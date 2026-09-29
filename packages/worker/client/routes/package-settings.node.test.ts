@@ -1,5 +1,5 @@
 import { type Handle } from 'remix/ui'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import {
 	clearPreloadedNavigationData,
@@ -11,19 +11,13 @@ import {
 	toPackageSettingsShell,
 } from './community-detail-shared.ts'
 
-const previousDocument = globalThis.document
-beforeEach(() => {
-	clearPreloadedNavigationData()
-	globalThis.document = {} as unknown as Document
-})
-afterEach(() => {
-	clearPreloadedNavigationData()
-	globalThis.document = previousDocument
-})
-
 type QueuedTask = (signal: AbortSignal) => unknown
 
+/** Browser-like navigation state; dispose restores `document` and the cache. */
 function createStubHandle() {
+	const previousDocument = globalThis.document
+	clearPreloadedNavigationData()
+	globalThis.document = {} as unknown as Document
 	const queuedTasks: Array<QueuedTask> = []
 	const handle = {
 		context: {
@@ -48,6 +42,10 @@ function createStubHandle() {
 			const tasks = queuedTasks.splice(0)
 			for (const task of tasks) await task(signal)
 		},
+		[Symbol.dispose]() {
+			clearPreloadedNavigationData()
+			globalThis.document = previousDocument
+		},
 	}
 }
 
@@ -61,7 +59,8 @@ test('a missing package maps to a not-found settings shell', () => {
 })
 
 test('preloaded settings 404 is ready immediately and does not fallback-fetch', async () => {
-	const { handle, queuedTasks, flushTasks } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, queuedTasks, flushTasks } = stub
 	const loads: Array<string> = []
 	const settingsData = createRouteData({
 		consume: consumePackageSettingsShell,

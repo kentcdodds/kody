@@ -13,17 +13,11 @@ import {
 	nextAdminUsersWindowAfterMutation,
 } from './admin-users-shared.ts'
 
-function stableUserId(id: number) {
-	return id.toString(16).padStart(64, '0')
-}
-
-function user(
-	overrides: Partial<AdminUserListItem> & Pick<AdminUserListItem, 'username'>,
-): AdminUserListItem {
-	const id = overrides.stableUserId ?? stableUserId(1)
+function user(id: number, username: string): AdminUserListItem {
 	return {
-		stableUserId: id,
-		email: `${overrides.username}@example.com`,
+		stableUserId: id.toString(16).padStart(64, '0'),
+		username,
+		email: `${username}@example.com`,
 		email_verified: true,
 		email_verified_at: '2026-01-01T00:00:00.000Z',
 		plan: 'free',
@@ -52,132 +46,103 @@ function user(
 		created_at: '2026-01-01T00:00:00.000Z',
 		updated_at: '2026-01-01T00:00:00.000Z',
 		roles: ['user'],
-		...overrides,
 	}
 }
 
+const existing = user(1, 'existing')
+const older = user(2, 'older')
+const created = user(9, 'created')
+
+type CreatePayload = Parameters<
+	typeof nextAdminUsersWindowAfterCreate
+>[0]['payload']
+
+const payload = (
+	users: Array<AdminUserListItem>,
+	total: number,
+	overrides: Partial<CreatePayload> = {},
+): CreatePayload => ({
+	ok: true,
+	selectedUser: null,
+	page: 1,
+	pageSize: 20,
+	availableRoles: [...roleNames],
+	availablePlans: [...planNames],
+	updatedUser: created,
+	createdUserInFilteredList: true,
+	users,
+	total,
+	...overrides,
+})
+
+const summarize = (window: {
+	items: Array<AdminUserListItem>
+	totalCount: number
+	hasMore: boolean
+}) => ({
+	names: window.items.map((item) => item.username),
+	totalCount: window.totalCount,
+	hasMore: window.hasMore,
+})
+
 test('create reseeds from the refreshed page and prepends a user that paging omitted', () => {
-	const existing = user({
-		stableUserId: stableUserId(1),
-		username: 'existing',
-	})
-	const created = user({
-		stableUserId: stableUserId(9),
-		username: 'created',
-	})
-	const basePayload = {
-		ok: true as const,
-		selectedUser: null,
-		page: 1,
-		pageSize: 20,
-		availableRoles: [...roleNames],
-		availablePlans: [...planNames],
-		updatedUser: created,
-	}
+	const afterCreate = (
+		currentItems: Array<AdminUserListItem>,
+		currentHasMore: boolean,
+		currentTotal: number,
+		next: CreatePayload,
+	) =>
+		summarize(
+			nextAdminUsersWindowAfterCreate({
+				currentItems,
+				currentHasMore,
+				currentTotal,
+				payload: next,
+			}),
+		)
 
-	const onPage = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing],
-		currentHasMore: false,
-		currentTotal: 1,
-		payload: {
-			...basePayload,
-			users: [existing, created],
-			total: 2,
-			createdUserInFilteredList: true,
-		},
+	expect(
+		afterCreate([existing], false, 1, payload([existing, created], 2)),
+	).toEqual({ names: ['existing', 'created'], totalCount: 2, hasMore: false })
+	expect(afterCreate([existing], true, 20, payload([existing], 21))).toEqual({
+		names: ['created', 'existing'],
+		totalCount: 21,
+		hasMore: true,
 	})
-	expect(onPage.items.map((item) => item.username)).toEqual([
-		'existing',
-		'created',
-	])
-	expect(onPage.totalCount).toBe(2)
-	expect(onPage.hasMore).toBe(false)
-
-	const omittedFromPageOne = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing],
-		currentHasMore: true,
-		currentTotal: 20,
-		payload: {
-			...basePayload,
-			users: [existing],
-			total: 21,
-			createdUserInFilteredList: true,
-		},
-	})
-	expect(omittedFromPageOne.items.map((item) => item.username)).toEqual([
-		'created',
-		'existing',
-	])
-	expect(omittedFromPageOne.totalCount).toBe(21)
-	expect(omittedFromPageOne.hasMore).toBe(true)
-
 	// page * pageSize < total is still true (2 < 3) after prepending the
 	// only omitted account; hasMore must follow the window length.
-	const older = user({
-		stableUserId: stableUserId(2),
-		username: 'older',
+	expect(
+		afterCreate(
+			[existing, older],
+			true,
+			2,
+			payload([existing, older], 3, { pageSize: 2 }),
+		),
+	).toEqual({
+		names: ['created', 'existing', 'older'],
+		totalCount: 3,
+		hasMore: false,
 	})
-	const omittedLastRow = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing, older],
-		currentHasMore: true,
-		currentTotal: 2,
-		payload: {
-			...basePayload,
-			pageSize: 2,
-			users: [existing, older],
-			total: 3,
-			createdUserInFilteredList: true,
-		},
-	})
-	expect(omittedLastRow.items.map((item) => item.username)).toEqual([
-		'created',
-		'existing',
-		'older',
-	])
-	expect(omittedLastRow.totalCount).toBe(3)
-	expect(omittedLastRow.hasMore).toBe(false)
-
-	const refreshFailed = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing],
-		currentHasMore: false,
-		currentTotal: 1,
-		payload: {
-			...basePayload,
-			users: [],
-			total: 0,
-			listRefreshFailed: true,
-			createdUserInFilteredList: true,
-		},
-	})
-	expect(refreshFailed.items.map((item) => item.username)).toEqual([
-		'created',
-		'existing',
-	])
-	expect(refreshFailed.totalCount).toBe(2)
-
-	const excludedByFilter = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing],
-		currentHasMore: false,
-		currentTotal: 1,
-		payload: {
-			...basePayload,
-			users: [existing],
-			total: 1,
-			createdUserInFilteredList: false,
-		},
-	})
-	expect(excludedByFilter.items.map((item) => item.username)).toEqual([
-		'existing',
-	])
-	expect(excludedByFilter.totalCount).toBe(1)
+	expect(
+		afterCreate(
+			[existing],
+			false,
+			1,
+			payload([], 0, { listRefreshFailed: true }),
+		),
+	).toMatchObject({ names: ['created', 'existing'], totalCount: 2 })
+	expect(
+		afterCreate(
+			[existing],
+			false,
+			1,
+			payload([existing], 1, { createdUserInFilteredList: false }),
+		),
+	).toMatchObject({ names: ['existing'], totalCount: 1 })
 
 	const mutationWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],
-		payload: {
-			...basePayload,
-			users: [existing],
-			total: 2,
-		},
+		payload: payload([existing], 2),
 		href: '/admin/users',
 	})
 	expect(mutationWindow.items.map((item) => item.username)).toEqual([
@@ -185,32 +150,16 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 	])
 	expect(mutationWindow.totalCount).toBe(2)
 
-	const rolePatched = user({
-		...existing,
-		roles: ['user', 'admin'],
-	})
+	const rolePatched = { ...existing, roles: ['user', 'admin'] }
 	const patchedWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],
-		payload: {
-			...basePayload,
-			users: [rolePatched],
-			updatedUser: rolePatched,
-			total: 1,
-		},
+		payload: payload([rolePatched], 1, { updatedUser: rolePatched }),
 		href: '/admin/users',
 	})
 	expect(patchedWindow.items).toEqual([rolePatched])
 })
 
 test('failed create refresh keeps the current window when reset runs after the snapshot is read', () => {
-	const existing = user({
-		stableUserId: stableUserId(1),
-		username: 'existing',
-	})
-	const created = user({
-		stableUserId: stableUserId(9),
-		username: 'created',
-	})
 	let snapshot: InfiniteListSnapshot<AdminUserListItem> = {
 		items: [],
 		hasMore: false,
@@ -226,71 +175,29 @@ test('failed create refresh keeps the current window when reset runs after the s
 			snapshot = next
 		},
 	})
-	list.replaceWindow({
-		items: [existing],
-		hasMore: true,
-		totalCount: 20,
-	})
+	list.replaceWindow({ items: [existing], hasMore: true, totalCount: 20 })
 	const nextWindow = nextAdminUsersWindowAfterCreate({
 		currentItems: snapshot.items,
 		currentHasMore: snapshot.hasMore,
 		currentTotal: snapshot.totalCount,
-		payload: {
-			ok: true,
-			selectedUser: null,
-			page: 1,
-			pageSize: 20,
-			availableRoles: [...roleNames],
-			availablePlans: [...planNames],
-			updatedUser: created,
-			users: [],
-			total: 0,
-			listRefreshFailed: true,
-			createdUserInFilteredList: true,
-		},
+		payload: payload([], 0, { listRefreshFailed: true }),
 	})
 	list.reset()
 	list.replaceWindow(nextWindow)
-	expect(snapshot.items.map((item) => item.username)).toEqual([
-		'created',
-		'existing',
-	])
-	expect(snapshot.totalCount).toBe(21)
-	expect(snapshot.hasMore).toBe(true)
+	expect(summarize(snapshot)).toEqual({
+		names: ['created', 'existing'],
+		totalCount: 21,
+		hasMore: true,
+	})
 })
 
 test('selection refetch keeps a created user that page one omitted', () => {
-	const oldest = user({
-		stableUserId: stableUserId(1),
-		username: 'oldest',
-	})
-	const older = user({
-		stableUserId: stableUserId(2),
-		username: 'older',
-	})
-	const created = user({
-		stableUserId: stableUserId(9),
-		username: 'created',
-	})
-	const pageOnePayload = {
-		users: [oldest, older],
-		page: 1,
-		pageSize: 2,
-		total: 3,
-	}
+	const oldest = user(1, 'oldest')
 	const afterCreate = nextAdminUsersWindowAfterCreate({
 		currentItems: [oldest, older],
 		currentHasMore: true,
 		currentTotal: 2,
-		payload: {
-			ok: true,
-			selectedUser: null,
-			availableRoles: [...roleNames],
-			availablePlans: [...planNames],
-			updatedUser: created,
-			createdUserInFilteredList: true,
-			...pageOnePayload,
-		},
+		payload: payload([oldest, older], 3, { pageSize: 2 }),
 	})
 	expect(afterCreate.items.map((item) => item.username)).toEqual([
 		'created',

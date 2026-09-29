@@ -9,10 +9,12 @@ import {
 const nowMs = Date.parse('2026-07-27T12:00:00.000Z')
 
 function job(
-	overrides: Partial<FilterableAccountJob> & Pick<FilterableAccountJob, 'id'>,
+	id: string,
+	overrides: Partial<FilterableAccountJob> = {},
 ): FilterableAccountJob {
 	return {
-		name: overrides.id,
+		id,
+		name: id,
 		ownership: 'package',
 		scheduleSummary: 'summary',
 		timezone: 'UTC',
@@ -26,143 +28,71 @@ function job(
 	}
 }
 
+const once = (nextRunAt: string) =>
+	({ enabled: false, scheduleType: 'once', nextRunAt }) as const
+
 test('account jobs filters cover active/history views and search', () => {
-	expect(
-		isActiveAccountJob(
-			job({ id: 'enabled-cron', enabled: true, scheduleType: 'cron' }),
-			nowMs,
-		),
-	).toBe(true)
-	expect(
-		isActiveAccountJob(
-			job({
-				id: 'future-once',
-				enabled: false,
-				scheduleType: 'once',
-				nextRunAt: '2026-07-28T00:00:00.000Z',
-			}),
-			nowMs,
-		),
-	).toBe(true)
-	expect(
-		isActiveAccountJob(
-			job({
-				id: 'past-once',
-				enabled: false,
-				scheduleType: 'once',
-				nextRunAt: '2026-07-26T00:00:00.000Z',
-			}),
-			nowMs,
-		),
-	).toBe(false)
-	expect(
-		isActiveAccountJob(
-			job({
-				id: 'disabled-interval',
+	const activeCases: Array<[FilterableAccountJob, boolean]> = [
+		[job('enabled-cron'), true],
+		[job('future-once', once('2026-07-28T00:00:00.000Z')), true],
+		[job('past-once', once('2026-07-26T00:00:00.000Z')), false],
+		[
+			job('disabled-interval', {
 				enabled: false,
 				scheduleType: 'interval',
 				nextRunAt: '2026-07-28T00:00:00.000Z',
 			}),
-			nowMs,
-		),
-	).toBe(false)
+			false,
+		],
+	]
+	expect(
+		activeCases
+			.filter(([item, want]) => isActiveAccountJob(item, nowMs) !== want)
+			.map(([item]) => item.id),
+	).toEqual([])
 
-	expect(readJobsViewFilter('/account/jobs')).toBe('active')
-	expect(readJobsViewFilter('/account/jobs?view=history')).toBe('history')
-	expect(readJobsViewFilter('/account/jobs?view=all')).toBe('all')
-	expect(readJobsViewFilter('/account/jobs?view=nope')).toBe('active')
+	const views = [
+		['/account/jobs', 'active'],
+		['/account/jobs?view=history', 'history'],
+		['/account/jobs?view=all', 'all'],
+		['/account/jobs?view=nope', 'active'],
+	] as const
+	expect(views.map(([href]) => [href, readJobsViewFilter(href)])).toEqual(views)
 
 	const jobs = [
-		job({
-			id: 'live-cron',
-			name: 'Live digest',
-			enabled: true,
-			ownership: 'package',
-		}),
-		job({
-			id: 'live-package',
-			name: 'Package digest',
-			enabled: true,
-			ownership: 'package',
-		}),
-		job({
-			id: 'upcoming-once',
+		job('live-cron', { name: 'Live digest' }),
+		job('live-package', { name: 'Package digest' }),
+		job('upcoming-once', {
 			name: 'Tomorrow ping',
-			enabled: false,
-			scheduleType: 'once',
 			ownership: 'ad-hoc',
-			nextRunAt: '2026-07-28T09:00:00.000Z',
+			...once('2026-07-28T09:00:00.000Z'),
 		}),
-		job({
-			id: 'failed-once',
+		job('failed-once', {
 			name: 'Failed ping',
-			enabled: false,
-			scheduleType: 'once',
 			ownership: 'ad-hoc',
-			nextRunAt: '2026-07-20T09:00:00.000Z',
+			...once('2026-07-20T09:00:00.000Z'),
 		}),
-		job({
-			id: 'disabled-package',
-			name: 'Old package digest',
-			enabled: false,
-			scheduleType: 'cron',
-			ownership: 'package',
-		}),
+		job('disabled-package', { name: 'Old package digest', enabled: false }),
 	]
+	const ids = (view: 'active' | 'history' | 'all', search = '', list = jobs) =>
+		filterAccountJobs(list, { view, search, nowMs }).map((item) => item.id)
 
-	expect(
-		filterAccountJobs(jobs, {
-			view: 'active',
-			search: '',
-			nowMs,
-		}).map((item) => item.id),
-	).toEqual(['live-cron', 'live-package', 'upcoming-once'])
-
-	expect(
-		filterAccountJobs(jobs, {
-			view: 'history',
-			search: '',
-			nowMs,
-		}).map((item) => item.id),
-	).toEqual(['failed-once', 'disabled-package'])
-
-	expect(
-		filterAccountJobs(jobs, {
-			view: 'all',
-			search: '',
-			nowMs,
-		}).map((item) => item.id),
-	).toEqual([
+	expect(ids('active')).toEqual(['live-cron', 'live-package', 'upcoming-once'])
+	expect(ids('history')).toEqual(['failed-once', 'disabled-package'])
+	expect(ids('all')).toEqual([
 		'live-cron',
 		'live-package',
 		'upcoming-once',
 		'failed-once',
 		'disabled-package',
 	])
-
+	expect(ids('history', 'failed')).toEqual(['failed-once'])
 	expect(
-		filterAccountJobs(jobs, {
-			view: 'history',
-			search: 'failed',
-			nowMs,
-		}).map((item) => item.id),
-	).toEqual(['failed-once'])
-
-	expect(
-		filterAccountJobs(
-			[
-				job({
-					id: 'named-package',
-					name: 'Nightly sync',
-					ownership: 'package',
-					packageName: 'State Store',
-				}),
-			],
-			{
-				view: 'all',
-				search: 'state store',
-				nowMs,
-			},
-		).map((item) => item.id),
+		ids('all', 'state store', [
+			job('named-package', {
+				name: 'Nightly sync',
+				packageName: 'State Store',
+			}),
+		]),
 	).toEqual(['named-package'])
 })

@@ -1,3 +1,4 @@
+import { type Handle } from 'remix/ui'
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
@@ -29,10 +30,22 @@ const rows = [
 	{ id: 'b', href: '/account/packages/b', cells: { name: 'Beta', count: '7' } },
 ]
 
-test('record table keeps container drops, row links, and expand/pane selection contracts', async () => {
-	const noneHtml = await renderToString(
-		jsx(RecordTable, { mode: 'none', ariaLabel: 'Packages', columns, rows }),
+type RecordTableProps =
+	Parameters<typeof RecordTable>[0] extends Handle<infer P> ? P : never
+
+const renderTable = (props: Partial<RecordTableProps>) =>
+	renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Secrets',
+			columns,
+			rows,
+			...props,
+		}),
 	)
+
+test('record table keeps container drops, row links, and expand/pane selection contracts', async () => {
+	const noneHtml = await renderTable({ mode: 'none' })
 
 	// These tables live inside a 200px-railed shell, so the viewport says very
 	// little about how much room the table actually has. A `@media` rule here
@@ -43,30 +56,19 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(noneHtml).toContain('data-primary="true"')
 
 	// none mode ignores selection even when an id and record are passed.
-	const noneWithSelection = await renderToString(
-		jsx(RecordTable, {
-			mode: 'none',
-			ariaLabel: 'Entitlements',
-			columns,
-			rows,
-			selectedId: 'a',
-			record: jsx('p', { children: 'should not render' }),
-		}),
-	)
+	const noneWithSelection = await renderTable({
+		mode: 'none',
+		selectedId: 'a',
+		record: jsx('p', { children: 'should not render' }),
+	})
 	expect(noneWithSelection).not.toContain('data-selected="true"')
 	expect(noneWithSelection).not.toContain('should not render')
 	expect(noneWithSelection).not.toContain('data-record-focus="true"')
 
-	const expandHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-			selectedId: 'b',
-			record: jsx('p', { children: 'Beta record' }),
-		}),
-	)
+	const expandHtml = await renderTable({
+		selectedId: 'b',
+		record: jsx('p', { children: 'Beta record' }),
+	})
 
 	// Rows stay real anchors, so the selected record is in the URL and the
 	// scroll-preserving navigation continues to work.
@@ -87,29 +89,16 @@ test('record table keeps container drops, row links, and expand/pane selection c
 
 	// Selected without a loaded record must not point assistive tech at a
 	// missing expanded region.
-	const expandPending = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-			selectedId: 'b',
-		}),
-	)
+	const expandPending = await renderTable({ selectedId: 'b' })
 	expect(expandPending).not.toContain('aria-expanded="true"')
 	expect(expandPending).not.toContain('aria-controls')
 	expect(expandPending).not.toContain('data-record-row="true"')
 
-	const paneHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'pane',
-			ariaLabel: 'Secrets',
-			columns,
-			rows,
-			selectedId: 'a',
-			record: jsx('p', { children: 'Alpha editor' }),
-		}),
-	)
+	const paneHtml = await renderTable({
+		mode: 'pane',
+		selectedId: 'a',
+		record: jsx('p', { children: 'Alpha editor' }),
+	})
 	expect(paneHtml).not.toContain('data-record-row="true"')
 	expect(paneHtml.indexOf('Alpha editor')).toBeGreaterThan(
 		paneHtml.indexOf('</table>'),
@@ -117,16 +106,10 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(paneHtml).toContain('data-selected="true"')
 
 	// Off-window expand selection falls back to a pane after the table.
-	const orphanHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Runs',
-			columns,
-			rows,
-			selectedId: 'not-in-this-window',
-			record: jsx('p', { children: 'Orphan record' }),
-		}),
-	)
+	const orphanHtml = await renderTable({
+		selectedId: 'not-in-this-window',
+		record: jsx('p', { children: 'Orphan record' }),
+	})
 	expect(orphanHtml).toContain('Orphan record')
 	expect(orphanHtml).not.toContain('data-record-row="true"')
 	expect(orphanHtml).toContain('data-record-focus="true"')
@@ -141,64 +124,29 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	// until the pane exists. List `busy` and detail `recordLoading` both
 	// count. A not-found selection is not pending. An in-list row already
 	// has `data-record-focus`, so it does not need the pending marker.
-	const pendingBusyHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Users',
-			columns,
-			rows,
-			selectedId: 'not-in-this-window',
-			busy: true,
-		}),
-	)
+	const pendingBusyHtml = await renderTable({
+		selectedId: 'not-in-this-window',
+		busy: true,
+	})
 	expect(pendingBusyHtml).toContain('data-record-focus-pending="true"')
 	expect(pendingBusyHtml).not.toContain('data-record-focus="true"')
-	const pendingRecordHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Memories',
-			columns,
-			rows,
-			selectedId: 'not-in-this-window',
-			recordLoading: true,
-		}),
-	)
+	const pendingRecordHtml = await renderTable({
+		selectedId: 'not-in-this-window',
+		recordLoading: true,
+	})
 	expect(pendingRecordHtml).toContain('data-record-focus-pending="true"')
 	expect(pendingRecordHtml).not.toContain('data-record-focus="true"')
-	const inListBusyHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Users',
-			columns,
-			rows,
-			selectedId: 'b',
-			busy: true,
-		}),
-	)
+	const inListBusyHtml = await renderTable({ selectedId: 'b', busy: true })
 	expect(inListBusyHtml).toContain('data-record-focus="true"')
 	expect(inListBusyHtml).not.toContain('data-record-focus-pending')
-	const notFoundHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Users',
-			columns,
-			rows,
-			selectedId: 'not-in-this-window',
-		}),
-	)
+	const notFoundHtml = await renderTable({ selectedId: 'not-in-this-window' })
 	expect(notFoundHtml).not.toContain('data-record-focus-pending')
 
 	// A not-found record has no selected row. It must still render, not vanish.
-	const missingHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Integrations',
-			columns,
-			rows,
-			selectedId: null,
-			record: jsx('p', { children: 'Connection not found' }),
-		}),
-	)
+	const missingHtml = await renderTable({
+		selectedId: null,
+		record: jsx('p', { children: 'Connection not found' }),
+	})
 	expect(missingHtml).toContain('Connection not found')
 	expect(missingHtml).not.toContain('data-record-row="true"')
 	expect(missingHtml.indexOf('Connection not found')).toBeGreaterThan(
@@ -222,17 +170,12 @@ test('record table keeps container drops, row links, and expand/pane selection c
 		},
 	])
 
-	const createHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Secrets',
-			columns,
-			rows: [],
-			createRow: { href: '/account/secrets/new', label: 'New secret' },
-			record: jsx('p', { children: 'Create editor' }),
-			emptyLabel: 'No secrets yet.',
-		}),
-	)
+	const createHtml = await renderTable({
+		rows: [],
+		createRow: { href: '/account/secrets/new', label: 'New secret' },
+		record: jsx('p', { children: 'Create editor' }),
+		emptyLabel: 'No secrets yet.',
+	})
 	expect(createHtml).toContain('<table')
 	expect(createHtml).not.toContain('No secrets yet.')
 	expect(createHtml).toContain('New secret')
@@ -247,14 +190,7 @@ test('record table keeps container drops, row links, and expand/pane selection c
 
 	// The table stays in the pane (`table-layout: fixed`). Horizontal overflow
 	// is only for a very narrow container, not for five nowrap columns.
-	const overflowHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'expand',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-		}),
-	)
+	const overflowHtml = await renderTable({})
 	expect(overflowHtml).toContain('table-layout: fixed')
 	expect(overflowHtml).toContain('overflow-x: hidden')
 	expect(overflowHtml).toContain('@container (max-width: 400px)')
@@ -317,27 +253,18 @@ test('record table search stays an uncontrolled searchbox outside the filtered r
 		value: '',
 		onInput: () => {},
 	})
-	const withRows = await renderToString(
-		jsx(RecordTable, {
-			mode: 'none',
-			ariaLabel: 'Secrets',
-			columns,
-			rows,
-			toolbar,
-			countLabel: '2 of 2 shown',
-		}),
-	)
-	const filteredEmpty = await renderToString(
-		jsx(RecordTable, {
-			mode: 'none',
-			ariaLabel: 'Secrets',
-			columns,
-			rows: [],
-			toolbar,
-			countLabel: '0 of 2 shown',
-			emptyLabel: 'No secrets match the current filters.',
-		}),
-	)
+	const withRows = await renderTable({
+		mode: 'none',
+		toolbar,
+		countLabel: '2 of 2 shown',
+	})
+	const filteredEmpty = await renderTable({
+		mode: 'none',
+		rows: [],
+		toolbar,
+		countLabel: '0 of 2 shown',
+		emptyLabel: 'No secrets match the current filters.',
+	})
 
 	for (const html of [withRows, filteredEmpty]) {
 		expect(html).toContain('role="searchbox"')
@@ -357,31 +284,22 @@ test('record table search stays an uncontrolled searchbox outside the filtered r
 })
 
 test('record table empty and busy states keep toolbar layout stable', async () => {
-	const emptyHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'pane',
-			ariaLabel: 'Secrets',
-			columns,
-			rows: [],
-			emptyLabel: 'No secrets yet.',
-			countLabel: '0 of 0 shown',
-		}),
-	)
+	const emptyHtml = await renderTable({
+		mode: 'pane',
+		rows: [],
+		emptyLabel: 'No secrets yet.',
+		countLabel: '0 of 0 shown',
+	})
 
 	expect(emptyHtml).not.toContain('<table')
 	expect(emptyHtml).toContain('0 of 0 shown')
 	expect(emptyHtml).toContain('<section aria-label="Secrets"')
 
-	const busyHtml = await renderToString(
-		jsx(RecordTable, {
-			mode: 'pane',
-			ariaLabel: 'Packages',
-			columns,
-			rows,
-			countLabel: '2 of 2 shown',
-			busy: true,
-		}),
-	)
+	const busyHtml = await renderTable({
+		mode: 'pane',
+		countLabel: '2 of 2 shown',
+		busy: true,
+	})
 
 	// A page-level "Loading…" line above the table reflowed everything below it
 	// on every keystroke of a search that refetches. The count dims in place
@@ -394,25 +312,21 @@ test('record table empty and busy states keep toolbar layout stable', async () =
 })
 
 test('record table keeps primary accessories outside the row link', async () => {
-	const html = await renderToString(
-		jsx(RecordTable, {
-			mode: 'none',
-			ariaLabel: 'Packages',
-			columns,
-			rows: [
-				{
-					id: 'a',
-					href: '/account/packages/a',
-					cells: { name: 'Alpha' },
-					primaryAccessory: jsx('button', {
-						type: 'button',
-						'data-testid': 'listing-ahead',
-						children: 'Fork outdated',
-					}),
-				},
-			],
-		}),
-	)
+	const html = await renderTable({
+		mode: 'none',
+		rows: [
+			{
+				id: 'a',
+				href: '/account/packages/a',
+				cells: { name: 'Alpha' },
+				primaryAccessory: jsx('button', {
+					type: 'button',
+					'data-testid': 'listing-ahead',
+					children: 'Fork outdated',
+				}),
+			},
+		],
+	})
 
 	expect(html).toContain('href="/account/packages/a"')
 	expect(html).toContain('data-testid="listing-ahead"')

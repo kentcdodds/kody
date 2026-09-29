@@ -32,68 +32,35 @@ const approval = {
 }
 
 test('connect secrets is already allowed only when every listed secret is present and every host is granted', () => {
-	expect(
+	const allGranted = {
+		...secret,
+		allowedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
+	}
+	const rejectedHosts = [
+		{ host: 'api.ope', reason: 'unknown_suffix', message: 'truncated' },
+	] as const
+	const allowed = (
+		secrets: Array<typeof secret>,
+		overrides: Partial<typeof approval> = {},
+	) =>
 		isConnectSecretsAlreadyAllowed({
-			secrets: [secret],
-			approval,
-		}),
-	).toBe(false)
+			secrets,
+			approval: { ...approval, ...overrides },
+		})
 
+	expect(allowed([secret])).toBe(false)
+	expect(allowed([allGranted])).toBe(true)
+	expect(allowed([])).toBe(false)
+	// Invalid (rejected) hosts do not block an otherwise fully granted request,
+	// but a request with only invalid hosts is never "already allowed".
+	expect(allowed([allGranted], { rejectedHosts: [...rejectedHosts] })).toBe(
+		true,
+	)
 	expect(
-		isConnectSecretsAlreadyAllowed({
-			secrets: [
-				{
-					...secret,
-					allowedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
-				},
-			],
-			approval,
-		}),
-	).toBe(true)
-
-	expect(
-		isConnectSecretsAlreadyAllowed({
-			secrets: [],
-			approval,
-		}),
-	).toBe(false)
-
-	expect(
-		isConnectSecretsAlreadyAllowed({
-			secrets: [
-				{
-					...secret,
-					allowedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
-				},
-			],
-			approval: {
-				...approval,
-				rejectedHosts: [
-					{
-						host: 'api.ope',
-						reason: 'unknown_suffix',
-						message: 'truncated',
-					},
-				],
-			},
-		}),
-	).toBe(true)
-
-	expect(
-		isConnectSecretsAlreadyAllowed({
-			secrets: [secret],
-			approval: {
-				...approval,
-				requestedHost: '',
-				requestedHosts: [],
-				rejectedHosts: [
-					{
-						host: 'api.ope',
-						reason: 'unknown_suffix',
-						message: 'truncated',
-					},
-				],
-			},
+		allowed([secret], {
+			requestedHost: '',
+			requestedHosts: [],
+			rejectedHosts: [...rejectedHosts],
 		}),
 	).toBe(false)
 

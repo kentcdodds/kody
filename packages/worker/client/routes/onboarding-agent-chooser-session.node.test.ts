@@ -17,27 +17,13 @@ import {
 	type OnboardingPayload,
 } from './onboarding-payload.ts'
 
-const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
-const originalSessionStorage = Object.getOwnPropertyDescriptor(
-	globalThis,
-	'sessionStorage',
-)
-
-function restoreBrowserStubs() {
-	clearOnboardingAgentChooserSession()
-	if (originalWindow) {
-		Object.defineProperty(globalThis, 'window', originalWindow)
-	} else {
-		Reflect.deleteProperty(globalThis, 'window')
-	}
-	if (originalSessionStorage) {
-		Object.defineProperty(globalThis, 'sessionStorage', originalSessionStorage)
-	} else {
-		Reflect.deleteProperty(globalThis, 'sessionStorage')
-	}
-}
-
+/** Installs a window + sessionStorage stub; dispose restores the globals. */
 function installBrowserSession() {
+	const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+	const originalSessionStorage = Object.getOwnPropertyDescriptor(
+		globalThis,
+		'sessionStorage',
+	)
 	const store = new Map<string, string>()
 	Object.defineProperty(globalThis, 'window', {
 		configurable: true,
@@ -46,19 +32,25 @@ function installBrowserSession() {
 	Object.defineProperty(globalThis, 'sessionStorage', {
 		configurable: true,
 		value: {
-			getItem(key: string) {
-				return store.get(key) ?? null
-			},
-			setItem(key: string, value: string) {
-				store.set(key, value)
-			},
-			removeItem(key: string) {
-				store.delete(key)
-			},
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+			removeItem: (key: string) => store.delete(key),
 		},
 	})
 	clearOnboardingAgentChooserSession()
-	return store
+	return {
+		store,
+		[Symbol.dispose]() {
+			clearOnboardingAgentChooserSession()
+			for (const [name, descriptor] of [
+				['window', originalWindow],
+				['sessionStorage', originalSessionStorage],
+			] as const) {
+				if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+				else Reflect.deleteProperty(globalThis, name)
+			}
+		},
+	}
 }
 
 const anonymousOnboardingPayload = {
@@ -116,38 +108,34 @@ function chooserFromLoader(
 }
 
 test('client loads of the selection step reuse the SSR agent order', async () => {
-	const store = installBrowserSession()
-	try {
-		const ssrPick = pickOnboardingAgentChooser(() => 0)
-		const otherPick = pickOnboardingAgentChooser((max) => Math.max(0, max - 1))
-		expect(ssrPick.desktopFeatured).not.toEqual(otherPick.desktopFeatured)
-		expect(ssrPick.mobileFeatured).not.toEqual(otherPick.mobileFeatured)
+	using browser = installBrowserSession()
+	const ssrPick = pickOnboardingAgentChooser(() => 0)
+	const otherPick = pickOnboardingAgentChooser((max) => Math.max(0, max - 1))
+	expect(ssrPick.desktopFeatured).not.toEqual(otherPick.desktopFeatured)
+	expect(ssrPick.mobileFeatured).not.toEqual(otherPick.mobileFeatured)
 
-		rememberOnboardingAgentChooser(ssrPick)
-		expect(readRememberedOnboardingAgentChooser()).toEqual(ssrPick)
-		expect(
-			JSON.parse(store.get(onboardingAgentChooserSessionKey) ?? 'null'),
-		).toEqual(ssrPick)
+	rememberOnboardingAgentChooser(ssrPick)
+	expect(readRememberedOnboardingAgentChooser()).toEqual(ssrPick)
+	expect(
+		JSON.parse(browser.store.get(onboardingAgentChooserSessionKey) ?? 'null'),
+	).toEqual(ssrPick)
 
-		const first = chooserFromLoader(await loadSelectionStep())
-		const afterSelect = chooserFromLoader(
-			await loadSelectionStep('/onboarding/step-1/cursor'),
-		)
-		const afterChangeSelection = chooserFromLoader(await loadSelectionStep())
-		const indexRedirect = await loadSelectionStep('/onboarding?redirectTo=%2F')
-		expect(isRouteLoaderRedirect(indexRedirect)).toBe(true)
-		if (isRouteLoaderRedirect(indexRedirect)) {
-			expect(indexRedirect.to).toBe('/onboarding/step-1?redirectTo=%2F')
-		}
-		expect(first).toEqual(ssrPick)
-		expect(afterSelect).toEqual(ssrPick)
-		expect(afterChangeSelection).toEqual(ssrPick)
-		expect(
-			resolveOnboardingAgentChooser((max) => Math.max(0, max - 1)),
-		).toEqual(ssrPick)
-	} finally {
-		restoreBrowserStubs()
+	const first = chooserFromLoader(await loadSelectionStep())
+	const afterSelect = chooserFromLoader(
+		await loadSelectionStep('/onboarding/step-1/cursor'),
+	)
+	const afterChangeSelection = chooserFromLoader(await loadSelectionStep())
+	const indexRedirect = await loadSelectionStep('/onboarding?redirectTo=%2F')
+	expect(isRouteLoaderRedirect(indexRedirect)).toBe(true)
+	if (isRouteLoaderRedirect(indexRedirect)) {
+		expect(indexRedirect.to).toBe('/onboarding/step-1?redirectTo=%2F')
 	}
+	expect(first).toEqual(ssrPick)
+	expect(afterSelect).toEqual(ssrPick)
+	expect(afterChangeSelection).toEqual(ssrPick)
+	expect(resolveOnboardingAgentChooser((max) => Math.max(0, max - 1))).toEqual(
+		ssrPick,
+	)
 })
 
 test('client /onboarding resume follows payload progress, not always step 1', async () => {
@@ -195,8 +183,8 @@ test('client /onboarding resume follows payload progress, not always step 1', as
 })
 
 test('onboarding agent chooser session ignores invalid storage and does not persist on the server', () => {
-	installBrowserSession()
-	try {
+	{
+		using _browser = installBrowserSession()
 		sessionStorage.setItem(onboardingAgentChooserSessionKey, '{"nope":true}')
 		expect(readRememberedOnboardingAgentChooser()).toBeNull()
 		const first = resolveOnboardingAgentChooser(() => 0)
@@ -205,8 +193,6 @@ test('onboarding agent chooser session ignores invalid storage and does not pers
 		expect(
 			resolveOnboardingAgentChooser((max) => Math.max(0, max - 1)),
 		).toEqual(first)
-	} finally {
-		restoreBrowserStubs()
 	}
 
 	const serverPick = pickOnboardingAgentChooser(() => 0)

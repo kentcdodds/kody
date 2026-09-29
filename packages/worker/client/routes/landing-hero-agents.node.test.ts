@@ -85,38 +85,23 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 	expect(outboundMid!.scale).toBeGreaterThan(0.45)
 	expect(landingHeroLightRate(0.5)).toBeGreaterThan(landingHeroLightRateFar)
 	expect(landingHeroLightRate(0.5)).toBeLessThan(landingHeroLightRateNear)
-	expect(
+	// Fine pointers light by distance to the pointer; coarse pointers by the
+	// lantern's distance from the viewport centre.
+	const proximity = (
+		lantern: { x: number; y: number },
+		pointer: { x: number; y: number } | null,
+		finePointer: boolean,
+	) =>
 		landingHeroLightProximity({
-			lantern: { x: 100, y: 100 },
-			pointer: { x: 100, y: 100 },
+			lantern,
+			pointer,
 			viewport: { width: 800, height: 600 },
-			finePointer: true,
-		}),
-	).toBe(1)
-	expect(
-		landingHeroLightProximity({
-			lantern: { x: 100, y: 100 },
-			pointer: null,
-			viewport: { width: 800, height: 600 },
-			finePointer: true,
-		}),
-	).toBe(0)
-	expect(
-		landingHeroLightProximity({
-			lantern: { x: 400, y: 300 },
-			pointer: null,
-			viewport: { width: 800, height: 600 },
-			finePointer: false,
-		}),
-	).toBe(1)
-	expect(
-		landingHeroLightProximity({
-			lantern: { x: 0, y: 0 },
-			pointer: null,
-			viewport: { width: 800, height: 600 },
-			finePointer: false,
-		}),
-	).toBeLessThan(0.5)
+			finePointer,
+		})
+	expect(proximity({ x: 100, y: 100 }, { x: 100, y: 100 }, true)).toBe(1)
+	expect(proximity({ x: 100, y: 100 }, null, true)).toBe(0)
+	expect(proximity({ x: 400, y: 300 }, null, false)).toBe(1)
+	expect(proximity({ x: 0, y: 0 }, null, false)).toBeLessThan(0.5)
 })
 
 test('orbit lights carry the primitive colors and paint no connector', async () => {

@@ -39,97 +39,97 @@ function largestVisibleHole(
 	return Math.max(hole, viewportWidth - end)
 }
 
-test('lane placements wrap with a seam copy instead of leaving a hole', () => {
-	expect(wrapUnitInterval(0, 1000)).toBe(0)
-	expect(wrapUnitInterval(1000, 1000)).toBe(0)
-	expect(wrapUnitInterval(1001, 1000)).toBe(1)
-	expect(wrapUnitInterval(-1, 1000)).toBe(999)
-	expect(wrapUnitInterval(50, 0)).toBe(0)
-
-	expect(wrapPagerIndex(0, 4)).toBe(0)
-	expect(wrapPagerIndex(-1, 4)).toBe(3)
-	expect(wrapPagerIndex(4, 4)).toBe(0)
-
-	const stride = 500
-	const cardWidth = 480
-	const count = 4
-	const totalWidth = count * stride
-
-	const atRest = listLanePlacements({
-		count,
+/** Lane placements for four cards, asserting the no-hole invariant. */
+function lane(
+	stride: number,
+	cardWidth: number,
+	viewportWidth: number,
+	offset: number,
+) {
+	const placements = listLanePlacements({
+		count: 4,
 		stride,
 		cardWidth,
-		offset: 0,
-		viewportWidth: 1200,
-	})
-	expect(atRest.map((placement) => placement.x)).toEqual(
-		expect.arrayContaining([0, 500, 1000, 1500]),
-	)
-	expect(largestVisibleHole(atRest, 1200, cardWidth)).toBeLessThanOrEqual(
-		stride - cardWidth,
-	)
-
-	const sliding = listLanePlacements({
-		count,
-		stride,
-		cardWidth,
-		offset: 10,
-		viewportWidth: 1200,
+		offset,
+		viewportWidth,
 	})
 	expect(
-		sliding.filter((placement) => placement.itemIndex === 0),
-	).toContainEqual({ itemIndex: 0, x: -10, seam: false })
-	expect(largestVisibleHole(sliding, 1200, cardWidth)).toBeLessThanOrEqual(
-		stride - cardWidth,
+		largestVisibleHole(placements, viewportWidth, cardWidth),
+	).toBeLessThanOrEqual(stride - cardWidth)
+	return placements
+}
+
+const samples = (...points: Array<[t: number, x: number]>) =>
+	points.map(([t, x]) => ({ t, x }))
+
+function release(
+	[startX, startY]: [number, number],
+	lastX: number,
+	[endX, endY, endT]: [number, number, number],
+	gestureSamples: Array<{ t: number; x: number }>,
+	dragging: boolean,
+) {
+	return finishPointerGesture({
+		startX,
+		startY,
+		lastX,
+		endX,
+		endY,
+		endT,
+		samples: gestureSamples,
+		dragging,
+	})
+}
+
+test('lane placements wrap with a seam copy instead of leaving a hole', () => {
+	const wraps: Array<[number, number, number]> = [
+		[0, 1000, 0],
+		[1000, 1000, 0],
+		[1001, 1000, 1],
+		[-1, 1000, 999],
+		[50, 0, 0],
+	]
+	expect(
+		wraps.filter(([v, n, want]) => wrapUnitInterval(v, n) !== want),
+	).toEqual([])
+	const pager: Array<[number, number, number]> = [
+		[0, 4, 0],
+		[-1, 4, 3],
+		[4, 4, 0],
+	]
+	expect(pager.filter(([i, n, want]) => wrapPagerIndex(i, n) !== want)).toEqual(
+		[],
 	)
 
-	const wide = listLanePlacements({
-		count,
-		stride,
-		cardWidth,
-		offset: 10,
-		viewportWidth: 1920,
-	})
-	const wideZero = wide
-		.filter((placement) => placement.itemIndex === 0)
-		.sort((left, right) => left.x - right.x)
-	expect(wideZero).toEqual([
-		{ itemIndex: 0, x: -10, seam: false },
-		{ itemIndex: 0, x: totalWidth - 10, seam: true },
-	])
-	expect(largestVisibleHole(wide, 1920, cardWidth)).toBeLessThanOrEqual(
-		stride - cardWidth,
+	const [stride, cardWidth, count] = [500, 480, 4]
+	expect(lane(stride, cardWidth, 1200, 0).map((p) => p.x)).toEqual(
+		expect.arrayContaining([0, 500, 1000, 1500]),
 	)
+	expect(
+		lane(stride, cardWidth, 1200, 10).filter((p) => p.itemIndex === 0),
+	).toContainEqual({ itemIndex: 0, x: -10, seam: false })
+
+	const wide = lane(stride, cardWidth, 1920, 10)
+	expect(
+		wide
+			.filter((p) => p.itemIndex === 0)
+			.sort((left, right) => left.x - right.x),
+	).toEqual([
+		{ itemIndex: 0, x: -10, seam: false },
+		{ itemIndex: 0, x: count * stride - 10, seam: true },
+	])
 	expect(wide.length).toBeLessThanOrEqual(count + 2)
 })
 
 test('narrow swipe moves the leading card off the origin instead of pinning it', () => {
-	const stride = 320
-	const cardWidth = 308
-	const viewportWidth = 375
-
-	const atRest = listLanePlacements({
-		count: 4,
-		stride,
-		cardWidth,
-		offset: 0,
-		viewportWidth,
+	expect(lane(320, 308, 375, 0)).toContainEqual({
+		itemIndex: 0,
+		x: 0,
+		seam: false,
 	})
-	expect(atRest).toContainEqual({ itemIndex: 0, x: 0, seam: false })
-
-	const swiped = listLanePlacements({
-		count: 4,
-		stride,
-		cardWidth,
-		offset: 80,
-		viewportWidth,
-	})
-	const leading = swiped.filter((placement) => placement.itemIndex === 0)
+	const leading = lane(320, 308, 375, 80).filter((p) => p.itemIndex === 0)
 	expect(leading).toContainEqual({ itemIndex: 0, x: -80, seam: false })
-	expect(leading.some((placement) => placement.x === 0)).toBe(false)
-	expect(
-		largestVisibleHole(swiped, viewportWidth, cardWidth),
-	).toBeLessThanOrEqual(stride - cardWidth)
+	expect(leading.some((p) => p.x === 0)).toBe(false)
 
 	expect(canPauseOnHover(() => ({ matches: false }))).toBe(false)
 	expect(
@@ -147,39 +147,29 @@ test('narrow swipe moves the leading card off the origin instead of pinning it',
 		matchesFocusWithin: false,
 		hoverCapable: false,
 	}
-	expect(isTestimonialsLanePaused(idle)).toBe(false)
-	expect(isTestimonialsLanePaused({ ...idle, focus: true })).toBe(true)
-	expect(isTestimonialsLanePaused({ ...idle, hover: true })).toBe(false)
-	expect(isTestimonialsLanePaused({ ...idle, matchesFocusWithin: true })).toBe(
-		false,
-	)
+	const paused: Array<[Partial<typeof idle>, boolean]> = [
+		[{}, false],
+		[{ focus: true }, true],
+		[{ hover: true }, false],
+		[{ matchesFocusWithin: true }, false],
+		[{ hoverCapable: true, hover: true }, true],
+	]
 	expect(
-		isTestimonialsLanePaused({ ...idle, hoverCapable: true, hover: true }),
-	).toBe(true)
+		paused.filter(
+			([state, want]) =>
+				isTestimonialsLanePaused({ ...idle, ...state }) !== want,
+		),
+	).toEqual([])
 })
 
 test('an exiting card stays on the negative lane instead of snapping to the origin', () => {
-	const stride = 500
-	const cardWidth = 480
-	const viewportWidth = 1200
+	const [stride, cardWidth] = [500, 480]
 	const offset = Math.round(cardWidth * 0.75)
-
-	const placements = listLanePlacements({
-		count: 4,
-		stride,
-		cardWidth,
-		offset,
-		viewportWidth,
-	})
-	const leading = placements.filter((placement) => placement.itemIndex === 0)
-	expect(leading.some((placement) => placement.x === 0)).toBe(false)
+	const placements = lane(stride, cardWidth, 1200, offset)
+	const leading = placements.filter((p) => p.itemIndex === 0)
+	expect(leading.some((p) => p.x === 0)).toBe(false)
 	expect(leading).toContainEqual({ itemIndex: 0, x: -offset, seam: false })
-	expect(placements.find((placement) => placement.itemIndex === 1)?.x).toBe(
-		stride - offset,
-	)
-	expect(
-		largestVisibleHole(placements, viewportWidth, cardWidth),
-	).toBeLessThanOrEqual(stride - cardWidth)
+	expect(placements.find((p) => p.itemIndex === 1)?.x).toBe(stride - offset)
 
 	const cards = [0, 1, 2, 3].map(() => ({
 		hidden: false,
@@ -197,26 +187,20 @@ test('an exiting card stays on the negative lane instead of snapping to the orig
 	parkUnusedLaneCards(cards, used)
 	parkUnusedLaneCards([clone], used)
 
-	expect(cards[0]?.hidden).toBe(false)
-	expect(cards[0]?.style.transform).toBe(`translate3d(${-offset}px, 0, 0)`)
-	expect(cards[0]?.style.transform).not.toBe('')
-	expect(cards[0]?.style.transform).not.toBe(PARKED_TRANSFORM)
-	for (const card of cards) {
-		if (used.has(card)) continue
-		expect(card.hidden).toBe(true)
-		expect(card.style.transform).toBe(PARKED_TRANSFORM)
-	}
-	if (!used.has(clone)) {
-		expect(clone.hidden).toBe(true)
-		expect(clone.style.transform).toBe(PARKED_TRANSFORM)
+	expect(cards[0]).toEqual({
+		hidden: false,
+		style: { transform: `translate3d(${-offset}px, 0, 0)` },
+	})
+	for (const card of [...cards, clone].filter((node) => !used.has(node))) {
+		expect(card).toEqual({
+			hidden: true,
+			style: { transform: PARKED_TRANSFORM },
+		})
 	}
 })
 
 test('unused cards keep a parked transform instead of snapping to the origin', () => {
-	const onStage = {
-		hidden: true,
-		style: { transform: PARKED_TRANSFORM },
-	}
+	const onStage = { hidden: true, style: { transform: PARKED_TRANSFORM } }
 	const exiting = {
 		hidden: false,
 		style: { transform: 'translate3d(-360px, 0, 0)' },
@@ -229,13 +213,13 @@ test('unused cards keep a parked transform instead of snapping to the origin', (
 	parkUnusedLaneCards([onStage, exiting], new Set([onStage]))
 	parkUnusedLaneCards([clone], new Set())
 
-	expect(onStage.hidden).toBe(false)
-	expect(onStage.style.transform).toBe('translate3d(140px, 0, 0)')
-	expect(exiting.hidden).toBe(true)
-	expect(exiting.style.transform).toBe(PARKED_TRANSFORM)
-	expect(exiting.style.transform).not.toBe('')
-	expect(clone.hidden).toBe(true)
-	expect(clone.style.transform).toBe(PARKED_TRANSFORM)
+	const parked = { hidden: true, style: { transform: PARKED_TRANSFORM } }
+	expect(onStage).toEqual({
+		hidden: false,
+		style: { transform: 'translate3d(140px, 0, 0)' },
+	})
+	expect(exiting).toEqual(parked)
+	expect(clone).toEqual(parked)
 })
 
 test('a fast swipe coasts after release instead of freezing on the finger', () => {
@@ -243,12 +227,7 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 	expect(classifyPointerIntent({ dx: 24, dy: 4 })).toBe('drag')
 	expect(classifyPointerIntent({ dx: 4, dy: 24 })).toBe('scroll')
 
-	const flickSamples = [
-		{ t: 0, x: 300 },
-		{ t: 16, x: 240 },
-		{ t: 32, x: 170 },
-		{ t: 48, x: 90 },
-	]
+	const flickSamples = samples([0, 300], [16, 240], [32, 170], [48, 90])
 	const windowed = appendFlickSample(flickSamples, { t: 100, x: 80 })
 	expect(windowed[0]?.t).toBe(32)
 	expect(windowed).toHaveLength(3)
@@ -256,113 +235,55 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 	expect(shouldCoastFlick(0.2)).toBe(false)
 	expect(shouldCoastFlick(flickVelocityPxPerMs(flickSamples))).toBe(true)
 
-	const slowDrag = finishPointerGesture({
-		startX: 200,
-		startY: 40,
-		lastX: 140,
-		endX: 140,
-		endY: 42,
-		endT: 400,
-		samples: [
-			{ t: 0, x: 200 },
-			{ t: 400, x: 140 },
-		],
+	const slowDrag = release(
+		[200, 40],
+		140,
+		[140, 42, 400],
+		samples([0, 200], [400, 140]),
+		true,
+	)
+	expect(slowDrag).toMatchObject({
 		dragging: true,
+		offsetDelta: 0,
+		coastVelocity: 0,
 	})
-	expect(slowDrag.dragging).toBe(true)
-	expect(slowDrag.offsetDelta).toBe(0)
-	expect(slowDrag.coastVelocity).toBe(0)
 
-	const coalescedFlick = finishPointerGesture({
-		startX: 280,
-		startY: 20,
-		lastX: 280,
-		endX: 40,
-		endY: 28,
-		endT: 70,
-		samples: [{ t: 0, x: 280 }],
-		dragging: false,
-	})
-	expect(coalescedFlick.dragging).toBe(true)
-	expect(coalescedFlick.offsetDelta).toBe(240)
+	const coalescedFlick = release(
+		[280, 20],
+		280,
+		[40, 28, 70],
+		samples([0, 280]),
+		false,
+	)
+	expect(coalescedFlick).toMatchObject({ dragging: true, offsetDelta: 240 })
 	expect(coalescedFlick.coastVelocity).toBeGreaterThan(0)
 
-	const delayedCoalesced = finishPointerGesture({
-		startX: 280,
-		startY: 20,
-		lastX: 280,
-		endX: 40,
-		endY: 28,
-		endT: 120,
-		samples: [{ t: 0, x: 280 }],
-		dragging: false,
-	})
-	expect(delayedCoalesced.coastVelocity).toBeGreaterThan(0)
 	expect(
-		samplesForFlickVelocity([{ t: 0, x: 280 }], { t: 120, x: 40 }),
-	).toEqual([
-		{ t: 0, x: 280 },
-		{ t: 120, x: 40 },
-	])
+		release([280, 20], 280, [40, 28, 120], samples([0, 280]), false)
+			.coastVelocity,
+	).toBeGreaterThan(0)
+	expect(samplesForFlickVelocity(samples([0, 280]), { t: 120, x: 40 })).toEqual(
+		samples([0, 280], [120, 40]),
+	)
 
-	const pausedRelease = finishPointerGesture({
-		startX: 200,
-		startY: 20,
-		lastX: 140,
-		endX: 140,
-		endY: 20,
-		endT: 200,
-		samples: [
-			{ t: 0, x: 200 },
-			{ t: 10, x: 140 },
-		],
-		dragging: true,
-	})
-	expect(pausedRelease.coastVelocity).toBe(0)
+	const pausedSamples = samples([0, 200], [10, 140])
 	expect(
-		samplesForFlickVelocity(
-			[
-				{ t: 0, x: 200 },
-				{ t: 10, x: 140 },
-			],
-			{ t: 200, x: 140 },
-		),
-	).toEqual([
-		{ t: 10, x: 140 },
-		{ t: 200, x: 140 },
-	])
+		release([200, 20], 140, [140, 20, 200], pausedSamples, true).coastVelocity,
+	).toBe(0)
+	expect(samplesForFlickVelocity(pausedSamples, { t: 200, x: 140 })).toEqual(
+		samples([10, 140], [200, 140]),
+	)
 
-	const delayedFlickWithMove = finishPointerGesture({
-		startX: 280,
-		startY: 20,
-		lastX: 260,
-		endX: 40,
-		endY: 28,
-		endT: 120,
-		samples: [
-			{ t: 0, x: 280 },
-			{ t: 5, x: 260 },
-		],
-		dragging: true,
-	})
-	expect(delayedFlickWithMove.coastVelocity).toBeGreaterThan(0)
+	expect(
+		release([280, 20], 260, [40, 28, 120], samples([0, 280], [5, 260]), true)
+			.coastVelocity,
+	).toBeGreaterThan(0)
 
-	const vertical = finishPointerGesture({
-		startX: 100,
-		startY: 20,
-		lastX: 100,
-		endX: 108,
-		endY: 140,
-		endT: 40,
-		samples: [{ t: 0, x: 100 }],
-		dragging: false,
-	})
-	expect(vertical.dragging).toBe(false)
-	expect(vertical.coastVelocity).toBe(0)
+	expect(
+		release([100, 20], 100, [108, 140, 40], samples([0, 100]), false),
+	).toMatchObject({ dragging: false, coastVelocity: 0 })
 
-	const stride = 320
 	const cardWidth = 308
-	const viewportWidth = 375
 	let offset = coalescedFlick.offsetDelta
 	let velocity = coalescedFlick.coastVelocity
 	const startOffset = offset
@@ -376,16 +297,5 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 	expect(done).toBe(true)
 	expect(velocity).toBe(0)
 	expect(offset).toBeGreaterThan(startOffset + cardWidth)
-
-	const placements = listLanePlacements({
-		count: 4,
-		stride,
-		cardWidth,
-		offset,
-		viewportWidth,
-	})
-	expect(
-		largestVisibleHole(placements, viewportWidth, cardWidth),
-	).toBeLessThanOrEqual(stride - cardWidth)
-	expect(placements.some((placement) => placement.x === 0)).toBe(false)
+	expect(lane(320, cardWidth, 375, offset).some((p) => p.x === 0)).toBe(false)
 })

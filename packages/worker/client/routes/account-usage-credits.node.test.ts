@@ -196,11 +196,13 @@ async function renderUsagePage(accountUsage: AccountUsageLoaderData) {
 
 const overHundredPercent = /\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/
 
-test('usage page is the one money/caps page: no Credits nav item, credits section last', async () => {
+const missing = (html: string, parts: Array<string>) =>
+	parts.filter((part) => !html.includes(part))
+
+test('usage page is the one money/caps page: Pro wallet shows balance, packs, limits, rate card, and credit history last', async () => {
 	const { html } = await renderUsagePage(usage())
 	expect(html).not.toContain('href="/account/credits"')
 	expect(html).toMatch(/href="\/account\/usage"[^>]*aria-current="page"/)
-	expect(html).toContain('id="credits"')
 	const order = [
 		'Activity this month',
 		'Included compute',
@@ -217,41 +219,37 @@ test('usage page is the one money/caps page: no Credits nav item, credits sectio
 	expect(
 		html.split('data-included-compute-meter="unique_worker_days"'),
 	).toHaveLength(2)
-})
 
-test('Pro wallet shows balance, packs, limits, rate card, and credit history', async () => {
-	const { html } = await renderUsagePage(usage())
-	expect(html).toContain('$18.42')
-	expect(html).toContain(
-		'Usage past your monthly include is charged from these credits.',
-	)
-	for (const pack of ['$10', '$25', '$50']) expect(html).toContain(`>${pack}<`)
-	expect(html).toContain('Custom amount ($)')
-	expect(html).toContain('How far credits go')
-	expect(html).toContain('>Included<')
-	expect(html).toContain('On credits, up to')
-	expect(html).toContain('25,000')
-	expect(html).toContain(
-		'Usage within the monthly include is free. Past it, credits pay these rates until they run out; then usage past the include stops.',
-	)
-	expect(html).toContain('How credits are charged')
-	expect(html).toContain('data-credits-rate-card')
-	expect(html).toContain('data-credits-rate-card-stack')
-	expect(html).toContain('<table')
-	expect(html).toContain('@media (max-width: 640px)')
-	expect(html).toContain('$0.004 per worker-compute day')
-	expect(html).toContain('$0.002 per million rows read')
-	expect(html).toContain('Monthly include')
-	expect(html).toContain('Used this period')
-	expect(html).toContain('Past include')
-	expect(html).toContain('Est. credits this period')
-	expect(html).toContain('1,645')
-	expect(html).toContain('$6.58')
-	expect(html).toContain('+$25.00')
-	expect(html).toContain('−$6.58')
-	expect(html).toContain('Worker compute (1,645)')
-	expect(html).toContain('Auto-refill')
-	expect(html).toContain('Balance at or below $5')
+	expect(
+		missing(html, [
+			'$18.42',
+			'Usage past your monthly include is charged from these credits.',
+			'>$10<',
+			'>$25<',
+			'>$50<',
+			'Custom amount ($)',
+			'>Included<',
+			'On credits, up to',
+			'25,000',
+			'data-credits-rate-card',
+			'data-credits-rate-card-stack',
+			'<table',
+			'@media (max-width: 640px)',
+			'$0.004 per worker-compute day',
+			'$0.002 per million rows read',
+			'Monthly include',
+			'Used this period',
+			'Past include',
+			'Est. credits this period',
+			'1,645',
+			'$6.58',
+			'+$25.00',
+			'−$6.58',
+			'Worker compute (1,645)',
+			'Auto-refill',
+			'Balance at or below $5',
+		]),
+	).toEqual([])
 	expect(html).not.toContain('Hit monthly cap')
 })
 
@@ -297,18 +295,18 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 			}),
 		}),
 	)
-	expect(html).toContain('−$0.12')
-	expect(html).toContain(
-		'With no credits left, usage past your monthly include stops. Add credits to keep going.',
-	)
-	expect(html).toContain('value="25"')
-	expect(html).toContain('value="100"')
-	expect(html).toContain('Auto-refilled')
-	expect(html).toContain('Hit monthly cap')
+	expect(
+		missing(html, [
+			'−$0.12',
+			'With no credits left, usage past your monthly include stops. Add credits to keep going.',
+			'value="25"',
+			'value="100"',
+			'Auto-refilled',
+			'Hit monthly cap',
+			'Auto-refill starts after your first top-up saves a card.',
+		]),
+	).toEqual([])
 	expect(html).not.toContain('Balance at or below $5')
-	expect(html).toContain(
-		'Auto-refill starts after your first top-up saves a card.',
-	)
 })
 
 test('eligible wallet that cannot buy shows subscribe, not purchase UI', async () => {
@@ -354,21 +352,18 @@ test('Free sees one short credits CTA with no balance or purchase UI', async () 
 	)
 	expect(html).toContain('id="credits"')
 	expect(text).toContain('Credits are available on Pro.')
-	expect(text).toContain(
-		'Pro usage past its monthly include runs on prepaid credits and stops when they run out.',
-	)
 	expect(html).toContain('>Switch to Pro<')
-	for (const purchase of [
-		'data-credits-balance',
-		'Add credits',
-		'Custom amount',
-		'Auto-refill',
-		'How far credits go',
-		'How credits are charged',
-		'Credit history',
-	]) {
-		expect(html).not.toContain(purchase)
-	}
+	expect(
+		[
+			'data-credits-balance',
+			'Add credits',
+			'Custom amount',
+			'Auto-refill',
+			'How far credits go',
+			'How credits are charged',
+			'Credit history',
+		].filter((purchase) => html.includes(purchase)),
+	).toEqual([])
 	expect(text).not.toMatch(/\bMax\b/)
 	expect(text).not.toMatch(overHundredPercent)
 

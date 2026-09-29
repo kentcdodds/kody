@@ -1,3 +1,4 @@
+import { type Handle } from 'remix/ui'
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
@@ -13,21 +14,25 @@ import {
 	kodyCursorMarketplaceUrl,
 } from './onboarding-mcp-clients.ts'
 
-test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
-	const picker = await renderToString(
-		jsx(OnboardingMcpClientTabs, { mcpServerUrl: defaultKodyMcpUrl }),
+const renderTabs = (
+	props: Partial<
+		Parameters<typeof OnboardingMcpClientTabs>[0] extends Handle<infer P>
+			? P
+			: never
+	>,
+) =>
+	renderToString(
+		jsx(OnboardingMcpClientTabs, { mcpServerUrl: defaultKodyMcpUrl, ...props }),
 	)
+
+test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
+	const picker = await renderTabs({})
 	expect(picker).toContain('data-testid="onboarding-agent-picker"')
 	expect(picker).toContain('data-testid="onboarding-agent-cursor"')
 	expect(picker).toContain('href="/onboarding/step-1/cursor"')
 	expect(picker).toContain('data-testid="onboarding-agent-other"')
 	expect(picker).toContain('href="/onboarding/step-1/not-listed"')
-	const pickerRedirect = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			search: '?redirectTo=%2F',
-		}),
-	)
+	const pickerRedirect = await renderTabs({ search: '?redirectTo=%2F' })
 	expect(pickerRedirect).toContain(
 		'href="/onboarding/step-1/cursor?redirectTo=%2F"',
 	)
@@ -53,12 +58,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('/images/icons/grokbot.svg')
 	expect(picker).toContain('/images/icons/muse.svg')
 
-	const cursor = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'cursor',
-		}),
-	)
+	const cursor = await renderTabs({ selectedAgent: 'cursor' })
 	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
 	expect(cursor).toContain('data-agent="cursor"')
 	expect(cursor).not.toContain('data-testid="onboarding-agent-change"')
@@ -88,12 +88,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'),
 	).toBeLessThan(cursorPrimary.indexOf(kodyCursorAddPluginCommand))
 
-	const other = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'other',
-		}),
-	)
+	const other = await renderTabs({ selectedAgent: 'other' })
 	expect(other).toContain('data-testid="onboarding-agent-not-listed"')
 	expect(other).toContain('id="onboarding-agent-not-listed-label"')
 	expect(other).toContain(defaultKodyMcpUrl)
@@ -108,12 +103,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(other).not.toContain(grokBotInstallUrl)
 
 	const previewUrl = 'http://localhost:3742/mcp'
-	const codexPreview = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: previewUrl,
-			selectedAgent: 'codex',
-		}),
-	)
+	const codexPreview = await renderTabs({
+		mcpServerUrl: previewUrl,
+		selectedAgent: 'codex',
+	})
 	expect(codexPreview).not.toContain(kodyChatGptPluginUrl)
 	expect(codexPreview).toContain(`codex mcp add kody --url ${previewUrl}`)
 	expect(codexPreview).toContain(
@@ -123,12 +116,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(codexPreview).toContain('codex mcp login kody')
 	expect(codexPreview).not.toContain(kodyCursorMarketplaceUrl)
 
-	const chatgptPreview = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: previewUrl,
-			selectedAgent: 'chatgpt',
-		}),
-	)
+	const chatgptPreview = await renderTabs({
+		mcpServerUrl: previewUrl,
+		selectedAgent: 'chatgpt',
+	})
 	expect(chatgptPreview).not.toContain(kodyChatGptPluginUrl)
 	expect(chatgptPreview).toContain(previewUrl)
 	expect(chatgptPreview).toContain(chatGptDeveloperModeGuideUrl)
@@ -136,12 +127,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		'<strong>localhost:3742</strong> OAuth window',
 	)
 
-	const grokBot = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'grok-bot',
-		}),
-	)
+	const grokBot = await renderTabs({ selectedAgent: 'grok-bot' })
 	expect(grokBot).toContain('data-agent="grok-bot"')
 	expect(grokBot).toContain('data-surface="desktop"')
 	expect(grokBot).toContain('data-surface="mobile"')
@@ -154,23 +140,13 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		grokBot.indexOf('Or add Kody from'),
 	)
 
-	const openclaw = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'openclaw',
-		}),
-	)
+	const openclaw = await renderTabs({ selectedAgent: 'openclaw' })
 	expect(openclaw).toContain('data-agent="openclaw"')
 	expect(openclaw).toContain('openclaw mcp login kody')
 	expect(openclaw).toContain('data-surface="mobile"')
 	expect(openclaw).toContain('on a computer')
 
-	const muse = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'muse',
-		}),
-	)
+	const muse = await renderTabs({ selectedAgent: 'muse' })
 	expect(muse).toContain('data-agent="muse"')
 	expect(muse).toContain('muse mcp login kody')
 	expect(muse).toContain('~/.config/muse/settings.json')
@@ -184,12 +160,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(muse).toContain('data-testid="onboarding-agent-help"')
 	expect(muse).toContain('data-testid="onboarding-agent-warning"')
 
-	const chatgpt = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'chatgpt',
-		}),
-	)
+	const chatgpt = await renderTabs({ selectedAgent: 'chatgpt' })
 	expect(chatgpt).toContain(kodyChatGptPluginUrl)
 	expect(chatgpt).toContain('<strong>kody.codes</strong> OAuth window')
 	expect(chatgpt.indexOf(kodyChatGptPluginUrl)).toBeLessThan(
@@ -204,22 +175,14 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(chatgpt).toContain('data-testid="onboarding-agent-warning"')
 	expect(chatgpt).toContain('ChatGPT desktop is Codex')
 
-	const claudeDesktop = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'claude-desktop',
-		}),
-	)
+	const claudeDesktop = await renderTabs({ selectedAgent: 'claude-desktop' })
 	expect(claudeDesktop).not.toContain('ChatGPT')
 	expect(claudeDesktop).toContain('claude_desktop_config.json')
 
-	const codexMobile = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: defaultKodyMcpUrl,
-			selectedAgent: 'codex',
-			surface: 'mobile',
-		}),
-	)
+	const codexMobile = await renderTabs({
+		selectedAgent: 'codex',
+		surface: 'mobile',
+	})
 	expect(codexMobile).toContain('data-testid="onboarding-mcp-app-icon"')
 	expect(codexMobile).toContain(
 		'src="https://kody.codes/images/kody-app-icon.png"',
@@ -235,7 +198,6 @@ function countClosedManualDetails(html: string) {
 }
 
 test('onboarding alternative config wells collapse behind closed details', async () => {
-	const url = defaultKodyMcpUrl
 	const agentsWithClosedWells = [
 		'chatgpt',
 		'codex',
@@ -246,21 +208,11 @@ test('onboarding alternative config wells collapse behind closed details', async
 		'copilot-app',
 	] as const
 	for (const selectedAgent of agentsWithClosedWells) {
-		const html = await renderToString(
-			jsx(OnboardingMcpClientTabs, {
-				mcpServerUrl: url,
-				selectedAgent,
-			}),
-		)
+		const html = await renderTabs({ selectedAgent })
 		expect(countClosedManualDetails(html)).toBeGreaterThanOrEqual(1)
 	}
 
-	const copilot = await renderToString(
-		jsx(OnboardingMcpClientTabs, {
-			mcpServerUrl: url,
-			selectedAgent: 'copilot',
-		}),
-	)
+	const copilot = await renderTabs({ selectedAgent: 'copilot' })
 	expect(countClosedManualDetails(copilot)).toBeGreaterThanOrEqual(2)
 	expect(copilot).not.toMatch(/<details[\s\S]*Or run this for Copilot CLI/)
 })

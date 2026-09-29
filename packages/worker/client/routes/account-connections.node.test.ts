@@ -191,28 +191,21 @@ test('an unknown agent segment renders the fallback instead of instructions', as
 })
 
 test('connections views parse from the pathname', () => {
-	expect(parseAccountConnectionsPathname('/account/connections')).toEqual({
-		kind: 'list',
-	})
-	expect(parseAccountConnectionsPathname('/account/connections/new')).toEqual({
-		kind: 'new',
-		agent: null,
-	})
+	const cases = [
+		['/account/connections', { kind: 'list' }],
+		['/account/connections/new', { kind: 'new', agent: null }],
+		['/account/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/account/connections/new/other', null],
+		['/account/connections/new/nope', null],
+		['/account/connections/new/cursor/x', null],
+		['/account/connections/nope', null],
+	] as const
 	expect(
-		parseAccountConnectionsPathname('/account/connections/new/cursor'),
-	).toEqual({ kind: 'new', agent: 'cursor' })
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/other'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/nope'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/cursor/x'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/nope'),
-	).toBeNull()
+		cases.map(([pathname]) => [
+			pathname,
+			parseAccountConnectionsPathname(pathname),
+		]),
+	).toEqual(cases)
 	expect(accountConnectionsNewHref(null)).toBe('/account/connections/new')
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
 		'/account/connections/new/grok-cli',

@@ -55,33 +55,18 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	)
 	expect(onboardingPickerAgentIds(rotated)).toContain('cursor')
 	expect(onboardingPickerAgentIds(rotated)).toContain('copilot-app')
-	expect(
-		onboardingNotListedAgentIds(rotated).some((entry) => entry.id === 'codex'),
-	).toBe(true)
-	expect(
-		onboardingNotListedAgentIds(rotated).some(
-			(entry) =>
-				entry.id === 'copilot-app' && entry.viewport === 'desktop-only',
+	expect(onboardingNotListedAgentIds(rotated)).toEqual(
+		expect.arrayContaining(
+			[
+				{ id: 'codex' },
+				{ id: 'copilot-app', viewport: 'desktop-only' },
+				{ id: 'codex', viewport: 'mobile-only' },
+				{ id: 'cursor', viewport: 'mobile-only' },
+				{ id: 'claude-code', viewport: 'mobile-only' },
+				{ id: 'devin' },
+			].map((entry) => expect.objectContaining(entry)),
 		),
-	).toBe(true)
-	expect(
-		onboardingNotListedAgentIds(rotated).some(
-			(entry) => entry.id === 'codex' && entry.viewport === 'mobile-only',
-		),
-	).toBe(true)
-	expect(
-		onboardingNotListedAgentIds(rotated).some(
-			(entry) => entry.id === 'cursor' && entry.viewport === 'mobile-only',
-		),
-	).toBe(true)
-	expect(
-		onboardingNotListedAgentIds(rotated).some(
-			(entry) => entry.id === 'claude-code' && entry.viewport === 'mobile-only',
-		),
-	).toBe(true)
-	expect(
-		onboardingNotListedAgentIds(rotated).some((entry) => entry.id === 'devin'),
-	).toBe(true)
+	)
 	expect(onboardingViewportCss('desktop-only', 'list-item')).toEqual({
 		display: 'list-item',
 		[onboardingMobileAgentMq]: { display: 'none' },
@@ -93,23 +78,16 @@ test('onboarding MCP client builders emit the structured configs each host expec
 
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)
-	expect(buildKodyCliInstallCommand(mcpServerUrl)).toBe(
-		'npx @kodycodes/cli install',
-	)
-	expect(buildKodyCliInstallCommand(`${mcpServerUrl}/`)).toBe(
-		'npx @kodycodes/cli install',
-	)
+	for (const url of [mcpServerUrl, `${mcpServerUrl}/`]) {
+		expect(buildKodyCliInstallCommand(url)).toBe('npx @kodycodes/cli install')
+	}
 	expect(buildKodyCliInstallCommand('http://localhost:3742/mcp')).toBe(
 		'npx @kodycodes/cli install --mcp-url http://localhost:3742/mcp',
 	)
 
+	const httpKody = { kody: { type: 'http', url: mcpServerUrl } }
 	expect(JSON.parse(buildClaudeCodeMcpJson(mcpServerUrl))).toEqual({
-		mcpServers: {
-			kody: {
-				type: 'http',
-				url: mcpServerUrl,
-			},
-		},
+		mcpServers: httpKody,
 	})
 	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toBe(
 		`claude mcp add --transport http -s user kody ${mcpServerUrl}`,
@@ -124,23 +102,13 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		`opencode mcp add kody --url ${mcpServerUrl}`,
 	)
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
-		servers: {
-			kody: {
-				type: 'http',
-				url: mcpServerUrl,
-			},
-		},
+		servers: httpKody,
 	})
 	expect(buildCopilotCliAddCommand(mcpServerUrl)).toBe(
 		`copilot mcp add --transport http kody ${mcpServerUrl}`,
 	)
 	expect(JSON.parse(buildCopilotCliMcpJson(mcpServerUrl))).toEqual({
-		mcpServers: {
-			kody: {
-				type: 'http',
-				url: mcpServerUrl,
-			},
-		},
+		mcpServers: httpKody,
 	})
 	expect(JSON.parse(buildOpenCodeMcpJson(mcpServerUrl))).toEqual({
 		mcp: {
@@ -176,15 +144,12 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
-	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
-		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
-	)
+	const kodyToml = `[mcp_servers.kody]\nurl = "${mcpServerUrl}"\n`
+	expect(buildCodexMcpToml(mcpServerUrl)).toBe(kodyToml)
 	expect(buildGrokCliAddCommand(mcpServerUrl)).toBe(
 		`grok mcp add --transport http --scope user kody ${mcpServerUrl}`,
 	)
-	expect(buildGrokCliMcpToml(mcpServerUrl)).toBe(
-		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
-	)
+	expect(buildGrokCliMcpToml(mcpServerUrl)).toBe(kodyToml)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://kody.codes/images/kody-app-icon.png',
 	)

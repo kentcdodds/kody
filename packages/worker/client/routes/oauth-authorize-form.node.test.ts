@@ -20,33 +20,24 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 		action: href,
 	})
 
+	// Consent actions stay disabled until hydration and a ready status.
+	const actions: Array<[boolean, boolean, boolean]> = [
+		[false, true, true],
+		[true, true, false],
+		[true, false, true],
+	]
 	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: false,
-			statusReady: true,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(true)
-	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: true,
-			statusReady: true,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(false)
-	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: true,
-			statusReady: false,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(true)
+		actions.filter(
+			([hydrated, statusReady, want]) =>
+				oauthAuthorizeActionsDisabled({
+					hydrated,
+					statusReady,
+					submitting: false,
+					sessionLoading: false,
+					needsEmailVerification: false,
+				}) !== want,
+		),
+	).toEqual([])
 
 	expect(
 		oauthAuthorizeApproveAriaLabel({
@@ -61,25 +52,19 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 		}),
 	).toBeUndefined()
 
+	const deny: Array<[boolean, boolean, boolean]> = [
+		[false, false, true],
+		[true, false, false],
+		[true, true, true],
+	]
 	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: false,
-			submitting: false,
-			sessionLoading: false,
-		}),
-	).toBe(true)
-	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: true,
-			submitting: false,
-			sessionLoading: false,
-		}),
-	).toBe(false)
-	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: true,
-			submitting: true,
-			sessionLoading: false,
-		}),
-	).toBe(true)
+		deny.filter(
+			([hydrated, submitting, want]) =>
+				oauthAuthorizeEmailVerificationDenyDisabled({
+					hydrated,
+					submitting,
+					sessionLoading: false,
+				}) !== want,
+		),
+	).toEqual([])
 })

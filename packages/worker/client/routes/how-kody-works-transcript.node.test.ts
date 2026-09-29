@@ -13,9 +13,12 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		'notify',
 		'mail',
 	])
-	expect(howKodyWorksTranscriptActs[0]?.scene).toBeUndefined()
-	expect(howKodyWorksTranscriptActs[1]?.scene).toBe('phone')
-	expect(howKodyWorksTranscriptActs[2]?.scene).toBe('phone')
+	expect(howKodyWorksTranscriptActs.map((act) => act.scene)).toEqual([
+		undefined,
+		'phone',
+		'phone',
+		undefined,
+	])
 	expect(howKodyWorksTranscriptActs[3]?.later).toBe('The next day')
 	expect(
 		howKodyWorksTranscriptActs[3]?.lines.some(
@@ -47,18 +50,9 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 			),
 		),
 	).toBe(true)
-	expect(
-		tools.some((tool) =>
-			tool.inputs.some((input) =>
-				input.value.includes('packagePublishExternalPush'),
-			),
-		),
-	).toBe(true)
-	expect(
-		tools.some((tool) =>
-			tool.inputs.some((input) => input.value.includes('repoEditFiles')),
-		),
-	).toBe(true)
+	const inputValues = tools.flatMap((tool) => tool.inputs.map((i) => i.value))
+	expect(inputValues.join('\n')).toContain('packagePublishExternalPush')
+	expect(inputValues.join('\n')).toContain('repoEditFiles')
 
 	const fileLines = howKodyWorksTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) => (line.role === 'files' ? [line] : [])),
@@ -95,20 +89,18 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 
 	const snippets = collectHowKodyWorksSnippets()
 	expect(snippets.length).toBeGreaterThan(0)
-	expect(
-		snippets.some(
-			(snippet) =>
-				snippet.code === howKodyWorksPackageFiles['src/daily-digest.ts'] &&
-				snippet.lang === 'ts',
-		),
-	).toBe(true)
-	expect(
-		snippets.some(
-			(snippet) =>
-				snippet.code === howKodyWorksPackageFiles['package.json'] &&
-				snippet.lang === 'json',
-		),
-	).toBe(true)
+	expect(snippets).toContainEqual(
+		expect.objectContaining({
+			code: howKodyWorksPackageFiles['src/daily-digest.ts'],
+			lang: 'ts',
+		}),
+	)
+	expect(snippets).toContainEqual(
+		expect.objectContaining({
+			code: howKodyWorksPackageFiles['package.json'],
+			lang: 'json',
+		}),
+	)
 	expect(
 		new Set(snippets.map((snippet) => highlightSnippetKey(snippet))).size,
 	).toBeGreaterThan(0)

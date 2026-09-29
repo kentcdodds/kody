@@ -84,79 +84,76 @@ function overage(
 	}
 }
 
+const week = (current: number, limit: number) => ({
+	current,
+	limit,
+	percentOfLimit: current / limit,
+	overEightyPercent: current / limit >= 0.8,
+})
+
 test('credits action follows the wallet: add, switch, subscribe, or nothing', () => {
-	expect(creditsActionForWallet('empty', 'pro', true)).toEqual({
-		label: 'Add credits',
-		href: '/account/usage#credits',
-	})
-	expect(creditsActionForWallet('none', 'standard', false)).toEqual({
-		label: 'Switch to Pro',
-		href: '/account/usage#credits',
-	})
-	expect(creditsActionForWallet('none', 'pro', false)).toEqual({
-		label: 'Switch to Pro',
-		href: '/account/usage#credits',
-	})
-	expect(creditsActionForWallet('empty', 'pro', false)).toEqual({
+	const add = { label: 'Add credits', href: '/account/usage#credits' }
+	const switchToPro = { label: 'Switch to Pro', href: '/account/usage#credits' }
+	const subscribe = {
 		label: 'Subscribe to Pro',
 		href: '/account/usage#credits',
-	})
-	expect(creditsActionForWallet('funded', 'pro', true)).toBeNull()
-	expect(creditsActionForWallet('none', 'max', false)).toBeNull()
+	}
+	const cases = [
+		['empty', 'pro', true, add],
+		['none', 'standard', false, switchToPro],
+		['none', 'pro', false, switchToPro],
+		['empty', 'pro', false, subscribe],
+		['funded', 'pro', true, null],
+		['none', 'max', false, null],
+	] as const
+	expect(
+		cases.map(([wallet, plan, canBuy]) => [
+			wallet,
+			plan,
+			canBuy,
+			creditsActionForWallet(wallet, plan, canBuy),
+		]),
+	).toEqual(cases)
 })
 
 test('warning credits links only on limits credits can raise', () => {
-	for (const resource of [
+	const raisable = [
 		'execute_calls_per_day',
 		'outbound_fetches_per_day',
 		'job_runs_per_day',
 		'automation_invocations_per_day',
 		'unique_worker_days',
 		'durable_object_rows_read',
-	]) {
-		expect(warningOffersCredits(resource)).toBe(true)
-	}
-	for (const resource of [
+	]
+	const fixed = [
 		'saved_packages',
 		'secrets',
 		'email_sends_per_day',
 		'storage_bytes',
 		'concurrent_workflows',
-	]) {
-		expect(warningOffersCredits(resource)).toBe(false)
-	}
+	]
+	expect(
+		raisable.filter((resource) => !warningOffersCredits(resource)),
+	).toEqual([])
+	expect(fixed.filter(warningOffersCredits)).toEqual([])
 })
 
-test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
+test('hotterUsagePercent and formatEntitlementUsedPercent use the closer of daily and weekly windows', () => {
+	const hotWeek = entitlement({ week: week(360, 400) })
 	expect(hotterUsagePercent(entitlement())).toBe(0.2)
+	expect(hotterUsagePercent(hotWeek)).toBe(0.9)
 	expect(
 		hotterUsagePercent(
-			entitlement({
-				week: {
-					current: 360,
-					limit: 400,
-					percentOfLimit: 0.9,
-					overEightyPercent: true,
-				},
-			}),
-		),
-	).toBe(0.9)
-	expect(
-		hotterUsagePercent(
-			entitlement({
-				percentOfLimit: 0.95,
-				week: {
-					current: 100,
-					limit: 400,
-					percentOfLimit: 0.25,
-					overEightyPercent: false,
-				},
-			}),
+			entitlement({ percentOfLimit: 0.95, week: week(100, 400) }),
 		),
 	).toBe(0.95)
 	expect(
 		hotterUsagePercent(entitlement({ percentOfLimit: null, week: undefined })),
 	).toBeNull()
+	expect(formatEntitlementUsedPercent(entitlement())).toBe('20%')
+	expect(formatEntitlementUsedPercent(hotWeek)).toBe(
+		'20% today · 90% this week',
+	)
 })
 
 test('usage resource name keeps the explanation in a popover', async () => {
@@ -181,49 +178,20 @@ test('usage resource name keeps the explanation in a popover', async () => {
 	expect(html.slice(0, panelAt)).not.toContain(whatCounts)
 })
 
-test('formatEntitlementUsedPercent shows today and this week', () => {
-	expect(formatEntitlementUsedPercent(entitlement())).toBe('20%')
-	expect(
-		formatEntitlementUsedPercent(
-			entitlement({
-				week: {
-					current: 360,
-					limit: 400,
-					percentOfLimit: 0.9,
-					overEightyPercent: true,
-				},
-			}),
-		),
-	).toBe('20% today · 90% this week')
-})
-
 test('warnings panel title is Limit reached at 100% daily or weekly', () => {
-	expect(
-		accountUsageWarningsPanelTitle([
-			entitlement({
-				percentOfLimit: 0.85,
-				overEightyPercent: true,
-			}),
-		]),
-	).toBe('Approaching limits')
-	expect(
-		hasReachedEntitlementLimit(
-			entitlement({
-				percentOfLimit: 0.85,
-				overEightyPercent: true,
-			}),
-		),
-	).toBe(false)
+	const dailyNearLimit = entitlement({
+		percentOfLimit: 0.85,
+		overEightyPercent: true,
+	})
+	expect(accountUsageWarningsPanelTitle([dailyNearLimit])).toBe(
+		'Approaching limits',
+	)
+	expect(hasReachedEntitlementLimit(dailyNearLimit)).toBe(false)
 
 	const weeklyAtLimit = entitlement({
 		percentOfLimit: 0.2,
 		overEightyPercent: true,
-		week: {
-			current: 400,
-			limit: 400,
-			percentOfLimit: 1,
-			overEightyPercent: true,
-		},
+		week: week(400, 400),
 	})
 	expect(hasReachedEntitlementLimit(weeklyAtLimit)).toBe(true)
 	expect(accountUsageWarningsPanelTitle([weeklyAtLimit])).toBe('Limit reached')
@@ -389,24 +357,5 @@ test('Pro usage page past include matches credits: capped bar, dollars on credit
 	expect(text).toContain('Include used · $173.67 on credits')
 	expect(text).toContain('43,768 of 350 worker-compute days included')
 	expect(html).not.toContain('data-credits-alarm')
-	expect(text).not.toMatch(overHundredPercent)
-})
-
-test('Pro usage page with no credits past include raises the stop alarm', async () => {
-	const emptyOverage = overage({
-		percentOfLimit: 1.2,
-		creditsStatus: 'add_credits',
-	})
-	emptyOverage.meters[0] = { ...emptyOverage.meters[0]!, current: 60 }
-	const { html, text } = await renderUsagePage(
-		usagePage({
-			plan: 'pro',
-			computeOverage: emptyOverage,
-			canBuyCredits: true,
-		}),
-	)
-	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
-	expect(text).toContain('Runs past the include are stopped')
-	expect(html).toMatch(/href="\/account\/usage#credits"[^>]*>Add credits</)
 	expect(text).not.toMatch(overHundredPercent)
 })

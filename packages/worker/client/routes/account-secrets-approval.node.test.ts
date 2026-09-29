@@ -33,82 +33,56 @@ const approval = {
 }
 
 test('package secret approval hrefs and already-granted checks match host-approval spirit', () => {
-	expect(isPackageApprovalHref('/account/secrets/approve')).toBe(true)
-	expect(
-		isPackageApprovalHref(
+	const hrefs: Array<[string, boolean]> = [
+		['/account/secrets/approve', true],
+		[
 			'/account/secrets/approve?package_id=pkg-notes&names=openai-api-key',
-		),
-	).toBe(true)
-	expect(
-		isPackageApprovalHref(
+			true,
+		],
+		[
 			'/account/secrets/user/openai-api-key?package_id=pkg-notes&package=notes',
-		),
-	).toBe(true)
-	expect(isPackageApprovalHref('/account/secrets/user/openai-api-key')).toBe(
-		false,
-	)
-	expect(isPackageApprovalHref('/account/secrets')).toBe(false)
-	expect(
-		isPackageApprovalHref(
+			true,
+		],
+		['/account/secrets/user/openai-api-key', false],
+		['/account/secrets', false],
+		[
 			'/account/secrets/new?package_id=pkg-notes&package=notes&name=openai-api-key',
-		),
-	).toBe(false)
-	expect(isPackageApprovalHref('/account/secrets?package_id=pkg-notes')).toBe(
-		false,
-	)
-	expect(
-		isPackageApprovalHref(
+			false,
+		],
+		['/account/secrets?package_id=pkg-notes', false],
+		[
 			'/account/secrets/package/pkg-notes/signingSecret?package_id=pkg-notes',
-		),
-	).toBe(false)
+			false,
+		],
+	]
+	expect(
+		hrefs.filter(([href, want]) => isPackageApprovalHref(href) !== want),
+	).toEqual([])
 
-	expect(
+	const granted = (
+		secrets: Array<typeof secret>,
+		names: Array<string> = approval.names,
+	) =>
 		isPackageSecretApprovalAlreadyGranted({
-			secrets: [{ ...secret, allowedPackages: [] }],
-			approval,
-		}),
-	).toBe(false)
-	expect(
-		isPackageSecretApprovalAlreadyGranted({
-			secrets: [secret],
-			approval,
-		}),
-	).toBe(true)
-	expect(
-		isPackageSecretApprovalAlreadyGranted({
-			secrets: [],
-			approval,
-		}),
-	).toBe(false)
-	expect(
-		isPackageSecretApprovalAlreadyGranted({
-			secrets: [secret],
-			approval: { ...approval, names: ['openai-api-key', 'missing'] },
-		}),
-	).toBe(false)
+			secrets,
+			approval: { ...approval, names },
+		})
+	expect(granted([{ ...secret, allowedPackages: [] }])).toBe(false)
+	expect(granted([secret])).toBe(true)
+	expect(granted([])).toBe(false)
+	expect(granted([secret], ['openai-api-key', 'missing'])).toBe(false)
 
+	const views = [
+		[null, false, { fullyAllowed: false, showBackToSecrets: false }],
+		['approve', false, { fullyAllowed: true, showBackToSecrets: true }],
+		[null, true, { fullyAllowed: true, showBackToSecrets: true }],
+		['reject', false, { fullyAllowed: false, showBackToSecrets: true }],
+	] as const
 	expect(
-		readPackageSecretApprovalView({
-			completed: null,
-			alreadyGranted: false,
-		}),
-	).toEqual({ fullyAllowed: false, showBackToSecrets: false })
-	expect(
-		readPackageSecretApprovalView({
-			completed: 'approve',
-			alreadyGranted: false,
-		}),
-	).toEqual({ fullyAllowed: true, showBackToSecrets: true })
-	expect(
-		readPackageSecretApprovalView({
-			completed: null,
-			alreadyGranted: true,
-		}),
-	).toEqual({ fullyAllowed: true, showBackToSecrets: true })
-	expect(
-		readPackageSecretApprovalView({
-			completed: 'reject',
-			alreadyGranted: false,
-		}),
-	).toEqual({ fullyAllowed: false, showBackToSecrets: true })
+		views.map(([completed, alreadyGranted]) => [
+			completed,
+			alreadyGranted,
+			readPackageSecretApprovalView({ completed, alreadyGranted }),
+		]),
+	).toEqual(views)
 })
