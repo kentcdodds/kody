@@ -277,6 +277,33 @@ describe('guardLegacyLaneSseResponse', () => {
 		})
 	})
 
+	test('cancels upstream reader and skips error injection on client disconnect', async () => {
+		const encoder = new TextEncoder()
+		let readerCancelled = false
+
+		const upstreamReadable = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(encoder.encode(': keepalive\n\n'))
+			},
+			cancel() {
+				readerCancelled = true
+			},
+		})
+
+		const response = new Response(upstreamReadable, {
+			status: 200,
+			headers: { 'Content-Type': 'text/event-stream' },
+		})
+		const guarded = guardLegacyLaneSseResponse([42], response)
+
+		const guardedReader = guarded.body!.getReader()
+		await guardedReader.read()
+		await guardedReader.cancel()
+
+		await new Promise((resolve) => setTimeout(resolve, 50))
+		expect(readerCancelled).toBe(true)
+	})
+
 	test('preserves original response headers', async () => {
 		const response = new Response('', {
 			status: 200,

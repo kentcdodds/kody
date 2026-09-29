@@ -60,14 +60,25 @@ export function guardLegacyLaneSseResponse(
 
 	let buffered = ''
 
-	const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
-	const writer = writable.getWriter()
+	function injectOrphanErrors(
+		controller: ReadableStreamDefaultController<Uint8Array>,
+	) {
+		for (const idJson of pendingIds) {
+			const id: string | number = JSON.parse(idJson)
+			controller.enqueue(encoder.encode(formatSseErrorFrame(id)))
+		}
+		pendingIds.clear()
+	}
 
-	const pump = async () => {
-		try {
-			for (;;) {
+	const guarded = new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
 				const { done, value } = await reader.read()
-				if (done) break
+				if (done) {
+					if (pendingIds.size > 0) injectOrphanErrors(controller)
+					controller.close()
+					return
+				}
 
 				const chunk = decoder.decode(value, { stream: true })
 				buffered += chunk
@@ -79,30 +90,18 @@ export function guardLegacyLaneSseResponse(
 					trackResponseIds(event, pendingIds)
 				}
 
-				await writer.write(value)
+				controller.enqueue(value)
+			} catch {
+				if (pendingIds.size > 0) injectOrphanErrors(controller)
+				controller.close()
 			}
+		},
+		cancel(reason) {
+			reader.cancel(reason).catch(() => {})
+		},
+	})
 
-			if (buffered.length > 0) {
-				trackResponseIds(buffered, pendingIds)
-			}
-		} catch {
-			// Upstream read error; fall through to inject orphan errors.
-		}
-
-		if (pendingIds.size > 0) {
-			for (const idJson of pendingIds) {
-				const id: string | number = JSON.parse(idJson)
-				const errorFrame = formatSseErrorFrame(id)
-				await writer.write(encoder.encode(errorFrame)).catch(() => {})
-			}
-		}
-
-		await writer.close().catch(() => {})
-	}
-
-	pump().catch(() => {})
-
-	return new Response(readable, {
+	return new Response(guarded, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: response.headers,
