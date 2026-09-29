@@ -13,55 +13,52 @@ import {
 
 const primaryKey = 'primary-secret-store-key-at-least-32-chars!!'
 
-test('secret encryption round-trips and rejects wrong keys or malformed payloads', async () => {
-	const env = { SECRET_STORE_KEY: primaryKey }
-	const context = userSecretContext('user-1')
-	const encrypted = await encryptSecretValue(env, 'my-secret-value', context)
-	expect(encrypted.startsWith('v2.')).toBe(true)
-	expect(await decryptSecretValue(env, encrypted, context)).toBe(
-		'my-secret-value',
-	)
-
-	const wrongEnv = {
-		SECRET_STORE_KEY: 'wrong-store-key-32-chars-minimum-value-here!!',
-	}
-	await expect(
-		decryptSecretValue(wrongEnv, encrypted, context),
-	).rejects.toThrow('Unable to decrypt secret value.')
-	await expect(
-		decryptSecretValue(env, 'no-dot-separator', context),
-	).rejects.toThrow('Unable to decrypt secret value.')
-})
-
-test('secret AAD/versioning binds identity context, platform OAuth slugs, and rejects malformed payloads', async () => {
+test('secret encryption round-trips and binds AAD, versioning, platform OAuth slugs, and webhook endpoints', async () => {
 	const env = { SECRET_STORE_KEY: primaryKey }
 	const encrypted = await encryptSecretValue(
 		env,
 		'bound-value',
 		userSecretContext('user-a'),
 	)
+	expect(encrypted.startsWith('v2.')).toBe(true)
+	expect(
+		await decryptSecretValue(env, encrypted, userSecretContext('user-a')),
+	).toBe('bound-value')
 
-	// Same key, different owner: the row-swap defense must reject it.
-	await expect(
-		decryptSecretValue(env, encrypted, userSecretContext('user-b')),
-	).rejects.toThrow('Unable to decrypt secret value.')
-
-	// Tampered ciphertext bytes must be rejected.
 	const [version, iv, ciphertext] = encrypted.split('.')
 	const tamperedByte = ciphertext![0] === 'A' ? 'B' : 'A'
-	const tampered = `${version}.${iv}.${tamperedByte}${ciphertext!.slice(1)}`
-	await expect(
-		decryptSecretValue(env, tampered, userSecretContext('user-a')),
-	).rejects.toThrow('Unable to decrypt secret value.')
-
-	// Unknown version tags must be rejected.
-	await expect(
-		decryptSecretValue(
-			env,
-			`v3.${iv}.${ciphertext}`,
-			userSecretContext('user-a'),
-		),
-	).rejects.toThrow('Unable to decrypt secret value.')
+	const rejectedDecrypts = [
+		{
+			label: 'wrong store key',
+			env: {
+				SECRET_STORE_KEY: 'wrong-store-key-32-chars-minimum-value-here!!',
+			},
+			payload: encrypted,
+		},
+		{ label: 'malformed payload', payload: 'no-dot-separator' },
+		// Same key, different owner: the row-swap defense must reject it.
+		{ label: 'other owner', payload: encrypted, userId: 'user-b' },
+		{
+			label: 'tampered ciphertext',
+			payload: `${version}.${iv}.${tamperedByte}${ciphertext!.slice(1)}`,
+		},
+		{ label: 'unknown version', payload: `v3.${iv}.${ciphertext}` },
+		{ label: 'missing version', payload: `${iv}.${ciphertext}` },
+	]
+	for (const rejected of rejectedDecrypts) {
+		const error = await decryptSecretValue(
+			rejected.env ?? env,
+			rejected.payload,
+			userSecretContext(rejected.userId ?? 'user-a'),
+		).catch((caught: unknown) => caught)
+		expect({
+			label: rejected.label,
+			message: (error as Error).message,
+		}).toEqual({
+			label: rejected.label,
+			message: 'Unable to decrypt secret value.',
+		})
+	}
 
 	const platformEncrypted = await encryptPlatformOauthClientSecret(
 		{ SECRET_STORE_KEY: primaryKey },
@@ -99,10 +96,6 @@ test('secret AAD/versioning binds identity context, platform OAuth slugs, and re
 			userWebhookUrlSecretContext('user-a', 'endpoint-2'),
 		),
 	).rejects.toThrow('Unable to decrypt webhook URL secret.')
-
-	await expect(
-		decryptSecretValue(env, `${iv}.${ciphertext}`, userSecretContext('user-a')),
-	).rejects.toThrow('Unable to decrypt secret value.')
 })
 
 test('secret store CryptoKey derivation is cached across encrypt and decrypt', async () => {

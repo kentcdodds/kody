@@ -107,50 +107,37 @@ test('secretList matches implicit user-secret read access and still lists packag
 	})
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
-	const selfAuthoredListed = await secretListCapability.handler(
-		{},
-		packageContext,
-	)
-	expect(selfAuthoredListed.secrets.map((secret) => secret.name)).toEqual([
-		'BraveSearch',
-		'GrantedSearch',
-		'packageToken',
-	])
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
-		...communityFork,
-		adoptedAt: '2026-07-01T00:00:00.000Z',
-		adoptionNote: 'Reviewed source; trusted for my use.',
-	})
-	const adoptedListed = await secretListCapability.handler({}, packageContext)
-	expect(adoptedListed.secrets.map((secret) => secret.name)).toEqual([
-		'BraveSearch',
-		'GrantedSearch',
-		'packageToken',
-	])
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(
-		communityFork,
-	)
-	const unadoptedListed = await secretListCapability.handler({}, packageContext)
-	expect(unadoptedListed.secrets.map((secret) => secret.name)).toEqual([
-		'GrantedSearch',
-		'packageToken',
-	])
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
-	const missingPackageListed = await secretListCapability.handler(
-		{},
-		packageContext,
-	)
-	expect(missingPackageListed.secrets.map((secret) => secret.name)).toEqual([
-		'GrantedSearch',
-		'packageToken',
-	])
+	const allNames = ['BraveSearch', 'GrantedSearch', 'packageToken']
+	const grantedOnly = ['GrantedSearch', 'packageToken']
+	const packageCases = [
+		{ label: 'self-authored', pkg: savedPackage, fork: null, names: allNames },
+		{
+			label: 'adopted fork',
+			pkg: savedPackage,
+			fork: {
+				...communityFork,
+				adoptedAt: '2026-07-01T00:00:00.000Z',
+				adoptionNote: 'Reviewed source; trusted for my use.',
+			},
+			names: allNames,
+		},
+		{
+			label: 'unadopted fork',
+			pkg: savedPackage,
+			fork: communityFork,
+			names: grantedOnly,
+		},
+		{ label: 'missing package', pkg: null, fork: null, names: grantedOnly },
+	]
+	for (const { label, pkg, fork, names } of packageCases) {
+		mockModule.getSavedPackageById.mockResolvedValueOnce(pkg)
+		mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(fork)
+		const listed = await secretListCapability.handler({}, packageContext)
+		expect({
+			label,
+			names: listed.secrets.map((secret) => secret.name),
+		}).toEqual({ label, names })
+	}
 	expect(listSecretsSpy).toHaveBeenCalled()
 	listSecretsSpy.mockRestore()
 })

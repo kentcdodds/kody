@@ -20,42 +20,39 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	}
 }
 
-function createFlaggedCapability(name = 'example_flagged'): Capability {
+function createCapability(
+	name: string,
+	featureFlag?: Capability['featureFlag'],
+): Capability {
 	return {
 		name,
 		domain: 'meta',
-		description: 'Flagged capability for access-control tests.',
+		description: 'Capability for access-control tests.',
 		keywords: [],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		featureFlag: 'demo-indicator',
+		...(featureFlag ? { featureFlag } : {}),
 		source: 'builtin',
 		inputSchema: { type: 'object', properties: {} },
-		inputTypeDefinition: 'type ExampleFlaggedInput = Record<string, never>',
+		inputTypeDefinition: 'type ExampleInput = Record<string, never>',
 		async handler() {
 			return { ok: true }
 		},
 	}
 }
 
-function createOpenCapability(name = 'example_open'): Capability {
-	return {
-		name,
-		domain: 'meta',
-		description: 'Ungated capability for access-control tests.',
-		keywords: [],
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		source: 'builtin',
-		inputSchema: { type: 'object', properties: {} },
-		inputTypeDefinition: 'type ExampleOpenInput = Record<string, never>',
-		async handler() {
-			return { ok: true }
-		},
-	}
-}
+const flagged = createCapability('example_flagged', 'demo-indicator')
+const open = createCapability('example_open')
+const callerContext = createMcpCallerContext({
+	baseUrl: 'https://example.com',
+	user: {
+		userId: 'user-1',
+		email: 'user@example.com',
+		displayName: 'user',
+		roles: ['user'],
+	},
+})
 
 function createRegistry(
 	capabilities: Array<Capability>,
@@ -106,17 +103,6 @@ function createRegistry(
 }
 
 test('featureFlag-gated capabilities are denied and hidden when the flag is off', async () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
-	const open = createOpenCapability()
 	const disabledFlags = createFlagMap(false)
 
 	expect(callerCanAccessCapability(callerContext, flagged, disabledFlags)).toBe(
@@ -142,16 +128,6 @@ test('featureFlag-gated capabilities are denied and hidden when the flag is off'
 })
 
 test('featureFlag-gated capabilities are allowed when the flag is on', async () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
 	const enabledFlags = createFlagMap(true)
 
 	expect(callerCanAccessCapability(callerContext, flagged, enabledFlags)).toBe(
@@ -172,16 +148,6 @@ test('featureFlag-gated capabilities are allowed when the flag is on', async () 
 })
 
 test('featureFlag-gated capabilities fail closed when the flag map is missing', () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
 	expect(callerCanAccessCapability(callerContext, flagged)).toBe(false)
 	expect(callerCanAccessCapability(callerContext, flagged, null)).toBe(false)
 })
@@ -190,7 +156,6 @@ test('featureFlag-gated capabilities require an authenticated caller', async () 
 	const anonymousContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 	})
-	const flagged = createFlaggedCapability()
 	const enabledFlags = createFlagMap(true)
 
 	expect(
@@ -203,7 +168,7 @@ test('featureFlag-gated capabilities require an authenticated caller', async () 
 	).rejects.toThrow(/Authenticated MCP user is required/)
 
 	const filtered = filterCapabilityRegistryForCaller(
-		createRegistry([flagged, createOpenCapability()]),
+		createRegistry([flagged, open]),
 		anonymousContext,
 		enabledFlags,
 	)

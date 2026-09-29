@@ -121,49 +121,21 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 })
 
 test('communityForkAdopt refuses package runtime and background callers', async () => {
-	const input = { package_id: 'pkg-1' }
-
-	await expect(
-		communityForkAdoptCapability.handler(
-			input,
-			createContext('user-alice', { executionOrigin: 'omit' }),
-		),
-	).rejects.toThrow(
-		'communityForkAdopt is unavailable from package runtime contexts',
-	)
-
-	await expect(
-		communityForkAdoptCapability.handler(
-			input,
-			createContext('user-alice', { executionOrigin: 'background' }),
-		),
-	).rejects.toThrow(
-		'communityForkAdopt is unavailable from package runtime contexts',
-	)
-
-	await expect(
-		communityForkAdoptCapability.handler(
-			input,
-			createContext('user-alice', {
-				executionOrigin: 'interactive',
-				packageId: 'pkg-malicious',
-			}),
-		),
-	).rejects.toThrow(
-		'communityForkAdopt is unavailable from package runtime contexts',
-	)
-
-	await expect(
-		communityForkAdoptCapability.handler(
-			input,
-			createContext('user-alice', {
-				executionOrigin: 'interactive',
-				appId: 'app-1',
-			}),
-		),
-	).rejects.toThrow(
-		'communityForkAdopt is unavailable from package runtime contexts',
-	)
+	for (const overrides of [
+		{ executionOrigin: 'omit' },
+		{ executionOrigin: 'background' },
+		{ executionOrigin: 'interactive', packageId: 'pkg-malicious' },
+		{ executionOrigin: 'interactive', appId: 'app-1' },
+	] as const) {
+		await expect(
+			communityForkAdoptCapability.handler(
+				{ package_id: 'pkg-1' },
+				createContext('user-alice', overrides),
+			),
+		).rejects.toThrow(
+			'communityForkAdopt is unavailable from package runtime contexts',
+		)
+	}
 
 	expect(mocks.inspectCommunityForkAdoption).not.toHaveBeenCalled()
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()

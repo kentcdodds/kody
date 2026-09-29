@@ -46,140 +46,140 @@ const { jobRunNowCapability } = await import('./job-run-now.ts')
 const { jobUpdateCapability } = await import('./job-update.ts')
 const { workflowListCapability } = await import('./workflow-list.ts')
 
-function resetMocks() {
-	mockModule.deleteJob.mockReset()
-	mockModule.getJobInspection.mockReset()
-	mockModule.inspectJobsForUser.mockReset()
-	mockModule.listRunRecords.mockReset()
-	mockModule.listWorkflowRunsForUser.mockReset()
-	mockModule.runJobNowViaManager.mockReset()
-	mockModule.updateJob.mockReset()
-	mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
+const env = {} as Env
+const user = {
+	userId: 'user-123',
+	email: 'user@example.com',
+	displayName: 'User Example',
+}
+const callerContext = createMcpCallerContext({
+	baseUrl: 'https://example.com',
+	user,
+})
+const ctx = { env, callerContext }
+
+function job(overrides: Record<string, unknown> = {}) {
+	const id = String(overrides['id'] ?? 'job-123')
+	return {
+		id,
+		name: 'Job',
+		sourceId: 'source-123',
+		publishedCommit: null,
+		storageId: `job:${id}`,
+		schedule: { type: 'interval', every: '15m' },
+		scheduleSummary: 'Runs every 15m',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: '2026-04-20T10:00:00.000Z',
+		updatedAt: '2026-04-20T10:05:00.000Z',
+		nextRunAt: '2026-04-20T18:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+		runHistory: [],
+		...overrides,
+	}
+}
+
+function alarm(overrides: Record<string, unknown> = {}) {
+	return {
+		bindingAvailable: true,
+		status: 'armed',
+		storedUserId: 'user-123',
+		alarmScheduledFor: '2026-04-20T18:30:00.000Z',
+		nextRunnableJobId: 'job-123',
+		nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
+		alarmInSync: true,
+		...overrides,
+	}
+}
+
+function updateBody(body: Record<string, unknown>) {
+	return {
+		env,
+		callerContext,
+		body: {
+			name: undefined,
+			params: undefined,
+			schedule: undefined,
+			timezone: undefined,
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+			preserved: undefined,
+			...body,
+		},
+	}
 }
 
 test('jobUpdate and jobDelete require authentication and mutate existing jobs for the signed-in user', async () => {
-	resetMocks()
-	const env = {} as Env
-	const unauthenticatedContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-	})
-
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-				enabled: false,
-			},
-			{
-				env,
-				callerContext: unauthenticatedContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobDeleteCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext: unauthenticatedContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobRunNowCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext: unauthenticatedContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	const unauthenticated = {
+		env,
+		callerContext: createMcpCallerContext({ baseUrl: 'https://example.com' }),
+	}
+	for (const capability of [
+		jobUpdateCapability,
+		jobDeleteCapability,
+		jobRunNowCapability,
+	]) {
+		await expect(
+			capability.handler(
+				{ id: 'job-123', enabled: false } as never,
+				unauthenticated,
+			),
+		).rejects.toThrow('Authenticated MCP user is required for this capability.')
+	}
 	expect(mockModule.updateJob).not.toHaveBeenCalled()
 	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 	expect(mockModule.runJobNowViaManager).not.toHaveBeenCalled()
 
-	const signedInContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.updateJob.mockResolvedValue({
-		id: 'job-123',
-		name: 'Nightly cleanup v2',
-		sourceId: 'source-123',
-		publishedCommit: 'commit-456',
-		storageId: 'job:job-123',
-		params: {
-			room: 'office',
-		},
-		schedule: {
-			type: 'cron',
-			expression: '0 3 * * *',
-		},
-		scheduleSummary: 'Runs on cron "0 3 * * *" in America/Denver',
-		timezone: 'America/Denver',
-		enabled: false,
-		killSwitchEnabled: true,
-		preserved: false,
-		expiresAt: null,
-		createdAt: '2026-04-20T10:00:00.000Z',
-		updatedAt: '2026-04-20T12:00:00.000Z',
-		nextRunAt: '2026-04-21T09:00:00.000Z',
-		runCount: 2,
-		successCount: 1,
-		errorCount: 1,
-		runHistory: [
-			{
-				startedAt: '2026-04-20T11:00:00.000Z',
-				finishedAt: '2026-04-20T11:01:00.000Z',
-				status: 'error',
-				durationMs: 60000,
-				error: 'Timed out',
-			},
-		],
-	})
-
+	mockModule.updateJob.mockResolvedValue(
+		job({
+			name: 'Nightly cleanup v2',
+			publishedCommit: 'commit-456',
+			params: { room: 'office' },
+			schedule: { type: 'cron', expression: '0 3 * * *' },
+			timezone: 'America/Denver',
+			enabled: false,
+			killSwitchEnabled: true,
+			updatedAt: '2026-04-20T12:00:00.000Z',
+			nextRunAt: '2026-04-21T09:00:00.000Z',
+			runCount: 2,
+			successCount: 1,
+			errorCount: 1,
+			runHistory: [
+				{
+					startedAt: '2026-04-20T11:00:00.000Z',
+					finishedAt: '2026-04-20T11:01:00.000Z',
+					status: 'error',
+					durationMs: 60000,
+					error: 'Timed out',
+				},
+			],
+		}),
+	)
 	const result = await jobUpdateCapability.handler(
 		{
 			id: 'job-123',
 			name: 'Nightly cleanup v2',
-			params: {
-				room: 'office',
-			},
-			schedule: {
-				type: 'cron',
-				expression: '0 3 * * *',
-			},
+			params: { room: 'office' },
+			schedule: { type: 'cron', expression: '0 3 * * *' },
 			timezone: 'America/Denver',
 			enabled: false,
 			kill_switch_enabled: true,
 		},
-		{
-			env,
-			callerContext: signedInContext,
-		},
+		ctx,
 	)
-
 	expect(mockModule.updateJob).toHaveBeenCalledWith({
 		env,
-		callerContext: signedInContext,
+		callerContext,
 		body: {
 			id: 'job-123',
 			name: 'Nightly cleanup v2',
-			params: {
-				room: 'office',
-			},
-			schedule: {
-				type: 'cron',
-				expression: '0 3 * * *',
-			},
+			params: { room: 'office' },
+			schedule: { type: 'cron', expression: '0 3 * * *' },
 			timezone: 'America/Denver',
 			enabled: false,
 			killSwitchEnabled: true,
@@ -191,13 +191,8 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 		source_id: 'source-123',
 		published_commit: 'commit-456',
 		storage_id: 'job:job-123',
-		params: {
-			room: 'office',
-		},
-		schedule: {
-			type: 'cron',
-			expression: '0 3 * * *',
-		},
+		params: { room: 'office' },
+		schedule: { type: 'cron', expression: '0 3 * * *' },
 		timezone: 'America/Denver',
 		enabled: false,
 		kill_switch_enabled: true,
@@ -213,318 +208,173 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 		run_history: [],
 	})
 
-	mockModule.updateJob.mockResolvedValueOnce({
-		id: 'job-once',
-		name: 'One-off cleanup',
-		sourceId: 'source-once',
-		publishedCommit: null,
-		storageId: 'job:job-once',
-		schedule: {
-			type: 'once',
-			runAt: '2026-04-22T18:30:00Z',
-		},
-		scheduleSummary: 'Runs once at 2026-04-22T18:30:00Z',
-		timezone: 'UTC',
-		enabled: true,
-		killSwitchEnabled: false,
-		preserved: false,
-		expiresAt: null,
-		createdAt: '2026-04-20T10:00:00.000Z',
-		updatedAt: '2026-04-20T12:00:00.000Z',
-		nextRunAt: '2026-04-22T18:30:00.000Z',
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-		runHistory: [],
-	})
+	mockModule.updateJob.mockResolvedValueOnce(
+		job({
+			id: 'job-once',
+			schedule: { type: 'once', runAt: '2026-04-22T18:30:00Z' },
+		}),
+	)
 	await jobUpdateCapability.handler(
 		{
 			id: 'job-once',
-			schedule: {
-				type: 'once',
-				run_at: '2026-04-22T18:30:00Z',
-			},
+			schedule: { type: 'once', run_at: '2026-04-22T18:30:00Z' },
 		},
-		{ env, callerContext: signedInContext },
+		ctx,
 	)
 	expect(mockModule.updateJob).toHaveBeenLastCalledWith({
 		env,
-		callerContext: signedInContext,
+		callerContext,
 		body: expect.objectContaining({
 			id: 'job-once',
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-22T18:30:00Z',
-			},
+			schedule: { type: 'once', runAt: '2026-04-22T18:30:00Z' },
 		}),
 	})
 	expect(
 		mockModule.updateJob.mock.calls.at(-1)?.[0].body.schedule,
 	).not.toHaveProperty('run_at')
 
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-			},
-			{
-				env,
-				callerContext: signedInContext,
-			},
-		),
-	).rejects.toThrow('Provide at least one mutable field to update.')
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-				code: 'export default async () => ({ ok: true })',
-			},
-			{
-				env,
-				callerContext: signedInContext,
-			},
-		),
-	).rejects.toThrow('Job code cannot be changed via jobUpdate.')
-	await expect(
-		jobUpdateCapability.handler(
-			{
-				id: 'job-123',
-				enabled: false,
-				code: 'export default async () => ({ rewritten: true })',
-			},
-			{
-				env,
-				callerContext: signedInContext,
-			},
-		),
-	).rejects.toThrow('Job code cannot be changed via jobUpdate.')
+	for (const [input, message] of [
+		[{ id: 'job-123' }, 'Provide at least one mutable field to update.'],
+		[
+			{ id: 'job-123', code: 'export default async () => ({ ok: true })' },
+			'Job code cannot be changed via jobUpdate.',
+		],
+		[
+			{ id: 'job-123', enabled: false, code: 'export default async () => 1' },
+			'Job code cannot be changed via jobUpdate.',
+		],
+	] as const) {
+		await expect(
+			jobUpdateCapability.handler(input as never, ctx),
+		).rejects.toThrow(message)
+	}
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 
-	mockModule.deleteJob.mockResolvedValue({
-		id: 'job-123',
-		deleted: true,
-	})
-	const deleteResult = await jobDeleteCapability.handler(
-		{
-			id: 'job-123',
-		},
-		{
-			env,
-			callerContext: signedInContext,
-		},
-	)
+	mockModule.deleteJob.mockResolvedValue({ id: 'job-123', deleted: true })
+	await expect(
+		jobDeleteCapability.handler({ id: 'job-123' }, ctx),
+	).resolves.toEqual({ job_id: 'job-123', deleted: true })
 	expect(mockModule.deleteJob).toHaveBeenCalledWith({
 		env,
 		userId: 'user-123',
 		jobId: 'job-123',
 	})
-	expect(deleteResult).toEqual({
-		job_id: 'job-123',
-		deleted: true,
-	})
-
 	await expect(
-		jobDeleteCapability.handler(
-			{
-				id: 'package-job:pkg-1:nightly',
-			},
-			{
-				env,
-				callerContext: signedInContext,
-			},
-		),
+		jobDeleteCapability.handler({ id: 'package-job:pkg-1:nightly' }, ctx),
 	).rejects.toThrow(packageOwnedJobDeleteErrorMessage)
 	expect(mockModule.deleteJob).toHaveBeenCalledTimes(1)
 })
 
-test('jobUpdate accepts interval and cron schedule replacements', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-
-	mockModule.updateJob
-		.mockResolvedValueOnce({
-			id: 'job-interval',
-			name: 'Nightly cleanup',
-			sourceId: 'source-interval',
-			publishedCommit: null,
-			storageId: 'job:job-interval',
-			schedule: {
-				type: 'interval',
-				every: '15m',
+test('jobUpdate accepts interval and cron schedule replacements and round-trips expires_at', async () => {
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
+	try {
+		const cases = [
+			{
+				input: {
+					id: 'job-interval',
+					schedule: { type: 'interval', every: '15m' },
+				},
+				body: {
+					id: 'job-interval',
+					schedule: { type: 'interval', every: '15m' },
+				},
+				returned: { nextRunAt: '2026-04-20T10:15:00.000Z' },
+				expected: {
+					schedule: { type: 'interval', every: '15m' },
+					next_run_at: '2026-04-20T10:15:00.000Z',
+				},
 			},
-			scheduleSummary: 'Runs every 15m',
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-04-20T10:00:00.000Z',
-			updatedAt: '2026-04-20T10:01:00.000Z',
-			nextRunAt: '2026-04-20T10:15:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-			runHistory: [],
+			{
+				input: {
+					id: 'job-cron',
+					name: 'Weekly digest',
+					schedule: { type: 'cron', expression: '0 9 * * 1' },
+					timezone: 'America/Denver',
+				},
+				body: {
+					id: 'job-cron',
+					name: 'Weekly digest',
+					schedule: { type: 'cron', expression: '0 9 * * 1' },
+					timezone: 'America/Denver',
+				},
+				returned: {
+					schedule: { type: 'cron', expression: '0 9 * * 1' },
+					nextRunAt: '2026-04-27T15:00:00.000Z',
+				},
+				expected: {
+					schedule: { type: 'cron', expression: '0 9 * * 1' },
+					next_run_at: '2026-04-27T15:00:00.000Z',
+				},
+			},
+			{
+				input: { id: 'job-expiring', expires_at: null },
+				body: { id: 'job-expiring', expiresAt: null },
+				returned: {},
+				expected: { expires_at: null, expired: false },
+			},
+			{
+				input: { id: 'job-expiring', expires_at: '2026-04-21T00:00:00Z' },
+				body: { id: 'job-expiring', expiresAt: '2026-04-21T00:00:00Z' },
+				returned: { expiresAt: '2026-04-21T00:00:00.000Z' },
+				expected: { expires_at: '2026-04-21T00:00:00.000Z', expired: false },
+			},
+		]
+		for (const { input, body, returned, expected } of cases) {
+			mockModule.updateJob.mockResolvedValueOnce(
+				job({ id: input.id, ...returned }),
+			)
+			const result = await jobUpdateCapability.handler(input as never, ctx)
+			expect(mockModule.updateJob).toHaveBeenLastCalledWith(updateBody(body))
+			expect(result).toMatchObject({ job_id: input.id, ...expected })
+		}
+
+		mockModule.inspectJobsForUser.mockResolvedValue({
+			jobs: [
+				job({
+					id: 'job-expired',
+					enabled: false,
+					expiresAt: '2026-04-20T18:00:00.000Z',
+					nextRunAt: '2026-04-20T19:00:00.000Z',
+				}),
+			],
+			alarm: alarm({
+				status: 'idle',
+				alarmScheduledFor: null,
+				nextRunnableJobId: null,
+				nextRunnableRunAt: null,
+			}),
 		})
-		.mockResolvedValueOnce({
-			id: 'job-cron',
-			name: 'Weekly digest',
-			sourceId: 'source-cron',
-			publishedCommit: null,
-			storageId: 'job:job-cron',
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			scheduleSummary: 'Runs on cron "0 9 * * 1" in America/Denver',
-			timezone: 'America/Denver',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-04-20T10:00:00.000Z',
-			updatedAt: '2026-04-20T10:02:00.000Z',
-			nextRunAt: '2026-04-27T15:00:00.000Z',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
-			runHistory: [],
+		const listed = await jobListCapability.handler({}, ctx)
+		expect(listed.jobs[0]).toMatchObject({
+			id: 'job-expired',
+			expires_at: '2026-04-20T18:00:00.000Z',
+			expired: true,
+			due_now: false,
+			enabled: false,
 		})
-
-	const intervalResult = await jobUpdateCapability.handler(
-		{
-			id: 'job-interval',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-	const cronResult = await jobUpdateCapability.handler(
-		{
-			id: 'job-cron',
-			name: 'Weekly digest',
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			timezone: 'America/Denver',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.updateJob).toHaveBeenNthCalledWith(1, {
-		env,
-		callerContext,
-		body: {
-			id: 'job-interval',
-			name: undefined,
-			params: undefined,
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-			timezone: undefined,
-			enabled: undefined,
-			killSwitchEnabled: undefined,
-			preserved: undefined,
-		},
-	})
-	expect(intervalResult).toMatchObject({
-		job_id: 'job-interval',
-		schedule: {
-			type: 'interval',
-			every: '15m',
-		},
-		next_run_at: '2026-04-20T10:15:00.000Z',
-	})
-
-	expect(mockModule.updateJob).toHaveBeenNthCalledWith(2, {
-		env,
-		callerContext,
-		body: {
-			id: 'job-cron',
-			name: 'Weekly digest',
-			params: undefined,
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			timezone: 'America/Denver',
-			enabled: undefined,
-			killSwitchEnabled: undefined,
-			preserved: undefined,
-		},
-	})
-	expect(cronResult).toMatchObject({
-		job_id: 'job-cron',
-		schedule: {
-			type: 'cron',
-			expression: '0 9 * * 1',
-		},
-		next_run_at: '2026-04-27T15:00:00.000Z',
-	})
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('jobRunNow executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
-	resetMocks()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
+	const appContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-		},
+		user,
+		storageContext: { sessionId: null, appId: 'app-123' },
 	})
 	mockModule.runJobNowViaManager.mockResolvedValueOnce({
-		job: {
-			id: 'job-123',
+		job: job({
 			name: 'Immediate run',
-			sourceId: 'source-123',
 			publishedCommit: 'commit-123',
-			storageId: 'job:job-123',
-			params: {
-				room: 'office',
-			},
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-			scheduleSummary: 'Runs every 15m',
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-04-20T10:00:00.000Z',
-			updatedAt: '2026-04-20T10:05:00.000Z',
+			params: { room: 'office' },
 			lastRunAt: '2026-04-20T10:05:00.000Z',
 			lastRunStatus: 'success',
 			lastDurationMs: 42,
 			nextRunAt: '2026-04-20T10:20:00.000Z',
 			runCount: 1,
 			successCount: 1,
-			errorCount: 0,
 			runHistory: [
 				{
 					startedAt: '2026-04-20T10:05:00.000Z',
@@ -533,30 +383,20 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 					durationMs: 42,
 				},
 			],
-		},
-		execution: {
-			ok: true,
-			result: { ok: true },
-			logs: ['ran job'],
-		},
+		}),
+		execution: { ok: true, result: { ok: true }, logs: ['ran job'] },
 		deletedAfterRun: false,
 	})
 
 	const successResult = await jobRunNowCapability.handler(
-		{
-			id: 'job-123',
-		},
-		{
-			env,
-			callerContext,
-		},
+		{ id: 'job-123' },
+		{ env, callerContext: appContext },
 	)
-
 	expect(mockModule.runJobNowViaManager).toHaveBeenCalledWith({
 		env,
 		userId: 'user-123',
 		jobId: 'job-123',
-		callerContext,
+		callerContext: appContext,
 	})
 	expect(successResult).toMatchObject({
 		job: {
@@ -565,13 +405,8 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 			source_id: 'source-123',
 			published_commit: 'commit-123',
 			storage_id: 'job:job-123',
-			params: {
-				room: 'office',
-			},
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
+			params: { room: 'office' },
+			schedule: { type: 'interval', every: '15m' },
 			timezone: 'UTC',
 			enabled: true,
 			kill_switch_enabled: false,
@@ -586,69 +421,28 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 			error_count: 0,
 			run_history: [],
 		},
-		execution: {
-			ok: true,
-			result: { ok: true },
-			logs: ['ran job'],
-		},
+		execution: { ok: true, result: { ok: true }, logs: ['ran job'] },
 		deleted_after_run: false,
 	})
 
 	mockModule.runJobNowViaManager.mockResolvedValueOnce({
-		job: {
+		job: job({
 			id: 'job-once',
-			name: 'One-off run',
-			sourceId: 'source-once',
-			publishedCommit: null,
-			storageId: 'job:job-once',
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-20T10:00:00.000Z',
-			},
-			scheduleSummary: 'Runs once at 2026-04-20T10:00:00.000Z',
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-04-20T09:00:00.000Z',
-			updatedAt: '2026-04-20T10:00:00.000Z',
+			schedule: { type: 'once', runAt: '2026-04-20T10:00:00.000Z' },
 			lastRunAt: '2026-04-20T10:00:00.000Z',
 			lastRunStatus: 'error',
 			lastRunError: 'boom',
 			lastDurationMs: 5,
-			nextRunAt: '2026-04-20T10:00:00.000Z',
 			runCount: 1,
-			successCount: 0,
 			errorCount: 1,
-			runHistory: [
-				{
-					startedAt: '2026-04-20T10:00:00.000Z',
-					finishedAt: '2026-04-20T10:00:00.000Z',
-					status: 'error',
-					durationMs: 5,
-					error: 'boom',
-				},
-			],
-		},
-		execution: {
-			ok: false,
-			error: 'boom',
-			logs: ['ran job'],
-		},
+		}),
+		execution: { ok: false, error: 'boom', logs: ['ran job'] },
 		deletedAfterRun: false,
 	})
-
 	const failedOneOffResult = await jobRunNowCapability.handler(
-		{
-			id: 'job-once',
-		},
-		{
-			env,
-			callerContext,
-		},
+		{ id: 'job-once' },
+		{ env, callerContext: appContext },
 	)
-
 	expect(failedOneOffResult.deleted_after_run).toBe(false)
 	expect(failedOneOffResult.execution).toEqual({
 		ok: false,
@@ -659,78 +453,17 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 })
 
 test('job inspection capabilities expose due-now state, history, alarm status, optional source code, and workflow runs', async () => {
-	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
+	const onceSchedule = { type: 'once', runAt: '2026-04-20T18:30:00.000Z' }
 	mockModule.inspectJobsForUser.mockResolvedValue({
-		jobs: [
-			{
-				id: 'job-123',
-				name: 'Turn lights off',
-				sourceId: 'source-123',
-				publishedCommit: 'commit-123',
-				storageId: 'job:job-123',
-				schedule: {
-					type: 'once',
-					runAt: '2026-04-20T18:30:00.000Z',
-				},
-				scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
-				timezone: 'UTC',
-				enabled: true,
-				killSwitchEnabled: false,
-				preserved: false,
-				expiresAt: null,
-				createdAt: '2026-04-20T10:00:00.000Z',
-				updatedAt: '2026-04-20T10:05:00.000Z',
-				nextRunAt: '2026-04-20T18:30:00.000Z',
-				runCount: 0,
-				successCount: 0,
-				errorCount: 0,
-				runHistory: [],
-			},
-		],
-		alarm: {
-			bindingAvailable: true,
-			status: 'armed',
-			storedUserId: 'user-123',
-			alarmScheduledFor: '2026-04-20T18:30:00.000Z',
-			nextRunnableJobId: 'job-123',
-			nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
-			alarmInSync: true,
-		},
+		jobs: [job({ publishedCommit: 'commit-123', schedule: onceSchedule })],
+		alarm: alarm(),
 	})
 	mockModule.getJobInspection.mockResolvedValue({
-		job: {
-			id: 'job-123',
-			name: 'Turn lights off',
-			sourceId: 'source-123',
-			publishedCommit: null,
-			storageId: 'job:job-123',
-			params: {
-				bridgeId: 'ZPGI01117',
-			},
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-20T18:30:00.000Z',
-			},
-			scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
-			timezone: 'UTC',
-			enabled: true,
-			killSwitchEnabled: false,
-			preserved: false,
-			expiresAt: null,
-			createdAt: '2026-04-20T10:00:00.000Z',
-			updatedAt: '2026-04-20T10:05:00.000Z',
-			nextRunAt: '2026-04-20T18:30:00.000Z',
+		job: job({
+			params: { bridgeId: 'ZPGI01117' },
+			schedule: onceSchedule,
 			lastRunAt: '2026-04-20T09:00:00.000Z',
 			lastRunStatus: 'error',
 			lastRunError: 'Timed out',
@@ -738,17 +471,12 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			runCount: 2,
 			successCount: 1,
 			errorCount: 1,
-			runHistory: [],
-		},
-		alarm: {
-			bindingAvailable: true,
+		}),
+		alarm: alarm({
 			status: 'out_of_sync',
-			storedUserId: 'user-123',
 			alarmScheduledFor: '2026-04-20T19:00:00.000Z',
-			nextRunnableJobId: 'job-123',
-			nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
 			alarmInSync: false,
-		},
+		}),
 	})
 	mockModule.listRunRecords.mockResolvedValue({
 		runs: [
@@ -756,7 +484,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				id: 'run-err-1',
 				surface: 'job',
 				status: 'error',
-				name: 'Turn lights off',
+				name: 'Job',
 				packageId: null,
 				kodyId: null,
 				sourceId: 'source-123',
@@ -781,22 +509,8 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	})
 
 	try {
-		const listResult = await jobListCapability.handler(
-			{},
-			{
-				env,
-				callerContext,
-			},
-		)
+		const listResult = await jobListCapability.handler({}, ctx)
 		expect(mockModule.listRunRecords).not.toHaveBeenCalled()
-		const getResult = await jobGetCapability.handler(
-			{ id: 'job-123' },
-			{
-				env,
-				callerContext,
-			},
-		)
-
 		expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
 			env,
 			userId: 'user-123',
@@ -819,6 +533,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			alarm_in_sync: true,
 		})
 
+		const getResult = await jobGetCapability.handler({ id: 'job-123' }, ctx)
 		expect(mockModule.getJobInspection).toHaveBeenCalledWith({
 			env,
 			userId: 'user-123',
@@ -834,9 +549,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		expect(getResult.job).toMatchObject({
 			id: 'job-123',
 			source_id: 'source-123',
-			params: {
-				bridgeId: 'ZPGI01117',
-			},
+			params: { bridgeId: 'ZPGI01117' },
 			due_now: true,
 			last_run_status: 'error',
 			last_run_error: 'Timed out',
@@ -862,59 +575,20 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			alarm_in_sync: false,
 		})
 
-		const sourceCode =
-			'export default async function main() { return { ok: true } }'
+		const source = {
+			entrypoint: 'src/custom-job.ts',
+			code: 'export default async function main() { return { ok: true } }',
+			error: null,
+		}
 		mockModule.getJobInspection.mockResolvedValue({
-			job: {
-				id: 'job-123',
-				name: 'Inspect source',
-				sourceId: 'source-123',
-				publishedCommit: 'commit-123',
-				storageId: 'job:job-123',
-				schedule: {
-					type: 'interval',
-					every: '15m',
-				},
-				scheduleSummary: 'Runs every 15m',
-				timezone: 'UTC',
-				enabled: true,
-				killSwitchEnabled: false,
-				preserved: false,
-				expiresAt: null,
-				createdAt: '2026-04-20T10:00:00.000Z',
-				updatedAt: '2026-04-20T10:05:00.000Z',
-				nextRunAt: '2026-04-20T18:30:00.000Z',
-				runCount: 0,
-				successCount: 0,
-				errorCount: 0,
-				runHistory: [],
-			},
-			alarm: {
-				bindingAvailable: true,
-				status: 'armed',
-				storedUserId: 'user-123',
-				alarmScheduledFor: '2026-04-20T18:30:00.000Z',
-				nextRunnableJobId: 'job-123',
-				nextRunnableRunAt: '2026-04-20T18:30:00.000Z',
-				alarmInSync: true,
-			},
-			source: {
-				entrypoint: 'src/custom-job.ts',
-				code: sourceCode,
-				error: null,
-			},
+			job: job(),
+			alarm: alarm(),
+			source,
 		})
-		mockModule.listRunRecords.mockResolvedValue({
-			runs: [],
-			nextCursor: null,
-		})
-
+		mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
 		const sourceResult = await jobGetCapability.handler(
 			{ job_id: 'job-123', includeCode: true },
-			{
-				env,
-				callerContext,
-			},
+			ctx,
 		)
 		expect(mockModule.getJobInspection).toHaveBeenLastCalledWith({
 			env,
@@ -922,11 +596,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 			jobId: 'job-123',
 			includeCode: true,
 		})
-		expect(sourceResult.source).toEqual({
-			entrypoint: 'src/custom-job.ts',
-			code: sourceCode,
-			error: null,
-		})
+		expect(sourceResult.source).toEqual(source)
 
 		mockModule.listWorkflowRunsForUser.mockResolvedValue([
 			{
@@ -948,10 +618,9 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 				lastError: null,
 			},
 		])
-
 		const workflowListResult = await workflowListCapability.handler(
 			{ limit: 5 },
-			{ env, callerContext },
+			ctx,
 		)
 		expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
 			env,
@@ -980,137 +649,4 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	} finally {
 		vi.useRealTimers()
 	}
-})
-
-test('jobUpdate and jobList round-trip expires_at and surface expired state', async () => {
-	resetMocks()
-	vi.useFakeTimers()
-	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-
-	mockModule.updateJob.mockResolvedValue({
-		id: 'job-expiring',
-		name: 'Expiring digest',
-		sourceId: 'source-expiring',
-		publishedCommit: null,
-		storageId: 'job:job-expiring',
-		schedule: { type: 'interval', every: '1h' },
-		scheduleSummary: 'Runs every 1h',
-		timezone: 'UTC',
-		enabled: true,
-		killSwitchEnabled: false,
-		preserved: false,
-		expiresAt: null,
-		createdAt: '2026-04-20T18:30:00.000Z',
-		updatedAt: '2026-04-20T18:31:00.000Z',
-		nextRunAt: '2026-04-20T19:30:00.000Z',
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-	})
-	const cleared = await jobUpdateCapability.handler(
-		{ id: 'job-expiring', expires_at: null },
-		{ env, callerContext },
-	)
-	expect(mockModule.updateJob).toHaveBeenCalledWith({
-		env,
-		callerContext,
-		body: {
-			id: 'job-expiring',
-			name: undefined,
-			params: undefined,
-			schedule: undefined,
-			timezone: undefined,
-			enabled: undefined,
-			killSwitchEnabled: undefined,
-			preserved: undefined,
-			expiresAt: null,
-		},
-	})
-	expect(cleared).toMatchObject({
-		job_id: 'job-expiring',
-		expires_at: null,
-		expired: false,
-	})
-
-	mockModule.updateJob.mockResolvedValueOnce({
-		id: 'job-expiring',
-		name: 'Expiring digest',
-		sourceId: 'source-expiring',
-		publishedCommit: null,
-		storageId: 'job:job-expiring',
-		schedule: { type: 'interval', every: '1h' },
-		scheduleSummary: 'Runs every 1h',
-		timezone: 'UTC',
-		enabled: true,
-		killSwitchEnabled: false,
-		preserved: false,
-		expiresAt: '2026-04-21T00:00:00.000Z',
-		createdAt: '2026-04-20T18:30:00.000Z',
-		updatedAt: '2026-04-20T18:32:00.000Z',
-		nextRunAt: '2026-04-20T19:30:00.000Z',
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-	})
-	const setExpiry = await jobUpdateCapability.handler(
-		{ id: 'job-expiring', expires_at: '2026-04-21T00:00:00Z' },
-		{ env, callerContext },
-	)
-	expect(setExpiry).toMatchObject({
-		job_id: 'job-expiring',
-		expires_at: '2026-04-21T00:00:00.000Z',
-		expired: false,
-	})
-
-	mockModule.inspectJobsForUser.mockResolvedValue({
-		jobs: [
-			{
-				id: 'job-expired',
-				name: 'Expired job',
-				sourceId: 'source-expired',
-				publishedCommit: null,
-				storageId: 'job:job-expired',
-				schedule: { type: 'interval', every: '1h' },
-				scheduleSummary: 'Runs every 1h',
-				timezone: 'UTC',
-				enabled: false,
-				killSwitchEnabled: false,
-				preserved: false,
-				expiresAt: '2026-04-20T18:00:00.000Z',
-				createdAt: '2026-04-20T10:00:00.000Z',
-				updatedAt: '2026-04-20T18:30:00.000Z',
-				nextRunAt: '2026-04-20T19:00:00.000Z',
-				runCount: 1,
-				successCount: 1,
-				errorCount: 0,
-			},
-		],
-		alarm: {
-			bindingAvailable: true,
-			status: 'idle',
-			storedUserId: 'user-123',
-			alarmScheduledFor: null,
-			nextRunnableJobId: null,
-			nextRunnableRunAt: null,
-			alarmInSync: true,
-		},
-	})
-	const listed = await jobListCapability.handler({}, { env, callerContext })
-	expect(listed.jobs[0]).toMatchObject({
-		id: 'job-expired',
-		expires_at: '2026-04-20T18:00:00.000Z',
-		expired: true,
-		due_now: false,
-		enabled: false,
-	})
-	vi.useRealTimers()
 })

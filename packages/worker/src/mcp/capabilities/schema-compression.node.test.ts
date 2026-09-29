@@ -1,258 +1,73 @@
 import { expect, test } from 'vitest'
 import { compressSchemaForLlm } from './schema-compression.ts'
 
-test('compressSchemaForLlm strips redundant metadata across object, array, and composed schemas', () => {
-	const schema = {
-		$schema: 'https://json-schema.org/draft/2020-12/schema',
+function makeSchema(compressed: boolean) {
+	const redundant = <T extends Record<string, unknown>>(fields: T) =>
+		compressed ? {} : fields
+	const string = (description?: string) => ({
+		type: 'string',
+		...redundant(description ? { description } : {}),
+	})
+	const described = (description: string) => ({ type: 'string', description })
+	const object = (properties: Record<string, unknown>) => ({
 		type: 'object',
-		additionalProperties: false,
+		properties,
+	})
+	return {
+		...redundant({
+			$schema: 'https://json-schema.org/draft/2020-12/schema',
+			type: 'object',
+			additionalProperties: false,
+		}),
 		properties: {
 			userId: {
 				type: 'string',
-				title: 'userId',
-				description: 'User ID',
+				...redundant({ title: 'userId', description: 'User ID' }),
 				format: 'uuid',
 			},
 			repo: {
-				type: 'object',
-				properties: {
-					owner: {
-						type: 'string',
-						title: 'Owner',
-						description: 'owner',
-					},
-					name: {
-						type: 'string',
-						description: 'Repository name',
-					},
-				},
+				...object({
+					owner: { ...string('owner'), ...redundant({ title: 'Owner' }) },
+					name: described('Repository name'),
+				}),
 				required: ['owner'],
 			},
 			labels: {
 				type: 'array',
 				items: {
-					type: 'object',
-					properties: {
-						name: {
-							type: 'string',
-							description: 'name',
-						},
-						color: {
-							type: 'string',
-							description: 'Hex color value.',
-						},
-					},
+					...object({
+						name: string('name'),
+						color: described('Hex color value.'),
+					}),
 					required: ['name'],
 				},
 			},
-			team: {
-				type: 'string',
-				description: 'team',
-			},
+			team: string('team'),
 		},
 		required: ['userId', 'repo'],
-		allOf: [
-			{
-				type: 'object',
-				properties: {
-					owner: {
-						type: 'string',
-						description: 'owner',
-					},
-				},
-				required: ['owner'],
-			},
-		],
-		anyOf: [
-			{
-				type: 'object',
-				properties: {
-					repo: {
-						type: 'string',
-					},
-				},
-			},
-		],
-		oneOf: [
-			{
-				type: 'object',
-				properties: {
-					org: {
-						type: 'string',
-						description: 'Organization name.',
-					},
-				},
-			},
-		],
-		not: {
-			type: 'object',
-			properties: {
-				ignored: {
-					type: 'string',
-					description: 'ignored',
-				},
-			},
-		},
-		if: {
-			type: 'object',
-			properties: {
-				mode: {
-					type: 'string',
-					description: 'mode',
-				},
-			},
-		},
+		allOf: [{ ...object({ owner: string('owner') }), required: ['owner'] }],
+		anyOf: [object({ repo: string() })],
+		oneOf: [object({ org: described('Organization name.') })],
+		not: object({ ignored: string('ignored') }),
+		if: object({ mode: string('mode') }),
 		// oxlint-disable-next-line unicorn/no-thenable -- JSON Schema if/then/else keyword, not a thenable
-		then: {
-			type: 'object',
-			properties: {
-				strategy: {
-					type: 'string',
-					description: 'Release strategy.',
-				},
-			},
-		},
-		else: {
-			type: 'object',
-			properties: {
-				reason: {
-					type: 'string',
-					description: 'reason',
-				},
-			},
+		then: object({ strategy: described('Release strategy.') }),
+		else: object({ reason: string('reason') }),
+	}
+}
+
+test('compressSchemaForLlm strips redundant metadata across object, array, and composed schemas', () => {
+	expect(compressSchemaForLlm(makeSchema(false))).toEqual(makeSchema(true))
+
+	const enabledSchema = {
+		type: 'object',
+		properties: {
+			enabled: { type: 'boolean', description: 'Enable the feature.' },
 		},
 	}
-
-	expect(compressSchemaForLlm(schema)).toEqual({
-		properties: {
-			userId: {
-				type: 'string',
-				format: 'uuid',
-			},
-			repo: {
-				type: 'object',
-				properties: {
-					owner: {
-						type: 'string',
-					},
-					name: {
-						type: 'string',
-						description: 'Repository name',
-					},
-				},
-				required: ['owner'],
-			},
-			labels: {
-				type: 'array',
-				items: {
-					type: 'object',
-					properties: {
-						name: {
-							type: 'string',
-						},
-						color: {
-							type: 'string',
-							description: 'Hex color value.',
-						},
-					},
-					required: ['name'],
-				},
-			},
-			team: {
-				type: 'string',
-			},
-		},
-		required: ['userId', 'repo'],
-		allOf: [
-			{
-				type: 'object',
-				properties: {
-					owner: {
-						type: 'string',
-					},
-				},
-				required: ['owner'],
-			},
-		],
-		anyOf: [
-			{
-				type: 'object',
-				properties: {
-					repo: {
-						type: 'string',
-					},
-				},
-			},
-		],
-		oneOf: [
-			{
-				type: 'object',
-				properties: {
-					org: {
-						type: 'string',
-						description: 'Organization name.',
-					},
-				},
-			},
-		],
-		not: {
-			type: 'object',
-			properties: {
-				ignored: {
-					type: 'string',
-				},
-			},
-		},
-		if: {
-			type: 'object',
-			properties: {
-				mode: {
-					type: 'string',
-				},
-			},
-		},
-		// oxlint-disable-next-line unicorn/no-thenable -- JSON Schema if/then/else keyword, not a thenable
-		then: {
-			type: 'object',
-			properties: {
-				strategy: {
-					type: 'string',
-					description: 'Release strategy.',
-				},
-			},
-		},
-		else: {
-			type: 'object',
-			properties: {
-				reason: {
-					type: 'string',
-				},
-			},
-		},
-	})
-
 	expect(
-		compressSchemaForLlm(
-			{
-				type: 'object',
-				properties: {
-					enabled: {
-						type: 'boolean',
-						description: 'Enable the feature.',
-					},
-				},
-			},
-			{ stripRootObjectType: false },
-		),
-	).toEqual({
-		type: 'object',
-		properties: {
-			enabled: {
-				type: 'boolean',
-				description: 'Enable the feature.',
-			},
-		},
-	})
+		compressSchemaForLlm(enabledSchema, { stripRootObjectType: false }),
+	).toEqual(enabledSchema)
 	expect(compressSchemaForLlm(null)).toBeNull()
 	expect(compressSchemaForLlm(undefined)).toBeUndefined()
 })

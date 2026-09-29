@@ -135,50 +135,38 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 			createCapabilityContext(),
 		),
 	).rejects.toThrow('Authenticated MCP user is required')
-	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			{ ...input, user_confirmed: false } as never,
-			createCapabilityContext({ userId: 'user-1' }),
-		),
-	).rejects.toThrow('Invalid input for capability "metaPlatformFeedbackSubmit"')
-	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			{ ...input, metadata: { conversation: 'private' } } as never,
-			createCapabilityContext({ userId: 'user-1' }),
-		),
-	).rejects.toThrow('Invalid input for capability "metaPlatformFeedbackSubmit"')
-	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
-	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			input,
-			createCapabilityContext({ userId: 'user-1' }),
-		),
-	).rejects.toThrow(
-		'only available from an interactive MCP agent flow after explicit user approval',
-	)
-	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			input,
-			createCapabilityContext({
-				userId: 'user-1',
-				executionOrigin: 'background',
-			}),
-		),
-	).rejects.toThrow(
-		'only available from an interactive MCP agent flow after explicit user approval',
-	)
-	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			input,
-			createCapabilityContext({
-				userId: 'user-1',
-				packageId: 'package-1',
-				executionOrigin: 'interactive',
-			}),
-		),
-	).rejects.toThrow(
-		'only available from an interactive MCP agent flow after explicit user approval',
-	)
+	for (const invalid of [
+		{ ...input, user_confirmed: false },
+		{ ...input, metadata: { conversation: 'private' } },
+	]) {
+		await expect(
+			metaPlatformFeedbackSubmitCapability.handler(
+				invalid as never,
+				createCapabilityContext({ userId: 'user-1' }),
+			),
+		).rejects.toThrow(
+			'Invalid input for capability "metaPlatformFeedbackSubmit"',
+		)
+	}
+	// Omitted origin, background, and package-app callers are all refused.
+	for (const context of [
+		{ userId: 'user-1' },
+		{ userId: 'user-1', executionOrigin: 'background' as const },
+		{
+			userId: 'user-1',
+			packageId: 'package-1',
+			executionOrigin: 'interactive' as const,
+		},
+	]) {
+		await expect(
+			metaPlatformFeedbackSubmitCapability.handler(
+				input,
+				createCapabilityContext(context),
+			),
+		).rejects.toThrow(
+			'only available from an interactive MCP agent flow after explicit user approval',
+		)
+	}
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
 	expect(mockModule.queueSend).not.toHaveBeenCalled()
 	expect(synchronousFanOutModule.loaded).toBe(false)
@@ -186,26 +174,21 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		synchronousFanOutModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	).not.toHaveBeenCalled()
 
+	const interactive = createCapabilityContext({
+		userId: 'user-1',
+		executionOrigin: 'interactive',
+	})
 	mockModule.submitPlatformFeedback.mockRejectedValueOnce(
 		new Error('active queue limit'),
 	)
 	await expect(
-		metaPlatformFeedbackSubmitCapability.handler(
-			input,
-			createCapabilityContext({
-				userId: 'user-1',
-				executionOrigin: 'interactive',
-			}),
-		),
+		metaPlatformFeedbackSubmitCapability.handler(input, interactive),
 	).rejects.toThrow('active queue limit')
 	expect(mockModule.queueSend).not.toHaveBeenCalled()
 
 	const result = await metaPlatformFeedbackSubmitCapability.handler(
 		input,
-		createCapabilityContext({
-			userId: 'user-1',
-			executionOrigin: 'interactive',
-		}),
+		interactive,
 	)
 	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith({
 		db: expect.anything(),
@@ -226,17 +209,10 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	})
 
 	consoleError.mockImplementation(() => {})
-	mockModule.queueSend.mockClear()
 	mockModule.queueSend.mockRejectedValueOnce(new Error('Queue unavailable'))
-	const resultAfterEnqueueFailure =
-		await metaPlatformFeedbackSubmitCapability.handler(
-			input,
-			createCapabilityContext({
-				userId: 'user-1',
-				executionOrigin: 'interactive',
-			}),
-		)
-	expect(resultAfterEnqueueFailure).toEqual(result)
+	await expect(
+		metaPlatformFeedbackSubmitCapability.handler(input, interactive),
+	).resolves.toEqual(result)
 	expect(mockModule.queueSend).toHaveBeenCalledWith({
 		feedbackId: openFeedback.id,
 	})
@@ -411,20 +387,21 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 })
 
 test('admin platform feedback resolve and dismiss email the submitter without failing the update', async () => {
-	const resolvedFeedback = {
-		...openFeedback,
-		status: 'resolved' as const,
+	const reviewed = {
 		reviewedByUserId: 'admin-1',
 		reviewedAt: '2026-07-19T01:00:00.000Z',
 		updatedAt: '2026-07-19T01:00:00.000Z',
 	}
+	const resolvedFeedback = {
+		...openFeedback,
+		...reviewed,
+		status: 'resolved' as const,
+	}
 	const dismissedFeedback = {
 		...openFeedback,
+		...reviewed,
 		id: 'feedback-2',
 		status: 'dismissed' as const,
-		reviewedByUserId: 'admin-1',
-		reviewedAt: '2026-07-19T01:00:00.000Z',
-		updatedAt: '2026-07-19T01:00:00.000Z',
 	}
 	const adminContext = createCapabilityContext({
 		userId: 'admin-1',

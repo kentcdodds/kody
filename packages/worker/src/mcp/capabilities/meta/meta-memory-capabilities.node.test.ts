@@ -36,11 +36,6 @@ function createSignedInCapabilityContext() {
 }
 
 test('memory capabilities support a verify-first mutation workflow', async () => {
-	mockModule.searchMemoryRecords.mockReset()
-	mockModule.verifyMemoryCandidate.mockReset()
-	mockModule.getMemory.mockReset()
-	mockModule.deleteMemory.mockReset()
-
 	mockModule.searchMemoryRecords.mockResolvedValueOnce({
 		query: 'theme preference',
 		matches: [
@@ -162,7 +157,7 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 	expect(verifyResult.candidate).not.toHaveProperty('details')
 	expect(verifyResult.related_memories[0]).not.toHaveProperty('details')
 
-	mockModule.getMemory.mockResolvedValueOnce({
+	const storedMemory = {
 		id: 'memory-1',
 		category: 'preference',
 		status: 'active',
@@ -176,20 +171,12 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 		updatedAt: '2026-01-02T00:00:00.000Z',
 		lastAccessedAt: null,
 		deletedAt: null,
-	})
+	}
+	mockModule.getMemory.mockResolvedValueOnce(storedMemory)
 	mockModule.deleteMemory.mockResolvedValueOnce({
-		id: 'memory-1',
-		category: 'preference',
+		...storedMemory,
 		status: 'deleted',
-		subject: 'Preferred editor theme',
-		summary: 'User prefers a dark theme in editors.',
-		details: 'Stored details for the existing memory.',
-		tags: ['theme', 'dark-mode'],
-		sourceUris: ['https://docs.example.com/preferences/editor-theme'],
-		dedupeKey: 'pref:editor-theme',
-		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-03T00:00:00.000Z',
-		lastAccessedAt: null,
 		deletedAt: '2026-01-03T00:00:00.000Z',
 	})
 

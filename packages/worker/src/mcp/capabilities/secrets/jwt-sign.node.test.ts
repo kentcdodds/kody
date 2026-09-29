@@ -15,202 +15,67 @@ import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { decodeHmacKeyMaterial, extractSecretMaterial } from './jwt-signing.ts'
 
+const pem = { type: 'pkcs8', format: 'pem' } as const
+const spki = { type: 'spki', format: 'pem' } as const
+const ctx = {
+	env: {} as Env,
+	callerContext: createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	}),
+}
+type SignInput = Parameters<typeof jwtSignCapability.handler>[0]
+
 function createKeyPair() {
 	return generateKeyPairSync('rsa', {
 		modulusLength: 2048,
-		publicKeyEncoding: {
-			type: 'spki',
-			format: 'pem',
-		},
-		privateKeyEncoding: {
-			type: 'pkcs8',
-			format: 'pem',
-		},
+		publicKeyEncoding: spki,
+		privateKeyEncoding: pem,
 	})
 }
 
-function decodeJwtPart(value: string) {
-	const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-	const padded = base64.padEnd(
-		base64.length + ((4 - (base64.length % 4)) % 4),
-		'=',
-	)
+function createEcKeyPair(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1') {
+	return generateKeyPairSync('ec', {
+		namedCurve,
+		publicKeyEncoding: spki,
+		privateKeyEncoding: pem,
+	})
+}
+
+function stubSecret(value: string | null) {
+	return vi.spyOn(secretService, 'resolveSecret').mockResolvedValue({
+		found: value !== null,
+		value,
+		scope: value === null ? null : 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+}
+
+function signWith(value: string, input: SignInput, context = ctx) {
+	stubSecret(value)
+	return jwtSignCapability.handler(input, context)
+}
+
+function decodeJwtPart(value: string | undefined) {
 	return JSON.parse(
-		Buffer.from(padded, 'base64url').toString('utf8'),
+		Buffer.from(value ?? '', 'base64url').toString('utf8'),
 	) as Record<string, unknown>
 }
 
-test('secretJwtSign resolves keys and never leaks key material', async () => {
-	const { privateKey, publicKey } = createKeyPair()
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const env = {} as Env
-
-	try {
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-
-		const signed = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'serviceAccountKey',
-				algorithm: 'RS256',
-				header: { kid: 'key-1' },
-				claims: {
-					iss: 'service@example.com',
-					sub: 'user@example.com',
-					aud: 'https://example.com/token',
-					iat: 1,
-					exp: 3601,
-				},
-			},
-			{ env, callerContext },
-		)
-		const [encodedHeader, encodedClaims, encodedSignature] =
-			signed.jwt.split('.')
-		expect(encodedHeader).toBeTruthy()
-		expect(encodedClaims).toBeTruthy()
-		expect(encodedSignature).toBeTruthy()
-		expect(signed.algorithm).toBe('RS256')
-		expect(decodeJwtPart(encodedHeader ?? '')).toMatchObject({
-			alg: 'RS256',
-			typ: 'JWT',
-			kid: 'key-1',
-		})
-		expect(decodeJwtPart(encodedClaims ?? '')).toMatchObject({
-			iss: 'service@example.com',
-			sub: 'user@example.com',
-		})
-		const verifier = createVerify('RSA-SHA256')
-		verifier.update(`${encodedHeader}.${encodedClaims}`)
-		verifier.end()
-		expect(
-			verifier.verify(
-				publicKey,
-				Buffer.from(encodedSignature ?? '', 'base64url'),
-			),
-		).toBe(true)
-		expect(signed.jwt).not.toContain('PRIVATE KEY')
-
-		const ed25519 = generateKeyPairSync('ed25519', {
-			publicKeyEncoding: {
-				type: 'spki',
-				format: 'pem',
-			},
-			privateKeyEncoding: {
-				type: 'pkcs8',
-				format: 'pem',
-			},
-		})
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: ed25519.privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const edSigned = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'originAppPrivateKey',
-				algorithm: 'EdDSA',
-				header: { kid: 'app_01example' },
-				claims: {
-					iss: 'app_01example',
-					aud: 'origin-apps',
-					iat: 1,
-					exp: 301,
-				},
-			},
-			{ env, callerContext },
-		)
-		const [edHeader, edClaims, edSignature] = edSigned.jwt.split('.')
-		expect(edSigned.algorithm).toBe('EdDSA')
-		expect(decodeJwtPart(edHeader ?? '')).toMatchObject({
-			alg: 'EdDSA',
-			typ: 'JWT',
-			kid: 'app_01example',
-		})
-		expect(decodeJwtPart(edClaims ?? '')).toEqual({
-			iss: 'app_01example',
-			aud: 'origin-apps',
-			iat: 1,
-			exp: 301,
-		})
-		expect(
-			verify(
-				null,
-				Buffer.from(`${edHeader}.${edClaims}`),
-				ed25519.publicKey,
-				Buffer.from(edSignature ?? '', 'base64url'),
-			),
-		).toBe(true)
-		expect(edSigned.jwt).not.toContain(ed25519.privateKey)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: JSON.stringify({
-				client_email: 'service@example.com',
-				private_key: privateKey,
-			}),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const jsonSigned = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'serviceAccountJson',
-				private_key_json_field: 'private_key',
-				algorithm: 'RS256',
-				claims: { iss: 'service@example.com' },
-			},
-			{ env, callerContext },
-		)
-		expect(jsonSigned.jwt.split('.')).toHaveLength(3)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: false,
-			value: null,
-			scope: null,
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'missingKey',
-					algorithm: 'RS256',
-					claims: { iss: 'service@example.com' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow(createMissingSecretMessage('missingKey'))
-
-		expect(() =>
-			extractSecretMaterial({
-				secretValue: JSON.stringify({ private_key: 'super-secret-key' }),
-				jsonField: 'missing_key',
-			}),
-		).toThrow(
-			'Signing key secret JSON field "missing_key" must be a non-empty string.',
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
-
-function jwtSigningInput(jwt: string) {
-	const [encodedHeader, encodedClaims, encodedSignature] = jwt.split('.')
+function jwtParts(jwt: string) {
+	const [header, claims, signature] = jwt.split('.')
 	return {
-		data: `${encodedHeader}.${encodedClaims}`,
-		signature: Buffer.from(encodedSignature ?? '', 'base64url'),
+		header: decodeJwtPart(header),
+		claims: decodeJwtPart(claims),
+		data: `${header}.${claims}`,
+		signature: Buffer.from(signature ?? '', 'base64url'),
 	}
+}
+
+function verifyRsaJwt(jwt: string, publicKey: string, hash: string) {
+	const { data, signature } = jwtParts(jwt)
+	return createVerify(`RSA-${hash}`).update(data).verify(publicKey, signature)
 }
 
 function verifyHmacJwt(
@@ -218,37 +83,114 @@ function verifyHmacJwt(
 	keyBytes: Uint8Array,
 	hash: 'sha256' | 'sha384' | 'sha512',
 ) {
-	const { data, signature } = jwtSigningInput(jwt)
+	const { data, signature } = jwtParts(jwt)
 	const expected = createHmac(hash, keyBytes).update(data).digest()
 	return (
 		expected.length === signature.length && timingSafeEqual(expected, signature)
 	)
 }
 
-function createEcKeyPair(namedCurve: 'prime256v1' | 'secp384r1' | 'secp521r1') {
-	return generateKeyPairSync('ec', {
-		namedCurve,
-		publicKeyEncoding: {
-			type: 'spki',
-			format: 'pem',
-		},
-		privateKeyEncoding: {
-			type: 'pkcs8',
-			format: 'pem',
+function rejectsWithoutLeaking(fragment: string, leaked: string) {
+	return (error: unknown) => {
+		const message = error instanceof Error ? error.message : String(error)
+		return message.includes(fragment) && !message.includes(leaked)
+	}
+}
+
+test('secretJwtSign resolves keys and never leaks key material', async () => {
+	const { privateKey, publicKey } = createKeyPair()
+	const signed = await signWith(privateKey, {
+		private_key_secret_name: 'serviceAccountKey',
+		algorithm: 'RS256',
+		header: { kid: 'key-1' },
+		claims: {
+			iss: 'service@example.com',
+			sub: 'user@example.com',
+			aud: 'https://example.com/token',
+			iat: 1,
+			exp: 3601,
 		},
 	})
-}
+	const rs256 = jwtParts(signed.jwt)
+	expect(signed.jwt.split('.').every(Boolean)).toBe(true)
+	expect(signed.algorithm).toBe('RS256')
+	expect(rs256.header).toMatchObject({ alg: 'RS256', typ: 'JWT', kid: 'key-1' })
+	expect(rs256.claims).toMatchObject({
+		iss: 'service@example.com',
+		sub: 'user@example.com',
+	})
+	expect(verifyRsaJwt(signed.jwt, publicKey, 'SHA256')).toBe(true)
+	expect(signed.jwt).not.toContain('PRIVATE KEY')
+
+	const ed25519 = generateKeyPairSync('ed25519', {
+		publicKeyEncoding: spki,
+		privateKeyEncoding: pem,
+	})
+	const edSigned = await signWith(ed25519.privateKey, {
+		private_key_secret_name: 'originAppPrivateKey',
+		algorithm: 'EdDSA',
+		header: { kid: 'app_01example' },
+		claims: { iss: 'app_01example', aud: 'origin-apps', iat: 1, exp: 301 },
+	})
+	const ed = jwtParts(edSigned.jwt)
+	expect(edSigned.algorithm).toBe('EdDSA')
+	expect(ed.header).toMatchObject({
+		alg: 'EdDSA',
+		typ: 'JWT',
+		kid: 'app_01example',
+	})
+	expect(ed.claims).toEqual({
+		iss: 'app_01example',
+		aud: 'origin-apps',
+		iat: 1,
+		exp: 301,
+	})
+	expect(
+		verify(null, Buffer.from(ed.data), ed25519.publicKey, ed.signature),
+	).toBe(true)
+	expect(edSigned.jwt).not.toContain(ed25519.privateKey)
+
+	const jsonSigned = await signWith(
+		JSON.stringify({
+			client_email: 'service@example.com',
+			private_key: privateKey,
+		}),
+		{
+			private_key_secret_name: 'serviceAccountJson',
+			private_key_json_field: 'private_key',
+			algorithm: 'RS256',
+			claims: { iss: 'service@example.com' },
+		},
+	)
+	expect(verifyRsaJwt(jsonSigned.jwt, publicKey, 'SHA256')).toBe(true)
+
+	stubSecret(null)
+	await expect(
+		jwtSignCapability.handler(
+			{
+				private_key_secret_name: 'missingKey',
+				algorithm: 'RS256',
+				claims: { iss: 'service@example.com' },
+			},
+			ctx,
+		),
+	).rejects.toThrow(createMissingSecretMessage('missingKey'))
+
+	expect(() =>
+		extractSecretMaterial({
+			secretValue: JSON.stringify({ private_key: 'super-secret-key' }),
+			jsonField: 'missing_key',
+		}),
+	).toThrow(
+		'Signing key secret JSON field "missing_key" must be a non-empty string.',
+	)
+})
 
 test('secretJwtSign signs HMAC JWTs from encoded secrets', async () => {
 	const hmacKey = Buffer.from('doordash-test-signing-key-32byte')
 	const utf8Secret = 'door-dash-utf8-hmac-secret-padded-to-48-bytes!!!'
 	const hs512Key = Buffer.alloc(64, 7)
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const env = {} as Env
+	const invalidBase64 = '%%%not-valid-base64%%%'
 	const doorDashClaims = {
 		aud: 'doordash',
 		iss: 'developer-id',
@@ -256,256 +198,109 @@ test('secretJwtSign signs HMAC JWTs from encoded secrets', async () => {
 		iat: 1,
 		exp: 301,
 	}
+	const hs256 = {
+		private_key_secret_name: 'doorDashSigningSecret',
+		algorithm: 'HS256',
+		claims: { aud: 'doordash' },
+	} as const
 
-	try {
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: hmacKey.toString('base64'),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
+	const signed = await signWith(hmacKey.toString('base64'), {
+		...hs256,
+		header: { 'dd-ver': 'DD-JWT-V1' },
+		claims: doorDashClaims,
+	})
+	expect(signed.jwt.split('.').every(Boolean)).toBe(true)
+	expect(signed.algorithm).toBe('HS256')
+	expect(jwtParts(signed.jwt).header).toEqual({
+		alg: 'HS256',
+		typ: 'JWT',
+		'dd-ver': 'DD-JWT-V1',
+	})
+	expect(jwtParts(signed.jwt).claims).toEqual(doorDashClaims)
+	expect(verifyHmacJwt(signed.jwt, hmacKey, 'sha256')).toBe(true)
+	expect(signed.jwt).not.toContain(hmacKey.toString('base64'))
+	expect(signed.jwt).not.toContain(hmacKey.toString('utf8'))
+	await expect(
+		jwtSignCapability.handler({ ...hs256, header: { alg: 'RS256' } }, ctx),
+	).rejects.toThrow('JWT header alg must match the requested algorithm.')
 
-		const signed = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'doorDashSigningSecret',
-				algorithm: 'HS256',
-				header: { 'dd-ver': 'DD-JWT-V1' },
-				claims: doorDashClaims,
-			},
-			{ env, callerContext },
-		)
-		const [encodedHeader, encodedClaims, encodedSignature] =
-			signed.jwt.split('.')
-		expect(encodedHeader).toBeTruthy()
-		expect(encodedClaims).toBeTruthy()
-		expect(encodedSignature).toBeTruthy()
-		expect(signed.algorithm).toBe('HS256')
-		expect(decodeJwtPart(encodedHeader ?? '')).toEqual({
-			alg: 'HS256',
-			typ: 'JWT',
-			'dd-ver': 'DD-JWT-V1',
-		})
-		expect(decodeJwtPart(encodedClaims ?? '')).toEqual(doorDashClaims)
-		expect(verifyHmacJwt(signed.jwt, hmacKey, 'sha256')).toBe(true)
-		expect(signed.jwt).not.toContain(hmacKey.toString('base64'))
-		expect(signed.jwt).not.toContain(hmacKey.toString('utf8'))
+	const utf8Signed = await signWith(utf8Secret, {
+		private_key_secret_name: 'utf8HmacSecret',
+		algorithm: 'HS384',
+		key_encoding: 'utf8',
+		claims: { aud: 'example' },
+	})
+	expect(utf8Signed.algorithm).toBe('HS384')
+	expect(jwtParts(utf8Signed.jwt).header).toMatchObject({ alg: 'HS384' })
+	expect(
+		verifyHmacJwt(utf8Signed.jwt, Buffer.from(utf8Secret, 'utf8'), 'sha384'),
+	).toBe(true)
+	expect(utf8Signed.jwt).not.toContain(utf8Secret)
 
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'doorDashSigningSecret',
-					algorithm: 'HS256',
-					header: { alg: 'RS256' },
-					claims: doorDashClaims,
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow('JWT header alg must match the requested algorithm.')
+	const base64urlSigned = await signWith(hs512Key.toString('base64url'), {
+		private_key_secret_name: 'base64urlHmacSecret',
+		algorithm: 'HS512',
+		key_encoding: 'base64url',
+		claims: { aud: 'example' },
+	})
+	expect(base64urlSigned.algorithm).toBe('HS512')
+	expect(verifyHmacJwt(base64urlSigned.jwt, hs512Key, 'sha512')).toBe(true)
 
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: utf8Secret,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const utf8Signed = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'utf8HmacSecret',
-				algorithm: 'HS384',
-				key_encoding: 'utf8',
-				claims: { aud: 'example' },
-			},
-			{ env, callerContext },
-		)
-		expect(utf8Signed.algorithm).toBe('HS384')
-		expect(decodeJwtPart(utf8Signed.jwt.split('.')[0] ?? '')).toMatchObject({
-			alg: 'HS384',
-		})
-		expect(
-			verifyHmacJwt(utf8Signed.jwt, Buffer.from(utf8Secret, 'utf8'), 'sha384'),
-		).toBe(true)
-		expect(utf8Signed.jwt).not.toContain(utf8Secret)
+	const jsonSigned = await signWith(
+		JSON.stringify({ signing_secret: hmacKey.toString('base64') }),
+		{ ...hs256, private_key_json_field: 'signing_secret' },
+	)
+	expect(verifyHmacJwt(jsonSigned.jwt, hmacKey, 'sha256')).toBe(true)
 
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: hs512Key.toString('base64url'),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const base64urlSigned = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'base64urlHmacSecret',
-				algorithm: 'HS512',
-				key_encoding: 'base64url',
-				claims: { aud: 'example' },
-			},
-			{ env, callerContext },
-		)
-		expect(base64urlSigned.algorithm).toBe('HS512')
-		expect(verifyHmacJwt(base64urlSigned.jwt, hs512Key, 'sha512')).toBe(true)
-
-		const shortHs256Secret = 'too-short-for-hs256'
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: Buffer.from(shortHs256Secret).toString('base64'),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'shortHmacSecret',
-					algorithm: 'HS256',
-					claims: { aud: 'doordash' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toSatisfy((error: unknown) => {
-			const message = error instanceof Error ? error.message : String(error)
-			return (
-				message.includes(
-					'HMAC signing key for HS256 must be at least 32 bytes.',
-				) && !message.includes(shortHs256Secret)
-			)
-		})
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: hmacKey.toString('utf8'),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'hs256KeyUsedAsHs512',
-					algorithm: 'HS512',
-					key_encoding: 'utf8',
-					claims: { aud: 'example' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow('HMAC signing key for HS512 must be at least 64 bytes.')
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: JSON.stringify({ signing_secret: hmacKey.toString('base64') }),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const jsonSigned = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: 'doorDashJson',
-				private_key_json_field: 'signing_secret',
-				algorithm: 'HS256',
-				claims: { aud: 'doordash' },
-			},
-			{ env, callerContext },
-		)
-		expect(verifyHmacJwt(jsonSigned.jwt, hmacKey, 'sha256')).toBe(true)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: '%%%not-valid-base64%%%',
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		const invalidBase64 = '%%%not-valid-base64%%%'
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'badBase64Secret',
-					algorithm: 'HS256',
-					claims: { aud: 'doordash' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toSatisfy((error: unknown) => {
-			const message = error instanceof Error ? error.message : String(error)
-			return (
-				message.includes('HMAC signing key secret is not valid base64.') &&
-				!message.includes(invalidBase64)
-			)
-		})
-
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'badBase64Secret',
-					algorithm: 'HS256',
-					key_encoding: 'hex',
-					claims: { aud: 'doordash' },
-				} as never,
-				{ env, callerContext },
-			),
-		).rejects.toSatisfy((error: unknown) => {
-			const message = error instanceof Error ? error.message : String(error)
-			return (
-				message.includes('Invalid input for capability "secretJwtSign"') &&
-				!message.includes(invalidBase64)
-			)
-		})
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: hmacKey.toString('base64'),
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'rsaKey',
-					algorithm: 'RS256',
-					key_encoding: 'base64',
-					claims: { iss: 'service@example.com' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow(
-			'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
-		)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: invalidBase64,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'badBase64UrlSecret',
-					algorithm: 'HS256',
-					key_encoding: 'base64url',
-					claims: { aud: 'doordash' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow('HMAC signing key secret is not valid base64url.')
-
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'doorDashSigningSecret',
-					algorithm: 'none',
-					claims: { aud: 'doordash' },
-				} as never,
-				{ env, callerContext },
-			),
-		).rejects.toThrow(/Invalid input for capability "secretJwtSign"/)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
+	const shortHs256Secret = 'too-short-for-hs256'
+	await expect(
+		signWith(Buffer.from(shortHs256Secret).toString('base64'), hs256),
+	).rejects.toSatisfy(
+		rejectsWithoutLeaking(
+			'HMAC signing key for HS256 must be at least 32 bytes.',
+			shortHs256Secret,
+		),
+	)
+	await expect(
+		signWith(hmacKey.toString('utf8'), {
+			...hs256,
+			algorithm: 'HS512',
+			key_encoding: 'utf8',
+		}),
+	).rejects.toThrow('HMAC signing key for HS512 must be at least 64 bytes.')
+	await expect(signWith(invalidBase64, hs256)).rejects.toSatisfy(
+		rejectsWithoutLeaking(
+			'HMAC signing key secret is not valid base64.',
+			invalidBase64,
+		),
+	)
+	await expect(
+		signWith(invalidBase64, { ...hs256, key_encoding: 'hex' } as never),
+	).rejects.toSatisfy(
+		rejectsWithoutLeaking(
+			'Invalid input for capability "secretJwtSign"',
+			invalidBase64,
+		),
+	)
+	await expect(
+		signWith(invalidBase64, { ...hs256, key_encoding: 'base64url' }),
+	).rejects.toThrow('HMAC signing key secret is not valid base64url.')
+	await expect(
+		signWith(hmacKey.toString('base64'), {
+			private_key_secret_name: 'rsaKey',
+			algorithm: 'RS256',
+			key_encoding: 'base64',
+			claims: { iss: 'service@example.com' },
+		}),
+	).rejects.toThrow(
+		'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
+	)
+	await expect(
+		signWith(hmacKey.toString('base64'), {
+			...hs256,
+			algorithm: 'none',
+		} as never),
+	).rejects.toThrow(/Invalid input for capability "secretJwtSign"/)
 })
 
 test('secretJwtSign signs RS, PS, and ES JWTs from PKCS#8 PEM secrets', async () => {
@@ -513,313 +308,175 @@ test('secretJwtSign signs RS, PS, and ES JWTs from PKCS#8 PEM secrets', async ()
 	const p256 = createEcKeyPair('prime256v1')
 	const p384 = createEcKeyPair('secp384r1')
 	const p521 = createEcKeyPair('secp521r1')
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const env = {} as Env
 	const claims = { iss: 'service@example.com', aud: 'example' }
-
-	async function signWithPem(
+	const signWithPem = (
 		privateKey: string,
 		algorithm: 'RS384' | 'RS512' | 'PS256' | 'ES256' | 'ES384' | 'ES512',
-	) {
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
+	) =>
+		signWith(privateKey, {
+			private_key_secret_name: 'signingKey',
+			algorithm,
+			claims,
 		})
-		return jwtSignCapability.handler(
+	const verifyEc = (jwt: string, hash: string, publicKey: string): boolean => {
+		const { data, signature } = jwtParts(jwt)
+		return verify(
+			hash,
+			Buffer.from(data),
+			{ key: publicKey, dsaEncoding: 'ieee-p1363' },
+			signature,
+		)
+	}
+
+	const rs384 = await signWithPem(rsa.privateKey, 'RS384')
+	expect(rs384.algorithm).toBe('RS384')
+	expect(jwtParts(rs384.jwt).header).toMatchObject({ alg: 'RS384' })
+	expect(verifyRsaJwt(rs384.jwt, rsa.publicKey, 'SHA384')).toBe(true)
+	expect(rs384.jwt).not.toContain('PRIVATE KEY')
+	const rs512 = await signWithPem(rsa.privateKey, 'RS512')
+	expect(verifyRsaJwt(rs512.jwt, rsa.publicKey, 'SHA512')).toBe(true)
+
+	const ps256 = await signWithPem(rsa.privateKey, 'PS256')
+	const ps256Parts = jwtParts(ps256.jwt)
+	expect(ps256.algorithm).toBe('PS256')
+	expect(
+		verify(
+			'sha256',
+			Buffer.from(ps256Parts.data),
 			{
-				private_key_secret_name: 'signingKey',
-				algorithm,
-				claims,
+				key: rsa.publicKey,
+				padding: constants.RSA_PKCS1_PSS_PADDING,
+				saltLength: 32,
 			},
-			{ env, callerContext },
-		)
-	}
+			ps256Parts.signature,
+		),
+	).toBe(true)
 
-	try {
-		const rs384 = await signWithPem(rsa.privateKey, 'RS384')
-		const rs384Parts = jwtSigningInput(rs384.jwt)
-		const rs384Verifier = createVerify('RSA-SHA384')
-		rs384Verifier.update(rs384Parts.data)
-		rs384Verifier.end()
-		expect(rs384.algorithm).toBe('RS384')
-		expect(decodeJwtPart(rs384.jwt.split('.')[0] ?? '')).toMatchObject({
-			alg: 'RS384',
-		})
-		expect(rs384Verifier.verify(rsa.publicKey, rs384Parts.signature)).toBe(true)
-		expect(rs384.jwt).not.toContain('PRIVATE KEY')
+	const es256 = await signWithPem(p256.privateKey, 'ES256')
+	expect(es256.algorithm).toBe('ES256')
+	expect(verifyEc(es256.jwt, 'sha256', p256.publicKey)).toBe(true)
+	const es384 = await signWithPem(p384.privateKey, 'ES384')
+	expect(verifyEc(es384.jwt, 'sha384', p384.publicKey)).toBe(true)
+	const es512 = await signWithPem(p521.privateKey, 'ES512')
+	expect(verifyEc(es512.jwt, 'sha512', p521.publicKey)).toBe(true)
 
-		const rs512 = await signWithPem(rsa.privateKey, 'RS512')
-		const rs512Parts = jwtSigningInput(rs512.jwt)
-		const rs512Verifier = createVerify('RSA-SHA512')
-		rs512Verifier.update(rs512Parts.data)
-		rs512Verifier.end()
-		expect(rs512Verifier.verify(rsa.publicKey, rs512Parts.signature)).toBe(true)
-
-		const ps256 = await signWithPem(rsa.privateKey, 'PS256')
-		const ps256Parts = jwtSigningInput(ps256.jwt)
-		expect(ps256.algorithm).toBe('PS256')
-		expect(
-			verify(
-				'sha256',
-				Buffer.from(ps256Parts.data),
-				{
-					key: rsa.publicKey,
-					padding: constants.RSA_PKCS1_PSS_PADDING,
-					saltLength: 32,
-				},
-				ps256Parts.signature,
-			),
-		).toBe(true)
-
-		const es256 = await signWithPem(p256.privateKey, 'ES256')
-		const es256Parts = jwtSigningInput(es256.jwt)
-		expect(es256.algorithm).toBe('ES256')
-		expect(
-			verify(
-				'sha256',
-				Buffer.from(es256Parts.data),
-				{ key: p256.publicKey, dsaEncoding: 'ieee-p1363' },
-				es256Parts.signature,
-			),
-		).toBe(true)
-
-		const es384 = await signWithPem(p384.privateKey, 'ES384')
-		const es384Parts = jwtSigningInput(es384.jwt)
-		expect(
-			verify(
-				'sha384',
-				Buffer.from(es384Parts.data),
-				{ key: p384.publicKey, dsaEncoding: 'ieee-p1363' },
-				es384Parts.signature,
-			),
-		).toBe(true)
-
-		const es512 = await signWithPem(p521.privateKey, 'ES512')
-		const es512Parts = jwtSigningInput(es512.jwt)
-		expect(
-			verify(
-				'sha512',
-				Buffer.from(es512Parts.data),
-				{ key: p521.publicKey, dsaEncoding: 'ieee-p1363' },
-				es512Parts.signature,
-			),
-		).toBe(true)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: p256.privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'signingKey',
-					algorithm: 'ES256',
-					key_encoding: 'utf8',
-					claims,
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow(
-			'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
+	await expect(
+		signWith(p256.privateKey, {
+			private_key_secret_name: 'signingKey',
+			algorithm: 'ES256',
+			key_encoding: 'utf8',
+			claims,
+		}),
+	).rejects.toThrow(
+		'key_encoding is only valid when algorithm is HS256, HS384, or HS512.',
+	)
 })
 
 test('decodeHmacKeyMaterial accepts encodings and rejects invalid input without leaking the key', () => {
 	const hmacKey = Buffer.from('doordash-test-signing-key-32byte')
 	const utf8Secret = 'plain-hmac-secret-32-bytes-long!'
-	expect(
-		Buffer.from(
-			decodeHmacKeyMaterial({
-				secretValue: hmacKey.toString('base64'),
-				encoding: 'base64',
-				algorithm: 'HS256',
-			}),
-		),
-	).toEqual(hmacKey)
-	expect(
-		Buffer.from(
-			decodeHmacKeyMaterial({
-				secretValue: ` ${hmacKey.toString('base64')}\n`,
-				encoding: 'base64',
-				algorithm: 'HS256',
-			}),
-		),
-	).toEqual(hmacKey)
-	expect(
-		Buffer.from(
-			decodeHmacKeyMaterial({
-				secretValue: hmacKey.toString('base64url'),
-				encoding: 'base64url',
-				algorithm: 'HS256',
-			}),
-		),
-	).toEqual(hmacKey)
-	expect(
-		Buffer.from(
-			decodeHmacKeyMaterial({
-				secretValue: utf8Secret,
-				encoding: 'utf8',
-				algorithm: 'HS256',
-			}),
-		),
-	).toEqual(Buffer.from(utf8Secret))
+	const decode = (
+		secretValue: string,
+		encoding: 'base64' | 'base64url' | 'utf8',
+		algorithm: 'HS256' | 'HS384' = 'HS256',
+	) => decodeHmacKeyMaterial({ secretValue, encoding, algorithm })
+
+	const accepted = [
+		[hmacKey.toString('base64'), 'base64', hmacKey],
+		[` ${hmacKey.toString('base64')}\n`, 'base64', hmacKey],
+		[hmacKey.toString('base64url'), 'base64url', hmacKey],
+		[utf8Secret, 'utf8', Buffer.from(utf8Secret)],
+	] as const
+	for (const [secretValue, encoding, expected] of accepted) {
+		expect(Buffer.from(decode(secretValue, encoding))).toEqual(expected)
+	}
 
 	const invalid = '%%%not-valid-base64%%%'
-	expect(() =>
-		decodeHmacKeyMaterial({
-			secretValue: invalid,
-			encoding: 'base64',
-			algorithm: 'HS256',
-		}),
-	).toThrow('HMAC signing key secret is not valid base64.')
-	expect(() =>
-		decodeHmacKeyMaterial({
-			secretValue: invalid,
-			encoding: 'base64url',
-			algorithm: 'HS256',
-		}),
-	).toThrow('HMAC signing key secret is not valid base64url.')
-	expect(() =>
-		decodeHmacKeyMaterial({
-			secretValue: '',
-			encoding: 'utf8',
-			algorithm: 'HS256',
-		}),
-	).toThrow('HMAC signing key secret must be a non-empty string.')
-	expect(() =>
-		decodeHmacKeyMaterial({
-			secretValue: hmacKey.toString('base64'),
-			encoding: 'base64',
-			algorithm: 'HS384',
-		}),
-	).toThrow('HMAC signing key for HS384 must be at least 48 bytes.')
-	try {
-		decodeHmacKeyMaterial({
-			secretValue: invalid,
-			encoding: 'base64',
-			algorithm: 'HS256',
-		})
-		throw new Error('expected decodeHmacKeyMaterial to throw')
-	} catch (error) {
-		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).not.toContain(invalid)
+	const rejected = [
+		[
+			invalid,
+			'base64',
+			'HS256',
+			'HMAC signing key secret is not valid base64.',
+		],
+		[
+			invalid,
+			'base64url',
+			'HS256',
+			'HMAC signing key secret is not valid base64url.',
+		],
+		[
+			'',
+			'utf8',
+			'HS256',
+			'HMAC signing key secret must be a non-empty string.',
+		],
+		[
+			hmacKey.toString('base64'),
+			'base64',
+			'HS384',
+			'HMAC signing key for HS384 must be at least 48 bytes.',
+		],
+	] as const
+	for (const [secretValue, encoding, algorithm, message] of rejected) {
+		expect(() => decode(secretValue, encoding, algorithm)).toThrow(message)
 	}
+	expect(() => decode(invalid, 'base64')).toThrow(
+		expect.objectContaining({
+			message: expect.not.stringContaining(invalid),
+		}),
+	)
 })
 
-test('secretJwtSign accepts opaque {{secret:…}} refs from packageSecrets.get', async () => {
+test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant guests to the package owner', async () => {
 	const { privateKey } = createKeyPair()
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const env = {} as Env
-
-	try {
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
+	const refInput = {
+		private_key_secret_name: '{{secret:serviceAccountKey|scope=user}}',
+		algorithm: 'RS256',
+		claims: { iss: 'service@example.com', iat: 1, exp: 3601 },
+	} as const
+	const signed = await signWith(privateKey, refInput)
+	expect(signed.jwt.split('.')).toHaveLength(3)
+	expect(secretService.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-123',
+			name: 'serviceAccountKey',
 			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
+		}),
+	)
+	expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
 
-		const signed = await jwtSignCapability.handler(
-			{
-				private_key_secret_name: '{{secret:serviceAccountKey|scope=user}}',
-				algorithm: 'RS256',
-				claims: {
-					iss: 'service@example.com',
-					sub: 'user@example.com',
-					aud: 'https://example.com/token',
-					iat: 1,
-					exp: 3601,
-				},
-			},
-			{ env, callerContext },
-		)
-		expect(signed.jwt.split('.')).toHaveLength(3)
-		expect(resolveSecretSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				userId: 'user-123',
-				name: 'serviceAccountKey',
-				scope: 'user',
-			}),
-		)
-		expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
-	} finally {
-		resolveSecretSpy.mockRestore()
-	}
-})
-
-test('secretJwtSign remaps share-grant guests to the package owner stamp', async () => {
-	const { privateKey } = createKeyPair()
-	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const ownerSpy = vi
 		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
 		.mockResolvedValue('owner-user')
-	const accessSpy = vi
-		.spyOn(packageAccess, 'assertPackageCanAccessResolvedSecret')
-		.mockResolvedValue(undefined)
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'guest-user' },
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'shared-pkg',
-			storageId: null,
-		},
-	})
-	const env = { APP_DB: {} } as Env
-
-	try {
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedPackages: [],
-		})
-
-		await jwtSignCapability.handler(
-			{
-				private_key_secret_name: '{{secret:ownerSigningKey|scope=user}}',
-				algorithm: 'RS256',
-				claims: { sub: 'guest@example.com', iat: 1, exp: 3601 },
-			},
-			{ env, callerContext },
-		)
-
-		expect(ownerSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				callerUserId: 'guest-user',
+	vi.spyOn(
+		packageAccess,
+		'assertPackageCanAccessResolvedSecret',
+	).mockResolvedValue(undefined)
+	await signWith(privateKey, refInput, {
+		env: { APP_DB: {} } as Env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: { userId: 'guest-user' },
+			storageContext: {
+				sessionId: null,
+				appId: null,
 				packageId: 'shared-pkg',
-			}),
-		)
-		expect(resolveSecretSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				userId: 'owner-user',
-				name: 'ownerSigningKey',
-				scope: 'user',
-			}),
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-		ownerSpy.mockRestore()
-		accessSpy.mockRestore()
-	}
+				storageId: null,
+			},
+		}),
+	})
+	expect(ownerSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			callerUserId: 'guest-user',
+			packageId: 'shared-pkg',
+		}),
+	)
+	expect(secretService.resolveSecret).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			userId: 'owner-user',
+			name: 'serviceAccountKey',
+			scope: 'user',
+		}),
+	)
 })

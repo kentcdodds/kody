@@ -50,19 +50,14 @@ function createAdminCtx(userId = 'admin-1') {
 	}
 }
 
-function emptyStepResult(input: {
-	runId: string
-	codemodId: string
-	mode: 'scan' | 'dry-run' | 'apply' | 'revert'
-}) {
-	return {
-		runId: input.runId,
-		codemodId: input.codemodId,
-		mode: input.mode,
-		items: [],
-		nextCursor: null,
-		summary: {},
-	}
+const codemodId = '0001-ambient-storage-to-package-storage'
+
+function stepResult(
+	runId: string,
+	mode: 'scan' | 'dry-run' | 'apply' | 'revert',
+	nextCursor: string | null = null,
+) {
+	return { runId, codemodId, mode, items: [], nextCursor, summary: {} }
 }
 
 test('admin package codemod capabilities are fleet-scoped, audited, and role-gated', async () => {
@@ -76,18 +71,13 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	expect(adminPackageCodemodApplyCapability.destructive).toBe(true)
 
 	mockModule.runPackageCodemodStep.mockResolvedValue(
-		emptyStepResult({
-			runId: 'fleet-scan-1',
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-		}),
+		stepResult('fleet-scan-1', 'scan'),
 	)
-	mockModule.logAuditEvent.mockResolvedValue(undefined)
 
 	await expect(
 		adminPackageCodemodScanCapability.handler(
 			{
-				codemodId: '0001-ambient-storage-to-package-storage',
+				codemodId,
 				filters: { userIds: ['user-a'], packageIds: ['pkg-a'] },
 				limit: 5,
 			},
@@ -98,7 +88,7 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 		env: { APP_DB: {} },
 		baseUrl: 'https://heykody.dev',
 		initiatedByUserId: 'admin-1',
-		codemodId: '0001-ambient-storage-to-package-storage',
+		codemodId,
 		mode: 'scan',
 		scope: { kind: 'fleet' },
 		filters: { userIds: ['user-a'], packageIds: ['pkg-a'] },
@@ -115,16 +105,12 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	)
 
 	mockModule.runPackageCodemodStep.mockResolvedValue(
-		emptyStepResult({
-			runId: 'fleet-apply-1',
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'apply',
-		}),
+		stepResult('fleet-apply-1', 'apply'),
 	)
 	await expect(
 		adminPackageCodemodApplyCapability.handler(
 			{
-				codemodId: '0001-ambient-storage-to-package-storage',
+				codemodId,
 				packageIds: ['pkg-canary'],
 			},
 			createAdminCtx(),
@@ -141,18 +127,13 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 			initiatedByUserId: 'admin-1',
 		}),
 	)
-	mockModule.runPackageCodemodStep.mockResolvedValue({
-		...emptyStepResult({
-			runId: 'fleet-apply-1',
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'apply',
-		}),
-		nextCursor: 'cursor-2',
-	})
+	mockModule.runPackageCodemodStep.mockResolvedValue(
+		stepResult('fleet-apply-1', 'apply', 'cursor-2'),
+	)
 	await expect(
 		adminPackageCodemodApplyCapability.handler(
 			{
-				codemodId: '0001-ambient-storage-to-package-storage',
+				codemodId,
 				runId: 'fleet-apply-1',
 				cursor: 'cursor-1',
 			},
@@ -176,7 +157,7 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 
 	mockModule.getPackageCodemodRunById.mockResolvedValue({
 		id: 'fleet-apply-1',
-		codemodId: '0001-ambient-storage-to-package-storage',
+		codemodId,
 		mode: 'apply',
 		scopeUserId: null,
 		initiatedByUserId: 'admin-1',
@@ -187,11 +168,7 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 		updatedAt: '2026-01-01T00:00:00.000Z',
 	})
 	mockModule.runPackageCodemodStep.mockResolvedValue(
-		emptyStepResult({
-			runId: 'fleet-revert-1',
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'revert',
-		}),
+		stepResult('fleet-revert-1', 'revert'),
 	)
 	await expect(
 		adminPackageCodemodRevertCapability.handler(
@@ -201,7 +178,7 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	).resolves.toMatchObject({ runId: 'fleet-revert-1', mode: 'revert' })
 	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
 		expect.objectContaining({
-			codemodId: '0001-ambient-storage-to-package-storage',
+			codemodId,
 			mode: 'revert',
 			scope: { kind: 'fleet' },
 			revertOfRunId: 'fleet-apply-1',

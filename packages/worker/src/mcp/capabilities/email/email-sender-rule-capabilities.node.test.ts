@@ -29,24 +29,18 @@ const { emailSenderRuleSetCapability } =
 const { emailSenderRuleDeleteCapability } =
 	await import('./email-sender-rule-delete.ts')
 
-function createUsersDb(emailVerifiedAt: string | null) {
+function createEnv() {
 	return {
-		prepare: () => ({
-			bind: () => ({
-				first: async () => ({ email_verified_at: emailVerifiedAt }),
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({
+						email_verified_at: '2026-01-01T00:00:00.000Z',
+					}),
+				}),
 			}),
-		}),
-	} as unknown as D1Database
-}
-
-function createEnv(options: { emailVerifiedAt?: string | null } = {}) {
-	return {
-		APP_DB: createUsersDb(
-			options.emailVerifiedAt === undefined
-				? '2026-01-01T00:00:00.000Z'
-				: options.emailVerifiedAt,
-		),
-	} as Env
+		},
+	} as unknown as Env
 }
 
 function createUserContext(userId = 'user-1') {

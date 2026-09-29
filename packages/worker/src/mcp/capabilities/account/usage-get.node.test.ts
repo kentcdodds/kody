@@ -1,127 +1,111 @@
+import { DatabaseSync } from 'node:sqlite'
+import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { usageGetCapability } from './usage-get.ts'
 
-function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
-	const meter = createInMemoryUserMeterEnv()
-	const runLog = createInMemoryRunLogUsageEnv()
-	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(env.APP_DB)
+const email = 'usage-get@example.com'
+
+function createUsageEnv(input: {
+	plan: string
+	stripePlan?: string
+	entitlementLadder?: 'legacy'
+	packageCount?: number
+	uniqueWorkerDays?: number
+}) {
+	const stableUserId = testStableUserIdFromEmail(email)
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(
+		sqlite,
+		new URL('../../../../migrations/', import.meta.url),
+	)
+	applyAllMigrations(
+		sqlite,
+		new URL('../../../../../jobs-worker/migrations/', import.meta.url),
+	)
+	sqlite
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, stripe_plan, entitlement_ladder)
+			 VALUES ('usage', ?, 'hash', ?, ?, ?, ?)`,
+		)
+		.run(
+			email,
+			stableUserId,
+			input.plan,
+			input.stripePlan ?? null,
+			input.entitlementLadder ?? 'public',
+		)
+	for (let index = 0; index < (input.packageCount ?? 0); index += 1) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+				 VALUES (?, ?, ?, ?, '', ?)`,
+			)
+			.run(
+				`pkg-${index}`,
+				stableUserId,
+				`pkg-${index}`,
+				`pkg-${index}`,
+				`src-${index}`,
+			)
+	}
+	if (input.uniqueWorkerDays) {
+		sqlite
+			.prepare(
+				`INSERT INTO usage_rollups (user_id, metric, month, event_count)
+				 VALUES (?, 'dynamic_worker_day', ?, ?)`,
+			)
+			.run(stableUserId, utcMonthKey(new Date()), input.uniqueWorkerDays)
+	}
+	const db = createD1FromSqlite(sqlite)
 	return {
-		...env,
-		...meter.env,
-		...runLog.env,
-		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
+		APP_DB: db,
+		...createInMemoryUserMeterEnv().env,
+		...createInMemoryRunLogUsageEnv().env,
+		REPO_SESSION_INDEX:
+			createInMemoryRepoSessionIndexEnv(db).REPO_SESSION_INDEX,
 		MAILBOX: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ countMessages: async () => ({ total: 0 }) }),
 		},
-		meter,
-		runLog,
-	}
+	} as unknown as Env
 }
 
-function createUsageTestDb(input: {
-	email: string
-	plan: string
-	stripePlan?: string | null
-	entitlementLadder?: 'public' | 'legacy'
-	stripeCustomerId?: string | null
-	packageCount?: number
-	uniqueWorkerDays?: number
-	durableObjectRowsRead?: number
-}) {
-	const stableUserId = testStableUserIdFromEmail(input.email)
+async function readUsage(input: Parameters<typeof createUsageEnv>[0]) {
+	const result = await usageGetCapability.handler(
+		{},
+		{
+			env: createUsageEnv(input),
+			callerContext: createMcpCallerContext({
+				baseUrl: 'https://example.com',
+				user: {
+					userId: testStableUserIdFromEmail(email),
+					email,
+					displayName: 'Usage',
+				},
+			}),
+		},
+	)
+	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 	return {
-		stableUserId,
-		db: {
-			prepare(query: string) {
-				const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
-					bind(...params: Array<unknown>) {
-						return {
-							async first<T>() {
-								if (normalized.includes('stripe_customer_id')) {
-									return {
-										id: 1,
-										stripe_customer_id: input.stripeCustomerId ?? null,
-									} as T
-								}
-								if (
-									normalized.includes('from users') &&
-									normalized.includes('email')
-								) {
-									return {
-										plan: input.plan,
-										stripe_plan: input.stripePlan ?? null,
-										entitlement_ladder: input.entitlementLadder ?? 'public',
-									} as T
-								}
-								if (normalized.includes('from saved_packages')) {
-									return { count: input.packageCount ?? 0 } as T
-								}
-								if (normalized.includes('select 1 as present from users')) {
-									return { present: 1 } as T
-								}
-								if (
-									normalized.includes('count(*)') ||
-									normalized.includes('sum(')
-								) {
-									return { count: 0, total: 0, bytes: 0 } as T
-								}
-								void params
-								return null
-							},
-							async all() {
-								if (normalized.includes('from usage_rollups')) {
-									const results = []
-									if ((input.uniqueWorkerDays ?? 0) > 0) {
-										results.push({
-											metric: 'dynamic_worker_day',
-											event_count: input.uniqueWorkerDays,
-										})
-									}
-									if ((input.durableObjectRowsRead ?? 0) > 0) {
-										results.push({
-											metric: 'durable_object_rows_read',
-											event_count: input.durableObjectRowsRead,
-										})
-									}
-									return { results }
-								}
-								return { results: [] }
-							},
-						}
-					},
-				}
-			},
-		} as unknown as D1Database,
+		result,
+		resource: (name: string) =>
+			result.resources.find((row) => row.resource === name),
 	}
 }
 
 test('usageGet returns self-scoped entitlement snapshot', async () => {
-	const email = 'usage-get@example.com'
-	const userId = testStableUserIdFromEmail(email)
-	const { db } = createUsageTestDb({
-		email,
-		plan: 'pro',
-		packageCount: 1,
-	})
-	const meterEnv = withUsageEnv({ APP_DB: db })
-	const env = meterEnv as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: { userId, email, displayName: 'Usage' },
-	})
-
 	await expect(
 		usageGetCapability.handler(
 			{},
 			{
-				env,
+				env: createUsageEnv({ plan: 'pro' }),
 				callerContext: createMcpCallerContext({
 					baseUrl: 'https://example.com',
 				}),
@@ -129,91 +113,57 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 		),
 	).rejects.toThrow(/Authenticated MCP user/)
 
-	const result = await usageGetCapability.handler({}, { env, callerContext })
+	const { result, resource } = await readUsage({ plan: 'pro', packageCount: 1 })
 	expect(result.plan).toBe('pro')
-	const workerCompute = result.resources.find(
-		(row) => row.resource === 'unique_worker_days',
-	)
-	expect(workerCompute?.label).toBe('Worker compute')
-	expect(workerCompute?.group).toBe('monthly')
-	expect(workerCompute?.current).toBe(0)
-	expect(workerCompute?.limit).toBe(2_000)
-	expect(workerCompute?.overEightyPercent).toBe(false)
-	const rowsRead = result.resources.find(
-		(row) => row.resource === 'durable_object_rows_read',
-	)
-	expect(rowsRead?.label).toBe('Rows read')
-	expect(rowsRead?.group).toBe('monthly')
-	expect(rowsRead?.current).toBe(0)
-	expect(rowsRead?.limit).toBe(20_000_000_000)
-	expect(rowsRead?.overEightyPercent).toBe(false)
-	const saved = result.resources.find(
-		(row) => row.resource === 'saved_packages',
-	)
-	expect(saved?.current).toBe(1)
-	expect(saved?.limit).toBeGreaterThan(0)
-	const execute = result.resources.find(
-		(row) => row.resource === 'execute_calls_per_day',
-	)
-	expect(execute?.limit).toBe(1_500)
-	expect(execute?.week).toEqual({
+	expect(resource('unique_worker_days')).toMatchObject({
+		label: 'Worker compute',
+		group: 'monthly',
+		current: 0,
+		limit: 2_000,
+		overEightyPercent: false,
+	})
+	expect(resource('durable_object_rows_read')).toMatchObject({
+		label: 'Rows read',
+		group: 'monthly',
+		current: 0,
+		limit: 20_000_000_000,
+		overEightyPercent: false,
+	})
+	expect(resource('saved_packages')?.current).toBe(1)
+	expect(resource('saved_packages')?.limit).toBeGreaterThan(0)
+	expect(resource('execute_calls_per_day')?.limit).toBe(1_500)
+	expect(resource('execute_calls_per_day')?.week).toEqual({
 		current: 0,
 		limit: 4_000,
 		percent: 0,
 		overEightyPercent: false,
 	})
-	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
 test('usageGet reports legacy Standard ceilings for grandfathered accounts', async () => {
-	const email = 'legacy-usage-get@example.com'
-	const userId = testStableUserIdFromEmail(email)
-	const { db } = createUsageTestDb({
-		email,
+	const { result, resource } = await readUsage({
 		plan: 'free',
 		stripePlan: 'standard',
 		entitlementLadder: 'legacy',
 	})
-	const env = withUsageEnv({ APP_DB: db }) as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: { userId, email, displayName: 'Legacy' },
-	})
-
-	const result = await usageGetCapability.handler({}, { env, callerContext })
 	expect(result.plan).toBe('standard')
-	const execute = result.resources.find(
-		(row) => row.resource === 'execute_calls_per_day',
-	)
-	expect(execute?.limit).toBe(500)
-	expect(execute?.week).toBeUndefined()
-	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+	expect(resource('execute_calls_per_day')?.limit).toBe(500)
+	expect(resource('execute_calls_per_day')?.week).toBeUndefined()
 })
 
 test('usageGet lists Free Worker compute as informational, never as a warning', async () => {
-	const email = 'worker-compute-usage-get@example.com'
-	const userId = testStableUserIdFromEmail(email)
-	const { db } = createUsageTestDb({
-		email,
+	const { result, resource } = await readUsage({
 		plan: 'free',
 		uniqueWorkerDays: 517,
 	})
-	const env = withUsageEnv({ APP_DB: db }) as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: { userId, email, displayName: 'WorkerCompute' },
+	expect(resource('unique_worker_days')).toMatchObject({
+		label: 'Worker compute',
+		current: 517,
+		limit: 50,
+		howToReduce: expect.stringContaining(
+			'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.',
+		),
 	})
-
-	const result = await usageGetCapability.handler({}, { env, callerContext })
-	const workerCompute = result.resources.find(
-		(row) => row.resource === 'unique_worker_days',
-	)
-	expect(workerCompute?.label).toBe('Worker compute')
-	expect(workerCompute?.current).toBe(517)
-	expect(workerCompute?.limit).toBe(50)
-	expect(workerCompute?.howToReduce).toContain(
-		'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.',
-	)
 	expect(
 		result.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(false)

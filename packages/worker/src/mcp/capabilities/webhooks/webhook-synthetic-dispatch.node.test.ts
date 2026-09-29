@@ -131,53 +131,41 @@ test('webhookSyntheticDispatch returns synthetic run metadata and rejects runtim
 	)
 
 	mocks.dispatchSyntheticWebhookForUser.mockClear()
-
-	await expect(
-		webhookSyntheticDispatchCapability.handler(
-			{
-				kodyId: 'demo',
-				webhookName: 'hook',
-				params: { ok: true },
-			},
-			createCtx({
+	const refusedCallers = [
+		{
+			ctx: createCtx({
 				storageContext: {
 					packageId: 'pkg-1',
 					appId: null,
 					storageId: 'package:pkg-1',
 				},
-			}) as never,
-		),
-	).rejects.toThrow(McpCallerError)
-
-	await expect(
-		webhookSyntheticDispatchCapability.handler(
-			{
-				kodyId: 'demo',
-				webhookName: 'hook',
-				params: { ok: true },
+			}),
+			error: McpCallerError,
+		},
+		{
+			ctx: createCtx({ executionOrigin: 'background' }),
+			error: /unavailable from package runtime contexts/,
+		},
+		{
+			ctx: {
+				env: { APP_DB: {} } as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://heykody.dev',
+					executionOrigin: 'interactive',
+					user: null,
+					storageContext: null,
+				}),
 			},
-			createCtx({ executionOrigin: 'background' }) as never,
-		),
-	).rejects.toThrow(/unavailable from package runtime contexts/)
-
-	const unsignedCtx = {
-		env: { APP_DB: {} } as Env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			executionOrigin: 'interactive',
-			user: null,
-			storageContext: null,
-		}),
+			error: /Authenticated MCP user is required/,
+		},
+	]
+	for (const { ctx, error } of refusedCallers) {
+		await expect(
+			webhookSyntheticDispatchCapability.handler(
+				{ kodyId: 'demo', webhookName: 'hook', params: { ok: true } },
+				ctx as never,
+			),
+		).rejects.toThrow(error)
 	}
-	await expect(
-		webhookSyntheticDispatchCapability.handler(
-			{
-				kodyId: 'demo',
-				webhookName: 'hook',
-				params: { ok: true },
-			},
-			unsignedCtx as never,
-		),
-	).rejects.toThrow(/Authenticated MCP user is required/)
 	expect(mocks.dispatchSyntheticWebhookForUser).not.toHaveBeenCalled()
 })

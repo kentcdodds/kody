@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	parsePackageAccessRequiredBatchMessage,
@@ -55,13 +55,13 @@ const {
 	resolvePackageMountedSecret,
 } = await import('./package-access.ts')
 
+const env = { APP_DB: {} as D1Database } as Env
 const savedPackage = {
 	id: 'pkg-1',
 	kodyId: 'discord-gateway',
 	name: '@kentcdodds/discord-gateway',
 	sourceId: 'source-1',
 }
-
 const communityFork = {
 	id: 'fork-1',
 	listingId: 'listing-1',
@@ -74,7 +74,11 @@ const communityFork = {
 	adoptedAt: null,
 	adoptionNote: null,
 }
-
+const adoptedFork = {
+	...communityFork,
+	adoptedAt: '2026-07-01T00:00:00.000Z',
+	adoptionNote: 'Reviewed source; trusted for my use.',
+}
 const userSecretResolved = {
 	found: true as const,
 	value: 'secret',
@@ -82,12 +86,13 @@ const userSecretResolved = {
 	allowedHosts: [] as Array<string>,
 	allowedPackages: [] as Array<string>,
 }
-
-beforeEach(() => {
-	mockModule.getSavedPackageById.mockReset()
-	mockModule.findAcceptedPackageShareGrant.mockReset()
-	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
-})
+const grantedToPkg1 = { ...userSecretResolved, allowedPackages: ['pkg-1'] }
+const discordMount = {
+	discordBotToken: {
+		name: 'discordBotTokenKentPersonalAutomation',
+		scope: 'user' as const,
+	},
+}
 
 function accessInput(
 	overrides: Partial<
@@ -98,42 +103,78 @@ function accessInput(
 		env: { APP_DB: {} as D1Database },
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
-		storageContext: {
-			sessionId: null,
-			packageId: 'pkg-1',
-		},
+		storageContext: { sessionId: null, packageId: 'pkg-1' },
 		secretName: 'userToken',
 		resolved: userSecretResolved,
 		...overrides,
 	}
 }
 
-function expectAccessDenied(error: unknown, secretName = 'userToken') {
+function expectAccessDenied(error: unknown) {
 	expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 	expect(error).toBeInstanceOf(McpCallerError)
 	expect(parsePackageAccessRequiredMessage((error as Error).message)).toEqual({
-		secretName,
+		secretName: 'userToken',
 		packageName: 'discord-gateway',
+	})
+	return true
+}
+
+function lookups(pkg: unknown, fork: unknown) {
+	mockModule.getSavedPackageById.mockResolvedValueOnce(pkg)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(fork)
+}
+
+function clearLookups() {
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.getCommunityForkByForkedPackageId.mockClear()
+}
+
+function mountManifest(
+	name: string,
+	kodyId: string,
+	secretMounts: Record<string, { name: string; scope: 'user' | 'package' }>,
+) {
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name,
+			exports: { '.': './src/index.ts' },
+			kody: { id: kodyId, description: kodyId, secretMounts },
+		},
 	})
 }
 
+function mountCaller(
+	storagePackageId: string | null,
+	options: { userId?: string | null; storageId?: string } = {},
+) {
+	const userId = options.userId === undefined ? 'user-1' : options.userId
+	return {
+		baseUrl: 'https://example.com',
+		user: userId
+			? { userId, email: `${userId}@example.com`, displayName: userId }
+			: undefined,
+		repoContext: null,
+		storageContext: {
+			sessionId: null,
+			packageId: storagePackageId,
+			storageId: options.storageId ?? storagePackageId ?? 'pkg-1',
+		},
+	}
+}
+
 test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
-	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
 				secretName: 'packageToken',
-				resolved: {
-					...userSecretResolved,
-					scope: 'package',
-				},
+				resolved: { ...userSecretResolved, scope: 'package' },
 			}),
 		),
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
+	lookups(savedPackage, null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
@@ -142,66 +183,39 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 		{ forkerUserId: 'user-1', forkedPackageId: 'pkg-1' },
 	)
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(
-		communityFork,
-	)
+	lookups(savedPackage, communityFork)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput()),
-	).rejects.toSatisfy((error: unknown) => {
-		expectAccessDenied(error)
-		return true
-	})
+	).rejects.toSatisfy(expectAccessDenied)
 
-	mockModule.getSavedPackageById.mockClear()
-	mockModule.getCommunityForkByForkedPackageId.mockClear()
+	clearLookups()
 	await expect(
 		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				resolved: {
-					...userSecretResolved,
-					allowedPackages: ['pkg-1'],
-				},
-			}),
+			accessInput({ resolved: grantedToPkg1 }),
 		),
 	).resolves.toBeUndefined()
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
-		...communityFork,
-		adoptedAt: '2026-07-01T00:00:00.000Z',
-		adoptionNote: 'Reviewed source; trusted for my use.',
-	})
+	lookups(savedPackage, adoptedFork)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
 
 	// Mutate always needs an allowed-packages grant (self-authored and adopted
 	// forks alike); the fork lookup is skipped for mutate.
-	mockModule.getSavedPackageById.mockClear()
-	mockModule.getCommunityForkByForkedPackageId.mockClear()
+	clearLookups()
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput({ intent: 'mutate' })),
-	).rejects.toSatisfy((error: unknown) => {
-		expectAccessDenied(error)
-		return true
-	})
+	).rejects.toSatisfy(expectAccessDenied)
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageById.mockClear()
 	await expect(
 		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				intent: 'mutate',
-				resolved: {
-					...userSecretResolved,
-					allowedPackages: ['pkg-1'],
-				},
-			}),
+			accessInput({ intent: 'mutate', resolved: grantedToPkg1 }),
 		),
 	).resolves.toBeUndefined()
 	// Grant short-circuits before package/fork lookups.
@@ -211,68 +225,45 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 })
 
 test('assertPackageCanAccessResolvedSecret denies implicit access when allowImplicitUserSecretAccess is false', async () => {
-	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
-
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({ allowImplicitUserSecretAccess: false }),
+		),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
+				resolved: grantedToPkg1,
 				allowImplicitUserSecretAccess: false,
 			}),
 		),
-	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
-
-	await assertPackageCanAccessResolvedSecret(
-		accessInput({
-			resolved: {
-				...userSecretResolved,
-				allowedPackages: ['pkg-1'],
-			},
-			allowImplicitUserSecretAccess: false,
-		}),
-	)
+	).resolves.toBeUndefined()
 })
 
 test('package secret access authorizes the stamp package, not the importing run', async () => {
-	mockModule.getSavedPackageById.mockResolvedValueOnce({
-		...savedPackage,
-		id: 'pkg-2',
-		kodyId: 'importer',
-		name: '@user/importer',
-	})
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
-		...communityFork,
-		forkedPackageId: 'pkg-2',
-		targetKodyId: 'importer',
-	})
+	lookups(
+		{
+			...savedPackage,
+			id: 'pkg-2',
+			kodyId: 'importer',
+			name: '@user/importer',
+		},
+		{ ...communityFork, forkedPackageId: 'pkg-2', targetKodyId: 'importer' },
+	)
+	const importerRun = { sessionId: null, packageId: 'pkg-2' }
 	await expect(
 		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				storageContext: {
-					sessionId: null,
-					packageId: 'pkg-2',
-				},
-				resolved: {
-					...userSecretResolved,
-					allowedPackages: ['pkg-1'],
-				},
-			}),
+			accessInput({ storageContext: importerRun, resolved: grantedToPkg1 }),
 		),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
-
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
-				storageContext: {
-					sessionId: null,
-					packageId: 'pkg-2',
-				},
+				storageContext: importerRun,
 				authorityPackageId: 'pkg-1',
-				resolved: {
-					...userSecretResolved,
-					allowedPackages: ['pkg-1'],
-				},
+				resolved: grantedToPkg1,
 			}),
 		),
 	).resolves.toBeUndefined()
@@ -280,16 +271,13 @@ test('package secret access authorizes the stamp package, not the importing run'
 
 test('package secret access does not resolve platform packages the caller does not own', async () => {
 	const platformPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
-	const platformAccess = accessInput({
-		storageContext: {
-			sessionId: null,
-			packageId: platformPackageId,
-		},
-	})
-
 	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
 	await expect(
-		assertPackageCanAccessResolvedSecret(platformAccess),
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				storageContext: { sessionId: null, packageId: platformPackageId },
+			}),
+		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 		expect((error as Error).message).toBe(
@@ -300,9 +288,7 @@ test('package secret access does not resolve platform packages the caller does n
 	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
+	lookups(savedPackage, null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
@@ -312,14 +298,7 @@ test('package secret access does not resolve platform packages the caller does n
 test('assertCanSetSecrets fails closed for mutate grants before any provider work', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
-	mockModule.resolveSecret.mockResolvedValue({
-		found: true,
-		value: 'secret',
-		scope: 'user',
-		allowedHosts: [],
-		allowedPackages: [],
-	})
-
+	mockModule.resolveSecret.mockResolvedValue(userSecretResolved)
 	await expect(
 		assertCanSetSecrets({
 			env: {
@@ -332,191 +311,75 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 				{ name: 'xRefreshToken', scope: 'user' },
 				{ name: 'xAccessToken', scope: 'user' },
 			],
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-			},
+			storageContext: { sessionId: null, packageId: 'pkg-1' },
 		}),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
 	expect(mockModule.resolveSecret).toHaveBeenCalled()
 })
 
 test('resolvePackageMountedSecret uses the stamped package id even when the run is another package', async () => {
-	const runtimeError =
-		'Package secret access requires a matching server-side package runtime context.'
-	const baseInput = {
-		env: {} as Env,
-		packageId: 'pkg-1',
-		alias: 'discordBotToken',
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-			},
-			repoContext: null,
-		},
-	}
-
+	const mount = { packageId: 'pkg-1', alias: 'discordBotToken' }
 	await expect(
 		resolvePackageMountedSecret({
-			...baseInput,
+			env: {} as Env,
+			...mount,
 			packageId: '',
-			callerContext: {
-				...baseInput.callerContext,
-				storageContext: {
-					sessionId: null,
-					packageId: null,
-					storageId: 'pkg-1',
-				},
-			},
+			callerContext: mountCaller(null),
 		}),
-	).rejects.toThrow(runtimeError)
-
+	).rejects.toThrow(
+		'Package secret access requires a matching server-side package runtime context.',
+	)
 	await expect(
 		resolvePackageMountedSecret({
-			...baseInput,
-			callerContext: {
-				...baseInput.callerContext,
-				user: undefined,
-				storageContext: {
-					sessionId: null,
-					packageId: 'pkg-1',
-					storageId: 'pkg-1',
-				},
-			},
+			env: {} as Env,
+			...mount,
+			callerContext: mountCaller('pkg-1', { userId: null }),
 		}),
 	).rejects.toThrow(
 		'Package secret access requires an authenticated package caller context.',
 	)
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway',
-				secretMounts: {
-					discordBotToken: {
-						name: 'discordBotTokenKentPersonalAutomation',
-						scope: 'user',
-					},
-				},
-			},
-		},
-	})
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'bot-token',
-		scope: 'user',
-		allowedPackages: ['pkg-1'],
-	})
-
-	await expect(
-		resolvePackageMountedSecret({
-			env: { APP_DB: {} as D1Database } as Env,
-			packageId: 'pkg-1',
-			alias: 'discordBotToken',
-			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-				repoContext: null,
-				storageContext: {
-					sessionId: null,
-					packageId: 'pkg-1',
-					storageId: 'pkg-1',
-				},
-			},
-		}),
-	).resolves.toMatchObject({
-		alias: 'discordBotToken',
-		name: 'discordBotTokenKentPersonalAutomation',
-		ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
-		scope: 'user',
-		packageId: 'pkg-1',
-		kodyId: 'discord-gateway',
-	})
-
-	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'user-1',
-			name: 'discordBotTokenKentPersonalAutomation',
+	for (const runPackageId of ['pkg-1', 'pkg-2']) {
+		mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+		mountManifest(
+			'@kentcdodds/discord-gateway',
+			'discord-gateway',
+			discordMount,
+		)
+		mockModule.resolveSecret.mockResolvedValueOnce({
+			found: true,
+			value: 'bot-token',
 			scope: 'user',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: 'pkg-1',
-				storageId: 'pkg-1',
-			},
-		}),
-	)
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway',
-				secretMounts: {
-					discordBotToken: {
-						name: 'discordBotTokenKentPersonalAutomation',
-						scope: 'user',
-					},
-				},
-			},
-		},
-	})
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'bot-token',
-		scope: 'user',
-		allowedPackages: ['pkg-1'],
-	})
-	await expect(
-		resolvePackageMountedSecret({
-			env: { APP_DB: {} as D1Database } as Env,
-			packageId: 'pkg-1',
+			allowedPackages: ['pkg-1'],
+		})
+		await expect(
+			resolvePackageMountedSecret({
+				env,
+				...mount,
+				callerContext: mountCaller(runPackageId),
+			}),
+		).resolves.toMatchObject({
 			alias: 'discordBotToken',
-			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-				},
-				repoContext: null,
+			name: 'discordBotTokenKentPersonalAutomation',
+			ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
+			scope: 'user',
+			packageId: 'pkg-1',
+			kodyId: 'discord-gateway',
+		})
+		expect(mockModule.resolveSecret).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				name: 'discordBotTokenKentPersonalAutomation',
+				scope: 'user',
 				storageContext: {
 					sessionId: null,
-					packageId: 'pkg-2',
-					storageId: 'pkg-2',
+					appId: null,
+					packageId: 'pkg-1',
+					storageId: runPackageId,
 				},
-			},
-		}),
-	).resolves.toMatchObject({
-		alias: 'discordBotToken',
-		ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
-		packageId: 'pkg-1',
-	})
-	expect(mockModule.resolveSecret).toHaveBeenLastCalledWith(
-		expect.objectContaining({
-			storageContext: expect.objectContaining({
-				packageId: 'pkg-1',
 			}),
-		}),
-	)
+		)
+	}
 })
 
 test('package approval helpers parse structured messages and skip trusted packages', async () => {
@@ -536,103 +399,57 @@ test('package approval helpers parse structured messages and skip trusted packag
 		packageName: 'discord-gateway',
 	})
 
+	const batchNames = ['discordBotToken', 'xAccessToken']
 	const batchMessage = buildPackageApprovalErrorForMounts({
 		baseUrl: 'https://example.com',
-		entries: [
-			{
-				secretName: 'discordBotToken',
-				packageId: 'pkg-1',
-				kodyId: 'release',
-				approvalUrl:
-					'https://example.com/account/secrets/user/discordBotToken?package_id=pkg-1',
-			},
-			{
-				secretName: 'xAccessToken',
-				packageId: 'pkg-1',
-				kodyId: 'release',
-				approvalUrl:
-					'https://example.com/account/secrets/user/xAccessToken?package_id=pkg-1',
-			},
-		],
+		entries: batchNames.map((secretName) => ({
+			secretName,
+			packageId: 'pkg-1',
+			kodyId: 'release',
+			approvalUrl: `https://example.com/account/secrets/user/${secretName}?package_id=pkg-1`,
+		})),
 	})
 	const batchParsed = parsePackageAccessRequiredBatchMessage(batchMessage ?? '')
-	expect(batchParsed?.entries).toEqual([
-		expect.objectContaining({
-			secretName: 'discordBotToken',
-			packageId: 'pkg-1',
-			kodyId: 'release',
-		}),
-		expect.objectContaining({
-			secretName: 'xAccessToken',
-			packageId: 'pkg-1',
-			kodyId: 'release',
-		}),
-	])
+	expect(batchParsed?.entries).toEqual(
+		batchNames.map((secretName) =>
+			expect.objectContaining({
+				secretName,
+				packageId: 'pkg-1',
+				kodyId: 'release',
+			}),
+		),
+	)
 	expect(batchParsed?.bulkApprovalUrl).toContain('/account/secrets/approve?')
 
-	const mounts = {
-		discordBotToken: {
-			name: 'discordBotTokenKentPersonalAutomation',
-			scope: 'user' as const,
+	const approvalsInput = {
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		mounts: discordMount,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
 		},
 	}
-	const storageContext = {
-		sessionId: null,
-		appId: null,
-		packageId: 'pkg-1',
-		storageId: 'pkg-1',
+	for (const trustedFork of [null, adoptedFork]) {
+		lookups(savedPackage, trustedFork)
+		await expect(findMissingPackageApprovals(approvalsInput)).resolves.toEqual(
+			[],
+		)
 	}
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
-	await expect(
-		findMissingPackageApprovals({
-			env: { APP_DB: {} as D1Database } as Env,
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			mounts,
-			storageContext,
-		}),
-	).resolves.toEqual([])
 	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
-		...communityFork,
-		adoptedAt: '2026-07-01T00:00:00.000Z',
-		adoptionNote: 'Reviewed source; trusted for my use.',
-	})
-	await expect(
-		findMissingPackageApprovals({
-			env: { APP_DB: {} as D1Database } as Env,
-			baseUrl: 'https://example.com',
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			mounts,
-			storageContext,
-		}),
-	).resolves.toEqual([])
-	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
-
-	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(
-		communityFork,
-	)
+	lookups(savedPackage, communityFork)
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'bot-token',
 		scope: 'user',
 		allowedPackages: [],
 	})
-	const entries = await findMissingPackageApprovals({
-		env: { APP_DB: {} as D1Database } as Env,
-		baseUrl: 'https://example.com',
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		mounts,
-		storageContext,
-	})
+	const entries = await findMissingPackageApprovals(approvalsInput)
 	expect(entries).toHaveLength(1)
 	expect(entries[0]).toMatchObject({
 		secretName: 'discordBotTokenKentPersonalAutomation',
@@ -646,12 +463,7 @@ test('shared package code cannot use the guest user secrets even when allowed_pa
 	mockModule.isShareGrantedForeignPackage.mockResolvedValueOnce(true)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				resolved: {
-					...userSecretResolved,
-					allowedPackages: ['pkg-1'],
-				},
-			}),
+			accessInput({ resolved: grantedToPkg1 }),
 		),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
 })
@@ -665,18 +477,8 @@ test('shared package mounts resolve secrets as the owner, not the guest', async 
 		ownerUserId: 'owner-1',
 		packageId: 'pkg-1',
 	})
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name: '@alice/shared-notes',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'shared-notes',
-				description: 'notes',
-				secretMounts: {
-					notesToken: { name: 'ownerNotesToken', scope: 'package' },
-				},
-			},
-		},
+	mountManifest('@alice/shared-notes', 'shared-notes', {
+		notesToken: { name: 'ownerNotesToken', scope: 'package' },
 	})
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
@@ -685,23 +487,10 @@ test('shared package mounts resolve secrets as the owner, not the guest', async 
 		allowedPackages: [],
 	})
 	const mounted = await resolvePackageMountedSecret({
-		env: { APP_DB: {} as D1Database } as Env,
+		env,
 		packageId: 'pkg-1',
 		alias: 'notesToken',
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'guest-1',
-				email: 'guest@example.com',
-				displayName: 'Guest',
-			},
-			repoContext: null,
-			storageContext: {
-				sessionId: null,
-				packageId: 'pkg-1',
-				storageId: 'pkg-1',
-			},
-		},
+		callerContext: mountCaller('pkg-1', { userId: 'guest-1' }),
 	})
 	expect(mounted).toMatchObject({
 		alias: 'notesToken',
