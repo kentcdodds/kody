@@ -47,6 +47,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).not.toContain('data-testid="onboarding-agent-wajo"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-cue"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-openmuse"')
+	expect(picker).not.toContain('data-testid="onboarding-agent-dots"')
 	expect(picker).toContain('href="/onboarding/step-1/chatgpt"')
 	expect(picker).toContain('href="/onboarding/step-1/claude-desktop"')
 	expect(picker).toContain('href="/onboarding/step-1/gemini"')
