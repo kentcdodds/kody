@@ -5,6 +5,7 @@ import type * as SearchRateLimit from '#worker/search-rate-limit.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	SEARCH_DEADLINE_MS,
+	SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
 	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 
@@ -58,6 +59,7 @@ const mockModule = vi.hoisted(() => ({
 	runPackageRetrievers: vi.fn(async () => ({ results: [], warnings: [] })),
 	searchCommunityListings: vi.fn(async () => []),
 	deriveWaitingItemsForStableUser: vi.fn(async () => []),
+	buildOnboardingSearchNotice: vi.fn(async () => null),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -144,6 +146,11 @@ vi.mock('#worker/community/service.ts', () => ({
 vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
 	deriveWaitingItemsForStableUser: (...args: Array<unknown>) =>
 		mockModule.deriveWaitingItemsForStableUser(...args),
+}))
+
+vi.mock('./search-onboarding-notice.ts', () => ({
+	buildOnboardingSearchNotice: (...args: Array<unknown>) =>
+		mockModule.buildOnboardingSearchNotice(...args),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
@@ -460,6 +467,50 @@ test('ranked search prepends ## Waiting for block items, skips domain browse, an
 		expect(result.waiting).toBeUndefined()
 		expect(result.matches.length).toBeGreaterThan(0)
 		expect(result.phaseTimings?.waitingItemsTimedOut).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('ranked search returns results without waiting the full onboarding notice when it outlives its budget', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.buildOnboardingSearchNotice.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+	try {
+		const pending = handler({
+			query: 'search docs',
+			conversationId: 'conv-onboarding-budget',
+		})
+		await vi.advanceTimersByTimeAsync(SEARCH_ONBOARDING_NOTICE_BUDGET_MS)
+		const response = await pending
+		expect(response.isError).toBeUndefined()
+		const result = response.structuredContent.result as {
+			warnings?: Array<string>
+			matches: Array<unknown>
+			phaseTimings?: {
+				onboardingNoticeTimedOut?: boolean
+				onboardingNoticeMs?: number
+			}
+		}
+		expect(result.matches.length).toBeGreaterThan(0)
+		expect(result.warnings ?? []).not.toContainEqual(
+			expect.stringMatching(/onboarding/i),
+		)
+		expect(result.phaseTimings?.onboardingNoticeTimedOut).toBe(true)
+		expect(result.phaseTimings?.onboardingNoticeMs).toBeLessThanOrEqual(
+			SEARCH_ONBOARDING_NOTICE_BUDGET_MS + 50,
+		)
 	} finally {
 		vi.useRealTimers()
 	}

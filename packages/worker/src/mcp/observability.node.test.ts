@@ -316,12 +316,28 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				'Repo path "src/../exports/self-test.ts" is not allowed: paths cannot contain ".." or ".git" segments.',
 			),
 		),
+		// Repo session unified-diff line limit (KODY-8E). Stable phrase and
+		// raw `@cloudflare/shell` EFBIG wording both stay off Sentry.
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error(
+				'"assets/extracted.txt" has 10,001 lines, which is over the 10,000-line line limit for repo session unified diffs. Repo session edits cannot emit unified diffs for files over that limit. Split the file into separate source files that each stay within the limit, or store large blobs outside the repo (for example Cloudflare R2, Amazon S3, Dropbox, or Google Drive).',
+			),
+		),
+		handlerFailure(
+			'repoEditFiles',
+			'repo',
+			'Error',
+			new Error('EFBIG: content too large for diff (max 10000 lines)'),
+		),
 	]
 	const payloads = captureMcpEvents(() => {
 		for (const event of callerFailures) logMcpEvent(event)
 	})
 
-	expect(payloads).toHaveLength(22)
+	expect(payloads).toHaveLength(24)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

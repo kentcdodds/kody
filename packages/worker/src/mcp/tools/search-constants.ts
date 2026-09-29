@@ -53,6 +53,12 @@ export const packageExportCandidateMinScore = 0.45
  */
 export const SEARCH_WAITING_ITEMS_BUDGET_MS = 1_500
 /**
+ * Bound wait for the post-list onboarding courtesy notice. It is a nudge, not
+ * the answer, so a slow checklist probe skips the notice instead of delaying
+ * results (and tipping dense-account searches over SEARCH_DEADLINE_MS).
+ */
+export const SEARCH_ONBOARDING_NOTICE_BUDGET_MS = 1_500
+/**
  * Hard ceiling for one `search` call. MCP hosts commonly time out at ~30s
  * (error -32001); failing first with a clear message beats a silent hang
  * that invites retries while the abandoned search keeps running.

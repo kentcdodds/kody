@@ -144,6 +144,7 @@ export type SearchPhaseTimings = {
 	memoryEnrichmentFailed?: boolean
 	memoryAcknowledgementFailed?: boolean
 	waitingItemsTimedOut?: boolean
+	onboardingNoticeTimedOut?: boolean
 	/**
 	 * Exclusive wall-clock tiles. These do not overlap, so summing them and
 	 * comparing to `durationMs` is how an operator reconciles the published

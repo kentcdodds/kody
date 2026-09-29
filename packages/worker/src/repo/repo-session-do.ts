@@ -141,9 +141,13 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import {
+	buildRepoDiffTooLargeMessage,
 	buildRepoLargeFileMessage,
+	isRepoDiffTooLargeMessage,
 	maxRepoSourceFileBytes,
+	maxRepoSourceFileDiffLines,
 	measureRepoSourceFileBytes,
+	measureRepoSourceFileLines,
 } from './large-file-policy.ts'
 import {
 	deleteStorageBucketInventory,
@@ -1240,29 +1244,92 @@ class RepoSessionBase extends DurableObject<Env> {
 				}),
 				async (path) => (await this.workspace.readFile(path)) ?? null,
 			)
+			// Track prior contents the same way `@cloudflare/shell`
+			// `applyTextEdits` does: each changed edit diffs previous → next,
+			// and a write earlier in the batch updates previous for later
+			// same-path edits. Gate both sides against the shell line ceiling
+			// before applyEditPlan so agents never see raw EFBIG.
+			const previousContentByPath = new Map<string, string>()
 			for (const plannedEdit of plan.edits) {
-				if (!plannedEdit.changed) continue
-				const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
-				if (byteLength > maxRepoSourceFileBytes) {
-					throw new Error(
-						buildRepoLargeFileMessage({
-							path: toExternalRepoPath(
-								plannedEdit.path,
-								repoSessionWorkspacePrefix,
-							),
-							byteLength,
-						}),
-					)
+				const externalPath = toExternalRepoPath(
+					plannedEdit.path,
+					repoSessionWorkspacePrefix,
+				)
+				const previousContent = previousContentByPath.has(plannedEdit.path)
+					? (previousContentByPath.get(plannedEdit.path) ?? '')
+					: ((await this.workspace.readFile(plannedEdit.path)) ?? '')
+				if (plannedEdit.changed) {
+					const previousLineCount = measureRepoSourceFileLines(previousContent)
+					const nextLineCount = measureRepoSourceFileLines(plannedEdit.content)
+					if (
+						previousLineCount > maxRepoSourceFileDiffLines ||
+						nextLineCount > maxRepoSourceFileDiffLines
+					) {
+						throw new Error(
+							buildRepoDiffTooLargeMessage({
+								path: externalPath,
+								lineCount: Math.max(previousLineCount, nextLineCount),
+							}),
+						)
+					}
+					const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
+					if (byteLength > maxRepoSourceFileBytes) {
+						throw new Error(
+							buildRepoLargeFileMessage({
+								path: externalPath,
+								byteLength,
+							}),
+						)
+					}
 				}
+				previousContentByPath.set(plannedEdit.path, plannedEdit.content)
 			}
-			const result = await this.state.applyEditPlan(plan, {
-				dryRun: input.dryRun,
-				rollbackOnError: input.rollbackOnError,
-			})
+			let appliedPlan: {
+				dryRun: boolean
+				totalChanged: number
+				edits: Array<{
+					path: string
+					changed: boolean
+					content: string
+					diff: string
+				}>
+			}
+			try {
+				appliedPlan = await this.state.applyEditPlan(plan, {
+					dryRun: input.dryRun,
+					rollbackOnError: input.rollbackOnError,
+				})
+			} catch (error) {
+				// Defense in depth: remap any shell EFBIG that slipped past
+				// preflight (or arrived wrapped in StateBatchOperationError).
+				const message = error instanceof Error ? error.message : String(error)
+				if (isRepoDiffTooLargeMessage(message) && message.includes('EFBIG')) {
+					const oversized = plan.edits.find((edit) => {
+						if (!edit.changed) return false
+						return (
+							measureRepoSourceFileLines(edit.content) >
+							maxRepoSourceFileDiffLines
+						)
+					})
+					const path = oversized
+						? toExternalRepoPath(oversized.path, repoSessionWorkspacePrefix)
+						: toExternalRepoPath(
+								plan.edits.find((edit) => edit.changed)?.path ??
+									plan.edits[0]?.path ??
+									'file',
+								repoSessionWorkspacePrefix,
+							)
+					const lineCount = oversized
+						? measureRepoSourceFileLines(oversized.content)
+						: maxRepoSourceFileDiffLines + 1
+					throw new Error(buildRepoDiffTooLargeMessage({ path, lineCount }))
+				}
+				throw error
+			}
 			contentResult = {
-				dryRun: result.dryRun,
-				totalChanged: result.totalChanged,
-				edits: result.edits.map((edit) => ({
+				dryRun: appliedPlan.dryRun,
+				totalChanged: appliedPlan.totalChanged,
+				edits: appliedPlan.edits.map((edit) => ({
 					path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
 					changed: edit.changed,
 					content: edit.content,

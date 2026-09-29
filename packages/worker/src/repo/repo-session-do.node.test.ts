@@ -238,7 +238,8 @@ vi.mock('#worker/storage-buckets/service.ts', () => ({
 const { RepoSession } = await import('./repo-session-do.ts')
 const { deleteRepoSession, insertRepoSession } =
 	await import('./repo-sessions.ts')
-const { maxRepoSourceFileBytes } = await import('./large-file-policy.ts')
+const { maxRepoSourceFileBytes, maxRepoSourceFileDiffLines } =
+	await import('./large-file-policy.ts')
 
 type RepoSessionInstance = InstanceType<typeof RepoSession>
 
@@ -851,6 +852,85 @@ test('sessionCommit rejects empty commit messages', async () => {
 	expect(mockModule.git.commit).not.toHaveBeenCalled()
 })
 
+function lastWorkspaceBackend() {
+	return vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)?.value as {
+		applyEditPlan: ReturnType<typeof vi.fn>
+	}
+}
+
+test('applyEdits rejects a write over the unified-diff line limit before applyEditPlan', async () => {
+	setCommonSessionFixtures()
+
+	await expect(
+		repoSession().applyEdits({
+			...session,
+			edits: [
+				{
+					kind: 'write',
+					path: 'assets/extracted.txt',
+					content: `${'line\n'.repeat(maxRepoSourceFileDiffLines)}last`,
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"assets\/extracted\.txt".*line limit for repo session unified diffs/s,
+	)
+	expect(lastWorkspaceBackend().applyEditPlan).not.toHaveBeenCalled()
+})
+
+test('applyEdits rejects replace on an existing file over the unified-diff line limit', async () => {
+	setCommonSessionFixtures()
+	seedWorkspace(
+		{
+			'assets/huge.txt': `${'old\n'.repeat(maxRepoSourceFileDiffLines)}tail`,
+		},
+		{ glob: false },
+	)
+
+	await expect(
+		repoSession().applyEdits({
+			...session,
+			edits: [
+				{
+					kind: 'replace',
+					path: 'assets/huge.txt',
+					search: 'tail',
+					replacement: 'next',
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"assets\/huge\.txt".*line limit for repo session unified diffs/s,
+	)
+	expect(lastWorkspaceBackend().applyEditPlan).not.toHaveBeenCalled()
+})
+
+test('applyEdits remaps raw Cloudflare shell EFBIG from applyEditPlan', async () => {
+	setCommonSessionFixtures()
+	vi.mocked(createWorkspaceStateBackend).mockImplementationOnce(() => ({
+		planEdits: vi.fn(),
+		applyEditPlan: vi.fn(async () => {
+			throw new Error('EFBIG: content too large for diff (max 10000 lines)')
+		}),
+		walkTree: vi.fn(),
+	}))
+
+	await expect(
+		repoSession().applyEdits({
+			...session,
+			edits: [
+				{
+					kind: 'write',
+					path: 'src/small.ts',
+					content: 'export const ok = true\n',
+				},
+			],
+		}),
+	).rejects.toThrow(
+		/"src\/small\.ts".*line limit for repo session unified diffs/s,
+	)
+})
+
 test('applyEdits composes multiple replace edits to the same file instead of keeping only the last', async () => {
 	setCommonSessionFixtures()
 	const lines = ['accountId', 'value', 'extra']
@@ -882,9 +962,7 @@ test('applyEdits composes multiple replace edits to the same file instead of kee
 		'const extra = accountId',
 		'',
 	].join('\n')
-	const backend = vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)
-		?.value as { applyEditPlan: ReturnType<typeof vi.fn> }
-	expect(backend.applyEditPlan).toHaveBeenCalledWith(
+	expect(lastWorkspaceBackend().applyEditPlan).toHaveBeenCalledWith(
 		expect.objectContaining({
 			totalChanged: 3,
 			edits: expect.arrayContaining([
