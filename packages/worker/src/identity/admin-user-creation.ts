@@ -18,6 +18,7 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import { maybeGrantSignupWelcomeCredits } from '#worker/billing/credit-wallet.ts'
 
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'
@@ -201,6 +202,12 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			error instanceof Error ? error.message : 'Unable to create setup link.',
 		)
 	}
+
+	await maybeGrantSignupWelcomeCredits({
+		db: input.db,
+		userId: stableUserId,
+		now,
+	})
 
 	return {
 		userId,

@@ -319,6 +319,16 @@ the calling admin, without a Stripe charge. Each grant writes a ledger row with
 audit event. `adminCreditWalletGet` and `GET /admin/users/credits.json` read the
 balance and recent ledger.
 
+**Signup welcome credits.** Every newly created person account (password signup,
+OAuth signup, admin-created) receives a one-shot house grant of
+`signupWelcomeCreditCents` ($5) via `grantSignupWelcomeCredits` /
+`maybeGrantSignupWelcomeCredits`. The ledger row is `admin_grant` with note
+`Welcome credits`, null `granted_by_user_id`, and deterministic id
+`signup_welcome:{stableUserId}` so retries never double-grant. Platform accounts
+are not granted. The balance is held until the account is credit-eligible Pro
+(include → credits → stop); this is not a Free prepaid wallet product and does
+not unlock spend on Free. Existing accounts are not backfilled by this path.
+
 **Admin eligibility.** To give an account the wallet without a Stripe checkout,
 set its manual plan to `pro` (`adminUserUpdate`), fund it (`adminCreditGrant`),
 and call `adminCreditEligibilitySet` with the target (`stableUserId`, `email`,

@@ -58,6 +58,7 @@ import {
 } from '#universal/referral-cookie.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { maybeGrantSignupWelcomeCredits } from '#worker/billing/credit-wallet.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 
 const authModes = ['login', 'signup'] as const
@@ -545,6 +546,10 @@ export function createAuthHandler(env: Env) {
 					},
 					source: 'signup',
 					attribution: signupAttribution,
+				})
+				await maybeGrantSignupWelcomeCredits({
+					db: env.APP_DB,
+					userId: record.stableUserId,
 				})
 				try {
 					await attributeReferralAtSignup({

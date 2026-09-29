@@ -5,7 +5,9 @@
  * D1 batch as the balance update, so the ledger always explains the
  * balance. Top-ups and auto-refills are idempotent on `stripe_reference`
  * (unique); admin grants record who granted, the amount, the recipient,
- * when, and an optional note. Debits live in `credit-debits.ts`.
+ * when, and an optional note. Signup welcome credits reuse `admin_grant`
+ * with a deterministic entry id (`signup_welcome:{userId}`) so retries
+ * never double-grant. Debits live in `credit-debits.ts`.
  */
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
@@ -18,6 +20,9 @@ import {
 	defaultCreditAutoRefillSettings,
 	defaultCreditNotifySettings,
 	microUsdPerCent,
+	signupWelcomeCreditCents,
+	signupWelcomeCreditLedgerId,
+	signupWelcomeCreditNote,
 	type CreditAutoRefillSettings,
 	type CreditDebitMeter,
 	type CreditLedgerEntryKind,
@@ -333,6 +338,13 @@ export type CreditAdminGrantResult = {
 	createdAt: string
 }
 
+export type SignupWelcomeCreditResult = {
+	applied: boolean
+	entryId: string
+	balanceMicroUsd: number
+	createdAt: string
+}
+
 /**
  * House-funded credit grant by an admin (including to themselves). No
  * Stripe charge. The ledger row is the audit record: granted_by, amount,
@@ -389,6 +401,94 @@ export async function grantAdminCredits(input: {
 		entryId,
 		balanceMicroUsd: wallet.balanceMicroUsd,
 		createdAt: nowIso,
+	}
+}
+
+/**
+ * One-shot $5 welcome credits for a newly created person account. Uses the
+ * same `admin_grant` ledger path as house grants, with a deterministic entry
+ * id so retries / re-login never double-grant. `granted_by_user_id` is null
+ * (platform signup, not an admin actor). Does not unlock spend — Free and
+ * non-eligible accounts hold the balance until credit-eligible Pro.
+ */
+export async function grantSignupWelcomeCredits(input: {
+	db: D1Database
+	userId: string
+	now?: Date
+}): Promise<SignupWelcomeCreditResult> {
+	const now = input.now ?? new Date()
+	const nowIso = now.toISOString()
+	const amountMicroUsd = signupWelcomeCreditCents * microUsdPerCent
+	const entryId = signupWelcomeCreditLedgerId(input.userId)
+	await forgiveBeforeFunding({
+		db: input.db,
+		userId: input.userId,
+		now,
+	})
+	try {
+		await input.db.batch([
+			input.db
+				.prepare(
+					`INSERT OR IGNORE INTO credit_wallets (user_id, created_at, updated_at)
+					 VALUES (?, ?, ?)`,
+				)
+				.bind(input.userId, nowIso, nowIso),
+			input.db
+				.prepare(
+					`INSERT INTO credit_ledger_entries
+						(id, user_id, kind, amount_micro_usd, month, granted_by_user_id, note, created_at)
+					 VALUES (?, ?, 'admin_grant', ?, ?, NULL, ?, ?)`,
+				)
+				.bind(
+					entryId,
+					input.userId,
+					amountMicroUsd,
+					utcMonthKey(now),
+					signupWelcomeCreditNote,
+					nowIso,
+				),
+			input.db
+				.prepare(
+					`UPDATE credit_wallets
+					 SET balance_micro_usd = balance_micro_usd + ?, updated_at = ?
+					 WHERE user_id = ?`,
+				)
+				.bind(amountMicroUsd, nowIso, input.userId),
+		])
+	} catch (error) {
+		if (!isUniqueConstraintError(error)) throw error
+		const wallet = await readCreditWallet(input.db, input.userId)
+		return {
+			applied: false,
+			entryId,
+			balanceMicroUsd: wallet.balanceMicroUsd,
+			createdAt: nowIso,
+		}
+	}
+	const wallet = await readCreditWallet(input.db, input.userId)
+	return {
+		applied: true,
+		entryId,
+		balanceMicroUsd: wallet.balanceMicroUsd,
+		createdAt: nowIso,
+	}
+}
+
+/**
+ * Best-effort wrapper for account-creation sites. Signup must not fail when
+ * the welcome grant cannot run (fake test DBs, transient D1 errors); the
+ * deterministic ledger id still makes a later retry safe.
+ */
+export async function maybeGrantSignupWelcomeCredits(input: {
+	db: D1Database
+	userId: string
+	now?: Date
+}): Promise<SignupWelcomeCreditResult | null> {
+	try {
+		return await grantSignupWelcomeCredits(input)
+	} catch (error) {
+		console.warn('signup-welcome-credits-failed', error)
+		return null
 	}
 }
 
@@ -533,7 +633,9 @@ function describeLedgerEntry(entry: CreditLedgerEntry): string {
 		case 'auto_refill':
 			return 'Auto-refill'
 		case 'admin_grant':
-			return 'Credits granted'
+			return entry.note === signupWelcomeCreditNote
+				? signupWelcomeCreditNote
+				: 'Credits granted'
 		case 'debit': {
 			const label =
 				entry.meter && entry.meter in computeOverageWarningResourceLabels

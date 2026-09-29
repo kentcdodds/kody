@@ -6,10 +6,24 @@ const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
 }))
 
+const welcomeCreditMocks = vi.hoisted(() => ({
+	maybeGrantSignupWelcomeCredits: vi.fn(async () => ({
+		applied: true,
+		entryId: 'signup_welcome:test',
+		balanceMicroUsd: 5_000_000,
+		createdAt: '2026-09-29T00:00:00.000Z',
+	})),
+}))
+
 vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
 		lifecycleMocks.scheduleUserCreatedEvent(...args),
 	scheduleUserDeletedEvent: vi.fn(),
+}))
+
+vi.mock('#worker/billing/credit-wallet.ts', () => ({
+	maybeGrantSignupWelcomeCredits: (...args: Array<unknown>) =>
+		welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
 }))
 
 const { createAuthHandler } = await import('#app/handlers/auth.ts')
@@ -504,6 +518,12 @@ test('password signup schedules user.created with first-touch attribution and pe
 			landingPath: null,
 			referrer: null,
 		},
+	})
+	expect(
+		welcomeCreditMocks.maybeGrantSignupWelcomeCredits,
+	).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: await createStableUserIdFromEmail(plainEmail),
 	})
 
 	const email = 'attributed@example.com'

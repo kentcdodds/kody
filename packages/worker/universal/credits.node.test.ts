@@ -7,6 +7,9 @@ import {
 	formatEstimatedCreditMicroUsd,
 	formatMicroUsd,
 	microUsdPerCent,
+	signupWelcomeCreditCents,
+	signupWelcomeCreditLedgerId,
+	signupWelcomeCreditNote,
 	validateCreditAdminGrantCents,
 	validateCreditAutoRefillSettings,
 	validateCreditTopUpCents,
@@ -44,6 +47,9 @@ test('debit rates price cumulative units exactly', () => {
 test('top-up and admin grant amounts are bounded whole cents', () => {
 	expect(validateCreditTopUpCents(1_000)).toEqual({ ok: true, cents: 1_000 })
 	expect(validateCreditAdminGrantCents(1)).toEqual({ ok: true, cents: 1 })
+	expect(signupWelcomeCreditCents).toBe(500)
+	expect(signupWelcomeCreditNote).toBe('Welcome credits')
+	expect(signupWelcomeCreditLedgerId('abc')).toBe('signup_welcome:abc')
 	expect(
 		[499, 50_001, 10.5, '1000'].filter(
 			(cents) => validateCreditTopUpCents(cents).ok,
