@@ -1,6 +1,6 @@
 import { type Handle } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
-import { afterEach, beforeEach, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 import { type DocDetailLoaderData } from '#universal/loader-data.ts'
 import { AppLoaderDataProvider } from './loader-data-context.tsx'
 import {
@@ -10,18 +10,6 @@ import {
 } from './navigation-data.ts'
 import { createRouteData, renderRoutePendingStatus } from './route-data.tsx'
 
-// The fallback fetch only queues in a browser; stand in for `document` so
-// the helper takes the client path.
-const previousDocument = globalThis.document
-beforeEach(() => {
-	clearPreloadedNavigationData()
-	globalThis.document = {} as unknown as Document
-})
-afterEach(() => {
-	clearPreloadedNavigationData()
-	globalThis.document = previousDocument
-})
-
 function createDoc(slug: string): DocDetailLoaderData {
 	return {
 		ok: true,
@@ -30,14 +18,31 @@ function createDoc(slug: string): DocDetailLoaderData {
 		title: slug,
 		summary: '',
 		body: `# ${slug}`,
-		category: 'guide',
-		audience: 'humans',
-	} as DocDetailLoaderData
+		category: 'platform',
+		audience: 'everyone',
+		image: null,
+		imageAlt: null,
+		ogImage: null,
+		provider: null,
+		lastVerified: null,
+	}
 }
+
+const readySnapshot = (slug: string) => ({
+	kind: 'ready',
+	data: createDoc(slug),
+	stale: false,
+	error: null,
+})
 
 type QueuedTask = (signal: AbortSignal) => unknown
 
 function createStubHandle() {
+	// The fallback fetch only queues in a browser; stand in for `document` so
+	// the helper takes the client path.
+	const previousDocument = globalThis.document
+	clearPreloadedNavigationData()
+	globalThis.document = {} as unknown as Document
 	const queuedTasks: Array<QueuedTask> = []
 	let updateCount = 0
 	const handle = {
@@ -68,6 +73,10 @@ function createStubHandle() {
 			for (const task of tasks) await task(signal)
 		},
 		getUpdateCount: () => updateCount,
+		[Symbol.dispose]() {
+			clearPreloadedNavigationData()
+			globalThis.document = previousDocument
+		},
 	}
 }
 
@@ -82,7 +91,8 @@ function createDeferred<T>() {
 }
 
 test('preloaded navigation data replaces the previous payload in one render and is never refetched', async () => {
-	const { handle, queuedTasks, flushTasks } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, queuedTasks, flushTasks } = stub
 	const loads: Array<string> = []
 	const docData = createRouteData({
 		key: 'docDetail',
@@ -94,12 +104,7 @@ test('preloaded navigation data replaces the previous payload in one render and 
 
 	setPreloadedNavigationData('/docs/memory', { docDetail: createDoc('memory') })
 	let snapshot = docData.read(handle, '/docs/memory')
-	expect(snapshot).toEqual({
-		kind: 'ready',
-		data: createDoc('memory'),
-		stale: false,
-		error: null,
-	})
+	expect(snapshot).toEqual(readySnapshot('memory'))
 	// The consume helper schedules one corrective render; run it. That render
 	// finds nothing to consume and must not queue a fetch.
 	await flushTasks()
@@ -112,12 +117,7 @@ test('preloaded navigation data replaces the previous payload in one render and 
 		docDetail: createDoc('secrets'),
 	})
 	snapshot = docData.read(handle, '/docs/secrets')
-	expect(snapshot).toEqual({
-		kind: 'ready',
-		data: createDoc('secrets'),
-		stale: false,
-		error: null,
-	})
+	expect(snapshot).toEqual(readySnapshot('secrets'))
 	await flushTasks()
 	snapshot = docData.read(handle, '/docs/secrets')
 	expect(snapshot.kind).toBe('ready')
@@ -126,7 +126,8 @@ test('preloaded navigation data replaces the previous payload in one render and 
 })
 
 test('a commit without preloaded data keeps the previous payload on screen (stale + pending) until the fallback fetch lands', async () => {
-	const { handle, queuedTasks, flushTasks, getUpdateCount } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, queuedTasks, flushTasks, getUpdateCount } = stub
 	const deferred = createDeferred<DocDetailLoaderData | null>()
 	const docData = createRouteData({
 		key: 'docDetail',
@@ -156,16 +157,12 @@ test('a commit without preloaded data keeps the previous payload on screen (stal
 	// Exactly one render for the applied result.
 	expect(getUpdateCount()).toBe(updatesBeforeFetch + 1)
 	const ready = docData.read(handle, '/docs/secrets')
-	expect(ready).toEqual({
-		kind: 'ready',
-		data: createDoc('secrets'),
-		stale: false,
-		error: null,
-	})
+	expect(ready).toEqual(readySnapshot('secrets'))
 })
 
 test('fallback fetch outcomes: not-found, error (latched), and stale refresh', async () => {
-	const { handle, queuedTasks, flushTasks } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, queuedTasks, flushTasks } = stub
 	let nextResult: () => Promise<DocDetailLoaderData | null> = () =>
 		Promise.resolve(null)
 	const docData = createRouteData({
@@ -219,7 +216,8 @@ test('fallback fetch outcomes: not-found, error (latched), and stale refresh', a
 })
 
 test('an aborted fallback fetch releases the latch and schedules the render that re-queues it', async () => {
-	const { handle, queuedTasks, flushTasks, getUpdateCount } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, queuedTasks, flushTasks, getUpdateCount } = stub
 	const docData = createRouteData({
 		key: 'docDetail',
 		load: (_href, signal) =>
@@ -244,7 +242,8 @@ test('an aborted fallback fetch releases the latch and schedules the render that
 })
 
 test('late completions for a location the user already left are dropped', async () => {
-	const { handle, flushTasks, getUpdateCount } = createStubHandle()
+	using stub = createStubHandle()
+	const { handle, flushTasks, getUpdateCount } = stub
 	const deferred = createDeferred<DocDetailLoaderData | null>()
 	const docData = createRouteData({
 		key: 'docDetail',
@@ -262,12 +261,9 @@ test('late completions for a location the user already left are dropped', async 
 	await flushing
 	// No update for the abandoned location, and the current one is untouched.
 	expect(getUpdateCount()).toBe(0)
-	expect(docData.read(handle, '/docs/secrets')).toEqual({
-		kind: 'ready',
-		data: createDoc('secrets'),
-		stale: false,
-		error: null,
-	})
+	expect(docData.read(handle, '/docs/secrets')).toEqual(
+		readySnapshot('secrets'),
+	)
 })
 
 test('pending status is a visually hidden live region', async () => {

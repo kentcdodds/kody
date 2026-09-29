@@ -15,16 +15,20 @@ import {
 const now = new Date('2026-09-27T12:00:00.000Z')
 
 test('debit rates price cumulative units exactly', () => {
-	expect(creditDebitCostMicroUsd('unique_worker_days', 1)).toBe(4_000)
-	expect(creditDebitCostMicroUsd('unique_worker_days', 250)).toBe(1_000_000)
-	expect(creditDebitCostMicroUsd('durable_object_rows_read', 1_000_000)).toBe(
-		2_000,
-	)
-	expect(creditDebitCostMicroUsd('durable_object_rows_read', 499)).toBe(0)
-	expect(creditDebitCostMicroUsd('durable_object_rows_read', 500)).toBe(1)
-	for (const junk of [0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
-		expect(creditDebitCostMicroUsd('unique_worker_days', junk)).toBe(0)
-	}
+	const rates: Array<[Parameters<typeof creditDebitCostMicroUsd>, number]> = [
+		[['unique_worker_days', 1], 4_000],
+		[['unique_worker_days', 250], 1_000_000],
+		[['durable_object_rows_read', 1_000_000], 2_000],
+		[['durable_object_rows_read', 499], 0],
+		[['durable_object_rows_read', 500], 1],
+		[['unique_worker_days', 0], 0],
+		[['unique_worker_days', -10], 0],
+		[['unique_worker_days', Number.NaN], 0],
+		[['unique_worker_days', Number.POSITIVE_INFINITY], 0],
+	]
+	expect(
+		rates.map(([args]) => [args, creditDebitCostMicroUsd(...args)]),
+	).toEqual(rates)
 	// Hourly increments sum to the cumulative cost with no drift.
 	let accounted = 0
 	let charged = 0
@@ -39,14 +43,17 @@ test('debit rates price cumulative units exactly', () => {
 
 test('top-up and admin grant amounts are bounded whole cents', () => {
 	expect(validateCreditTopUpCents(1_000)).toEqual({ ok: true, cents: 1_000 })
-	expect(validateCreditTopUpCents(499).ok).toBe(false)
-	expect(validateCreditTopUpCents(50_001).ok).toBe(false)
-	expect(validateCreditTopUpCents(10.5).ok).toBe(false)
-	expect(validateCreditTopUpCents('1000').ok).toBe(false)
 	expect(validateCreditAdminGrantCents(1)).toEqual({ ok: true, cents: 1 })
-	expect(validateCreditAdminGrantCents(0).ok).toBe(false)
-	expect(validateCreditAdminGrantCents(-500).ok).toBe(false)
-	expect(validateCreditAdminGrantCents(100_001).ok).toBe(false)
+	expect(
+		[499, 50_001, 10.5, '1000'].filter(
+			(cents) => validateCreditTopUpCents(cents).ok,
+		),
+	).toEqual([])
+	expect(
+		[0, -500, 100_001].filter(
+			(cents) => validateCreditAdminGrantCents(cents).ok,
+		),
+	).toEqual([])
 })
 
 test('auto-refill is off by default and needs a $5+ threshold, amount, and cap to turn on', () => {
@@ -97,98 +104,69 @@ test('auto-refill guards: disabled, incomplete, above threshold, cap, card, and 
 		lastFailedAt: null,
 		now,
 	}
-	expect(decideCreditAutoRefill(base)).toEqual({
-		action: 'charge',
-		amountCents: 2_500,
-	})
+	type Input = Parameters<typeof decideCreditAutoRefill>[0]
+	const charge = { action: 'charge', amountCents: 2_500 }
+	const skip = (reason: string) => ({ action: 'skip', reason })
+	const cases: Array<[Partial<Input>, unknown]> = [
+		[{}, charge],
+		[{ balanceMicroUsd: -1_000_000 }, charge],
+		[{ settings: { ...settings, enabled: false } }, skip('disabled')],
+		[
+			{ settings: { ...settings, monthlyCapCents: null } },
+			skip('incomplete_settings'),
+		],
+		[
+			{ settings: { ...settings, thresholdCents: null } },
+			skip('incomplete_settings'),
+		],
+		[{ balanceMicroUsd: 501 * microUsdPerCent }, skip('above_threshold')],
+		[{ refilledThisMonthCents: 2_501 }, { action: 'cap_reached' }],
+		[{ refilledThisMonthCents: 2_500 }, charge],
+		[{ hasPaymentMethod: false }, skip('no_payment_method')],
+		[{ lastFailedAt: '2026-09-27T01:00:00.000Z' }, skip('recent_failure')],
+		[{ lastFailedAt: '2026-09-26T11:00:00.000Z' }, charge],
+	]
 	expect(
-		decideCreditAutoRefill({ ...base, balanceMicroUsd: -1_000_000 }),
-	).toEqual({ action: 'charge', amountCents: 2_500 })
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			settings: { ...settings, enabled: false },
-		}),
-	).toEqual({ action: 'skip', reason: 'disabled' })
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			settings: { ...settings, monthlyCapCents: null },
-		}),
-	).toEqual({ action: 'skip', reason: 'incomplete_settings' })
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			settings: { ...settings, thresholdCents: null },
-		}),
-	).toEqual({ action: 'skip', reason: 'incomplete_settings' })
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			balanceMicroUsd: 501 * microUsdPerCent,
-		}),
-	).toEqual({ action: 'skip', reason: 'above_threshold' })
-	expect(
-		decideCreditAutoRefill({ ...base, refilledThisMonthCents: 2_501 }),
-	).toEqual({ action: 'cap_reached' })
-	expect(
-		decideCreditAutoRefill({ ...base, refilledThisMonthCents: 2_500 }),
-	).toEqual({ action: 'charge', amountCents: 2_500 })
-	expect(decideCreditAutoRefill({ ...base, hasPaymentMethod: false })).toEqual({
-		action: 'skip',
-		reason: 'no_payment_method',
-	})
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			lastFailedAt: '2026-09-27T01:00:00.000Z',
-		}),
-	).toEqual({ action: 'skip', reason: 'recent_failure' })
-	expect(
-		decideCreditAutoRefill({
-			...base,
-			lastFailedAt: '2026-09-26T11:00:00.000Z',
-		}),
-	).toEqual({ action: 'charge', amountCents: 2_500 })
+		cases.map(([overrides]) => [
+			overrides,
+			decideCreditAutoRefill({ ...base, ...overrides }),
+		]),
+	).toEqual(cases)
 })
 
 test('low-balance notice fires once on crossing to $5 and only while auto-refill is off', () => {
 	const five = 500 * microUsdPerCent
+	const cases: Array<[number, number, boolean, boolean]> = [
+		// [previous, next, autoRefillEnabled, crossed]
+		[five + 1, five, false, true],
+		[five, 0, false, false],
+		[five * 3, 0, true, false],
+	]
 	expect(
-		crossedCreditLowBalance({
-			previousBalanceMicroUsd: five + 1,
-			nextBalanceMicroUsd: five,
-			autoRefillEnabled: false,
-		}),
-	).toBe(true)
-	expect(
-		crossedCreditLowBalance({
-			previousBalanceMicroUsd: five,
-			nextBalanceMicroUsd: 0,
-			autoRefillEnabled: false,
-		}),
-	).toBe(false)
-	expect(
-		crossedCreditLowBalance({
-			previousBalanceMicroUsd: five * 3,
-			nextBalanceMicroUsd: 0,
-			autoRefillEnabled: true,
-		}),
-	).toBe(false)
+		cases.filter(
+			([
+				previousBalanceMicroUsd,
+				nextBalanceMicroUsd,
+				autoRefillEnabled,
+				want,
+			]) =>
+				crossedCreditLowBalance({
+					previousBalanceMicroUsd,
+					nextBalanceMicroUsd,
+					autoRefillEnabled,
+				}) !== want,
+		),
+	).toEqual([])
 })
 
-test('money formatting rounds balances toward zero to the cent', () => {
-	expect(formatCents(1_234_567)).toBe('$12,345.67')
-	expect(formatCents(-250)).toBe('−$2.50')
-	expect(formatMicroUsd(12_349_999)).toBe('$12.34')
-	expect(formatMicroUsd(-4_000)).toBe('$0.00')
-	expect(formatMicroUsd(-1_234_000)).toBe('−$1.23')
-})
-
-test('estimated credit formatting keeps sub-cent debit rates visible', () => {
-	expect(formatEstimatedCreditMicroUsd(0)).toBe('$0.00')
-	expect(formatEstimatedCreditMicroUsd(4_000)).toBe('$0.004')
-	expect(formatEstimatedCreditMicroUsd(2_000)).toBe('$0.002')
-	expect(formatEstimatedCreditMicroUsd(6_580_000)).toBe('$6.58')
-	expect(formatEstimatedCreditMicroUsd(-4_000)).toBe('−$0.004')
+test('money formatting rounds balances toward zero to the cent and keeps sub-cent debit rates visible', () => {
+	expect([1_234_567, -250].map(formatCents)).toEqual(['$12,345.67', '−$2.50'])
+	expect([12_349_999, -4_000, -1_234_000].map(formatMicroUsd)).toEqual([
+		'$12.34',
+		'$0.00',
+		'−$1.23',
+	])
+	expect(
+		[0, 4_000, 2_000, 6_580_000, -4_000].map(formatEstimatedCreditMicroUsd),
+	).toEqual(['$0.00', '$0.004', '$0.002', '$6.58', '−$0.004'])
 })

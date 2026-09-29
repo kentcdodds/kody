@@ -25,6 +25,29 @@ import {
 	resolveOnboardingMcpOAuthBanner,
 } from './onboarding-mcp-chooser.ts'
 
+type OverlayInput = Parameters<typeof overlayOnboardingFeaturedMcpServers>[0]
+type RemoteStatus =
+	NonNullable<OverlayInput['statusByServerId']> extends Map<string, infer S>
+		? S
+		: never
+
+const readyStatus: RemoteStatus = {
+	connected: true,
+	authUrl: null,
+	state: 'ready',
+	error: null,
+}
+
+function remotes(
+	servers: Array<[id: string, name: string, url: string]>,
+	statuses: Record<string, RemoteStatus> = {},
+): OverlayInput {
+	return {
+		settings: servers.map(([id, name, url]) => ({ id, name, url })),
+		statusByServerId: new Map(Object.entries(statuses)),
+	}
+}
+
 test('featured MCP chooser overlays OAuth state and package listings', () => {
 	expect(onboardingFeaturedMcpServers.length).toBeGreaterThan(
 		onboardingFeaturedMcpSlotCount,
@@ -69,26 +92,16 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 		true,
 	)
 
-	const overlaid = overlayOnboardingFeaturedMcpServers({
-		settings: [
-			{
-				id: 'srv-linear',
-				name: 'linear',
-				url: 'https://mcp.linear.app/mcp',
+	const overlaid = overlayOnboardingFeaturedMcpServers(
+		remotes([['srv-linear', 'linear', 'https://mcp.linear.app/mcp']], {
+			'srv-linear': {
+				connected: false,
+				authUrl: 'https://auth.linear.test/authorize',
+				state: 'authenticating',
+				error: null,
 			},
-		],
-		statusByServerId: new Map([
-			[
-				'srv-linear',
-				{
-					connected: false,
-					authUrl: 'https://auth.linear.test/authorize',
-					state: 'authenticating',
-					error: null,
-				},
-			],
-		]),
-	})
+		}),
+	)
 	expect(overlaid[0]?.connected).toBe(false)
 	expect(overlaid[0]?.serverId).toBeNull()
 	expect(overlaid[1]).toMatchObject({
@@ -100,43 +113,14 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 	})
 	expect(hasPendingOnboardingFeaturedMcpAuth(overlaid)).toBe(true)
 
-	const connected = overlayOnboardingFeaturedMcpServers({
-		settings: [
-			{
-				id: 'srv-notion',
-				name: 'notion',
-				url: 'https://mcp.notion.com/mcp',
-			},
-		],
-		statusByServerId: new Map([
-			[
-				'srv-notion',
-				{
-					connected: true,
-					authUrl: null,
-					state: 'ready',
-					error: null,
-				},
-			],
-		]),
-	})
+	const connected = overlayOnboardingFeaturedMcpServers(
+		remotes([['srv-notion', 'notion', 'https://mcp.notion.com/mcp']], {
+			'srv-notion': readyStatus,
+		}),
+	)
 	expect(hasConnectedOnboardingFeaturedMcpServer(connected)).toBe(true)
 	expect(hasPendingOnboardingFeaturedMcpAuth(connected)).toBe(false)
 
-	const attached = attachOnboardingMcpPackageListings(connected, [
-		{
-			id: onboardingFeaturedMcpServers[0].listingId,
-			kodyId: 'notion-mcp',
-			name: '@kody/notion-mcp',
-			description: 'Notion MCP helpers',
-			iconUrl: '/icon.png',
-			tags: ['notion', 'mcp'],
-		},
-	])
-	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
-	expect(attached[1]?.packageListing).toBeNull()
-
-	const withoutListing = listDisconnectedOnboardingFeaturedMcpServers()
 	const notionListing = {
 		id: onboardingFeaturedMcpServers[0].listingId,
 		kodyId: 'notion-mcp',
@@ -145,6 +129,13 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 		iconUrl: '/icon.png',
 		tags: ['notion', 'mcp'],
 	}
+	const attached = attachOnboardingMcpPackageListings(connected, [
+		notionListing,
+	])
+	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
+	expect(attached[1]?.packageListing).toBeNull()
+
+	const withoutListing = listDisconnectedOnboardingFeaturedMcpServers()
 	const withListing = attachOnboardingMcpPackageListings(withoutListing, [
 		notionListing,
 	])
@@ -172,36 +163,16 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 })
 
 test('custom MCP servers exclude featured remotes and count as a workspace connect', () => {
-	const custom = listOnboardingCustomMcpServers({
-		settings: [
-			{
-				id: 'srv-linear',
-				name: 'linear',
-				url: 'https://mcp.linear.app/mcp',
-			},
-			{
-				id: 'srv-acme',
-				name: 'acme',
-				url: 'https://mcp.acme.example/mcp',
-			},
-			{
-				id: 'srv-other-linear',
-				name: 'linear',
-				url: 'https://mcp.other.example/mcp',
-			},
-		],
-		statusByServerId: new Map([
+	const custom = listOnboardingCustomMcpServers(
+		remotes(
 			[
-				'srv-acme',
-				{
-					connected: true,
-					authUrl: null,
-					state: 'ready',
-					error: null,
-				},
+				['srv-linear', 'linear', 'https://mcp.linear.app/mcp'],
+				['srv-acme', 'acme', 'https://mcp.acme.example/mcp'],
+				['srv-other-linear', 'linear', 'https://mcp.other.example/mcp'],
 			],
-		]),
-	})
+			{ 'srv-acme': readyStatus },
+		),
+	)
 	expect(custom).toEqual([
 		{
 			id: 'srv-acme',
@@ -261,38 +232,24 @@ test('custom MCP servers exclude featured remotes and count as a workspace conne
 })
 
 test('onboarding OAuth banner prefers a later success over leftover URL error', () => {
+	const cases: Array<[boolean, boolean, string | null, string | null]> = [
+		// [connected, returnedSuccess, returnedError, banner]
+		[false, false, null, 'access_denied'],
+		[false, true, null, null],
+		[true, false, 'access_denied', null],
+		[false, false, 'Supported sites required.', 'Supported sites required.'],
+	]
 	expect(
-		resolveOnboardingMcpOAuthBanner({
-			connected: false,
-			returnedSuccess: false,
-			returnedError: null,
-			urlError: 'access_denied',
-		}),
-	).toBe('access_denied')
-	expect(
-		resolveOnboardingMcpOAuthBanner({
-			connected: false,
-			returnedSuccess: true,
-			returnedError: null,
-			urlError: 'access_denied',
-		}),
-	).toBeNull()
-	expect(
-		resolveOnboardingMcpOAuthBanner({
-			connected: true,
-			returnedSuccess: false,
-			returnedError: 'access_denied',
-			urlError: 'access_denied',
-		}),
-	).toBeNull()
-	expect(
-		resolveOnboardingMcpOAuthBanner({
-			connected: false,
-			returnedSuccess: false,
-			returnedError: 'Supported sites required.',
-			urlError: 'access_denied',
-		}),
-	).toBe('Supported sites required.')
+		cases.filter(
+			([connected, returnedSuccess, returnedError, want]) =>
+				resolveOnboardingMcpOAuthBanner({
+					connected,
+					returnedSuccess,
+					returnedError,
+					urlError: 'access_denied',
+				}) !== want,
+		),
+	).toEqual([])
 })
 
 test('every featured MCP chip that is not a ProviderIcon has a repo SVG', () => {

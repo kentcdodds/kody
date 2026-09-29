@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { type AppLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountProfileLoaderData,
+	type AdminUsersLoaderData,
+	type AppLoaderData,
+} from '#universal/loader-data.ts'
 import {
 	clearPreloadedNavigationData,
 	consumeStaleNavigationData,
@@ -8,141 +12,82 @@ import {
 	tryConsumePreloadedLoaderData,
 } from './navigation-data.ts'
 
-test('preloaded navigation data is consumed once for matching hrefs and replaced on update', () => {
-	clearPreloadedNavigationData()
-	setPreloadedNavigationData('/account', {
-		accountProfile: {
-			ok: true,
-			email: 'kody@example.com',
-			emailVerified: true,
-			username: 'kody',
-			displayName: 'Kody',
-		},
-	})
-
-	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual({
+function profile(
+	username = 'kody',
+	displayName = 'Kody',
+): AccountProfileLoaderData {
+	return {
 		ok: true,
-		email: 'kody@example.com',
+		email: `${username}@example.com`,
 		emailVerified: true,
-		username: 'kody',
-		displayName: 'Kody',
-	})
-	expect(
-		tryConsumePreloadedLoaderData('accountProfile', '/account'),
-	).toBeUndefined()
+		username,
+		displayName,
+		bio: null,
+		avatarUrl: null,
+		profileVisibility: 'public',
+		formerEmails: [],
+	}
+}
+
+test('preloaded navigation data is consumed once for matching hrefs and replaced on update', () => {
+	const matching: Array<[setHref: string, consumeHref: string]> = [
+		['/account', '/account'],
+		['https://kody.local/account?q=1#top', '/account?q=1#top'],
+		['/account', '/account#invite'],
+	]
+	for (const [setHref, consumeHref] of matching) {
+		clearPreloadedNavigationData()
+		setPreloadedNavigationData(setHref, { accountProfile: profile() })
+		expect(
+			tryConsumePreloadedLoaderData('accountProfile', consumeHref),
+		).toEqual(profile())
+		expect(
+			tryConsumePreloadedLoaderData('accountProfile', consumeHref),
+		).toBeUndefined()
+	}
 
 	clearPreloadedNavigationData()
-	setPreloadedNavigationData('/account', {
-		accountProfile: {
-			ok: true,
-			email: 'kody@example.com',
-			emailVerified: true,
-			username: 'kody',
-			displayName: 'Kody',
-		},
-	})
+	setPreloadedNavigationData('/account', { accountProfile: profile() })
 	expect(
 		tryConsumePreloadedLoaderData('accountProfile', '/account/secrets'),
 	).toBeUndefined()
-	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual({
-		ok: true,
-		email: 'kody@example.com',
-		emailVerified: true,
-		username: 'kody',
-		displayName: 'Kody',
-	})
-
-	clearPreloadedNavigationData()
-	setPreloadedNavigationData('https://kody.local/account?q=1#top', {
-		accountProfile: {
-			ok: true,
-			email: 'kody@example.com',
-			emailVerified: true,
-			username: 'kody',
-			displayName: 'Kody',
-		},
-	})
-	expect(
-		tryConsumePreloadedLoaderData('accountProfile', '/account?q=1#top'),
-	).toEqual({
-		ok: true,
-		email: 'kody@example.com',
-		emailVerified: true,
-		username: 'kody',
-		displayName: 'Kody',
-	})
+	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual(
+		profile(),
+	)
 
 	clearPreloadedNavigationData()
 	setPreloadedNavigationData('/account', {
-		accountProfile: {
-			ok: true,
-			email: 'kody@example.com',
-			emailVerified: true,
-			username: 'kody',
-			displayName: 'Kody',
-		},
-	})
-	expect(
-		tryConsumePreloadedLoaderData('accountProfile', '/account#invite'),
-	).toEqual({
-		ok: true,
-		email: 'kody@example.com',
-		emailVerified: true,
-		username: 'kody',
-		displayName: 'Kody',
-	})
-
-	clearPreloadedNavigationData()
-	setPreloadedNavigationData('/account', {
-		accountProfile: {
-			ok: true,
-			email: 'first@example.com',
-			emailVerified: true,
-			username: 'first',
-			displayName: 'First',
-		},
+		accountProfile: profile('first', 'First'),
 	})
 	setPreloadedNavigationData('/account', {
-		accountProfile: {
-			ok: true,
-			email: 'second@example.com',
-			emailVerified: true,
-			username: 'second',
-			displayName: 'Second',
-		},
+		accountProfile: profile('second', 'Second'),
 	})
-	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual({
-		ok: true,
-		email: 'second@example.com',
-		emailVerified: true,
-		username: 'second',
-		displayName: 'Second',
-	})
+	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual(
+		profile('second', 'Second'),
+	)
 
 	clearPreloadedNavigationData()
+	const adminUsers: AdminUsersLoaderData = {
+		ok: true,
+		users: [],
+		selectedUser: null,
+		page: 1,
+		pageSize: 25,
+		total: 0,
+		availableRoles: [],
+		availablePlans: [],
+	}
 	const payload: Partial<AppLoaderData> = {
-		accountProfile: {
-			ok: true,
-			email: 'kody@example.com',
-			emailVerified: true,
-			username: 'kody',
-			displayName: 'Kody',
-		},
-		adminUsers: {
-			ok: true,
-			users: [],
-			page: 1,
-			pageSize: 25,
-			total: 0,
-			availableRoles: [],
-			availablePlans: [],
-		},
+		accountProfile: profile(),
+		adminUsers,
 	}
 	setPreloadedNavigationData('/account', payload)
-	expect(
-		tryConsumePreloadedLoaderData('accountProfile', '/account'),
-	).toBeTruthy()
-	expect(tryConsumePreloadedLoaderData('adminUsers', '/account')).toBeTruthy()
+	expect(tryConsumePreloadedLoaderData('accountProfile', '/account')).toEqual(
+		profile(),
+	)
+	expect(tryConsumePreloadedLoaderData('adminUsers', '/account')).toEqual(
+		adminUsers,
+	)
 	expect(
 		tryConsumePreloadedLoaderData('adminUsers', '/account'),
 	).toBeUndefined()

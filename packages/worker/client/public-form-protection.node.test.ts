@@ -58,6 +58,21 @@ function createShadowContainer(options: {
 	})
 }
 
+function stubTurnstile(
+	containers: Array<unknown>,
+	turnstile: Record<string, unknown>,
+) {
+	vi.stubGlobal('document', { querySelectorAll: vi.fn(() => containers) })
+	vi.stubGlobal('window', { turnstile })
+	return { [Symbol.dispose]: () => vi.unstubAllGlobals() }
+}
+
+const expectedRenderOptions = {
+	sitekey: 'site-key',
+	'response-field-name': 'turnstileToken',
+	'error-callback': expect.any(Function),
+}
+
 test('resetTurnstileWidgets clears orphaned hosts instead of throwing', () => {
 	const orphan = createContainer({ rendered: true, childElementCount: 0 })
 	const live = createContainer({ rendered: true, childElementCount: 2 })
@@ -71,10 +86,7 @@ test('resetTurnstileWidgets clears orphaned hosts instead of throwing', () => {
 	})
 	const remove = vi.fn()
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [orphan, live, zombie]),
-	})
-	vi.stubGlobal('window', { turnstile: { reset, remove } })
+	using _globals = stubTurnstile([orphan, live, zombie], { reset, remove })
 
 	expect(() => resetTurnstileWidgets()).not.toThrow()
 	expect(orphan.dataset.turnstileRendered).toBeUndefined()
@@ -84,8 +96,6 @@ test('resetTurnstileWidgets clears orphaned hosts instead of throwing', () => {
 	expect(reset).toHaveBeenCalledWith(live)
 	expect(reset).toHaveBeenCalledWith(zombie)
 	expect(live.dataset.turnstileRendered).toBe('true')
-
-	vi.unstubAllGlobals()
 })
 
 test('resetTurnstileWidgets resets a live shadow mount after a light-DOM wipe', () => {
@@ -98,61 +108,45 @@ test('resetTurnstileWidgets resets a live shadow mount after a light-DOM wipe', 
 	const reset = vi.fn()
 	const remove = vi.fn()
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [liveShadow]),
-	})
-	vi.stubGlobal('window', { turnstile: { reset, remove } })
+	using _globals = stubTurnstile([liveShadow], { reset, remove })
 
 	expect(() => resetTurnstileWidgets()).not.toThrow()
 	expect(reset).toHaveBeenCalledWith(liveShadow.mount)
 	expect(remove).not.toHaveBeenCalled()
 	expect(liveShadow.dataset.turnstileRendered).toBe('true')
 	expect(liveShadow.dataset.turnstileWidgetId).toBe('live-widget')
-
-	vi.unstubAllGlobals()
 })
 
 test('renderTurnstileWidgets remounts hosts whose children were wiped by a re-render', async () => {
 	const orphan = createContainer({ rendered: true, childElementCount: 0 })
 	const live = createContainer({ rendered: true, childElementCount: 1 })
 	const fresh = createContainer({ rendered: false, childElementCount: 0 })
-	const render = vi.fn((container: FakeContainer) => {
-		container.childElementCount = 1
-		return 'widget-id'
-	})
+	const render = vi.fn(
+		(
+			container: FakeContainer,
+			_options: { 'error-callback': (code: number) => boolean },
+		) => {
+			container.childElementCount = 1
+			return 'widget-id'
+		},
+	)
 	const remove = vi.fn()
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [orphan, live, fresh]),
-	})
-	vi.stubGlobal('window', { turnstile: { render, remove } })
+	using _globals = stubTurnstile([orphan, live, fresh], { render, remove })
 
 	await renderTurnstileWidgets('site-key')
 
 	expect(remove).toHaveBeenCalledWith(orphan)
 	expect(render).toHaveBeenCalledTimes(2)
-	expect(render).toHaveBeenCalledWith(orphan, {
-		sitekey: 'site-key',
-		'response-field-name': 'turnstileToken',
-		'error-callback': expect.any(Function),
-	})
-	expect(render).toHaveBeenCalledWith(fresh, {
-		sitekey: 'site-key',
-		'response-field-name': 'turnstileToken',
-		'error-callback': expect.any(Function),
-	})
+	expect(render).toHaveBeenCalledWith(orphan, expectedRenderOptions)
+	expect(render).toHaveBeenCalledWith(fresh, expectedRenderOptions)
 	expect(render).not.toHaveBeenCalledWith(live, expect.anything())
 	expect(orphan.dataset.turnstileRendered).toBe('true')
 	expect(fresh.dataset.turnstileRendered).toBe('true')
 	expect(live.dataset.turnstileRendered).toBe('true')
-	const renderOptions = render.mock.calls[0]?.[1] as {
-		'error-callback': (code: number) => boolean
-	}
-	expect(renderOptions['error-callback'](300010)).toBe(true)
+	expect(render.mock.calls[0]?.[1]['error-callback'](300010)).toBe(true)
 	expect(orphan.dataset.turnstileWidgetId).toBe('widget-id')
 	expect(fresh.dataset.turnstileWidgetId).toBe('widget-id')
-
-	vi.unstubAllGlobals()
 })
 
 test('renderTurnstileWidgets keeps a live shadow mount after a light-DOM wipe', async () => {
@@ -173,10 +167,7 @@ test('renderTurnstileWidgets keeps a live shadow mount after a light-DOM wipe', 
 	})
 	const remove = vi.fn()
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [liveShadow, wipedShadow]),
-	})
-	vi.stubGlobal('window', { turnstile: { render, remove } })
+	using _globals = stubTurnstile([liveShadow, wipedShadow], { render, remove })
 
 	await renderTurnstileWidgets('site-key')
 
@@ -186,17 +177,11 @@ test('renderTurnstileWidgets keeps a live shadow mount after a light-DOM wipe', 
 	expect(render).not.toHaveBeenCalledWith(liveShadow.mount, expect.anything())
 	expect(remove).toHaveBeenCalledWith(wipedShadow.mount)
 	expect(render).toHaveBeenCalledTimes(1)
-	expect(render).toHaveBeenCalledWith(wipedShadow.mount, {
-		sitekey: 'site-key',
-		'response-field-name': 'turnstileToken',
-		'error-callback': expect.any(Function),
-	})
+	expect(render).toHaveBeenCalledWith(wipedShadow.mount, expectedRenderOptions)
 	expect(liveShadow.dataset.turnstileRendered).toBe('true')
 	expect(liveShadow.dataset.turnstileWidgetId).toBe('live-widget')
 	expect(wipedShadow.dataset.turnstileRendered).toBe('true')
 	expect(wipedShadow.dataset.turnstileWidgetId).toBe('remounted-widget')
-
-	vi.unstubAllGlobals()
 })
 
 test('readPublicFormProtection falls back to Turnstile getResponse in a form scope', () => {
@@ -220,10 +205,7 @@ test('readPublicFormProtection falls back to Turnstile getResponse in a form sco
 		return ''
 	})
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [other, target]),
-	})
-	vi.stubGlobal('window', { turnstile: { getResponse } })
+	using _globals = stubTurnstile([other, target], { getResponse })
 
 	const formData = new FormData()
 	formData.set('kody_hp', '')
@@ -243,8 +225,6 @@ test('readPublicFormProtection falls back to Turnstile getResponse in a form sco
 		kody_hp: '',
 		turnstileToken: 'field-token',
 	})
-
-	vi.unstubAllGlobals()
 })
 
 test('renderTurnstileWidgets does not leave the rendered marker when render throws', async () => {
@@ -253,17 +233,12 @@ test('renderTurnstileWidgets does not leave the rendered marker when render thro
 		throw new Error('render failed')
 	})
 
-	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn(() => [container]),
-	})
-	vi.stubGlobal('window', { turnstile: { render } })
+	using _globals = stubTurnstile([container], { render })
 
 	await expect(renderTurnstileWidgets('site-key')).rejects.toThrow(
 		'render failed',
 	)
 	expect(container.dataset.turnstileRendered).toBeUndefined()
-
-	vi.unstubAllGlobals()
 })
 
 test('renderTurnstileWidgets soft-fails when the Turnstile script fails to load', async () => {

@@ -56,23 +56,24 @@ test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {
 	expect(onboardingConnectedChooserKinds([{ kind: 'other' }])).toEqual([])
 
 	const greyed = listOnboardingGreyedSecondAgents(connected)
-	expect(greyed).toContainEqual({ id: 'cursor', reason: 'connected' })
-	expect(greyed).toContainEqual({ id: 'claude-desktop', reason: 'connected' })
-	expect(greyed).toContainEqual({ id: 'chatgpt', reason: 'connected' })
-	expect(greyed).not.toContainEqual({
-		id: 'claude-code',
-		reason: 'connected',
-	})
-	expect(greyed).not.toContainEqual({ id: 'grok-bot', reason: 'connected' })
-	expect(greyed).not.toContainEqual({
-		id: 'cursor-local',
-		reason: 'connected',
-	})
-	expect(greyed).not.toContainEqual({
-		id: 'cursor-cloud',
-		reason: 'connected',
-	})
-	expect(greyed.some((entry) => entry.id === 'other')).toBe(false)
+	const greyedIds = greyed.map((entry) => entry.id)
+	expect(greyed).toEqual(
+		expect.arrayContaining(
+			['cursor', 'claude-desktop', 'chatgpt'].map((id) => ({
+				id,
+				reason: 'connected',
+			})),
+		),
+	)
+	for (const id of [
+		'claude-code',
+		'grok-bot',
+		'cursor-local',
+		'cursor-cloud',
+		'other',
+	]) {
+		expect(greyedIds).not.toContain(id)
+	}
 	expect(
 		onboardingSecondAgentDisableReason('claude-code', connected),
 	).toBeNull()
@@ -105,66 +106,44 @@ test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {
 })
 
 test('a second agent is a second ecosystem, not a second Cursor login', () => {
-	expect(countConnectedAgentEcosystems([{ kind: 'cursor' }])).toBe(1)
+	type Kinds = Parameters<typeof countConnectedAgentEcosystems>[0]
+	const kinds = (...list: Array<Kinds[number]['kind']>): Kinds =>
+		list.map((kind) => ({ kind }))
+	const ecosystems: Array<[Kinds, number]> = [
+		[kinds('cursor'), 1],
+		[kinds('cursor', 'cursor-local', 'cursor-cloud', 'grok-bot'), 1],
+		[kinds('cursor-cloud', 'grok-bot', 'grok', 'grok-cli'), 1],
+		[kinds('codex', 'chatgpt', 'claude-desktop'), 2],
+	]
 	expect(
-		countConnectedAgentEcosystems([
-			{ kind: 'cursor' },
-			{ kind: 'cursor-local' },
-			{ kind: 'cursor-cloud' },
-			{ kind: 'grok-bot' },
-		]),
-	).toBe(1)
+		ecosystems.filter(
+			([connected, want]) => countConnectedAgentEcosystems(connected) !== want,
+		),
+	).toEqual([])
+	const second: Array<[Kinds, boolean]> = [
+		[kinds('cursor-local', 'cursor-cloud'), false],
+		[kinds('cursor-local', 'grok'), false],
+		[kinds('cursor', null, 'other'), false],
+		[kinds(null, null), false],
+		[kinds('cursor-cloud', 'claude-code'), true],
+	]
 	expect(
-		hasSecondConnectedMcpClient([
-			{ kind: 'cursor-local' },
-			{ kind: 'cursor-cloud' },
-		]),
-	).toBe(false)
-	expect(
-		countConnectedAgentEcosystems([
-			{ kind: 'cursor-cloud' },
-			{ kind: 'grok-bot' },
-			{ kind: 'grok' },
-			{ kind: 'grok-cli' },
-		]),
-	).toBe(1)
-	expect(
-		hasSecondConnectedMcpClient([{ kind: 'cursor-local' }, { kind: 'grok' }]),
-	).toBe(false)
-	expect(
-		hasSecondConnectedMcpClient([
-			{ kind: 'cursor' },
-			{ kind: null },
-			{ kind: 'other' },
-		]),
-	).toBe(false)
-	expect(hasSecondConnectedMcpClient([{ kind: null }, { kind: null }])).toBe(
-		false,
-	)
-	expect(
-		hasSecondConnectedMcpClient([
-			{ kind: 'cursor-cloud' },
-			{ kind: 'claude-code' },
-		]),
-	).toBe(true)
-	expect(
-		countConnectedAgentEcosystems([
-			{ kind: 'codex' },
-			{ kind: 'chatgpt' },
-			{ kind: 'claude-desktop' },
-		]),
-	).toBe(2)
+		second.filter(
+			([connected, want]) => hasSecondConnectedMcpClient(connected) !== want,
+		),
+	).toEqual([])
 })
 
 test('step 3 deep links keep connected hosts and drop Not listed', () => {
-	expect(resolveOnboardingStep3SelectedAgent('chatgpt')).toBe('chatgpt')
-	expect(resolveOnboardingStep3SelectedAgent('codex')).toBe('codex')
-	expect(resolveOnboardingStep3SelectedAgent('claude-code')).toBe('claude-code')
-	expect(resolveOnboardingStep3SelectedAgent(null)).toBeNull()
-	expect(resolveOnboardingStep3SelectedAgent('cursor-cloud')).toBe(
+	const kept = [
+		'chatgpt',
+		'codex',
+		'claude-code',
 		'cursor-cloud',
-	)
-	expect(resolveOnboardingStep3SelectedAgent('grok-bot')).toBe('grok-bot')
+		'grok-bot',
+		'cursor',
+	] as const
+	expect(kept.map(resolveOnboardingStep3SelectedAgent)).toEqual(kept)
+	expect(resolveOnboardingStep3SelectedAgent(null)).toBeNull()
 	expect(resolveOnboardingStep3SelectedAgent('other')).toBeNull()
-	expect(resolveOnboardingStep3SelectedAgent('cursor')).toBe('cursor')
 })

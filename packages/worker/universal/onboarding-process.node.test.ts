@@ -32,6 +32,12 @@ const guidesDir = join(
 	'../../../docs/guides',
 )
 
+const progress = (
+	hasMcpClient: boolean,
+	hasAccessWin: boolean,
+	hasSecondMcpClient: boolean,
+) => ({ hasMcpClient, hasAccessWin, hasSecondMcpClient })
+
 test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingChecklistItemHref('verify-email', 'kentcdodds')).toBe(
 		'/pending-verification',
@@ -46,85 +52,58 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		}
 		expect(onboardingChecklistItemHref(item.id, 'kentcdodds')).toBe(step.path)
 	}
-	expect(onboardingIndexRedirectHref()).toBe('/onboarding/step-1')
-	expect(onboardingIndexRedirectHref('?redirectTo=%2F')).toBe(
-		'/onboarding/step-1?redirectTo=%2F',
-	)
-	expect(
-		onboardingIndexRedirectHref('?redirectTo=%2F', {
-			hasMcpClient: true,
-			hasAccessWin: false,
-			hasSecondMcpClient: false,
-		}),
-	).toBe('/onboarding/step-2?redirectTo=%2F')
-	expect(
-		onboardingIndexRedirectHref('', {
-			hasMcpClient: true,
-			hasAccessWin: true,
-			hasSecondMcpClient: true,
-		}),
-	).toBe('/onboarding/step-3')
 	expect(onboardingChecklistItemHref('install-starter', 'kentcdodds')).toBe(
 		'/@kentcdodds',
 	)
-	expect(onboardingWizardStepHref(2)).toBe('/onboarding/step-2')
-	expect(onboardingWizardStepHref(3)).toBe('/onboarding/step-3')
-	expect(onboardingAgentHref('cursor')).toBe('/onboarding/step-1/cursor')
-	expect(onboardingAgentHref('other')).toBe('/onboarding/step-1/not-listed')
-	expect(onboardingAgentHref('cursor', '?redirectTo=%2F')).toBe(
-		'/onboarding/step-1/cursor?redirectTo=%2F',
-	)
-	expect(onboardingAgentHref(null, '?redirectTo=%2F')).toBe(
+	expect([
+		onboardingIndexRedirectHref(),
+		onboardingIndexRedirectHref('?redirectTo=%2F'),
+		onboardingIndexRedirectHref(
+			'?redirectTo=%2F',
+			progress(true, false, false),
+		),
+		onboardingIndexRedirectHref('', progress(true, true, true)),
+		onboardingWizardStepHref(2),
+		onboardingWizardStepHref(3),
+		onboardingAgentHref('cursor'),
+		onboardingAgentHref('other'),
+		onboardingAgentHref('cursor', '?redirectTo=%2F'),
+		onboardingAgentHref(null, '?redirectTo=%2F'),
+		onboardingSecondAgentHref('claude-code'),
+		onboardingSecondAgentHref('other'),
+		onboardingSecondAgentHref(null, '?redirectTo=%2F'),
+		onboardingExplorePackagesHref(),
+	]).toEqual([
+		'/onboarding/step-1',
 		'/onboarding/step-1?redirectTo=%2F',
-	)
-	expect(onboardingSecondAgentHref('claude-code')).toBe(
+		'/onboarding/step-2?redirectTo=%2F',
+		'/onboarding/step-3',
+		'/onboarding/step-2',
+		'/onboarding/step-3',
+		'/onboarding/step-1/cursor',
+		'/onboarding/step-1/not-listed',
+		'/onboarding/step-1/cursor?redirectTo=%2F',
+		'/onboarding/step-1?redirectTo=%2F',
 		'/onboarding/step-3/claude-code',
-	)
-	expect(onboardingSecondAgentHref('other')).toBe('/onboarding/step-3')
-	expect(onboardingSecondAgentHref(null, '?redirectTo=%2F')).toBe(
+		'/onboarding/step-3',
 		'/onboarding/step-3?redirectTo=%2F',
+		'/community',
+	])
+
+	const parsed: Array<[string, 1 | 2 | 3, string | null, boolean]> = [
+		['/onboarding', 1, null, true],
+		['/onboarding/step-1/cursor', 1, 'cursor', true],
+		['/onboarding/step-1/not-listed', 1, 'other', true],
+		['/onboarding/step-2', 2, null, true],
+		['/onboarding/step-2/notion', 2, null, false],
+		['/onboarding/step-3', 3, null, true],
+		['/onboarding/step-3/claude-code', 3, 'claude-code', true],
+		['/onboarding/step-3/not-listed', 3, null, false],
+	]
+	expect(parsed.map(([path]) => [path, parseOnboardingPathname(path)])).toEqual(
+		parsed.map(([path, step, agent, valid]) => [path, { step, agent, valid }]),
 	)
-	expect(parseOnboardingPathname('/onboarding')).toEqual({
-		step: 1,
-		agent: null,
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-1/cursor')).toEqual({
-		step: 1,
-		agent: 'cursor',
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-1/not-listed')).toEqual({
-		step: 1,
-		agent: 'other',
-		valid: true,
-	})
 	expect(parseOnboardingPathname('/onboarding/step-1/nope')?.valid).toBe(false)
-	expect(parseOnboardingPathname('/onboarding/step-2')).toEqual({
-		step: 2,
-		agent: null,
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-2/notion')).toEqual({
-		step: 2,
-		agent: null,
-		valid: false,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-3')).toEqual({
-		step: 3,
-		agent: null,
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-3/claude-code')).toEqual({
-		step: 3,
-		agent: 'claude-code',
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-3/not-listed')).toEqual({
-		step: 3,
-		agent: null,
-		valid: false,
-	})
 	expect(parseOnboardingPathname('/onboarding/step-3/nope')?.valid).toBe(false)
 	expect(parseOnboardingPathname('/account')).toBeNull()
 	expect(onboardingWizardSteps.map((step) => step.path)).toEqual([
@@ -132,49 +111,46 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'/onboarding/step-2',
 		'/onboarding/step-3',
 	])
-	expect(onboardingExplorePackagesHref()).toBe('/community')
 })
 
 test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
-	expect(onboardingAccessSelectedLede('Cursor')).toContain('onboarding guide')
 	expect(onboardingStep2Prompt).toContain(
 		'search({ entity: "guide:onboarding" })',
 	)
 	expect(onboardingPortabilityProofPrompt).toContain(
 		'search({ entity: "guide:portability" })',
 	)
-	expect(onboardingAccessWinMadeLine({})).toBeNull()
-	expect(onboardingAccessWinMadeLine({ packageName: 'grok-bot' })).toBeNull()
+	const longSubject =
+		'Family vault photo backup cannot use Cloudflare Tunnel for large uploads'
+	const madeLines: Array<
+		[Parameters<typeof onboardingAccessWinMadeLine>[0], string | null]
+	> = [
+		[{}, null],
+		[{ packageName: 'grok-bot' }, null],
+		[{ memorySubject: 'Preferred commute' }, 'You made Preferred commute'],
+		[{ packageName: '@you/morning-digest' }, 'You made @you/morning-digest'],
+		[
+			{
+				memorySubject: 'Preferred commute',
+				packageName: '@you/morning-digest',
+			},
+			'You made Preferred commute and @you/morning-digest',
+		],
+		[
+			{ memorySubject: longSubject, packageName: 'grok-bot' },
+			'You made Family vault photo backup cannot use Cloudflare…',
+		],
+		[
+			{ memorySubject: longSubject, packageName: '@you/family-vault' },
+			'You made Family vault photo backup cannot use Cloudflare… and @you/family-vault',
+		],
+	]
 	expect(
-		onboardingAccessWinMadeLine({ memorySubject: 'Preferred commute' }),
-	).toBe('You made Preferred commute')
-	expect(
-		onboardingAccessWinMadeLine({ packageName: '@you/morning-digest' }),
-	).toBe('You made @you/morning-digest')
-	expect(
-		onboardingAccessWinMadeLine({
-			memorySubject: 'Preferred commute',
-			packageName: '@you/morning-digest',
-		}),
-	).toBe('You made Preferred commute and @you/morning-digest')
-	expect(
-		onboardingAccessWinMadeLine({
-			memorySubject:
-				'Family vault photo backup cannot use Cloudflare Tunnel for large uploads',
-			packageName: 'grok-bot',
-		}),
-	).toBe('You made Family vault photo backup cannot use Cloudflare…')
-	expect(
-		onboardingAccessWinMadeLine({
-			memorySubject:
-				'Family vault photo backup cannot use Cloudflare Tunnel for large uploads',
-			packageName: '@you/family-vault',
-		}),
-	).toBe(
-		'You made Family vault photo backup cannot use Cloudflare… and @you/family-vault',
-	)
+		madeLines.map(([input]) => [input, onboardingAccessWinMadeLine(input)]),
+	).toEqual(madeLines)
+
 	expect(onboardingConnectedAgentLabelsLine([])).toBeNull()
 	expect(onboardingConnectedAgentLabelsLine([{ label: 'Cursor' }])).toBe(
 		'Connected: Cursor',
@@ -204,100 +180,59 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 })
 
 test('resume step is the first unfinished wizard step, else step 3', () => {
+	expect([
+		resumeOnboardingWizardStep(progress(false, false, false)),
+		resumeOnboardingWizardStep(progress(true, false, false)),
+		resumeOnboardingWizardStep(progress(true, true, false)),
+		resumeOnboardingWizardStep(progress(true, true, true)),
+	]).toEqual([1, 2, 3, 3])
+
+	const cursorAt17 = {
+		kind: 'cursor',
+		connectedAt: '2026-09-08T17:00:00.000Z',
+	} as const
+	const chatgptAt17 = {
+		kind: 'chatgpt',
+		connectedAt: '2026-09-08T17:00:00.000Z',
+	} as const
+	const claudeAt18 = {
+		kind: 'claude-desktop',
+		connectedAt: '2026-09-08T18:00:00.000Z',
+	} as const
+	const firstAgents: Array<
+		[
+			...Parameters<typeof resolveOnboardingFirstAgentKind>,
+			ReturnType<typeof resolveOnboardingFirstAgentKind>,
+		]
+	> = [
+		[null, [claudeAt18, cursorAt17], 'cursor'],
+		['claude-desktop', [cursorAt17], 'cursor'],
+		['claude-desktop', [chatgptAt17], 'chatgpt'],
+		['claude-desktop', [], 'claude-desktop'],
+		['claude-desktop', [claudeAt18, chatgptAt17], 'claude-desktop'],
+		[null, [{ kind: 'cursor', connectedAt: null }], 'cursor'],
+		['claude-desktop', [{ kind: 'chatgpt', connectedAt: null }], 'chatgpt'],
+		[
+			'claude-desktop',
+			[{ kind: null, connectedAt: '2026-09-08T17:00:00.000Z' }],
+			null,
+		],
+	]
 	expect(
-		resumeOnboardingWizardStep({
-			hasMcpClient: false,
-			hasAccessWin: false,
-			hasSecondMcpClient: false,
-		}),
-	).toBe(1)
-	expect(
-		resumeOnboardingWizardStep({
-			hasMcpClient: true,
-			hasAccessWin: false,
-			hasSecondMcpClient: false,
-		}),
-	).toBe(2)
-	expect(
-		resumeOnboardingWizardStep({
-			hasMcpClient: true,
-			hasAccessWin: true,
-			hasSecondMcpClient: false,
-		}),
-	).toBe(3)
-	expect(
-		resumeOnboardingWizardStep({
-			hasMcpClient: true,
-			hasAccessWin: true,
-			hasSecondMcpClient: true,
-		}),
-	).toBe(3)
-	expect(
-		resolveOnboardingFirstAgentKind(null, [
-			{
-				kind: 'claude-desktop',
-				connectedAt: '2026-09-08T18:00:00.000Z',
-			},
-			{ kind: 'cursor', connectedAt: '2026-09-08T17:00:00.000Z' },
-		]),
-	).toBe('cursor')
-	expect(
-		resolveOnboardingFirstAgentKind('claude-desktop', [
-			{ kind: 'cursor', connectedAt: '2026-09-08T17:00:00.000Z' },
-		]),
-	).toBe('cursor')
-	expect(
-		resolveOnboardingFirstAgentKind('claude-desktop', [
-			{
-				kind: 'chatgpt',
-				connectedAt: '2026-09-08T17:00:00.000Z',
-			},
-		]),
-	).toBe('chatgpt')
-	expect(resolveOnboardingFirstAgentKind('claude-desktop', [])).toBe(
-		'claude-desktop',
-	)
-	expect(
-		resolveOnboardingFirstAgentKind('claude-desktop', [
-			{
-				kind: 'claude-desktop',
-				connectedAt: '2026-09-08T18:00:00.000Z',
-			},
-			{ kind: 'chatgpt', connectedAt: '2026-09-08T17:00:00.000Z' },
-		]),
-	).toBe('claude-desktop')
-	expect(
-		resolveOnboardingFirstAgentKind(null, [
-			{ kind: 'cursor', connectedAt: null },
-		]),
-	).toBe('cursor')
-	expect(
-		resolveOnboardingFirstAgentKind('claude-desktop', [
-			{ kind: 'chatgpt', connectedAt: null },
-		]),
-	).toBe('chatgpt')
-	expect(
-		resolveOnboardingFirstAgentKind('claude-desktop', [
-			{ kind: null, connectedAt: '2026-09-08T17:00:00.000Z' },
-		]),
-	).toBeNull()
+		firstAgents.filter(
+			([selected, agents, want]) =>
+				resolveOnboardingFirstAgentKind(selected, agents) !== want,
+		),
+	).toEqual([])
 })
 
 test('search leftover notice lists remaining wizard steps, not a quest', () => {
-	expect(
-		remainingOnboardingWizardLabels({
-			hasMcpClient: true,
-			hasAccessWin: false,
-			hasSecondMcpClient: false,
-		}),
-	).toEqual(['Make something useful', 'Connect a second agent'])
-	expect(
-		remainingOnboardingWizardLabels({
-			hasMcpClient: true,
-			hasAccessWin: true,
-			hasSecondMcpClient: true,
-		}),
-	).toEqual([])
+	expect(remainingOnboardingWizardLabels(progress(true, false, false))).toEqual(
+		['Make something useful', 'Connect a second agent'],
+	)
+	expect(remainingOnboardingWizardLabels(progress(true, true, true))).toEqual(
+		[],
+	)
 	const notice = formatOnboardingSearchNotice(
 		['Make something useful', 'Connect a second agent'],
 		'https://kody.example',

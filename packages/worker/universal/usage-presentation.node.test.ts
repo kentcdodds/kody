@@ -17,23 +17,22 @@ function allCopy(values: Array<unknown>) {
 }
 
 test('include bars and percents never read above 100%', () => {
-	expect(includeBarPercent(0)).toBe(0)
-	expect(includeBarPercent(0.42)).toBe(42)
-	expect(includeBarPercent(1)).toBe(100)
-	expect(includeBarPercent(517 / 50)).toBe(100)
-	expect(includeBarPercent(125.05)).toBe(100)
-	expect(includeBarPercent(Number.NaN)).toBe(0)
-	expect(formatCappedPercent(10.34)).toBe('100%')
-	expect(formatCappedPercent(0.9)).toBe('90%')
-	expect(formatCappedPercent(null)).toBe('—')
+	expect(
+		[0, 0.42, 1, 517 / 50, 125.05, Number.NaN].map(includeBarPercent),
+	).toEqual([0, 42, 100, 100, 100, 0])
+	expect([10.34, 0.9, null].map(formatCappedPercent)).toEqual([
+		'100%',
+		'90%',
+		'—',
+	])
 })
 
 test('dollars on credits use cents from $1 up and keep sub-cent charges visible', () => {
-	expect(formatOnCreditsMicroUsd(4_000)).toBe('$0.004')
-	expect(formatOnCreditsMicroUsd(200_000)).toBe('$0.20')
-	expect(formatOnCreditsMicroUsd(6_580_000)).toBe('$6.58')
-	expect(formatOnCreditsMicroUsd(173_672_000)).toBe('$173.67')
-	expect(formatOnCreditsMicroUsd(1_234_567_890)).toBe('$1,234.57')
+	expect(
+		[4_000, 200_000, 6_580_000, 173_672_000, 1_234_567_890].map(
+			formatOnCreditsMicroUsd,
+		),
+	).toEqual(['$0.004', '$0.20', '$6.58', '$173.67', '$1,234.57'])
 })
 
 test('Free Worker compute is informational: no bar, no include status, never charged', () => {
@@ -99,47 +98,28 @@ test('funded Pro past include is calm dollars on credits with a full bar', () =>
 })
 
 test('empty Pro wallet near or past include gets attention; retired plans stay calm', () => {
-	expect(
+	const workerDays = (
+		current: number,
+		include: number,
+		plan: 'pro' | 'standard',
+		creditWallet: 'empty' | 'funded' | 'none',
+	) =>
 		presentIncludedComputeMeter({
 			resource: 'unique_worker_days',
-			current: 300,
-			include: 350,
-			plan: 'pro',
-			creditWallet: 'empty',
-		}).tone,
-	).toBe('attention')
-	expect(
-		presentIncludedComputeMeter({
-			resource: 'unique_worker_days',
-			current: 300,
-			include: 350,
-			plan: 'pro',
-			creditWallet: 'funded',
-		}).tone,
-	).toBe('calm')
-	expect(
-		presentIncludedComputeMeter({
-			resource: 'unique_worker_days',
-			current: 400,
-			include: 350,
-			plan: 'pro',
-			creditWallet: 'empty',
-		}),
-	).toMatchObject({
+			current,
+			include,
+			plan,
+			creditWallet,
+		})
+	expect(workerDays(300, 350, 'pro', 'empty').tone).toBe('attention')
+	expect(workerDays(300, 350, 'pro', 'funded').tone).toBe('calm')
+	expect(workerDays(400, 350, 'pro', 'empty')).toMatchObject({
 		barPercent: 100,
 		tone: 'attention',
 		status: 'Include used · add credits to keep going',
 		onCreditsMicroUsd: 0,
 	})
-	expect(
-		presentIncludedComputeMeter({
-			resource: 'unique_worker_days',
-			current: 4_000,
-			include: 1_000,
-			plan: 'standard',
-			creditWallet: 'none',
-		}),
-	).toMatchObject({
+	expect(workerDays(4_000, 1_000, 'standard', 'none')).toMatchObject({
 		barPercent: 100,
 		tone: 'calm',
 		informational: false,
@@ -157,45 +137,49 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 		monthlyCapCents: null,
 		refilledThisMonthCents: 0,
 	}
+	const alarm = (
+		input: Partial<Parameters<typeof resolveCreditsAlarm>[0]> &
+			Pick<
+				Parameters<typeof resolveCreditsAlarm>[0],
+				'creditWallet' | 'meters'
+			>,
+	) =>
+		resolveCreditsAlarm({
+			balanceMicroUsd: 0,
+			canBuyCredits: true,
+			autoRefill: autoRefillOff,
+			...input,
+		})
 
 	// Healthy funded wallet past include: credits doing their job, no alarm.
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'funded',
 			meters: past,
 			balanceMicroUsd: 40_000_000,
-			canBuyCredits: true,
-			autoRefill: autoRefillOff,
 		}),
 	).toBeNull()
 	// Free and other wallet-less plans never alarm on compute.
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'none',
 			meters: [{ current: 517, include: 50 }],
-			balanceMicroUsd: 0,
 			canBuyCredits: false,
 			autoRefill: null,
 		}),
 	).toBeNull()
 	// Empty wallet within include with room to spare: nothing to say.
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'empty',
 			meters: within,
-			balanceMicroUsd: 0,
-			canBuyCredits: true,
-			autoRefill: autoRefillOff,
 		}),
 	).toBeNull()
 
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'empty',
 			meters: past,
-			balanceMicroUsd: 0,
-			canBuyCredits: true,
-			autoRefill: autoRefillOff,
 		}),
 	).toMatchObject({
 		kind: 'include_used_no_credits',
@@ -203,10 +187,9 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 		action: { label: 'Add credits', href: '/account/usage#credits' },
 	})
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'empty',
 			meters: [{ current: 300, include: 350 }],
-			balanceMicroUsd: 0,
 			canBuyCredits: false,
 			autoRefill: null,
 		}),
@@ -216,12 +199,10 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 		action: { label: 'Subscribe to Pro' },
 	})
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'funded',
 			meters: past,
 			balanceMicroUsd: 3_000_000,
-			canBuyCredits: true,
-			autoRefill: autoRefillOff,
 		}),
 	).toMatchObject({
 		kind: 'credits_low',
@@ -229,20 +210,17 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 	})
 	// Low balance within the include is not an alarm (nothing stops).
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'funded',
 			meters: within,
 			balanceMicroUsd: 3_000_000,
-			canBuyCredits: true,
-			autoRefill: autoRefillOff,
 		}),
 	).toBeNull()
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'funded',
 			meters: within,
 			balanceMicroUsd: 3_000_000,
-			canBuyCredits: true,
 			autoRefill: {
 				enabled: true,
 				thresholdCents: 500,
@@ -254,11 +232,10 @@ test('credits alarm fires only when the wallet or access is at risk', () => {
 	).toMatchObject({ kind: 'auto_refill_capped', tone: 'warn' })
 	// Auto-refill with room under the cap handles a low balance itself.
 	expect(
-		resolveCreditsAlarm({
+		alarm({
 			creditWallet: 'funded',
 			meters: past,
 			balanceMicroUsd: 3_000_000,
-			canBuyCredits: true,
 			autoRefill: {
 				enabled: true,
 				thresholdCents: 500,

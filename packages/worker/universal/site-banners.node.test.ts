@@ -60,101 +60,97 @@ function banner(overrides: Partial<SiteBannerRecord> = {}): SiteBannerRecord {
 	}
 }
 
-test('route patterns match exact, single-segment, and suffix globs', () => {
-	expect(matchRoutePattern('/blog', '/blog')).toBe(true)
-	expect(matchRoutePattern('/blog/', '/blog')).toBe(true)
-	expect(matchRoutePattern('/blog/hello', '/blog')).toBe(false)
-	expect(matchRoutePattern('/blog/hello', '/blog/*')).toBe(true)
-	expect(matchRoutePattern('/blog/hello/world', '/blog/*')).toBe(false)
-	expect(matchRoutePattern('/blog/hello/world', '/blog/**')).toBe(true)
-	expect(matchRoutePattern('/blog', '/blog/**')).toBe(true)
-	expect(matchRoutePattern('/account/usage', '/account/**')).toBe(true)
-	expect(matchRoutePattern('/pricing', '/account/**')).toBe(false)
-})
+test('route patterns, page targeting, audiences, and schedule windows gate eligibility', () => {
+	const patterns: Array<[string, string, boolean]> = [
+		['/blog', '/blog', true],
+		['/blog/', '/blog', true],
+		['/blog/hello', '/blog', false],
+		['/blog/hello', '/blog/*', true],
+		['/blog/hello/world', '/blog/*', false],
+		['/blog/hello/world', '/blog/**', true],
+		['/blog', '/blog/**', true],
+		['/account/usage', '/account/**', true],
+		['/pricing', '/account/**', false],
+	]
+	expect(
+		patterns.filter(
+			([path, pattern, want]) => matchRoutePattern(path, pattern) !== want,
+		),
+	).toEqual([])
 
-test('page targeting all matches every path; routes requires a pattern hit', () => {
+	// Page targeting all matches every path; routes requires a pattern hit.
+	const routesBanner = banner({
+		pageTargeting: 'routes',
+		routePatterns: ['/pricing'],
+	})
 	expect(bannerMatchesPath(banner({ pageTargeting: 'all' }), '/pricing')).toBe(
 		true,
 	)
-	expect(
-		bannerMatchesPath(
-			banner({ pageTargeting: 'routes', routePatterns: ['/pricing'] }),
-			'/pricing',
-		),
-	).toBe(true)
-	expect(
-		bannerMatchesPath(
-			banner({ pageTargeting: 'routes', routePatterns: ['/pricing'] }),
-			'/',
-		),
-	).toBe(false)
-})
+	expect(bannerMatchesPath(routesBanner, '/pricing')).toBe(true)
+	expect(bannerMatchesPath(routesBanner, '/')).toBe(false)
 
-test('audience matching covers everyone, auth state, users, and plans', () => {
-	expect(
-		bannerMatchesAudience(banner({ audience: 'everyone' }), guestViewer),
-	).toBe(true)
-	expect(
-		bannerMatchesAudience(banner({ audience: 'logged_out' }), guestViewer),
-	).toBe(true)
-	expect(
-		bannerMatchesAudience(banner({ audience: 'logged_out' }), adminViewer),
-	).toBe(false)
-	expect(
-		bannerMatchesAudience(banner({ audience: 'logged_in' }), adminViewer),
-	).toBe(true)
-	expect(
-		bannerMatchesAudience(
-			banner({
-				audience: 'users',
-				audienceUserIds: [adminViewer.stableUserId ?? ''],
-			}),
+	const audiences: Array<
+		[Partial<SiteBannerRecord>, SiteBannerViewer, boolean]
+	> = [
+		[{ audience: 'everyone' }, guestViewer, true],
+		[{ audience: 'logged_out' }, guestViewer, true],
+		[{ audience: 'logged_out' }, adminViewer, false],
+		[{ audience: 'logged_in' }, adminViewer, true],
+		[
+			{ audience: 'users', audienceUserIds: [adminViewer.stableUserId ?? ''] },
 			adminViewer,
-		),
-	).toBe(true)
-	expect(
-		bannerMatchesAudience(
-			banner({
-				audience: 'users',
-				audienceUserIds: ['b'.repeat(64)],
-			}),
+			true,
+		],
+		[
+			{ audience: 'users', audienceUserIds: ['b'.repeat(64)] },
 			adminViewer,
-		),
-	).toBe(false)
+			false,
+		],
+		[{ audience: 'plans', audiencePlans: ['pro'] }, adminViewer, true],
+		[{ audience: 'plans', audiencePlans: ['max'] }, adminViewer, false],
+	]
 	expect(
-		bannerMatchesAudience(
-			banner({ audience: 'plans', audiencePlans: ['pro'] }),
-			adminViewer,
+		audiences.filter(
+			([overrides, viewer, want]) =>
+				bannerMatchesAudience(banner(overrides), viewer) !== want,
 		),
-	).toBe(true)
-	expect(
-		bannerMatchesAudience(
-			banner({ audience: 'plans', audiencePlans: ['max'] }),
-			adminViewer,
-		),
-	).toBe(false)
-})
+	).toEqual([])
 
-test('schedule windows exclude banners before start or after end', () => {
 	const now = Date.parse('2026-09-06T12:00:00.000Z')
-	expect(
-		bannerIsScheduled(banner({ startsAt: '2026-09-07T00:00:00.000Z' }), now),
-	).toBe(false)
-	expect(
-		bannerIsScheduled(banner({ endsAt: '2026-09-05T00:00:00.000Z' }), now),
-	).toBe(false)
-	expect(
-		bannerIsScheduled(
-			banner({
+	const schedules: Array<[Partial<SiteBannerRecord>, boolean]> = [
+		[{ startsAt: '2026-09-07T00:00:00.000Z' }, false],
+		[{ endsAt: '2026-09-05T00:00:00.000Z' }, false],
+		[
+			{
 				startsAt: '2026-09-01T00:00:00.000Z',
 				endsAt: '2026-09-10T00:00:00.000Z',
-			}),
-			now,
+			},
+			true,
+		],
+	]
+	expect(
+		schedules.filter(
+			([overrides, want]) => bannerIsScheduled(banner(overrides), now) !== want,
 		),
-	).toBe(true)
+	).toEqual([])
 })
 
-test('highest priority eligible banner wins; dismissed banners lose', () => {
+function resolve(
+	candidates: Array<SiteBannerRecord>,
+	options: Partial<Parameters<typeof resolveVisibleSiteBanner>[0]> = {},
+) {
+	return resolveVisibleSiteBanner({
+		candidates,
+		dismissedIds: [],
+		pathname: '/',
+		viewer: guestViewer,
+		...options,
+	})
+}
+
+const promoLookPreview = () => new URLSearchParams('siteBannerLook=promo')
+
+test('highest priority eligible banner wins; dismissed banners lose; ties break on newer updatedAt', () => {
 	const low = banner({
 		id: '22222222-2222-4222-8222-222222222222',
 		priority: 1,
@@ -165,66 +161,28 @@ test('highest priority eligible banner wins; dismissed banners lose', () => {
 		priority: 50,
 		title: 'High',
 	})
-	expect(
-		resolveVisibleSiteBanner({
-			candidates: [low, high],
-			dismissedIds: [],
-			pathname: '/',
-			viewer: guestViewer,
-		})?.title,
-	).toBe('High')
-	expect(
-		resolveVisibleSiteBanner({
-			candidates: [low, high],
-			dismissedIds: [high.id],
-			pathname: '/',
-			viewer: guestViewer,
-		})?.title,
-	).toBe('Low')
-})
+	expect(resolve([low, high])?.title).toBe('High')
+	expect(resolve([low, high], { dismissedIds: [high.id] })?.title).toBe('Low')
 
-test('priority ties break on newer updatedAt then id', () => {
 	const older = banner({
 		id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		priority: 10,
 		updatedAt: '2026-09-01T00:00:00.000Z',
 	})
 	const newer = banner({
 		id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-		priority: 10,
 		updatedAt: '2026-09-02T00:00:00.000Z',
 	})
 	expect(compareSiteBannerPriority(newer, older)).toBeLessThan(0)
-	expect(
-		resolveVisibleSiteBanner({
-			candidates: [older, newer],
-			dismissedIds: [],
-			pathname: '/',
-			viewer: guestViewer,
-		})?.id,
-	).toBe(newer.id)
+	expect(resolve([older, newer])?.id).toBe(newer.id)
 })
 
 test('auth and oauth shells hide banners unless an admin look preview is set', () => {
 	expect(shouldHideSiteBanner('/login')).toBe(true)
 	expect(shouldHideSiteBanner('/oauth/authorize')).toBe(true)
 	expect(shouldHideSiteBanner('/')).toBe(false)
+	expect(resolve([banner()], { pathname: '/login' })).toBeNull()
 	expect(
-		resolveVisibleSiteBanner({
-			candidates: [banner()],
-			dismissedIds: [],
-			pathname: '/login',
-			viewer: guestViewer,
-		}),
-	).toBeNull()
-	expect(
-		resolveVisibleSiteBanner({
-			candidates: [],
-			dismissedIds: [],
-			pathname: '/',
-			searchParams: new URLSearchParams('siteBannerLook=promo'),
-			viewer: adminViewer,
-		}),
+		resolve([], { searchParams: promoLookPreview(), viewer: adminViewer }),
 	).toMatchObject({
 		look: 'promo',
 		title: 'Kody is live',
@@ -255,13 +213,17 @@ test('parseSiteBannerInput accepts a launch-video banner and rejects bad hrefs',
 	})
 	expect(parsed.ok).toBe(true)
 
-	expect(parseBannerHref('javascript:alert(1)')).toBe(false)
-	expect(parseBannerHref('//evil.example')).toBe(false)
-	expect(parseBannerHref('http://example.com')).toBe(false)
-	expect(parseBannerHref('/blog')).toBe('/blog')
-	expect(parseBannerHref('https://example.com/kody-launch-video')).toBe(
-		'https://example.com/kody-launch-video',
-	)
+	const hrefs: Array<[string, string | false]> = [
+		['javascript:alert(1)', false],
+		['//evil.example', false],
+		['http://example.com', false],
+		['/blog', '/blog'],
+		[
+			'https://example.com/kody-launch-video',
+			'https://example.com/kody-launch-video',
+		],
+	]
+	expect(hrefs.map(([href]) => [href, parseBannerHref(href)])).toEqual(hrefs)
 
 	const missingCtaLabel = parseSiteBannerInput({
 		enabled: true,
@@ -285,11 +247,6 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 		id: '11111111-1111-4111-8111-111111111111',
 		audience: 'everyone',
 	})
-	const loggedInBanner = banner({
-		id: '22222222-2222-4222-8222-222222222222',
-		audience: 'logged_in',
-		title: 'Members only',
-	})
 	const targeted = banner({
 		id: '33333333-3333-4333-8333-333333333333',
 		audience: 'users',
@@ -305,20 +262,27 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 		audienceUserIds: [memberId],
 		title: 'Someone else',
 	})
+	const select = (viewer: SiteBannerViewer, includeUnmatched: boolean) =>
+		selectSiteBannersForClient({
+			banners: [
+				publicBanner,
+				banner({
+					id: '22222222-2222-4222-8222-222222222222',
+					audience: 'logged_in',
+					title: 'Members only',
+				}),
+				targeted,
+				otherUser,
+			],
+			viewer,
+			includeUnmatched,
+		})
 
-	const guestCandidates = selectSiteBannersForClient({
-		banners: [publicBanner, loggedInBanner, targeted, otherUser],
-		viewer: guestViewer,
-		includeUnmatched: false,
-	})
+	const guestCandidates = select(guestViewer, false)
 	expect(guestCandidates.map((item) => item.id)).toEqual([publicBanner.id])
 	expect(guestCandidates[0]?.audienceUserIds).toEqual([])
 
-	const adminCandidates = selectSiteBannersForClient({
-		banners: [publicBanner, loggedInBanner, targeted, otherUser],
-		viewer: adminViewer,
-		includeUnmatched: false,
-	})
+	const adminCandidates = select(adminViewer, false)
 	expect(adminCandidates.map((item) => item.title)).toEqual([
 		'Kody is live',
 		'Members only',
@@ -335,16 +299,9 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 	expect(JSON.stringify(adminCandidates)).not.toContain(memberId)
 	expect(JSON.stringify(adminCandidates)).not.toContain(adminStableUserId)
 
-	const previewCandidates = selectSiteBannersForClient({
-		banners: [publicBanner, loggedInBanner, targeted, otherUser],
-		viewer: adminViewer,
-		includeUnmatched: true,
-	})
+	const previewCandidates = select(adminViewer, true)
 	expect(previewCandidates.find((item) => item.id === otherUser.id)).toEqual(
-		expect.objectContaining({
-			audience: 'users',
-			audienceUserIds: [],
-		}),
+		expect.objectContaining({ audience: 'users', audienceUserIds: [] }),
 	)
 	expect(previewCandidates.find((item) => item.id === targeted.id)).toEqual(
 		expect.objectContaining({
@@ -353,20 +310,12 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 			title: 'Just you',
 		}),
 	)
+	expect(resolve(previewCandidates, { viewer: adminViewer })?.title).toBe(
+		'Just you',
+	)
 	expect(
-		resolveVisibleSiteBanner({
-			candidates: previewCandidates,
-			dismissedIds: [],
-			pathname: '/',
-			viewer: adminViewer,
-		})?.title,
-	).toBe('Just you')
-	expect(
-		resolveVisibleSiteBanner({
-			candidates: previewCandidates,
-			dismissedIds: [],
-			pathname: '/',
-			searchParams: new URLSearchParams('siteBannerLook=promo'),
+		resolve(previewCandidates, {
+			searchParams: promoLookPreview(),
 			viewer: adminViewer,
 		})?.title,
 	).toBe('Just you')
@@ -376,36 +325,26 @@ test('public banner views keep stored CTAs and derive first-party thumbs', () =>
 	const videoId = 'QA0xYMAMjEg'
 	const playlistWatchUrl = `https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`
 	const onSiteWatchHref = `/?youtubeId=${videoId}`
-	const externalView = toSiteBannerView(
-		banner({
-			ctaHref: playlistWatchUrl,
-			secondaryHref: `https://youtu.be/${videoId}`,
-			imageUrl: null,
-		}),
-	)
-	expect(externalView.ctaHref).toBe(playlistWatchUrl)
-	expect(externalView.secondaryHref).toBe(`https://youtu.be/${videoId}`)
-	expect(externalView.imageUrl).toBe(`/youtube-thumb/${videoId}`)
-
-	const onSiteView = toSiteBannerView(
-		banner({
-			ctaHref: onSiteWatchHref,
-			imageUrl: null,
-		}),
-	)
-	expect(onSiteView.ctaHref).toBe(onSiteWatchHref)
-	expect(onSiteView.imageUrl).toBe(`/youtube-thumb/${videoId}`)
-
-	const selected = resolveVisibleSiteBanner({
-		candidates: [
+	expect(
+		toSiteBannerView(
 			banner({
 				ctaHref: playlistWatchUrl,
+				secondaryHref: `https://youtu.be/${videoId}`,
 				imageUrl: null,
 			}),
-		],
-		dismissedIds: [],
-		pathname: '/',
-		viewer: guestViewer,
+		),
+	).toMatchObject({
+		ctaHref: playlistWatchUrl,
+		secondaryHref: `https://youtu.be/${videoId}`,
+		imageUrl: `/youtube-thumb/${videoId}`,
 	})
-	expect(selected?.ctaHref).toBe(playlistWatchUrl)
+	expect(
+		toSiteBannerView(banner({ ctaHref: onSiteWatchHref, imageUrl: null })),
+	).toMatchObject({
+		ctaHref: onSiteWatchHref,
+		imageUrl: `/youtube-thumb/${videoId}`,
+	})
+	expect(
+		resolve([banner({ ctaHref: playlistWatchUrl, imageUrl: null })])?.ctaHref,
+	).toBe(playlistWatchUrl)
 })
