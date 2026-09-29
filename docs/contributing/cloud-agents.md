@@ -116,6 +116,32 @@ review-thread replies (`403`). Reply with `kody:@kentcdodds/github/request`
 (kody-bot) or Cursor `ManagePullRequest` `post_comment` / `in_reply_to`. See
 [ship-pr](../../.agents/skills/ship-pr/SKILL.md).
 
+## GitHub token expiry mid-run
+
+The `x-access-token` baked into `~/.gitconfig` and `~/.config/gh/hosts.yml` at
+VM boot can stop working after tens of minutes (`git push` / `gh` report `401` /
+`Invalid username or token`). The metadata socket has no token endpoint. The
+environment rewrites those files on its own; there is no supported way to mint a
+replacement from this repo.
+
+When `git push` or `gh` fails with bad credentials:
+
+1. Confirm it: `gh auth status` and `git ls-remote origin HEAD`.
+2. Check whether the environment has rewritten the files (`stat ~/.gitconfig`
+   `~/.config/gh/hosts.yml`). If mtimes are still boot-time, wait and retry
+   those two commands. Observed rewrite delay has been on the order of 30–40
+   minutes; do not treat that as a contract.
+3. Once `gh auth status` is valid again, retry `git push`. Cursor
+   `ManagePullRequest` does not replace `git push`.
+4. Do **not** invent a Contents API / Git Data API / throwaway-repo transfer as
+   kody-bot. That path ships the wrong author and skips the standard AI
+   reviewer. If the token is still dead at the end of the run, park the PR and
+   say so.
+
+Kody `@kentcdodds/github/request` (kody-bot) can still comment, label, and read
+when the Cloud Agent git token is stale. Use it for GitHub API writes that
+ship-pr already routes through kody-bot — not for pushing the branch.
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |
@@ -156,7 +182,8 @@ review-thread replies (`403`). Reply with `kody:@kentcdodds/github/request`
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived interactive `npm run dev` in tmux so the session survives tool
   timeouts. `dev:ensure` detaches the started process so the ensure command can
-  exit.
+  exit, tees that process to `.tmp/dev-server.log`, and prints
+  `Dev server log: <path>` so a later crash is readable without restarting.
 - Health check (no auth): `curl http://localhost:<port>/health` →
   `{"ok":true,"commitSha":...,"commit":...,"pullRequest":...,"deploy":...}`.
   Locally the extra fields are `null` unless a deploy var is set. Platform and

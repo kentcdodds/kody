@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
+import {
+	closeSync,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -264,6 +273,27 @@ export function envWithPreferredNode26(
 
 export function formatAppRunning(origin: string) {
 	return `App running at ${origin}`
+}
+
+export const defaultDevServerLogRelativePath = '.tmp/dev-server.log'
+
+export function resolveDevServerLogPath(root = process.cwd()) {
+	return path.join(root, defaultDevServerLogRelativePath)
+}
+
+export function formatDevServerLogPath(logPath: string) {
+	return `Dev server log: ${logPath}`
+}
+
+export function tailDevServerLog(logPath: string, maxLines = 80) {
+	try {
+		const lines = readFileSync(logPath, 'utf8')
+			.split(/\r?\n/)
+			.filter((line) => line.length > 0)
+		return lines.slice(-maxLines).join('\n')
+	} catch {
+		return ''
+	}
 }
 
 export const workerEnvRelativePath = 'packages/worker/.env'
@@ -537,45 +567,38 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 			`Created ${workerEnvRelativePath} from ${workerEnvExampleRelativePath}`,
 		)
 	}
+	const logPath = resolveDevServerLogPath()
+	mkdirSync(path.dirname(logPath), { recursive: true })
+	writeFileSync(
+		logPath,
+		`--- ${new Date().toISOString()} npm run dev ---\n`,
+		'utf8',
+	)
+	const logFd = openSync(logPath, 'a')
 	const child = spawnInOwnProcessGroup(resolveNpmCommand(), ['run', 'dev'], {
-		stdio: ['ignore', 'pipe', 'pipe'],
+		stdio: ['ignore', logFd, logFd],
 		env,
 		cwd: process.cwd(),
 	})
-	const buffered: Array<string> = []
-	const stdoutState = { pending: '' }
-	const stderrState = { pending: '' }
+	closeSync(logFd)
+	console.log(formatDevServerLogPath(logPath))
 	let exited = false
-	child.stdout?.on('data', (chunk: Buffer | string) => {
-		appendDevOutputChunk(buffered, stdoutState, chunk.toString())
-	})
-	child.stderr?.on('data', (chunk: Buffer | string) => {
-		appendDevOutputChunk(buffered, stderrState, chunk.toString())
-	})
 	child.once('exit', (code, signal) => {
 		exited = true
 		if (code && code !== 0) {
+			const output = tailDevServerLog(logPath)
 			console.error(
-				`npm run dev exited (${signal ?? `code ${code}`}). Last output:\n${joinDevOutput(buffered, stdoutState.pending, stderrState.pending)}`,
+				`npm run dev exited (${signal ?? `code ${code}`}). Last output:\n${output}`,
 			)
 		}
 	})
-	function detachPipes() {
-		child.stdout?.removeAllListeners()
-		child.stderr?.removeAllListeners()
-		child.stdout?.destroy()
-		child.stderr?.destroy()
-	}
 	return {
 		hasExited: () => exited || child.exitCode !== null,
-		lastOutput: () =>
-			joinDevOutput(buffered, stdoutState.pending, stderrState.pending),
+		lastOutput: () => tailDevServerLog(logPath),
 		unref() {
-			detachPipes()
 			child.unref()
 		},
 		async stop() {
-			detachPipes()
 			await stopChildProcessTree(child)
 		},
 	}
