@@ -126,6 +126,14 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 	expect(invalid.parsedBody).toBeUndefined()
 })
 
+const modernListEvent = {
+	lane: 'modern',
+	method: 'tools/list',
+	protocolVersion: '2026-07-28',
+	clientName: '',
+	clientVersion: '',
+} as const
+
 test('recordMcpProtocolEvent writes a data point, no-ops without binding, and swallows sink errors', () => {
 	const writeDataPoint = vi.fn<(point: AnalyticsEngineDataPoint) => void>()
 	const env = {
@@ -156,18 +164,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 		doubles: [1],
 	})
 
-	expect(() =>
-		recordMcpProtocolEvent(
-			{},
-			{
-				lane: 'modern',
-				method: 'tools/list',
-				protocolVersion: '2026-07-28',
-				clientName: '',
-				clientVersion: '',
-			},
-		),
-	).not.toThrow()
+	expect(() => recordMcpProtocolEvent({}, modernListEvent)).not.toThrow()
 
 	consoleWarn.mockImplementation(() => {})
 	expect(() =>
@@ -179,13 +176,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 					},
 				} as unknown as AnalyticsEngineDataset,
 			},
-			{
-				lane: 'modern',
-				method: 'tools/list',
-				protocolVersion: '2026-07-28',
-				clientName: '',
-				clientVersion: '',
-			},
+			modernListEvent,
 		),
 	).not.toThrow()
 	expect(consoleWarn).toHaveBeenCalledWith(

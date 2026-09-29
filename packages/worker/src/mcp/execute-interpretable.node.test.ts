@@ -7,100 +7,79 @@ import {
 } from './execute-interpretable.ts'
 
 test('classifies glue-only execute modules and each documented disqualifier', () => {
-	expect(
-		classifyExecuteInterpretable(`import { kody } from 'kody:runtime'
+	const cases: Array<[source: string, reason: string]> = [
+		[
+			`import { kody } from 'kody:runtime'
 export default async function main() {
 	return await kody.capability_id({})
-}`),
-	).toEqual({ class: 'interpretable', reason: 'glue' })
-
-	expect(
-		classifyExecuteInterpretable(`import { email, workflows } from 'kody:runtime'
+}`,
+			'glue',
+		],
+		[
+			`import { email, workflows } from 'kody:runtime'
 export default async function main() {
 	return await email.send({ to: 'a@example.com', subject: 'hi', text: 'hi' })
-}`),
-	).toEqual({ class: 'interpretable', reason: 'glue' })
-
-	expect(
-		classifyExecuteInterpretable(
-			'export default async function main() { return { ok: true } }',
-		),
-	).toEqual({ class: 'interpretable', reason: 'glue' })
-
-	expect(
-		classifyExecuteInterpretable(
+}`,
+			'glue',
+		],
+		['export default async function main() { return { ok: true } }', 'glue'],
+		[
 			`import type { Config } from 'kody:@owner/types/config'
 import { kody } from 'kody:runtime'
 export default async function main() {
 	return await kody.capability_id({})
 }`,
-		),
-	).toEqual({ class: 'interpretable', reason: 'glue' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'glue',
+		],
+		[
 			`import whatShipped from 'kody:@you/kody-bot-shipped/whatShipped'
 export default async function main() {
 	return await whatShipped({})
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_package_import' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_package_import',
+		],
+		[
 			`const mod = await import('kody:@scope/notes/note-list')
 export default async function main() {
 	return await mod.default({})
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_package_import' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_package_import',
+		],
+		[
 			`import { get } from 'lodash'
 export default async function main() {
 	return get({ a: 1 }, 'a')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_npm' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_npm',
+		],
+		[
 			`import { createHash } from 'node:crypto'
 export default async function main() {
 	return createHash('sha256').update('x').digest('hex')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_node_builtin' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_node_builtin',
+		],
+		[
 			`export default async function main() {
 	return await fetch('https://example.com')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_fetch' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_fetch',
+		],
+		[
 			`export default async function main() {
 	return await globalThis.fetch('https://example.com')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_fetch' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_fetch',
+		],
+		[
 			`import { createAuthenticatedFetch } from 'kody:runtime'
 export default async function main() {
 	const authFetch = createAuthenticatedFetch('github')
 	return await authFetch('https://api.github.com/user')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_fetch' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_fetch',
+		],
+		[
 			`import { oauthClientCredentials } from 'kody:runtime'
 export default async function main() {
 	return await oauthClientCredentials({
@@ -109,53 +88,47 @@ export default async function main() {
 		clientSecretSecret: 'client-secret',
 	})
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_fetch' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_fetch',
+		],
+		[
 			`const specifier = condition ? 'kody:runtime' : 'lodash'
 const mod = await import(specifier)
 export default async function main() {
 	return mod
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_dynamic_import' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_dynamic_import',
+		],
+		[
 			`import { connect } from 'cloudflare:sockets'
 export default async function main() {
 	return connect
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_unsupported_import' })
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_unsupported_import',
+		],
+		[
 			`import helper from './helper.ts'
 export default async function main() {
 	return helper()
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_unsupported_import' })
-
-	expect(
-		classifyExecuteInterpretable('export default async function main( {'),
-	).toEqual({
-		class: 'non_interpretable',
-		reason: 'unparseable',
-	})
-
-	expect(
-		classifyExecuteInterpretable(
+			'has_unsupported_import',
+		],
+		['export default async function main( {', 'unparseable'],
+		// The first disqualifier wins when several apply.
+		[
 			`import whatShipped from 'kody:@you/bot/whatShipped'
 import { get } from 'lodash'
 export default async function main() {
 	return await fetch('https://example.com')
 }`,
-		),
-	).toEqual({ class: 'non_interpretable', reason: 'has_package_import' })
+			'has_package_import',
+		],
+	]
+	expect(cases.map(([source]) => classifyExecuteInterpretable(source))).toEqual(
+		cases.map(([, reason]) => ({
+			class: reason === 'glue' ? 'interpretable' : 'non_interpretable',
+			reason,
+		})),
+	)
 })
 
 test('records a privacy-safe payload and never throws when unavailable or broken', () => {

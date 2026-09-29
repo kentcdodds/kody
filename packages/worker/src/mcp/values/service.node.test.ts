@@ -243,72 +243,63 @@ function createValueTestDb() {
 	}
 }
 
-test('value service respects storage context precedence and deletion', async () => {
+function createValueEnv() {
 	const testDb = createValueTestDb()
 	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-	const storageContext = {
-		sessionId: 'session-123',
-		appId: 'app-123',
-	}
+	return { testDb, env: { APP_DB: testDb.db, ...meterEnv } }
+}
+
+const isCallerError =
+	(matches: (message: string) => boolean) => (error: unknown) =>
+		error instanceof McpCallerError && matches(error.message)
+const scopeUnavailable = (scope: string) =>
+	isCallerError(
+		(message) =>
+			message === `Value scope "${scope}" is unavailable in this context.`,
+	)
+
+test('value service respects storage context precedence and deletion', async () => {
+	const { env } = createValueEnv()
+	const storageContext = { sessionId: 'session-123', appId: 'app-123' }
+	const userId = 'user-123'
+	const name = 'workspaceSlug'
 
 	await saveValue({
 		env,
-		userId: 'user-123',
+		userId,
 		scope: 'user',
-		name: 'workspaceSlug',
+		name,
 		value: 'global-workspace',
 		description: 'Global workspace slug',
 	})
 	await saveValue({
 		env,
-		userId: 'user-123',
+		userId,
 		scope: 'app',
-		name: 'workspaceSlug',
+		name,
 		value: 'app-workspace',
 		description: 'App workspace slug',
 		storageContext,
 	})
 	await saveValue({
 		env,
-		userId: 'user-123',
+		userId,
 		scope: 'session',
-		name: 'workspaceSlug',
+		name,
 		value: 'session-workspace',
 		description: 'Session workspace slug',
 		storageContext,
 		sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
 	})
 
-	expect(
-		await getValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			storageContext,
-		}),
-	).toMatchObject({
+	expect(await getValue({ env, userId, name, storageContext })).toMatchObject({
 		scope: 'session',
 		value: 'session-workspace',
 	})
 	expect(
-		await getValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			scope: 'app',
-			storageContext,
-		}),
-	).toMatchObject({
-		scope: 'app',
-		value: 'app-workspace',
-	})
-
-	const listed = await listValues({
-		env,
-		userId: 'user-123',
-		storageContext,
-	})
+		await getValue({ env, userId, name, scope: 'app', storageContext }),
+	).toMatchObject({ scope: 'app', value: 'app-workspace' })
+	const listed = await listValues({ env, userId, storageContext })
 	expect(listed.map((value) => `${value.scope}:${value.value}`)).toEqual([
 		'session:session-workspace',
 		'app:app-workspace',
@@ -316,108 +307,40 @@ test('value service respects storage context precedence and deletion', async () 
 	])
 
 	expect(
-		await deleteValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			scope: 'session',
-			storageContext,
-		}),
+		await deleteValue({ env, userId, name, scope: 'session', storageContext }),
 	).toBe(true)
-
-	expect(
-		await getValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			storageContext,
-		}),
-	).toMatchObject({
+	expect(await getValue({ env, userId, name, storageContext })).toMatchObject({
 		scope: 'app',
 		value: 'app-workspace',
 	})
 })
 
-test('value service rejects unavailable scoped storage', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-
-	await expect(
-		saveValue({
-			env,
-			userId: 'user-123',
-			scope: 'app',
-			name: 'workspaceSlug',
-			value: 'missing-app',
-			storageContext: {
-				sessionId: 'session-123',
-				appId: null,
-			},
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message === 'Value scope "app" is unavailable in this context.',
-	)
-
-	await expect(
-		saveValue({
-			env,
-			userId: 'user-123',
-			scope: 'session',
-			name: 'workspaceSlug',
-			value: 'missing-session',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-			},
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message === 'Value scope "session" is unavailable in this context.',
-	)
-})
-
-test('value service rejects app scope when only storageId is bound', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-	const storageContext = {
+test('value service rejects unavailable scoped storage and cannot read legacy app buckets keyed by storageId', async () => {
+	const { testDb, env } = createValueEnv()
+	const jobStorageContext = {
 		sessionId: null,
 		appId: null,
 		storageId: 'job:job-123',
 	}
-
-	expect(getStorageBindingKey('app', storageContext)).toBeNull()
-	expect(resolveStorageScopeOrder(storageContext)).toEqual(['user'])
-
-	await expect(
-		saveValue({
-			env,
-			userId: 'user-123',
-			scope: 'app',
-			name: 'workspaceSlug',
-			value: 'job-scratch-as-app',
-			storageContext,
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message === 'Value scope "app" is unavailable in this context.',
-	)
-})
-
-test('value service cannot read legacy app buckets keyed by storageId', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-	const storageContext = {
-		sessionId: null,
-		appId: null,
-		storageId: 'job:job-123',
+	for (const [scope, storageContext] of [
+		['app', { sessionId: 'session-123', appId: null }],
+		['session', { sessionId: null, appId: null }],
+		['app', jobStorageContext],
+	] as const) {
+		await expect(
+			saveValue({
+				env,
+				userId: 'user-123',
+				scope,
+				name: 'workspaceSlug',
+				value: 'unavailable',
+				storageContext,
+			}),
+		).rejects.toSatisfy(scopeUnavailable(scope))
 	}
+	expect(getStorageBindingKey('app', jobStorageContext)).toBeNull()
+	expect(resolveStorageScopeOrder(jobStorageContext)).toEqual(['user'])
+
 	const now = new Date().toISOString()
 	const bucketId = 'legacy-job-app-bucket'
 	testDb.buckets.set('user-123:app:job:job-123', {
@@ -437,179 +360,96 @@ test('value service cannot read legacy app buckets keyed by storageId', async ()
 		created_at: now,
 		updated_at: now,
 	})
-
-	expect(resolveStorageScopeOrder(storageContext)).toEqual(['user'])
-	expect(
-		await getValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			storageContext,
-		}),
-	).toBeNull()
-	expect(
-		await getValue({
-			env,
-			userId: 'user-123',
-			name: 'workspaceSlug',
-			scope: 'app',
-			storageContext,
-		}),
-	).toBeNull()
-	expect(
-		await listValues({
-			env,
-			userId: 'user-123',
-			storageContext,
-		}),
-	).toEqual([])
+	const lookup = {
+		env,
+		userId: 'user-123',
+		name: 'workspaceSlug',
+		storageContext: jobStorageContext,
+	}
+	expect(await getValue(lookup)).toBeNull()
+	expect(await getValue({ ...lookup, scope: 'app' })).toBeNull()
+	expect(await listValues(lookup)).toEqual([])
 })
 
 test('value service rejects values too large for restorable D1 backups', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-
-	await expect(
+	const { env } = createValueEnv()
+	const saveUserValue = (name: string, bytes: number) =>
 		saveValue({
 			env,
 			userId: 'user-123',
 			scope: 'user',
-			name: 'giantHistoryCache',
-			value: 'x'.repeat(maxRestorableTextColumnBytes + 1),
+			name,
+			value: 'x'.repeat(bytes),
 			storageContext: { sessionId: null, appId: null },
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message.includes('too large to store'),
-	)
+		})
 
+	await expect(
+		saveUserValue('giantHistoryCache', maxRestorableTextColumnBytes + 1),
+	).rejects.toSatisfy(
+		isCallerError((message) => message.includes('too large to store')),
+	)
 	// A value at the limit is accepted.
-	const saved = await saveValue({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'largeButRestorable',
-		value: 'x'.repeat(maxRestorableTextColumnBytes),
-		storageContext: { sessionId: null, appId: null },
-	})
+	const saved = await saveUserValue(
+		'largeButRestorable',
+		maxRestorableTextColumnBytes,
+	)
 	expect(saved.name).toBe('largeButRestorable')
 })
 
 test('deleteAllAppScopedValues removes all app-scoped values for one app', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-
-	await saveValue({
-		env,
-		userId: 'user-123',
-		scope: 'app',
-		name: 'token',
-		value: 'app-one',
-		storageContext: {
-			sessionId: null,
-			appId: 'app-1',
-		},
-	})
-	await saveValue({
-		env,
-		userId: 'user-123',
-		scope: 'app',
-		name: 'token',
-		value: 'app-two',
-		storageContext: {
-			sessionId: null,
-			appId: 'app-2',
-		},
-	})
-
-	await expect(
-		deleteAllAppScopedValues({
+	const { env } = createValueEnv()
+	const appContext = (appId: string) => ({ sessionId: null, appId })
+	for (const appId of ['app-1', 'app-2']) {
+		await saveValue({
 			env,
 			userId: 'user-123',
-			appId: 'app-1',
-		}),
+			scope: 'app',
+			name: 'token',
+			value: appId === 'app-1' ? 'app-one' : 'app-two',
+			storageContext: appContext(appId),
+		})
+	}
+
+	await expect(
+		deleteAllAppScopedValues({ env, userId: 'user-123', appId: 'app-1' }),
 	).resolves.toBe(true)
-
-	await expect(
+	const readToken = (appId: string) =>
 		getValue({
 			env,
 			userId: 'user-123',
 			name: 'token',
 			scope: 'app',
-			storageContext: {
-				sessionId: null,
-				appId: 'app-1',
-			},
-		}),
-	).resolves.toBeNull()
-
-	await expect(
-		getValue({
-			env,
-			userId: 'user-123',
-			name: 'token',
-			scope: 'app',
-			storageContext: {
-				sessionId: null,
-				appId: 'app-2',
-			},
-		}),
-	).resolves.toMatchObject({
-		value: 'app-two',
-	})
+			storageContext: appContext(appId),
+		})
+	await expect(readToken('app-1')).resolves.toBeNull()
+	await expect(readToken('app-2')).resolves.toMatchObject({ value: 'app-two' })
 })
 
 test('listValues uses one metadata query across buckets and preserves ordering', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
-	const storageContext = {
-		sessionId: 'session-456',
-		appId: 'app-456',
+	const { testDb, env } = createValueEnv()
+	const storageContext = { sessionId: 'session-456', appId: 'app-456' }
+	const userId = 'user-456'
+	for (const [scope, name, value] of [
+		['user', 'zebra', 'user-zebra'],
+		['user', 'alpha', 'user-alpha'],
+		['app', 'beta', 'app-beta'],
+		['session', 'gamma', 'session-gamma'],
+	] as const) {
+		await saveValue({
+			env,
+			userId,
+			scope,
+			name,
+			value,
+			...(scope === 'user' ? {} : { storageContext }),
+			...(scope === 'session'
+				? { sessionExpiresAt: new Date(Date.now() + 60_000).toISOString() }
+				: {}),
+		})
 	}
 
-	await saveValue({
-		env,
-		userId: 'user-456',
-		scope: 'user',
-		name: 'zebra',
-		value: 'user-zebra',
-	})
-	await saveValue({
-		env,
-		userId: 'user-456',
-		scope: 'user',
-		name: 'alpha',
-		value: 'user-alpha',
-	})
-	await saveValue({
-		env,
-		userId: 'user-456',
-		scope: 'app',
-		name: 'beta',
-		value: 'app-beta',
-		storageContext,
-	})
-	await saveValue({
-		env,
-		userId: 'user-456',
-		scope: 'session',
-		name: 'gamma',
-		value: 'session-gamma',
-		storageContext,
-		sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-	})
-
 	const metadataQueriesBefore = testDb.listMetadataQueryCount
-	const listed = await listValues({
-		env,
-		userId: 'user-456',
-		storageContext,
-	})
-
+	const listed = await listValues({ env, userId, storageContext })
 	expect(testDb.listMetadataQueryCount - metadataQueriesBefore).toBe(1)
 	expect(
 		listed.map((value) => `${value.scope}:${value.name}:${value.value}`),
@@ -620,68 +460,44 @@ test('listValues uses one metadata query across buckets and preserves ordering',
 		'user:zebra:user-zebra',
 	])
 
-	await deleteValue({
-		env,
-		userId: 'user-456',
-		name: 'beta',
-		scope: 'app',
-		storageContext,
-	})
+	await deleteValue({ env, userId, name: 'beta', scope: 'app', storageContext })
 	expect(
-		(
-			await listValues({
-				env,
-				userId: 'user-456',
-				storageContext,
-			})
-		).map((value) => `${value.scope}:${value.name}`),
+		(await listValues({ env, userId, storageContext })).map(
+			(value) => `${value.scope}:${value.name}`,
+		),
 	).toEqual(['session:gamma', 'user:alpha', 'user:zebra'])
 	expect(
-		await listValues({
-			env,
-			userId: 'user-missing',
-			storageContext,
-		}),
+		await listValues({ env, userId: 'user-missing', storageContext }),
 	).toEqual([])
 })
 
 test('saveValue permits underscore-prefixed ordinary value names', async () => {
-	const testDb = createValueTestDb()
-	const { env: meterEnv } = createInMemoryUserMeterEnv()
-	const env = { APP_DB: testDb.db, ...meterEnv }
+	const { env } = createValueEnv()
+	const stored = { name: '_scratch:widgets', value: '{"provider":"widgets"}' }
 
-	const saved = await saveValue({
-		env,
-		userId: 'user-platform',
-		scope: 'user',
-		name: '_scratch:widgets',
-		value: '{"provider":"widgets"}',
-		description: 'Scratch widgets config',
-	})
-
-	expect(saved).toMatchObject({
-		name: '_scratch:widgets',
-		value: '{"provider":"widgets"}',
-		scope: 'user',
-	})
-	expect(
-		await getValue({
+	await expect(
+		saveValue({
 			env,
 			userId: 'user-platform',
-			name: '_scratch:widgets',
+			scope: 'user',
+			description: 'Scratch widgets config',
+			...stored,
+		}),
+	).resolves.toMatchObject({ ...stored, scope: 'user' })
+	await expect(
+		getValue({
+			env,
+			userId: 'user-platform',
+			name: stored.name,
 			scope: 'user',
 		}),
-	).toMatchObject({
-		name: '_scratch:widgets',
-		value: '{"provider":"widgets"}',
-	})
+	).resolves.toMatchObject(stored)
 })
 
 test('saveValue awaits the UserMeter atomic reserve and never writes the retired D1 mirror', async () => {
 	const testDb = createValueTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const userId = 'a'.repeat(64)
-	const email = 'value-storage@example.com'
 	await meter.seedStorageBytes({ userId, bytes: 7 })
 
 	const d1StorageWrites: Array<string> = []
@@ -725,7 +541,7 @@ test('saveValue awaits the UserMeter atomic reserve and never writes the retired
 	const saved = await saveValue({
 		env,
 		userId,
-		userEmail: email,
+		userEmail: 'value-storage@example.com',
 		scope: 'user',
 		name: 'metered-value',
 		value: 'hello-storage',

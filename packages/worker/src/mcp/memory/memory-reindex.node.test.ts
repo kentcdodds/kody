@@ -3,6 +3,7 @@ import {
 	d1LockRetryBaseDelayMs,
 	d1LockRetryMaxAttempts,
 } from '#worker/d1-retry.ts'
+import { reindexMemoryVectors } from './memory-reindex.ts'
 import { type McpMemoryRow } from './types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -29,14 +30,13 @@ vi.mock('./repo.ts', () => ({
 		mockModule.listMemoriesPage(...args),
 }))
 
-const { reindexMemoryVectors } = await import('./memory-reindex.ts')
-
-function resetMocks() {
-	mockModule.embedTextsForVectorize.mockReset()
-	mockModule.getCapabilityVectorIndex.mockReset()
-	mockModule.isCapabilitySearchOffline.mockReset()
-	mockModule.listMemoriesPage.mockReset()
+function mockOnlineVectorIndex(upsert: unknown) {
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
 }
+
+const exportInProgress = () =>
+	new Error('D1_ERROR: Currently processing a long-running export.')
 
 function buildMemoryRow(id: string): McpMemoryRow {
 	return {
@@ -58,10 +58,8 @@ function buildMemoryRow(id: string): McpMemoryRow {
 }
 
 test('memory reindex walks keyset pages and merges the page results', async () => {
-	resetMocks()
 	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockOnlineVectorIndex(upsert)
 	mockModule.embedTextsForVectorize.mockImplementation(
 		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
 	)
@@ -101,10 +99,8 @@ test('memory reindex walks keyset pages and merges the page results', async () =
 })
 
 test('memory reindex retries transient D1 export page errors then surfaces exhaustion', async () => {
-	resetMocks()
 	const upsert = vi.fn()
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockOnlineVectorIndex(upsert)
 	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
 	mockModule.listMemoriesPage.mockResolvedValueOnce([])
 	await expect(reindexMemoryVectors({ APP_DB: {} } as Env)).resolves.toEqual({
@@ -113,14 +109,9 @@ test('memory reindex retries transient D1 export page errors then surfaces exhau
 		afterId: null,
 	})
 
-	resetMocks()
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1]])
+	mockModule.listMemoriesPage.mockClear()
 	mockModule.listMemoriesPage
-		.mockRejectedValueOnce(
-			new Error('D1_ERROR: Currently processing a long-running export.'),
-		)
+		.mockRejectedValueOnce(exportInProgress())
 		.mockResolvedValueOnce([buildMemoryRow('memory-1')])
 
 	vi.useFakeTimers()
@@ -138,12 +129,8 @@ test('memory reindex retries transient D1 export page errors then surfaces exhau
 	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(2)
 	expect(upsert).toHaveBeenCalledTimes(1)
 
-	resetMocks()
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert: vi.fn() })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listMemoriesPage.mockRejectedValue(
-		new Error('D1_ERROR: Currently processing a long-running export.'),
-	)
+	mockModule.listMemoriesPage.mockClear()
+	mockModule.listMemoriesPage.mockRejectedValue(exportInProgress())
 
 	vi.useFakeTimers()
 	try {

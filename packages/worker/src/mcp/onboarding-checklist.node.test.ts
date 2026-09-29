@@ -53,6 +53,16 @@ async function readDismissedAt(db: D1Database, stableUserId = userId) {
 	return row?.onboarding_checklist_dismissed_at ?? null
 }
 
+function noticeWith(env: Env, oauthProvider?: Record<string, unknown>) {
+	return buildOnboardingSearchNotice({
+		env: (oauthProvider
+			? { ...env, OAUTH_PROVIDER: oauthProvider }
+			: env) as Env,
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+}
+
 test('checklist derives wizard steps from grants and an access win, not integrations', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
@@ -94,111 +104,87 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 		.run()
 	expect(await loadOnboardingAccessWin(env, userId)).toBe(true)
 
-	const afterSearch = await buildOnboardingSearchNotice({
-		env: {
-			...env,
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [{ id: 'grant-1', clientId: 'client-a' }],
-				}),
-			},
+	// Two grants alone still ask for a second agent; the notice clears only
+	// once grants resolve to two distinct client ecosystems.
+	const grantCases = [
+		{ label: 'one grant', items: [{ id: 'grant-1', clientId: 'client-a' }] },
+		{
+			label: 'two grants, same client',
+			items: [
+				{ id: 'grant-1', clientId: 'client-a' },
+				{ id: 'grant-2', clientId: 'client-a' },
+			],
 		},
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(afterSearch).not.toContain('Make something useful')
-	expect(afterSearch).toContain('Connect a second agent')
-
-	const twoGrantsSameClient = await buildOnboardingSearchNotice({
-		env: {
-			...env,
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [
-						{ id: 'grant-1', clientId: 'client-a' },
-						{ id: 'grant-2', clientId: 'client-a' },
-					],
-				}),
-			},
+		{
+			label: 'two unique unlabeled clients',
+			items: [
+				{ id: 'grant-1', clientId: 'client-a' },
+				{ id: 'grant-2', clientId: 'client-b' },
+			],
 		},
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(twoGrantsSameClient).toContain('Connect a second agent')
-
-	const twoUniqueUnlabeledClients = await buildOnboardingSearchNotice({
-		env: {
-			...env,
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [
-						{ id: 'grant-1', clientId: 'client-a' },
-						{ id: 'grant-2', clientId: 'client-b' },
-					],
-				}),
-			},
+		{
+			label: 'dual Cursor contexts',
+			items: [
+				{
+					id: 'grant-local',
+					clientId: 'cursor-local-client',
+					redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+				},
+				{
+					id: 'grant-cloud',
+					clientId: 'cursor-cloud-client',
+					redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
+				},
+			],
+			lookupClient: async (clientId: string) => ({
+				clientId,
+				clientName: 'Cursor',
+			}),
 		},
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(twoUniqueUnlabeledClients).toContain('Connect a second agent')
-
-	const dualCursorContexts = await buildOnboardingSearchNotice({
-		env: {
-			...env,
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [
-						{
-							id: 'grant-local',
-							clientId: 'cursor-local-client',
-							redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+		{
+			label: 'two ecosystems',
+			items: [
+				{
+					id: 'grant-cursor',
+					clientId: 'cursor-client',
+					redirectUri: 'http://localhost:8787/callback',
+				},
+				{ id: 'grant-claude', clientId: 'claude-client' },
+			],
+			lookupClient: async (clientId: string) => ({
+				clientId,
+				clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
+			}),
+		},
+	]
+	const noticeResults = []
+	for (const { label, items, lookupClient } of grantCases) {
+		const notice = await noticeWith(env, {
+			listUserGrants: async () => ({ items }),
+			...(lookupClient ? { lookupClient } : {}),
+		})
+		noticeResults.push({
+			label,
+			notice:
+				notice === null
+					? null
+					: {
+							makeSomethingUseful: notice.includes('Make something useful'),
+							connectSecondAgent: notice.includes('Connect a second agent'),
 						},
-						{
-							id: 'grant-cloud',
-							clientId: 'cursor-cloud-client',
-							redirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
-						},
-					],
-				}),
-				lookupClient: async (clientId: string) => ({
-					clientId,
-					clientName: 'Cursor',
-				}),
-			},
-		},
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(dualCursorContexts).toContain('Connect a second agent')
-
-	const twoEcosystems = await buildOnboardingSearchNotice({
-		env: {
-			...env,
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [
-						{
-							id: 'grant-cursor',
-							clientId: 'cursor-client',
-							redirectUri: 'http://localhost:8787/callback',
-						},
-						{
-							id: 'grant-claude',
-							clientId: 'claude-client',
-						},
-					],
-				}),
-				lookupClient: async (clientId: string) => ({
-					clientId,
-					clientName: clientId === 'claude-client' ? 'Claude Code' : 'Cursor',
-				}),
-			},
-		},
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(twoEcosystems).toBeNull()
+		})
+	}
+	const asksForSecondAgent = {
+		makeSomethingUseful: false,
+		connectSecondAgent: true,
+	}
+	expect(noticeResults).toEqual([
+		{ label: 'one grant', notice: asksForSecondAgent },
+		{ label: 'two grants, same client', notice: asksForSecondAgent },
+		{ label: 'two unique unlabeled clients', notice: asksForSecondAgent },
+		{ label: 'dual Cursor contexts', notice: asksForSecondAgent },
+		{ label: 'two ecosystems', notice: null },
+	])
 
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
@@ -206,60 +192,28 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 	expect(await readDismissedAt(env.APP_DB)).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 })
 
-test('search onboarding notice lists remaining wizard steps without writing dismissal', async () => {
+test('search onboarding notice lists remaining steps without writing dismissal and stays quiet when grants are unavailable', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
-	const envWithGrants = {
-		...env,
-		OAUTH_PROVIDER: {
-			listUserGrants: async () => ({ items: [] }),
-		},
-	}
+	const noGrants = { listUserGrants: async () => ({ items: [] }) }
 
-	const notice = await buildOnboardingSearchNotice({
-		env: envWithGrants,
-		userId,
-		baseUrl: 'https://kody.example',
-	})
+	const notice = await noticeWith(env, noGrants)
 	expect(notice).toContain('3 steps left')
 	expect(notice).toContain('/onboarding')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
 
-	await dismissOnboardingChecklist({ env, userId })
 	expect(
-		await buildOnboardingSearchNotice({
-			env: envWithGrants,
-			userId,
-			baseUrl: 'https://kody.example',
-		}),
-	).toBe(null)
-})
-
-test('search onboarding notice stays quiet when grants cannot be listed', async () => {
-	const { env } = createEnv()
-	await seedUser(env.APP_DB)
-	expect(
-		await buildOnboardingSearchNotice({
-			env: {
-				...env,
-				OAUTH_PROVIDER: {
-					listUserGrants: async () => {
-						throw new Error('provider unavailable')
-					},
-				},
+		await noticeWith(env, {
+			listUserGrants: async () => {
+				throw new Error('provider unavailable')
 			},
-			userId,
-			baseUrl: 'https://kody.example',
 		}),
 	).toBe(null)
-	expect(
-		await buildOnboardingSearchNotice({
-			env,
-			userId,
-			baseUrl: 'https://kody.example',
-		}),
-	).toBe(null)
+	expect(await noticeWith(env)).toBe(null)
+
+	await dismissOnboardingChecklist({ env, userId })
+	expect(await noticeWith(env, noGrants)).toBe(null)
 })
 
 test('access-win memory subject is the newest active subject and fails open', async () => {

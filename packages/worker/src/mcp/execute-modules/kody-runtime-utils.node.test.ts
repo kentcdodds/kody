@@ -27,30 +27,40 @@ type ApiResponseSpec = {
 	body: Record<string, unknown>
 }
 
-const spotifyIntegration = {
+type TestIntegration = {
+	name: string
+	tokenUrl: string
+	apiBaseUrl: string
+	flow: 'pkce' | 'confidential'
+	clientId: string
+	requiredHosts: Array<string>
+	platform?: boolean
+}
+
+const spotifyIntegration: TestIntegration = {
 	name: 'spotify',
 	tokenUrl: 'https://accounts.spotify.test/api/token',
 	apiBaseUrl: 'https://api.spotify.test/v1',
-	flow: 'pkce' as const,
+	flow: 'pkce',
 	clientId: 'spotify-client-id',
 	requiredHosts: ['api.spotify.test'],
 }
 
-function createKody(
-	integration = spotifyIntegration,
-	options: {
-		accessToken?: string
-	} = {},
-) {
+const githubPlatformIntegration: TestIntegration = {
+	name: 'github',
+	tokenUrl: 'https://github.test/login/oauth/access_token',
+	apiBaseUrl: 'https://api.github.test',
+	flow: 'confidential',
+	clientId: 'platform-github-client-id',
+	requiredHosts: ['api.github.test'],
+	platform: true,
+}
+
+function createKody(integration: TestIntegration) {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
-	const storedSecrets = new Map<string, string>()
-	if (options.accessToken) {
-		storedSecrets.set(integration.name, options.accessToken)
-	}
 	const kody = {
 		async integrationGet(args: CapabilityArgs) {
-			const name = args.name
-			expect(name).toBe(integration.name)
+			expect(args.name).toBe(integration.name)
 			return { integration }
 		},
 		async integrationTokenRefresh(args: CapabilityArgs) {
@@ -62,86 +72,35 @@ function createKody(
 			}
 		},
 	} satisfies KodyNamespace
-
-	return {
-		kody,
-		tokenRefreshCalls,
-		storedSecrets,
-	}
+	return { kody, tokenRefreshCalls }
 }
 
-function createSpotifyHandlers(options: {
-	tokenPayload: Record<string, unknown>
+function createFetchInterceptor(options: {
 	fetchCalls: Array<Request>
-	apiResponses?: Array<ApiResponseSpec>
+	apiErrors: Array<Error>
+	apiResponses: Array<ApiResponseSpec>
 }) {
-	const apiResponses = [...(options.apiResponses ?? [])]
-	return [
-		http.post(spotifyIntegration.tokenUrl, async ({ request }) => {
-			options.fetchCalls.push(request.clone())
-			return HttpResponse.json(options.tokenPayload)
-		}),
-		http.all('https://api.spotify.test/v1/*', async ({ request }) => {
-			options.fetchCalls.push(request.clone())
-			const apiResponse = apiResponses.shift()
-			if (apiResponse) {
-				return HttpResponse.json(apiResponse.body, {
-					status: apiResponse.status,
-				})
-			}
-			return HttpResponse.json({ ok: true })
-		}),
-	]
-}
-
-type SpotifyFetchInterceptorOptions = {
-	tokenPayload: Record<string, unknown>
-	fetchCalls: Array<Request>
-	apiErrors?: Array<Error>
-	apiResponses?: Array<ApiResponseSpec>
-}
-
-function createSpotifyFetchInterceptor(
-	options: SpotifyFetchInterceptorOptions,
-) {
 	// MSW HttpResponse bodies hang on response.body.cancel(), which
 	// createAuthenticatedFetch uses during 401 retry. Native Response
 	// objects from FetchInterceptor avoid that Node/Vitest issue.
-	const apiErrors = [...(options.apiErrors ?? [])]
-	const apiResponses = [...(options.apiResponses ?? [])]
+	const apiErrors = [...options.apiErrors]
+	const apiResponses = [...options.apiResponses]
 	const interceptor = new FetchInterceptor()
 	interceptor.on('request', ({ request, controller }) => {
 		void (async () => {
 			try {
 				options.fetchCalls.push(request.clone())
-				if (request.url === spotifyIntegration.tokenUrl) {
-					await controller.respondWith(
-						Response.json(options.tokenPayload, {
-							headers: { 'content-type': 'application/json' },
-						}),
-					)
-					return
-				}
 				const apiError = apiErrors.shift()
 				if (apiError) {
 					controller.errorWith(apiError)
 					return
 				}
 				const apiResponse = apiResponses.shift()
-				if (apiResponse) {
-					await controller.respondWith(
-						Response.json(apiResponse.body, {
-							status: apiResponse.status,
-							headers: { 'content-type': 'application/json' },
-						}),
-					)
-					return
-				}
 				await controller.respondWith(
-					Response.json(
-						{ ok: true },
-						{ headers: { 'content-type': 'application/json' } },
-					),
+					Response.json(apiResponse?.body ?? { ok: true }, {
+						status: apiResponse?.status ?? 200,
+						headers: { 'content-type': 'application/json' },
+					}),
 				)
 			} catch (error) {
 				controller.errorWith(error)
@@ -156,96 +115,76 @@ function createSpotifyFetchInterceptor(
 	}
 }
 
-test('kody oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
-	const storedTokenFetchCalls: Array<Request> = []
-	const { kody: storedTokenKody, tokenRefreshCalls: storedTokenRefreshCalls } =
-		createKody()
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: { access_token: 'refreshed-access-token' },
-				fetchCalls: storedTokenFetchCalls,
-			}),
-		)
-		const authenticatedFetch = await createAuthenticatedFetch(
-			storedTokenKody,
-			'spotify',
-		)
-		const storedTokenResponse = await authenticatedFetch('/me/playlists', {
-			method: 'POST',
-		})
-		expect(await storedTokenResponse.json()).toEqual({ ok: true })
-	}
-	expect(storedTokenFetchCalls).toHaveLength(1)
-	expect(storedTokenFetchCalls[0]?.url).toBe(
-		'https://api.spotify.test/v1/me/playlists',
-	)
-	expect(storedTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:spotify}}',
-	)
-	expect(storedTokenRefreshCalls).toEqual([])
-
-	const missingTokenFetchCalls: Array<Request> = []
-	const {
-		kody: missingTokenKody,
-		tokenRefreshCalls: missingTokenRefreshCalls,
-	} = createKody()
-	{
-		using _spotifyFetch = createSpotifyFetchInterceptor({
-			tokenPayload: { access_token: 'new-access-token' },
-			fetchCalls: missingTokenFetchCalls,
+test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on missing or expired tokens', async () => {
+	const expired = [
+		{ status: 401, body: { error: 'expired' } },
+		{ status: 200, body: { ok: true } },
+	]
+	// Every attempt uses the placeholder header: the raw token never enters
+	// the sandbox even on the post-refresh retry.
+	const scenarios = [
+		{
+			label: 'stored token',
+			integration: spotifyIntegration,
+			path: '/me/playlists',
+			init: { method: 'POST' },
+			apiErrors: [],
+			apiResponses: [],
+			urls: ['https://api.spotify.test/v1/me/playlists'],
+		},
+		{
+			label: 'missing token',
+			integration: spotifyIntegration,
+			path: '/me?market=US',
 			apiErrors: [
 				new Error('Integration "spotify" does not have a stored access token.'),
 			],
+			apiResponses: [],
+			urls: Array(2).fill('https://api.spotify.test/v1/me?market=US'),
+		},
+		{
+			label: 'expired token',
+			integration: spotifyIntegration,
+			path: '/me?market=US',
+			apiErrors: [],
+			apiResponses: expired,
+			urls: Array(2).fill('https://api.spotify.test/v1/me?market=US'),
+		},
+		{
+			label: 'expired platform token',
+			integration: githubPlatformIntegration,
+			path: '/user',
+			apiErrors: [],
+			apiResponses: expired,
+			urls: Array(2).fill('https://api.github.test/user'),
+		},
+	]
+	for (const scenario of scenarios) {
+		const { name } = scenario.integration
+		const fetchCalls: Array<Request> = []
+		const { kody, tokenRefreshCalls } = createKody(scenario.integration)
+		{
+			using _interceptor = createFetchInterceptor({ fetchCalls, ...scenario })
+			const authenticatedFetch = await createAuthenticatedFetch(kody, name)
+			const response = await authenticatedFetch(scenario.path, scenario.init)
+			expect(await response.json()).toEqual({ ok: true })
+		}
+		expect({
+			label: scenario.label,
+			tokenRefreshCalls,
+			requests: fetchCalls.map((request) => [
+				request.url,
+				request.headers.get('authorization'),
+			]),
+		}).toEqual({
+			label: scenario.label,
+			tokenRefreshCalls: scenario.urls.length > 1 ? [{ name }] : [],
+			requests: scenario.urls.map((url) => [
+				url,
+				`Bearer {{integration-token:${name}}}`,
+			]),
 		})
-		const missingTokenFetch = await createAuthenticatedFetch(
-			missingTokenKody,
-			'spotify',
-		)
-		const missingTokenResponse = await missingTokenFetch('/me?market=US')
-		expect(await missingTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(missingTokenRefreshCalls).toEqual([{ name: 'spotify' }])
-	expect(missingTokenFetchCalls).toHaveLength(2)
-	expect(missingTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:spotify}}',
-	)
-	expect(missingTokenFetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:spotify}}',
-	)
-
-	const expiredTokenFetchCalls: Array<Request> = []
-	const {
-		kody: expiredTokenKody,
-		tokenRefreshCalls: expiredTokenRefreshCalls,
-	} = createKody()
-	{
-		using _spotifyFetch = createSpotifyFetchInterceptor({
-			tokenPayload: { access_token: 'new-access-token' },
-			fetchCalls: expiredTokenFetchCalls,
-			apiResponses: [
-				{ status: 401, body: { error: 'expired' } },
-				{ status: 200, body: { ok: true } },
-			],
-		})
-		const expiredTokenFetch = await createAuthenticatedFetch(
-			expiredTokenKody,
-			'spotify',
-		)
-		const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
-		expect(await expiredTokenResponse.json()).toEqual({ ok: true })
-	}
-	expect(expiredTokenRefreshCalls).toEqual([{ name: 'spotify' }])
-	expect(expiredTokenFetchCalls).toHaveLength(2)
-	expect(expiredTokenFetchCalls[0]?.url).toBe(
-		'https://api.spotify.test/v1/me?market=US',
-	)
-	expect(expiredTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:spotify}}',
-	)
-	expect(expiredTokenFetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:spotify}}',
-	)
 })
 
 test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
@@ -266,7 +205,9 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 		}
 	}
 
-	const helpers = createSandboxHelpers(dispatchFor(createKody().kody))
+	const helpers = createSandboxHelpers(
+		dispatchFor(createKody(spotifyIntegration).kody),
+	)
 	expect(
 		helpers.secretHeaders.basic({
 			usernameSecret: 'paypalClientId',
@@ -287,7 +228,7 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 
-	const platform = createPlatformKody()
+	const platform = createKody(githubPlatformIntegration)
 	const platformCalls: Array<string> = []
 	const platformHelpers = createSandboxHelpers(async (name, args) => {
 		platformCalls.push(name)
@@ -330,89 +271,3 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
 	)
 })
-
-const githubPlatformIntegration = {
-	name: 'github',
-	tokenUrl: 'https://github.test/login/oauth/access_token',
-	apiBaseUrl: 'https://api.github.test',
-	flow: 'confidential' as const,
-	clientId: 'platform-github-client-id',
-	requiredHosts: ['api.github.test'],
-	platform: true,
-}
-
-function createPlatformKody() {
-	const tokenRefreshCalls: Array<CapabilityArgs> = []
-	const kody = {
-		async integrationGet(args: CapabilityArgs) {
-			expect(args.name).toBe(githubPlatformIntegration.name)
-			return { integration: githubPlatformIntegration }
-		},
-		async integrationTokenRefresh(args: CapabilityArgs) {
-			tokenRefreshCalls.push(args)
-			return {
-				ok: true,
-				refreshedAt: new Date().toISOString(),
-				refreshTokenRotated: false,
-			}
-		},
-	} satisfies KodyNamespace
-	return { kody, tokenRefreshCalls }
-}
-
-test('createAuthenticatedFetch refreshes platform integrations host-side and retries with a placeholder header', async () => {
-	const fetchCalls: Array<Request> = []
-	const { kody, tokenRefreshCalls } = createPlatformKody()
-	{
-		using _interceptor = createGithubPlatformFetchInterceptor({
-			fetchCalls,
-			apiResponses: [
-				{ status: 401, body: { error: 'expired' } },
-				{ status: 200, body: { ok: true } },
-			],
-		})
-		const authenticatedFetch = await createAuthenticatedFetch(kody, 'github')
-		const response = await authenticatedFetch('/user')
-		expect(await response.json()).toEqual({ ok: true })
-	}
-	expect(tokenRefreshCalls).toEqual([{ name: 'github' }])
-	expect(fetchCalls).toHaveLength(2)
-	// Both attempts use the placeholder header: the raw token never enters
-	// the sandbox even on the post-refresh retry.
-	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:github}}',
-	)
-	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{integration-token:github}}',
-	)
-})
-
-function createGithubPlatformFetchInterceptor(options: {
-	fetchCalls: Array<Request>
-	apiResponses: Array<ApiResponseSpec>
-}) {
-	const apiResponses = [...options.apiResponses]
-	const interceptor = new FetchInterceptor()
-	interceptor.on('request', ({ request, controller }) => {
-		void (async () => {
-			try {
-				options.fetchCalls.push(request.clone())
-				const apiResponse = apiResponses.shift()
-				await controller.respondWith(
-					Response.json(apiResponse?.body ?? { ok: true }, {
-						status: apiResponse?.status ?? 200,
-						headers: { 'content-type': 'application/json' },
-					}),
-				)
-			} catch (error) {
-				controller.errorWith(error)
-			}
-		})()
-	})
-	interceptor.apply()
-	return {
-		[Symbol.dispose]() {
-			interceptor.dispose()
-		},
-	}
-}

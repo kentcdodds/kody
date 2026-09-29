@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as secretsService from '#mcp/secrets/service.ts'
+import type * as integrationsService from '#worker/integrations/service.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
 import { buildWaitingItems, waitingFirstUseIds } from '#universal/waiting.ts'
@@ -28,8 +30,7 @@ vi.mock('#worker/run-records/service.ts', () => ({
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/integrations/service.ts')>()
+	const actual = await importOriginal<typeof integrationsService>()
 	return {
 		...actual,
 		listJoinedIntegrations: (...args: Array<unknown>) =>
@@ -38,8 +39,7 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 })
 
 vi.mock('#mcp/secrets/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/secrets/service.ts')>()
+	const actual = await importOriginal<typeof secretsService>()
 	return {
 		...actual,
 		listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
@@ -111,21 +111,6 @@ function createStubDb(
 	} as unknown as D1Database
 }
 
-function resetFirstUseMocks() {
-	mockModule.listJoinedIntegrations.mockReset()
-	mockModule.listJoinedIntegrations.mockResolvedValue([])
-	mockModule.listSecrets.mockReset()
-	mockModule.listSecrets.mockResolvedValue([])
-	mockModule.listSavedPackagesByUserId.mockReset()
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listMemoriesByUserId.mockReset()
-	mockModule.listMemoriesByUserId.mockResolvedValue([])
-	mockModule.countJobsForUser.mockReset()
-	mockModule.countJobsForUser.mockResolvedValue(0)
-	mockModule.readOfficialDiscordMembershipForUser.mockReset()
-	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValue(false)
-}
-
 const user = {
 	userId: 11,
 	stableUserId: 'user-aaa',
@@ -168,28 +153,59 @@ test('waiting signals read MCP OAuth grants from OAUTH_KV when the provider help
 	expect(noOAuthSurface.onboardingRemaining).toContain('connect-agent')
 })
 
+const stampedAt = '2026-09-01T00:00:00.000Z'
+const allStamped = {
+	first_search_at: stampedAt,
+	first_execute_at: stampedAt,
+	first_saved_package_at: stampedAt,
+	onboarding_checklist_dismissed_at: stampedAt,
+}
+const demoPackage = {
+	id: 'pkg-1',
+	name: 'demo',
+	kodyId: 'demo',
+	lockedAt: null,
+}
+
+function stubEnv(stamps?: Parameters<typeof createStubDb>[0]) {
+	return { APP_DB: createStubDb(stamps) } as Env
+}
+
+function mockFirstUseProbesPresent(discordMember: boolean) {
+	mockModule.listMemoriesByUserId.mockResolvedValue([
+		{ id: 'mem-1', subject: 'Commute' },
+	])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([demoPackage])
+	mockModule.countJobsForUser.mockResolvedValue(1)
+	mockModule.listJoinedIntegrations.mockResolvedValue([
+		{ connection: { name: 'github', lastAuthFailure: null } },
+	])
+	mockModule.listSecrets.mockResolvedValue([{ name: 'apiKey', ttlMs: 60 }])
+	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValue(
+		discordMember,
+	)
+}
+
 test('waiting error-rate card uses open Activity errors, not monthly rollups', async () => {
 	const now = new Date('2026-09-05T00:00:00.000Z')
-	const env = { APP_DB: createStubDb() } as Env
+	const since = new Date(
+		now.getTime() - accountActivitySummaryWindowMs,
+	).toISOString()
+	const env = stubEnv()
+	const summary = { since, running: 0, bySurface: [] }
 
 	mockModule.summarizeRunRecords.mockResolvedValueOnce({
-		since: new Date(
-			now.getTime() - accountActivitySummaryWindowMs,
-		).toISOString(),
+		...summary,
 		total: 162103,
 		errors: 0,
 		ignored: 800,
 		resolved: 407,
-		running: 0,
-		bySurface: [],
 	})
 	const triaged = await collectWaitingSignals({ env, user, now })
 	expect(mockModule.summarizeRunRecords).toHaveBeenCalledWith({
 		env,
 		userId: user.stableUserId,
-		since: new Date(
-			now.getTime() - accountActivitySummaryWindowMs,
-		).toISOString(),
+		since,
 	})
 	expect(triaged.errorRate).toEqual({ errorCount: 0, eventCount: 162103 })
 	expect(buildWaitingItems(triaged).map((item) => item.kind)).not.toContain(
@@ -197,15 +213,11 @@ test('waiting error-rate card uses open Activity errors, not monthly rollups', a
 	)
 
 	mockModule.summarizeRunRecords.mockResolvedValueOnce({
-		since: new Date(
-			now.getTime() - accountActivitySummaryWindowMs,
-		).toISOString(),
+		...summary,
 		total: 20,
 		errors: 12,
 		ignored: 0,
 		resolved: 0,
-		running: 0,
-		bySurface: [],
 	})
 	const open = await collectWaitingSignals({ env, user, now })
 	expect(open.errorRate).toEqual({ errorCount: 12, eventCount: 20 })
@@ -220,44 +232,24 @@ test('waiting error-rate card uses open Activity errors, not monthly rollups', a
 })
 
 test('waiting first-use signals emit cards only when the probe knows they are missing', async () => {
-	resetFirstUseMocks()
-	const env = {
-		APP_DB: createStubDb({
+	const missing = await collectWaitingSignals({
+		env: stubEnv({
 			first_search_at: null,
 			first_execute_at: null,
 			first_saved_package_at: null,
-			onboarding_checklist_dismissed_at: '2026-09-01T00:00:00.000Z',
+			onboarding_checklist_dismissed_at: stampedAt,
 		}),
-	} as Env
-
-	const missing = await collectWaitingSignals({ env, user })
+		user,
+	})
 	expect(missing.firstUseMissing).toEqual([...waitingFirstUseIds])
 	expect(buildWaitingItems(missing).map((item) => item.id)).toEqual(
 		waitingFirstUseIds.map((id) => `first-use:${id}`),
 	)
 	expect(missing.onboardingDismissed).toBe(true)
 
-	mockModule.listMemoriesByUserId.mockResolvedValueOnce([
-		{ id: 'mem-1', subject: 'Commute' },
-	])
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{ id: 'pkg-1', name: 'demo', kodyId: 'demo', lockedAt: null },
-	])
-	mockModule.countJobsForUser.mockResolvedValueOnce(1)
-	mockModule.listJoinedIntegrations.mockResolvedValueOnce([
-		{ connection: { name: 'github', lastAuthFailure: null } },
-	])
-	mockModule.listSecrets.mockResolvedValueOnce([{ name: 'apiKey', ttlMs: 60 }])
-	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValueOnce(true)
+	mockFirstUseProbesPresent(true)
 	const present = await collectWaitingSignals({
-		env: {
-			APP_DB: createStubDb({
-				first_search_at: '2026-09-01T00:00:00.000Z',
-				first_execute_at: '2026-09-01T00:00:00.000Z',
-				first_saved_package_at: '2026-09-01T00:00:00.000Z',
-				onboarding_checklist_dismissed_at: '2026-09-01T00:00:00.000Z',
-			}),
-		} as Env,
+		env: stubEnv(allStamped),
 		user,
 	})
 	expect(present.firstUseMissing).toEqual([])
@@ -275,46 +267,22 @@ test('waiting first-use signals emit cards only when the probe knows they are mi
 		new Error('packages down'),
 	)
 	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValueOnce(null)
-	const unknown = await collectWaitingSignals({
-		env: { APP_DB: createStubDb() } as Env,
-		user,
-	})
+	const unknown = await collectWaitingSignals({ env: stubEnv(), user })
 	expect(unknown.firstUseMissing).toEqual([])
 
-	resetFirstUseMocks()
-	mockModule.listMemoriesByUserId.mockResolvedValue([{ id: 'mem-1' }])
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{ id: 'pkg-1', name: 'demo', kodyId: 'demo', lockedAt: null },
-	])
-	mockModule.countJobsForUser.mockResolvedValue(1)
-	mockModule.listJoinedIntegrations.mockResolvedValue([
-		{ connection: { name: 'github', lastAuthFailure: null } },
-	])
-	mockModule.listSecrets.mockResolvedValue([{ name: 'apiKey', ttlMs: 60 }])
-	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValue(false)
+	mockFirstUseProbesPresent(false)
 	const discordOpen = await collectWaitingSignals({
-		env: {
-			APP_DB: createStubDb({
-				first_search_at: '2026-09-01T00:00:00.000Z',
-				first_execute_at: '2026-09-01T00:00:00.000Z',
-				first_saved_package_at: '2026-09-01T00:00:00.000Z',
-				onboarding_checklist_dismissed_at: '2026-09-01T00:00:00.000Z',
-			}),
-		} as Env,
+		env: stubEnv(allStamped),
 		user,
 	})
 	expect(discordOpen.firstUseMissing).toEqual(['discord'])
 	expect(buildWaitingItems(discordOpen).map((item) => item.id)).toEqual([
 		'first-use:discord',
 	])
-	resetFirstUseMocks()
 })
 
-test('waiting onboarding checklist reuses first-use probes instead of re-reading them', async () => {
-	resetFirstUseMocks()
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{ id: 'pkg-1', name: 'demo', kodyId: 'demo', lockedAt: null },
-	])
+test('waiting onboarding checklist reuses first-use probes and falls back to its own package count when the probe fails', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([demoPackage])
 	const queries: Array<string> = []
 	const signals = await collectWaitingSignals({
 		env: {
@@ -322,7 +290,7 @@ test('waiting onboarding checklist reuses first-use probes instead of re-reading
 				{
 					first_search_at: null,
 					first_execute_at: null,
-					first_saved_package_at: '2026-09-01T00:00:00.000Z',
+					first_saved_package_at: stampedAt,
 				},
 				queries,
 			),
@@ -343,26 +311,18 @@ test('waiting onboarding checklist reuses first-use probes instead of re-reading
 				query.includes('first_search_at') || query.includes('first_execute_at'),
 		),
 	).toHaveLength(1)
-	resetFirstUseMocks()
-})
 
-test('waiting onboarding checklist falls back to its own package count when the package probe fails', async () => {
-	resetFirstUseMocks()
-	mockModule.listSavedPackagesByUserId.mockRejectedValue(
+	mockModule.listSavedPackagesByUserId.mockRejectedValueOnce(
 		new Error('packages down'),
 	)
-	const signals = await collectWaitingSignals({
-		env: {
-			APP_DB: createStubDb({
-				first_search_at: null,
-				first_execute_at: null,
-				saved_package_count: 2,
-			}),
-		} as Env,
+	const fallback = await collectWaitingSignals({
+		env: stubEnv({
+			first_search_at: null,
+			first_execute_at: null,
+			saved_package_count: 2,
+		}),
 		user,
 	})
-
-	expect(signals.onboardingRemaining).not.toContain('give-access')
-	expect(signals.onboardingRemaining).not.toContain('install-starter')
-	resetFirstUseMocks()
+	expect(fallback.onboardingRemaining).not.toContain('give-access')
+	expect(fallback.onboardingRemaining).not.toContain('install-starter')
 })
