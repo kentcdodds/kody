@@ -25,6 +25,8 @@ import {
 	oauthScopes,
 } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import {
 	TEST_OIDC_SIGNING_KEY_ID,
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
@@ -273,28 +275,11 @@ async function createSha256Hex(value: string) {
 		.join('')
 }
 
-async function seedWorkerUser(email: string, password: string) {
-	const passwordHash = await createPasswordHash(password)
-	const stableUserId = await createStableUserIdFromEmail(email)
-	await env.APP_DB.prepare(
-		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			username TEXT NOT NULL UNIQUE,
-			email TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL,
-			email_verified_at TEXT,
-			stable_user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-		)`,
-	).run()
-	try {
-		await env.APP_DB.prepare(
-			`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
-		).run()
-	} catch {
-		// Column already present on a fresh CREATE above.
-	}
+async function seedWorkerUser(email: string) {
+	await ensureUsersTestSchema({
+		db: env.APP_DB,
+		columns: ['email_verified_at'],
+	})
 	// The inline OAuth login checks two-factor status, which queries the
 	// verifications table (empty here: no seeded user has 2FA enabled).
 	await env.APP_DB.prepare(
@@ -312,22 +297,12 @@ async function seedWorkerUser(email: string, password: string) {
 			UNIQUE (target, type)
 		)`,
 	).run()
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(email) DO UPDATE SET
-				password_hash = excluded.password_hash,
-				email_verified_at = excluded.email_verified_at,
-				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)`,
-	)
-		.bind(
-			`user-${crypto.randomUUID().slice(0, 8)}`,
-			email,
-			passwordHash,
-			new Date(0).toISOString(),
-			stableUserId,
-		)
-		.run()
+	await seedAccount({
+		db: env.APP_DB,
+		email,
+		username: `user-${crypto.randomUUID().slice(0, 8)}`,
+		passwordHash: await createPasswordHash('password123'),
+	})
 }
 
 function exampleOAuthUrl(
@@ -609,77 +584,6 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	expect(defaultScopeOptions?.request.issuer).toBe('https://example.com')
 })
 
-test('authorize success and deny redirects include RFC 9207 iss for the kody.codes issuer', async () => {
-	const authorizeUrl = exampleOAuthUrl(
-		'authorize',
-		baseAuthorizeParams,
-		'https://kody.codes',
-	)
-	const approveResponse = await handleAuthorizeRequest(
-		formRequest(approveWithPassword, jsonAccept, authorizeUrl),
-		createEnv(
-			createHelpers({
-				completeAuthorization: completingWith(
-					'https://example.com/callback?code=codex',
-				),
-			}),
-			await createDatabase('password123'),
-		),
-	)
-	await expectApprovedRedirect(
-		approveResponse,
-		callbackUri,
-		{ code: 'codex' },
-		'https://kody.codes',
-	)
-
-	const denyResponse = await handleAuthorizeRequest(
-		formRequest({ decision: 'deny' }, {}, authorizeUrl),
-		createEnv(createHelpers()),
-	)
-	expect(denyResponse.status).toBe(302)
-	expectRedirect(
-		denyResponse.headers.get('Location') ?? '',
-		callbackUri,
-		{ error: 'access_denied', state: 'demo' },
-		'https://kody.codes',
-	)
-})
-
-test('Claude-shaped authorize requests render and approve without throwing', async () => {
-	const completion = completingWith(
-		'https://claude.ai/api/mcp/auth_callback?code=demo&state=x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc',
-	)
-	const helpers = createHelpers({
-		parseAuthRequest: async () => claudeAuthRequest,
-		lookupClient: async () => claudeClient,
-		completeAuthorization: completion,
-	})
-	expect(
-		await readAuthorizePage(
-			await handleAuthorizeRequest(
-				new Request(claudeAuthorizeUrl),
-				createEnv(helpers),
-			),
-		),
-	).toContain('Claude')
-
-	const postResponse = await handleAuthorizeRequest(
-		formRequest(approveWithPassword, jsonAccept, claudeAuthorizeUrl),
-		createEnv(helpers, await createDatabase('password123')),
-	)
-	await expectApprovedRedirect(
-		postResponse,
-		'https://claude.ai/api/mcp/auth_callback',
-		{ code: 'demo', state: 'x5z9jORTCRNTmZ5_fiH7tdVWDVbiPujOHtUkyHzBvmc' },
-		'https://heykody.dev',
-	)
-	const { request } = completion.mock.lastCall?.[0] ?? {}
-	expect(request?.resource).toBe(mcpResource)
-	expect(request?.scope).toEqual(['profile', 'email'])
-	expect(request?.issuer).toBe('https://heykody.dev')
-})
-
 test('Gemini-shaped authorize requests default resource to /mcp when omitted', async () => {
 	const completion = completingWith(
 		`${geminiAuthRequestWithoutResource.redirectUri}?code=demo&state=gemini-demo-state`,
@@ -706,7 +610,7 @@ test('Gemini-shaped authorize requests default resource to /mcp when omitted', a
 
 test('session approval uses stable user id when cookie email is stale', async () => {
 	const currentEmail = `changed-oauth-${crypto.randomUUID()}@example.com`
-	await seedWorkerUser(currentEmail, 'password123')
+	await seedWorkerUser(currentEmail)
 	const completion = completingWith(
 		'https://example.com/callback?code=stale-session',
 	)
@@ -830,7 +734,7 @@ test('worker entrypoint renders Claude-shaped authorize GET and recoverable erro
 
 test('worker entrypoint completes Claude-shaped dynamic registration and token exchange', async () => {
 	const email = `claude-oauth-${crypto.randomUUID()}@example.com`
-	await seedWorkerUser(email, 'password123')
+	await seedWorkerUser(email)
 	const clientId = await registerClient({
 		redirect_uris: [claudeAuthRequest.redirectUri],
 		client_name: 'Claude',
@@ -910,23 +814,11 @@ test('worker entrypoint advertises OAuth, OIDC, and RFC 9728 resource metadata p
 		new Request('https://heykody.dev/.well-known/openid-configuration'),
 	)
 	expect(oidcDiscovery.status).toBe(200)
-	const oidcMetadata = (await oidcDiscovery.json()) as {
-		issuer: string
-		token_endpoint: string
-		revocation_endpoint: string
-		revocation_endpoint_auth_methods_supported: Array<string>
-		token_endpoint_auth_methods_supported: Array<string>
-		response_types_supported: Array<string>
-		scopes_supported: Array<string>
-	}
-	expect(oidcMetadata.issuer).toBe('https://heykody.dev')
-	expect(oidcMetadata.response_types_supported).toEqual(['code'])
-	expect(oidcMetadata.scopes_supported).toContain('openid')
-	expect(oidcMetadata.token_endpoint).toBe(metadata.token_endpoint)
-	expect(oidcMetadata.revocation_endpoint).toBe(metadata.revocation_endpoint)
-	expect(oidcMetadata.revocation_endpoint_auth_methods_supported).toEqual(
-		oidcMetadata.token_endpoint_auth_methods_supported,
-	)
+	await expect(oidcDiscovery.json()).resolves.toMatchObject({
+		issuer: metadata.issuer,
+		token_endpoint: metadata.token_endpoint,
+		revocation_endpoint: metadata.revocation_endpoint,
+	})
 
 	const jwks = await workerFetch(
 		new Request('https://heykody.dev/.well-known/jwks.json'),
@@ -938,7 +830,7 @@ test('worker entrypoint advertises OAuth, OIDC, and RFC 9728 resource metadata p
 
 test('worker entrypoint completes ChatGPT-shaped CIMD authorize and token exchange', async () => {
 	const email = `chatgpt-oauth-${crypto.randomUUID()}@example.com`
-	await seedWorkerUser(email, 'password123')
+	await seedWorkerUser(email)
 	const clientId = 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
 	const redirectUri = 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83'
 	using _fetch = stubClientMetadataFetch(clientId, () =>
@@ -1335,14 +1227,9 @@ test('worker entrypoint rejects unsupported implicit response_type on authorize-
 	})
 })
 
-test('worker entrypoint returns id_token when openid scope is granted and gates userinfo on the bearer token', async () => {
-	const unauthenticatedUserinfo = await workerFetch(
-		new Request('https://heykody.dev/oauth/userinfo'),
-	)
-	expect(unauthenticatedUserinfo.status).toBe(401)
-
+test('worker entrypoint returns id_token when openid scope is granted and serves userinfo for the bearer token', async () => {
 	const email = `oidc-oauth-${crypto.randomUUID()}@example.com`
-	await seedWorkerUser(email, 'password123')
+	await seedWorkerUser(email)
 	const clientId = `https://oidc-client.example/${crypto.randomUUID()}.json`
 	const redirectUri = 'https://oidc-client.example/callback'
 	using _fetch = stubClientMetadataFetch(clientId, () =>

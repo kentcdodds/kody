@@ -5,7 +5,6 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import {
-	buildProtectedResourceMetadata,
 	handleMcpRequest,
 	handleProtectedResourceMetadata,
 	mcpInvalidTokenDescription,
@@ -95,20 +94,12 @@ type MockAccountRow = {
 	password_changed_at?: string | null
 }
 
-type VerificationLookupKind =
-	| 'email_and_stable_user_id'
-	| 'stable_user_id_only'
-	| 'email_only'
-
 type MockDbOptions = {
-	// Row returned for the `email_verified_at` lookup keyed by account email.
+	// Default profile row fields; the row is absent when emailVerifiedAt is
+	// undefined.
 	emailVerifiedAt?: string | null
-	// Row returned for the `suspended_at` lookup keyed by account identity.
 	suspendedAt?: string | null
-	// Row returned for the password-reset lockout lookup.
 	passwordChangedAt?: string | null
-	// Row returned for the indexed `stable_user_id` verification lookup.
-	stableUserVerifiedAt?: string | null
 	// Expected bind values for the default verified fixture identity.
 	expectedEmail?: string
 	expectedStableUserId?: string
@@ -118,8 +109,6 @@ type MockDbOptions = {
 	connectorRows?: Array<Record<string, unknown>>
 	// Optional sink for audit rows written while rejecting a request.
 	auditInserts?: Array<Array<unknown>>
-	// Optional sink for which verification SQL shapes were exercised.
-	verificationLookups?: Array<VerificationLookupKind>
 	// Optional sink for consolidated users SELECTs.
 	userSelects?: Array<string>
 	// Optional deleting_at for the write-lease D1 gate only (profile lookup
@@ -133,9 +122,6 @@ function createMockDb(options: MockDbOptions = {}) {
 	const defaultStableUserId = options.expectedStableUserId ?? 'user'
 	const expectedLeaseUserId =
 		options.accountByStableId?.stable_user_id ?? defaultStableUserId
-	const recordVerificationLookup = (kind: VerificationLookupKind) => {
-		options.verificationLookups?.push(kind)
-	}
 	const statementFor = (query: string) => {
 		const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 		let boundParams: Array<unknown> = []
@@ -191,8 +177,7 @@ function createMockDb(options: MockDbOptions = {}) {
 						return options.accountByStableId
 					}
 					if (boundStableUserId !== defaultStableUserId) return null
-					const verifiedAt =
-						options.stableUserVerifiedAt ?? options.emailVerifiedAt
+					const verifiedAt = options.emailVerifiedAt
 					if (verifiedAt === undefined) return null
 					return {
 						id: 1,
@@ -225,86 +210,14 @@ function createMockDb(options: MockDbOptions = {}) {
 					if (boundStableUserId !== defaultStableUserId) return null
 					return { deleting_at: null }
 				}
-				if (normalized.includes('select suspended_at from users')) {
-					// Validate the bound identity like the adjacent
-					// verification branches so a widened isAccountSuspended
-					// query scope fails this mock.
-					const email =
-						typeof boundParams[0] === 'string' ? boundParams[0] : null
-					if (email !== defaultEmail) return null
-					if (normalized.includes('stable_user_id')) {
-						const stableUserId =
-							typeof boundParams[1] === 'string' ? boundParams[1] : null
-						if (stableUserId !== defaultStableUserId) return null
-					}
-					return { suspended_at: options.suspendedAt ?? null }
-				}
-				if (normalized.includes('email = ? and stable_user_id')) {
-					recordVerificationLookup('email_and_stable_user_id')
-					const email =
-						typeof boundParams[0] === 'string' ? boundParams[0] : null
-					const stableUserId =
-						typeof boundParams[1] === 'string' ? boundParams[1] : null
-					if (!email || !stableUserId) return null
-					if (options.accountByStableId) {
-						if (
-							email !== options.accountByStableId.email ||
-							stableUserId !== options.accountByStableId.stable_user_id
-						) {
-							return null
-						}
-						return {
-							email_verified_at: options.accountByStableId.email_verified_at,
-						}
-					}
-					if (email !== defaultEmail || stableUserId !== defaultStableUserId) {
-						return null
-					}
-					if (options.emailVerifiedAt !== undefined) {
-						return { email_verified_at: options.emailVerifiedAt }
-					}
-					if (options.stableUserVerifiedAt !== undefined) {
-						return { email_verified_at: options.stableUserVerifiedAt }
-					}
-					return null
-				}
 				if (
-					normalized.includes('where stable_user_id') &&
+					normalized.includes('select suspended_at from users') ||
 					normalized.includes('email_verified_at')
 				) {
-					recordVerificationLookup('stable_user_id_only')
-					if (!boundStableUserId) return null
-					if (options.accountByStableId) {
-						if (
-							options.accountByStableId.stable_user_id !== boundStableUserId
-						) {
-							return null
-						}
-						return {
-							email_verified_at: options.accountByStableId.email_verified_at,
-						}
-					}
-					if (boundStableUserId !== defaultStableUserId) return null
-					return options.stableUserVerifiedAt === undefined
-						? null
-						: { email_verified_at: options.stableUserVerifiedAt }
-				}
-				if (
-					normalized.includes('email_verified_at') &&
-					normalized.includes('where email = ?') &&
-					!normalized.includes('stable_user_id')
-				) {
-					// Mirrors production `isAccountEmailVerified` email-only path used by
-					// browser sessions (oauth-handlers consent/approve with session email
-					// only). MCP auth always supplies stable userId and must not rely on
-					// this branch; see verificationLookups assertions below.
-					recordVerificationLookup('email_only')
-					const email =
-						typeof boundParams[0] === 'string' ? boundParams[0] : null
-					if (!email || email !== defaultEmail) return null
-					return options.emailVerifiedAt === undefined
-						? null
-						: { email_verified_at: options.emailVerifiedAt }
+					// Identity, verification, and suspension come from the one
+					// consolidated profile lookup above; any per-field users
+					// lookup is a regression.
+					throw new Error(`Unexpected per-field users lookup: ${query}`)
 				}
 				const result = await statement.all()
 				return result.results[0] ?? null
@@ -523,42 +436,28 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 	}
 })
 
-test('protected resource metadata and auth challenge resolve origin consistently', async () => {
-	const workersDevOrigin = 'https://kody-production.kentcdodds.workers.dev'
-	expect(buildProtectedResourceMetadata(origin)).toMatchObject({
-		resource: 'https://example.com/mcp',
+test('protected resource metadata and auth challenge use the request origin over APP_BASE_URL', async () => {
+	// MCP clients require resource metadata to match the URL they connected to.
+	const requestOrigin = 'https://kody-production.kentcdodds.workers.dev'
+	const envOverrides = { APP_BASE_URL: 'https://heykody.dev' }
+	const metadataResponse = handleProtectedResourceMetadata(
+		new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
+		envOverrides as Env,
+	)
+	expect(metadataResponse.status).toBe(200)
+	expect(await metadataResponse.json()).toEqual({
+		resource: `${requestOrigin}/mcp`,
+		authorization_servers: [requestOrigin],
+		scopes_supported: oauthScopes,
 		bearer_methods_supported: ['header'],
 	})
 
-	// Request origin wins even when APP_BASE_URL is configured differently —
-	// MCP clients require resource metadata to match the URL they connected to.
-	const cases = [
-		[origin, {}],
-		[workersDevOrigin, { APP_BASE_URL: 'https://heykody.dev' }],
-	] as const
-	for (const [requestOrigin, envOverrides] of cases) {
-		const metadataResponse = handleProtectedResourceMetadata(
-			new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
-			envOverrides as Env,
-		)
-		expect(metadataResponse.status).toBe(200)
-		expect(await metadataResponse.json()).toEqual(
-			buildProtectedResourceMetadata(requestOrigin),
-		)
-
-		const unauthorized = await callMcp(
-			new Request(`${requestOrigin}${mcpResourcePath}`),
-			createEnv(createHelpers(), envOverrides),
-		)
-		expect(unauthorized.status).toBe(401)
-		expect(unauthorized.headers.get('Content-Type')).toMatch(
-			/application\/json/,
-		)
-		expect(await unauthorized.json()).toEqual({
-			error_description: mcpInvalidTokenDescription,
-		})
-		expectAuthenticateHeader(unauthorized, requestOrigin, 'missing_credential')
-	}
+	const unauthorized = await callMcp(
+		new Request(`${requestOrigin}${mcpResourcePath}`),
+		createEnv(createHelpers(), envOverrides),
+	)
+	expect(unauthorized.status).toBe(401)
+	expectAuthenticateHeader(unauthorized, requestOrigin, 'missing_credential')
 })
 
 test('mcp request enforces token audience and forwards caller props', async () => {
@@ -571,7 +470,6 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		expectAuthenticateHeader(response, origin)
 	}
 
-	const verificationLookups: Array<VerificationLookupKind> = []
 	const userSelects: Array<string> = []
 	let receivedProps: unknown = null
 	const captureProps: FetchMcp = (_request, _env, ctx) => {
@@ -580,7 +478,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	}
 	const validResponse = await callMcp(
 		request,
-		tokenEnv(mcpToken(), { ...verified, verificationLookups, userSelects }),
+		tokenEnv(mcpToken(), { ...verified, userSelects }),
 		captureProps,
 	)
 	expect(validResponse.status).toBe(200)
@@ -594,7 +492,6 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(userSelects[0]).toContain('email_verified_at')
 	expect(userSelects[0]).toContain('suspended_at')
 	expect(userSelects[0]).toContain('password_changed_at')
-	expect(verificationLookups).toHaveLength(0)
 
 	const withConnectorResponse = await callMcp(
 		request,
@@ -805,7 +702,6 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	const fallbackResponse = await callMcp(
 		request,
 		tokenEnv(mcpToken({ props: { userId: stableUserId } }), {
-			stableUserVerifiedAt: epoch,
 			accountByStableId: accountRow(11, fallbackEmail, stableUserId),
 			userSelects: fallbackUserSelects,
 		}),

@@ -1,8 +1,11 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import type * as UsersData from '#worker/admin/users-data.ts'
 import * as AdminUserCreation from '#worker/identity/admin-user-creation.ts'
@@ -62,12 +65,10 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 
 type UserRow = {
 	id: number
-	stable_user_id?: string
 	username: string
 	email: string
 	email_verified_at?: string | null
-	plan?: string | null
-	entitlement_ladder?: string | null
+	plan?: string
 	stripe_plan?: string | null
 	stripe_customer_id?: string | null
 	suspended_at?: string | null
@@ -76,8 +77,6 @@ type UserRow = {
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
 	email_verification_delivery_class?: string | null
-	account_type?: 'person' | 'platform' | null
-	deleting_at?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -112,336 +111,29 @@ function createAdminTestEnv(input: {
 	users: Array<UserRow>
 	userRoles: Array<[number, RoleName]>
 }) {
-	const users = new Map(
-		input.users.map((user) => [
-			user.id,
-			{
-				...user,
-				stable_user_id: user.stable_user_id ?? stableUserId(user.id),
-				// Normal fixtures default to free; unknown/null stay
-				// explicit so the dedicated stored-plan coercion test can warn.
-				plan: user.plan === undefined ? 'free' : user.plan,
-				stripe_plan: user.stripe_plan ?? null,
-				stripe_customer_id: user.stripe_customer_id ?? null,
-				suspended_at: user.suspended_at ?? null,
-				email_outbound_paused_at: user.email_outbound_paused_at ?? null,
-				email_verification_delivery_status:
-					user.email_verification_delivery_status ?? null,
-				email_verification_delivery_at:
-					user.email_verification_delivery_at ?? null,
-				email_verification_delivery_detail:
-					user.email_verification_delivery_detail ?? null,
-				email_verification_delivery_class:
-					user.email_verification_delivery_class ?? null,
-				account_type: user.account_type ?? 'person',
-				deleting_at: user.deleting_at ?? null,
-			},
-		]),
-	)
-	const userRoles = input.userRoles.map(([user_id, role_name]) => ({
-		user_id,
-		role_name,
-	}))
-
-	return {
-		COOKIE_SECRET: 'secret',
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				// Mirrors buildAdminUserListWhereClause: optional username/email
-				// LIKE, optional role membership, optional stalled-verification
-				// cutoff, shared by the page query and its COUNT.
-				function applyListFilters(params: Array<unknown>) {
-					let rows = Array.from(users.values()).sort((a, b) => a.id - b.id)
-					let paramIndex = 0
-					if (normalizedQuery.includes('username like ?')) {
-						const pattern = String(params[paramIndex])
-						paramIndex += 2
-						const needle = pattern
-							.slice(1, -1)
-							.replace(/\\(.)/g, '$1')
-							.toLowerCase()
-						rows = rows.filter(
-							(row) =>
-								row.username.toLowerCase().includes(needle) ||
-								row.email.toLowerCase().includes(needle),
-						)
-					}
-					if (normalizedQuery.includes('where r.name = ?')) {
-						const roleName = String(params[paramIndex])
-						paramIndex += 1
-						rows = rows.filter((row) =>
-							userRoles.some(
-								(role) =>
-									role.user_id === row.id && role.role_name === roleName,
-							),
-						)
-					}
-					if (
-						normalizedQuery.includes(
-							"email_verification_delivery_status = 'accepted'",
-						)
-					) {
-						const cutoff = String(params[paramIndex])
-						paramIndex += 1
-						rows = rows.filter(
-							(row) =>
-								!row.email_verified_at &&
-								!row.deleting_at &&
-								(row.account_type ?? 'person') === 'person' &&
-								row.email_verification_delivery_status === 'accepted' &&
-								row.email_verification_delivery_at != null &&
-								row.email_verification_delivery_at <= cutoff,
-						)
-					}
-					return { rows, paramIndex }
-				}
-				const execute = {
-					async all<T>() {
-						if (
-							normalizedQuery.includes('select count(*) as total from users')
-						) {
-							return {
-								results: [{ total: users.size }] as Array<T>,
-								meta: { changes: 0 },
-							}
-						}
-						return { results: [] as Array<T>, meta: { changes: 0 } }
-					},
-					async first<T>() {
-						if (
-							normalizedQuery.includes('select count(*) as total from users')
-						) {
-							return { total: users.size } as T
-						}
-						return null
-					},
-					async run() {
-						return { meta: { changes: 0 } }
-					},
-				}
-				return {
-					...execute,
-					bind(...params: Array<unknown>) {
-						return {
-							async all<T>() {
-								if (
-									normalizedQuery.startsWith(
-										'select id, stable_user_id, username, email',
-									)
-								) {
-									const { rows, paramIndex } = applyListFilters(params)
-									const pageSize = Number(params[paramIndex])
-									const offset = Number(params[paramIndex + 1])
-									const results = rows.slice(offset, offset + pageSize)
-									return { results: results as Array<T>, meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('where ur.user_id in')) {
-									const userIds = params.map((value) => Number(value))
-									return {
-										results: userRoles
-											.filter((row) => userIds.includes(row.user_id))
-											.map((row) => ({
-												user_id: row.user_id,
-												role_name: row.role_name,
-											})) as Array<T>,
-										meta: { changes: 0 },
-									}
-								}
-								return { results: [] as Array<T>, meta: { changes: 0 } }
-							},
-							async first<T>() {
-								if (normalizedQuery.includes('select 1 as found from users')) {
-									const { rows, paramIndex } = applyListFilters(params)
-									const stableUserId = String(params[paramIndex] ?? '')
-									return (
-										rows.some((row) => row.stable_user_id === stableUserId)
-											? { found: 1 }
-											: null
-									) as T
-								}
-								if (
-									normalizedQuery.includes(
-										'select deleting_at from users where stable_user_id',
-									)
-								) {
-									const user = Array.from(users.values()).find(
-										(row) => row.stable_user_id === params[0],
-									)
-									return (
-										user ? { deleting_at: user.deleting_at ?? null } : null
-									) as T
-								}
-								if (
-									normalizedQuery.includes(
-										'count(distinct ur.user_id) as count',
-									)
-								) {
-									const roleName = String(params[0])
-									const count = new Set(
-										userRoles
-											.filter((row) => row.role_name === roleName)
-											.map((row) => row.user_id),
-									).size
-									return { count } as T
-								}
-								if (
-									normalizedQuery.startsWith(
-										'select count(*) as total from users',
-									)
-								) {
-									const { rows } = applyListFilters(params)
-									return { total: rows.length } as T
-								}
-								if (
-									normalizedQuery.startsWith(
-										'select id, stable_user_id, username, email',
-									) &&
-									normalizedQuery.includes('from users where stable_user_id =')
-								) {
-									const user = Array.from(users.values()).find(
-										(row) => row.stable_user_id === params[0],
-									)
-									return user ? ({ ...user } as T) : null
-								}
-								return null
-							},
-							async run() {
-								if (
-									normalizedQuery.includes('insert or ignore into user_roles')
-								) {
-									const userId = Number(params[0])
-									const roleName = String(params[1]) as RoleName
-									if (
-										!userRoles.some(
-											(row) =>
-												row.user_id === userId && row.role_name === roleName,
-										)
-									) {
-										userRoles.push({ user_id: userId, role_name: roleName })
-									}
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes('delete from user_roles') &&
-									normalizedQuery.includes('count(distinct ur.user_id)')
-								) {
-									// Atomic admin removal: only deletes while another admin
-									// remains, mirroring removeAdminRolePreservingLastAdmin.
-									const userId = Number(params[0])
-									const adminCount = new Set(
-										userRoles
-											.filter((row) => row.role_name === 'admin')
-											.map((row) => row.user_id),
-									).size
-									const index = userRoles.findIndex(
-										(row) =>
-											row.user_id === userId && row.role_name === 'admin',
-									)
-									if (adminCount > 1 && index >= 0) {
-										userRoles.splice(index, 1)
-										return { meta: { changes: 1 } }
-									}
-									return { meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('delete from user_roles')) {
-									const userId = Number(params[0])
-									const roleName = String(params[1]) as RoleName
-									const index = userRoles.findIndex(
-										(row) =>
-											row.user_id === userId && row.role_name === roleName,
-									)
-									if (index >= 0) userRoles.splice(index, 1)
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set plan = ?, entitlement_ladder = ?, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[3]))
-									if (!user) return { meta: { changes: 0 } }
-									user.plan = params[0] === null ? null : String(params[0])
-									user.entitlement_ladder = String(params[1])
-									user.updated_at = String(params[2])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set suspended_at = ?, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user) return { meta: { changes: 0 } }
-									user.suspended_at =
-										params[0] === null ? null : String(params[0])
-									user.updated_at = String(params[1])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_outbound_paused_at = null, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[1]))
-									if (!user) return { meta: { changes: 0 } }
-									user.email_outbound_paused_at = null
-									user.updated_at = String(params[0])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_verified_at = coalesce(email_verified_at, ?)',
-									)
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user || user.deleting_at) {
-										return { meta: { changes: 0 } }
-									}
-									user.email_verified_at =
-										user.email_verified_at ?? String(params[0])
-									user.updated_at = String(params[1])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_verification_delivery_status = null',
-									)
-								) {
-									const user = users.get(Number(params[1]))
-									if (!user) return { meta: { changes: 0 } }
-									user.email_verification_delivery_status = null
-									user.email_verification_delivery_at = null
-									user.email_verification_delivery_detail = null
-									user.email_verification_delivery_class = null
-									user.updated_at = String(params[0])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'insert into "email_verifications"',
-									) ||
-									normalizedQuery.includes('insert into email_verifications')
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user || user.deleting_at) {
-										return { meta: { changes: 0, last_row_id: 0 } }
-									}
-									return { meta: { changes: 1, last_row_id: 1 } }
-								}
-								if (
-									normalizedQuery.includes('delete from email_verifications')
-								) {
-									return { meta: { changes: 1 } }
-								}
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-			},
-		} as unknown as D1Database,
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	for (const user of input.users) {
+		const row = {
+			password_hash: 'test-password-hash',
+			stable_user_id: stableUserId(user.id),
+			...user,
+		}
+		const columns = Object.keys(row)
+		sqlite
+			.prepare(
+				`INSERT INTO users (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+			)
+			.run(...Object.values(row))
 	}
+	for (const [userId, role] of input.userRoles) {
+		sqlite
+			.prepare(
+				`INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name = ?`,
+			)
+			.run(userId, role)
+	}
+	return { COOKIE_SECRET: 'secret', APP_DB: createD1FromSqlite(sqlite) }
 }
 const { createAdminUsersApiHandler } = await import('./admin-users.ts')
 
