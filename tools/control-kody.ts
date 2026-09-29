@@ -117,6 +117,8 @@ const usageLines = [
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists. --email keys the',
 	'stored cookie; a leftover session for a different user is not reused.',
+	'--skip-login sends the request without authenticating, even when another',
+	"user's cookie is stored for the same origin.",
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -961,16 +963,6 @@ async function runCommand(options: ControlKodyOptions) {
 				origin,
 				requestedEmail,
 			)
-			if (
-				requestedEmail &&
-				options.skipLogin &&
-				!cookieHeader &&
-				existsSync(options.cookieFile)
-			) {
-				throw new ControlKodyError(
-					`--email ${requestedEmail} does not match the session stored for ${origin} in ${options.cookieFile}`,
-				)
-			}
 			const method = options.request.method.toUpperCase()
 			if (
 				!options.skipLogin &&
