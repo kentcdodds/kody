@@ -49,14 +49,18 @@ function createSourceRow() {
 	}
 }
 
-test('loadPublishedEntityManifest reads only manifest content from stored snapshots', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.readArtifactSourceSnapshot.mockReset()
-	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
-	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
-	mockModule.loadPublishedSourceSnapshot.mockReset()
-	mockModule.persistPublishedSourceSnapshot.mockReset()
+const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
+const loadInput = { env, userId: 'user-1', sourceId: 'source-1' }
 
+function manifestJson(kody: Record<string, unknown> = {}) {
+	return JSON.stringify({
+		name: '@kentcdodds/example-package',
+		exports: { '.': './index.js' },
+		kody: { id: 'example-package', description: 'Example package', ...kody },
+	})
+}
+
+function mockManifestSnapshot(manifestContent: string) {
 	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
 	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
 		version: 1,
@@ -66,27 +70,15 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 		entityId: 'package-1',
 		publishedCommit: 'commit-1',
 		manifestPath: 'package.json',
-		manifestContent: JSON.stringify({
-			name: '@kentcdodds/example-package',
-			exports: {
-				'.': './index.js',
-			},
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-			},
-		}),
+		manifestContent,
 		createdAt: '2026-04-20T00:00:00.000Z',
 	})
+}
 
-	const manifest = await loadPublishedEntityManifest({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as Env,
-		userId: 'user-1',
-		sourceId: 'source-1',
-	})
+test('loadPublishedEntityManifest reads only manifest content from stored snapshots', async () => {
+	mockManifestSnapshot(manifestJson())
+
+	const manifest = await loadPublishedEntityManifest(loadInput)
 
 	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(
 		1,
@@ -97,117 +89,45 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 	).not.toHaveBeenCalled()
 	expect(mockModule.persistPublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(manifest).toMatchObject({
-		source: expect.objectContaining({
-			id: 'source-1',
-		}),
+		source: expect.objectContaining({ id: 'source-1' }),
 		manifest: expect.objectContaining({
 			name: '@kentcdodds/example-package',
-			kody: expect.objectContaining({
-				id: 'example-package',
-			}),
+			kody: expect.objectContaining({ id: 'example-package' }),
 		}),
 	})
 })
 
 test('loadPublishedEntityManifest ignores leftover kody.app.runtime on published snapshots', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.readArtifactSourceSnapshot.mockReset()
-	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
-	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
-	mockModule.loadPublishedSourceSnapshot.mockReset()
-	mockModule.persistPublishedSourceSnapshot.mockReset()
+	mockManifestSnapshot(
+		manifestJson({ app: { runtime: 'remix', entry: './app/router.ts' } }),
+	)
 
-	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
-	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
-		version: 1,
-		sourceId: 'source-1',
-		repoId: 'repo-1',
-		entityKind: 'package',
-		entityId: 'package-1',
-		publishedCommit: 'commit-1',
-		manifestPath: 'package.json',
-		manifestContent: JSON.stringify({
-			name: '@kentcdodds/example-package',
-			exports: {
-				'.': './index.js',
-			},
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-				app: {
-					runtime: 'remix',
-					entry: './app/router.ts',
-				},
-			},
-		}),
-		createdAt: '2026-04-20T00:00:00.000Z',
-	})
+	const manifest = await loadPublishedEntityManifest(loadInput)
 
-	const manifest = await loadPublishedEntityManifest({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as Env,
-		userId: 'user-1',
-		sourceId: 'source-1',
-	})
-
-	expect(manifest.manifest.kody.app).toEqual({
-		entry: './app/router.ts',
-	})
+	expect(manifest.manifest.kody.app).toEqual({ entry: './app/router.ts' })
 })
 
 test('loadPublishedEntitySource persists fetched snapshots for later reuse', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.readArtifactSourceSnapshot.mockReset()
-	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
-	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
-	mockModule.loadPublishedSourceSnapshot.mockReset()
-	mockModule.persistPublishedSourceSnapshot.mockReset()
-
 	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
 	mockModule.readArtifactSourceSnapshot.mockResolvedValue({
 		published_commit: 'commit-1',
 		files: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.js',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-				},
-			}),
+			'package.json': manifestJson(),
 			'index.js': 'export const value = "ok"',
 		},
 	})
 	mockModule.persistPublishedSourceSnapshot.mockResolvedValue(undefined)
 
-	const source = await loadPublishedEntitySource({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as Env,
-		userId: 'user-1',
-		sourceId: 'source-1',
-	})
+	const source = await loadPublishedEntitySource(loadInput)
 
 	expect(mockModule.readArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
 	expect(mockModule.persistPublishedSourceSnapshot).toHaveBeenCalledWith({
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		},
+		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} },
 		userId: 'user-1',
-		source: expect.objectContaining({
-			id: 'source-1',
-		}),
+		source: expect.objectContaining({ id: 'source-1' }),
 		snapshot: expect.objectContaining({
-			files: expect.objectContaining({
-				'package.json': expect.any(String),
-			}),
+			files: expect.objectContaining({ 'package.json': expect.any(String) }),
 		}),
 	})
 	expect(source.files).toMatchObject({

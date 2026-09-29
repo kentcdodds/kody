@@ -111,39 +111,39 @@ function source(overrides: Partial<EntitySourceRow> = {}): EntitySourceRow {
 	}
 }
 
-test('identity icon commit prefers published for packages and indexed for repos', () => {
-	expect(
-		identityIconCommitForKind({
-			entityKind: 'package',
-			publishedCommit: 'pub',
-			indexedCommit: 'idx',
-		}),
-	).toBe('pub')
-	expect(
-		identityIconCommitForKind({
-			entityKind: 'repo',
-			publishedCommit: 'pub',
-			indexedCommit: 'idx',
-		}),
-	).toBe('idx')
-	expect(
-		identityIconCommitForKind({
-			entityKind: 'repo',
-			publishedCommit: 'pub',
-			indexedCommit: null,
-		}),
-	).toBe('pub')
-})
-
-test('getIdentityIconObject prefers .kody/icon and skips package-app icons unless requested', async () => {
-	const { kv } = createFakeKv()
-	const { bucket } = createFakeR2()
+function iconEnv() {
+	const { kv, values: kvValues } = createFakeKv()
+	const { bucket, values: r2Values } = createFakeR2()
 	const env = {
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
 		IMAGES: createFakeImagesBinding(),
 	} as Env
+	return { env, kvValues, r2Values }
+}
+
+test('identity icon commit prefers published for packages and indexed for repos', () => {
+	const cases = [
+		['package', 'idx', 'pub'],
+		['repo', 'idx', 'idx'],
+		['repo', null, 'pub'],
+	] as const
+	for (const [entityKind, indexedCommit, expected] of cases) {
+		expect([
+			entityKind,
+			indexedCommit,
+			identityIconCommitForKind({
+				entityKind,
+				publishedCommit: 'pub',
+				indexedCommit,
+			}),
+		]).toEqual([entityKind, indexedCommit, expected])
+	}
+})
+
+test('getIdentityIconObject prefers .kody/icon and skips package-app icons unless requested', async () => {
+	const { env } = iconEnv()
 	const png = createPngHeader(64, 64)
 	mocks.readFirstArtifactFileAtCommit.mockResolvedValue({
 		path: '.kody/icon.png',
@@ -162,10 +162,14 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 
 	expect(result.descriptor.sourcePath).toBe('.kody/icon.png')
 	expect(result.descriptor.contentType).toBe('image/webp')
-	const withPackageApp = mocks.readFirstArtifactFileAtCommit.mock
-		.calls[0]?.[0] as { filePaths?: Array<string> }
-	expect(withPackageApp.filePaths).toContain('.kody/icon.png')
-	expect(withPackageApp.filePaths).toContain('icons/icon-192.png')
+	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
+		expect.objectContaining({
+			filePaths: expect.arrayContaining([
+				'.kody/icon.png',
+				'icons/icon-192.png',
+			]),
+		}),
+	)
 
 	mocks.readFirstArtifactFileAtCommit.mockClear()
 	mocks.readFirstArtifactFileAtCommit.mockResolvedValue(null)
@@ -178,21 +182,16 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 		includePackageAppIcon: false,
 		isServableCommit: async () => true,
 	})
-	const withoutPackageApp = mocks.readFirstArtifactFileAtCommit.mock
-		.calls[0]?.[0] as { filePaths?: Array<string> }
-	expect(withoutPackageApp.filePaths).toContain('.kody/icon.png')
-	expect(withoutPackageApp.filePaths).not.toContain('icons/icon-192.png')
+	const [lookup] = mocks.readFirstArtifactFileAtCommit.mock.calls[0] as [
+		{ filePaths: Array<string> },
+	]
+	const { filePaths } = lookup
+	expect(filePaths).toContain('.kody/icon.png')
+	expect(filePaths).not.toContain('icons/icon-192.png')
 })
 
 test('deleteIdentityIconAssets keeps the current commit and refresh stamps live repo heads', async () => {
-	const { kv, values: kvValues } = createFakeKv()
-	const { bucket, values: r2Values } = createFakeR2()
-	const env = {
-		APP_DB: {} as D1Database,
-		BUNDLE_ARTIFACTS_KV: kv,
-		COMMUNITY_ASSETS: bucket,
-		IMAGES: createFakeImagesBinding(),
-	} as Env
+	const { env, kvValues, r2Values } = iconEnv()
 	for (const commit of ['old', 'new']) {
 		kvValues.set(
 			`derived-cache:v1:${buildIdentityIconCacheKey({ repoId: 'repo-1', commit })}`,

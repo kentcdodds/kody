@@ -1,5 +1,5 @@
 import { createCacheEntry } from '@epic-web/cachified'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
 
@@ -56,17 +56,17 @@ function storedHead(kv: ReturnType<typeof createKv>, env: Env, repoId: string) {
 	return raw ? (JSON.parse(raw.value) as { value: unknown }).value : undefined
 }
 
-beforeEach(() => {
-	mocks.resolveArtifactSourceHead.mockReset()
+function setup(withKv = true) {
 	mocks.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-live',
 	})
-})
+	const kv = createKv()
+	return { kv, env: createEnv(withKv ? kv : null) }
+}
 
 test('first read resolves live and later reads come from KV', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 
 	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
 		{ branch: 'main', commit: 'commit-live' },
@@ -82,8 +82,7 @@ test('first read resolves live and later reads come from KV', async () => {
 })
 
 test('one request resolves a repo once even when several loaders ask', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { env } = setup()
 	const request = new Request('https://kody.test/@owner/demo/tree/main')
 
 	await runWithRequestContext(request, () =>
@@ -97,8 +96,7 @@ test('one request resolves a repo once even when several loaders ask', async () 
 })
 
 test('a missing HEAD is cached only briefly', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	mocks.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: null,
@@ -112,7 +110,7 @@ test('a missing HEAD is cached only briefly', async () => {
 })
 
 test('falls back to the live lookup without a KV binding', async () => {
-	const env = createEnv(null)
+	const { env } = setup(false)
 	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
 		{ branch: 'main', commit: 'commit-live' },
 	)
@@ -120,8 +118,7 @@ test('falls back to the live lookup without a KV binding', async () => {
 })
 
 test('a stale entry is served immediately and refreshed in the background', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	const key =
 		derivedCacheKeyPrefix + buildArtifactSourceHeadCacheKey(env, 'repo-1')
 	kv.store.set(key, {
@@ -151,8 +148,7 @@ test('a stale entry is served immediately and refreshed in the background', asyn
 })
 
 test('a push to the cached default branch rewrites the commit without a lookup', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	await resolveCachedArtifactSourceHead(env, 'repo-1')
 	mocks.resolveArtifactSourceHead.mockClear()
 
@@ -173,8 +169,7 @@ test('a push to the cached default branch rewrites the commit without a lookup',
 })
 
 test('a push to another branch leaves the cached HEAD alone', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	await resolveCachedArtifactSourceHead(env, 'repo-1')
 
 	await applyArtifactSourcePushToHeadCache({
@@ -190,8 +185,7 @@ test('a push to another branch leaves the cached HEAD alone', async () => {
 })
 
 test('a push to a repo nobody has viewed writes nothing', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	await applyArtifactSourcePushToHeadCache({
 		env,
 		repoId: 'repo-unvisited',
@@ -202,8 +196,7 @@ test('a push to a repo nobody has viewed writes nothing', async () => {
 })
 
 test('deleting the default branch drops the cached HEAD', async () => {
-	const kv = createKv()
-	const env = createEnv(kv)
+	const { kv, env } = setup()
 	await resolveCachedArtifactSourceHead(env, 'repo-1')
 	await applyArtifactSourcePushToHeadCache({
 		env,

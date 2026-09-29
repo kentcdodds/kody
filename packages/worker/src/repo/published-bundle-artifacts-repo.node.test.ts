@@ -7,7 +7,6 @@ import {
 	insertPublishedBundleArtifactRow,
 	isPublishedBundleArtifactIdentityConflict,
 	listStaticDependentBundleArtifactRows,
-	type PublishedBundleArtifactUpsertInput,
 	upsertPublishedBundleArtifactRow,
 } from './published-bundle-artifacts-repo.ts'
 
@@ -162,35 +161,40 @@ test('static dependent bundle artifact queries count and list bounded rows by so
 	])
 })
 
+const identity = {
+	userId: 'user-1',
+	sourceId: 'source-1',
+	artifactName: './record-version',
+	entryPoint: 'src/record-version.ts',
+}
+
+function artifactRow(
+	artifactKind: 'module' | 'importable-module',
+	publishedCommit: string,
+	dependenciesJson = '[]',
+) {
+	const kvPrefix = artifactKind === 'module' ? 'module' : 'importable'
+	return {
+		...identity,
+		publishedCommit,
+		artifactKind,
+		kvKey: `kv:${kvPrefix}:${publishedCommit}`,
+		dependenciesJson,
+	}
+}
+
+function lookup(db: D1Database, artifactKind: string) {
+	return getPublishedBundleArtifactByIdentity(db, { ...identity, artifactKind })
+}
+
 test('upsertPublishedBundleArtifactRow keeps module and importable-module distinct and recovers a raced identity insert', async () => {
 	const db = createPublishedBundleArtifactsDb()
-	const identity = {
-		userId: 'user-1',
-		sourceId: 'source-1',
-		artifactName: './record-version',
-		entryPoint: 'src/record-version.ts',
-	}
-
-	await upsertPublishedBundleArtifactRow(db, {
-		...identity,
-		publishedCommit: 'commit-1',
-		artifactKind: 'module',
-		kvKey: 'kv:module:commit-1',
-		dependenciesJson: '[]',
-	})
-	const importableId = await upsertPublishedBundleArtifactRow(db, {
-		...identity,
-		publishedCommit: 'commit-1',
-		artifactKind: 'importable-module',
-		kvKey: 'kv:importable:commit-1',
-		dependenciesJson: '[]',
-	})
-	expect(
-		await getPublishedBundleArtifactByIdentity(db, {
-			...identity,
-			artifactKind: 'importable-module',
-		}),
-	).toEqual(
+	await upsertPublishedBundleArtifactRow(db, artifactRow('module', 'commit-1'))
+	const importableId = await upsertPublishedBundleArtifactRow(
+		db,
+		artifactRow('importable-module', 'commit-1'),
+	)
+	await expect(lookup(db, 'importable-module')).resolves.toEqual(
 		expect.objectContaining({
 			id: importableId,
 			publishedCommit: 'commit-1',
@@ -199,34 +203,19 @@ test('upsertPublishedBundleArtifactRow keeps module and importable-module distin
 		}),
 	)
 
-	let racedInsertError: unknown
-	try {
-		await insertPublishedBundleArtifactRow(db, {
-			...identity,
-			publishedCommit: 'commit-2',
-			artifactKind: 'importable-module',
-			kvKey: 'kv:importable:commit-2',
-			dependenciesJson: '[{"sourceId":"dep-1"}]',
-		})
-	} catch (error) {
-		racedInsertError = error
-	}
-	expect(isPublishedBundleArtifactIdentityConflict(racedInsertError)).toBe(true)
+	const commit2 = artifactRow(
+		'importable-module',
+		'commit-2',
+		'[{"sourceId":"dep-1"}]',
+	)
+	await expect(insertPublishedBundleArtifactRow(db, commit2)).rejects.toSatisfy(
+		isPublishedBundleArtifactIdentityConflict,
+	)
 
-	const recoveredId = await upsertPublishedBundleArtifactRow(db, {
-		...identity,
-		publishedCommit: 'commit-2',
-		artifactKind: 'importable-module',
-		kvKey: 'kv:importable:commit-2',
-		dependenciesJson: '[{"sourceId":"dep-1"}]',
-	})
-	expect(recoveredId).toBe(importableId)
-	expect(
-		await getPublishedBundleArtifactByIdentity(db, {
-			...identity,
-			artifactKind: 'importable-module',
-		}),
-	).toEqual(
+	await expect(upsertPublishedBundleArtifactRow(db, commit2)).resolves.toBe(
+		importableId,
+	)
+	await expect(lookup(db, 'importable-module')).resolves.toEqual(
 		expect.objectContaining({
 			id: importableId,
 			publishedCommit: 'commit-2',
@@ -234,12 +223,7 @@ test('upsertPublishedBundleArtifactRow keeps module and importable-module distin
 			dependenciesJson: '[{"sourceId":"dep-1"}]',
 		}),
 	)
-	expect(
-		await getPublishedBundleArtifactByIdentity(db, {
-			...identity,
-			artifactKind: 'module',
-		}),
-	).toEqual(
+	await expect(lookup(db, 'module')).resolves.toEqual(
 		expect.objectContaining({
 			publishedCommit: 'commit-1',
 			artifactKind: 'module',
@@ -263,7 +247,7 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 		updated_at: '2026-09-14T00:00:00.000Z',
 	}
 	let lookups = 0
-	let updated: PublishedBundleArtifactUpsertInput | null = null
+	let updatedValues: Array<unknown> | null = null
 	const db = {
 		prepare(query: string) {
 			return {
@@ -282,16 +266,7 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 									'D1_ERROR: UNIQUE constraint failed: idx_published_bundle_artifacts_source_identity: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)',
 								)
 							}
-							updated = {
-								userId: String(values[0]),
-								sourceId: String(values[1]),
-								publishedCommit: String(values[2]),
-								artifactKind: String(values[3]),
-								artifactName: String(values[4]),
-								entryPoint: String(values[5]),
-								kvKey: String(values[6]),
-								dependenciesJson: String(values[7]),
-							}
+							updatedValues = values.slice(0, 8)
 							return { meta: { changes: 1 } }
 						},
 					}
@@ -300,66 +275,43 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 		},
 	} as unknown as D1Database
 
-	const id = await upsertPublishedBundleArtifactRow(db, {
-		userId: 'user-1',
-		sourceId: 'source-1',
-		publishedCommit: 'commit-2',
-		artifactKind: 'importable-module',
-		artifactName: './record-version',
-		entryPoint: 'src/record-version.ts',
-		kvKey: 'kv:importable:commit-2',
-		dependenciesJson: '[{"sourceId":"dep-1"}]',
-	})
-
-	expect(id).toBe('row-importable')
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			db,
+			artifactRow('importable-module', 'commit-2', '[{"sourceId":"dep-1"}]'),
+		),
+	).resolves.toBe('row-importable')
 	expect(lookups).toBe(2)
-	expect(updated).toEqual({
-		userId: 'user-1',
-		sourceId: 'source-1',
-		publishedCommit: 'commit-2',
-		artifactKind: 'importable-module',
-		artifactName: './record-version',
-		entryPoint: 'src/record-version.ts',
-		kvKey: 'kv:importable:commit-2',
-		dependenciesJson: '[{"sourceId":"dep-1"}]',
-	})
+	expect(updatedValues).toEqual([
+		'user-1',
+		'source-1',
+		'commit-2',
+		'importable-module',
+		'./record-version',
+		'src/record-version.ts',
+		'kv:importable:commit-2',
+		'[{"sourceId":"dep-1"}]',
+	])
 })
 
 test('upsertPublishedBundleArtifactRow leaves a newer live identity alone when a stale persist recovers', async () => {
 	const db = createPublishedBundleArtifactsDb()
-	const identity = {
-		userId: 'user-1',
-		sourceId: 'source-1',
-		artifactName: './record-version',
-		entryPoint: 'src/record-version.ts',
-	}
 	await setLivePublishedCommit(db, {
 		userId: 'user-1',
 		sourceId: 'source-1',
 		publishedCommit: 'commit-2',
 	})
-	const liveId = await upsertPublishedBundleArtifactRow(db, {
-		...identity,
-		publishedCommit: 'commit-2',
-		artifactKind: 'importable-module',
-		kvKey: 'kv:importable:commit-2',
-		dependenciesJson: '[]',
-	})
-	const staleId = await upsertPublishedBundleArtifactRow(db, {
-		...identity,
-		publishedCommit: 'commit-1',
-		artifactKind: 'importable-module',
-		kvKey: 'kv:importable:commit-1',
-		dependenciesJson: '[]',
-	})
-
-	expect(staleId).toBe(liveId)
-	expect(
-		await getPublishedBundleArtifactByIdentity(db, {
-			...identity,
-			artifactKind: 'importable-module',
-		}),
-	).toEqual(
+	const liveId = await upsertPublishedBundleArtifactRow(
+		db,
+		artifactRow('importable-module', 'commit-2'),
+	)
+	await expect(
+		upsertPublishedBundleArtifactRow(
+			db,
+			artifactRow('importable-module', 'commit-1'),
+		),
+	).resolves.toBe(liveId)
+	await expect(lookup(db, 'importable-module')).resolves.toEqual(
 		expect.objectContaining({
 			id: liveId,
 			publishedCommit: 'commit-2',

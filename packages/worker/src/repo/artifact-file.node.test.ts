@@ -44,31 +44,46 @@ vi.mock('./artifact-source-snapshot.ts', () => ({
 		mocks.readArtifactSourceSnapshot(...args),
 }))
 
-test('reads binary artifact files from an exact pinned commit', async () => {
-	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
-	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			remote: 'https://artifacts.example.test/package.git',
-			defaultBranch: 'main',
-		})),
-		createToken: vi.fn(async () => ({
-			plaintext: 'token',
-		})),
-	})
-	mocks.readBlob.mockResolvedValue({ blob: bytes })
+const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+const treeCommit = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
 
-	const result = await readArtifactFileAtCommit({
+function mockArtifactRepo(
+	remote = 'https://artifacts.example.test/package.git',
+) {
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({ remote, defaultBranch: 'main' })),
+		createToken: vi.fn(async () => ({ plaintext: 'token' })),
+	})
+}
+
+function readIcon() {
+	return readArtifactFileAtCommit({
 		env: {} as Env,
 		repoId: 'package-1',
 		commit: 'abc123',
 		filePath: 'community-icon.png',
 	})
+}
 
-	expect(result).toEqual(bytes)
+function readTree() {
+	return readArtifactTreeAtCommit({
+		env: {} as Env,
+		repoId: 'package-1',
+		commit: treeCommit,
+	})
+}
+
+function gitError(message: string, code: string, extra = {}) {
+	return Object.assign(new Error(message), { code, name: code, ...extra })
+}
+
+test('reads binary artifact files from an exact pinned commit', async () => {
+	mockArtifactRepo()
+	mocks.readBlob.mockResolvedValue({ blob: pngBytes })
+
+	await expect(readIcon()).resolves.toEqual(pngBytes)
 	expect(mocks.init).toHaveBeenCalledWith(
-		expect.objectContaining({
-			dir: '/repo',
-		}),
+		expect.objectContaining({ dir: '/repo' }),
 	)
 	expect(mocks.addRemote).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -90,221 +105,99 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 		mocks.fetch.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
 	)
 	expect(mocks.readBlob).toHaveBeenCalledWith(
-		expect.objectContaining({
-			oid: 'abc123',
-			filepath: 'community-icon.png',
-		}),
+		expect.objectContaining({ oid: 'abc123', filepath: 'community-icon.png' }),
 	)
 
-	const httpError = Object.assign(
-		new Error('HTTP Error: 500 Internal Server Error'),
-		{
-			code: 'HttpError',
-			name: 'HttpError',
-			data: {
-				statusCode: 500,
-				statusMessage: 'Internal Server Error',
-				response: '',
-			},
-		},
-	)
-	mocks.fetch.mockReset()
-	mocks.fetch.mockRejectedValueOnce(httpError).mockResolvedValueOnce(undefined)
-	mocks.readBlob.mockResolvedValue({ blob: bytes })
-	await expect(
-		readArtifactFileAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'abc123',
-			filePath: 'community-icon.png',
-		}),
-	).resolves.toEqual(bytes)
+	mocks.fetch.mockClear()
+	mocks.fetch
+		.mockRejectedValueOnce(
+			gitError('HTTP Error: 500 Internal Server Error', 'HttpError', {
+				data: {
+					statusCode: 500,
+					statusMessage: 'Internal Server Error',
+					response: '',
+				},
+			}),
+		)
+		.mockResolvedValueOnce(undefined)
+	await expect(readIcon()).resolves.toEqual(pngBytes)
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
 })
 
 test('retries packfile corruption on readBlob after fetch and does not retry missing files (KODY-CLOUDFLARE-56)', async () => {
-	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
-	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			remote: 'https://artifacts.example.test/package.git',
-			defaultBranch: 'main',
-		})),
-		createToken: vi.fn(async () => ({
-			plaintext: 'token',
-		})),
-	})
-	mocks.fetch.mockReset()
-	mocks.fetch.mockResolvedValue(undefined)
-	mocks.init.mockClear()
-	mocks.addRemote.mockClear()
-
-	const packCorruption = Object.assign(
-		new Error(
-			`An internal error caused this command to fail.\n\nIf you're using an application that depends on isomorphic-git, please report this error to that application's developers.\n\nIf you're a developer and you believe this is a bug in isomorphic-git, please file an issue at https://github.com/isomorphic-git/isomorphic-git/issues with a minimal reproduction, version and environment details, and this error message: Packfile payload corrupted: calculated abc but expected def. The packfile may have been tampered with.`,
-		),
-		{ code: 'InternalError', name: 'InternalError' },
-	)
+	mockArtifactRepo()
 	mocks.readBlob
-		.mockRejectedValueOnce(packCorruption)
-		.mockResolvedValueOnce({ blob: bytes })
+		.mockRejectedValueOnce(
+			gitError(
+				`An internal error caused this command to fail.\n\nIf you're using an application that depends on isomorphic-git, please report this error to that application's developers.\n\nIf you're a developer and you believe this is a bug in isomorphic-git, please file an issue at https://github.com/isomorphic-git/isomorphic-git/issues with a minimal reproduction, version and environment details, and this error message: Packfile payload corrupted: calculated abc but expected def. The packfile may have been tampered with.`,
+				'InternalError',
+			),
+		)
+		.mockResolvedValueOnce({ blob: pngBytes })
 
-	await expect(
-		readArtifactFileAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'abc123',
-			filePath: 'community-icon.png',
-		}),
-	).resolves.toEqual(bytes)
-
+	await expect(readIcon()).resolves.toEqual(pngBytes)
 	// Fresh workspace + fetch on each attempt (corruption on read must re-fetch).
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
 	expect(mocks.init).toHaveBeenCalledTimes(2)
 	expect(mocks.readBlob).toHaveBeenCalledTimes(2)
 
-	mocks.fetch.mockClear()
-	mocks.init.mockClear()
-	const missing = Object.assign(
-		new Error('Could not find community-icon.png'),
-		{
-			code: 'NotFoundError',
-			name: 'NotFoundError',
-		},
+	vi.clearAllMocks()
+	mocks.readBlob.mockRejectedValue(
+		gitError('Could not find community-icon.png', 'NotFoundError'),
 	)
-	mocks.readBlob.mockReset()
-	mocks.readBlob.mockRejectedValue(missing)
-
-	await expect(
-		readArtifactFileAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'abc123',
-			filePath: 'community-icon.png',
-		}),
-	).resolves.toBeNull()
-
+	await expect(readIcon()).resolves.toBeNull()
 	expect(mocks.fetch).toHaveBeenCalledTimes(1)
 	expect(mocks.readBlob).toHaveBeenCalledTimes(1)
 })
 
 test('readArtifactTreeAtCommit walks the fetched commit tree', async () => {
-	mocks.isLoopbackArtifactsRemote.mockReturnValue(false)
-	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			remote: 'https://artifacts.example.test/package.git',
-			defaultBranch: 'main',
-		})),
-		createToken: vi.fn(async () => ({
-			plaintext: 'token',
-		})),
-	})
-	mocks.fetch.mockReset()
-	mocks.fetch.mockResolvedValue(undefined)
+	mockArtifactRepo()
+	const communityIcon = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1])
+	const photo = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x10, 0x4a])
+	const entries: Array<[string, 'tree' | 'blob' | null, Uint8Array]> = [
+		['.', null, new Uint8Array()],
+		['src', 'tree', new Uint8Array()],
+		['README.md', 'blob', new TextEncoder().encode('# Hello\n')],
+		['__proto__', 'blob', new TextEncoder().encode('not proto\n')],
+		['community-icon.png', 'blob', communityIcon],
+		['other-icon.png', 'blob', Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 2])],
+		['photo.jpg', 'blob', photo],
+	]
 	mocks.walk.mockImplementation(
 		async (input: {
-			map: (
-				filepath: string,
-				entries: Array<{
-					type: () => Promise<string>
-					content: () => Promise<Uint8Array>
-				} | null>,
-			) => Promise<void>
+			map: (filepath: string, entries: Array<unknown>) => Promise<void>
 		}) => {
-			await input.map('.', [null])
-			await input.map('src', [
-				{
-					type: async () => 'tree',
-					content: async () => new Uint8Array(),
-				},
-			])
-			await input.map('README.md', [
-				{
-					type: async () => 'blob',
-					content: async () => new TextEncoder().encode('# Hello\n'),
-				},
-			])
-			await input.map('__proto__', [
-				{
-					type: async () => 'blob',
-					content: async () => new TextEncoder().encode('not proto\n'),
-				},
-			])
-			await input.map('community-icon.png', [
-				{
-					type: async () => 'blob',
-					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
-				},
-			])
-			await input.map('other-icon.png', [
-				{
-					type: async () => 'blob',
-					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 2]),
-				},
-			])
-			await input.map('photo.jpg', [
-				{
-					type: async () => 'blob',
-					content: async () =>
-						Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x10, 0x4a]),
-				},
-			])
+			for (const [path, type, bytes] of entries) {
+				await input.map(path, [
+					type && { type: async () => type, content: async () => bytes },
+				])
+			}
 		},
 	)
 
-	const tree = await readArtifactTreeAtCommit({
-		env: {} as Env,
-		repoId: 'package-1',
-		commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-	})
+	const tree = await readTree()
 	expect(tree?.['README.md']).toBe('# Hello\n')
 	expect(Object.hasOwn(tree ?? {}, '__proto__')).toBe(true)
 	expect(tree?.['__proto__']).toBe('not proto\n')
 	expect(tree?.['community-icon.png']).not.toBe(tree?.['other-icon.png'])
 	expect(tree?.['community-icon.png']).toBe(
-		String.fromCharCode(...Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1])),
+		String.fromCharCode(...communityIcon),
 	)
 	expect(tree?.['community-icon.png']).toContain('\0')
-	expect(tree?.['photo.jpg']).toBe(
-		String.fromCharCode(
-			...Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x10, 0x4a]),
-		),
-	)
+	expect(tree?.['photo.jpg']).toBe(String.fromCharCode(...photo))
 	expect(tree?.['photo.jpg']).not.toContain('\0')
-	expect(mocks.TREE).toHaveBeenCalledWith({
-		ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-	})
+	expect(mocks.TREE).toHaveBeenCalledWith({ ref: treeCommit })
 	expect(mocks.fetch).toHaveBeenCalledWith(
-		expect.objectContaining({
-			ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-			depth: 1,
-		}),
+		expect.objectContaining({ ref: treeCommit, depth: 1 }),
 	)
 })
 
 test('readArtifactTreeAtCommit returns null when a loopback snapshot is missing', async () => {
 	mocks.isLoopbackArtifactsRemote.mockReturnValue(true)
-	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			remote: 'http://127.0.0.1/package.git',
-			defaultBranch: 'main',
-		})),
-	})
+	mockArtifactRepo('http://127.0.0.1/package.git')
 	mocks.readArtifactSourceSnapshot.mockResolvedValueOnce(null)
-	await expect(
-		readArtifactTreeAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-		}),
-	).resolves.toBeNull()
+	await expect(readTree()).resolves.toBeNull()
 
 	mocks.readArtifactSourceSnapshot.mockResolvedValueOnce({ files: {} })
-	await expect(
-		readArtifactTreeAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-		}),
-	).resolves.toEqual({})
-	mocks.isLoopbackArtifactsRemote.mockReturnValue(false)
+	await expect(readTree()).resolves.toEqual({})
 })

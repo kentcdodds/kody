@@ -126,17 +126,15 @@ test('destructive overwrite confirmation description documents history replace a
 })
 
 test('package source overwrite and private-visibility changes require explicit confirmation', async () => {
-	let overwriteMessage = ''
-	try {
-		await assertPackageSourceOverwriteAllowed({
-			env: createEnvWithSnapshot({ 'package.json': '{}' }),
-			userId: 'user-1',
-			source: packageSource(),
-			operation: 'packageSave',
-		})
-	} catch (error) {
-		overwriteMessage = error instanceof Error ? error.message : String(error)
-	}
+	const overwriteMessage = await assertPackageSourceOverwriteAllowed({
+		env: createEnvWithSnapshot({ 'package.json': '{}' }),
+		userId: 'user-1',
+		source: packageSource(),
+		operation: 'packageSave',
+	}).then(
+		() => '',
+		(error: Error) => error.message,
+	)
 	expect(overwriteMessage).toContain(destructiveOverwriteConfirmationField)
 	expect(isDestructiveOverwriteConfirmationMessage(overwriteMessage)).toBe(true)
 	expect(
@@ -154,7 +152,7 @@ test('package source overwrite and private-visibility changes require explicit c
 			operation: 'packageSave',
 		})
 	} catch (error) {
-		visibilityMessage = error instanceof Error ? error.message : String(error)
+		visibilityMessage = (error as Error).message
 	}
 	expect(visibilityMessage).toContain(privateVisibilityChangeConfirmationField)
 	expect(isPrivateVisibilityChangeConfirmationMessage(visibilityMessage)).toBe(
@@ -168,48 +166,45 @@ test('package source overwrite and private-visibility changes require explicit c
 })
 
 test('restorable package source snapshot verification rejects corrupt snapshots and accepts manifest-bearing backups', async () => {
-	await expect(
+	const assertRestorable = (env: Env, operation: string) =>
 		assertRestorablePackageSourceSnapshot({
-			env: createEnvWithSnapshot(null),
+			env,
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'packagePublishExternalPush force publish',
-		}),
-	).rejects.toThrow('Stop and report this source recovery problem')
-
-	await expect(
-		assertRestorablePackageSourceSnapshot({
-			env: createEnvWithSnapshot({ 'src/index.ts': 'export {}' }),
-			userId: 'user-1',
-			source: packageSource(),
-			operation: 'packagePublishExternalPush force publish',
-		}),
-	).rejects.toThrow('missing manifest "package.json"')
-
-	await expect(
-		assertRestorablePackageSourceSnapshot({
-			env: createEnvWithRawSnapshot({
+			operation,
+		})
+	const forcePublish = 'packagePublishExternalPush force publish'
+	const rejected: Array<[Env, string]> = [
+		[
+			createEnvWithSnapshot(null),
+			'Stop and report this source recovery problem',
+		],
+		[
+			createEnvWithSnapshot({ 'src/index.ts': 'export {}' }),
+			'missing manifest "package.json"',
+		],
+		[
+			createEnvWithRawSnapshot({
 				version: 1,
 				sourceId: 'source-1',
 				publishedCommit: 'commit-1',
 				files: null,
 			}),
-			userId: 'user-1',
-			source: packageSource(),
-			operation: 'packagePublishExternalPush force publish',
-		}),
-	).rejects.toThrow('the published source snapshot is missing or malformed')
+			'the published source snapshot is missing or malformed',
+		],
+	]
+	for (const [env, message] of rejected) {
+		await expect(assertRestorable(env, forcePublish)).rejects.toThrow(message)
+	}
 
 	await expect(
-		assertRestorablePackageSourceSnapshot({
-			env: createEnvWithSnapshot({
+		assertRestorable(
+			createEnvWithSnapshot({
 				'package.json': '{"name":"@user/demo"}',
 				'src/index.ts': 'export {}',
 			}),
-			userId: 'user-1',
-			source: packageSource(),
-			operation: 'packageGetGitRemote write access',
-		}),
+			'packageGetGitRemote write access',
+		),
 	).resolves.toEqual({
 		sourceId: 'source-1',
 		publishedCommit: 'commit-1',

@@ -58,41 +58,30 @@ const {
 
 const env = { APP_DB: {} } as Env
 
+const repoDeleted = { id: 'repo_deleted', alreadyDeleted: false }
+const userSource = (userId: string, repoId: string, id = 'source-1') => ({
+	id,
+	user_id: userId,
+	repo_id: repoId,
+})
+const sourceCleanupInput = { env, userId: 'user-1', sourceId: 'source-1' }
+
 test('artifact repo cleanup deletes scoped repos and records warning-only failures', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
-	mockModule.deleteArtifactRepo.mockResolvedValue({
-		id: 'repo_deleted',
-		alreadyDeleted: false,
-	})
-	mockModule.deleteArtifactRepo.mockResolvedValueOnce({
-		id: 'repo_1',
-		alreadyDeleted: false,
-	})
-	mockModule.deleteArtifactRepo.mockResolvedValueOnce({
-		id: null,
-		alreadyDeleted: true,
-	})
+	mockModule.deleteArtifactRepo
+		.mockResolvedValue(repoDeleted)
+		.mockResolvedValueOnce({ id: 'repo_1', alreadyDeleted: false })
+		.mockResolvedValueOnce({ id: null, alreadyDeleted: true })
 
-	expect(
-		await deleteUserScopedArtifactRepo({
-			env,
-			userId: 'user-1',
-			repoName: 'package-src-1',
-		}),
-	).toBe(true)
-	expect(
-		await deleteUserScopedArtifactRepo({
-			env,
-			userId: 'user-1',
-			repoName: 'package-src-1-session-abc',
-		}),
-	).toBe(true)
+	for (const repoName of ['package-src-1', 'package-src-1-session-abc']) {
+		await expect(
+			deleteUserScopedArtifactRepo({ env, userId: 'user-1', repoName }),
+		).resolves.toBe(true)
+	}
 
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'package-pkg-1',
-	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		userSource('user-1', 'package-pkg-1'),
+	)
 	mockModule.listRepoSessionsBySource.mockResolvedValueOnce([
 		{
 			id: 'session-1',
@@ -101,106 +90,75 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 			source_repo_id: 'package-pkg-1',
 		},
 	])
-	expect(
-		await cleanupArtifactReposForPackage({
-			env,
-			userId: 'user-1',
-			sourceId: 'source-1',
-		}),
-	).toBe(1)
+	await expect(
+		cleanupArtifactReposForPackage(sourceCleanupInput),
+	).resolves.toBe(1)
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('package-pkg-1')
 
 	mockModule.listEntitySourcesByUser.mockResolvedValue([
-		{ id: 'source-1', user_id: 'user-1', repo_id: 'package-pkg-1' },
-		{ id: 'source-2', user_id: 'user-1', repo_id: 'job-job-1' },
+		userSource('user-1', 'package-pkg-1'),
+		userSource('user-1', 'job-job-1', 'source-2'),
 	])
 	mockModule.listRepoSessionsByUser.mockResolvedValueOnce([
-		{
-			id: 'session-1',
-			user_id: 'user-1',
-			source_repo_id: 'package-pkg-1',
-		},
+		{ id: 'session-1', user_id: 'user-1', source_repo_id: 'package-pkg-1' },
 	])
-	expect(
-		await cleanupAllUserArtifactRepos({
-			env,
-			userId: 'user-1',
-			warnings: [],
-		}),
-	).toBe(2)
+	await expect(
+		cleanupAllUserArtifactRepos({ env, userId: 'user-1', warnings: [] }),
+	).resolves.toBe(2)
 
 	mockModule.listRepoSessionsByUser.mockResolvedValue([])
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-other',
-		repo_id: 'package-pkg-1',
-	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		userSource('user-other', 'package-pkg-1'),
+	)
 	mockModule.deleteArtifactRepo.mockClear()
 	const packageWarnings: Array<string> = []
-	expect(
-		await cleanupArtifactReposForPackage({
-			env,
-			userId: 'user-1',
-			sourceId: 'source-1',
+	await expect(
+		cleanupArtifactReposForPackage({
+			...sourceCleanupInput,
 			warnings: packageWarnings,
 		}),
-	).toBe(0)
+	).resolves.toBe(0)
 	expect(mockModule.deleteArtifactRepo).not.toHaveBeenCalled()
 	expect(packageWarnings).toHaveLength(1)
 
 	mockModule.hasArtifactsAccess.mockReturnValue(false)
 	mockModule.listEntitySourcesByUser.mockResolvedValue([
-		{ id: 'source-1', user_id: 'user-1', repo_id: 'package-pkg-1' },
+		userSource('user-1', 'package-pkg-1'),
 	])
 	const accountWarnings: Array<string> = []
-	expect(
-		await cleanupAllUserArtifactRepos({
+	await expect(
+		cleanupAllUserArtifactRepos({
 			env,
 			userId: 'user-1',
 			warnings: accountWarnings,
 		}),
-	).toBe(0)
+	).resolves.toBe(0)
 	expect(accountWarnings).toHaveLength(1)
 })
 
 test('generic source cleanup deletes the source root with user scope checks', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
-	mockModule.listRepoSessionsBySource.mockResolvedValue([])
-	mockModule.deleteArtifactRepo.mockResolvedValue({
-		id: 'repo-deleted',
-		alreadyDeleted: false,
-	})
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'job-job-1',
-	})
+	mockModule.deleteArtifactRepo.mockResolvedValue(repoDeleted)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		userSource('user-1', 'job-job-1'),
+	)
 	await expect(
-		cleanupArtifactReposForSource({
-			env,
-			userId: 'user-1',
-			sourceId: 'source-1',
-		}),
+		cleanupArtifactReposForSource(sourceCleanupInput),
 	).resolves.toEqual({
 		deleted: 1,
 		artifactAccessUnavailable: false,
 	})
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
+	// No stored push subscription means no Cloudflare subscription delete.
+	expect(mockModule.deleteArtifactsRepoPushSubscription).not.toHaveBeenCalled()
 
 	mockModule.deleteArtifactRepo.mockClear()
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-2',
-		repo_id: 'job-job-1',
-	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		userSource('user-2', 'job-job-1'),
+	)
 	const warnings: Array<string> = []
 	await expect(
-		cleanupArtifactReposForSource({
-			env,
-			userId: 'user-1',
-			sourceId: 'source-1',
-			warnings,
-		}),
+		cleanupArtifactReposForSource({ ...sourceCleanupInput, warnings }),
 	).resolves.toEqual({
 		deleted: 0,
 		artifactAccessUnavailable: false,
@@ -209,17 +167,13 @@ test('generic source cleanup deletes the source root with user scope checks', as
 	expect(warnings).toHaveLength(1)
 
 	mockModule.hasArtifactsAccess.mockReturnValue(false)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'job-job-1',
-	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
+		userSource('user-1', 'job-job-1'),
+	)
 	const missingAccessWarnings: Array<string> = []
 	await expect(
 		cleanupArtifactReposForSource({
-			env,
-			userId: 'user-1',
-			sourceId: 'source-1',
+			...sourceCleanupInput,
 			warnings: missingAccessWarnings,
 		}),
 	).resolves.toEqual({
@@ -231,14 +185,10 @@ test('generic source cleanup deletes the source root with user scope checks', as
 
 test('account cleanup deletes stored Artifacts push subscriptions before repos', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
-	mockModule.deleteArtifactRepo.mockResolvedValue({
-		id: 'repo_deleted',
-		alreadyDeleted: false,
-	})
+	mockModule.deleteArtifactRepo.mockResolvedValue(repoDeleted)
 	mockModule.listEntitySourcesByUser.mockResolvedValue([
-		{ id: 'source-1', user_id: 'user-1', repo_id: 'package-pkg-1' },
+		userSource('user-1', 'package-pkg-1'),
 	])
-	mockModule.listRepoSessionsByUser.mockResolvedValue([])
 	mockModule.getArtifactsPushSubscriptionBySourceId.mockResolvedValue({
 		source_id: 'source-1',
 		user_id: 'user-1',
@@ -246,13 +196,9 @@ test('account cleanup deletes stored Artifacts push subscriptions before repos',
 		subscription_id: 'sub-1',
 		created_at: '2026-05-01T00:00:00.000Z',
 		updated_at: '2026-05-01T00:00:00.000Z',
-	})
+	} as never)
 
-	await cleanupAllUserArtifactRepos({
-		env,
-		userId: 'user-1',
-		warnings: [],
-	})
+	await cleanupAllUserArtifactRepos({ env, userId: 'user-1', warnings: [] })
 
 	expect(mockModule.deleteArtifactsRepoPushSubscription).toHaveBeenCalledWith({
 		env,
@@ -261,37 +207,6 @@ test('account cleanup deletes stored Artifacts push subscriptions before repos',
 	})
 	expect(
 		mockModule.deleteArtifactsPushSubscriptionBySourceId,
-	).toHaveBeenCalledWith(
-		{},
-		{
-			sourceId: 'source-1',
-			userId: 'user-1',
-		},
-	)
+	).toHaveBeenCalledWith({}, { sourceId: 'source-1', userId: 'user-1' })
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('package-pkg-1')
-})
-
-test('cleanup skips Cloudflare push subscription delete when none is stored', async () => {
-	mockModule.hasArtifactsAccess.mockReturnValue(true)
-	mockModule.deleteArtifactsRepoPushSubscription.mockClear()
-	mockModule.deleteArtifactRepo.mockResolvedValue({
-		id: 'repo_deleted',
-		alreadyDeleted: false,
-	})
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		repo_id: 'job-job-1',
-	})
-	mockModule.listRepoSessionsBySource.mockResolvedValue([])
-	mockModule.getArtifactsPushSubscriptionBySourceId.mockResolvedValue(null)
-
-	await cleanupArtifactReposForSource({
-		env,
-		userId: 'user-1',
-		sourceId: 'source-1',
-	})
-
-	expect(mockModule.deleteArtifactsRepoPushSubscription).not.toHaveBeenCalled()
-	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
 })

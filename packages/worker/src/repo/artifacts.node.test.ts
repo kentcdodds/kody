@@ -30,189 +30,191 @@ const {
 	resolveExistingArtifactSourceRepo,
 } = await import('./artifacts.ts')
 
-test('artifacts REST client scopes API paths to configured or stored namespaces', async () => {
-	const envBinding = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-		ARTIFACTS_NAMESPACE: 'preview',
-	} as Env
-	const bindingFetch = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			expect(url.pathname).toContain(
-				'/artifacts/namespaces/preview/repos/repo-1',
-			)
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-							name: 'repo-1',
-							description: null,
-							default_branch: 'main',
-							created_at: '2026-04-17T00:00:00.000Z',
-							updated_at: '2026-04-17T00:00:00.000Z',
-							last_push_at: null,
-							source: null,
-							read_only: false,
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/preview/repo-1.git',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
+const restEnv = {
+	CLOUDFLARE_ACCOUNT_ID: 'acct',
+	CLOUDFLARE_API_TOKEN: 'token-123',
+	CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+} as Env
+
+const remoteFor = (name: string, namespace = 'default') =>
+	`https://acct.artifacts.cloudflare.net/git/${namespace}/${name}.git`
+
+function apiResponse(
+	result: unknown,
+	{
+		status = 200,
+		errors = [] as Array<{ code: number; message: string }>,
+		headers = {} as Record<string, string>,
+	} = {},
+) {
+	return new Response(
+		JSON.stringify({
+			success: status < 300,
+			result,
+			errors,
+			messages: [],
+		}),
+		{ status, headers: { 'content-type': 'application/json', ...headers } },
+	)
+}
+
+const repoNotFound = (headers?: Record<string, string>) =>
+	apiResponse(null, {
+		status: 404,
+		errors: [{ code: 1000, message: 'Repo not found' }],
+		headers,
+	})
+
+function restRepo(name: string, overrides: Record<string, unknown> = {}) {
+	return {
+		id: name.replace('-', '_'),
+		name,
+		description: null,
+		default_branch: 'main',
+		created_at: '2026-04-17T00:00:00.000Z',
+		updated_at: '2026-04-17T00:00:00.000Z',
+		last_push_at: null,
+		source: null,
+		read_only: false,
+		remote: remoteFor(name),
+		...overrides,
+	}
+}
+
+function createdRepo(name: string, token = 'art_v1_create?expires=1760000000') {
+	return {
+		id: name.replace('-', '_'),
+		name,
+		description: null,
+		default_branch: 'main',
+		remote: remoteFor(name),
+		token,
+	}
+}
+
+function mockFetch(
+	handle: (
+		method: string,
+		url: URL,
+		init?: RequestInit,
+	) => Response | undefined,
+) {
+	const spy = vi.spyOn(globalThis, 'fetch')
+	spy.mockClear()
+	return spy.mockImplementation(async (input, init) => {
+		const url = new URL(String(input))
+		const method = init?.method ?? 'GET'
+		const response = handle(method, url, init)
+		if (!response) {
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+		}
+		return response
+	})
+}
+
+function nativeRepoHandle(
+	name: string,
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		id: name.replace('-', '_'),
+		name,
+		description: null,
+		defaultBranch: 'main',
+		createdAt: '2026-04-17T00:00:00.000Z',
+		updatedAt: '2026-04-17T00:00:00.000Z',
+		lastPushAt: null,
+		source: null,
+		readOnly: false,
+		remote: remoteFor(name, 'production'),
+		createToken: vi.fn(),
+		listTokens: vi.fn(async () => ({ tokens: [], total: 0 })),
+		revokeToken: vi.fn(),
+		...overrides,
+	}
+}
+
+test('artifacts REST client scopes API paths to configured or stored namespaces', async () => {
+	const fetchMock = mockFetch((method, url) => {
+		expect(url.pathname).toContain('/artifacts/namespaces/preview/repos/repo-1')
+		return method === 'GET'
+			? apiResponse(
+					restRepo('repo-1', { remote: remoteFor('repo-1', 'preview') }),
+				)
+			: undefined
+	})
 
 	await expect(
-		getArtifactsBinding(envBinding).get('repo-1'),
-	).resolves.toMatchObject({
-		status: 'ready',
+		getArtifactsBinding({
+			...restEnv,
+			ARTIFACTS_NAMESPACE: 'preview',
+		} as Env).get('repo-1'),
+	).resolves.toMatchObject({ status: 'ready' })
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+
+	const storedFetch = mockFetch((method, url) => {
+		expect(url.pathname).toContain('/artifacts/namespaces/stored/repos/repo-1')
+		return method === 'GET'
+			? apiResponse(
+					restRepo('repo-1', { remote: remoteFor('repo-1', 'stored') }),
+				)
+			: undefined
 	})
-	expect(bindingFetch).toHaveBeenCalledTimes(1)
-	bindingFetch.mockRestore()
+	await expect(
+		getArtifactsBinding(
+			{ ...restEnv, ARTIFACTS_NAMESPACE: 'preview' } as Env,
+			' stored ',
+		).get('repo-1'),
+	).resolves.toMatchObject({ status: 'ready' })
+	expect(storedFetch).toHaveBeenCalledTimes(1)
+	expect(getArtifactsNamespace({} as Env)).toBe('default')
+	expect(
+		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),
+	).toBe('preview')
 })
 
 test('artifacts REST client supports get, create, token, and delete operations', async () => {
 	let getRepo1Count = 0
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				getRepo1Count += 1
-				if (getRepo1Count === 1) {
-					return new Response(
-						JSON.stringify({
-							success: false,
-							result: null,
-							errors: [{ code: 1000, message: 'Repo not found' }],
-							messages: [],
-						}),
-						{
-							status: 404,
-							headers: { 'content-type': 'application/json' },
-						},
-					)
-				}
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-							name: 'repo-1',
-							description: 'Repo 1',
-							default_branch: 'main',
-							created_at: '2026-04-17T00:00:00.000Z',
-							updated_at: '2026-04-17T00:00:00.000Z',
-							last_push_at: null,
-							source: null,
-							read_only: false,
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-							name: 'repo-1',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-							token: 'art_v1_create?expires=1760000000',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/tokens')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'tok_1',
-							plaintext: 'art_v1_read?expires=1760000100',
-							scope: 'read',
-							expires_at: '2026-10-09T08:55:00.000Z',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'DELETE' && url.pathname.endsWith('/repos/repo-1')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 202,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const fetchMock = mockFetch((method, url) => {
+		if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
+			getRepo1Count += 1
+			return getRepo1Count === 1
+				? repoNotFound()
+				: apiResponse(restRepo('repo-1', { description: 'Repo 1' }))
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			return apiResponse(createdRepo('repo-1'))
+		}
+		if (method === 'POST' && url.pathname.endsWith('/tokens')) {
+			return apiResponse({
+				id: 'tok_1',
+				plaintext: 'art_v1_read?expires=1760000100',
+				scope: 'read',
+				expires_at: '2026-10-09T08:55:00.000Z',
+			})
+		}
+		if (method === 'DELETE' && url.pathname.endsWith('/repos/repo-1')) {
+			return apiResponse({ id: 'repo_1' }, { status: 202 })
+		}
+		return undefined
+	})
 
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-
-	const binding = getArtifactsBinding(env)
+	const binding = getArtifactsBinding(restEnv)
 	await expect(binding.get('repo-1')).resolves.toEqual({ status: 'not_found' })
 	await expect(binding.create('repo-1')).resolves.toMatchObject({
 		id: 'repo_1',
 		name: 'repo-1',
 		defaultBranch: 'main',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+		remote: remoteFor('repo-1'),
 		token: 'art_v1_create?expires=1760000000',
 	})
 
-	const repo = await resolveArtifactSourceRepo(env, 'repo-1')
+	const repo = await resolveArtifactSourceRepo(restEnv, 'repo-1')
 	await expect(repo.info()).resolves.toMatchObject({
 		id: 'repo_1',
 		name: 'repo-1',
 		defaultBranch: 'main',
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+		remote: remoteFor('repo-1'),
 	})
 	await expect(repo.createToken('read', 120)).resolves.toEqual({
 		id: 'tok_1',
@@ -224,7 +226,6 @@ test('artifacts REST client supports get, create, token, and delete operations',
 		id: 'repo_1',
 		alreadyDeleted: false,
 	})
-
 	expect(fetchMock).toHaveBeenCalledTimes(6)
 
 	expect(parseArtifactTokenSecret('art_v1_secret?expires=1760000100')).toBe(
@@ -232,10 +233,7 @@ test('artifacts REST client supports get, create, token, and delete operations',
 	)
 	expect(
 		buildArtifactsGitAuth({ token: 'art_v1_secret?expires=1760000100' }),
-	).toEqual({
-		username: 'x',
-		password: 'art_v1_secret',
-	})
+	).toEqual({ username: 'x', password: 'art_v1_secret' })
 	expect(
 		buildAuthenticatedArtifactsRemote({
 			remote: 'http://127.0.0.1:8787/git/default/repo-1.git',
@@ -244,233 +242,117 @@ test('artifacts REST client supports get, create, token, and delete operations',
 	).toBe('http://x:art_v1_secret@127.0.0.1:8787/git/default/repo-1.git')
 })
 
-test('ensureArtifactRepoReady handles concurrent create conflicts', async () => {
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
+test('ensureArtifactRepoReady uses the create result, recovers from concurrent create conflicts, and surfaces other conflicts', async () => {
+	const createFetch = mockFetch((method, url) => {
+		if (method === 'GET' && url.pathname.endsWith('/repos/repo-new')) {
+			return repoNotFound({ 'cf-ray': 'create-miss-ray' })
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			return apiResponse(createdRepo('repo-new'), {
+				status: 201,
+				headers: { 'cf-ray': 'create-post-ray' },
+			})
+		}
+		return undefined
+	})
+	await expect(
+		ensureArtifactRepoReady(restEnv, 'repo-new'),
+	).resolves.toMatchObject({
+		recreated: true,
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: remoteFor('repo-new'),
+			token: 'art_v1_create?expires=1760000000',
+		},
+		repo: expect.any(Object),
+	})
+	// No follow-up GET after a successful create.
+	expect(createFetch).toHaveBeenCalledTimes(2)
 
 	let getRepoCount = 0
-	const recoverableFetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				getRepoCount += 1
-				if (getRepoCount === 1) {
-					return new Response(
-						JSON.stringify({
-							success: false,
-							result: null,
-							errors: [{ code: 1000, message: 'Repo not found' }],
-							messages: [],
-						}),
-						{
-							status: 404,
-							headers: { 'content-type': 'application/json' },
-						},
-					)
-				}
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-							name: 'repo-1',
-							description: null,
-							default_branch: 'main',
-							created_at: '2026-04-18T00:00:00.000Z',
-							updated_at: '2026-04-18T00:00:00.000Z',
-							last_push_at: null,
-							source: null,
-							read_only: false,
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 10201, message: 'Create failed' }],
-						messages: [],
-					}),
-					{
-						status: 409,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-
-	await expect(ensureArtifactRepoReady(env, 'repo-1')).resolves.toMatchObject({
+	const racedFetch = mockFetch((method, url) => {
+		if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
+			getRepoCount += 1
+			return getRepoCount === 1
+				? repoNotFound()
+				: apiResponse(restRepo('repo-1'))
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			return apiResponse(null, {
+				status: 409,
+				errors: [{ code: 10201, message: 'Create failed' }],
+			})
+		}
+		return undefined
+	})
+	await expect(
+		ensureArtifactRepoReady(restEnv, 'repo-1'),
+	).resolves.toMatchObject({
 		recreated: false,
 		repo: expect.any(Object),
 	})
-	expect(recoverableFetchMock).toHaveBeenCalledTimes(3)
-	recoverableFetchMock.mockRestore()
+	expect(racedFetch).toHaveBeenCalledTimes(3)
 
-	const genericConflictFetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 1000, message: 'Repo not found' }],
-						messages: [],
-					}),
-					{
-						status: 404,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 9000, message: 'Different conflict' }],
-						messages: [],
-					}),
-					{
-						status: 409,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-
-	await expect(ensureArtifactRepoReady(env, 'repo-1')).rejects.toThrow(
+	const conflictFetch = mockFetch((method, url) => {
+		if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
+			return repoNotFound()
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			return apiResponse(null, {
+				status: 409,
+				errors: [{ code: 9000, message: 'Different conflict' }],
+			})
+		}
+		return undefined
+	})
+	await expect(ensureArtifactRepoReady(restEnv, 'repo-1')).rejects.toThrow(
 		'Different conflict',
 	)
-	expect(genericConflictFetchMock).toHaveBeenCalledTimes(2)
+	expect(conflictFetch).toHaveBeenCalledTimes(2)
 })
 
 test('artifacts REST client error paths and missing source repos', async () => {
-	expect(getArtifactsNamespace({} as Env)).toBe('default')
-	expect(
-		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),
-	).toBe('preview')
-
-	const missingRepoFetch = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-1')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 1000, message: 'Repo not found' }],
-						messages: [],
-					}),
-					{
-						status: 404,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-
-	await expect(resolveExistingArtifactSourceRepo(env, 'repo-1')).resolves.toBe(
-		null,
+	const missingRepoFetch = mockFetch((method, url) =>
+		method === 'GET' && url.pathname.endsWith('/repos/repo-1')
+			? repoNotFound()
+			: undefined,
 	)
-	await expect(resolveArtifactSourceHead(env, 'repo-1')).resolves.toEqual({
+	await expect(
+		resolveExistingArtifactSourceRepo(restEnv, 'repo-1'),
+	).resolves.toBe(null)
+	await expect(resolveArtifactSourceHead(restEnv, 'repo-1')).resolves.toEqual({
 		branch: 'main',
 		commit: null,
 	})
 	expect(missingRepoFetch).toHaveBeenCalledTimes(2)
-	missingRepoFetch.mockRestore()
 
-	vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-		new Response(
-			JSON.stringify({
-				success: false,
-				result: null,
-				messages: [],
-			}),
-			{
-				status: 500,
-				headers: { 'content-type': 'application/json' },
-			},
-		),
-	)
-	await expect(getArtifactsBinding(env).get('repo-1')).rejects.toThrow(
+	mockFetch(() => apiResponse(null, { status: 500 }))
+	await expect(getArtifactsBinding(restEnv).get('repo-1')).rejects.toThrow(
 		/Artifacts API request failed \(500\)/,
 	)
-	vi.mocked(globalThis.fetch).mockRestore()
 
-	const invalidTokenFetch = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_1',
-							name: 'repo-1',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-							token: 'art_v1_missing_expiry',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-	await expect(getArtifactsBinding(env).create('repo-1')).rejects.toThrow(
+	const invalidTokenFetch = mockFetch((method, url) =>
+		method === 'POST' && url.pathname.endsWith('/repos')
+			? apiResponse(createdRepo('repo-1', 'art_v1_missing_expiry'))
+			: undefined,
+	)
+	await expect(getArtifactsBinding(restEnv).create('repo-1')).rejects.toThrow(
 		/parseable expires timestamp/,
 	)
 	expect(invalidTokenFetch).toHaveBeenCalledTimes(1)
 })
 
 test('resolveArtifactDefaultBranchHead reuses a provided token and still works without one', async () => {
-	gitMocks.listServerRefs.mockReset()
 	gitMocks.listServerRefs.mockResolvedValue([
 		{ ref: 'refs/heads/main', oid: 'abc123' },
 	])
-	const createToken = vi.fn(async () => ({
+	const readToken = {
 		id: 'tok_read',
 		plaintext: 'art_v1_throwaway',
 		scope: 'read',
 		expiresAt: '2026-10-09T08:55:00.000Z',
-	}))
+	}
+	const createToken = vi.fn(async () => readToken as typeof readToken | object)
 	const info = vi.fn(async () => ({
 		id: 'repo_1',
 		name: 'repo-1',
@@ -481,15 +363,18 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		lastPushAt: null,
 		source: null,
 		readOnly: false,
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+		remote: remoteFor('repo-1'),
 	}))
 	const repo = { info, createToken }
-
-	await expect(resolveArtifactDefaultBranchHead({ repo })).resolves.toEqual({
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+	const head = (commit: string) => ({
+		remote: remoteFor('repo-1'),
 		defaultBranch: 'main',
-		commit: 'abc123',
+		commit,
 	})
+
+	await expect(resolveArtifactDefaultBranchHead({ repo })).resolves.toEqual(
+		head('abc123'),
+	)
 	expect(createToken).toHaveBeenCalledTimes(1)
 	expect(createToken).toHaveBeenCalledWith('read', 300)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledWith(
@@ -500,103 +385,68 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		}),
 	)
 
+	const knownInfo = await info()
 	createToken.mockClear()
 	info.mockClear()
 	gitMocks.listServerRefs.mockClear()
-	gitMocks.listServerRefs.mockResolvedValue([
-		{ ref: 'refs/heads/main', oid: 'abc123' },
-	])
 	await expect(
 		resolveArtifactDefaultBranchHead({
 			repo,
 			token: 'art_v1_reused_write',
-			info: await info(),
+			info: knownInfo,
 		}),
-	).resolves.toEqual({
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-		defaultBranch: 'main',
-		commit: 'abc123',
-	})
+	).resolves.toEqual(head('abc123'))
 	expect(createToken).not.toHaveBeenCalled()
-	expect(info).toHaveBeenCalledTimes(1)
+	expect(info).not.toHaveBeenCalled()
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
 
-	createToken.mockReset()
-	createToken.mockResolvedValue({
-		id: 'tok_empty',
-		plaintext: undefined,
-		scope: 'read',
-		expiresAt: '2026-10-09T08:55:00.000Z',
-	})
+	createToken.mockResolvedValueOnce({ ...readToken, plaintext: undefined })
 	await expect(resolveArtifactDefaultBranchHead({ repo })).rejects.toThrow(
 		'Artifacts createToken result is missing plaintext.',
 	)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
 
-	const httpError = Object.assign(
-		new Error('HTTP Error: 500 Internal Server Error'),
-		{
-			code: 'HttpError',
-			name: 'HttpError',
-			data: {
-				statusCode: 500,
-				statusMessage: 'Internal Server Error',
-				response: '',
-			},
-		},
-	)
 	gitMocks.listServerRefs.mockReset()
 	gitMocks.listServerRefs
-		.mockRejectedValueOnce(httpError)
+		.mockRejectedValueOnce(
+			Object.assign(new Error('HTTP Error: 500 Internal Server Error'), {
+				code: 'HttpError',
+				name: 'HttpError',
+				data: {
+					statusCode: 500,
+					statusMessage: 'Internal Server Error',
+					response: '',
+				},
+			}),
+		)
 		.mockResolvedValueOnce([{ ref: 'refs/heads/main', oid: 'retried-oid' }])
-	createToken.mockReset()
-	createToken.mockResolvedValue({
-		id: 'tok_read',
-		plaintext: 'art_v1_throwaway',
-		scope: 'read',
-		expiresAt: '2026-10-09T08:55:00.000Z',
-	})
-	await expect(resolveArtifactDefaultBranchHead({ repo })).resolves.toEqual({
-		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
-		defaultBranch: 'main',
-		commit: 'retried-oid',
-	})
+	await expect(resolveArtifactDefaultBranchHead({ repo })).resolves.toEqual(
+		head('retried-oid'),
+	)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(2)
 })
 
-test('native createToken maps token when JSRPC omits plaintext', async () => {
-	const nativeCreateToken = vi.fn(async () => ({
-		id: 'tok_native',
-		token: 'art_v2_read?expires=1760000100',
-		scope: 'read' as const,
-	}))
+test('native createToken maps token when JSRPC omits plaintext and defers to REST tokens when both are configured', async () => {
+	const nativeCreateToken = vi.fn(
+		async (): Promise<{ id: string; scope: 'read'; token?: string }> => ({
+			id: 'tok_native',
+			token: 'art_v2_read?expires=1760000100',
+			scope: 'read',
+		}),
+	)
 	const env = {
 		ARTIFACTS_NAMESPACE: 'production',
 		ARTIFACTS: {
 			create: vi.fn(),
-			get: vi.fn(async () => ({
-				id: 'repo_1',
-				name: 'repo-1',
-				description: null,
-				defaultBranch: 'main',
-				createdAt: '2026-04-17T00:00:00.000Z',
-				updatedAt: '2026-04-17T00:00:00.000Z',
-				lastPushAt: null,
-				source: null,
-				readOnly: false,
-				remote:
-					'https://acct.artifacts.cloudflare.net/git/production/repo-1.git',
-				createToken: nativeCreateToken,
-				listTokens: vi.fn(async () => ({ tokens: [], total: 0 })),
-				revokeToken: vi.fn(),
-			})),
+			get: vi.fn(async () =>
+				nativeRepoHandle('repo-1', { createToken: nativeCreateToken }),
+			),
 			delete: vi.fn(),
 			list: vi.fn(async () => ({ repos: [], total: 0 })),
 		},
 	} as unknown as Env
 
 	const result = await getArtifactsBinding(env).get('repo-1')
-	expect(result.status).toBe('ready')
 	if (result.status !== 'ready') {
 		throw new Error('expected native repo to be ready')
 	}
@@ -607,53 +457,27 @@ test('native createToken maps token when JSRPC omits plaintext', async () => {
 		expiresAt: '2025-10-09T08:55:00.000Z',
 	})
 	expect(nativeCreateToken).toHaveBeenCalledWith('read', 120)
-	expect(parseArtifactTokenSecret('art_v2_read?expires=1760000100')).toBe(
-		'art_v2_read',
-	)
 
-	nativeCreateToken.mockResolvedValueOnce({
-		id: 'tok_empty',
-		scope: 'read' as const,
-	})
+	nativeCreateToken.mockResolvedValueOnce({ id: 'tok_empty', scope: 'read' })
 	await expect(result.repo.createToken('read', 120)).rejects.toThrow(
 		'Artifacts native createToken failed: Artifacts createToken result is missing plaintext.',
 	)
 
-	const restFetch = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'POST' && url.pathname.endsWith('/tokens')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'tok_rest',
-							plaintext: 'art_v1_rest?expires=1760000100',
-							scope: 'read',
-							expires_at: '2026-10-09T08:55:00.000Z',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-	const hybridEnv = {
-		...env,
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as unknown as Env
+	const restFetch = mockFetch((method, url) =>
+		method === 'POST' && url.pathname.endsWith('/tokens')
+			? apiResponse({
+					id: 'tok_rest',
+					plaintext: 'art_v1_rest?expires=1760000100',
+					scope: 'read',
+					expires_at: '2026-10-09T08:55:00.000Z',
+				})
+			: undefined,
+	)
 	nativeCreateToken.mockClear()
-	const hybrid = await getArtifactsBinding(hybridEnv).get('repo-1')
-	expect(hybrid.status).toBe('ready')
+	const hybrid = await getArtifactsBinding({
+		...env,
+		...restEnv,
+	} as unknown as Env).get('repo-1')
 	if (hybrid.status !== 'ready') {
 		throw new Error('expected hybrid native repo to be ready')
 	}
@@ -665,79 +489,6 @@ test('native createToken maps token when JSRPC omits plaintext', async () => {
 	})
 	expect(nativeCreateToken).not.toHaveBeenCalled()
 	expect(restFetch).toHaveBeenCalledTimes(1)
-	restFetch.mockRestore()
-})
-
-test('ensureArtifactRepoReady uses the create result without a follow-up GET', async () => {
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/repo-new')) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 1000, message: 'Repo not found' }],
-						messages: [],
-					}),
-					{
-						status: 404,
-						headers: {
-							'content-type': 'application/json',
-							'cf-ray': 'create-miss-ray',
-						},
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo_new',
-							name: 'repo-new',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/repo-new.git',
-							token: 'art_v1_create?expires=1760000000',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 201,
-						headers: {
-							'content-type': 'application/json',
-							'cf-ray': 'create-post-ray',
-						},
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-
-	await expect(ensureArtifactRepoReady(env, 'repo-new')).resolves.toMatchObject(
-		{
-			recreated: true,
-			bootstrapAccess: {
-				defaultBranch: 'main',
-				remote:
-					'https://acct.artifacts.cloudflare.net/git/default/repo-new.git',
-				token: 'art_v1_create?expires=1760000000',
-			},
-			repo: expect.any(Object),
-		},
-	)
-	expect(fetchMock).toHaveBeenCalledTimes(2)
-	fetchMock.mockRestore()
 })
 
 test('getArtifactsBinding prefers the native ARTIFACTS binding for the env namespace', async () => {
@@ -746,21 +497,22 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 		name: 'repo-native',
 		description: null,
 		defaultBranch: 'main',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/production/repo-native.git',
+		remote: remoteFor('repo-native', 'production'),
 		token: 'art_v2_native',
 		tokenExpiresAt: '2026-10-09T08:53:20.000Z',
 	}
-	const nativeGet = vi.fn(async () => {
-		const error = new Error('not found') as Error & {
-			name: string
-			code: string
-		}
-		error.name = 'ArtifactsError'
-		error.code = 'NOT_FOUND'
-		throw error
+	const notFound = (name: string) => ({
+		name: 'ArtifactsError',
+		code: 'NOT_FOUND',
+		message: `Repository not found: ${name}`,
 	})
-	const nativeCreate = vi.fn(async () => created)
+	const nativeGet = vi.fn(async (): Promise<unknown> => {
+		throw Object.assign(new Error('not found'), {
+			name: 'ArtifactsError',
+			code: 'NOT_FOUND',
+		})
+	})
+	const nativeCreate = vi.fn(async (): Promise<unknown> => created)
 	const env = {
 		ARTIFACTS_NAMESPACE: 'production',
 		ARTIFACTS: {
@@ -770,8 +522,8 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 			list: vi.fn(async () => ({ repos: [], total: 0 })),
 		},
 	} as unknown as Env
-
 	const binding = getArtifactsBinding(env)
+
 	await expect(binding.get('repo-native')).resolves.toEqual({
 		status: 'not_found',
 	})
@@ -789,24 +541,17 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	expect(nativeCreate).toHaveBeenCalledWith('repo-native', { readOnly: false })
 	expect(nativeGet).toHaveBeenCalledTimes(2)
 
-	const duckTypedNotFound = {
-		name: 'ArtifactsError',
-		code: 'NOT_FOUND',
-		message: 'Repository not found: repo-native-duck',
-	}
-	nativeGet.mockReset()
+	// Duck-typed (non-Error) NOT_FOUND; expiry comes from the token suffix.
 	nativeGet.mockImplementation(async () => {
-		throw duckTypedNotFound
+		throw notFound('repo-native-duck')
 	})
-	nativeCreate.mockClear()
 	nativeCreate.mockImplementation(async () => ({
+		...created,
 		id: 'repo_native_duck',
 		name: 'repo-native-duck',
-		description: null,
-		defaultBranch: 'main',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/production/repo-native-duck.git',
+		remote: remoteFor('repo-native-duck', 'production'),
 		token: 'art_v2_native?expires=1760000000',
+		tokenExpiresAt: undefined,
 	}))
 	await expect(binding.get('repo-native-duck')).resolves.toEqual({
 		status: 'not_found',
@@ -824,7 +569,6 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 		readOnly: false,
 	})
 
-	nativeGet.mockReset()
 	nativeGet.mockImplementation(async () => {
 		throw new Error('git: repository not found on the remote')
 	})
@@ -832,34 +576,12 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 		/git: repository not found/,
 	)
 
-	const readyHandle = {
-		id: 'repo_exists',
-		name: 'repo-native-exists',
-		description: null,
-		defaultBranch: 'main',
-		createdAt: '2026-08-13T00:00:00.000Z',
-		updatedAt: '2026-08-13T00:00:00.000Z',
-		lastPushAt: null,
-		source: null,
-		readOnly: false,
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/production/repo-native-exists.git',
-		createToken: vi.fn(),
-		listTokens: vi.fn(),
-		revokeToken: vi.fn(),
-	}
+	// ALREADY_EXISTS on create after a NOT_FOUND get re-reads the ready repo.
 	let existsGets = 0
-	nativeGet.mockReset()
 	nativeGet.mockImplementation(async () => {
 		existsGets += 1
-		if (existsGets === 1) {
-			throw {
-				name: 'ArtifactsError',
-				code: 'NOT_FOUND',
-				message: 'Repository not found: repo-native-exists',
-			}
-		}
-		return readyHandle
+		if (existsGets === 1) throw notFound('repo-native-exists')
+		return nativeRepoHandle('repo-native-exists')
 	})
 	nativeCreate.mockReset()
 	nativeCreate.mockImplementation(async () => {
@@ -871,10 +593,7 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	})
 	await expect(
 		ensureArtifactRepoReady(env, 'repo-native-exists', binding),
-	).resolves.toMatchObject({
-		recreated: false,
-		repo: expect.any(Object),
-	})
+	).resolves.toMatchObject({ recreated: false, repo: expect.any(Object) })
 	expect(nativeCreate).toHaveBeenCalledTimes(1)
 	expect(existsGets).toBeGreaterThan(1)
 })
@@ -882,36 +601,13 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 test('artifacts REST logs redact plaintext tokens on revoke', async () => {
 	const plaintext = 'art_v1_secret?expires=1760000100'
 	const info = vi.spyOn(console, 'info').mockImplementation(() => {})
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			expect(method).toBe('DELETE')
-			expect(url.pathname).toContain(`/tokens/${encodeURIComponent(plaintext)}`)
-			return new Response(
-				JSON.stringify({
-					success: true,
-					result: null,
-					errors: [],
-					messages: [],
-				}),
-				{
-					status: 200,
-					headers: {
-						'content-type': 'application/json',
-						'cf-ray': 'revoke-ray-1',
-					},
-				},
-			)
-		})
+	mockFetch((method, url) => {
+		expect(method).toBe('DELETE')
+		expect(url.pathname).toContain(`/tokens/${encodeURIComponent(plaintext)}`)
+		return apiResponse(null, { headers: { 'cf-ray': 'revoke-ray-1' } })
+	})
 
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
-	await getArtifactsBinding(env).repo('repo-1').revokeToken?.(plaintext)
+	await getArtifactsBinding(restEnv).repo('repo-1').revokeToken?.(plaintext)
 
 	const logged = info.mock.calls.filter((call) => call[0] === 'artifacts-rest')
 	expect(logged).toHaveLength(1)
@@ -923,94 +619,54 @@ test('artifacts REST logs redact plaintext tokens on revoke', async () => {
 	})
 	expect(JSON.stringify(logged)).not.toContain(plaintext)
 	expect(JSON.stringify(logged)).not.toContain(encodeURIComponent(plaintext))
-	info.mockRestore()
-	fetchMock.mockRestore()
 })
 
 test('artifacts REST client forks a repo without sending file contents', async () => {
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			expect(method).toBe('POST')
-			expect(url.pathname).toBe(
-				'/client/v4/accounts/acct/artifacts/namespaces/default/repos/package-origin/fork',
-			)
-			const body = JSON.parse(String(init?.body ?? '{}')) as Record<
-				string,
-				unknown
-			>
-			expect(body).toEqual({
-				name: 'package-dest',
-				read_only: false,
-				default_branch_only: true,
-			})
-			expect(JSON.stringify(body)).not.toContain('files')
-			return new Response(
-				JSON.stringify({
-					success: true,
-					result: {
-						id: 'repo_dest',
-						name: 'package-dest',
-						description: null,
-						default_branch: 'main',
-						remote:
-							'https://acct.artifacts.cloudflare.net/git/default/package-dest.git',
-						token: 'art_v1_fork?expires=1760000000',
-					},
-					errors: [],
-					messages: [],
-				}),
-				{
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				},
-			)
+	mockFetch((method, url, init) => {
+		expect(method).toBe('POST')
+		expect(url.pathname).toBe(
+			'/client/v4/accounts/acct/artifacts/namespaces/default/repos/package-origin/fork',
+		)
+		expect(JSON.parse(String(init?.body ?? '{}'))).toEqual({
+			name: 'package-dest',
+			read_only: false,
+			default_branch_only: true,
 		})
+		return apiResponse(
+			createdRepo('package-dest', 'art_v1_fork?expires=1760000000'),
+		)
+	})
 
-	const env = {
-		CLOUDFLARE_ACCOUNT_ID: 'acct',
-		CLOUDFLARE_API_TOKEN: 'token-123',
-		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
-	} as Env
 	await expect(
-		getArtifactsBinding(env).fork('package-origin', 'package-dest', {
+		getArtifactsBinding(restEnv).fork('package-origin', 'package-dest', {
 			readOnly: false,
 			defaultBranchOnly: true,
 		}),
 	).resolves.toMatchObject({
-		id: 'repo_dest',
+		id: 'package_dest',
 		name: 'package-dest',
 		token: 'art_v1_fork?expires=1760000000',
 	})
-	fetchMock.mockRestore()
 })
 
 test('isArtifactRepoNotFoundError matches repo-scoped messages only', () => {
+	const cases: Array<[string, boolean]> = [
+		['Artifacts repo "package-origin" was not found.', true],
+		['Repository not found: package-origin', true],
+		['Repo not found', true],
+		['Secret not found', false],
+		['git: repository not found on the remote', false],
+		['User was not found', false],
+	]
 	expect(
-		isArtifactRepoNotFoundError(
-			new Error('Artifacts repo "package-origin" was not found.'),
+		cases.filter(
+			([message, want]) =>
+				isArtifactRepoNotFoundError(new Error(message)) !== want,
 		),
-	).toBe(true)
-	expect(
-		isArtifactRepoNotFoundError(
-			new Error('Repository not found: package-origin'),
-		),
-	).toBe(true)
-	expect(isArtifactRepoNotFoundError(new Error('Repo not found'))).toBe(true)
+	).toEqual([])
 	expect(
 		artifactsBindingErrorCode(
 			new Error('ArtifactsError: Repository not found: package-origin'),
 		),
 	).toBe('NOT_FOUND')
-	expect(isArtifactRepoNotFoundError(new Error('Secret not found'))).toBe(false)
-	expect(
-		isArtifactRepoNotFoundError(
-			new Error('git: repository not found on the remote'),
-		),
-	).toBe(false)
-	expect(isArtifactRepoNotFoundError(new Error('User was not found'))).toBe(
-		false,
-	)
 })

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
 import { type ArtifactBootstrapAccess } from './artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -29,10 +30,7 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 vi.mock(
 	'#worker/package-registry/package-publish-lock.ts',
 	async (importOriginal) => {
-		const actual =
-			await importOriginal<
-				typeof import('#worker/package-registry/package-publish-lock.ts')
-			>()
+		const actual = await importOriginal<typeof PublishLock>()
 		return {
 			...actual,
 			loadLockedSavedPackage: (...args: Array<unknown>) =>
@@ -55,54 +53,23 @@ const jobFiles = {
 	'src/job.ts': 'export default async function main() { return { ok: true } }',
 }
 
-function createBundleArtifactsKv(): KVNamespace {
-	const store = new Map<string, string>()
-	return {
-		async get(key: string, type?: 'text' | 'json') {
-			const value = store.get(key) ?? null
-			if (value == null) return null
-			if (type === 'json') {
-				return JSON.parse(value)
-			}
-			return value
-		},
-		async put(key: string, value: string | ArrayBuffer | ArrayBufferView) {
-			if (typeof value === 'string') {
-				store.set(key, value)
-				return
-			}
-			const view =
-				value instanceof ArrayBuffer
-					? new Uint8Array(value)
-					: new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-			store.set(key, Buffer.from(view).toString('utf8'))
-		},
-		async delete(key: string) {
-			store.delete(key)
-		},
-	} as unknown as KVNamespace
+const packageJson =
+	'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+
+const syncInput = {
+	env: {
+		APP_DB: { prepare: () => ({}) as D1PreparedStatement },
+		BUNDLE_ARTIFACTS_KV: {},
+		REPO_SESSION: {},
+		CLOUDFLARE_ACCOUNT_ID: 'account-1',
+		CLOUDFLARE_API_TOKEN: 'token-1',
+	} as unknown as Env,
+	userId: 'user-1',
+	baseUrl: 'https://heykody.dev',
+	sourceId: 'source-1',
 }
 
-function createSyncEnv() {
-	return {
-		env: {
-			APP_DB: {
-				prepare() {
-					return {} as D1PreparedStatement
-				},
-			},
-			BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
-			REPO_SESSION: {},
-			CLOUDFLARE_ACCOUNT_ID: 'account-1',
-			CLOUDFLARE_API_TOKEN: 'token-1',
-		} as unknown as Env,
-		userId: 'user-1',
-		baseUrl: 'https://heykody.dev',
-		sourceId: 'source-1',
-	}
-}
-
-function createUnpublishedSourceRow() {
+function sourceRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
 		user_id: 'user-1',
@@ -115,29 +82,50 @@ function createUnpublishedSourceRow() {
 		source_root: '/',
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
+		...overrides,
 	}
 }
 
-function createPublishedSourceRow() {
+const packageSource = {
+	entity_kind: 'package',
+	entity_id: 'package-1',
+	repo_id: 'package-1',
+	manifest_path: 'package.json',
+}
+
+function bootstrapped(publishedCommit: string, extra = {}) {
+	return vi.fn(async () => ({
+		sessionId: 'source-sync-source-1-session',
+		publishedCommit,
+		message: 'Bootstrapped source source-1.',
+		...extra,
+	}))
+}
+
+function publishingSession(publishedCommit: string) {
 	return {
-		...createUnpublishedSourceRow(),
-		published_commit: 'commit-existing-1',
-		indexed_commit: 'commit-existing-1',
+		openSession: vi.fn(async () => ({ id: 'source-sync-source-1-session' })),
+		applyEdits: vi.fn(async () => ({
+			dryRun: false,
+			totalChanged: 1,
+			edits: [],
+		})),
+		publishSession: vi.fn(async () => ({
+			status: 'ok' as const,
+			sessionId: 'source-sync-source-1-session',
+			publishedCommit,
+			message: 'Published session',
+		})),
 	}
 }
 
-test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions for published sources', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.updateEntitySource.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockReset()
-
-	const bootstrapClient = {
-		bootstrapSource: vi.fn(async () => ({
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-bootstrap-1',
-			message: 'Bootstrapped source source-1 in job-1.',
-		})),
+function setupSync(
+	row: Record<string, unknown>,
+	overrides: Record<string, ReturnType<typeof vi.fn>> = {},
+) {
+	vi.clearAllMocks()
+	const client = {
+		bootstrapSource: vi.fn(),
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
 		publishSession: vi.fn(),
@@ -146,174 +134,110 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 			sessionId: 'source-sync-source-1-session',
 			deleted: false,
 		})),
+		...overrides,
 	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
-		createUnpublishedSourceRow(),
-	)
-	mockModule.repoSessionRpc.mockReturnValueOnce(bootstrapClient as never)
+	mockModule.getEntitySourceById.mockResolvedValueOnce(row)
+	mockModule.repoSessionRpc.mockReturnValueOnce(client as never)
+	return client
+}
 
-	const syncInput = createSyncEnv()
-	const bootstrapCommit = await syncArtifactSourceSnapshot({
-		...syncInput,
-		files: jobFiles,
+test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions for published sources', async () => {
+	const bootstrap = setupSync(sourceRow(), {
+		bootstrapSource: bootstrapped('commit-bootstrap-1'),
 	})
-
-	expect(bootstrapCommit).toBe('commit-bootstrap-1')
-	expect(bootstrapClient.bootstrapSource).toHaveBeenCalledWith({
+	await expect(
+		syncArtifactSourceSnapshot({ ...syncInput, files: jobFiles }),
+	).resolves.toBe('commit-bootstrap-1')
+	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		sourceId: 'source-1',
 		userId: 'user-1',
 		edits: [
-			{
-				kind: 'write',
-				path: 'kody.json',
-				content: jobFiles['kody.json'],
-			},
-			{
-				kind: 'write',
-				path: 'src/job.ts',
-				content: jobFiles['src/job.ts'],
-			},
+			{ kind: 'write', path: 'kody.json', content: jobFiles['kody.json'] },
+			{ kind: 'write', path: 'src/job.ts', content: jobFiles['src/job.ts'] },
 		],
 		bootstrapAccess: null,
 	})
-	expect(bootstrapClient.openSession).not.toHaveBeenCalled()
-	expect(bootstrapClient.publishSession).not.toHaveBeenCalled()
+	expect(bootstrap.openSession).not.toHaveBeenCalled()
+	expect(bootstrap.publishSession).not.toHaveBeenCalled()
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	const bootstrapAccessClient = {
-		...bootstrapClient,
-		bootstrapSource: vi.fn(async () => ({
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-bootstrap-2',
-			message: 'Bootstrapped source source-1 in job-1.',
-		})),
-	}
-	bootstrapAccessClient.bootstrapSource.mockClear()
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
-		createUnpublishedSourceRow(),
-	)
-	mockModule.repoSessionRpc.mockReturnValueOnce(bootstrapAccessClient as never)
-
-	const bootstrapAccessCommit = await syncArtifactSourceSnapshot({
-		...syncInput,
-		bootstrapAccess,
-		files: { 'kody.json': jobFiles['kody.json'] },
+	const withAccess = setupSync(sourceRow(), {
+		bootstrapSource: bootstrapped('commit-bootstrap-2'),
 	})
-
-	expect(bootstrapAccessCommit).toBe('commit-bootstrap-2')
-	expect(bootstrapAccessClient.bootstrapSource).toHaveBeenCalledWith(
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			bootstrapAccess,
+			files: { 'kody.json': jobFiles['kody.json'] },
+		}),
+	).resolves.toBe('commit-bootstrap-2')
+	expect(withAccess.bootstrapSource).toHaveBeenCalledWith(
 		expect.objectContaining({ bootstrapAccess }),
 	)
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockReset()
-	const sessionClient = {
-		bootstrapSource: vi.fn(),
-		openSession: vi.fn(async () => ({
-			id: 'source-sync-source-1-session',
-		})),
-		applyEdits: vi.fn(async () => ({
-			dryRun: false,
-			totalChanged: 1,
-			edits: [],
-		})),
-		publishSession: vi.fn(async () => ({
-			status: 'ok' as const,
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-session-2',
-			message: 'Published session source-sync-source-1-session to job-1.',
-		})),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: true,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(
-		createPublishedSourceRow(),
+	const session = setupSync(
+		sourceRow({
+			published_commit: 'commit-existing-1',
+			indexed_commit: 'commit-existing-1',
+		}),
+		{
+			...publishingSession('commit-session-2'),
+			discardSession: vi.fn(async () => ({
+				ok: true as const,
+				sessionId: 'source-sync-source-1-session',
+				deleted: true,
+			})),
+		},
 	)
-	mockModule.repoSessionRpc.mockReturnValueOnce(sessionClient as never)
-
-	const sessionCommit = await syncArtifactSourceSnapshot({
-		...syncInput,
-		files: { 'kody.json': jobFiles['kody.json'] },
-	})
-
-	expect(sessionCommit).toBe('commit-session-2')
-	expect(sessionClient.bootstrapSource).not.toHaveBeenCalled()
-	expect(sessionClient.openSession).toHaveBeenCalledWith(
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'kody.json': jobFiles['kody.json'] },
+		}),
+	).resolves.toBe('commit-session-2')
+	expect(session.bootstrapSource).not.toHaveBeenCalled()
+	expect(session.openSession).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
 			userId: 'user-1',
 			sourceRoot: '/',
 		}),
 	)
-	expect(sessionClient.applyEdits).toHaveBeenCalledWith(
+	expect(session.applyEdits).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
 			dryRun: false,
 			rollbackOnError: true,
 		}),
 	)
-	expect(sessionClient.publishSession).toHaveBeenCalledWith({
+	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: 'user-1',
 		force: true,
 	})
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
-	expect(sessionClient.discardSession).toHaveBeenCalledWith(
+	expect(session.discardSession).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'user-1' }),
 	)
 })
 
 test('syncArtifactSourceSnapshot threads destructiveOverwriteConfirmed into publishSession', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	const sessionClient = {
-		bootstrapSource: vi.fn(),
-		openSession: vi.fn(async () => ({
-			id: 'source-sync-source-1-session',
-		})),
-		applyEdits: vi.fn(async () => ({
-			dryRun: false,
-			totalChanged: 1,
-			edits: [],
-		})),
-		publishSession: vi.fn(async () => ({
-			status: 'ok' as const,
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-replaced',
-			message: 'Published session',
-		})),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: true,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce({
-		...createPublishedSourceRow(),
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		manifest_path: 'package.json',
-	})
-	mockModule.repoSessionRpc.mockReturnValueOnce(sessionClient as never)
-
-	const published = await syncArtifactSourceSnapshot({
-		...createSyncEnv(),
-		files: {
-			'package.json': '{"name":"@user/demo","kody":{"id":"demo"}}',
-			'src/index.ts': 'export const ready = true\n',
-		},
-		destructiveOverwriteConfirmed: true,
-	})
-
-	expect(published).toBe('commit-replaced')
-	expect(sessionClient.publishSession).toHaveBeenCalledWith(
+	const session = setupSync(
+		sourceRow({ ...packageSource, published_commit: 'commit-existing-1' }),
+		publishingSession('commit-replaced'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: {
+				'package.json': '{"name":"@user/demo","kody":{"id":"demo"}}',
+				'src/index.ts': 'export const ready = true\n',
+			},
+			destructiveOverwriteConfirmed: true,
+		}),
+	).resolves.toBe('commit-replaced')
+	expect(session.publishSession).toHaveBeenCalledWith(
 		expect.objectContaining({
 			force: true,
 			destructiveOverwriteConfirmed: true,
@@ -322,143 +246,67 @@ test('syncArtifactSourceSnapshot threads destructiveOverwriteConfirmed into publ
 })
 
 test('syncArtifactSourceSnapshot refuses to bootstrap a locked package without allowLockedPublish', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.updateEntitySource.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockReset()
-	mockModule.loadLockedSavedPackage.mockReset()
+	const locked = setupSync(sourceRow(packageSource))
 	mockModule.loadLockedSavedPackage.mockResolvedValue({
 		id: 'package-1',
 		name: '@scope/demo',
 		lockedAt: '2026-08-28T12:00:00.000Z',
-	})
-
-	const unpublishedPackageSource = {
-		...createUnpublishedSourceRow(),
-		entity_kind: 'package' as const,
-		entity_id: 'package-1',
-		repo_id: 'package-1',
-		manifest_path: 'package.json',
-	}
-	const bootstrapClient = {
-		bootstrapSource: vi.fn(),
-		openSession: vi.fn(),
-		applyEdits: vi.fn(),
-		publishSession: vi.fn(),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: false,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
-	mockModule.repoSessionRpc.mockReturnValueOnce(bootstrapClient as never)
-
+	} as never)
 	await expect(
 		syncArtifactSourceSnapshot({
-			...createSyncEnv(),
-			files: {
-				'package.json':
-					'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}',
-			},
+			...syncInput,
+			files: { 'package.json': packageJson },
 		}),
 	).rejects.toThrow(
 		'Package "@scope/demo" is locked. Unlock it on the website before the first published snapshot can be created.',
 	)
-	expect(bootstrapClient.bootstrapSource).not.toHaveBeenCalled()
+	expect(locked.bootstrapSource).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.loadLockedSavedPackage.mockReset()
-	const allowedBootstrapClient = {
-		...bootstrapClient,
-		bootstrapSource: vi.fn(async () => ({
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-bootstrap-locked',
-			message: 'Bootstrapped source source-1 in package-1.',
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
-	mockModule.repoSessionRpc.mockReturnValueOnce(allowedBootstrapClient as never)
-
-	const allowedCommit = await syncArtifactSourceSnapshot({
-		...createSyncEnv(),
-		allowLockedPublish: true,
-		files: {
-			'package.json':
-				'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}',
-		},
+	const allowed = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-bootstrap-locked'),
 	})
-	expect(allowedCommit).toBe('commit-bootstrap-locked')
-	expect(allowedBootstrapClient.bootstrapSource).toHaveBeenCalled()
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			allowLockedPublish: true,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-bootstrap-locked')
+	expect(allowed.bootstrapSource).toHaveBeenCalled()
 	expect(mockModule.loadLockedSavedPackage).not.toHaveBeenCalled()
 })
 
 test('syncArtifactSourceSnapshot first-publishes a forked dest HEAD without force overwrite', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.updateEntitySource.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockReset()
-	mockModule.loadLockedSavedPackage.mockReset()
-	mockModule.loadLockedSavedPackage.mockResolvedValue(null)
-
-	const unpublishedPackageSource = {
-		...createUnpublishedSourceRow(),
-		entity_kind: 'package' as const,
-		entity_id: 'package-1',
-		repo_id: 'package-1',
-		manifest_path: 'package.json',
-	}
 	const destWorkspaceFiles = {
 		'package.json':
 			'{"name":"@jane/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"},"private":true}',
 		'src/index.ts': 'export const ready = true\n',
 		'README.md': 'forked dest tree',
 	}
-	const bootstrapClient = {
-		bootstrapSource: vi.fn(async () => ({
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-fork-rewrite',
-			message: 'Bootstrapped source source-1 in package-1.',
-			files: destWorkspaceFiles,
-		})),
-		openSession: vi.fn(),
-		applyEdits: vi.fn(),
-		publishSession: vi.fn(),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: false,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
-	mockModule.repoSessionRpc.mockReturnValueOnce(bootstrapClient as never)
-
-	const destCommit = await syncArtifactSourceSnapshot({
-		...createSyncEnv(),
+	const forkInput = {
+		...syncInput,
 		existingHeadCommit: 'commit-dest-head',
-		files: {
-			'package.json':
-				'{"name":"@jane/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"},"private":true}',
-		},
-	})
+		files: { 'package.json': destWorkspaceFiles['package.json'] },
+	}
 
-	expect(destCommit).toBe('commit-fork-rewrite')
-	expect(bootstrapClient.bootstrapSource).toHaveBeenCalledWith(
+	const fork = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-fork-rewrite', {
+			files: destWorkspaceFiles,
+		}),
+	})
+	await expect(syncArtifactSourceSnapshot(forkInput)).resolves.toBe(
+		'commit-fork-rewrite',
+	)
+	expect(fork.bootstrapSource).toHaveBeenCalledWith(
 		expect.objectContaining({
 			existingHeadCommit: 'commit-dest-head',
-			edits: [
-				expect.objectContaining({
-					kind: 'write',
-					path: 'package.json',
-				}),
-			],
+			edits: [expect.objectContaining({ kind: 'write', path: 'package.json' })],
 		}),
 	)
-	expect(bootstrapClient.openSession).not.toHaveBeenCalled()
-	expect(bootstrapClient.publishSession).not.toHaveBeenCalled()
+	expect(fork.openSession).not.toHaveBeenCalled()
+	expect(fork.publishSession).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			files: destWorkspaceFiles,
@@ -468,60 +316,20 @@ test('syncArtifactSourceSnapshot first-publishes a forked dest HEAD without forc
 		}),
 	)
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	mockModule.writePublishedSourceSnapshot.mockReset()
-	const overlayOnlyClient = {
-		...bootstrapClient,
-		bootstrapSource: vi.fn(async () => ({
-			sessionId: 'source-sync-source-1-session',
-			publishedCommit: 'commit-fork-rewrite',
-			message: 'Bootstrapped source source-1 in package-1.',
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
-	mockModule.repoSessionRpc.mockReturnValueOnce(overlayOnlyClient as never)
-
-	await expect(
-		syncArtifactSourceSnapshot({
-			...createSyncEnv(),
-			existingHeadCommit: 'commit-dest-head',
-			files: {
-				'package.json': destWorkspaceFiles['package.json'],
-			},
-		}),
-	).rejects.toThrow(/produced no workspace snapshot/)
+	setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-fork-rewrite'),
+	})
+	await expect(syncArtifactSourceSnapshot(forkInput)).rejects.toThrow(
+		/produced no workspace snapshot/,
+	)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-	const publishedClient = {
-		bootstrapSource: vi.fn(),
-		openSession: vi.fn(),
-		applyEdits: vi.fn(),
-		publishSession: vi.fn(),
-		discardSession: vi.fn(async () => ({
-			ok: true as const,
-			sessionId: 'source-sync-source-1-session',
-			deleted: false,
-		})),
-	}
-	mockModule.getEntitySourceById.mockResolvedValueOnce({
-		...unpublishedPackageSource,
-		published_commit: 'commit-existing-1',
-	})
-	mockModule.repoSessionRpc.mockReturnValueOnce(publishedClient as never)
-
-	await expect(
-		syncArtifactSourceSnapshot({
-			...createSyncEnv(),
-			existingHeadCommit: 'commit-dest-head',
-			files: {
-				'package.json':
-					'{"name":"@jane/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"},"private":true}',
-			},
-		}),
-	).rejects.toThrow(/already has a published commit/)
-	expect(publishedClient.bootstrapSource).not.toHaveBeenCalled()
-	expect(publishedClient.publishSession).not.toHaveBeenCalled()
+	const published = setupSync(
+		sourceRow({ ...packageSource, published_commit: 'commit-existing-1' }),
+	)
+	await expect(syncArtifactSourceSnapshot(forkInput)).rejects.toThrow(
+		/already has a published commit/,
+	)
+	expect(published.bootstrapSource).not.toHaveBeenCalled()
+	expect(published.publishSession).not.toHaveBeenCalled()
 })
