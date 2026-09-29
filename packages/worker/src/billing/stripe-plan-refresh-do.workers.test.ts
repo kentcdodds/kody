@@ -1,12 +1,12 @@
 import { expect, test, vi, type Mock } from 'vitest'
 import { env, runInDurableObject } from 'cloudflare:test'
-import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	scheduleStripePlanRefreshBackstop,
 	stripePlanRefreshBackstopDelayMs,
 } from './stripe-plan-refresh-client.ts'
+import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 function stubFetch<T extends Mock>(fetchMock: T) {
 	vi.stubGlobal('fetch', fetchMock)
@@ -16,7 +16,7 @@ function stubFetch<T extends Mock>(fetchMock: T) {
 }
 
 async function seedStripeRefreshUser(prefix: string, stripeCustomerId: string) {
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(

@@ -1,6 +1,5 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
-import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createBillingLinkReference } from './billing-config.ts'
@@ -10,6 +9,7 @@ import {
 	linkStripeCustomerFromCheckoutSession,
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
+import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 const legacyStandardPrice = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
 const standardYearlyPrice = 'price_1U3sg6LAQpAnsYszqq9abwIY'
@@ -40,7 +40,7 @@ type SeedInput = {
 }
 
 async function seedUser(label: string, input: SeedInput = {}) {
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${label}-${crypto.randomUUID()}@example.com`
 	const stableUserId = await createStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
