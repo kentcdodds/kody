@@ -72,6 +72,10 @@ const clientNameKindRules = [
 	{ kind: 'devin', needles: ['devin'] },
 	{ kind: 'opencode', needles: ['opencode', 'open code'] },
 	{ kind: 'openclaw', needles: ['openclaw', 'open claw'] },
+	// OpenMuse before bare `muse` so CopilotKit OpenMuse does not classify as Muse.
+	{ kind: 'openmuse', needles: ['openmuse', 'open muse'] },
+	{ kind: 'wajo', needles: ['wajo'] },
+	{ kind: 'cue', needles: ['cue'] },
 	// Token-boundary match for bare `muse` so OpenMuse / openmuse stay distinct.
 	{ kind: 'muse', needles: ['muse code', 'muse-code', 'musecode', 'muse'] },
 ] as const satisfies ReadonlyArray<{
@@ -89,6 +93,8 @@ const hostKindRules = [
 	{ kind: 'devin', hosts: ['devin.ai', 'app.devin.ai'] },
 	{ kind: 'opencode', hosts: ['opencode.ai'] },
 	{ kind: 'openclaw', hosts: ['openclaw.ai'] },
+	{ kind: 'wajo', hosts: ['wajo.ai'] },
+	{ kind: 'cue', hosts: ['cue.im'] },
 	// Muse Code docs/OAuth live under dev.meta.ai — not muse.ai (video) or
 	// blanket meta.ai (unrelated Meta products).
 	{ kind: 'muse', hosts: ['dev.meta.ai'] },

@@ -132,7 +132,7 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 				clientName: 'OpenMuse',
 				clientUri: 'https://openmuse.example/',
 			},
-			null,
+			'openmuse',
 			'OpenMuse',
 		],
 		[
@@ -198,8 +198,10 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		['Muse Code', 'muse', 'Muse'],
 		['Muse', 'muse', 'Muse'],
 		['muse-code', 'muse', 'Muse'],
-		['OpenMuse', null, 'OpenMuse'],
-		['openmuse', null, 'openmuse'],
+		['OpenMuse', 'openmuse', 'OpenMuse'],
+		['openmuse', 'openmuse', 'OpenMuse'],
+		['Wajo', 'wajo', 'Wajo'],
+		['Cue', 'cue', 'Cue'],
 	]
 	expect(names.map(([name]) => [name, classifyMcpClientName(name)])).toEqual(
 		names.map(([name, kind, label]) => [name, { kind, label }]),

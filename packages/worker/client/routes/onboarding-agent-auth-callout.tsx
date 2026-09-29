@@ -180,6 +180,10 @@ function renderAgentAuthHint(
 					into the Muse chat.
 				</>
 			)
+		case 'wajo':
+		case 'cue':
+		case 'openmuse':
+			return <>Complete OAuth when the host opens it.</>
 		case 'copilot':
 			return surface === 'mobile' ? (
 				<>Complete OAuth when the GitHub or Copilot app opens it.</>

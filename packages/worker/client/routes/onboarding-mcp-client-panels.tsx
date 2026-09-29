@@ -409,6 +409,60 @@ export function renderPanelContent(
 				</>
 			)
 		}
+		case 'wajo':
+			return (
+				<>
+					<p>
+						Wajo (Fo) connects ChatGPT and Claude through Wajo sign-in. Paste
+						the MCP URL where Wajo asks for a custom MCP server (
+						<a href="https://wajo.ai" target="_blank" rel="noreferrer">
+							wajo.ai
+						</a>
+						).
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
+		case 'cue':
+			return (
+				<>
+					<p>
+						Cue is a personal AI agent host (
+						<a href="https://cue.im" target="_blank" rel="noreferrer">
+							cue.im
+						</a>
+						). When Cue exposes a custom MCP connector, paste this URL and
+						complete OAuth.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
+		case 'openmuse':
+			return (
+				<>
+					<p>
+						OpenMuse (CopilotKit) does not ship a Kody connector — wire Kody
+						into the harness behind your OpenMuse fork. See the{' '}
+						<a href="/docs/openmuse">OpenMuse and Kody</a> guide.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
 		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
@@ -589,6 +643,22 @@ export function renderPanelWarning(
 					{surface === 'mobile'
 						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."
 						: "Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."}
+				</ClientWarning>
+			)
+		case 'wajo':
+		case 'cue':
+			return surface === 'mobile' ? (
+				<ClientWarning>
+					Setup is easiest on a computer. Change selection and pick a host with
+					a mobile app, or run these steps later on a computer.
+				</ClientWarning>
+			) : null
+		case 'openmuse':
+			return (
+				<ClientWarning>
+					{surface === 'mobile'
+						? 'OpenMuse is self-hosted. Wire Kody into your OpenMuse fork on a computer (see the OpenMuse and Kody guide), then use the phone or web app.'
+						: 'OpenMuse is distinct from Muse Code. Wire Kody into your OpenMuse fork or AG-UI harness — there is no one-click connector yet.'}
 				</ClientWarning>
 			)
 		case 'cursor-cloud':
