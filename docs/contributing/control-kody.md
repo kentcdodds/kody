@@ -77,8 +77,9 @@ node tools/seed-test-data.ts --local
 - anything else (PR preview, production) → `me@kentcdodds.com` / `ilikecode`
 
 Override with `--email` / `--password`. `--cookie-file` defaults to
-`.tmp/control-kody-cookie` and stores the origin that created the session, so a
-leftover local cookie is not sent to a preview. `preview` uses
+`.tmp/control-kody-cookie` and stores the origin and email that created the
+session, so a leftover local cookie is not sent to a preview and `--email` does
+not reuse another user's cookie for the same origin. `preview` uses
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview (or local

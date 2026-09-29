@@ -457,6 +457,7 @@ test('dev output matching keeps a split fatal phrase across chunks and interleav
 		),
 	).toBe(true)
 })
+
 test('dev:ensure names a durable log file agents can read after detach', () => {
 	expect(resolveDevServerLogPath('/repo')).toBe('/repo/.tmp/dev-server.log')
 	expect(formatDevServerLogPath('/repo/.tmp/dev-server.log')).toBe(
