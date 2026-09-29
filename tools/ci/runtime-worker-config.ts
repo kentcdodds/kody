@@ -191,14 +191,15 @@ function copyResourceIdentifiers(input: {
 		runtimeEnv.vars && typeof runtimeEnv.vars === 'object'
 			? (runtimeEnv.vars as JsonRecord)
 			: {}
-	runtimeEnv.vars = { ...mainVars, ...runtimeVars }
+	const mergedVars: JsonRecord = { ...mainVars, ...runtimeVars }
+	runtimeEnv.vars = mergedVars
 	// GitHub deploy overlays (`PACKAGE_APP_LEGACY_*`) land on the main
 	// Worker's generated config. Runtime committed vars then overwrite the
 	// merge, which would discard a non-empty overlay and publish zone routes
 	// for the committed list only. Prefer the main Worker's already-overlaid
 	// values for those keys so dual-serve hosts stay in lockstep.
 	applyMainWorkerPackageAppOverlayVars({
-		mergedVars: runtimeEnv.vars,
+		mergedVars,
 		mainVars,
 	})
 }

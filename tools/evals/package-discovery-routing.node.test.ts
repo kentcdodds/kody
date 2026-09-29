@@ -154,7 +154,8 @@ test('routing cases are natural, balanced, and have internally consistent hidden
 		expect(evalCase.expected.requiredActions).toContain(
 			evalCase.expected.terminalAction,
 		)
-		routeCounts[evalCase.expected.route] += 1
+		routeCounts[evalCase.expected.route] =
+			(routeCounts[evalCase.expected.route] ?? 0) + 1
 	}
 	expect(routeCounts).toEqual({
 		existing: 2,

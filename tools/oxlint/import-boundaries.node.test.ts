@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-// @ts-expect-error - the oxlint plugin is plain JS with no type declarations.
 import {
 	findImportBoundaryViolation,
 	getImportBoundariesForFile,

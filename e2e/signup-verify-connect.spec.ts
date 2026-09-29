@@ -96,7 +96,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			/resource_metadata="[^"]*\/.well-known\/oauth-protected-resource"/,
 		)
 
-		let verificationEmail: MockEmailMessage | null = null
+		let verificationEmail = null as MockEmailMessage | null
 		await expect
 			.poll(
 				async () => {

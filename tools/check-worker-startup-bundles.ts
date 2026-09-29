@@ -155,7 +155,11 @@ export async function readStartupBundleBudget(
 	const resolved = {} as StartupBundleBudget
 	for (const name of startupBundleNames) {
 		const maxEntryBytes = budget[name]
-		if (!Number.isSafeInteger(maxEntryBytes) || maxEntryBytes <= 0) {
+		if (
+			typeof maxEntryBytes !== 'number' ||
+			!Number.isSafeInteger(maxEntryBytes) ||
+			maxEntryBytes <= 0
+		) {
 			throw new Error(
 				`Invalid startup bundle budget for ${name} at ${budgetPath}`,
 			)
