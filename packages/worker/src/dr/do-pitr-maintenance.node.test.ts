@@ -33,66 +33,48 @@ function createRequest(
 	})
 }
 
+const bookmarkRequest = {
+	operation: 'get-recovery-bookmark',
+	kind: 'mailbox',
+	userId: 'stable-user-id',
+}
+const productionEnv = {
+	SENTRY_ENVIRONMENT: 'production',
+	DR_RESTORE_SECRET: 'correct',
+}
+
 test('DO PITR maintenance route fails closed without its shared recovery secret', async () => {
-	const nonProduction = await handleDoPitrRequest(
-		createRequest(
-			{
-				operation: 'get-recovery-bookmark',
-				kind: 'mailbox',
-				userId: 'stable-user-id',
-				timestampMs: Date.now() - 60_000,
-			},
-			'Bearer correct',
-		),
-		{
-			SENTRY_ENVIRONMENT: 'preview',
-			DR_RESTORE_SECRET: 'correct',
-		} as Env,
-	)
-	expect(nonProduction.status).toBe(403)
-	await expect(nonProduction.text()).resolves.toBe('Forbidden')
-
-	const missingSecret = await handleDoPitrRequest(
-		createRequest({
-			operation: 'get-recovery-bookmark',
-			kind: 'mailbox',
-			userId: 'stable-user-id',
-			timestampMs: Date.now() - 60_000,
-		}),
-		{ SENTRY_ENVIRONMENT: 'production' } as Env,
-	)
-	expect(missingSecret.status).toBe(503)
-
-	const missingBearer = await handleDoPitrRequest(
-		createRequest({
-			operation: 'get-recovery-bookmark',
-			kind: 'mailbox',
-			userId: 'stable-user-id',
-			timestampMs: Date.now() - 60_000,
-		}),
-		{
-			SENTRY_ENVIRONMENT: 'production',
-			DR_RESTORE_SECRET: 'correct',
-		} as Env,
-	)
-	expect(missingBearer.status).toBe(401)
-
-	const wrongBearer = await handleDoPitrRequest(
-		createRequest(
-			{
-				operation: 'restore-to-bookmark',
-				kind: 'mailbox',
-				userId: 'stable-user-id',
-				bookmark: 'bookmark',
-			},
-			'Bearer wrong',
-		),
-		{
-			SENTRY_ENVIRONMENT: 'production',
-			DR_RESTORE_SECRET: 'correct',
-		} as Env,
-	)
-	expect(wrongBearer.status).toBe(401)
+	const timestampMs = Date.now() - 60_000
+	const cases: Array<[Request, Partial<Env>, number]> = [
+		[
+			createRequest({ ...bookmarkRequest, timestampMs }, 'Bearer correct'),
+			{ ...productionEnv, SENTRY_ENVIRONMENT: 'preview' },
+			403,
+		],
+		[
+			createRequest({ ...bookmarkRequest, timestampMs }),
+			{ SENTRY_ENVIRONMENT: 'production' },
+			503,
+		],
+		[createRequest({ ...bookmarkRequest, timestampMs }), productionEnv, 401],
+		[
+			createRequest(
+				{
+					...bookmarkRequest,
+					operation: 'restore-to-bookmark',
+					bookmark: 'bookmark',
+				},
+				'Bearer wrong',
+			),
+			productionEnv,
+			401,
+		],
+	]
+	for (const [request, env, status] of cases) {
+		const response = await handleDoPitrRequest(request, env as Env)
+		expect(response.status).toBe(status)
+		if (status === 403) await expect(response.text()).resolves.toBe('Forbidden')
+	}
 })
 
 test('DO PITR maintenance route targets exact user-scoped object names and round-trips bookmarks', async () => {
@@ -103,8 +85,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 	const timestampMs = Date.now() - 60_000
 	const logger = { log: vi.fn<(message: string) => void>() }
 	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		DR_RESTORE_SECRET: 'correct',
+		...productionEnv,
 		MAILBOX: mailbox.namespace,
 		RUN_LOG: runLog.namespace,
 		USER_METER: userMeter.namespace,
@@ -195,11 +176,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 
 test('DO PITR maintenance route rejects timestamps outside the provider window', async () => {
 	const mailbox = createNamespace()
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		DR_RESTORE_SECRET: 'correct',
-		MAILBOX: mailbox.namespace,
-	} as unknown as Env
+	const env = { ...productionEnv, MAILBOX: mailbox.namespace } as unknown as Env
 	const invalidTimestamps = [
 		Date.now() + 60_000,
 		Date.now() - 31 * 24 * 60 * 60 * 1000,
@@ -207,15 +184,7 @@ test('DO PITR maintenance route rejects timestamps outside the provider window',
 
 	for (const timestampMs of invalidTimestamps) {
 		const response = await handleDoPitrRequest(
-			createRequest(
-				{
-					operation: 'get-recovery-bookmark',
-					kind: 'mailbox',
-					userId: 'stable-user-id',
-					timestampMs,
-				},
-				'Bearer correct',
-			),
+			createRequest({ ...bookmarkRequest, timestampMs }, 'Bearer correct'),
 			env,
 		)
 		expect(response.status).toBe(500)

@@ -10,9 +10,21 @@ import {
 } from './export.ts'
 import {
 	createMigratedDb,
+	createMigratedDbWithUser,
 	createMailboxBinding,
+	createStubNamespace,
+	insertTestUser,
+	rawMimeReference,
 } from '#worker/test-support/account-export.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
+
+const exportFor = (env: Env, dbUserId = 1, mcpUserId = 'user-aaa') =>
+	createAccountExport({
+		env,
+		dbUserId,
+		mcpUserId,
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
 
 test('account export D1 coverage includes every live user-owned schema column', () => {
 	const db = new DatabaseSync(':memory:')
@@ -52,41 +64,24 @@ test('account export D1 coverage includes every live user-owned schema column', 
 })
 
 test('account export documents and excludes operator-owned system email rows', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
+	const { db } = createMigratedDbWithUser()
 
-	const accountExport = await createAccountExport({
-		env: {
-			APP_DB: db,
-			MAILBOX: createMailboxBinding({
-				blobReferences: () => [
-					{
-						kind: 'raw_mime',
-						key: 'email-raw:v1:user-aaa/user-message',
-						messageId: 'user-message',
-						attachmentId: null,
-					},
-				],
-			}),
-		} as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor({
+		APP_DB: db,
+		MAILBOX: createMailboxBinding({
+			blobReferences: () => [rawMimeReference('user-message')],
+		}),
+	} as Env)
 
-	expect(accountExport.d1).not.toHaveProperty('email_messages')
-	expect(accountExport.d1).not.toHaveProperty('email_threads')
-	expect(accountExport.d1).not.toHaveProperty('email_attachments')
-	expect(accountExport.d1).not.toHaveProperty('email_delivery_events')
+	for (const table of [
+		'email_messages',
+		'email_threads',
+		'email_attachments',
+		'email_delivery_events',
+		'entitlement_daily_counters',
+	]) {
+		expect(accountExport.d1).not.toHaveProperty(table)
+	}
 	expect(accountExport.manifest.sections.r2_object?.count).toBe(1)
 	expect(accountExport.manifest.excludedD1Surfaces).toEqual(
 		expect.arrayContaining([
@@ -100,7 +95,6 @@ test('account export documents and excludes operator-owned system email rows', a
 			}),
 		]),
 	)
-	expect(accountExport.d1).not.toHaveProperty('entitlement_daily_counters')
 })
 
 test('account export includes submitted feedback but excludes reviewer-only relationships', async () => {
@@ -111,44 +105,17 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 			category, summary, details, status, reviewed_by_user_id,
 			reviewed_at, admin_note, created_at, updated_at
 		) VALUES
-			(
-				'feedback-submitted-by-a',
-				'user-aaa',
-				'user-a',
-				'a@example.com',
-				'friction',
-				'Setup is confusing',
-				'The setup flow needs clearer guidance.',
-				'triaged',
-				'admin-other',
-				'2026-07-05',
-				'Needs setup review.',
-				'2026-07-04',
-				'2026-07-05'
-			),
-			(
-				'feedback-reviewed-by-a',
-				'user-bbb',
-				'user-b',
-				'b@example.com',
-				'bug',
-				'Private feedback from B',
-				'This record belongs only in user B exports.',
-				'triaged',
-				'user-aaa',
-				'2026-07-05',
-				'Reviewer-only relationship.',
-				'2026-07-04',
-				'2026-07-05'
-			);
+			('feedback-submitted-by-a', 'user-aaa', 'user-a', 'a@example.com',
+				'friction', 'Setup is confusing', 'The setup flow needs clearer guidance.',
+				'triaged', 'admin-other', '2026-07-05', 'Needs setup review.',
+				'2026-07-04', '2026-07-05'),
+			('feedback-reviewed-by-a', 'user-bbb', 'user-b', 'b@example.com',
+				'bug', 'Private feedback from B', 'This record belongs only in user B exports.',
+				'triaged', 'user-aaa', '2026-07-05', 'Reviewer-only relationship.',
+				'2026-07-04', '2026-07-05');
 	`)
 
-	const accountExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor({ APP_DB: db } as Env)
 
 	const feedbackRows = accountExport.d1.platform_feedback.rows
 	expect(feedbackRows).toEqual([
@@ -165,20 +132,16 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 			updated_at: '2026-07-05',
 		}),
 	])
-	expect(feedbackRows[0]).not.toHaveProperty('reviewed_by_user_id')
-	expect(feedbackRows[0]).not.toHaveProperty('reviewed_at')
-	expect(feedbackRows[0]).not.toHaveProperty('admin_note')
-	expect(feedbackRows.some((row) => row.id === 'feedback-reviewed-by-a')).toBe(
-		false,
+	const reviewerColumns = ['admin_note', 'reviewed_at', 'reviewed_by_user_id']
+	for (const column of reviewerColumns) {
+		expect(feedbackRows[0]).not.toHaveProperty(column)
+	}
+	expect(accountExport.d1.platform_feedback.redactedColumns).toEqual(
+		reviewerColumns,
 	)
-	expect(accountExport.d1.platform_feedback.redactedColumns).toEqual([
-		'admin_note',
-		'reviewed_at',
-		'reviewed_by_user_id',
-	])
 	expect(
 		accountExport.manifest.sections['d1.platform_feedback']?.redactedColumns,
-	).toEqual(['admin_note', 'reviewed_at', 'reviewed_by_user_id'])
+	).toEqual(reviewerColumns)
 })
 
 test('account export includes profile fields and social graph edges for either side', async () => {
@@ -188,49 +151,29 @@ test('account export includes profile fields and social graph edges for either s
 			id, username, email, password_hash, created_at, updated_at,
 			email_verified_at, stable_user_id, display_name, bio, profile_visibility
 		) VALUES
-			(
-				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-aaa', 'User A', 'Builds packages',
-				'public'
-			),
-			(
-				2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-bbb', 'User B', NULL, 'private'
-			);
+			(1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05', '2026-07-05',
+				'2026-07-05', 'user-aaa', 'User A', 'Builds packages', 'public'),
+			(2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05', '2026-07-05',
+				'2026-07-05', 'user-bbb', 'User B', NULL, 'private');
 
 		INSERT INTO community_listings (
 			id, owner_user_id, package_id, source_id, kody_id, name, description,
 			tags_json, license, pinned_commit, status, published_at
 		) VALUES
-			(
-				'listing-a', 'user-aaa', 'pkg-a', 'src-a', 'demo', '@user-a/demo',
-				'Demo listing', '[]', 'MIT', 'commit-a', 'active', '2026-07-05'
-			),
-			(
-				'listing-b', 'user-bbb', 'pkg-b', 'src-b', 'other', '@user-b/other',
-				'Other listing', '[]', 'MIT', 'commit-b', 'active', '2026-07-05'
-			);
+			('listing-a', 'user-aaa', 'pkg-a', 'src-a', 'demo', '@user-a/demo',
+				'Demo listing', '[]', 'MIT', 'commit-a', 'active', '2026-07-05'),
+			('listing-b', 'user-bbb', 'pkg-b', 'src-b', 'other', '@user-b/other',
+				'Other listing', '[]', 'MIT', 'commit-b', 'active', '2026-07-05');
 
 		INSERT INTO community_activity_events (
 			id, actor_user_id, event_type, listing_id, created_at
 		) VALUES
-			(
-				'evt-a', 'user-aaa', 'listing_published', 'listing-b', '2026-07-05'
-			),
-			(
-				'evt-b', 'user-bbb', 'listing_updated', 'listing-a', '2026-07-05'
-			),
-			(
-				'evt-c', 'user-bbb', 'listing_published', 'listing-b', '2026-07-05'
-			);
+			('evt-a', 'user-aaa', 'listing_published', 'listing-b', '2026-07-05'),
+			('evt-b', 'user-bbb', 'listing_updated', 'listing-a', '2026-07-05'),
+			('evt-c', 'user-bbb', 'listing_published', 'listing-b', '2026-07-05');
 	`)
 
-	const accountExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor({ APP_DB: db } as Env)
 
 	expect(accountExport.d1.users.rows).toEqual([
 		expect.objectContaining({
@@ -252,25 +195,23 @@ test('account export includes profile fields and social graph edges for either s
 		}),
 	])
 	expect(
-		accountExport.d1.community_activity_events.rows.some(
-			(row) => row.id === 'evt-c' || row.actor_user_id === 'user-bbb',
-		),
-	).toBe(false)
-
-	expect(
 		accountExport.manifest.sections['d1.community_activity_events']?.count,
 	).toBe(1)
 })
 
 test('account export separates listing-owner deletion cascades from participant ownership', async () => {
 	const { sqlite, db } = createMigratedDb()
+	insertTestUser(sqlite, {
+		id: 1,
+		username: 'owner',
+		stableUserId: 'user-owner',
+	})
+	insertTestUser(sqlite, {
+		id: 2,
+		username: 'participant',
+		stableUserId: 'user-participant',
+	})
 	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		) VALUES
-			(1, 'owner', 'owner@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-owner'),
-			(2, 'participant', 'participant@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-participant');
 		INSERT INTO community_listings (
 			id, owner_user_id, package_id, source_id, kody_id, name, description,
 			tags_json, license, pinned_commit, status, published_at
@@ -300,20 +241,16 @@ test('account export separates listing-owner deletion cascades from participant 
 			'user-participant', 'private report reason', 'user-moderator'
 		);
 	`)
-	const ownerExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-owner',
-	})
+	const ownerExport = await exportFor({ APP_DB: db } as Env, 1, 'user-owner')
 	expect(ownerExport.d1.community_ratings.rows).toEqual([])
 	expect(ownerExport.d1.community_forks.rows).toEqual([])
 	expect(ownerExport.d1.community_reports.rows).toEqual([])
 
-	const participantExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 2,
-		mcpUserId: 'user-participant',
-	})
+	const participantExport = await exportFor(
+		{ APP_DB: db } as Env,
+		2,
+		'user-participant',
+	)
 	expect(participantExport.d1.community_ratings.rows).toEqual([
 		expect.objectContaining({
 			id: 'rating-private',
@@ -339,13 +276,17 @@ test('account export separates listing-owner deletion cascades from participant 
 
 test('account write lease repair export redacts the foreign party for both perspectives', async () => {
 	const { sqlite, db } = createMigratedDb()
+	insertTestUser(sqlite, {
+		id: 1,
+		username: 'target',
+		stableUserId: 'user-target',
+	})
+	insertTestUser(sqlite, {
+		id: 2,
+		username: 'admin',
+		stableUserId: 'user-admin',
+	})
 	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		) VALUES
-			(1, 'target', 'target@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-target'),
-			(2, 'admin', 'admin@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-admin');
 		INSERT INTO account_write_lease_repairs (
 			id, target_user_id, lease_token, lease_holder, lease_acquired_at,
 			repaired_by_user_id, reason, created_at
@@ -354,22 +295,14 @@ test('account write lease repair export redacts the foreign party for both persp
 			'user-admin', 'Confirmed crashed worker', '2026-07-05'
 		);
 	`)
-	const targetExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-target',
-	})
+	const targetExport = await exportFor({ APP_DB: db } as Env, 1, 'user-target')
 	expect(targetExport.d1.account_write_lease_repairs.rows).toEqual([
 		expect.objectContaining({
 			target_user_id: 'user-target',
 			repaired_by_user_id: '[redacted]',
 		}),
 	])
-	const adminExport = await createAccountExport({
-		env: { APP_DB: db } as Env,
-		dbUserId: 2,
-		mcpUserId: 'user-admin',
-	})
+	const adminExport = await exportFor({ APP_DB: db } as Env, 2, 'user-admin')
 	expect(adminExport.d1.account_write_lease_repairs.rows).toEqual([
 		expect.objectContaining({
 			target_user_id: '[redacted]',
@@ -379,45 +312,21 @@ test('account write lease repair export redacts the foreign party for both persp
 })
 
 test('createAccountExport redacts secrets and credential-equivalent hashes', async () => {
-	const { sqlite, db } = createMigratedDb()
+	const { sqlite, db } = createMigratedDbWithUser()
+	insertTestUser(sqlite, {
+		id: 2,
+		username: 'user-b',
+		stableUserId: 'user-bbb',
+	})
 	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES
-			(
-				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-aaa'
-			),
-			(
-				2, 'user-b', 'b@example.com', 'password-hash-b', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-bbb'
-			);
-
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key, created_at, updated_at)
 		VALUES ('secret-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');
 		INSERT INTO secret_entries (
-			bucket_id,
-			name,
-			description,
-			encrypted_value,
-			allowed_hosts,
-			allowed_packages,
-			lookup_hash,
-			created_at,
-			updated_at
-		)
-		VALUES (
-			'secret-bucket-a',
-			'api-key',
-			'API key',
-			'encrypted-secret-value',
-			'["api.example.com"]',
-			'["@user/pkg"]',
-			'lookup-hash',
-			'2026-07-05',
-			'2026-07-05'
+			bucket_id, name, description, encrypted_value, allowed_hosts,
+			allowed_packages, lookup_hash, created_at, updated_at
+		) VALUES (
+			'secret-bucket-a', 'api-key', 'API key', 'encrypted-secret-value',
+			'["api.example.com"]', '["@user/pkg"]', 'lookup-hash', '2026-07-05', '2026-07-05'
 		);
 
 		INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
@@ -426,53 +335,30 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		VALUES ('value-bucket-a', 'timezone', 'Preferred timezone', 'America/Denver', '2026-07-05', '2026-07-05');
 
 		INSERT INTO package_invocation_tokens (
-			id,
-			user_id,
-			package_id,
-			name,
-			token_hash,
-			created_at,
-			updated_at
-		)
-		VALUES (
-			'token-a',
-			'user-aaa',
-			'pkg-a',
-			'Migration token',
-			'token-hash-a',
-			'2026-07-05',
-			'2026-07-05'
+			id, user_id, package_id, name, token_hash, created_at, updated_at
+		) VALUES (
+			'token-a', 'user-aaa', 'pkg-a', 'Migration token', 'token-hash-a',
+			'2026-07-05', '2026-07-05'
 		);
 
 		INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
 		VALUES (1, 1, 'reset-token-hash-a', 2000000000, '2026-07-05');
-
 
 		INSERT INTO mcp_memories (id, user_id, subject, summary, details)
 		VALUES
 			('memory-a', 'user-aaa', 'Favorite color', 'Blue', 'Likes navy.'),
 			('memory-b', 'user-bbb', 'Favorite color', 'Green', 'Likes moss.');
 	`)
-	const accountExport = await createAccountExport({
-		env: {
-			APP_DB: db,
-			STORAGE_RUNNER: {
-				idFromName: (name: string) => name as unknown as DurableObjectId,
-				get: () => ({
-					exportStorage: async () => ({
-						entries: [],
-						estimatedBytes: 0,
-						truncated: false,
-						nextStartAfter: null,
-						pageSize: 500,
-					}),
-				}),
-			},
-		} as unknown as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor({
+		APP_DB: db,
+		STORAGE_RUNNER: createStubNamespace({
+			exportStorage: async () => ({
+				entries: [],
+				truncated: false,
+				nextStartAfter: null,
+			}),
+		}),
+	} as unknown as Env)
 
 	expect(accountExport.manifest.security.secretValuesExported).toBe(false)
 	expect(accountExport.d1.users.rows).toEqual([
@@ -505,45 +391,19 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		expect.objectContaining({ id: 'memory-a', summary: 'Blue' }),
 	])
 	expect(
-		accountExport.d1.mcp_memories.rows.some((row) => row.id === 'memory-b'),
-	).toBe(false)
-	expect(
 		accountExport.manifest.sections['d1.secret_entries']?.redactedColumns,
 	).toEqual(['encrypted_value', 'lookup_hash'])
 })
 
 test('createAccountExport records partial-failure warnings and section pagination works', async () => {
-	const { sqlite, db } = createMigratedDb()
+	const { sqlite, db } = createMigratedDbWithUser()
 	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
 		INSERT INTO archived_job_artifacts (
-			id,
-			job_id,
-			user_id,
-			source_id,
-			published_commit,
-			storage_id,
-			retain_until,
-			created_at,
-			updated_at
-		)
-		VALUES (
-			'archive-a',
-			'job-a',
-			'user-aaa',
-			'source-a',
-			'commit-a',
-			'job:archive-a',
-			'2026-08-05',
-			'2026-07-05',
-			'2026-07-05'
+			id, job_id, user_id, source_id, published_commit, storage_id,
+			retain_until, created_at, updated_at
+		) VALUES (
+			'archive-a', 'job-a', 'user-aaa', 'source-a', 'commit-a',
+			'job:archive-a', '2026-08-05', '2026-07-05', '2026-07-05'
 		);
 		INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
 		VALUES ('value-bucket-a', 'user-aaa', 'user', 'global', '2026-07-05', '2026-07-05');
@@ -552,32 +412,21 @@ test('createAccountExport records partial-failure warnings and section paginatio
 			('value-bucket-a', 'first', '', '1', '2026-07-05', '2026-07-05'),
 			('value-bucket-a', 'second', '', '2', '2026-07-05', '2026-07-05');
 	`)
-	const exportStorage = vi.fn(async () => {
-		throw new Error('storage unavailable')
-	})
 	const env = {
 		APP_DB: db,
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ exportStorage }),
-		},
+		STORAGE_RUNNER: createStubNamespace({
+			exportStorage: vi.fn(async () => {
+				throw new Error('storage unavailable')
+			}),
+		}),
 		OAUTH_PROVIDER: {
 			async listUserGrants() {
 				throw new Error('oauth unavailable')
 			},
 		},
-	} as unknown as Env & {
-		OAUTH_PROVIDER: {
-			listUserGrants: () => Promise<never>
-		}
-	}
+	} as unknown as Env
 
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor(env)
 	expect(accountExport.manifest.warnings).toEqual(
 		expect.arrayContaining([
 			expect.stringContaining('Storage runner export failed for job:archive-a'),
@@ -585,26 +434,21 @@ test('createAccountExport records partial-failure warnings and section paginatio
 		]),
 	)
 
-	const page = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'd1_table',
-		table: 'value_entries',
-		pageSize: 1,
-	})
+	const readValues = (startAfter?: string) =>
+		readAccountExportSection({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			section: 'd1_table',
+			table: 'value_entries',
+			pageSize: 1,
+			startAfter,
+		})
+	const page = await readValues()
 	expect(page.items).toEqual([expect.objectContaining({ name: 'first' })])
 	expect(page.truncated).toBe(true)
 	expect(page.nextStartAfter).not.toBeNull()
-	const nextPage = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'd1_table',
-		table: 'value_entries',
-		pageSize: 1,
-		startAfter: page.nextStartAfter ?? undefined,
-	})
+	const nextPage = await readValues(page.nextStartAfter ?? undefined)
 	expect(nextPage.items).toEqual([expect.objectContaining({ name: 'second' })])
 	expect(nextPage.truncated).toBe(false)
 	expect(nextPage.nextStartAfter).toBeNull()
@@ -613,20 +457,10 @@ test('createAccountExport records partial-failure warnings and section paginatio
 test('D1 export reads large tables in bounded keyset pages', async () => {
 	const rowCounts: Array<number> = []
 	const queries: Array<string> = []
-	const { sqlite, db } = createMigratedDb({
+	const { sqlite, db } = createMigratedDbWithUser({
 		onQueryRows: (rowCount) => rowCounts.push(rowCount),
 		onQuery: (query) => queries.push(query),
 	})
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
 	const totalRows = 502
 	const insert = sqlite.prepare(
 		`INSERT INTO mcp_memories (
@@ -640,21 +474,12 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		INSERT INTO user_storage_buckets (
 			user_id, storage_id, kind, created_at, last_seen_at
 		) VALUES (
-			'user-aaa', 'package:pkg%3A1', 'package',
-			'2026-07-05', '2026-07-05'
+			'user-aaa', 'package:pkg%3A1', 'package', '2026-07-05', '2026-07-05'
 		);
 	`)
 
-	const env = {
-		APP_DB: db,
-		MAILBOX: createMailboxBinding(),
-	} as Env
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const env = { APP_DB: db, MAILBOX: createMailboxBinding() } as Env
+	const accountExport = await exportFor(env)
 	expect(accountExport.d1.mcp_memories.rows).toHaveLength(totalRows)
 	expect(accountExport.manifest.sections['d1.mcp_memories']?.count).toBe(
 		totalRows,
@@ -719,17 +544,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 })
 
 test('account export reads OAuth grant metadata from OAUTH_KV when the provider helpers are absent', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
+	const { db } = createMigratedDbWithUser()
 	const storedGrant = (userId: string, grantId: string) =>
 		JSON.stringify({
 			id: grantId,
@@ -775,20 +590,14 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 		expiresAt: undefined,
 		redirectUri: 'https://host.example/callback',
 	}))
+	const oauthUnavailableWarning = expect.arrayContaining([
+		expect.stringContaining('OAuth grant metadata was not exported'),
+	])
 
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const accountExport = await exportFor(env)
 	expect(accountExport.oauthGrants).toEqual(expectedGrants)
 	expect(accountExport.manifest.sections.oauth_grants?.count).toBe(2)
-	expect(accountExport.manifest.warnings).not.toEqual(
-		expect.arrayContaining([
-			expect.stringContaining('OAuth grant metadata was not exported'),
-		]),
-	)
+	expect(accountExport.manifest.warnings).not.toEqual(oauthUnavailableWarning)
 	expect(JSON.stringify(accountExport.oauthGrants)).not.toMatch(
 		/ciphertext|refresh-secret|wrapped-key|auth-code-secret|challenge/,
 	)
@@ -799,11 +608,7 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 		mcpUserId: 'user-aaa',
 	})
 	expect(manifest.sections.oauth_grants?.count).toBe(2)
-	expect(manifest.warnings).not.toEqual(
-		expect.arrayContaining([
-			expect.stringContaining('OAuth grant metadata was not exported'),
-		]),
-	)
+	expect(manifest.warnings).not.toEqual(oauthUnavailableWarning)
 
 	const section = await readAccountExportSection({
 		env,
@@ -812,18 +617,12 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 		section: 'oauth_grants',
 	})
 	expect(section.items).toEqual(expectedGrants)
-	expect(section.warnings).not.toEqual(
-		expect.arrayContaining([
-			expect.stringContaining('OAuth grant metadata was not exported'),
-		]),
-	)
+	expect(section.warnings).not.toEqual(oauthUnavailableWarning)
 
-	const withoutOAuthSurface = await createAccountExport({
-		env: { APP_DB: db, MAILBOX: createMailboxBinding() } as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		generatedAt: '2026-07-05T00:00:00.000Z',
-	})
+	const withoutOAuthSurface = await exportFor({
+		APP_DB: db,
+		MAILBOX: createMailboxBinding(),
+	} as Env)
 	expect(withoutOAuthSurface.oauthGrants).toEqual([])
 	expect(withoutOAuthSurface.manifest.warnings).toContain(
 		'OAuth provider binding and OAUTH_KV were unavailable; OAuth grant metadata was not exported.',

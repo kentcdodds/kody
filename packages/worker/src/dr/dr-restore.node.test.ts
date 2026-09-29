@@ -67,8 +67,64 @@ function createMemoryS3(seed: Record<string, string | Uint8Array> = {}) {
 	return { client, objects }
 }
 
-function sealedKey(day: string, stagingKey: string) {
-	return __testOnlySealedObjectKey(day, stagingKey)
+const day = '2026-07-23'
+const identity = encodeStorageIdentity('user-a', 'job:1')
+const dumpBody = `${JSON.stringify({ key: 'alpha', valueJson: '{"n":1}' })}\n`
+
+function storageEntry(input: { bytes: number; sha256: string }) {
+	return {
+		storageId: identity,
+		objectKey: stagingStorageDumpKey(day, identity),
+		entryCount: 1,
+		...input,
+	}
+}
+
+function artifactEntry(snapshotSha256: string) {
+	return {
+		sourceId: 'src-1',
+		entityKind: 'package',
+		entityId: 'pkg-1',
+		userId: 'user-a',
+		publishedCommit: 'commit-1',
+		snapshotSha256,
+	} satisfies ArtifactsIndex['entries'][number]
+}
+
+function createSealedS3(input: {
+	storage?: StorageIndex['entries']
+	dump?: string
+	emailBlobsIndex?: string
+	artifacts?: ArtifactsIndex['entries']
+	blobs?: Record<string, string | Uint8Array>
+}) {
+	const sealed = (stagingKey: string) =>
+		__testOnlySealedObjectKey(day, stagingKey)
+	const seed: Record<string, string | Uint8Array> = {
+		[sealed(stagingStorageIndexKey(day))]: JSON.stringify({
+			schemaVersion: 1,
+			day,
+			entries: input.storage ?? [],
+		} satisfies StorageIndex),
+	}
+	if (input.dump !== undefined) {
+		seed[sealed(stagingStorageDumpKey(day, identity))] = input.dump
+	}
+	if (input.emailBlobsIndex !== undefined) {
+		seed[sealed(stagingR2IndexKey(day, 'email-blobs'))] = input.emailBlobsIndex
+		seed[sealed(stagingR2IndexKey(day, 'community-assets'))] = ''
+	}
+	if (input.artifacts) {
+		seed[sealed(stagingArtifactsIndexKey(day))] = JSON.stringify({
+			schemaVersion: 1,
+			day,
+			entries: input.artifacts,
+		} satisfies ArtifactsIndex)
+	}
+	for (const [digest, body] of Object.entries(input.blobs ?? {})) {
+		seed[backupBlobKey(digest)] = body
+	}
+	return createMemoryS3(seed).client
 }
 
 function baseEnv() {
@@ -84,120 +140,59 @@ function baseEnv() {
 	} as unknown as Env
 }
 
-async function expectRestoreFailure(
-	promise: Promise<unknown>,
-	message: string,
-) {
-	await expect(promise).rejects.toMatchObject({
-		name: MaintenanceFailureError.name,
-		message: expect.stringContaining(message),
-	})
-}
-
 test('dr-restore auth fails closed when secret is missing and rejects wrong bearer', async () => {
-	const missing = await handleDrRestoreRequest(
+	const request = (headers: Record<string, string>) =>
 		new Request('https://example.com/__maintenance/dr-restore', {
 			method: 'POST',
-			body: JSON.stringify({ day: '2026-07-23' }),
-		}),
-		{} as Env,
+			headers,
+			body: JSON.stringify({ day }),
+		})
+	expect((await handleDrRestoreRequest(request({}), {} as Env)).status).toBe(
+		503,
 	)
-	expect(missing.status).toBe(503)
-
-	const wrong = await handleDrRestoreRequest(
-		new Request('https://example.com/__maintenance/dr-restore', {
-			method: 'POST',
-			headers: { Authorization: 'Bearer wrong' },
-			body: JSON.stringify({ day: '2026-07-23' }),
-		}),
-		{ DR_RESTORE_SECRET: 'correct' } as Env,
-	)
-	expect(wrong.status).toBe(401)
+	expect(
+		(
+			await handleDrRestoreRequest(request({ Authorization: 'Bearer wrong' }), {
+				DR_RESTORE_SECRET: 'correct',
+			} as Env)
+		).status,
+	).toBe(401)
 })
 
 test('dr-restore restores storage, R2, and artifacts in chunked ticks', async () => {
-	storageMocks.importStorage.mockReset()
 	storageMocks.importStorage.mockResolvedValue({
 		ok: true,
 		written: 1,
 		cleared: true,
 	})
-
-	const day = '2026-07-23'
-	const identity = encodeStorageIdentity('user-a', 'job:1')
-	const dumpBody = `${JSON.stringify({ key: 'alpha', valueJson: '{"n":1}' })}\n`
-	const storageIndex: StorageIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [
-			{
-				storageId: identity,
-				objectKey: stagingStorageDumpKey(day, identity),
-				entryCount: 1,
-				bytes: dumpBody.length,
-				sha256: await sha256Hex(dumpBody),
-			},
-		],
-	}
 	const r2Bytes = new TextEncoder().encode('mime')
 	const r2Digest = await sha256Hex(r2Bytes)
-	const r2Index = `${JSON.stringify({ key: 'raw/1', size: r2Bytes.byteLength, sha256: r2Digest })}\n`
 	const snapshot = JSON.stringify({ version: 1, files: { a: 'b' } })
 	const snapshotDigest = await sha256Hex(snapshot)
-	const artifactsIndex: ArtifactsIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [
-			{
-				sourceId: 'src-1',
-				entityKind: 'package',
-				entityId: 'pkg-1',
-				userId: 'user-a',
-				publishedCommit: 'commit-1',
-				snapshotSha256: snapshotDigest,
-			},
+	const s3 = createSealedS3({
+		storage: [
+			storageEntry({
+				bytes: dumpBody.length,
+				sha256: await sha256Hex(dumpBody),
+			}),
 		],
-	}
-
-	const { client } = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify(storageIndex),
-		[sealedKey(day, stagingStorageDumpKey(day, identity))]: dumpBody,
-		[sealedKey(day, stagingR2IndexKey(day, 'email-blobs'))]: r2Index,
-		[sealedKey(day, stagingR2IndexKey(day, 'community-assets'))]: '',
-		[sealedKey(day, stagingArtifactsIndexKey(day))]:
-			JSON.stringify(artifactsIndex),
-		[backupBlobKey(r2Digest)]: r2Bytes,
-		[backupBlobKey(snapshotDigest)]: snapshot,
+		dump: dumpBody,
+		emailBlobsIndex: `${JSON.stringify({ key: 'raw/1', size: r2Bytes.byteLength, sha256: r2Digest })}\n`,
+		artifacts: [artifactEntry(snapshotDigest)],
+		blobs: { [r2Digest]: r2Bytes, [snapshotDigest]: snapshot },
 	})
 
-	const r2Puts: Array<{ key: string; bytes: Uint8Array }> = []
-	const kvPuts: Array<{ key: string; value: string }> = []
+	const r2PutKeys: Array<string> = []
+	const kvPutKeys: Array<string> = []
 	const env = {
 		...baseEnv(),
-		EMAIL_BLOBS: {
-			put: async (key: string, value: ArrayBuffer | Uint8Array | string) => {
-				const bytes =
-					typeof value === 'string'
-						? new TextEncoder().encode(value)
-						: value instanceof Uint8Array
-							? value
-							: new Uint8Array(value)
-				r2Puts.push({ key, bytes })
-			},
-		},
+		EMAIL_BLOBS: { put: async (key: string) => void r2PutKeys.push(key) },
 		BUNDLE_ARTIFACTS_KV: {
-			put: async (key: string, value: string) => {
-				kvPuts.push({ key, value })
-			},
+			put: async (key: string) => void kvPutKeys.push(key),
 		},
 	} as unknown as Env
 
-	const first = await runDrRestoreTick({
-		env,
-		day,
-		timeBudgetMs: 0,
-		s3: client,
-	})
+	const first = await runDrRestoreTick({ env, day, timeBudgetMs: 0, s3 })
 	expect(first.done).toBe(false)
 	expect(first.nextCursor).toBeTruthy()
 
@@ -206,148 +201,60 @@ test('dr-restore restores storage, R2, and artifacts in chunked ticks', async ()
 		day,
 		cursor: first.nextCursor,
 		timeBudgetMs: 60_000,
-		s3: client,
+		s3,
 	})
 	expect(second.done).toBe(true)
-	expect(storageMocks.importStorage).toHaveBeenCalled()
-	expect(r2Puts.some((entry) => entry.key === 'raw/1')).toBe(true)
-	expect(
-		kvPuts.some((entry) => entry.key === 'source-snapshot:v1:src-1:commit-1'),
-	).toBe(true)
+	expect(storageMocks.importStorage).toHaveBeenCalledTimes(1)
+	expect(r2PutKeys).toEqual(['raw/1'])
+	expect(kvPutKeys).toEqual(['source-snapshot:v1:src-1:commit-1'])
 })
 
 test('dr-restore hard-fails closed on missing dumps, sha mismatches, and missing blobs', async () => {
-	const day = '2026-07-23'
-	const identity = encodeStorageIdentity('user-a', 'job:1')
-	const missingDumpIndex: StorageIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [
+	const badDigest = 'a'.repeat(64)
+	const cases: Array<[string, Parameters<typeof createSealedS3>[0]]> = [
+		[
+			'Missing sealed storage dump',
+			{ storage: [storageEntry({ bytes: 1, sha256: badDigest })] },
+		],
+		[
+			'backup blob sha256 mismatch',
 			{
-				storageId: identity,
-				objectKey: stagingStorageDumpKey(day, identity),
-				entryCount: 1,
-				bytes: 1,
-				sha256: 'a'.repeat(64),
+				emailBlobsIndex: `${JSON.stringify({ key: 'raw/bad', size: 4, sha256: badDigest })}\n`,
+				artifacts: [],
+				blobs: { [badDigest]: new TextEncoder().encode('nope') },
 			},
 		],
-	}
-	let memory = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]:
-			JSON.stringify(missingDumpIndex),
-	})
-	await expectRestoreFailure(
-		runDrRestoreTick({
-			env: baseEnv(),
-			day,
-			timeBudgetMs: 60_000,
-			s3: memory.client,
-		}),
-		'Missing sealed storage dump',
-	)
-
-	storageMocks.importStorage.mockReset()
+		[
+			'backup blob missing',
+			{ emailBlobsIndex: '', artifacts: [artifactEntry('b'.repeat(64))] },
+		],
+		[
+			'storage dump sha256 mismatch',
+			{
+				storage: [
+					storageEntry({ bytes: dumpBody.length, sha256: 'c'.repeat(64) }),
+				],
+				dump: dumpBody,
+			},
+		],
+	]
 	storageMocks.importStorage.mockResolvedValue({
 		ok: true,
 		written: 0,
 		cleared: true,
 	})
-	const badDigest = 'a'.repeat(64)
-	const r2Index = `${JSON.stringify({ key: 'raw/bad', size: 4, sha256: badDigest })}\n`
-	const emptyStorageIndex: StorageIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [],
+	for (const [message, sealed] of cases) {
+		await expect(
+			runDrRestoreTick({
+				env: baseEnv(),
+				day,
+				timeBudgetMs: 60_000,
+				s3: createSealedS3(sealed),
+			}),
+		).rejects.toMatchObject({
+			name: MaintenanceFailureError.name,
+			message: expect.stringContaining(message),
+		})
 	}
-	const emptyArtifactsIndex: ArtifactsIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [],
-	}
-	memory = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]:
-			JSON.stringify(emptyStorageIndex),
-		[sealedKey(day, stagingR2IndexKey(day, 'email-blobs'))]: r2Index,
-		[sealedKey(day, stagingR2IndexKey(day, 'community-assets'))]: '',
-		[sealedKey(day, stagingArtifactsIndexKey(day))]:
-			JSON.stringify(emptyArtifactsIndex),
-		[backupBlobKey(badDigest)]: new TextEncoder().encode('nope'),
-	})
-	await expectRestoreFailure(
-		runDrRestoreTick({
-			env: baseEnv(),
-			day,
-			timeBudgetMs: 60_000,
-			s3: memory.client,
-		}),
-		'backup blob sha256 mismatch',
-	)
-
-	storageMocks.importStorage.mockReset()
-	const missingDigest = 'b'.repeat(64)
-	const artifactsIndex: ArtifactsIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [
-			{
-				sourceId: 'src-1',
-				entityKind: 'package',
-				entityId: 'pkg-1',
-				userId: 'user-a',
-				publishedCommit: 'commit-1',
-				snapshotSha256: missingDigest,
-			},
-		],
-	}
-	memory = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]: JSON.stringify({
-			schemaVersion: 1,
-			day,
-			entries: [],
-		} satisfies StorageIndex),
-		[sealedKey(day, stagingR2IndexKey(day, 'email-blobs'))]: '',
-		[sealedKey(day, stagingR2IndexKey(day, 'community-assets'))]: '',
-		[sealedKey(day, stagingArtifactsIndexKey(day))]:
-			JSON.stringify(artifactsIndex),
-	})
-	await expectRestoreFailure(
-		runDrRestoreTick({
-			env: baseEnv(),
-			day,
-			timeBudgetMs: 60_000,
-			s3: memory.client,
-		}),
-		'backup blob missing',
-	)
-
-	storageMocks.importStorage.mockReset()
-	const dumpBody = `${JSON.stringify({ key: 'alpha', valueJson: '{"n":1}' })}\n`
-	const mismatchedDumpIndex: StorageIndex = {
-		schemaVersion: 1,
-		day,
-		entries: [
-			{
-				storageId: identity,
-				objectKey: stagingStorageDumpKey(day, identity),
-				entryCount: 1,
-				bytes: dumpBody.length,
-				sha256: 'c'.repeat(64),
-			},
-		],
-	}
-	memory = createMemoryS3({
-		[sealedKey(day, stagingStorageIndexKey(day))]:
-			JSON.stringify(mismatchedDumpIndex),
-		[sealedKey(day, stagingStorageDumpKey(day, identity))]: dumpBody,
-	})
-	await expectRestoreFailure(
-		runDrRestoreTick({
-			env: baseEnv(),
-			day,
-			timeBudgetMs: 60_000,
-			s3: memory.client,
-		}),
-		'storage dump sha256 mismatch',
-	)
 	expect(storageMocks.importStorage).not.toHaveBeenCalled()
 })

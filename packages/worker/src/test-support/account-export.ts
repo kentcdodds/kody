@@ -82,6 +82,64 @@ export function createMigratedDb(options?: {
 	}
 }
 
+export function insertTestUser(
+	sqlite: DatabaseSync,
+	input: {
+		id: number
+		username: string
+		stableUserId: string
+		avatarKey?: string
+	},
+) {
+	sqlite
+		.prepare(
+			`INSERT INTO users (
+				id, username, email, password_hash, created_at, updated_at,
+				email_verified_at, stable_user_id, avatar_key
+			) VALUES (?, ?, ?, 'hash', '2026-07-05', '2026-07-05', '2026-07-05', ?, ?)`,
+		)
+		.run(
+			input.id,
+			input.username,
+			`${input.username}@example.com`,
+			input.stableUserId,
+			input.avatarKey ?? null,
+		)
+}
+
+/** Migrated APP_DB seeded with user 1 (`user-a` / stable id `user-aaa`). */
+export function createMigratedDbWithUser(
+	options?: Parameters<typeof createMigratedDb>[0],
+) {
+	const migrated = createMigratedDb(options)
+	insertTestUser(migrated.sqlite, {
+		id: 1,
+		username: 'user-a',
+		stableUserId: 'user-aaa',
+	})
+	return migrated
+}
+
+/** Minimal DO namespace whose every stub is `stub`. */
+export function createStubNamespace(stub: object) {
+	return {
+		idFromName: (name: string) => name as unknown as DurableObjectId,
+		get: () => stub,
+	}
+}
+
+export function rawMimeReference(
+	messageId: string,
+	userId = 'user-aaa',
+): TestMailboxBlobReference {
+	return {
+		kind: 'raw_mime',
+		key: `email-raw:v1:${userId}/${messageId}`,
+		messageId,
+		attachmentId: null,
+	}
+}
+
 export type TestMailboxBlobReference = {
 	kind: 'raw_mime' | 'attachment'
 	key: string

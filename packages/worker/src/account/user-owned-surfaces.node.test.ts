@@ -20,64 +20,58 @@ const accountExportSource = readFileSync(
 	'utf8',
 )
 
+function surface<T extends { id: string }>(
+	surfaces: ReadonlyArray<T>,
+	id: string,
+) {
+	return surfaces.find((entry) => entry.id === id)
+}
+
 test('account deletion and export consume the out-of-band surface registry', () => {
 	const coverage = getAccountUserOwnedSurfaceCoverage()
-	const deletionResultKeys = [
-		...getAccountDeletionDurableObjectResultKeys(),
-	].sort()
-	const excludedNames = getAccountExportExcludedDurableObjects()
-		.map((entry) => entry.name)
-		.sort()
+	const excludedNames = getAccountExportExcludedDurableObjects().map(
+		(entry) => entry.name,
+	)
+	const deletionResultKeys = accountUserOwnedDurableObjectSurfaces
+		.map((entry) => entry.deletionResultKey)
+		.filter((key): key is string => key != null)
 
-	expect(coverage.durableObjectIds.size).toBeGreaterThan(0)
 	expect(coverage.vectorizeIds.size).toBeGreaterThan(0)
-	expect(coverage.kvSchemeIds.size).toBeGreaterThan(0)
-	expect(coverage.r2SurfaceIds.size).toBeGreaterThan(0)
 	expect(coverage.artifactSurfaceIds.size).toBeGreaterThan(0)
-	expect(deletionResultKeys).toEqual(
-		accountUserOwnedDurableObjectSurfaces
-			.map((surface) => surface.deletionResultKey)
-			.filter((key): key is string => key != null)
-			.sort(),
+	expect([...getAccountDeletionDurableObjectResultKeys()].sort()).toEqual(
+		[...deletionResultKeys].sort(),
 	)
 	expect(excludedNames.length).toBeGreaterThan(0)
 	expect(
 		accountUserOwnedDurableObjectSurfaces.filter(
-			(surface) => surface.export === 'exclude',
+			(entry) => entry.export === 'exclude',
 		).length,
 	).toBeGreaterThanOrEqual(excludedNames.length)
-
 	expect(
 		accountUserOwnedVectorizeSurfaces.every(
-			(surface) => surface.export === 'rebuild_from_d1',
+			(entry) => entry.export === 'rebuild_from_d1',
 		),
 	).toBe(true)
 	expect(
 		accountUserOwnedR2Surfaces.every(
-			(surface) => surface.export === 'chunked_bytes',
+			(entry) => entry.export === 'chunked_bytes',
 		),
 	).toBe(true)
-	expect(coverage.r2SurfaceIds.has('email_raw_mime')).toBe(true)
-	expect(coverage.r2SurfaceIds.has('user_avatar')).toBe(true)
-	expect(coverage.r2SurfaceIds.has('identity_icon')).toBe(true)
-	expect(coverage.kvSchemeIds.has('identity_icon_derived_cache')).toBe(true)
-	expect(coverage.durableObjectIds.has('user_meter')).toBe(true)
-	expect(coverage.durableObjectIds.has('mailbox')).toBe(true)
-	expect(coverage.durableObjectIds.has('repo_session_index')).toBe(true)
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'user_meter',
-		),
-	).toMatchObject({
+	expect([...coverage.r2SurfaceIds]).toEqual(
+		expect.arrayContaining(['email_raw_mime', 'user_avatar', 'identity_icon']),
+	)
+	expect([...coverage.kvSchemeIds]).toContain('identity_icon_derived_cache')
+	expect([...coverage.durableObjectIds]).toEqual(
+		expect.arrayContaining(['user_meter', 'mailbox', 'repo_session_index']),
+	)
+
+	const durableObjects = accountUserOwnedDurableObjectSurfaces
+	expect(surface(durableObjects, 'user_meter')).toMatchObject({
 		binding: 'USER_METER',
 		deletionResultKey: 'userMeters',
 		export: 'include',
 	})
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'mailbox',
-		),
-	).toMatchObject({
+	expect(surface(durableObjects, 'mailbox')).toMatchObject({
 		binding: 'MAILBOX',
 		deletionResultKey: 'mailboxes',
 		export: 'include',
@@ -85,88 +79,59 @@ test('account deletion and export consume the out-of-band surface registry', () 
 			/authoritative email metadata.*lists Mailbox blob references.*D1 retains only thin provider/s,
 		),
 	})
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'repo_session_index',
-		),
-	).toMatchObject({
+	expect(surface(durableObjects, 'repo_session_index')).toMatchObject({
 		binding: 'REPO_SESSION_INDEX',
 		deletionResultKey: 'repoSessionIndexes',
 		export: 'include',
 	})
-	expect(
-		accountUserOwnedR2Surfaces.find(
-			(surface) => surface.id === 'email_raw_mime',
-		),
-	).toMatchObject({
+	expect(surface(durableObjects, 'run_log')?.notes).toMatch(
+		/There are no D1 tables workflow_runs/,
+	)
+	expect(surface(accountUserOwnedR2Surfaces, 'email_raw_mime')).toMatchObject({
 		sourceTable: 'Mailbox.email_messages',
 		sourceColumn: 'id',
 	})
 	expect(
-		accountUserOwnedR2Surfaces.find(
-			(surface) => surface.id === 'email_attachment_storage_key',
-		),
+		surface(accountUserOwnedR2Surfaces, 'email_attachment_storage_key'),
 	).toMatchObject({
 		sourceTable: 'Mailbox.email_attachments',
 		sourceColumn: 'storage_key',
 	})
+	const kvPrefixes = accountUserOwnedKvKeySchemes.map(
+		(scheme) => scheme.prefixTemplate ?? '',
+	)
 	expect(
-		accountUserOwnedKvKeySchemes.some((scheme) =>
-			scheme.prefixTemplate?.includes('source-snapshot:v1:'),
-		),
+		kvPrefixes.some((prefix) => prefix.includes('source-snapshot:v1:')),
 	).toBe(true)
 	expect(
-		accountUserOwnedKvKeySchemes.every(
-			(scheme) => !scheme.prefixTemplate?.startsWith('platform-settings:'),
-		),
-	).toBe(true)
-	expect(accountExportSource).toContain("'user_meter'")
-	expect(accountExportSource).toContain('userMeterRpc')
-	expect(accountExportSource).toContain("'mailbox'")
-	expect(accountExportSource).toContain('exportInternalUserMailbox')
-	expect(accountExportSource).toContain("'repo_session_index'")
-	expect(accountExportSource).toContain('repoSessionIndexRpc')
-	expect(accountDeletionSource).toContain('userMeterRpc')
-	expect(accountDeletionSource).toContain('userMeters')
-	expect(accountDeletionSource).toContain('mailboxRpc')
-	expect(accountDeletionSource).toContain('mailboxes')
-	expect(accountDeletionSource).toContain('repoSessionIndexRpc')
-	expect(accountDeletionSource).toContain('repoSessionIndexes')
+		kvPrefixes.filter((prefix) => prefix.startsWith('platform-settings:')),
+	).toEqual([])
 
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'run_log',
-		)?.notes,
-	).toMatch(/There are no D1 tables workflow_runs/)
-	expect(accountDeletionSource).toContain(
-		"from '#worker/account/user-owned-surfaces.ts'",
-	)
-	expect(accountDeletionSource).toContain(
-		'getAccountDeletionDurableObjectResultKeys',
-	)
-	expect(accountDeletionSource).toContain('accountUserOwnedVectorizeSurfaces')
-	expect(accountDeletionSource).toContain('deleteAccountCommunityAssetPrefixes')
-	expect(accountExportSource).toContain(
+	for (const snippet of [
+		"'user_meter'",
+		'userMeterRpc',
+		"'mailbox'",
+		'exportInternalUserMailbox',
+		"'repo_session_index'",
+		'repoSessionIndexRpc',
 		'getAccountExportExcludedDurableObjects',
-	)
-	expect(accountExportSource).toContain('readAccountR2ExportPage')
+		'readAccountR2ExportPage',
+	]) {
+		expect(accountExportSource).toContain(snippet)
+	}
 	expect(accountExportSource).not.toContain('collectAccountR2Inventory')
-
-	for (const prefix of [
+	for (const snippet of [
+		'userMeterRpc',
+		'mailboxRpc',
+		'repoSessionIndexRpc',
+		"from '#worker/account/user-owned-surfaces.ts'",
+		'getAccountDeletionDurableObjectResultKeys',
+		'accountUserOwnedVectorizeSurfaces',
+		'deleteAccountCommunityAssetPrefixes',
 		'source-snapshot:v1:',
 		'source-manifest-snapshot:v1:',
+		...deletionResultKeys,
 	]) {
-		expect(
-			accountDeletionSource.includes(prefix),
-			`account-deletion.ts must still enumerate prefix ${prefix}`,
-		).toBe(true)
-	}
-
-	for (const surface of accountUserOwnedDurableObjectSurfaces) {
-		if (surface.deletionResultKey == null) continue
-		expect(
-			accountDeletionSource.includes(surface.deletionResultKey),
-			`account-deletion.ts missing clearedDurableObjects key ${surface.deletionResultKey}`,
-		).toBe(true)
+		expect(accountDeletionSource).toContain(snippet)
 	}
 })

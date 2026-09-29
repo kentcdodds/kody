@@ -14,11 +14,17 @@ const catalog = resolveStripePriceCatalog({
 	STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
 })
 
+const standardPriceId = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
+const paidStandard = {
+	stripePlan: 'standard',
+	stripePriceId: standardPriceId,
+} as const
+
 test('estimatePaidListMrrUsdCents uses catalog list MRR and treats overlays as $0', () => {
 	expect(
 		estimatePaidListMrrUsdCents({
 			stripePlan: 'standard',
-			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
+			stripePriceId: standardPriceId,
 			catalog,
 		}),
 	).toEqual({ cents: 1_200, source: 'stripe_catalog' })
@@ -32,7 +38,7 @@ test('estimatePaidListMrrUsdCents uses catalog list MRR and treats overlays as $
 	expect(
 		estimatePaidListMrrUsdCents({
 			stripePlan: null,
-			stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
+			stripePriceId: standardPriceId,
 			catalog,
 		}),
 	).toEqual({ cents: 0, source: 'none' })
@@ -45,159 +51,120 @@ test('estimatePaidListMrrUsdCents uses catalog list MRR and treats overlays as $
 	).toEqual({ cents: 0, source: 'none' })
 })
 
+function costVsPay(
+	username: string,
+	uniqueWorkerDays: number,
+	overrides: Partial<Parameters<typeof toAdminCostVsPay>[0]> = {},
+) {
+	return toAdminCostVsPay({
+		uniqueWorkerDays,
+		stripePlan: null,
+		stripePriceId: null,
+		catalog,
+		manualPlan: 'free',
+		username,
+		...overrides,
+	})
+}
+
 test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
-	const freePennies = toAdminCostVsPay({
-		uniqueWorkerDays: 90,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'free',
-		username: 'cara',
-	})
-	expect(freePennies.estimatedGrossUsd).toBe(0.18)
-	expect(freePennies.estimatedPaidUsdCents).toBe(0)
-	expect(freePennies.underwater).toBe(false)
-	expect(freePennies.risk).toBe('none')
-	expect(freePennies.paidSource).toBe('none')
+	const cases: Array<
+		[
+			ReturnType<typeof toAdminCostVsPay>,
+			Partial<ReturnType<typeof toAdminCostVsPay>>,
+		]
+	> = [
+		[
+			costVsPay('cara', 90),
+			{
+				estimatedGrossUsd: 0.18,
+				estimatedPaidUsdCents: 0,
+				underwater: false,
+				risk: 'none',
+				paidSource: 'none',
+			},
+		],
+		[
+			costVsPay('climber', 500),
+			{ estimatedGrossUsd: 1, underwater: false, risk: 'free_near_allotment' },
+		],
+		[
+			costVsPay('heavy', 1_500),
+			{ estimatedGrossUsd: 3, underwater: false, risk: 'free_near_allotment' },
+		],
+		[
+			costVsPay('paid-light', 90, paidStandard),
+			{
+				estimatedGrossUsd: 0.18,
+				estimatedPaidUsdCents: 1_200,
+				underwater: false,
+				risk: 'none',
+				paidSource: 'stripe_catalog',
+			},
+		],
+		[
+			costVsPay('paid-heavy', 7_000, paidStandard),
+			{
+				estimatedGrossUsd: 14,
+				estimatedPaidUsdCents: 1_200,
+				underwater: true,
+				risk: 'paid_underwater',
+			},
+		],
+		[
+			costVsPay('maciek', 481, { stripePlan: 'standard' }),
+			{
+				estimatedGrossUsd: 0.962,
+				estimatedPaidUsdCents: 0,
+				underwater: false,
+				risk: 'missing_price_id',
+				paidSource: 'none',
+			},
+		],
+		[
+			costVsPay('gifted', 481, { manualPlan: 'standard' }),
+			{ risk: 'none', underwater: false },
+		],
+		[
+			costVsPay('gifted-heavy', 600, { manualPlan: 'standard' }),
+			{ risk: 'free_near_allotment', underwater: false },
+		],
+		[
+			costVsPay('kentcdodds', 20_000, { manualPlan: 'max' }),
+			{ estimatedGrossUsd: 40, underwater: false, risk: 'none' },
+		],
+		[
+			costVsPay('ops-admin', 7_000, { ...paidStandard, isOperator: true }),
+			{ risk: 'paid_underwater', underwater: true },
+		],
+	]
+	for (const [actual, expected] of cases) {
+		expect(actual).toMatchObject(expected)
+	}
 
-	const freeNearAllotment = toAdminCostVsPay({
-		uniqueWorkerDays: 500,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'free',
-		username: 'climber',
-	})
-	expect(freeNearAllotment.estimatedGrossUsd).toBe(1)
-	expect(freeNearAllotment.underwater).toBe(false)
-	expect(freeNearAllotment.risk).toBe('free_near_allotment')
-
-	const freePastAllotment = toAdminCostVsPay({
-		uniqueWorkerDays: 1_500,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'free',
-		username: 'heavy',
-	})
-	expect(freePastAllotment.estimatedGrossUsd).toBe(3)
-	expect(freePastAllotment.underwater).toBe(false)
-	expect(freePastAllotment.risk).toBe('free_near_allotment')
-
-	const paidLight = toAdminCostVsPay({
-		uniqueWorkerDays: 90,
-		stripePlan: 'standard',
-		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-		catalog,
-		manualPlan: 'free',
-		username: 'paid-light',
-	})
-	expect(paidLight.estimatedGrossUsd).toBe(0.18)
-	expect(paidLight.estimatedPaidUsdCents).toBe(1_200)
-	expect(paidLight.underwater).toBe(false)
-	expect(paidLight.risk).toBe('none')
-	expect(paidLight.paidSource).toBe('stripe_catalog')
-
-	const paidUnderwater = toAdminCostVsPay({
-		uniqueWorkerDays: 7_000,
-		stripePlan: 'standard',
-		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-		catalog,
-		manualPlan: 'free',
-		username: 'paid-heavy',
-	})
-	expect(paidUnderwater.estimatedGrossUsd).toBe(14)
-	expect(paidUnderwater.estimatedPaidUsdCents).toBe(1_200)
-	expect(paidUnderwater.underwater).toBe(true)
-	expect(paidUnderwater.risk).toBe('paid_underwater')
-
-	const missingPriceId = toAdminCostVsPay({
-		uniqueWorkerDays: 481,
-		stripePlan: 'standard',
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'free',
-		username: 'maciek',
-	})
-	expect(missingPriceId.estimatedGrossUsd).toBe(0.962)
-	expect(missingPriceId.estimatedPaidUsdCents).toBe(0)
-	expect(missingPriceId.underwater).toBe(false)
-	expect(missingPriceId.risk).toBe('missing_price_id')
-	expect(missingPriceId.paidSource).toBe('none')
-
-	const giftStandardPennies = toAdminCostVsPay({
-		uniqueWorkerDays: 481,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'standard',
-		username: 'gifted',
-	})
-	expect(giftStandardPennies.risk).toBe('none')
-	expect(giftStandardPennies.underwater).toBe(false)
-
-	const giftStandardNearAllotment = toAdminCostVsPay({
-		uniqueWorkerDays: 600,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'standard',
-		username: 'gifted-heavy',
-	})
-	expect(giftStandardNearAllotment.risk).toBe('free_near_allotment')
-	expect(giftStandardNearAllotment.underwater).toBe(false)
-
-	const maxOperator = toAdminCostVsPay({
-		uniqueWorkerDays: 20_000,
-		stripePlan: null,
-		stripePriceId: null,
-		catalog,
-		manualPlan: 'max',
-		username: 'kentcdodds',
-	})
-	expect(maxOperator.estimatedGrossUsd).toBe(40)
-	expect(maxOperator.underwater).toBe(false)
-	expect(maxOperator.risk).toBe('none')
 	expect(
 		isOperatorCostNoise({ username: 'kentcdodds', manualPlan: 'free' }),
 	).toBe(true)
 	expect(
 		isOperatorCostNoise({ username: 'ops-admin', manualPlan: 'free' }),
 	).toBe(false)
+	const unpaidRisk = {
+		estimatedGrossUsd: 4,
+		estimatedPaidUsdCents: 0,
+		paidSource: 'none',
+		stripePlan: null,
+		manualPlan: 'free',
+	} as const
+	expect(classifyAdminCostRisk({ ...unpaidRisk, username: 'kentcdodds' })).toBe(
+		'none',
+	)
 	expect(
 		classifyAdminCostRisk({
-			estimatedGrossUsd: 4,
-			estimatedPaidUsdCents: 0,
-			paidSource: 'none',
-			stripePlan: null,
-			manualPlan: 'free',
-			username: 'kentcdodds',
-		}),
-	).toBe('none')
-	expect(
-		classifyAdminCostRisk({
-			estimatedGrossUsd: 4,
-			estimatedPaidUsdCents: 0,
-			paidSource: 'none',
-			stripePlan: null,
-			manualPlan: 'free',
+			...unpaidRisk,
 			username: 'ops-admin',
 			isOperator: true,
 		}),
 	).toBe('none')
-
-	const paidOperatorUnderwater = toAdminCostVsPay({
-		uniqueWorkerDays: 7_000,
-		stripePlan: 'standard',
-		stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-		catalog,
-		manualPlan: 'free',
-		username: 'ops-admin',
-		isOperator: true,
-	})
-	expect(paidOperatorUnderwater.risk).toBe('paid_underwater')
-	expect(paidOperatorUnderwater.underwater).toBe(true)
-
 	expect(
 		classifyAdminCostRisk({
 			estimatedGrossUsd: 14,
@@ -211,104 +178,56 @@ test('toAdminCostVsPay buckets real risk instead of every unpaid penny', () => {
 })
 
 test('rankRiskCostConsumers ranks within buckets and drops pennies and operator noise', () => {
+	const consumer = (
+		stableUserId: string,
+		uniqueWorkerDays: number,
+		overrides: Partial<Parameters<typeof toAdminCostVsPayConsumer>[0]> = {},
+	) =>
+		toAdminCostVsPayConsumer({
+			stableUserId,
+			username: stableUserId,
+			uniqueWorkerDays,
+			stripePlan: null,
+			stripePriceId: null,
+			catalog,
+			...overrides,
+		})
+	const free = { manualPlan: 'free' } as const
 	const ranked = rankRiskCostConsumers(
 		[
-			toAdminCostVsPayConsumer({
-				stableUserId: 'paid-small-deficit',
-				username: 'paid-small-deficit',
-				uniqueWorkerDays: 6_100,
-				stripePlan: 'standard',
-				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-				catalog,
-			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'paid-big-deficit',
-				username: 'paid-big-deficit',
-				uniqueWorkerDays: 8_000,
-				stripePlan: 'standard',
-				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-				catalog,
-			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'free-pennies',
-				username: 'free-pennies',
-				uniqueWorkerDays: 90,
-				stripePlan: null,
-				stripePriceId: null,
-				catalog,
-				manualPlan: 'free',
-			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'free-near',
-				username: 'free-near',
-				uniqueWorkerDays: 600,
-				stripePlan: null,
-				stripePriceId: null,
-				catalog,
-				manualPlan: 'free',
-			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'free-past',
-				username: 'free-past',
-				uniqueWorkerDays: 1_200,
-				stripePlan: null,
-				stripePriceId: null,
-				catalog,
-				manualPlan: 'free',
-			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'missing-price',
+			consumer('paid-small-deficit', 6_100, paidStandard),
+			consumer('paid-big-deficit', 8_000, paidStandard),
+			consumer('free-pennies', 90, free),
+			consumer('free-near', 600, free),
+			consumer('free-past', 1_200, free),
+			consumer('missing-price', 481, {
 				username: 'maciek',
-				uniqueWorkerDays: 481,
 				stripePlan: 'standard',
 				stripePriceId: 'price_unknown',
-				catalog,
 			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'operator',
+			consumer('operator', 20_000, {
 				username: 'kentcdodds',
-				uniqueWorkerDays: 20_000,
-				stripePlan: null,
-				stripePriceId: null,
-				catalog,
 				manualPlan: 'max',
 			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'paid-admin-deficit',
+			consumer('paid-admin-deficit', 7_000, {
+				...paidStandard,
 				username: 'ops-admin',
-				uniqueWorkerDays: 7_000,
-				stripePlan: 'standard',
-				stripePriceId: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
-				catalog,
 				isOperator: true,
 			}),
-			toAdminCostVsPayConsumer({
-				stableUserId: 'unpaid-admin-heavy',
+			consumer('unpaid-admin-heavy', 1_200, {
+				...free,
 				username: 'ops-admin-free',
-				uniqueWorkerDays: 1_200,
-				stripePlan: null,
-				stripePriceId: null,
-				catalog,
-				manualPlan: 'free',
 				isOperator: true,
 			}),
 		],
 		10,
 	)
-	expect(ranked.map((row) => row.stableUserId)).toEqual([
-		'paid-big-deficit',
-		'paid-admin-deficit',
-		'paid-small-deficit',
-		'free-past',
-		'free-near',
-		'missing-price',
-	])
-	expect(ranked.map((row) => row.risk)).toEqual([
-		'paid_underwater',
-		'paid_underwater',
-		'paid_underwater',
-		'free_near_allotment',
-		'free_near_allotment',
-		'missing_price_id',
+	expect(ranked.map((row) => [row.stableUserId, row.risk])).toEqual([
+		['paid-big-deficit', 'paid_underwater'],
+		['paid-admin-deficit', 'paid_underwater'],
+		['paid-small-deficit', 'paid_underwater'],
+		['free-past', 'free_near_allotment'],
+		['free-near', 'free_near_allotment'],
+		['missing-price', 'missing_price_id'],
 	])
 })
