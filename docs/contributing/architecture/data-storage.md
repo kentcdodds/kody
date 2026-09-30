@@ -459,11 +459,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `(user_id, slug)`. Holds shared client id, client-secret ciphertext, provider
   endpoints, and flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
-  built-in OAuth apps that remaining connections still refresh against. New
-  connects and reconnects are bring-your-own only. Global operator config with
-  **no `user_id`** (like feature flags, not user data). Keyed by `slug`; holds
-  the inline non-secret `client_id`, provider endpoints, flow options, the
-  allowed/default scope menu, `required_hosts_json`, and `enabled`.
+  built-in OAuth apps. Global operator config with **no `user_id`** (like
+  feature flags, not user data). Keyed by `slug`; holds the inline non-secret
+  `client_id`, provider endpoints, flow options, the allowed/default scope menu,
+  `required_hosts_json`, `enabled` (hard kill), and `visibility`
+  (`0074-platform-oauth-app-visibility.sql`; `draft` | `published`, default
+  `draft`). Only enabled + published apps are discoverable and accept new
+  connects; draft apps keep serving existing connections.
   `client_secret_encrypted` is the one credential ciphertext stored outside
   `secret_entries` (AES-GCM with a dedicated purpose, so no `{{secret:…}}`
   placeholder can name it); `getPlatformOauthAppClientSecret` in
