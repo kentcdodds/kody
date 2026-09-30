@@ -142,6 +142,7 @@ test('kody.app.client and kody.app.assets publish and serve end-to-end on a real
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user

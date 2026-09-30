@@ -116,6 +116,7 @@ test('package app fetch handler can use packageStorage against a real local work
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user

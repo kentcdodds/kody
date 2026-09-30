@@ -177,11 +177,50 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 	)
 	expect(requests).toEqual([
 		'POST /auth',
-		'POST /auth',
 		'POST /oauth/register',
 		'POST /oauth/authorize',
 		'POST /oauth/token',
 	])
+
+	const signupFirstRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			signupFirstRequests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			void readRequestBody(request).then((rawBody) => {
+				if (request.method !== 'POST' || url.pathname !== '/auth') {
+					response.statusCode = 404
+					response.end('missing')
+					return
+				}
+				const body = JSON.parse(rawBody) as { mode?: string }
+				if (body.mode === 'login') {
+					response.statusCode = 401
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ error: 'Invalid email or password.' }))
+					return
+				}
+				if (body.mode === 'signup') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true, mode: 'signup' }))
+					return
+				}
+				response.statusCode = 400
+				response.end('unexpected auth mode')
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'new@example.com',
+					username: 'new-user',
+					password: 'ilikecode',
+				}),
+			).resolves.toBe('kody_session=fresh')
+		},
+	)
+	expect(signupFirstRequests).toEqual(['POST /auth', 'POST /auth'])
 
 	await withMockOrigin(
 		(_request, response) => {
