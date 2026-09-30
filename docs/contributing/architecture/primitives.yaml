@@ -525,7 +525,9 @@ primitives:
     code:
       - packages/worker/src/repo/artifacts.ts
       - packages/worker/src/repo/public-package-git-http.ts
+      - packages/worker/src/repo/public-package-git-http.node.test.ts
       - packages/worker/src/repo/git-pkt-line.ts
+      - packages/worker/src/repo/git-pkt-line.node.test.ts
     docs:
       - docs/contributing/architecture/data-storage.md
       - docs/use/community-packages.md
