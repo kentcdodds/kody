@@ -151,7 +151,7 @@ export function AccountManagementLinkNav(
 							// Sticks under the site header on a long page. The
 							// cap is the shell (`100%`) and the viewport, so a
 							// short page scrolls the links inside the content
-							// box instead of growing a blank band under it.
+							// box instead of stretching the shell.
 							position: 'sticky',
 							top: '5rem',
 							display: 'flex',

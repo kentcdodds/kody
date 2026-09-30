@@ -380,19 +380,13 @@ input[type='checkbox'] {
    padding: the shared page gutter inline, so its content lines up with the
    header's 72rem content box, plus the vertical rhythm). `<main>`'s generic
    padding for non-redesigned routes would stack on top of it. Unlayered on
-   purpose — it has to beat the css() class that sets that padding. */
+   purpose — it has to beat the css() class that sets that padding.
+   Account pages keep the site sticky footer: the shell stays content-sized
+   and `<main>` still grows in the 100vh app frame, so a short page leaves
+   empty space above the footer instead of lifting it mid-viewport, the same
+   as marketing and docs pages. */
 main:has([data-account-shell]) {
 	padding: 0;
-	/* Don't stretch a short account page into a viewport-tall column. The
-	   shell is content-sized; main and the app frame must be too, or the
-	   footer sits in a blank band. min-height 0 beats the root and the
-	   app frame's 100vh (this file, and a css() layer). */
-	flex-grow: 0;
-}
-
-#root:has([data-account-shell]),
-[data-app-frame]:has([data-account-shell]) {
-	min-height: 0;
 }
 
 /* Always reserve the classic scrollbar's track, so a short page and a long one

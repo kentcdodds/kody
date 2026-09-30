@@ -202,9 +202,11 @@ export function AccountManagementShell(
 				// nav-less shell users (onboarding, pending verification) keep
 				// the plain column. The rail starts at the gutter so it lines
 				// up with the header's brand. Its box is the shell (top and
-				// bottom), and the link column scrolls inside that box, so a
-				// short page stays as tall as its content. A fixed min-height
-				// here leaves a blank band above the footer. Note: `css()`
+				// bottom), and the link column scrolls inside that box, so the
+				// shell stays as tall as its content. `<main>` fills the rest
+				// of the viewport so the site footer still sits at the bottom
+				// (public/styles.css); a fixed min-height here would only push
+				// that footer below the fold on short pages. Note: `css()`
 				// classes each live in their own cascade sub-layer, so child
 				// spacing must stay on the shell's `gap`, never on per-child
 				// margins a child's own class would silently beat.

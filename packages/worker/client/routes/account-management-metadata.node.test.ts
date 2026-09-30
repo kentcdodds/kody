@@ -104,8 +104,8 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	const railRules = readRulesFor(railHtml, 'nav')
 	// The rail is the shell's left track: as tall as the content, clipped so
 	// it cannot paint over the footer. The link column inside sticks and
-	// scrolls. A min-height on the shell would leave a blank band on short
-	// pages, so the track does not reserve one.
+	// scrolls. `<main>` (not the shell) fills the viewport for the sticky
+	// footer, so the track does not reserve a min-height.
 	expect(railRules).toContain('position: absolute')
 	expect(railRules).toContain('bottom: 0')
 	expect(railRules).toContain('overflow: clip')
