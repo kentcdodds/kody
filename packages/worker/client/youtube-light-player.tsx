@@ -124,8 +124,16 @@ const posterButtonCss = {
 }
 
 const posterImageCss = {
+	// Fill the stage. Docs prose also styles `img`; the prose override for
+	// `[data-doc-youtube] img` repeats these so a later prose layer cannot
+	// push the poster down with margin and leave a black strip.
+	display: 'block' as const,
 	width: '100%',
+	maxWidth: 'none',
 	height: '100%',
+	margin: 0,
+	border: 'none',
+	borderRadius: 0,
 	objectFit: 'cover' as const,
 }
 

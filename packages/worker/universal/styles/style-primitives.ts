@@ -524,6 +524,19 @@ export const proseCss = {
 		borderRadius: radius.md,
 		border: `1px solid ${colors.border}`,
 	},
+	// The lite player's poster is an `img` inside a 16:9 black stage. The
+	// rule above would inset it with margin and `height: auto`, which paints
+	// as a black strip along the top of docs `[!WATCH]` embeds.
+	'& [data-doc-youtube] img': {
+		display: 'block',
+		width: '100%',
+		maxWidth: 'none',
+		height: '100%',
+		margin: 0,
+		border: 'none',
+		borderRadius: 0,
+		objectFit: 'cover' as const,
+	},
 	'& p': {
 		margin: '1.15rem 0 0',
 		maxWidth: '62ch',
