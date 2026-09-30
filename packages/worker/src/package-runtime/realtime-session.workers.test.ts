@@ -79,6 +79,46 @@ test('package realtime session DO lists empty sessions and is addressable as a d
 	)
 })
 
+test('package realtime DO accepts Upgrade when set on Request construction (Sentry-safe connect shape)', async () => {
+	const binding = createBinding()
+	const stub = getStub(binding)
+
+	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
+		const anyInstance = instance as unknown as {
+			initializeBinding: (bindingState: unknown) => Promise<void>
+			resolveRealtimeHookResult: () => Promise<Array<unknown>>
+			fetch: (request: Request) => Promise<Response>
+		}
+		anyInstance.initializeBinding = async () => undefined
+		anyInstance.resolveRealtimeHookResult = async () => []
+
+		// Equivalent to what stub.fetch(url, { headers: { Upgrade } }) delivers to
+		// the DO after packageRealtimeSessionRpc.connect's plain-object headers fix.
+		const response = await anyInstance.fetch(
+			new Request('https://package-realtime.invalid/session/connect', {
+				method: 'POST',
+				headers: {
+					Upgrade: 'websocket',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					binding: bindingState(binding),
+					facet: 'main',
+					request: {
+						url: 'https://kentcdodds.kody.run/packages/pr-desk/ws',
+						method: 'GET',
+						headers: {},
+					},
+				}),
+			}),
+		)
+		expect(response.status).toBe(101)
+		expect(response.webSocket).toBeTruthy()
+		response.webSocket?.accept()
+		response.webSocket?.close(1000, 'test-done')
+	})
+})
+
 test('package realtime session broadcast and disconnect paths tolerate partial delivery and socket close errors', async () => {
 	const binding = createBinding()
 	const stub = getStub(binding)
