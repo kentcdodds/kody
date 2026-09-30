@@ -1,0 +1,88 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Public Kody Open API edge (`api.kody.codes`). JSON only. Owns CORS,
+	// rate limits, header stripping, and the body cap, then forwards to the
+	// origin's `KodyApi` entrypoint over the KODY_API service binding, where
+	// the API token is authenticated and the operation runs next to D1.
+	// Deploys after origin (the binding targets an origin entrypoint).
+	"name": "kody-api",
+	"main": "./src/index.ts",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"minify": true,
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"env": {
+		"production": {
+			// Only the custom domain serves the API; Cloudflare creates the
+			// proxied DNS record for `api.kody.codes` on deploy.
+			"workers_dev": false,
+			"routes": [
+				{
+					"pattern": "api.kody.codes",
+					"custom_domain": true,
+				},
+			],
+			"services": [
+				{
+					"binding": "KODY_API",
+					"service": "kody-production",
+					"entrypoint": "KodyApi",
+				},
+			],
+			"ratelimits": [
+				{
+					"name": "API_IP_RATE_LIMITER",
+					"namespace_id": "1005",
+					"simple": {
+						"limit": 600,
+						"period": 60,
+					},
+				},
+				{
+					"name": "API_TOKEN_RATE_LIMITER",
+					"namespace_id": "1006",
+					"simple": {
+						"limit": 300,
+						"period": 60,
+					},
+				},
+			],
+		},
+		"preview": {
+			// `tools/ci/api-worker-config.ts` rewrites the service to the
+			// per-preview app worker (`kody-pr-<n>`).
+			"workers_dev": true,
+			"services": [
+				{
+					"binding": "KODY_API",
+					"service": "kody",
+					"entrypoint": "KodyApi",
+				},
+			],
+			"ratelimits": [
+				{
+					"name": "API_IP_RATE_LIMITER",
+					"namespace_id": "1007",
+					"simple": {
+						"limit": 600,
+						"period": 60,
+					},
+				},
+				{
+					"name": "API_TOKEN_RATE_LIMITER",
+					"namespace_id": "1008",
+					"simple": {
+						"limit": 300,
+						"period": 60,
+					},
+				},
+			],
+		},
+	},
+}

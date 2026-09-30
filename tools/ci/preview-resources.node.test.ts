@@ -259,6 +259,7 @@ test('assertPreviewResourceName accepts every derived preview name kind, includi
 			[`${workerName}-platform`, 'worker'],
 			[`${workerName}-jobs`, 'worker'],
 			[`${workerName}-highlight`, 'worker'],
+			[`${workerName}-api`, 'worker'],
 			[`${workerName}-mock-cloudflare`, 'worker'],
 			[derived.d1DatabaseName, 'd1'],
 			[derived.auditD1DatabaseName, 'd1'],
@@ -297,7 +298,7 @@ test('cleanup and each guarded delete refuse production names before any wrangle
 	}
 	await expect(
 		cleanupPreviewResources({ workerName: 'kody', dryRun: true }),
-	).rejects.toThrow('Refusing to delete worker "kody-runtime"')
+	).rejects.toThrow('Refusing to delete worker "kody-api"')
 	expect(consoleError).not.toHaveBeenCalled()
 
 	const queueClient = {
@@ -359,6 +360,7 @@ test('dry-run cleanup of a PR preview walks every resource without Cloudflare cr
 		expect.arrayContaining([
 			'[dry-run] remove Queue consumers: kody-pr-42-webhook-dispatch',
 			'[dry-run] remove Queue consumers: kody-pr-42-webhook-dispatch-dlq',
+			'[dry-run] delete Worker script: kody-pr-42-api',
 			'[dry-run] delete Worker script: kody-pr-42-runtime',
 			'[dry-run] delete Worker script: kody-pr-42-platform',
 			'[dry-run] delete Worker script: kody-pr-42',
@@ -481,6 +483,7 @@ test('permanent queue auth failure still attempts later independent resources an
 	expect(attemptedWorkers).toEqual(
 		expect.arrayContaining(
 			[
+				'-api',
 				'-runtime',
 				'-platform',
 				'',

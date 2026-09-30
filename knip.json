@@ -24,6 +24,9 @@
 		"packages/highlight-worker": {
 			"project": ["src/**/*.ts"]
 		},
+		"packages/api-worker": {
+			"project": ["src/**/*.ts"]
+		},
 		"packages/backup-control-plane": {
 			"project": ["*.ts"]
 		},

@@ -108,6 +108,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run highlight:build
 
+      - name: 🔌 API build
+        if: ${{ !cancelled() }}
+        run: npm run api:build
+
       - name: 📦 Worker startup bundles
         if: ${{ !cancelled() }}
         run: npm run worker-startup-bundles:check
