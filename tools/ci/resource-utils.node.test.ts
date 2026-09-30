@@ -7,11 +7,13 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
 	cloudflareApiRequest,
+	deleteArtifactsNamespace,
 	deleteCloudflareQueue,
 	emailSendingEventTypes,
 	emptyR2Bucket,
 	encodeR2ObjectKey,
 	ensureArtifactsAccountEventSubscription,
+	ensureArtifactsNamespace,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
@@ -24,6 +26,7 @@ import {
 	isWranglerNotFoundOutput,
 	parseJsonc,
 	removeCloudflareQueueConsumers,
+	setArtifactsNamespaceOnWranglerEnv,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 
@@ -558,6 +561,71 @@ test('ensureArtifactsAccountEventSubscription creates account-level lifecycle su
 			}),
 		}),
 	)
+})
+
+test('ensureArtifactsNamespace creates when missing and deleteArtifactsNamespace empties then deletes', async () => {
+	consoleError.mockImplementation(() => {})
+	const ensureFetcher = mockFetch(
+		Response.json(
+			{
+				success: false,
+				result: null,
+				errors: [{ code: 1000, message: 'namespace not found' }],
+			},
+			{ status: 404 },
+		),
+		ok({ namespace: 'kody-pr-42' }),
+	)
+	await expect(
+		ensureArtifactsNamespace({
+			...creds,
+			namespace: 'kody-pr-42',
+			fetcher: ensureFetcher,
+		}),
+	).resolves.toEqual({ namespace: 'kody-pr-42' })
+	expect(ensureFetcher).toHaveBeenNthCalledWith(
+		2,
+		`${accountApi}/artifacts/namespaces`,
+		expect.objectContaining({
+			method: 'POST',
+			body: JSON.stringify({ namespace: 'kody-pr-42' }),
+		}),
+	)
+
+	const deleteFetcher = mockFetch(
+		listed([{ name: 'package-a' }, { name: 'package-b' }]),
+		ok({ id: 'repo-a' }),
+		ok({ id: 'repo-b' }),
+		ok({ namespace: 'kody-pr-42' }),
+	)
+	await deleteArtifactsNamespace({
+		...creds,
+		namespace: 'kody-pr-42',
+		fetcher: deleteFetcher,
+	})
+	expect(
+		deleteFetcher.mock.calls.map(([url, init]) => [String(url), init?.method]),
+	).toEqual([
+		[`${accountApi}/artifacts/namespaces/kody-pr-42/repos?limit=200`, 'GET'],
+		[`${accountApi}/artifacts/namespaces/kody-pr-42/repos/package-a`, 'DELETE'],
+		[`${accountApi}/artifacts/namespaces/kody-pr-42/repos/package-b`, 'DELETE'],
+		[`${accountApi}/artifacts/namespaces/kody-pr-42`, 'DELETE'],
+	])
+})
+
+test('setArtifactsNamespaceOnWranglerEnv rewrites binding and var together', () => {
+	const envRecord: Record<string, unknown> = {
+		vars: { ARTIFACTS_NAMESPACE: 'preview', OTHER: 'keep' },
+		artifacts: [{ binding: 'ARTIFACTS', namespace: 'preview' }],
+	}
+	setArtifactsNamespaceOnWranglerEnv(envRecord, 'kody-pr-9')
+	expect(envRecord.vars).toEqual({
+		ARTIFACTS_NAMESPACE: 'kody-pr-9',
+		OTHER: 'keep',
+	})
+	expect(envRecord.artifacts).toEqual([
+		{ binding: 'ARTIFACTS', namespace: 'kody-pr-9' },
+	])
 })
 
 const queueStillReferencedResponse = () =>

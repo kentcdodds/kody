@@ -42,8 +42,11 @@ This project uses the following resources:
     subscriptions; leftover per-repo rows are still deleted during artifact
     cleanup. Uses `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`.
   - Production and preview Workers bind `ARTIFACTS` (wrangler `artifacts`,
-    namespaces `production` / `preview`). Create/get prefer that JSRPC binding
-    and fall back to REST when the binding is absent (local/tests).
+    namespaces `production` / per-PR `kody-pr-<n>`). Create/get prefer that
+    JSRPC binding and fall back to REST when the binding is absent
+    (local/tests). Preview ensure creates the per-PR Artifacts namespace and
+    rewrites generated origin/platform/runtime configs away from the shared
+    committed `preview` template value.
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork
