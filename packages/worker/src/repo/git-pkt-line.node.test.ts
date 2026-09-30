@@ -83,10 +83,10 @@ test('uploadPackWantsOnlySnapshot accepts the published oid and rejects others',
 		encodeGitFlushPkt() +
 		encodeGitPktLine('done\n')
 
-	expect(extractUploadPackWantOids(new TextEncoder().encode(allowed))).toEqual([
-		published,
-		published,
-	])
+	expect(extractUploadPackWantOids(new TextEncoder().encode(allowed))).toEqual({
+		ok: true,
+		wants: [published, published],
+	})
 	expect(
 		uploadPackWantsOnlySnapshot({
 			body: new TextEncoder().encode(allowed),
@@ -99,4 +99,51 @@ test('uploadPackWantsOnlySnapshot accepts the published oid and rejects others',
 			snapshotCommit: published,
 		}),
 	).toBe(false)
+})
+
+test('uploadPackWantsOnlySnapshot fails closed on empty wants, bad framing, and short oids', () => {
+	const published = '0123456789abcdef0123456789abcdef01234567'
+	const haveOnly =
+		encodeGitFlushPkt() +
+		encodeGitPktLine(`have ${published}\n`) +
+		encodeGitPktLine('done\n')
+	const shortWant =
+		encodeGitPktLine('want deadbeef\n') +
+		encodeGitFlushPkt() +
+		encodeGitPktLine('done\n')
+	// Length claims more bytes than remain — must not fail open.
+	const truncated = new TextEncoder().encode('00ffwant ')
+	// Multi-byte UTF-8 after a length that counted code units would desync a
+	// string walker; byte framing still rejects trailing garbage.
+	const trailingGarbage = new Uint8Array([
+		...new TextEncoder().encode(encodeGitPktLine(`want ${published}\n`)),
+		0xff,
+		0xfe,
+	])
+
+	expect(
+		uploadPackWantsOnlySnapshot({
+			body: new TextEncoder().encode(haveOnly),
+			snapshotCommit: published,
+		}),
+	).toBe(false)
+	expect(
+		uploadPackWantsOnlySnapshot({
+			body: new TextEncoder().encode(shortWant),
+			snapshotCommit: published,
+		}),
+	).toBe(false)
+	expect(
+		uploadPackWantsOnlySnapshot({
+			body: truncated,
+			snapshotCommit: published,
+		}),
+	).toBe(false)
+	expect(
+		uploadPackWantsOnlySnapshot({
+			body: trailingGarbage,
+			snapshotCommit: published,
+		}),
+	).toBe(false)
+	expect(extractUploadPackWantOids(truncated)).toEqual({ ok: false })
 })

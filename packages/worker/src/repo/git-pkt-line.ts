@@ -19,23 +19,34 @@ export function encodeGitFlushPkt(): string {
 	return flushPkt
 }
 
-export function splitGitPktLines(body: string): Array<string | null> {
+const pktLengthHexPattern = /^[0-9a-fA-F]{4}$/
+
+/**
+ * Split a Git pkt-line stream using byte offsets (length fields are bytes, not
+ * UTF-8 code units). Fails closed on truncated packets, invalid length hex, or
+ * trailing unparsed bytes so callers cannot miss framed content.
+ */
+export function splitGitPktLines(
+	body: Uint8Array,
+): { ok: true; packets: Array<string | null> } | { ok: false } {
 	const packets: Array<string | null> = []
 	let offset = 0
-	while (offset + 4 <= body.length) {
-		const lengthHex = body.slice(offset, offset + 4)
+	while (offset + 4 <= body.byteLength) {
+		const lengthHex = textDecoder.decode(body.subarray(offset, offset + 4))
 		if (lengthHex === flushPkt) {
 			packets.push(null)
 			offset += 4
 			continue
 		}
+		if (!pktLengthHexPattern.test(lengthHex)) return { ok: false }
 		const length = Number.parseInt(lengthHex, 16)
-		if (!Number.isFinite(length) || length < 4) break
-		const payload = body.slice(offset + 4, offset + length)
-		packets.push(payload)
+		if (!Number.isFinite(length) || length < 4) return { ok: false }
+		if (offset + length > body.byteLength) return { ok: false }
+		packets.push(textDecoder.decode(body.subarray(offset + 4, offset + length)))
 		offset += length
 	}
-	return packets
+	if (offset !== body.byteLength) return { ok: false }
+	return { ok: true, packets }
 }
 
 const requiredUploadPackCapabilities = [
@@ -115,10 +126,12 @@ export function rewriteUploadPackAdvertisement(input: {
 	}
 	const branch = input.defaultBranch.trim() || 'main'
 	const headRef = `refs/heads/${branch}`
-	const text = textDecoder.decode(input.upstreamBody)
-	const packets = splitGitPktLines(text)
+	const parsed = splitGitPktLines(input.upstreamBody)
+	if (!parsed.ok) {
+		return buildUploadPackAdvertisement(input)
+	}
 	let capabilities: string | null = null
-	for (const packet of packets) {
+	for (const packet of parsed.packets) {
 		if (packet === null) continue
 		if (packet.startsWith('# service=')) continue
 		const nullIndex = packet.indexOf('\0')
@@ -155,32 +168,40 @@ export function rewriteUploadPackAdvertisement(input: {
 /**
  * Extract `want <oid>` object ids from a protocol-v1 upload-pack request body.
  * Ignores have/shallow/deepen/done and capability suffixes on the first want.
+ * Fails closed when the pkt-line framing cannot be fully parsed, or when a
+ * `want` line is present but does not carry a 40-hex oid (so Artifacts cannot
+ * honor a framed want that this filter missed).
  */
-export function extractUploadPackWantOids(body: Uint8Array): Array<string> {
-	const text = textDecoder.decode(body)
+export function extractUploadPackWantOids(
+	body: Uint8Array,
+): { ok: true; wants: Array<string> } | { ok: false } {
+	const parsed = splitGitPktLines(body)
+	if (!parsed.ok) return { ok: false }
 	const wants: Array<string> = []
-	for (const packet of splitGitPktLines(text)) {
+	for (const packet of parsed.packets) {
 		if (packet === null) continue
 		const line = packet.replace(/\n$/, '')
 		if (!line.startsWith('want ')) continue
 		const oid = line.slice('want '.length).split(' ', 1)[0]?.toLowerCase()
-		if (oid && /^[0-9a-f]{40}$/.test(oid)) {
-			wants.push(oid)
-		}
+		if (!oid || !/^[0-9a-f]{40}$/.test(oid)) return { ok: false }
+		wants.push(oid)
 	}
-	return wants
+	return { ok: true, wants }
 }
 
 /**
- * True when every `want` targets the published snapshot (or there are no wants
- * yet — deepen/have-only negotiation packets).
+ * True only when the body fully parses and every `want` targets the published
+ * snapshot. Empty-want or unparseable bodies fail closed so a crafted packet
+ * cannot hide unpublished wants from this filter while Artifacts still honors
+ * them with the minted read token.
  */
 export function uploadPackWantsOnlySnapshot(input: {
 	body: Uint8Array
 	snapshotCommit: string
 }) {
 	const snapshot = input.snapshotCommit.trim().toLowerCase()
-	const wants = extractUploadPackWantOids(input.body)
-	if (wants.length === 0) return true
-	return wants.every((oid) => oid === snapshot)
+	const extracted = extractUploadPackWantOids(input.body)
+	if (!extracted.ok) return false
+	if (extracted.wants.length === 0) return false
+	return extracted.wants.every((oid) => oid === snapshot)
 }
