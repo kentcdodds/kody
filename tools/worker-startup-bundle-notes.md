@@ -308,3 +308,8 @@ runtime path if this budget is raised again.
   CI dry-run runtime 3_905_392 against the previous 3_903_500 budget, reviewed
   ceiling 3_905_500; platform local dry-run 5_232_529 against the previous
   5_230_500 budget, reviewed ceiling 5_233_000.
+- Wajo / Cue / OpenMuse / Dots agent marks (#2718): onboarding MCP client kinds,
+  DIY connect panels, and walkthrough host catalog entries pull additional agent
+  labels/help URLs into the origin/runtime shared onboarding graph CI already
+  evaluates. CI dry-run runtime 3_905_770 against the previous 3_905_500 budget,
+  reviewed ceiling 3_906_500.
