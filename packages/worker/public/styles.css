@@ -381,12 +381,15 @@ input[type='checkbox'] {
    header's 72rem content box, plus the vertical rhythm). `<main>`'s generic
    padding for non-redesigned routes would stack on top of it. Unlayered on
    purpose — it has to beat the css() class that sets that padding.
-   Account pages keep the site sticky footer: the shell stays content-sized
-   and `<main>` still grows in the 100vh app frame, so a short page leaves
-   empty space above the footer instead of lifting it mid-viewport, the same
-   as marketing and docs pages. */
+   `<main>` grows in the 100vh app frame so the footer sits at the viewport
+   bottom on a short page and after the content on a tall one. The flex
+   column lets the shell (flex-grow in AccountManagementShell) take that
+   growth, so the rail runs down to the footer instead of stopping above an
+   empty band. */
 main:has([data-account-shell]) {
 	padding: 0;
+	display: flex;
+	flex-direction: column;
 }
 
 /* Always reserve the classic scrollbar's track, so a short page and a long one

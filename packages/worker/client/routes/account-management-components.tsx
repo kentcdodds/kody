@@ -183,8 +183,16 @@ export function AccountManagementShell(
 			data-account-shell
 			aria-busy={handle.props.busy ? 'true' : undefined}
 			mix={css({
+				width: '100%',
 				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
+				// `<main>` is a flex column for this shell (public/styles.css).
+				// Growing into it keeps the footer at the viewport bottom on a
+				// short page without leaving an empty band outside the shell;
+				// a tall page stays content-sized and scrolls to the footer.
+				// Rows pack to the top so the growth never spreads sections.
+				flexGrow: 1,
+				alignContent: 'start',
 				// Prototype `.account` padding. The inline gutter is the one every
 				// other page container carries, so the content column lines up
 				// with the header's 72rem content box instead of running wider
@@ -202,11 +210,11 @@ export function AccountManagementShell(
 				// nav-less shell users (onboarding, pending verification) keep
 				// the plain column. The rail starts at the gutter so it lines
 				// up with the header's brand. Its box is the shell (top and
-				// bottom), and the link column scrolls inside that box, so the
-				// shell stays as tall as its content. `<main>` fills the rest
-				// of the viewport so the site footer still sits at the bottom
-				// (public/styles.css); a fixed min-height here would only push
-				// that footer below the fold on short pages. Note: `css()`
+				// bottom), so it runs down to the footer on a short page, and
+				// the link column scrolls inside that box when the list is
+				// taller. No fixed min-height: the flex growth above already
+				// fills the viewport, and more would push the footer below the
+				// fold on short pages. Note: `css()`
 				// classes each live in their own cascade sub-layer, so child
 				// spacing must stay on the shell's `gap`, never on per-child
 				// margins a child's own class would silently beat.
@@ -214,7 +222,6 @@ export function AccountManagementShell(
 					position: 'relative',
 					gap: accountSectionGap,
 					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
-					alignContent: 'start',
 					...(handle.props.maxWidth
 						? {
 								'& > *:not([data-account-nav])': {

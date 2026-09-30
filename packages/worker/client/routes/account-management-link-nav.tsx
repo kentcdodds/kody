@@ -121,8 +121,8 @@ export function AccountManagementLinkNav(
 					mix={css({
 						// Prototype `.account-nav`: a 200px rail beside the
 						// content. The nav fills the shell's left track (top
-						// and bottom), so it is exactly as tall as the content
-						// and cannot paint over the footer. `overflow: clip`
+						// and bottom), so it runs down to the footer and cannot
+						// paint over it. `overflow: clip`
 						// hides any link that would spill out without becoming
 						// a scroll container, which would trap the sticky
 						// column below. Named so a view transition lifts it out
@@ -150,8 +150,8 @@ export function AccountManagementLinkNav(
 						mix={css({
 							// Sticks under the site header on a long page. The
 							// cap is the shell (`100%`) and the viewport, so a
-							// short page scrolls the links inside the content
-							// box instead of stretching the shell.
+							// link list taller than either scrolls inside the
+							// rail instead of stretching the shell.
 							position: 'sticky',
 							top: '5rem',
 							display: 'flex',
