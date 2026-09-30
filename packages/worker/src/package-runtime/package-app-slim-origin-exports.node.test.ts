@@ -4,6 +4,7 @@ import { expect, test } from 'vitest'
 const productionExportAllowlist = [
 	'DynamicWorkerUsageTail',
 	'JobsHost',
+	'KodyApi',
 	'KodyFetchGateway',
 ] as const
 

@@ -335,3 +335,12 @@ runtime path if this budget is raised again.
   bytes per worker over main). Local dry-run runtime 3_912_325 against the
   previous 3_912_000 budget, reviewed ceiling 3_912_500; platform local dry-run
   5_238_445 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
+- Open API + MCP `api` tool + scoped API tokens: the platform `MCP` Durable
+  Object registers the flag-gated `api` tool, which reaches the Open API
+  operation catalog (`packages/worker/src/open-api/`, `api-tokens/`). The tool
+  loads that graph through a memoized dynamic `import()`, so esbuild wraps it
+  and nothing evaluates until the first `api` call; bytes grow, startup CPU does
+  not. Local dry-run platform 5_275_466 against the previous 5_238_500 budget,
+  reviewed ceiling 5_276_000. Runtime gains the `kody_at_` redactor on execute
+  output and the two flag registry entries: local dry-run 3_913_497 against the
+  previous 3_912_500 budget, reviewed ceiling 3_914_000.

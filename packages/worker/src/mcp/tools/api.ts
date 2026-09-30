@@ -1,5 +1,6 @@
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { redactApiTokens } from '@kody-internal/shared/api-token-format.ts'
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import {
 	defaultExecutionResponseLimitBytes,
@@ -11,9 +12,23 @@ import { callerContextFields, logMcpEvent } from '#mcp/observability.ts'
 import { mcpApiToolFlagKey } from '#universal/feature-flags/registry.ts'
 import { createApiInvocationContext } from '#worker/open-api/context.ts'
 import { ApiError, toApiError } from '#worker/open-api/errors.ts'
-import { invokeApiOperation } from '#worker/open-api/invoke.ts'
+import type * as OpenApiInvoke from '#worker/open-api/invoke.ts'
 import { buildKodyToolIcons } from './tool-icons.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
+
+let openApiInvokeMemo: Promise<typeof OpenApiInvoke> | null = null
+
+// The operation catalog builds zod schemas at module scope; load it on the
+// first api call instead of during platform startup (see startup-budget.md).
+function loadOpenApiInvoke() {
+	openApiInvokeMemo ??= import('#worker/open-api/invoke.ts').catch(
+		(error: unknown) => {
+			openApiInvokeMemo = null
+			throw error
+		},
+	)
+	return openApiInvokeMemo
+}
 
 export const apiToolDescription = [
 	'Call one Kody API operation directly: no sandbox, no execute quota. Same operations as the HTTP API at https://api.kody.codes/openapi.json.',
@@ -128,6 +143,7 @@ export async function registerApiTool(agent: McpRegistrationAgent) {
 				}
 				const flags = await resolveCallerFeatureFlags(env, callerContext)
 				if (flags[mcpApiToolFlagKey] !== true) throw apiToolUnavailableError()
+				const { invokeApiOperation } = await loadOpenApiInvoke()
 				const result = await invokeApiOperation({
 					operationId,
 					params: params ?? {},
@@ -172,7 +188,7 @@ export async function registerApiTool(agent: McpRegistrationAgent) {
 					durationMs: finishToolTiming(timingStart).durationMs,
 					failurePhase: 'handler',
 					errorName: apiError.code,
-					errorMessage: apiError.message,
+					errorMessage: redactApiTokens(apiError.message),
 					callerError: apiError.status < 500,
 					cause: error,
 				})

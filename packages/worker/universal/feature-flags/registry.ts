@@ -134,13 +134,13 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Third MCP tool `api` beside search/execute: call any Kody Open API operation by operationId + params without a sandbox, including minting scoped API tokens for local execute. When off the tool is not registered. The HTTP Open API on api.kody.codes is not gated by this flag.',
+			'Third MCP tool `api`: run one Open API operation (operationId + params) without a sandbox, including tokenCreate. Off: tool not registered. The HTTP API is not gated.',
 		successMetric: {
 			eventType: 'dynamic_worker_day',
 			measure: 'event_count',
 			goal: 'decrease',
 			hypothesis:
-				'Agents with the api tool do plain account CRUD without spinning up execute sandboxes, so they burn fewer unique worker-days.',
+				'Plain CRUD through api skips execute sandboxes, so fewer unique worker-days.',
 		},
 	},
 	{
@@ -148,7 +148,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Local execute venue: lets the account mint API tokens with the `local-execute` scope and use the CapabilityProxy on api.kody.codes so a local workerd execute can reach secrets, storage, fetch, and kody.* in the cloud. Off-flag accounts get a clear error from token mint and every proxy route. No success metric: this is a rollout kill switch, not an experiment.',
+			'Local execute: mint `local-execute` API tokens and call the CapabilityProxy (/v1/capability-proxy/*). Off: 403 feature_disabled. Rollout kill switch, not an experiment.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
