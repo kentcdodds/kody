@@ -309,11 +309,13 @@ export async function resolveKodyDependenciesForEntryPoint(input: {
 		),
 	)
 	const importedPackages = new Map<string, string>()
+	const importedSpecifiers = new Set<string>()
 	for (const imported of collectStaticKodyPackageImportsFromFiles(
 		reachableFiles,
 	)) {
 		if (imported.packageName === rootPackage?.manifest.name) continue
 		importedPackages.set(imported.packageName, imported.specifier)
+		importedSpecifiers.add(imported.specifier)
 	}
 	const sortedSpecifiers = [...importedPackages.values()].sort((left, right) =>
 		left.localeCompare(right),
@@ -381,7 +383,9 @@ export async function resolveKodyDependenciesForEntryPoint(input: {
 	)
 	const transitiveDependencies = input.loadedPackages
 		? collectTransitiveKodyDependencies({
-				directSpecifiers: sortedSpecifiers,
+				directSpecifiers: [...importedSpecifiers].sort((left, right) =>
+					left.localeCompare(right),
+				),
 				directPackageIds: new Set(
 					dependencies
 						.map((dependency) => dependency.packageId)
