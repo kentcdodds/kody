@@ -5,7 +5,10 @@
  * D1 batch as the balance update, so the ledger always explains the
  * balance. Top-ups and auto-refills are idempotent on `stripe_reference`
  * (unique); admin grants record who granted, the amount, the recipient,
- * when, and an optional note. Debits live in `credit-debits.ts`.
+ * when, and an optional note. Signup welcome credits live in
+ * `signup-welcome-credits.ts` (deterministic `signup_welcome:{userId}` id)
+ * so this module stays out of that code path. Debits live in
+ * `credit-debits.ts`.
  */
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
@@ -18,6 +21,8 @@ import {
 	defaultCreditAutoRefillSettings,
 	defaultCreditNotifySettings,
 	microUsdPerCent,
+	signupWelcomeCreditLedgerIdPrefix,
+	signupWelcomeCreditNote,
 	type CreditAutoRefillSettings,
 	type CreditDebitMeter,
 	type CreditLedgerEntryKind,
@@ -533,7 +538,9 @@ function describeLedgerEntry(entry: CreditLedgerEntry): string {
 		case 'auto_refill':
 			return 'Auto-refill'
 		case 'admin_grant':
-			return 'Credits granted'
+			return entry.id.startsWith(signupWelcomeCreditLedgerIdPrefix)
+				? signupWelcomeCreditNote
+				: 'Credits granted'
 		case 'debit': {
 			const label =
 				entry.meter && entry.meter in computeOverageWarningResourceLabels

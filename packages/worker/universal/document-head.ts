@@ -13,7 +13,7 @@ import {
 } from '#universal/home-og-variants.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
 
-const DEFAULT_DOCUMENT_TITLE = 'kody'
+export const DEFAULT_DOCUMENT_TITLE = 'Kody'
 export const NOT_FOUND_DOCUMENT_TITLE = 'Not found'
 export const INTERNAL_ERROR_DOCUMENT_TITLE = 'Something went wrong'
 

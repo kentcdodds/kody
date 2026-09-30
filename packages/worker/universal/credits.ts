@@ -76,6 +76,20 @@ const creditAdminGrantMinCents = 1
 export const creditAdminGrantMaxCents = 100_000
 export const creditAdminGrantNoteMaxLength = 500
 
+/**
+ * House-funded welcome credits granted once per new person account at
+ * signup (password, OAuth, or admin-created). Ledger id is deterministic
+ * so retries never double-grant. Not a Stripe top-up; held until the
+ * account is credit-eligible Pro (include → credits → stop).
+ */
+export const signupWelcomeCreditCents = 500
+export const signupWelcomeCreditNote = 'Welcome credits'
+export const signupWelcomeCreditLedgerIdPrefix = 'signup_welcome:'
+
+export function signupWelcomeCreditLedgerId(stableUserId: string): string {
+	return `${signupWelcomeCreditLedgerIdPrefix}${stableUserId}`
+}
+
 function isWholeCents(value: unknown): value is number {
 	return typeof value === 'number' && Number.isSafeInteger(value)
 }

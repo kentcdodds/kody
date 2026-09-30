@@ -21,6 +21,7 @@ D1 saved_packages.is_private = 0 + community_listings row
         ▼
 Public /community + /@username/:name + /tree/:ref + /settings
         │
+        │   also: /@username/:name.git  (read-only smart HTTP → Artifacts)
         ▼
 Visitor forks ──► communityFork ──► entity_sources (no saved_packages row)
         │                              copy of HEAD, inert until publish
@@ -66,6 +67,25 @@ Activity actor columns store the MCP **stable user id**
 (`packageUpdate` / `repoUpdate`), not a `package.json#private` projection.
 Active community listings backfill to public; leftover `"private": false`
 teasers stay private.
+
+### Public `.git` smart HTTP
+
+`/@owner/kody-id.git` is a **read-only** Git smart HTTP proxy for active public
+listings (`packages/worker/src/repo/public-package-git-http.ts`). The origin
+Worker handles it before the anonymous HTML edge cache and Remix. Flow:
+
+1. Resolve the listing via `resolveCommunityPackageUrl` (404 when missing /
+   private / delisted — same non-leak posture as package pages).
+2. Load `entity_sources` + mint an Artifacts **read** token server-side.
+3. Advertise only the immutable published snapshot commit (`published_commit`,
+   else listing `pinned_commit`) on `HEAD` / `refs/heads/<defaultBranch>`.
+4. Proxy `git-upload-pack` to Artifacts with `Authorization: Bearer …`. Strip
+   `Location` / `WWW-Authenticate` / `Set-Cookie` so the Artifacts host and
+   credentials never reach the client.
+5. Reject `git-receive-pack` and `?service=git-receive-pack` with 403.
+
+Owner authoring remotes remain `packageGetGitRemote` (signed-in). See
+[Public packages (usage)](../use/community-packages.md#clone-a-public-package-read-only-git).
 
 Profile activity reads stored `community_activity_events` plus public forks from
 `community_forks`. Forks appear only while the forker's saved package copy has
@@ -227,8 +247,8 @@ matches the listing pin used in prepare, only rewritten files (`package.json`
 and self-reference text) are applied. When dest HEAD is ahead of that pin,
 persist re-derives the `package.json` rewrite from dest HEAD instead of applying
 pin-relative edits that would revert later origin commits. When the origin
-Artifacts repo is missing, persist falls back to the older full-tree snapshot
-sync. Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
+Artifacts repo is missing, persist falls back to the full-tree snapshot sync.
+Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
 `CommunityForkResourceLimitError` (honest UI/MCP copy; fork count does not
 increment). Records `community_forks` — **without** inserting `saved_packages`.
 Failed persist cleanup deletes the dest Artifacts repo, the inert entity source,
@@ -239,9 +259,9 @@ block a retry.
 `communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
 D1 or Analytics Engine. The storage-layer path records `artifacts-fork`. The
-legacy full-tree fallback may still include nested `bootstrap-*` phases from the
-RepoSession Durable Object; `bootstrap-source` is the RPC wall clock, including
-isolate startup. Subtract the nested bootstrap phases from `bootstrap-source` to
+full-tree fallback may include nested `bootstrap-*` phases from the RepoSession
+Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
+startup. Subtract the nested bootstrap phases from `bootstrap-source` to
 estimate cold start. `Date.now()` in Workers only advances across I/O, so
 CPU-only steps may report `0`.
 
@@ -385,6 +405,18 @@ enqueue this topic. Enqueue failures are logged and never fail
 `communityPublish`. See
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins)
 for the handler payload.
+
+A republish whose pinned commit differs from the stored listing enqueues a
+`{ kind: 'fork_upstream_updated', eventId, listingId, previous, current, publishedAt }`
+message on the same queue. `previous` and `current` are
+`{ pinnedCommit, packageVersion }`. Change detection lives in
+`publishCommunityListing` (`hasCommunityListingReleaseChanged`); the consumer is
+`dispatchCommunityForkUpstreamUpdatedSubscriptionEvents`. It lists every
+`community_forks` row for the listing, skips forks already at the new pin,
+evaluates `fork-upstream-update-events` per forker, and invokes
+`community.fork.upstream_updated` on that forker's own subscribed packages, one
+event per fork. Forking is required: there is no listing watch. Payload:
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## Inert fork mechanism
 

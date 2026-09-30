@@ -75,7 +75,13 @@ function verificationValue(webhook: PackageWebhookListItem) {
 				{verification.type} · <code>{verification.header}</code>
 			</span>
 			<span mix={css({ color: colors.textMuted })}>
-				secret <code>{verification.secretName}</code>
+				{verification.secretName ? (
+					<>
+						secret <code>{verification.secretName}</code>
+					</>
+				) : (
+					'package-owned HMAC'
+				)}
 				{verification.prefix ? ` · prefix ${verification.prefix}` : ''}
 				{verification.signedPayload === 'timestamp.body'
 					? ' · signs timestamp.body'

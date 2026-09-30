@@ -17,8 +17,9 @@ description:
   `/health` on 3742–3751, prints `App running at http://localhost:<port>` and
   exits 0 when a server is already up, waits for a stale kody/workerd leftover
   that is listening but not serving before replacing it, then starts
-  `npm run dev` and waits until `/health` is actually ok. Do not inventory
-  Cursor terminal files or curl 3742 as a substitute.
+  `npm run dev` and waits until `/health` is actually ok. A started server tees
+  to `.tmp/dev-server.log` and prints that path. Do not inventory Cursor
+  terminal files or curl 3742 as a substitute.
 - Run interactive `npm run dev` in tmux when you need the CLI shortcuts; it
   starts the mock Cloudflare API worker, then Vite (`@pitlane/dev` +
   `@cloudflare/vite-plugin`) so origin SSR and the client hydrate in one workerd
@@ -61,8 +62,11 @@ transfers become `new_sqlite_classes`, create-then-delete pairs such as
 `PackageServiceInstance` are elided), and inject `APP_BASE_URL`,
 `COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV` from the dev
 process env. Runtime still rewrites any remaining `script_name: "kody"` refs to
-the primary's dev name (`kody-<env>`). If runtime-owned paths 503 with
-`Worker "kody-runtime" not found` or a secondary worker 500s on missing vars,
+the primary's dev name (`kody-<env>`). Jobs and highlight get the same name pin
+via `tools/local-auxiliary-dev-config.ts` (`kody-jobs` / `kody-highlight`, not
+`kody-jobs-production`) so origin `JOBS` / `HIGHLIGHT` bindings resolve. If
+runtime-owned paths 503 with `Worker "kody-runtime" not found`, admin usage 500s
+with `Worker "kody-jobs" not found`, or a secondary worker 500s on missing vars,
 inspect those generated files first.
 
 If `npm run dev` or `npm run runtime:build` / startup-bundle dry-run fails with

@@ -163,6 +163,9 @@ test('anonymous package pages are cacheable, but only successful documents', () 
 			'/@kentcdodds/sentry/settings',
 			'/profiles/kentcdodds/packages/sentry.json',
 			'/account/packages/abc/files',
+			'/@kentcdodds/sentry.git',
+			'/@kentcdodds/sentry.git/info/refs',
+			'/@kentcdodds/sentry.git/git-upload-pack',
 		].filter(isCacheableAnonymousPath),
 	).toEqual([])
 

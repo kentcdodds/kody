@@ -504,6 +504,34 @@ test('packageSave keeps new packages private unless an explicit private:false is
 		}),
 	).rejects.toThrow('confirm_private_visibility_change')
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+
+	// First save injects `"private": true`. Re-sending the same author files
+	// (no `private` field) must not trip the visibility guard.
+	const resave = await setup({
+		...visibilityUser,
+		savedPackages: (userId) => [
+			savedPackageRow(userId, 'package-existing', 'new-package', {
+				name: '@visibility/new-package',
+				hidden: 0,
+				is_private: 1,
+			}),
+		],
+	})
+	mockModule.loadPriorPackageManifestContent.mockResolvedValue(
+		JSON.stringify({
+			name: '@visibility/new-package',
+			private: true,
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'new-package', description: 'Package new-package' },
+		}),
+	)
+	await resave.save({
+		package_id: 'package-existing',
+		confirm_destructive_overwrite: true,
+		files: buildPackageFiles('new-package', { username: 'visibility' }),
+	})
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+	expect(readSyncedPackageJson()['private']).toBeUndefined()
 })
 
 test('packageSave lock approval keeps the stored kody id during a rename', async () => {

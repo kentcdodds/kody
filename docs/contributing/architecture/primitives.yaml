@@ -524,8 +524,14 @@ primitives:
     summary: Canonical published git source for packages and jobs.
     code:
       - packages/worker/src/repo/artifacts.ts
+      - packages/worker/src/repo/public-package-git-http.ts
+      - packages/worker/src/repo/public-package-git-http.node.test.ts
+      - packages/worker/src/repo/git-pkt-line.ts
+      - packages/worker/src/repo/git-pkt-line.node.test.ts
     docs:
       - docs/contributing/architecture/data-storage.md
+      - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
 
   - id: bundle-artifacts-kv
     group: storage
@@ -646,12 +652,14 @@ primitives:
     group: storage
     name: Community listing published dispatch queue
     summary:
-      Durable opaque event delivery from first community listing publish to
-      admin packages.
+      Durable event delivery from first community listing publish to admin
+      packages, and from pin-moving republishes to forkers' packages.
     code:
       - packages/worker/src/community/listing-published-dispatch-queue
       - packages/worker/src/community/listing-published-package-subscriptions
       - packages/worker/src/community/listing-published-subscription-event
+      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
+      - packages/worker/src/community/fork-upstream-updated-subscription-event
     docs:
       - docs/contributing/setup-manifest.md
       - docs/contributing/architecture/authorization.md

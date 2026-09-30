@@ -15,6 +15,11 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 import {
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
+import { forgiveCreditUsageBeforeUnlock } from '#worker/billing/credit-wallet.ts'
+import {
 	createBillingLinkReference,
 	isBillingConfigured,
 	resolveSubscriptionPlan,
@@ -66,19 +71,18 @@ export async function refreshStripePlanForUser(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT email, stable_user_id, plan, stripe_plan, stripe_price_id,
-		        entitlement_ladder
+		`SELECT email, stable_user_id, stripe_price_id,
+		        ${userEntitlementColumnsSql()}
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
-		.first<{
-			email: string
-			stable_user_id: string
-			plan: string
-			stripe_plan: string | null
-			stripe_price_id: string | null
-			entitlement_ladder: string | null
-		}>()
+		.first<
+			UserEntitlementRow & {
+				email: string
+				stable_user_id: string
+				stripe_price_id: string | null
+			}
+		>()
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
 	const resolved = resolveSubscriptionPlan(subscriptions, input.env)
 	const nextLadder = previous
@@ -91,6 +95,20 @@ export async function refreshStripePlanForUser(input: {
 				nextStripePriceId: resolved.stripePriceId,
 			})
 		: 'public'
+	if (previous) {
+		await forgiveCreditUsageBeforeUnlock({
+			db: input.env.APP_DB,
+			userId: previous.stable_user_id,
+			current: previous,
+			next: {
+				...previous,
+				stripe_plan: resolved.stripePlan,
+				stripe_credits_eligible: resolved.creditsEligible ? 1 : 0,
+				entitlement_ladder: nextLadder,
+			},
+			now,
+		})
+	}
 	await input.env.APP_DB.prepare(
 		`UPDATE users
 		 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,

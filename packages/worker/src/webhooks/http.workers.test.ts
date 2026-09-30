@@ -151,6 +151,7 @@ async function ensureSchema(db: D1Database) {
 				webhook_name TEXT NOT NULL,
 				url_secret_hash TEXT NOT NULL,
 				url_secret_encrypted TEXT,
+				hmac_secret_encrypted TEXT,
 				previous_url_secret_hash TEXT,
 				previous_url_secret_expires_at TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,

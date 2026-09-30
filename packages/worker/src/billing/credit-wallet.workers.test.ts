@@ -17,6 +17,11 @@ import {
 } from '#worker/entitlements/service.ts'
 import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { resolvePlanLimit } from '#universal/plans.ts'
+import {
+	microUsdPerCent,
+	signupWelcomeCreditCents,
+	signupWelcomeCreditLedgerId,
+} from '#universal/credits.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
@@ -27,6 +32,7 @@ import {
 	readCreditWallet,
 	updateCreditWalletSettings,
 } from './credit-wallet.ts'
+import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 const now = new Date('2026-09-27T12:00:00.000Z')
@@ -530,6 +536,63 @@ test('a replayed top-up credits once', async () => {
 		(await readCreditWallet(env.APP_DB, user.stableUserId))
 			.autoRefillPaymentMethodId,
 	).toBe('pm_saved')
+})
+
+test('new accounts get $5 signup welcome credits once, with an honest ledger row', async () => {
+	const user = await seedUser({ label: 'signup-welcome' })
+	const first = await grantSignupWelcomeCredits({
+		db: env.APP_DB,
+		userId: user.stableUserId,
+		now,
+	})
+	expect(first).toEqual({
+		applied: true,
+		entryId: signupWelcomeCreditLedgerId(user.stableUserId),
+		balanceMicroUsd: signupWelcomeCreditCents * microUsdPerCent,
+		createdAt: now.toISOString(),
+	})
+
+	const wallet = await readCreditWallet(env.APP_DB, user.stableUserId)
+	expect(wallet.balanceMicroUsd).toBe(5_000_000)
+
+	const row = await env.APP_DB.prepare(
+		`SELECT id, kind, amount_micro_usd, granted_by_user_id
+		 FROM credit_ledger_entries WHERE user_id = ?`,
+	)
+		.bind(user.stableUserId)
+		.first<{
+			id: string
+			kind: string
+			amount_micro_usd: number
+			granted_by_user_id: string | null
+		}>()
+	expect(row).toEqual({
+		id: signupWelcomeCreditLedgerId(user.stableUserId),
+		kind: 'admin_grant',
+		amount_micro_usd: 5_000_000,
+		granted_by_user_id: null,
+	})
+
+	const replay = await grantSignupWelcomeCredits({
+		db: env.APP_DB,
+		userId: user.stableUserId,
+		now,
+	})
+	expect(replay).toEqual({
+		applied: false,
+		entryId: signupWelcomeCreditLedgerId(user.stableUserId),
+		balanceMicroUsd: 5_000_000,
+		createdAt: now.toISOString(),
+	})
+	expect(
+		(
+			await env.APP_DB.prepare(
+				`SELECT COUNT(*) AS count FROM credit_ledger_entries WHERE user_id = ?`,
+			)
+				.bind(user.stableUserId)
+				.first<{ count: number }>()
+		)?.count,
+	).toBe(1)
 })
 
 test('admins can grant credits to any account, including themselves, with an audited ledger row', async () => {

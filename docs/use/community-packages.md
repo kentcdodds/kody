@@ -8,7 +8,7 @@ Public **packages** appear in that catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on
-promote; they do not yet appear on `/community`. Package **runtime** uses
+promote; they do not appear on `/community`. Package **runtime** uses
 `published_commit`; pushing to a public default branch is world-readable at HEAD
 even before the next package publish.
 
@@ -18,8 +18,26 @@ checks pass. If checks fail, the fork stays inert until you adapt and publish.
 
 Public pages work without a Kody account: `/community` (searchable index),
 `/@username` (public catalog), and `/@username/:name` (detail). Forking, rating,
-and reporting require a signed-in MCP user. Anonymous git remotes are not
-offered.
+and reporting require a signed-in MCP user.
+
+### Clone a public package (read-only Git)
+
+Append `.git` to a public listing URL for a **read-only** Git smart HTTP remote:
+
+```bash
+git clone https://kody.codes/@kody/cloudflare.git
+```
+
+That route proxies to the package's Artifacts repo with a short-lived
+server-side read token. Clients never see Artifacts host URLs or credentials.
+The advertised refs pin the **published snapshot** (`published_commit`, else the
+listing `pinned_commit`) — not a mutable worktree tip that may be ahead of
+publish. Push (`git-receive-pack`) is rejected with HTTP 403. Private or
+unlisted packages 404 the same way the website does (no existence leak).
+
+Owner write remotes stay on `packageGetGitRemote` (signed-in, short-lived
+Artifacts credentials). The public `.git` URL is for anonymous clone, preview,
+and tools such as Celld import — not for authoring.
 
 Community discovery uses the MCP **`community`** domain. Catalog listings do
 **not** appear in the general MCP **`search`** tool.
@@ -144,6 +162,12 @@ link-break icon for that same outdated action and a **Fork ahead** badge. For an
 outdated fork, compare origin HEAD with your package, port useful changes, keep
 your customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
+
+When the listing owner republishes with a new pinned commit, packages in your
+account can react through the `community.fork.upstream_updated` subscription
+topic (experiments opt-in only). Use it to auto-rebase, or to ping you on
+Discord. See
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## One-click install
 

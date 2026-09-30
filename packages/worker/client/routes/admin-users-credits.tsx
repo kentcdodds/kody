@@ -10,6 +10,7 @@ import {
 	creditAdminGrantNoteMaxLength,
 	formatCents,
 	formatMicroUsd,
+	signupWelcomeCreditLedgerIdPrefix,
 	validateCreditAdminGrantCents,
 } from '#universal/credits.ts'
 import {
@@ -319,7 +320,11 @@ export function AdminUserCreditsPanel(
 										</span>
 										{item.kind === 'admin_grant' ? (
 											<span mix={css({ color: colors.textMuted })}>
-												by {item.grantedByUsername ?? 'unknown admin'}
+												by{' '}
+												{item.grantedByUsername ??
+													(item.id.startsWith(signupWelcomeCreditLedgerIdPrefix)
+														? 'signup'
+														: 'unknown admin')}
 												{item.note ? ` — ${item.note}` : ''}
 											</span>
 										) : (

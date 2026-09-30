@@ -24,6 +24,10 @@ export type McpClientKind =
 	| 'gemini'
 	| 'openclaw'
 	| 'muse'
+	| 'wajo'
+	| 'cue'
+	| 'openmuse'
+	| 'dots'
 	| 'other'
 
 export type OnboardingAgentSurface = 'desktop' | 'mobile'
@@ -53,6 +57,10 @@ export const mcpClientTabs = [
 	{ id: 'gemini', label: 'Gemini', isNonCodingAgent: true },
 	{ id: 'openclaw', label: 'OpenClaw', isNonCodingAgent: false },
 	{ id: 'muse', label: 'Muse', isNonCodingAgent: false },
+	{ id: 'wajo', label: 'Wajo', isNonCodingAgent: false },
+	{ id: 'cue', label: 'Cue', isNonCodingAgent: false },
+	{ id: 'openmuse', label: 'OpenMuse', isNonCodingAgent: false },
+	{ id: 'dots', label: 'Dots', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
@@ -64,9 +72,11 @@ export const mcpClientTabs = [
  * ChatGPT.com, Claude Desktop, and Grok Bot fill the leftover seats so
  * the auto-fill desktop grid lands on complete rows with Not listed
  * (12 cards). Gemini stays under More on desktop (still featured on
- * mobile). Grok.com, Grok CLI, and the Copilot app stay under Not listed
- * (Copilot desktop/CLI is already featured; Aider is not a Kody connect
- * path yet).
+ * mobile). Wajo, Cue, OpenMuse, and Dots are lower-priority MCP peers: they
+ * stay off the featured 12 and appear under Not listed (and Account →
+ * Connections). Grok.com, Grok CLI, and the Copilot app stay under Not
+ * listed (Copilot desktop/CLI is already featured; Aider is not a Kody
+ * connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -80,6 +90,18 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'chatgpt',
 	'claude-desktop',
 	'grok-bot',
+] as const satisfies ReadonlyArray<McpClientKind>
+
+/**
+ * Lower-priority action agents / MCP peers. Shown under Not listed on
+ * Get started (and on Account → Connections via the full catalog), not in
+ * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
+ */
+const onboardingSecondaryAgentIds = [
+	'wajo',
+	'cue',
+	'openmuse',
+	'dots',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
@@ -247,7 +269,10 @@ export function onboardingNotListedAgentIds(
 	const mobileOnly = chooser.mobileFeatured
 		.filter((id) => !desktopSet.has(id))
 		.map((id) => ({ id, viewport: 'desktop-only' as const }))
-	return [...desktopOnly, ...mobileOnly]
+	const secondary = onboardingSecondaryAgentIds
+		.filter((id) => !desktopSet.has(id) && !mobileSet.has(id))
+		.map((id) => ({ id, viewport: 'both' as const }))
+	return [...desktopOnly, ...mobileOnly, ...secondary]
 }
 
 export function onboardingViewportCss(
@@ -324,6 +349,14 @@ export function onboardingAgentIconName(
 			return 'openclaw'
 		case 'muse':
 			return 'muse'
+		case 'wajo':
+			return 'wajo'
+		case 'cue':
+			return 'cue'
+		case 'openmuse':
+			return 'openmuse'
+		case 'dots':
+			return 'dots'
 		case 'other':
 			return null
 		default: {
@@ -399,6 +432,21 @@ const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
  */
 export const museMcpGuideUrl = 'https://dev.meta.ai/docs/muse-code/extending/'
 
+/** Wajo (Fo action agent) product site — MCP connect is via Wajo sign-in. */
+export const wajoSiteUrl = 'https://wajo.ai'
+
+/** Cue (personal AI agents by Manus) product site. */
+export const cueSiteUrl = 'https://cue.im'
+
+/**
+ * OpenMuse and Kody guide (same-origin docs path — not openmuse.ai).
+ * Distinct from Muse Code (`muse`).
+ */
+export const openMuseGuideUrl = '/docs/openmuse'
+
+/** OpenAI Dots product intro (personal agent / MCP peer). */
+export const dotsIntroUrl = 'https://openai.com/index/introducing-dots/'
+
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 
@@ -449,6 +497,14 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 			return openClawMcpGuideUrl
 		case 'muse':
 			return museMcpGuideUrl
+		case 'wajo':
+			return wajoSiteUrl
+		case 'cue':
+			return cueSiteUrl
+		case 'openmuse':
+			return openMuseGuideUrl
+		case 'dots':
+			return dotsIntroUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive

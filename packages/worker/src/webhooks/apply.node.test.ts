@@ -1,5 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi, type Mock } from 'vitest'
+import {
+	decryptWebhookHmacSecret,
+	userWebhookHmacSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -8,6 +12,7 @@ import {
 	mintWebhookUrlForUser,
 	revealWebhookUrlForWebsite,
 } from './service.ts'
+import { parseWebhookUrlHandle } from './handle.ts'
 
 const integrationMocks = vi.hoisted(() => ({
 	getJoinedIntegration: vi.fn(),
@@ -18,6 +23,7 @@ const integrationMocks = vi.hoisted(() => ({
 
 const secretMocks = vi.hoisted(() => ({
 	resolveSecretForHost: vi.fn(),
+	resolveSecret: vi.fn(),
 }))
 
 vi.mock('#worker/integrations/service.ts', () => ({
@@ -66,6 +72,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecretForHost: (...args: Array<unknown>) =>
 		secretMocks.resolveSecretForHost(...args),
+	resolveSecret: (...args: Array<unknown>) =>
+		secretMocks.resolveSecret(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -94,6 +102,12 @@ function mockIntegration(name = 'github', host = 'api.github.com') {
 
 function mockSecret(value: string, host = 'api.github.com') {
 	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value,
+		allowedHosts: [host],
+		scope: 'user',
+	})
+	secretMocks.resolveSecret.mockResolvedValue({
 		found: true,
 		value,
 		allowedHosts: [host],
@@ -163,7 +177,22 @@ function redaction(
 
 const redactedFailure = { ok: false, leaked: [], redacted: true }
 
-async function setupOwner(input: { verification?: boolean } = {}) {
+async function setupOwner(
+	input: {
+		verification?: boolean | 'package-owned' | 'secret-name'
+		legacySecretValue?: string
+	} = {},
+) {
+	const verificationMode =
+		input.verification === true
+			? 'secret-name'
+			: input.verification === false || input.verification === undefined
+				? null
+				: input.verification
+	const legacyMintHmac =
+		verificationMode === 'secret-name'
+			? (input.legacySecretValue ?? 'legacy_minted_hmac_value')
+			: null
 	vi.mocked(loadPackageManifestBySourceId).mockResolvedValue({
 		manifest: {
 			name: '@owner/sentry-bridge',
@@ -178,13 +207,15 @@ async function setupOwner(input: { verification?: boolean } = {}) {
 						name: 'sentry',
 						export: './handle-sentry-webhook',
 						responseMode: 'ack',
-						...(input.verification
+						...(verificationMode
 							? {
 									verification: {
 										type: 'hmac-sha256',
 										header: 'x-hub-signature-256',
-										secretName: 'githubWebhookSecret',
 										encoding: 'hex',
+										...(verificationMode === 'secret-name'
+											? { secretName: 'githubWebhookSecret' }
+											: {}),
 									},
 								}
 							: {}),
@@ -203,6 +234,7 @@ async function setupOwner(input: { verification?: boolean } = {}) {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
 			url_secret_encrypted TEXT,
+			hmac_secret_encrypted TEXT,
 			previous_url_secret_hash TEXT,
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
@@ -232,6 +264,14 @@ async function setupOwner(input: { verification?: boolean } = {}) {
 		)
 		.bind(userId)
 		.run()
+	if (legacyMintHmac) {
+		secretMocks.resolveSecret.mockResolvedValue({
+			found: true,
+			value: legacyMintHmac,
+			allowedHosts: [],
+			scope: 'user',
+		})
+	}
 	const { handle } = await mintWebhookUrlForUser({
 		env,
 		userId,
@@ -240,9 +280,13 @@ async function setupOwner(input: { verification?: boolean } = {}) {
 		webhookName: 'sentry',
 	})
 	secretMocks.resolveSecretForHost.mockReset()
+	secretMocks.resolveSecret.mockReset()
 	return {
 		userId,
 		db,
+		env,
+		handle,
+		legacyMintHmac,
 		reveal: async () =>
 			(
 				await revealWebhookUrlForWebsite({
@@ -412,7 +456,7 @@ test('webhookUrlApply rejects invalid destinations before fetch', async () => {
 		],
 		[
 			githubHooksHttpDestination({ includeWebhookSecret: true }),
-			/verification\.secretName/,
+			/no verification declaration/,
 		],
 	]
 	for (const [destination, message] of cases) {
@@ -531,50 +575,104 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalled()
 })
 
-test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from verification.secretName', async () => {
-	const { reveal, apply } = await setupOwner({ verification: true })
+test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned HMAC', async () => {
+	const { db, env, handle, userId, reveal, apply } = await setupOwner({
+		verification: 'package-owned',
+	})
 	const url = await reveal()
 	mockIntegration()
-	const secrets: Array<[string, string]> = [
-		['hook_signing_secret_value', '99'],
-		['hook"with\\quotes\nand\tnewline', '100'],
-	]
-	for (const [hookSecret, remoteId] of secrets) {
-		mockSecret(hookSecret)
-		using fetchMock = fetchResponding(
-			JSON.stringify({ id: Number(remoteId) }),
-			{
-				status: 201,
-			},
-		)
-
-		const applied = await apply(
-			githubHooksHttpDestination({ includeWebhookSecret: true }),
-		)
-
-		expect({ ok: applied.ok, remoteId: applied.remoteId }).toEqual({
-			ok: true,
-			remoteId,
-		})
-		expect(JSON.stringify(applied)).not.toContain(hookSecret)
-		const raw = String(requestOf(fetchMock).init.body)
-		expect(raw).toContain(JSON.stringify(hookSecret).slice(1, -1))
-		expect(JSON.parse(raw).config).toMatchObject({ url, secret: hookSecret })
-	}
-	expect(secretMocks.resolveSecretForHost).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'githubWebhookSecret',
-			host: 'api.github.com',
-		}),
+	const endpointId = parseWebhookUrlHandle(handle)
+	expect(endpointId).toBeTruthy()
+	const row = await db
+		.prepare(`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`)
+		.bind(endpointId)
+		.first<{ hmac_secret_encrypted: string }>()
+	expect(row?.hmac_secret_encrypted).toBeTruthy()
+	const plaintext = await decryptWebhookHmacSecret(
+		env,
+		row!.hmac_secret_encrypted,
+		userWebhookHmacSecretContext(userId, endpointId!),
 	)
+	using fetchMock = fetchResponding(JSON.stringify({ id: 99 }), {
+		status: 201,
+	})
+
+	const applied = await apply(
+		githubHooksHttpDestination({ includeWebhookSecret: true }),
+	)
+
+	expect(applied).toMatchObject({ ok: true, remoteId: '99' })
+	const injected = JSON.parse(String(requestOf(fetchMock).init.body)).config
+		.secret as string
+	expect(injected).toBe(plaintext)
+	expect(injected).not.toEqual(url)
+	expect(JSON.stringify(applied)).not.toContain(injected)
+	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a live secrets lookup', async () => {
+	const { db, handle, legacyMintHmac, reveal, apply } = await setupOwner({
+		verification: 'secret-name',
+	})
+	const url = await reveal()
+	mockIntegration()
+	const endpointId = parseWebhookUrlHandle(handle)
+	expect(endpointId).toBeTruthy()
+	expect(
+		(
+			await db
+				.prepare(
+					`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`,
+				)
+				.bind(endpointId)
+				.first<{ hmac_secret_encrypted: string | null }>()
+		)?.hmac_secret_encrypted,
+	).toBeTruthy()
+
+	using fetchMock = fetchResponding(JSON.stringify({ id: 42 }), {
+		status: 201,
+	})
+	const applied = await apply(
+		githubHooksHttpDestination({ includeWebhookSecret: true }),
+	)
+
+	expect(applied).toMatchObject({ ok: true, remoteId: '42' })
+	expect(JSON.parse(String(requestOf(fetchMock).init.body)).config).toEqual(
+		expect.objectContaining({ url, secret: legacyMintHmac }),
+	)
+	// Apply must not re-resolve verification.secretName (prevents post-Allow
+	// secret swaps into an already-approved destination).
+	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply still requires host Allow for destination.secretName Bearer auth', async () => {
+	const { apply } = await setupOwner()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: 'tok_unapproved',
+		allowedHosts: [],
+		scope: 'user',
+	})
+
+	await expect(
+		apply({
+			type: 'http',
+			url: hooksRegister,
+			body: '{"url":"{{webhookUrl}}"}',
+			secretName: 'hooksRegistrationToken',
+		}),
+	).rejects.toThrow(/not approved for host "hooks\.example"/)
 })
 
 test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error bodies', async () => {
-	const { apply } = await setupOwner({ verification: true })
-	const hookSecret = 'hook_signing_secret_for_redaction'
-	mockIntegration()
-	mockSecret(hookSecret)
 	{
+		const { apply, legacyMintHmac } = await setupOwner({
+			verification: 'secret-name',
+		})
+		const hookSecret = legacyMintHmac!
+		mockIntegration()
 		using _fetch = fetchResponding(`invalid secret ${hookSecret}`, {
 			status: 400,
 		})
@@ -586,20 +684,27 @@ test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error
 		).toEqual(redactedFailure)
 	}
 
-	const spacedSecret = 'hook secret with spaces'
-	mockSecret(spacedSecret, 'hooks.example')
-	const formEncoded = new URLSearchParams({ v: spacedSecret })
-		.toString()
-		.slice('v='.length)
-	expect(formEncoded).toContain('+')
-	using _fetch = fetchResponding(`bad callback ${formEncoded}`, { status: 400 })
-	const formApplied = await apply({
-		type: 'http',
-		url: hooksRegister,
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
-	})
-	expect(redaction(formApplied, [spacedSecret, formEncoded])).toEqual(
-		redactedFailure,
-	)
+	{
+		const { apply, legacyMintHmac } = await setupOwner({
+			verification: 'secret-name',
+			legacySecretValue: 'hook secret with spaces',
+		})
+		const spacedSecret = legacyMintHmac!
+		const formEncoded = new URLSearchParams({ v: spacedSecret })
+			.toString()
+			.slice('v='.length)
+		expect(formEncoded).toContain('+')
+		using _fetch = fetchResponding(`bad callback ${formEncoded}`, {
+			status: 400,
+		})
+		const formApplied = await apply({
+			type: 'http',
+			url: hooksRegister,
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: `url=${encodeURIComponent('{{webhookUrl}}')}&secret=${encodeURIComponent('{{webhookSecret}}')}`,
+		})
+		expect(redaction(formApplied, [spacedSecret, formEncoded])).toEqual(
+			redactedFailure,
+		)
+	}
 })

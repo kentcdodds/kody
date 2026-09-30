@@ -23,6 +23,27 @@ test('cookie files are bound to one origin', () => {
 	).toBe(null)
 })
 
+test('cookie files are bound to origin plus email when --email is used', () => {
+	const file = formatCookieFile(
+		'http://localhost:3742',
+		'kody_session=admin',
+		'kody@example.com',
+	)
+	expect(
+		cookieHeaderForOrigin(file, 'http://localhost:3742', 'kody@example.com'),
+	).toBe('kody_session=admin')
+	expect(
+		cookieHeaderForOrigin(file, 'http://localhost:3742', 'jane@example.com'),
+	).toBe(null)
+	expect(
+		cookieHeaderForOrigin(
+			formatCookieFile('http://localhost:3742', 'kody_session=legacy'),
+			'http://localhost:3742',
+			'jane@example.com',
+		),
+	).toBe(null)
+})
+
 test('login HTML on an account path refreshes the session', () => {
 	expect(looksLikeLoginHtml(loginHtml)).toBe(true)
 	expect(

@@ -134,7 +134,13 @@ export type WebhookTimestampFormat =
 export const packageWebhookVerificationSchema = z.object({
 	type: z.enum(['hmac-sha256', 'hmac-sha1']),
 	header: z.string().regex(httpFieldNamePattern),
-	secretName: z.string().min(1),
+	/**
+	 * Optional. Omit for package-owned HMAC (minted onto the webhook URL
+	 * record). Set only for provider-issued signing secrets that live in the
+	 * secret store (for example Sentry). GitHub-style hooks that register via
+	 * webhookUrlApply with {{webhookSecret}} should omit this.
+	 */
+	secretName: z.string().min(1).optional(),
 	encoding: z.enum(['hex', 'base64']),
 	prefix: z.string().optional(),
 	signedPayload: z.enum(webhookSignedPayloadValues).optional(),

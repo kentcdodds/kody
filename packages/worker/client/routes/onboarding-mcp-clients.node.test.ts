@@ -64,6 +64,10 @@ test('onboarding MCP client builders emit the structured configs each host expec
 				{ id: 'cursor', viewport: 'mobile-only' },
 				{ id: 'claude-code', viewport: 'mobile-only' },
 				{ id: 'devin' },
+				{ id: 'wajo', viewport: 'both' },
+				{ id: 'cue', viewport: 'both' },
+				{ id: 'openmuse', viewport: 'both' },
+				{ id: 'dots', viewport: 'both' },
 			].map((entry) => expect.objectContaining(entry)),
 		),
 	)

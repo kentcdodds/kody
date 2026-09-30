@@ -42,8 +42,10 @@ Prerequisites, install, and `npm run dev` notes. See the
 - `npm run dev:ensure` reuses a healthy origin `/health` on 3742–3751 (prints
   `App running at http://localhost:<port>` and exits 0), waits for a stale
   kody/workerd leftover that is listening but not serving before replacing it,
-  then starts `npm run dev` and waits until `/health` is ok. Agents should call
-  this instead of reconstructing a startup playbook from terminal files.
+  then starts `npm run dev` and waits until `/health` is ok. A started server
+  writes `.tmp/dev-server.log` (printed as `Dev server log: <path>`). Agents
+  should call this instead of reconstructing a startup playbook from terminal
+  files.
 - `npm run dev` starts the Cloudflare API mock, then Vite (`@pitlane/dev` +
   `@cloudflare/vite-plugin`) so origin SSR runs inside workerd with client HMR.
   Jobs and highlight join as Vite auxiliary workers in every serve, including

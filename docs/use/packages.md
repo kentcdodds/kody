@@ -30,9 +30,10 @@ hosting. The package page tabs are **Repo**, **Files**
 (`/@username/:name/tree/:ref` — the same URL whether the package is public or
 private), and **Settings**. Visibility keeps private source off the public web.
 Owner controls (lock, visibility, share, webhooks, delete) live at
-`/@username/:name/settings`. Inbound HTTP uses [webhooks](./webhooks.md). To let
-another paid account use a package without getting a copy,
-[share it](../guides/package-sharing.md).
+`/@username/:name/settings`. Public listings also expose a read-only
+[`.git` clone URL](./community-packages.md#clone-a-public-package-read-only-git).
+Inbound HTTP uses [webhooks](./webhooks.md). To let another paid account use a
+package without getting a copy, [share it](../guides/package-sharing.md).
 
 ## Package state model
 

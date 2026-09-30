@@ -102,6 +102,19 @@ allows `10.5.0`, so this override cannot be removed yet.
 
 The upper bound `<11.0.0` keeps the override within the same major version.
 
+### `fast-uri` → `>=3.1.8 <4.0.0`
+
+Keeps the transitive `fast-uri` copy (via `ajv` from
+`@modelcontextprotocol/sdk`) at or above the current advisory floor. Upstream
+still declares `fast-uri@^3.0.1`, which allows `3.1.7`, so this override cannot
+be removed yet.
+
+- [GHSA-hrr3-gc8f-f4qj](https://github.com/advisories/GHSA-hrr3-gc8f-f4qj) —
+  inconsistent host case normalization via percent-encoded octets
+  (`>=3.0.0, <=3.1.7`)
+
+The upper bound `<4.0.0` keeps the override within the same major version.
+
 ### `undici` (under wrangler / miniflare / `@cloudflare/vite-plugin`) → `>=7.29.1 <8.0.0`
 
 Floors only the Cloudflare 7.x undici copies. The root `undici@6.28.1` is

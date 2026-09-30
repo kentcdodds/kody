@@ -205,6 +205,7 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 		expect.arrayContaining([
 			'url_secret_hash',
 			'url_secret_encrypted',
+			'hmac_secret_encrypted',
 			'previous_url_secret_hash',
 		]),
 	)

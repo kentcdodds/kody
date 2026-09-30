@@ -107,18 +107,19 @@ of MCP tool output). A provider POSTs to it and Kody dispatches the validated
 request to the package export that owns it.
 
 1. Declare it under `package.json#kody.webhooks`: a `name`, the `export` it
-   binds to, and (for vendor senders) `verification` — HMAC header, encoding,
-   and the **name** of the signing secret in your secret store. Providers that
-   quiz URL ownership (X CRC, WebSub, Meta, Slack) also declare `challenge`; the
-   platform answers that quiz on the minted URL. One webhook name binds one
-   export; there is no wildcard.
-2. Store the signing secret with `secretSet` under that name.
-3. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
+   binds to, and (for vendor senders) `verification` — HMAC header and encoding.
+   Omit `secretName` for GitHub-style hooks so mint stores package-owned HMAC.
+   Set `secretName` only for provider-issued secrets (Sentry, Stripe) and store
+   that value with `secretSet`. Providers that quiz URL ownership (X CRC,
+   WebSub, Meta, Slack) also declare `challenge`; the platform answers that quiz
+   on the minted URL. One webhook name binds one export; there is no wildcard.
+2. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
    and register it with `webhookUrlApply` (`type: "http"` with `{{webhookUrl}}`
    after the owner Approves the destination at `/connect/webhook-apply`; GitHub
-   repo hooks use the same path against the Hooks API). Treat the URL as a
-   credential; tool output never includes it. When apply does not fit the
-   provider, the owner copies the URL from the package's settings page
+   repo hooks use the same path against the Hooks API, with `{{webhookSecret}}`
+   in `config.secret` when HMAC is declared). Treat the URL as a credential;
+   tool output never includes it. When apply does not fit the provider, the
+   owner copies the URL from the package's settings page
    (`/@<username>/<packageKodyId>/settings`, Webhooks section), where they can
    also reveal, rotate, disable, or enable it. Rotate keeps the previous URL
    live for 24 hours, or until the first accepted delivery arrives on the new

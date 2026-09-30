@@ -562,7 +562,7 @@ test('control-kody request re-logs in when a stored cookie is rejected or HTML r
 				),
 			).toBe(0)
 			expect(readFileSync(cookieFile, 'utf8')).toBe(
-				formatCookieFile(origin, 'kody_session=fresh'),
+				formatCookieFile(origin, 'kody_session=fresh', 'jane@example.com'),
 			)
 
 			await writeFile(
@@ -583,6 +583,134 @@ test('control-kody request re-logs in when a stored cookie is rejected or HTML r
 			).toBe(0)
 		},
 	)
+})
+
+test('control-kody request --email does not reuse another user cookie for the same origin', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-email-cookie-'))
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		const seen: Array<{ url?: string; cookie?: string; email?: string }> = []
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (request.method === 'POST' && url === '/auth') {
+					const chunks: Array<Buffer> = []
+					request.on('data', (chunk: Buffer | string) => {
+						chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+					})
+					request.on('end', () => {
+						const body = Buffer.concat(chunks).toString()
+						const email = (JSON.parse(body) as { email?: string }).email ?? ''
+						seen.push({ url, email })
+						response.setHeader(
+							'Set-Cookie',
+							`kody_session=${email === 'jane@example.com' ? 'jane' : 'other'}; Path=/`,
+						)
+						response.setHeader('Content-Type', 'application/json')
+						response.end(JSON.stringify({ ok: true }))
+					})
+					return
+				}
+				if (url === '/account/usage.json') {
+					seen.push({ url, cookie: request.headers.cookie })
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							session: request.headers.cookie,
+						}),
+					)
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				await writeFile(
+					cookieFile,
+					formatCookieFile(origin, 'kody_session=admin', 'kody@example.com'),
+				)
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/account/usage.json',
+						'--origin',
+						origin,
+						'--email',
+						'jane@example.com',
+						'--password',
+						'ilikecode',
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(seen).toEqual([
+					{ url: '/auth', email: 'jane@example.com' },
+					{ url: '/account/usage.json', cookie: 'kody_session=jane' },
+				])
+				expect(readFileSync(cookieFile, 'utf8')).toBe(
+					formatCookieFile(origin, 'kody_session=jane', 'jane@example.com'),
+				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
+})
+
+test('control-kody request --skip-login --email does not reuse another user cookie', async () => {
+	const dir = await mkdtemp(
+		path.join(tmpdir(), 'control-kody-skip-login-email-'),
+	)
+	try {
+		const cookieFile = path.join(dir, 'cookie')
+		const seen: Array<{ url?: string; cookie?: string }> = []
+		await withAuthServer(
+			(request, response) => {
+				const url = request.url ?? '/'
+				if (url === '/admin') {
+					seen.push({ url, cookie: request.headers.cookie })
+					response.statusCode = request.headers.cookie ? 200 : 403
+					response.setHeader('Content-Type', 'text/plain')
+					response.end(request.headers.cookie ? 'admin' : 'forbidden')
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			},
+			async (origin) => {
+				await writeFile(
+					cookieFile,
+					formatCookieFile(origin, 'kody_session=jane', 'jane@example.com'),
+				)
+				const code = await runCommand(
+					parseControlArgs([
+						'request',
+						'GET',
+						'/admin',
+						'403',
+						'--origin',
+						origin,
+						'--email',
+						'kody@example.com',
+						'--skip-login',
+						'--cookie-file',
+						cookieFile,
+						'--json',
+					]),
+				)
+				expect(code).toBe(0)
+				expect(seen).toEqual([{ url: '/admin', cookie: undefined }])
+				expect(readFileSync(cookieFile, 'utf8')).toBe(
+					formatCookieFile(origin, 'kody_session=jane', 'jane@example.com'),
+				)
+			},
+		)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
 })
 
 test('control-kody request logs in before a mutating call when no cookie exists', async () => {

@@ -106,6 +106,7 @@ async function setup(sessionUsername = 'owner') {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
 			url_secret_encrypted TEXT,
+			hmac_secret_encrypted TEXT,
 			previous_url_secret_hash TEXT,
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),

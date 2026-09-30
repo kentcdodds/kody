@@ -32,6 +32,14 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type CommunityActivityDispatchQueueMessage } from './activity-dispatch-queue-producer.ts'
+import {
+	dispatchCommunityForkUpstreamUpdatedSubscriptionEvents,
+	isForkUpstreamUpdateEventsEnabled,
+} from './fork-upstream-updated-package-subscriptions.ts'
+import {
+	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
+	type CommunityListingPublishedDispatchQueueMessage,
+} from './listing-published-dispatch-queue-producer.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 
@@ -105,8 +113,10 @@ function createFlowHarness() {
 		{ onUnhandledRequest: 'bypass' },
 	)
 	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
-	const queuedListingPublished: Array<{ eventId: string; listingId: string }> =
-		[]
+	const queuedListingPublished: Array<
+		| CommunityListingPublishedDispatchQueueMessage
+		| CommunityForkUpstreamUpdatedDispatchQueueMessage
+	> = []
 	const testEnv: Env = {
 		...env,
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
@@ -118,7 +128,11 @@ function createFlowHarness() {
 			},
 		} as unknown as Env['COMMUNITY_ACTIVITY_DISPATCH_QUEUE'],
 		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
-			async send(message: { eventId: string; listingId: string }) {
+			async send(
+				message:
+					| CommunityListingPublishedDispatchQueueMessage
+					| CommunityForkUpstreamUpdatedDispatchQueueMessage,
+			) {
 				queuedListingPublished.push(message)
 			},
 		} as unknown as Env['COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE'],
@@ -435,6 +449,41 @@ test('public package flow works end-to-end through capability handlers', async (
 		republishedCommit,
 		sourceId,
 	)
+	expect((await publish()).pinned_commit).toBe(republishedCommit)
+	const forkUpstreamUpdated = {
+		kind: 'fork_upstream_updated',
+		eventId: expect.any(String),
+		listingId,
+		previous: { pinnedCommit: publishedCommit, packageVersion: '1.0.4' },
+		current: { pinnedCommit: republishedCommit, packageVersion: '1.0.4' },
+		publishedAt: expect.any(String),
+	}
+	expect(queuedListingPublished).toEqual([forkUpstreamUpdated])
+	const [queuedForkUpstreamUpdated] = queuedListingPublished
+	if (!queuedForkUpstreamUpdated || !('kind' in queuedForkUpstreamUpdated)) {
+		throw new Error('Expected a fork upstream-updated queue message.')
+	}
+	const { kind: _kind, ...forkUpstreamMessage } = queuedForkUpstreamUpdated
+	queuedListingPublished.length = 0
+	const forkerGate = () =>
+		isForkUpstreamUpdateEventsEnabled({
+			db: testEnv.APP_DB,
+			stableUserId: forker.userId,
+		})
+	expect(await forkerGate()).toBe(false)
+	await runSql(
+		`UPDATE users SET experiments_opt_in = 1 WHERE stable_user_id = ?`,
+		forker.userId,
+	)
+	expect(await forkerGate()).toBe(true)
+	// Opted in, but the inert fork is the forker's only package and it has no
+	// saved package row, so there is no subscriber to invoke.
+	await expect(
+		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
+			env: testEnv,
+			message: forkUpstreamMessage,
+		}),
+	).resolves.toEqual([])
 	expect((await publish()).pinned_commit).toBe(republishedCommit)
 	expect(queuedListingPublished).toEqual([])
 	// Featured survives republish — it is editorial placement, not trust.

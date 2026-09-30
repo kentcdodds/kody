@@ -342,7 +342,7 @@ export type PackageWebhookManifestEntry = {
 	verification: {
 		type: 'hmac-sha256' | 'hmac-sha1'
 		header: string
-		secretName: string
+		secretName?: string
 		encoding: 'hex' | 'base64'
 		prefix?: string
 		signedPayload?: 'body' | 'timestamp.body'
@@ -376,7 +376,9 @@ export function listPackageWebhooks(
 				? {
 						type: webhook.verification.type,
 						header: webhook.verification.header,
-						secretName: webhook.verification.secretName,
+						...(webhook.verification.secretName !== undefined
+							? { secretName: webhook.verification.secretName }
+							: {}),
 						encoding: webhook.verification.encoding,
 						...(webhook.verification.prefix !== undefined
 							? { prefix: webhook.verification.prefix }

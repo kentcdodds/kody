@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	appendDevOutputChunk,
@@ -6,6 +9,7 @@ import {
 	ensureDev,
 	ensureWorkerEnvFile,
 	envWithPreferredNode26,
+	formatDevServerLogPath,
 	formatMissingWranglerBindingHint,
 	isKodyDevProcess,
 	isMissingWranglerBindingOutput,
@@ -15,7 +19,9 @@ import {
 	parseLsofListenPids,
 	parseSsListenPids,
 	replaceStaleKodyListeners,
+	resolveDevServerLogPath,
 	resolveNode26BinDir,
+	tailDevServerLog,
 	waitForHealthyOrigin,
 	type ProcessIdentity,
 } from './ensure-dev.ts'
@@ -450,4 +456,18 @@ test('dev output matching keeps a split fatal phrase across chunks and interleav
 			joinDevOutput(interleaved, stdout.pending, stderr.pending),
 		),
 	).toBe(true)
+})
+
+test('dev:ensure names a durable log file agents can read after detach', () => {
+	expect(resolveDevServerLogPath('/repo')).toBe('/repo/.tmp/dev-server.log')
+	expect(formatDevServerLogPath('/repo/.tmp/dev-server.log')).toBe(
+		'Dev server log: /repo/.tmp/dev-server.log',
+	)
+	expect(tailDevServerLog('/repo/.tmp/missing-dev-server.log')).toBe('')
+	const logFile = path.join(
+		mkdtempSync(path.join(tmpdir(), 'dev-log-')),
+		'dev-server.log',
+	)
+	writeFileSync(logFile, 'one\n\ntwo\nthree\n')
+	expect(tailDevServerLog(logFile)).toBe('one\ntwo\nthree')
 })

@@ -90,7 +90,8 @@ const usageLines = [
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
-	'  --cookie-file <p>    Session Cookie header file',
+	'  --cookie-file <p>    Session Cookie header file (keyed by origin + --email)',
+	"  --email <addr>       Session identity; does not reuse another user's cookie",
 	'  --dump               Write the raw response body to .tmp/control-kody-body',
 	'  --contains <text>    Fail unless the response body includes this text',
 	'  --package-name <s>   Required for package-create (leaf or @scope/leaf)',
@@ -114,7 +115,10 @@ const usageLines = [
 	'are joined, so POST /path 400 \'{"action":"add"}\' sends the body.',
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
-	'Mutating methods log in first when no cookie exists.',
+	'Mutating methods log in first when no cookie exists. --email keys the',
+	'stored cookie; a leftover session for a different user is not reused.',
+	'--skip-login sends the request without authenticating, even when another',
+	"user's cookie is stored for the same origin.",
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -761,18 +765,23 @@ export async function readHealth(input: {
 	}
 }
 
-export function readCookieFile(cookieFile: string, origin: string) {
+export function readCookieFile(
+	cookieFile: string,
+	origin: string,
+	email?: string | null,
+) {
 	if (!existsSync(cookieFile)) return null
-	return cookieHeaderForOrigin(readFileSync(cookieFile, 'utf8'), origin)
+	return cookieHeaderForOrigin(readFileSync(cookieFile, 'utf8'), origin, email)
 }
 
 export async function writeCookieFile(
 	cookieFile: string,
 	cookieHeader: string,
 	origin: string,
+	email?: string | null,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
-	await writeFile(cookieFile, formatCookieFile(origin, cookieHeader), {
+	await writeFile(cookieFile, formatCookieFile(origin, cookieHeader, email), {
 		mode: 0o600,
 	})
 	await chmod(cookieFile, 0o600)
@@ -804,7 +813,12 @@ async function loginAndStoreCookie(
 		else console.error(detail)
 		return { ok: false }
 	}
-	await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
+	await writeCookieFile(
+		options.cookieFile,
+		session.cookieHeader,
+		origin,
+		options.email ?? defaults.email,
+	)
 	return { ok: true, cookieHeader: session.cookieHeader }
 }
 
@@ -925,7 +939,12 @@ async function runCommand(options: ControlKodyOptions) {
 				? session.detail
 				: withLocalAppDbRemediation(origin, session, localAppDbSeedEmails())
 			if (session.cookieHeader) {
-				await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					session.cookieHeader,
+					origin,
+					options.email ?? defaults.email,
+				)
 			}
 			if (options.json) {
 				printJson({ ...session, detail, cookieFile: options.cookieFile })
@@ -942,13 +961,17 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const origin = await resolveOrigin(options)
-			let cookieHeader = readCookieFile(options.cookieFile, origin)
+			const requestedEmail = options.email
+			let cookieHeader = readCookieFile(
+				options.cookieFile,
+				origin,
+				requestedEmail,
+			)
 			const method = options.request.method.toUpperCase()
 			if (
 				!options.skipLogin &&
 				!cookieHeader &&
-				method !== 'GET' &&
-				method !== 'HEAD'
+				(Boolean(requestedEmail) || (method !== 'GET' && method !== 'HEAD'))
 			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
 				if (!loggedIn.ok) return 1
@@ -1053,7 +1076,12 @@ async function runCommand(options: ControlKodyOptions) {
 				headAhead: options.headAhead,
 			})
 			if (report.cookieHeader) {
-				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					options.email ?? defaults.email,
+				)
 			}
 			if (options.json) {
 				const { cookieHeader: _cookieHeader, ...publicReport } = report
@@ -1088,7 +1116,12 @@ async function runCommand(options: ControlKodyOptions) {
 				params,
 			})
 			if (report.cookieHeader) {
-				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					options.email ?? defaults.email,
+				)
 			}
 			if (options.json) {
 				const { cookieHeader: _cookieHeader, ...publicReport } = report
@@ -1121,7 +1154,12 @@ async function runCommand(options: ControlKodyOptions) {
 				limit: options.limit ?? undefined,
 			})
 			if (report.cookieHeader) {
-				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					options.email ?? defaults.email,
+				)
 			}
 			if (options.json) {
 				const { cookieHeader: _cookieHeader, ...publicReport } = report

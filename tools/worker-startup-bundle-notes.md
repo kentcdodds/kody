@@ -295,3 +295,22 @@ runtime path if this budget is raised again.
   and MCP caller-failure classification for the stable / raw phrases. Local / CI
   dry-run platform 5_227_844 against the previous 5_227_000 budget, reviewed
   ceiling 5_228_000.
+- Signup welcome credits (#2720): Stripe unlock now calls
+  `forgiveCreditUsageBeforeUnlock` from `refreshStripePlanForUser` so
+  Free-period usage is not charged against the $5 welcome balance; that pulls
+  more of the credit-wallet forgive path into runtime via subscription-sync.
+  Local dry-run runtime 3_902_482 against the previous 3_901_500 budget,
+  reviewed ceiling 3_903_500; platform local dry-run 5_229_587 against the
+  previous 5_228_000 budget, reviewed ceiling 5_230_500. Signup grant helpers
+  live in `signup-welcome-credits.ts` so they stay off the debit graph.
+- Package-owned webhook HMAC (#2724): endpoint `hmac_secret_encrypted` mint /
+  resolve helpers on the webhooks MCP graph runtime already evaluates: local /
+  CI dry-run runtime 3_905_392 against the previous 3_903_500 budget, reviewed
+  ceiling 3_905_500; platform local dry-run 5_232_529 against the previous
+  5_230_500 budget, reviewed ceiling 5_233_000.
+- Wajo / Cue / OpenMuse / Dots agent marks (#2718): onboarding MCP client kinds,
+  DIY connect panels, and walkthrough host catalog entries pull additional agent
+  labels/help URLs into the origin/runtime shared onboarding graph CI already
+  evaluates. CI dry-run runtime 3_905_770 against the previous 3_905_500 budget,
+  reviewed ceiling 3_906_500; platform CI dry-run 5_233_076 against the previous
+  5_233_000 budget, reviewed ceiling 5_233_500.

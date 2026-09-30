@@ -17,6 +17,7 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 	const mockModule = {
 		enqueueCommunityActivityDispatch: vi.fn(),
 		enqueueCommunityListingPublishedDispatch: vi.fn(),
+		enqueueCommunityForkUpstreamUpdatedDispatch: vi.fn(),
 		getSavedPackageById: vi.fn(),
 		loadPackageSourceBySourceId: vi.fn(),
 		getCommunityBan: vi.fn(),
@@ -74,7 +75,10 @@ vi.mock('./activity-dispatch-queue-producer.ts', () =>
 	pickMocks('enqueueCommunityActivityDispatch'),
 )
 vi.mock('./listing-published-dispatch-queue-producer.ts', () =>
-	pickMocks('enqueueCommunityListingPublishedDispatch'),
+	pickMocks(
+		'enqueueCommunityListingPublishedDispatch',
+		'enqueueCommunityForkUpstreamUpdatedDispatch',
+	),
 )
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 	getPlatformAccountByUsername: async () => null,
@@ -855,6 +859,71 @@ test('publishCommunityListing enqueues listing.published only on first publish',
 	expect(
 		mockModule.enqueueCommunityListingPublishedDispatch,
 	).not.toHaveBeenCalled()
+})
+
+test('publishCommunityListing enqueues fork upstream-updated only when a republish moves the pinned commit', async () => {
+	mockPublishable()
+	mockModule.insertCommunityActivityEvent.mockResolvedValue(undefined)
+
+	await publish()
+	expect(
+		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
+	).not.toHaveBeenCalled()
+
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-1', version: '1.0.4' }),
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	await publish()
+	expect(
+		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
+	).not.toHaveBeenCalled()
+
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	republishedSource.files['package.json'] = JSON.stringify({
+		...JSON.parse(republishedSource.files['package.json'] ?? '{}'),
+		version: '1.1.0',
+	})
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-1', version: null }),
+	)
+	await publish()
+
+	expect(
+		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
+	).toHaveBeenCalledTimes(1)
+	expect(
+		mockModule.enqueueCommunityForkUpstreamUpdatedDispatch,
+	).toHaveBeenCalledWith({
+		queue: testCommunityListingPublishedQueue,
+		listingId: 'listing-1',
+		previous: { pinnedCommit: 'commit-1', packageVersion: null },
+		current: { pinnedCommit: 'commit-2', packageVersion: '1.1.0' },
+		publishedAt: expect.any(String),
+	})
+	expect(
+		mockModule.enqueueCommunityListingPublishedDispatch,
+	).toHaveBeenCalledTimes(1)
+})
+
+test('publishCommunityListing does not fail when fork upstream-updated enqueue fails', async () => {
+	consoleError.mockImplementation(() => {})
+	mockPublishable()
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-0' }),
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.enqueueCommunityForkUpstreamUpdatedDispatch.mockRejectedValue(
+		new Error('queue unavailable'),
+	)
+
+	await expect(publish()).resolves.toMatchObject({ id: 'listing-1' })
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-fork-upstream-updated-dispatch-enqueue-failed',
+		expect.any(Error),
+	)
 })
 
 test('publishCommunityListing invalidates old and reused icon revisions', async () => {

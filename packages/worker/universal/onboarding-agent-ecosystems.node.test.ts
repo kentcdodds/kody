@@ -29,6 +29,17 @@ test('step 3 groups Cursor hosts with Grok and GitHub hosts together', () => {
 		(group) => group.id === 'muse',
 	)
 	expect(muse?.agents).toEqual(['muse'])
+	expect(onboardingStep3EcosystemGroups.map((group) => group.id)).toEqual(
+		expect.arrayContaining(['wajo', 'cue', 'openmuse', 'openai']),
+	)
+	expect(
+		onboardingStep3EcosystemGroups.find((group) => group.id === 'openmuse')
+			?.agents,
+	).toEqual(['openmuse'])
+	expect(
+		onboardingStep3EcosystemGroups.find((group) => group.id === 'openai')
+			?.agents,
+	).toEqual(['chatgpt', 'codex', 'dots'])
 })
 
 test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {

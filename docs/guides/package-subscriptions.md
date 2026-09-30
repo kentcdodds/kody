@@ -7,8 +7,8 @@ summary:
   interactive MCP with packageSubscriptionDispatch; follow metadata-first email,
   run.error.recorded activity notifiers, integration.auth.failed /
   integration.auth.succeeded reconnect notifiers, mcp.server.disconnected /
-  mcp.server.reconnected connection episodes, and repo / package lifecycle
-  topics.
+  mcp.server.reconnected connection episodes, community.fork.upstream_updated
+  fork notifiers, and repo / package lifecycle topics.
 category: platform
 ---
 
@@ -614,6 +614,70 @@ Account-level Artifacts create/delete events map to `repo.created` and
 (`default_branch`, `description`, Cloudflare `cloudflare_repo_id`). Same-user
 fan-out and Queue delivery match `repo.pushed`. Unmatched deletes (D1 row
 already gone) are acknowledged without retry.
+
+## `community.fork.upstream_updated`
+
+When a community listing you forked is republished with a new pinned commit,
+Kody dispatches `community.fork.upstream_updated` to packages saved by **your**
+account that declare the topic. There is one event per fork of that listing
+(forking the same listing twice produces two events). Republishes that keep the
+same pinned commit do not emit, and forks already at the new pinned commit are
+skipped. Watching a listing without forking it is not supported.
+
+This topic is behind the `fork-upstream-update-events` feature flag. It is on
+for accounts that opted into experiments at `/account/experiments`. The flag is
+checked for each forking account when the event is delivered.
+
+Delivery is durable: `communityPublish` enqueues the republish on the
+`kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
+are logged and never fail the publish. The consumer reads the forks and your
+subscribed packages when it runs. Flag evaluation, subscriber discovery, and
+pre-handler infrastructure failures retry. Idempotency keys include the event
+id, fork id, and subscriber package id, so Queue redelivery replays stored
+results instead of re-running handlers.
+
+Handlers receive a metadata-only payload:
+
+```ts
+type CommunityForkUpstreamUpdatedEvent = {
+	event: 'community.fork.upstream_updated'
+	event_id: string
+	listing: {
+		id: string
+		name: string
+		kody_id: string
+		public_url: string
+	}
+	publisher: {
+		username: string | null
+	}
+	fork: {
+		id: string
+		package_id: string
+		kody_id: string
+		origin_commit: string
+		forked_at: string
+	}
+	previous: { pinned_commit: string; package_version: string | null }
+	current: { pinned_commit: string; package_version: string | null }
+	published_at: string
+}
+```
+
+`fork.package_id` and `fork.kody_id` identify your forked package (it may still
+be an inert fork with no live saved package). `fork.origin_commit` is the
+listing commit your fork last absorbed. `previous` and `current` are the
+listing's pinned commit and author-supplied `package.json#version` before and
+after the republish. `listing` and `publisher` are read when the event is
+delivered, so if the listing republished again before delivery they describe the
+newer release; key rebase logic on `current.pinned_commit`. The event omits
+listing source and the publisher's account identifiers. Read upstream files from
+`listing.public_url` or the community capabilities. When your changes are
+ported, publish with `repoPublishSession` and `absorbed_upstream_commit` (see
+[Community packages](../use/community-packages.md)).
+
+Use this topic for packages that auto-rebase a fork, open a review session, or
+post a Discord ping when an upstream package changes.
 
 ## `package.codemod.applied`
 

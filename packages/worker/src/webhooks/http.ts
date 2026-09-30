@@ -56,6 +56,7 @@ import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
+import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
@@ -647,19 +648,20 @@ export async function handleWebhookIngressRequest(
 		if (!provided) {
 			return rejectUnauthorized('missing_signature')
 		}
-		const resolved = await resolveSecret({
-			env,
-			userId: liveEndpoint.userId,
-			name: declared.verification.secretName,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: liveEndpoint.packageId,
-			},
-		})
-		if (!resolved.found || !resolved.value) {
+		let hmacSecret: string
+		try {
+			hmacSecret = await resolveWebhookHmacSigningSecret({
+				env,
+				userId: liveEndpoint.userId,
+				endpoint: liveEndpoint,
+				verification: declared.verification,
+				allowLegacySecretNameFallback: true,
+			})
+		} catch {
 			return rejectUnauthorized(
-				`verification_secret_missing:${declared.verification.secretName}`,
+				declared.verification.secretName
+					? `verification_secret_missing:${declared.verification.secretName}`
+					: 'verification_secret_missing:package_owned_hmac',
 			)
 		}
 		const signedPayload = declared.verification.signedPayload ?? 'body'
@@ -684,7 +686,7 @@ export async function handleWebhookIngressRequest(
 			if (
 				await verifyWebhookHmacSignature({
 					algorithm: declared.verification.type,
-					secret: resolved.value,
+					secret: hmacSecret,
 					body: hmacPayload,
 					encoding: declared.verification.encoding,
 					prefix: declared.verification.prefix,

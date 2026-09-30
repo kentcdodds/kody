@@ -129,6 +129,13 @@ export const featureFlagDefinitions = [
 				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
+	{
+		key: 'fork-upstream-update-events',
+		defaultEnabled: true,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Dispatch `community.fork.upstream_updated` to packages in accounts that forked a community listing when that listing republishes with a new pinned commit. On by default for accounts opted into experiments at /account/experiments. No success metric: this is a rollout gate, not an experiment. Delete the flag and gate site after general availability.',
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -143,6 +150,9 @@ export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
+
+export const forkUpstreamUpdateEventsFlagKey =
+	'fork-upstream-update-events' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

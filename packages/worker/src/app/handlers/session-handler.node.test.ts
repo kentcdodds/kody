@@ -102,6 +102,7 @@ test('session handler only renews remembered sessions after the renewal window',
 					'secret-providers': false,
 					'jev-search-rerank': false,
 					'execute-invoke': false,
+					'fork-upstream-update-events': false,
 				},
 			},
 		})

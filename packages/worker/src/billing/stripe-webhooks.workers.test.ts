@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
-import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
@@ -40,7 +39,7 @@ async function seedUser(input: {
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 }) {
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
@@ -215,7 +214,7 @@ function invoicePaid(
 
 test('stripe webhook verifies signature, links checkout, refreshes subscription, and is idempotent', async () => {
 	// Guard: returns 503 when webhook secret is not configured.
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	const unconfigured = await handleStripeWebhookRequest({
 		env: createWebhookEnv({ STRIPE_WEBHOOK_SECRET: '' }),
 		request: new Request('https://test.kody.dev/webhooks/stripe', {
@@ -422,7 +421,7 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 })
 
 test('invoice.paid returns 500 when a qualifying invoice has no linked user', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	silenceExpectedConsoleErrors([
 		'stripe_webhook_process_failed',
 		'stripe_webhook_invoice_paid_user_not_linked',
