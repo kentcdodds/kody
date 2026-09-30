@@ -631,10 +631,10 @@ checked for each forking account when the event is delivered.
 Delivery is durable: `communityPublish` enqueues the republish on the
 `kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
 are logged and never fail the publish. The consumer reads the forks and your
-subscribed packages when it runs. Subscriber discovery and pre-handler
-infrastructure failures retry. Idempotency keys include the event id, fork id,
-and subscriber package id, so Queue redelivery replays stored results instead of
-re-running handlers.
+subscribed packages when it runs. Flag evaluation, subscriber discovery, and
+pre-handler infrastructure failures retry. Idempotency keys include the event
+id, fork id, and subscriber package id, so Queue redelivery replays stored
+results instead of re-running handlers.
 
 Handlers receive a metadata-only payload:
 
@@ -668,10 +668,12 @@ type CommunityForkUpstreamUpdatedEvent = {
 be an inert fork with no live saved package). `fork.origin_commit` is the
 listing commit your fork last absorbed. `previous` and `current` are the
 listing's pinned commit and author-supplied `package.json#version` before and
-after the republish. The event omits listing source and the publisher's account
-identifiers. Read upstream files from `listing.public_url` or the community
-capabilities. When your changes are ported, publish with `repoPublishSession`
-and `absorbed_upstream_commit` (see
+after the republish. `listing` and `publisher` are read when the event is
+delivered, so if the listing republished again before delivery they describe the
+newer release; key rebase logic on `current.pinned_commit`. The event omits
+listing source and the publisher's account identifiers. Read upstream files from
+`listing.public_url` or the community capabilities. When your changes are
+ported, publish with `repoPublishSession` and `absorbed_upstream_commit` (see
 [Community packages](../use/community-packages.md)).
 
 Use this topic for packages that auto-rebase a fork, open a review session, or

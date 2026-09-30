@@ -252,18 +252,12 @@ test('does nothing when the listing has no forks behind the new pinned commit', 
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
-test('does nothing when no forker passes the flag, and fails closed on flag evaluation errors', async () => {
-	consoleWarn.mockImplementation(() => {})
+test('does nothing when no forker passes the flag', async () => {
+	enableFlagFor([])
 	mocks.listCommunityForksByListingId.mockResolvedValue([
 		forkRow({ id: 'fork-plain', forkerUserId: 'stable-plain' }),
 		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
 	])
-	mocks.isFeatureEnabled.mockImplementation(
-		async (_db: unknown, _key: string, userId: number) => {
-			if (userId === 1) throw new Error('D1 unavailable')
-			return false
-		},
-	)
 
 	await expect(
 		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
@@ -276,9 +270,50 @@ test('does nothing when no forker passes the flag, and fails closed on flag eval
 	expect(mocks.getCommunityListingPublishedForAdmin).not.toHaveBeenCalled()
 	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
+})
+
+test('skips a forker whose flag evaluation fails and rejects for Queue retry', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mocks.isFeatureEnabled.mockImplementation(
+		async (_db: unknown, _key: string, userId: number) => {
+			if (userId === 1) throw new Error('D1 unavailable')
+			return userId === 3
+		},
+	)
+	mocks.listCommunityForksByListingId.mockResolvedValue([
+		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
+	])
+
+	await expect(
+		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
+			env: createEnv(),
+			message,
+		}),
+	).rejects.toThrow('subscription discovery failed')
+	expect(mocks.getCommunityListingPublishedForAdmin).not.toHaveBeenCalled()
+	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
+
+	mocks.listCommunityForksByListingId.mockResolvedValue([
+		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
+		forkRow({ id: 'fork-second', forkerUserId: 'stable-second-opted' }),
+	])
+	await expect(
+		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
+			env: createEnv(),
+			message,
+		}),
+	).rejects.toThrow('subscription discovery failed')
+	expect(
+		mocks.invokePackageSubscription.mock.calls.map(
+			([call]) => (call as { savedPackage: { id: string } }).savedPackage.id,
+		),
+	).toEqual(['discord-ping'])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'community-fork-upstream-updated-flag-evaluation-failed',
-		expect.objectContaining({ error: expect.any(Error) }),
+		expect.objectContaining({
+			forkerUserId: 'stable-opted',
+			error: expect.any(Error),
+		}),
 	)
 })
 

@@ -146,9 +146,10 @@ Remove the flag and gate sites when the experiment ends.
 default **on** with `defaultAudience: experiments_opt_in`). With no global row,
 it is on only for accounts with `users.experiments_opt_in = 1`. An operator can
 turn it off globally or override it for one account. The Queue consumer checks
-it for each forking account (`isForkUpstreamUpdateEventsEnabled`), and
-evaluation failures fail closed. No `successMetric`: this is a rollout gate.
-Remove the flag and the gate site after general availability.
+it for each forking account (`isForkUpstreamUpdateEventsEnabled`). Evaluation
+failures skip that forker for the attempt and make the message retry. No
+`successMetric`: this is a rollout gate. Remove the flag and the gate site after
+general availability.
 
 `package-share-grants` is a rollout kill switch for person-to-person package
 shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.
