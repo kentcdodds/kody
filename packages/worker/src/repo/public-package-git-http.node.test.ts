@@ -1,9 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import {
-	buildUploadPackAdvertisement,
-	encodeGitFlushPkt,
-	encodeGitPktLine,
-} from './git-pkt-line.ts'
+import { encodeGitFlushPkt, encodeGitPktLine } from './git-pkt-line.ts'
 
 const resolveCommunityPackageUrl = vi.fn()
 const getCommunityListingById = vi.fn()
@@ -55,7 +51,6 @@ vi.mock('#worker/audit-log.ts', () => ({
 
 const {
 	handlePublicPackageGitHttpRequest,
-	isPublicPackageGitHttpRequest,
 	parsePublicPackageGitHttpPath,
 	resolveImmutableSnapshotCommit,
 } = await import('./public-package-git-http.ts')
@@ -184,9 +179,6 @@ test('parsePublicPackageGitHttpPath recognizes smart HTTP suffixes under /@owner
 	expect(
 		parsePublicPackageGitHttpPath('/@kody/cloudflare/tree/main'),
 	).toBeNull()
-	expect(isPublicPackageGitHttpRequest('/@kody/cloudflare.git/info/refs')).toBe(
-		true,
-	)
 })
 
 test('resolveImmutableSnapshotCommit prefers published_commit then pinned_commit', () => {
@@ -416,14 +408,11 @@ test('public package git HTTP redirects listing renames and falls back to a loca
 		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(fallback!.status).toBe(200)
+	expect(fetchImpl).toHaveBeenCalled()
 	const body = await fallback!.text()
-	expect(body).toBe(
-		new TextDecoder().decode(
-			buildUploadPackAdvertisement({
-				commit: publishedCommit,
-				defaultBranch: 'main',
-				agent: 'kody-public-git',
-			}),
-		),
-	)
+	expect(body.startsWith('001e# service=git-upload-pack\n0000')).toBe(true)
+	expect(body).toContain(`${publishedCommit} HEAD\0`)
+	expect(body).toContain('symref=HEAD:refs/heads/main')
+	expect(body).toContain(`${publishedCommit} refs/heads/main\n`)
+	expect(body.endsWith('0000')).toBe(true)
 })

@@ -1,5 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi, type Mock } from 'vitest'
+import {
+	decryptWebhookHmacSecret,
+	userWebhookHmacSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -570,7 +574,7 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 })
 
 test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned HMAC', async () => {
-	const { db, handle, reveal, apply } = await setupOwner({
+	const { db, env, handle, userId, reveal, apply } = await setupOwner({
 		verification: 'package-owned',
 	})
 	const url = await reveal()
@@ -582,6 +586,11 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 		.bind(endpointId)
 		.first<{ hmac_secret_encrypted: string }>()
 	expect(row?.hmac_secret_encrypted).toBeTruthy()
+	const plaintext = await decryptWebhookHmacSecret(
+		env,
+		row!.hmac_secret_encrypted,
+		userWebhookHmacSecretContext(userId, endpointId!),
+	)
 	using fetchMock = fetchResponding(JSON.stringify({ id: 99 }), {
 		status: 201,
 	})
@@ -593,7 +602,7 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(applied).toMatchObject({ ok: true, remoteId: '99' })
 	const injected = JSON.parse(String(requestOf(fetchMock).init.body)).config
 		.secret as string
-	expect(injected).toBeTruthy()
+	expect(injected).toBe(plaintext)
 	expect(injected).not.toEqual(url)
 	expect(JSON.stringify(applied)).not.toContain(injected)
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
@@ -606,7 +615,6 @@ test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a liv
 	})
 	const url = await reveal()
 	mockIntegration()
-	expect(legacyMintHmac).toBeTruthy()
 	const endpointId = parseWebhookUrlHandle(handle)
 	expect(endpointId).toBeTruthy()
 	expect(

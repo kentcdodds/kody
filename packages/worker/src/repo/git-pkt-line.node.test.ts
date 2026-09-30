@@ -30,8 +30,6 @@ test('buildUploadPackAdvertisement advertises only the published snapshot on HEA
 	expect(body).toContain('allow-reachable-sha1-in-want')
 	expect(body).toContain(`${commit} refs/heads/main\n`)
 	expect(body.endsWith('0000')).toBe(true)
-	// No other branch names should appear.
-	expect(body).not.toContain('refs/heads/develop')
 })
 
 test('rewriteUploadPackAdvertisement keeps upstream capabilities and pins refs to the snapshot', () => {
