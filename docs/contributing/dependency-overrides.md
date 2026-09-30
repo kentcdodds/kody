@@ -1,8 +1,11 @@
 # Dependency overrides
 
 This file documents every `overrides` entry in the root `package.json` and
-explains why it exists. When adding or removing an override, update this file in
-the same commit.
+explains why it exists. `npm run overrides:check` (part of `npm run validate`
+and the CI static job) fails when an override has no `###` heading here whose
+first code span is the overridden package (nested overrides also name each
+parent in backticks), when a heading documents a package with no override, or
+when `package.json` repeats a key.
 
 After changing overrides, `npm run audit:prod` is the production-dependency
 check. It is part of `npm run validate` and the CI static job (see
@@ -115,7 +118,7 @@ be removed yet.
 
 The upper bound `<4.0.0` keeps the override within the same major version.
 
-### `undici` (under wrangler / miniflare / `@cloudflare/vite-plugin`) → `>=7.29.1 <8.0.0`
+### `undici` (under `wrangler` / `miniflare` / `@cloudflare/vite-plugin`) → `>=7.29.1 <8.0.0`
 
 Floors only the Cloudflare 7.x undici copies. The root `undici@6.28.1` is
 already on the 6.x patched line and must stay there.
@@ -125,3 +128,35 @@ already on the 6.x patched line and must stay there.
   (`7.28.0`–`7.29.0`)
 
 The upper bound `<8.0.0` keeps those tools on 7.x.
+
+### `isomorphic-git` → `>=1.40.0 <1.40.8`
+
+A compatibility cap, not an advisory floor. `isomorphic-git@1.40.8` and later
+route `git.init` through a `mkdirp` that expects Node-style error codes, which
+the `@cloudflare/shell` workspace filesystem does not set, so repo sessions fail
+to initialize. Remove the cap once a newer release (or `@cloudflare/shell`)
+handles those errors and repo-session tests pass against it.
+
+## Development overrides
+
+These packages are only reached through dev tooling, so `audit:prod` does not
+cover them. The overrides still keep the local and CI toolchain off known
+vulnerable releases.
+
+### `brace-expansion` → `>=5.0.12 <6.0.0`
+
+Keeps the `brace-expansion` copy (via `nx` and its `minimatch`) at or above the
+current advisory floor. Upstream `nx@23.2.0` pins `brace-expansion@5.0.9`
+exactly and `minimatch@10.2.5` declares `^5.0.5`, both of which allow vulnerable
+releases, so this override cannot be removed yet.
+
+The floor is `5.0.12` for:
+
+- [GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr) —
+  quadratic-time expansion of the `{a},b}` rewrite (`<5.0.12`)
+- [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7) —
+  uncontrolled recursion on nested brace groups (`<5.0.11`)
+- [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p) —
+  uncontrolled recursion in `parseCommaParts` (`<5.0.10`)
+
+The upper bound `<6.0.0` keeps the override within the same major version.
