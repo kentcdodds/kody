@@ -530,7 +530,11 @@ async function ensurePreviewResources(options: CliOptions) {
 		webhookDispatchDeadLetterQueueName,
 		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
-	assertPreviewResourceName(artifactsNamespace, 'artifacts')
+	if (!previewResourceNamePattern.test(artifactsNamespace)) {
+		fail(
+			`Refusing to create Artifacts namespace "${artifactsNamespace}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}. Preview ensure only creates kody-pr-<number>* and kody-branch-<slug>* Artifacts namespaces.`,
+		)
+	}
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
