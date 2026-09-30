@@ -1,0 +1,203 @@
+import { z } from 'zod'
+import { redactApiTokens } from '@kody-internal/shared/api-token-format.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	buildKodyToolContext,
+	createWorkflowTools,
+} from '#mcp/run-kody-registry.ts'
+import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
+import { type PackageInvokeInput } from '#mcp/runtime-helper-manifest.ts'
+import { type ApiInvocationContext } from './context.ts'
+import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
+import { maxApiRequestBodyBytes } from './request-params.ts'
+
+/**
+ * CapabilityProxy: the cloud half of local execute (`kody execute --local`,
+ * `@kodycodes/cli`). The CLI runs the module in a local workerd and forwards
+ * every `kody:runtime` call here as `{ path, args }`; this dispatches it
+ * through the same `kody.*` tool map ad hoc cloud execute builds, so
+ * capabilities, `kody.mcp`, `workflows.create`, and `packages.invoke` behave
+ * as they do in the cloud. Local CPU is never metered; each hop is one
+ * `api_call`, and the capability behind it meters itself as usual.
+ */
+
+export const capabilityProxyLimits = {
+	maxPathSegments: 8,
+	maxPathSegmentLength: 200,
+	maxArgs: 8,
+	maxRequestBytes: maxApiRequestBodyBytes,
+} as const
+
+const pathSegmentSchema = z
+	.string()
+	.min(1)
+	.max(capabilityProxyLimits.maxPathSegmentLength)
+
+export const capabilityProxyCallInputSchema = z
+	.object({
+		path: z
+			.array(pathSegmentSchema)
+			.min(2)
+			.max(capabilityProxyLimits.maxPathSegments)
+			.describe(
+				"`kody:runtime` property path, e.g. `['kody','emailSend']`, `['kody','mcp','home','lights_on']`, `['workflows','create']`, or `['packages','invoke']`.",
+			),
+		args: z
+			.array(z.unknown())
+			.max(capabilityProxyLimits.maxArgs)
+			.describe('Positional arguments passed to the runtime function.'),
+		conversationId: z
+			.string()
+			.min(1)
+			.max(64)
+			.optional()
+			.describe('Optional MCP conversation id to attribute the call to.'),
+	})
+	.strict()
+
+export type CapabilityProxyCallInput = z.infer<
+	typeof capabilityProxyCallInputSchema
+>
+
+export const capabilityProxyCallOutputSchema = z.object({
+	result: z.unknown().describe('Return value of the runtime call (JSON).'),
+})
+
+export const capabilityProxySessionOutputSchema = z.object({
+	scopes: z.array(z.string()),
+	expiresAt: z
+		.string()
+		.describe('Sliding expiry; every proxied call pushes it forward.'),
+	maxExpiresAt: z.string().describe('Absolute expiry of the token.'),
+	idleTtlSeconds: z.number().int(),
+	user: z.object({ userId: z.string(), email: z.string() }),
+	limits: z.object({
+		maxPathSegments: z.number().int(),
+		maxArgs: z.number().int(),
+		maxRequestBytes: z.number().int(),
+	}),
+})
+
+export function capabilityProxyUsageEntityId(params: unknown) {
+	const parsed = capabilityProxyCallInputSchema.safeParse(params)
+	return parsed.success
+		? `capability-proxy:${parsed.data.path.join('.')}`.slice(0, 200)
+		: 'capability-proxy:invalid'
+}
+
+function describePath(path: ReadonlyArray<string>) {
+	return path.join('.')
+}
+
+async function callKodyPath(input: {
+	ctx: ApiInvocationContext
+	path: ReadonlyArray<string>
+	args: ReadonlyArray<unknown>
+}) {
+	const { ctx, path, args } = input
+	const { tools, mcpServers } = await buildKodyToolContext(
+		ctx.env,
+		ctx.callerContext,
+		{
+			workflowTools: createWorkflowTools({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				packageContext: null,
+			}),
+			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+		},
+	)
+	if (path[1] === 'mcp') {
+		const [, , serverName, toolName] = path
+		if (path.length !== 4 || !serverName || !toolName) {
+			throw notFound(
+				`kody.mcp calls must look like kody.mcp.<server>.<tool>(args); got ${describePath(path)}.`,
+			)
+		}
+		const server = mcpServers.find((entry) => entry.name === serverName)
+		if (!server) {
+			throw notFound(
+				`Unknown MCP server "${serverName}". Available MCP servers: ${
+					mcpServers.map((entry) => entry.name).join(', ') || '(none)'
+				}.`,
+			)
+		}
+		if (!server.status.connected || server.status.toolCount === 0) {
+			throw invalidRequest(server.status.unavailableMessage)
+		}
+		const capability = server.capabilities.find(
+			(entry) => entry.name === toolName,
+		)
+		const tool = capability ? tools[capability.dispatchName] : undefined
+		if (!tool) {
+			throw notFound(
+				`Unknown tool "${toolName}" for MCP server "${serverName}". Available tools: ${
+					server.capabilities.map((entry) => entry.name).join(', ') || '(none)'
+				}.`,
+			)
+		}
+		return tool(args[0])
+	}
+	const [, name] = path
+	const tool = name ? tools[name] : undefined
+	if (path.length !== 2 || !tool) {
+		throw notFound(`Unknown runtime function kody.${path.slice(1).join('.')}.`)
+	}
+	return tool(args[0])
+}
+
+async function dispatchCapabilityProxyCall(input: {
+	ctx: ApiInvocationContext
+	call: CapabilityProxyCallInput
+}) {
+	const { ctx, call } = input
+	const [root, name] = call.path
+	if (root === 'kody') {
+		return callKodyPath({ ctx, path: call.path, args: call.args })
+	}
+	if (root === 'workflows' && name === 'create' && call.path.length === 2) {
+		return createWorkflowTools({
+			env: ctx.env,
+			callerContext: ctx.callerContext,
+			packageContext: null,
+		}).create(call.args[0] as never)
+	}
+	if (root === 'packages' && name === 'invoke' && call.path.length === 2) {
+		const tools = await createExecutePackageInvokeTools({
+			env: ctx.env,
+			baseUrl: ctx.callerContext.baseUrl,
+			callerContext: ctx.callerContext,
+			conversationId: call.conversationId ?? null,
+			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
+		})
+		return tools.invoke({
+			specifier: call.args[0],
+			options: call.args[1],
+		} as PackageInvokeInput)
+	}
+	throw notFound(
+		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.mcp.<server>.<tool>, workflows.create, and packages.invoke.`,
+	)
+}
+
+/**
+ * Run one proxied `kody:runtime` call. Errors the capability throws reach
+ * local user code with the same message cloud execute would show; only
+ * platform failures (not caller or capability errors) are hidden.
+ */
+export async function runCapabilityProxyCall(input: {
+	ctx: ApiInvocationContext
+	call: CapabilityProxyCallInput
+}) {
+	try {
+		return { result: (await dispatchCapabilityProxyCall(input)) ?? null }
+	} catch (error) {
+		const apiError = toApiError(error)
+		if (error instanceof ApiError || apiError.status < 500) throw apiError
+		throw new ApiError({
+			status: 500,
+			code: 'capability_error',
+			message: redactApiTokens(getErrorMessage(error)),
+		})
+	}
+}

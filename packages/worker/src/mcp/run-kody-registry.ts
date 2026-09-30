@@ -299,7 +299,7 @@ export async function buildKodyFns(
 	return (await buildKodyToolContext(env, callerContext, options)).tools
 }
 
-async function buildKodyToolContext(
+export async function buildKodyToolContext(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
