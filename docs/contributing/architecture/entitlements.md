@@ -327,8 +327,8 @@ is `admin_grant` with note `Welcome credits`, null `granted_by_user_id`, and
 deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 Platform accounts are not granted. The balance is held until the account is
 credit-eligible Pro (include → credits → stop); this is not a Free prepaid
-wallet product and does not unlock spend on Free. Existing accounts are not
-backfilled by this path. When Stripe later flips `stripe_credits_eligible` on,
+wallet product and does not unlock spend on Free. The grant runs at account
+creation. When Stripe later flips `stripe_credits_eligible` on,
 `refreshStripePlanForUser` calls `forgiveCreditUsageBeforeUnlock` so Free-period
 usage above the Pro include is not charged against the welcome balance.
 

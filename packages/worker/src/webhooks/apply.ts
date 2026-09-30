@@ -17,6 +17,8 @@ import {
 	collectWebhookCredentialSecrets,
 	redactWebhookCredentials,
 } from './redact.ts'
+import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
+import { type WebhookEndpointRecord } from './types.ts'
 
 export const webhookUrlApplyHttpMethods = [
 	'GET',
@@ -30,8 +32,11 @@ export const webhookUrlApplyHttpMethods = [
 export const webhookUrlApplyPlaceholder = '{{webhookUrl}}'
 
 /**
- * Server-side substitution token for the package webhook's declared
- * verification.secretName value (resolved for the destination host).
+ * Server-side substitution token for package-owned HMAC signing material
+ * (minted on the webhook URL record, or copied from verification.secretName
+ * at mint or rotate). Injected only after the owner Approves the apply
+ * destination. Not a user-secrets host-gated credential — unlike
+ * destination.secretName Bearer auth.
  */
 export const webhookUrlApplySecretPlaceholder = '{{webhookSecret}}'
 
@@ -718,10 +723,9 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 	env: Env
 	userId: string
 	baseUrl: string
-	packageId: string
 	savedPackage: SavedPackageRecord
+	endpoint: WebhookEndpointRecord
 	webhookName: string
-	destinationHost: string
 }): Promise<string> {
 	const declared = await loadDeclaredWebhookIfPresent({
 		env: input.env,
@@ -730,45 +734,17 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		savedPackage: input.savedPackage,
 		webhookName: input.webhookName,
 	})
-	const secretName = declared?.verification?.secretName?.trim() ?? ''
-	if (!secretName) {
+	if (!declared?.verification) {
 		throw new McpCallerError(
-			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification.secretName.`,
+			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification declaration.`,
 		)
 	}
-	const resolved = await resolveSecretForHost({
+	return resolveWebhookHmacSigningSecret({
 		env: input.env,
 		userId: input.userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageId,
-		},
-		host: input.destinationHost,
+		endpoint: input.endpoint,
+		verification: declared.verification,
 	})
-	if (!resolved.found || !resolved.value) {
-		throw new McpCallerError(
-			`Secret "${secretName}" was not found for this user.`,
-		)
-	}
-	if (!resolved.allowedHosts.includes(input.destinationHost)) {
-		const approvalUrl = buildSecretHostApprovalUrl({
-			baseUrl: input.baseUrl,
-			name: secretName,
-			scope: resolved.scope ?? 'user',
-			requestedHost: input.destinationHost,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: input.packageId,
-			},
-		})
-		throw new McpCallerError(
-			`Secret "${secretName}" is not approved for host "${input.destinationHost}". Approve it at ${approvalUrl}.`,
-		)
-	}
-	return resolved.value
 }
 
 async function dispatchHttpApply(input: {
@@ -780,6 +756,7 @@ async function dispatchHttpApply(input: {
 	packageKodyId: string
 	webhookName: string
 	savedPackage: SavedPackageRecord
+	endpoint: WebhookEndpointRecord
 	webhookUrl: string
 	urlSecret: string
 	destination: WebhookUrlApplyHttpDestination
@@ -796,7 +773,9 @@ async function dispatchHttpApply(input: {
 		headers,
 		body,
 	})
-	const hostProbeUrl = assertHttpsDestinationUrl(
+	// Validate the destination URL (with placeholders substituted) before
+	// resolving secrets / sending the outbound request.
+	assertHttpsDestinationUrl(
 		substituteApplyPlaceholders(
 			urlTemplate,
 			input.webhookUrl,
@@ -804,16 +783,14 @@ async function dispatchHttpApply(input: {
 			true,
 		),
 	)
-	const destinationHost = normalizeHost(hostProbeUrl.hostname)
 	const webhookSecret = needsWebhookSecret
 		? await resolveWebhookVerificationSecretForDestination({
 				env: input.env,
 				userId: input.userId,
 				baseUrl: input.baseUrl,
-				packageId: input.packageId,
 				savedPackage: input.savedPackage,
+				endpoint: input.endpoint,
 				webhookName: input.webhookName,
-				destinationHost,
 			})
 		: null
 	const resolvedUrl = assertHttpsDestinationUrl(
@@ -908,6 +885,7 @@ export async function dispatchWebhookUrlApply(input: {
 	packageKodyId: string
 	webhookName: string
 	savedPackage: SavedPackageRecord
+	endpoint: WebhookEndpointRecord
 	webhookUrl: string
 	urlSecret: string
 	urlHost: string
@@ -923,6 +901,7 @@ export async function dispatchWebhookUrlApply(input: {
 		packageKodyId: input.packageKodyId,
 		webhookName: input.webhookName,
 		savedPackage: input.savedPackage,
+		endpoint: input.endpoint,
 		webhookUrl: input.webhookUrl,
 		urlSecret: input.urlSecret,
 		destination: input.destination,

@@ -801,6 +801,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	webhook_endpoints: [
 		'url_secret_hash',
 		'url_secret_encrypted',
+		'hmac_secret_encrypted',
 		'previous_url_secret_hash',
 	],
 	webhook_apply_destination_pending: ['destination_json'],

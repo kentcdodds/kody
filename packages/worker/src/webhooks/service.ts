@@ -39,6 +39,7 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
+import { resolveHmacCiphertextForMint } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
@@ -286,7 +287,7 @@ export async function mintWebhookUrlForUser(input: {
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
-	await loadDeclaredWebhook({
+	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl,
 		userId: input.userId,
@@ -310,6 +311,14 @@ export async function mintWebhookUrlForUser(input: {
 			urlSecret,
 			userWebhookUrlSecretContext(input.userId, endpointId),
 		)
+		const hmacSecretEncrypted = await resolveHmacCiphertextForMint({
+			env: input.env,
+			userId: input.userId,
+			endpointId,
+			packageId: savedPackage.id,
+			verification: declared.verification,
+			existingHmacEncrypted: existing?.hmacSecretEncrypted,
+		})
 		try {
 			stored = await upsertWebhookEndpointSecret({
 				db: input.env.APP_DB,
@@ -319,6 +328,7 @@ export async function mintWebhookUrlForUser(input: {
 				webhookName,
 				urlSecretHash,
 				urlSecretEncrypted: encrypted,
+				...(hmacSecretEncrypted !== undefined ? { hmacSecretEncrypted } : {}),
 				enabled: true,
 				updateEnabledOnConflict: activate,
 			})
@@ -540,6 +550,7 @@ export async function applyWebhookUrlForUser(input: {
 		packageKodyId: resolved.savedPackage.kodyId,
 		webhookName: resolved.endpoint.webhookName,
 		savedPackage: resolved.savedPackage,
+		endpoint: resolved.endpoint,
 		webhookUrl: resolved.url,
 		urlSecret: resolved.urlSecret,
 		urlHost: resolved.urlHost,

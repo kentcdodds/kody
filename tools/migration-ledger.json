@@ -287,6 +287,10 @@
 		{
 			"filename": "0071-drop-compute-overage-invoices.sql",
 			"sha256": "0ded331875afe2d1adc89a9fd2b6100019707c9f2939f156b0f4d12c3a2c177b"
+		},
+		{
+			"filename": "0072-webhook-hmac-secret-encrypted.sql",
+			"sha256": "2592bfe5abde38660709516f82d52e43faade226283d828a5ae2bbdb56fd188f"
 		}
 	]
 }

@@ -20,6 +20,9 @@ type WalkthroughHostCompany =
 	| 'pi'
 	| 'openclaw'
 	| 'meta'
+	| 'wajo'
+	| 'cue'
+	| 'copilotkit'
 
 export type WalkthroughHostSlot = 'coding' | 'invoke' | 'notify'
 
@@ -171,6 +174,34 @@ export const walkthroughHostCatalog = [
 		label: 'Muse',
 		icon: 'muse',
 		company: 'meta',
+		kind: 'coding',
+	},
+	{
+		id: 'wajo',
+		label: 'Wajo',
+		icon: 'wajo',
+		company: 'wajo',
+		kind: 'coding',
+	},
+	{
+		id: 'cue',
+		label: 'Cue',
+		icon: 'cue',
+		company: 'cue',
+		kind: 'coding',
+	},
+	{
+		id: 'openmuse',
+		label: 'OpenMuse',
+		icon: 'openmuse',
+		company: 'copilotkit',
+		kind: 'coding',
+	},
+	{
+		id: 'dots',
+		label: 'Dots',
+		icon: 'dots',
+		company: 'openai',
 		kind: 'coding',
 	},
 ] as const satisfies ReadonlyArray<WalkthroughHost>

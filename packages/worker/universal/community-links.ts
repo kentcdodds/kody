@@ -46,6 +46,21 @@ export function getCommunityPackageHrefFromName(name: string) {
 }
 
 /**
+ * Read-only smart HTTP clone URL for a public listing: `/@owner/kody-id.git`.
+ * Append `.git` to the canonical package href. Private packages 404 on this
+ * route; push is rejected.
+ */
+export function getCommunityPackageGitHref(input: {
+	username: string
+	kodyId: string
+}) {
+	return `${routes.communityPackage.href({
+		username: input.username,
+		kodyId: input.kodyId,
+	})}.git`
+}
+
+/**
  * The canonical, shareable URL for a community listing: `/@owner/kody-id`.
  * The listing-uuid URL still resolves and redirects here, so it stays the
  * fallback for the surfaces that hold a listing id without its owner's name.

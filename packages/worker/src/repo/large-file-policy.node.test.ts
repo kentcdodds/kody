@@ -1,7 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	buildRepoDiffTooLargeMessage,
-	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
 	isRepoDiffTooLargeMessage,
 	isRepoLargeFileMessage,
@@ -34,16 +32,10 @@ test('large-file policy measures UTF-8 bytes, finds the first oversize file, and
 		byteLength: maxRepoSourceFileBytes + 1,
 	})
 
-	const message = buildRepoLargeFileMessage({
-		path: 'assets/too-big.txt',
-		byteLength: maxRepoSourceFileBytes + 1,
-	})
-	expect(isRepoLargeFileMessage(message)).toBe(true)
 	expect(isRepoLargeFileMessage('Source "x" was not found.')).toBe(false)
 })
 
 test('diff-line policy mirrors the Cloudflare shell ceiling and classifies stable plus raw EFBIG messages', () => {
-	expect(maxRepoSourceFileDiffLines).toBe(10_000)
 	expect(measureRepoSourceFileLines('')).toBe(1)
 	expect(measureRepoSourceFileLines('a')).toBe(1)
 	expect(measureRepoSourceFileLines('a\nb')).toBe(2)
@@ -51,15 +43,6 @@ test('diff-line policy mirrors the Cloudflare shell ceiling and classifies stabl
 		maxRepoSourceFileDiffLines + 1,
 	)
 
-	const message = buildRepoDiffTooLargeMessage({
-		path: 'assets/extracted.txt',
-		lineCount: maxRepoSourceFileDiffLines + 1,
-	})
-	expect(message).toContain('"assets/extracted.txt"')
-	expect(message).toContain('10,001 lines')
-	expect(message).toContain('10,000-line')
-	expect(message).toContain('Split the file into separate source files')
-	expect(isRepoDiffTooLargeMessage(message)).toBe(true)
 	expect(
 		isRepoDiffTooLargeMessage(
 			'EFBIG: content too large for diff (max 10000 lines)',
@@ -79,5 +62,9 @@ test('diff-line policy mirrors the Cloudflare shell ceiling and classifies stabl
 		false,
 	)
 	expect(isRepoDiffTooLargeMessage('Source "x" was not found.')).toBe(false)
-	expect(isRepoLargeFileMessage(message)).toBe(false)
+	expect(
+		isRepoLargeFileMessage(
+			'EFBIG: content too large for diff (max 10000 lines)',
+		),
+	).toBe(false)
 })

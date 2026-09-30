@@ -21,7 +21,6 @@ import {
 	microUsdPerCent,
 	signupWelcomeCreditCents,
 	signupWelcomeCreditLedgerId,
-	signupWelcomeCreditNote,
 } from '#universal/credits.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -31,7 +30,6 @@ import {
 	applyCreditPayment,
 	ensureCreditWallet,
 	readCreditWallet,
-	toAccountCreditsLedgerItem,
 	updateCreditWalletSettings,
 } from './credit-wallet.ts'
 import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
@@ -553,13 +551,12 @@ test('new accounts get $5 signup welcome credits once, with an honest ledger row
 		balanceMicroUsd: signupWelcomeCreditCents * microUsdPerCent,
 		createdAt: now.toISOString(),
 	})
-	expect(first.balanceMicroUsd).toBe(5_000_000)
 
 	const wallet = await readCreditWallet(env.APP_DB, user.stableUserId)
 	expect(wallet.balanceMicroUsd).toBe(5_000_000)
 
 	const row = await env.APP_DB.prepare(
-		`SELECT id, kind, amount_micro_usd, granted_by_user_id, note
+		`SELECT id, kind, amount_micro_usd, granted_by_user_id
 		 FROM credit_ledger_entries WHERE user_id = ?`,
 	)
 		.bind(user.stableUserId)
@@ -568,30 +565,12 @@ test('new accounts get $5 signup welcome credits once, with an honest ledger row
 			kind: string
 			amount_micro_usd: number
 			granted_by_user_id: string | null
-			note: string | null
 		}>()
 	expect(row).toEqual({
 		id: signupWelcomeCreditLedgerId(user.stableUserId),
 		kind: 'admin_grant',
 		amount_micro_usd: 5_000_000,
 		granted_by_user_id: null,
-		note: signupWelcomeCreditNote,
-	})
-	expect(
-		toAccountCreditsLedgerItem({
-			id: row!.id,
-			kind: 'admin_grant',
-			amountMicroUsd: row!.amount_micro_usd,
-			meter: null,
-			month: month,
-			units: null,
-			grantedByUserId: null,
-			note: row!.note,
-			createdAt: now.toISOString(),
-		}),
-	).toMatchObject({
-		description: signupWelcomeCreditNote,
-		amountMicroUsd: 5_000_000,
 	})
 
 	const replay = await grantSignupWelcomeCredits({

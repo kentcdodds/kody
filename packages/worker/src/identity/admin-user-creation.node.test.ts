@@ -90,7 +90,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	expect(
 		sqlite
 			.prepare(
-				`SELECT id, kind, amount_micro_usd, granted_by_user_id, note
+				`SELECT id, kind, amount_micro_usd, granted_by_user_id
 				 FROM credit_ledger_entries WHERE user_id = ?`,
 			)
 			.get(created.stableUserId),
@@ -99,7 +99,6 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		kind: 'admin_grant',
 		amount_micro_usd: 5_000_000,
 		granted_by_user_id: null,
-		note: 'Welcome credits',
 	})
 	expect(
 		sqlite

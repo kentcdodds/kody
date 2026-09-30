@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
@@ -7,6 +9,7 @@ import { AdminCommunityReportsRoute } from '#client/routes/admin-community-repor
 import {
 	AccountManagementInlineLinkNav,
 	AccountManagementLinkNav,
+	AccountManagementShell,
 	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
@@ -102,10 +105,9 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	)
 	expect(railHtml).toContain('data-account-nav')
 	const railRules = readRulesFor(railHtml, 'nav')
-	// The rail is the shell's left track: as tall as the content, clipped so
-	// it cannot paint over the footer. The link column inside sticks and
-	// scrolls. A min-height on the shell would leave a blank band on short
-	// pages, so the track does not reserve one.
+	// The rail is the shell's left track: as tall as the shell (which grows
+	// down to the footer on a short page), clipped so it cannot paint over
+	// the footer. The link column inside sticks and scrolls.
 	expect(railRules).toContain('position: absolute')
 	expect(railRules).toContain('bottom: 0')
 	expect(railRules).toContain('overflow: clip')
@@ -129,6 +131,33 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	expect(inlineHtml).toContain('>Open</a>')
 	expect(inlineHtml).not.toContain('data-account-nav')
 	expect(readRulesFor(inlineHtml, 'nav')).not.toContain('position: absolute')
+})
+
+test('account shell grows into main so a short page has no band above the footer', async () => {
+	const shellHtml = await renderToString(
+		jsx(AccountManagementShell, { children: jsx('p', { children: 'Short' }) }),
+	)
+	const shellRules = readRulesFor(shellHtml, 'section')
+	expect(shellRules).toContain('flex-grow: 1')
+	expect(shellRules).toContain('width: 100%')
+	expect(shellRules).toContain('align-content: start')
+	expect(shellRules).not.toContain('min-height')
+
+	// `<main>` keeps growing in the 100vh app frame (sticky footer) and hands
+	// that growth to the shell through a flex column.
+	const styles = readFileSync(
+		fileURLToPath(new URL('../../public/styles.css', import.meta.url)),
+		'utf8',
+	)
+	const mainRule = /main:has\(\[data-account-shell\]\) \{([^}]*)\}/.exec(
+		styles,
+	)?.[1]
+	expect(mainRule).toContain('display: flex')
+	expect(mainRule).toContain('flex-direction: column')
+	expect(mainRule).not.toContain('flex-grow')
+	expect(styles).not.toMatch(
+		/:has\(\[data-account-shell\]\)[^{]*\{[^}]*min-height/,
+	)
 })
 
 test('community reports page keeps one admin rail and an in-flow status filter', async () => {
