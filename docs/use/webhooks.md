@@ -160,16 +160,16 @@ Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
 and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
 required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
 stored on the minted webhook URL record (not a user secrets-list entry, and not
-host-gated). When a legacy package still declares `verification.secretName`,
-reminting (or rotating) the URL copies that value onto the endpoint when the
-named secret exists — apply never does a live `secretName` lookup for
-`{{webhookSecret}}` (so changing the name after destination Allow cannot swap
-credentials). Destination `secretName` / `integration` Bearer auth still
-requires host approval / integration allowlists. Destination URLs must be
-`https://`. Redirects are not followed. Auth is optional via `secretName` or
-`integration` (Bearer), or a caller-supplied `Authorization` header — not both.
-Destination `secretName` / `integration` authorize the outbound request; they
-are not the webhook HMAC signing secret.
+host-gated). When a package declares `verification.secretName`, reminting (or
+rotating) the URL copies that value onto the endpoint when the named secret
+exists — apply never does a live `secretName` lookup for `{{webhookSecret}}` (so
+changing the name after destination Allow cannot swap credentials). Destination
+`secretName` / `integration` Bearer auth requires host approval / integration
+allowlists. Destination URLs must be `https://`. Redirects are not followed.
+Auth is optional via `secretName` or `integration` (Bearer), or a
+caller-supplied `Authorization` header — not both. Destination `secretName` /
+`integration` authorize the outbound request; they are not the webhook HMAC
+signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
@@ -235,13 +235,12 @@ await kody.webhooks.webhookUrlApply({
 ```
 
 `{{webhookSecret}}` injects package-owned HMAC from the webhook URL record (or a
-value copied from legacy `verification.secretName` at mint/rotate). If the
-placeholder is present but verification is undeclared, or package-owned HMAC is
-missing, apply fails with a clear error. Omit `{{webhookSecret}}` when the
-webhook has no HMAC verification. Packages that still declare
-`verification.secretName` for GitHub-style hooks can delete that secrets-list
-entry after reminting (with the named secret still present so it can be copied)
-or after reminting without `secretName`.
+value copied from `verification.secretName` at mint/rotate). If the placeholder
+is present but verification is undeclared, or package-owned HMAC is missing,
+apply fails with a clear error. Omit `{{webhookSecret}}` when the webhook has no
+HMAC verification. GitHub-style hooks that declare `verification.secretName` can
+drop that secrets-list entry after reminting (with the named secret present so
+mint can copy it) or after reminting without `secretName`.
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,

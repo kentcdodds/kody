@@ -33,8 +33,8 @@ export const webhookUrlApplyPlaceholder = '{{webhookUrl}}'
 
 /**
  * Server-side substitution token for package-owned HMAC signing material
- * (minted on the webhook URL record, or migrated from a legacy
- * verification.secretName). Injected only after the owner Approves the apply
+ * (minted on the webhook URL record, or copied from verification.secretName
+ * at mint or rotate). Injected only after the owner Approves the apply
  * destination. Not a user-secrets host-gated credential — unlike
  * destination.secretName Bearer auth.
  */

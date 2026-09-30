@@ -112,15 +112,14 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    delivery row. Non-matching POSTs continue. GET without a matching challenge
    declaration → **405**.
 7. Payload cap 1 MB → **413**. When verification is declared, resolve
-   package-owned HMAC from `webhook_endpoints.hmac_secret_encrypted`, or fall
-   back to legacy `verification.secretName` in the secret store (user/package
-   scope via package storage context). Missing secret or HMAC mismatch →
-   **401**, with a clear delivery-log error for missing secrets. When
-   `replay.timestampHeader` is declared, a missing, unparseable, or stale
-   timestamp is rejected with the same generic **401** before dispatch (and
-   before any run record that implies acceptance). When
-   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
-   present ids become the invocation idempotency key.
+   package-owned HMAC from `webhook_endpoints.hmac_secret_encrypted`, or
+   `verification.secretName` in the secret store (user/package scope via package
+   storage context). Missing secret or HMAC mismatch → **401**, with a clear
+   delivery-log error for missing secrets. When `replay.timestampHeader` is
+   declared, a missing, unparseable, or stale timestamp is rejected with the
+   same generic **401** before dispatch (and before any run record that implies
+   acceptance). When `replay.deliveryIdHeader` is declared, a missing id is
+   rejected the same way; present ids become the invocation idempotency key.
 8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
 9. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
@@ -223,7 +222,7 @@ the path secret). `webhookUrlMint` / `webhookUrlRotate` return an opaque
 `handle` (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle
 inside Kody and registers the URL through an outbound HTTPS request
 (`type: "http"` with server-side `{{webhookUrl}}` substitution, and optional
-`{{webhookSecret}}` from package-owned HMAC on the endpoint — copied from legacy
+`{{webhookSecret}}` from package-owned HMAC on the endpoint — copied from
 `verification.secretName` at mint/rotate when present). HMAC injection is not a
 user-secrets host Allow (unlike destination Bearer `secretName`). Apply is
 interactive-only and reuses the account owner approval flow (same family as

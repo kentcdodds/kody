@@ -222,4 +222,5 @@ knobs belong in `packageStorage()`. Versioned config belongs in a repo.
 Credentials belong in secrets. OAuth client ids belong in integrations. OAuth
 access and refresh tokens, and a user-registered app's client secret, live on
 the integration — they do not appear in the Secrets list. PATs, API keys, and
-webhook HMAC secrets stay in the secret store.
+provider-issued webhook HMAC secrets live in the secret store. GitHub-style
+package-owned HMAC lives on the webhook URL record, not in the Secrets list.

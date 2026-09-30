@@ -247,8 +247,8 @@ matches the listing pin used in prepare, only rewritten files (`package.json`
 and self-reference text) are applied. When dest HEAD is ahead of that pin,
 persist re-derives the `package.json` rewrite from dest HEAD instead of applying
 pin-relative edits that would revert later origin commits. When the origin
-Artifacts repo is missing, persist falls back to the older full-tree snapshot
-sync. Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
+Artifacts repo is missing, persist falls back to the full-tree snapshot sync.
+Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
 `CommunityForkResourceLimitError` (honest UI/MCP copy; fork count does not
 increment). Records `community_forks` — **without** inserting `saved_packages`.
 Failed persist cleanup deletes the dest Artifacts repo, the inert entity source,
@@ -259,9 +259,9 @@ block a retry.
 `communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
 D1 or Analytics Engine. The storage-layer path records `artifacts-fork`. The
-legacy full-tree fallback may still include nested `bootstrap-*` phases from the
-RepoSession Durable Object; `bootstrap-source` is the RPC wall clock, including
-isolate startup. Subtract the nested bootstrap phases from `bootstrap-source` to
+full-tree fallback may include nested `bootstrap-*` phases from the RepoSession
+Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
+startup. Subtract the nested bootstrap phases from `bootstrap-source` to
 estimate cold start. `Date.now()` in Workers only advances across I/O, so
 CPU-only steps may report `0`.
 

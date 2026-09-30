@@ -34,8 +34,9 @@ switch-to-Pro prompt with no purchase UI; operator plans have no Credits
 section. Top-up Stripe returns land on `/account/usage?topup=success`, which
 confirms and redirects to `/account/usage?credits=added#credits`. Usage above
 the monthly include debits a funded wallet; nobody is invoiced for overage.
-Grant credits to a test account from `/admin/users/:stableUserId` (admin only)
-instead of paying.
+Every newly created person account receives a $5 house grant (held until the
+account is credit-eligible Pro). Grant extra credits to a test account from
+`/admin/users/:stableUserId` (admin only) instead of paying.
 
 `/account/usage` and `usageGet` lead with activity (code executions, job runs,
 workflow runs, package calls). Worker compute and Rows read are an include bar

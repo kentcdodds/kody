@@ -8,7 +8,7 @@ Public **packages** appear in that catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on
-promote; they do not yet appear on `/community`. Package **runtime** uses
+promote; they do not appear on `/community`. Package **runtime** uses
 `published_commit`; pushing to a public default branch is world-readable at HEAD
 even before the next package publish.
 

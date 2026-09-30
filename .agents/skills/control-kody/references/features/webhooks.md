@@ -67,7 +67,7 @@ node tools/control-kody.ts request GET /account/webhooks.json
 - HMAC for GitHub-style hooks is **package-owned** on the webhook URL record
   (`hmac_secret_encrypted`), minted when verification omits `secretName`. It is
   not listed in account secrets and never needs a secret→host Allow.
-  `{{webhookSecret}}` apply injects that material (or migrates a legacy
-  `verification.secretName` onto the endpoint once). Destination Bearer
-  `secretName` still needs host Allow. Provider-issued secrets (Sentry, …) still
-  use `verification.secretName` in the secret store.
+  `{{webhookSecret}}` apply injects that material (or a
+  `verification.secretName` copied onto the endpoint at mint/rotate).
+  Destination Bearer `secretName` needs host Allow. Provider-issued secrets
+  (Sentry, …) use `verification.secretName` in the secret store.
