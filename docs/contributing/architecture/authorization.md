@@ -424,6 +424,15 @@ admin owners only, metadata-only listing fields (including canonical
 `public_url`), permanent cancellation for missing or inactive listings, and
 enqueue failures that never fail `communityPublish`.
 
+A republish that moves the pinned commit fans `community.fork.upstream_updated`
+out across accounts, and only to accounts that hold a `community_forks` row for
+that listing. Each forker receives public listing metadata (id, name, package
+name leaf, `public_url`, publisher username, pinned commits and versions) plus
+identifiers of their own fork. The event never carries the publisher's stable
+id, email, or source, and never names other forkers. Delivery goes only to
+packages owned by that forker and is gated per forker by
+`fork-upstream-update-events` at processing time.
+
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort
 POSTs metadata to the main worker. Fan-out of `status.incident.opened` and

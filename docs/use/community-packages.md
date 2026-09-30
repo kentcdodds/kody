@@ -163,6 +163,12 @@ outdated fork, compare origin HEAD with your package, port useful changes, keep
 your customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
 
+When the listing owner republishes with a new pinned commit, packages in your
+account can react through the `community.fork.upstream_updated` subscription
+topic (experiments opt-in only). Use it to auto-rebase, or to ping you on
+Discord. See
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
+
 ## One-click install
 
 The listing detail page puts the install control beside the package name.

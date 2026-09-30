@@ -35,7 +35,8 @@ extended by `0065-experiments-opt-in.sql`:
 - `feature_flags` — at most one global row per key: `enabled`, `rollout_percent`
   (nullable), `audience` (`everyone` | `experiments_opt_in`, default
   `everyone`), `note`, `updated_by`, `updated_at`. No row means "use the
-  registry default" with audience `everyone`.
+  registry default" with the registry `defaultAudience` (`everyone` when
+  omitted).
 - `feature_flag_user_overrides` — per-user forced on/off, keyed by
   `(flag_key, user_id)`, cascade-deleted with the user and covered by account
   export/deletion targets.
@@ -53,11 +54,12 @@ leftover DB rows for removed keys surface as **stale** in the admin UI
    bucket of `key:userId` compared to the percentage (anonymous users are
    excluded from percentage rollouts); on without a percentage → on.
 3. Registry `defaultEnabled`.
-4. **Audience gate** (when the global row's `audience` is not `everyone`): if
-   the evaluation would be on and the audience is `experiments_opt_in`, the user
+4. **Audience gate** (when the effective audience is not `everyone`): if the
+   evaluation would be on and the audience is `experiments_opt_in`, the user
    must have `users.experiments_opt_in = 1` (set from `/account/experiments`).
-   Otherwise the flag stays off and keeps the same assignment source. No global
-   row means audience `everyone`.
+   Otherwise the flag stays off and keeps the same assignment source. The
+   effective audience is the global row's `audience`, or the registry
+   `defaultAudience` (`everyone` when omitted) when there is no global row.
 
 Evaluation failures for authenticated users **fail closed** (all flags off) so a
 default-on flag can never bypass an operator kill switch when D1 is unavailable.
@@ -139,6 +141,14 @@ when the MCP execute tool is registered (invoke offered). Enable for experiment
 members with
 `adminFeatureFlagSet({ key: "execute-invoke", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
+
+`fork-upstream-update-events` gates `community.fork.upstream_updated` (registry
+default **on** with `defaultAudience: experiments_opt_in`). With no global row,
+it is on only for accounts with `users.experiments_opt_in = 1`. An operator can
+turn it off globally or override it for one account. The Queue consumer checks
+it for each forking account (`isForkUpstreamUpdateEventsEnabled`), and
+evaluation failures fail closed. No `successMetric`: this is a rollout gate.
+Remove the flag and the gate site after general availability.
 
 `package-share-grants` is a rollout kill switch for person-to-person package
 shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.

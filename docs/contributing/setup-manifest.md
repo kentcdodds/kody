@@ -82,8 +82,10 @@ This project uses the following resources:
   - Queue messages contain only `{ eventId, listingId }`. The consumer reloads
     the metadata-only listing projection, acknowledges invalid or inactive
     listings, and retries transient lookup, subscription-discovery, or
-    package-invocation infrastructure failures. Only first publish enqueues;
-    republish does not.
+    package-invocation infrastructure failures. Only first publish enqueues this
+    shape. A republish that moves the pinned commit enqueues a
+    `kind: 'fork_upstream_updated'` message on the same queue for
+    `community.fork.upstream_updated` forker fan-out.
 - Cloudflare Queue for durable package-emitted event dispatch
   - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
   - Queue: `kody-package-events-dispatch`
