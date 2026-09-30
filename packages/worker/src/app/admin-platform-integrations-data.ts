@@ -32,6 +32,7 @@ export async function loadAdminPlatformIntegrationsData(
 			defaultScopes: app.defaultScopes,
 			requiredHosts: app.requiredHosts,
 			enabled: app.enabled,
+			visibility: app.visibility,
 			logoPath: buildPlatformOauthAppLogoPath(app),
 			connectionCount: await countConnectionsForPlatformApp({
 				db: env.APP_DB,

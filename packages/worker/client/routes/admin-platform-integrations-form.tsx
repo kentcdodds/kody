@@ -40,6 +40,7 @@ export function renderIntegrationForm(input: {
 	onLogoFileChange: (event: Event) => void
 	onRemoveLogoChange: (checked: boolean) => void
 	onToggleEnabled: (app: AdminPlatformIntegrationApp) => void
+	onToggleVisibility: (app: AdminPlatformIntegrationApp) => void
 	onDelete: (app: AdminPlatformIntegrationApp) => void
 	onCancel: () => void
 }) {
@@ -80,6 +81,15 @@ export function renderIntegrationForm(input: {
 						Save creates or updates a platform OAuth app. Omitted write-only
 						fields retain stored values.
 					</p>
+					{isEditing && editingApp ? (
+						<p mix={css(descriptionCss)}>
+							{editingApp.visibility === 'published'
+								? editingApp.enabled
+									? 'Published: offered on onboarding, account integrations, and the connect chooser.'
+									: 'Published, but disabled: hidden and rejecting new connects until enabled.'
+								: 'Draft: hidden from discovery. Existing connections keep working.'}
+						</p>
+					) : null}
 				</div>
 				{isEditing && editingApp ? (
 					<div
@@ -103,6 +113,22 @@ export function renderIntegrationForm(input: {
 								: editingApp.enabled
 									? 'Disable'
 									: 'Enable'}
+						</button>
+						<button
+							type="button"
+							disabled={actionState !== 'idle'}
+							data-testid="platform-integration-toggle-visibility"
+							mix={[
+								on('click', () => input.onToggleVisibility(editingApp)),
+								css(secondaryButtonCss),
+							]}
+						>
+							{actionState === 'toggling-visibility' &&
+							pendingSlug === editingApp.slug
+								? 'Saving…'
+								: editingApp.visibility === 'published'
+									? 'Move to draft'
+									: 'Publish'}
 						</button>
 						<button
 							type="button"

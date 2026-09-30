@@ -1269,41 +1269,180 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	)
 })
 
-test('platform-lane oauth exchange and connect are rejected', async () => {
+const publishedGithubPlatformApp = {
+	slug: 'github-platform',
+	provider: 'github',
+	label: 'GitHub',
+	description: null,
+	clientId: 'platform-client-id',
+	hasClientSecret: true,
+	tokenUrl: 'https://github.com/login/oauth/access_token',
+	authorizeUrl: 'https://github.com/login/oauth/authorize',
+	apiBaseUrl: 'https://api.github.com',
+	flow: 'confidential' as const,
+	usePkce: true,
+	tokenExchangeStyle: null,
+	scopeSeparator: null,
+	extraAuthorizeParams: {},
+	allowedScopes: ['read:user', 'repo'],
+	defaultScopes: ['read:user'],
+	requiredHosts: ['github.com'],
+	enabled: true,
+	visibility: 'published' as const,
+	logoKey: null,
+	logoContentType: null,
+	createdAt: epoch,
+	updatedAt: epoch,
+}
+
+test('platform-lane oauth exchange and connect reject apps that are not discoverable', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
+	mockModule.getAvailablePlatformApp.mockResolvedValue(null)
+	mockModule.persistIntegrationTokens.mockClear()
 	const call = createHandler()
-	const retired = {
+	const unavailable = {
 		ok: false,
-		error:
-			'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
+		error: 'Platform integration is not available.',
 	}
 
 	const exchangeResponse = await call(
 		postRequest({
 			action: 'oauth_exchange',
-			platformAppSlug: 'github',
+			platformAppSlug: 'google-platform',
 			params: 'grant_type=authorization_code',
 		}),
 	)
 	expect(exchangeResponse.status).toBe(400)
-	await expect(exchangeResponse.json()).resolves.toEqual(retired)
+	await expect(exchangeResponse.json()).resolves.toEqual(unavailable)
 	expect(fetchMock).not.toHaveBeenCalled()
+	expect(mockModule.getPlatformOauthAppClientSecret).not.toHaveBeenCalled()
 
 	const connectResponse = await call(
 		postRequest({
 			action: 'connect_oauth',
-			provider: 'github',
-			platformAppSlug: 'github',
-			scopes: ['read:user'],
-			accessTokenSecretName: 'githubAccessToken',
-			tokenPayload: { access_token: 'gh-access-token' },
+			provider: 'google-platform',
+			platformAppSlug: 'google-platform',
+			scopes: ['openid'],
+			tokenPayload: { access_token: 'google-access-token' },
 		}),
 	)
 	expect(connectResponse.status).toBe(400)
-	await expect(connectResponse.json()).resolves.toEqual(retired)
+	await expect(connectResponse.json()).resolves.toEqual(unavailable)
 	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
-	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(mockModule.persistIntegrationTokens).not.toHaveBeenCalled()
 
+	vi.unstubAllGlobals()
+})
+
+test('published platform apps exchange with the app row credentials and connect in the platform lane', async () => {
+	const fetchMock = vi.fn(
+		async (_url: string, _init?: RequestInit) =>
+			new Response(JSON.stringify({ access_token: 'gh-access-token' }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	mockModule.getAvailablePlatformApp.mockResolvedValue(
+		publishedGithubPlatformApp,
+	)
+	mockModule.getPlatformOauthAppClientSecret.mockResolvedValue(
+		'shared-platform-secret',
+	)
+	mockModule.persistIntegrationTokens.mockClear()
+	mockModule.persistUserOauthAppClientSecret.mockClear()
+	mockModule.upsertPlatformIntegration.mockClear()
+	mockModule.upsertIntegration.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
+	const call = createHandler()
+
+	const exchangeResponse = await call(
+		postRequest({
+			action: 'oauth_exchange',
+			platformAppSlug: 'github-platform',
+			tokenUrl: 'https://attacker.example/token',
+			flow: 'pkce',
+			params: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code: 'auth-code',
+				client_id: 'attacker-client-id',
+				client_secret: 'attacker-secret',
+			}).toString(),
+		}),
+	)
+	expect(exchangeResponse.status).toBe(200)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	const [exchangeUrl, exchangeInit] = fetchMock.mock.calls[0] ?? []
+	expect(exchangeUrl).toBe('https://github.com/login/oauth/access_token')
+	const exchangeBody = new URLSearchParams(String(exchangeInit?.body))
+	expect(exchangeBody.get('client_id')).toBe('platform-client-id')
+	expect(exchangeBody.get('client_secret')).toBe('shared-platform-secret')
+	expect(exchangeBody.get('code')).toBe('auth-code')
+
+	const rejectedScopes = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'github-platform',
+			platformAppSlug: 'github-platform',
+			scopes: ['admin:org'],
+			tokenPayload: { access_token: 'gh-access-token' },
+		}),
+	)
+	expect(rejectedScopes.status).toBe(400)
+	expect(mockModule.persistIntegrationTokens).not.toHaveBeenCalled()
+
+	const connectResponse = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'github-platform',
+			platformAppSlug: 'github-platform',
+			tokenUrl: 'https://attacker.example/token',
+			clientId: 'attacker-client-id',
+			clientSecret: 'attacker-secret',
+			scopes: ['read:user'],
+			tokenPayload: {
+				access_token: 'gh-access-token',
+				refresh_token: 'gh-refresh-token',
+			},
+		}),
+	)
+	expect(connectResponse.status).toBe(200)
+	await expect(connectResponse.json()).resolves.toMatchObject({
+		ok: true,
+		integrationName: 'github-platform',
+		refreshTokenSaved: true,
+		allowedHosts: ['api.github.com', 'github.com'],
+	})
+	expect(mockModule.upsertPlatformIntegration).toHaveBeenCalledWith(
+		expect.objectContaining({
+			platformAppSlug: 'github-platform',
+			name: 'github-platform',
+			scopes: ['read:user'],
+		}),
+	)
+	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
+	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'github-platform',
+			accessToken: 'gh-access-token',
+			refreshToken: 'gh-refresh-token',
+		}),
+	)
+	expect(mockModule.persistUserOauthAppClientSecret).not.toHaveBeenCalled()
+	expect(
+		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			integration: expect.objectContaining({
+				lane: 'platform',
+				provider: 'github',
+				platform_app_slug: 'github-platform',
+			}),
+		}),
+	)
+
+	mockModule.getAvailablePlatformApp.mockResolvedValue(null)
+	mockModule.getPlatformOauthAppClientSecret.mockResolvedValue(null)
 	vi.unstubAllGlobals()
 })

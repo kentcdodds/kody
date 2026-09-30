@@ -15,6 +15,7 @@ import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { setPlatformOauthAppLogo } from '#worker/integrations/platform-app-logo.ts'
 import {
 	PlatformOauthAppValidationError,
+	platformOauthAppVisibilityValues,
 	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
 } from '#worker/integrations/platform-apps.ts'
@@ -75,7 +76,13 @@ const inputSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				'Disabled apps are hidden from users and reject new connects. Defaults to enabled on create; pass false to stage a confidential app before its client secret exists.',
+				'Hard kill for connect: disabled apps reject every new connect and are hidden everywhere. Defaults to enabled on create; pass false to stage a confidential app before its client secret exists. Do not disable to hide an app from discovery — use visibility: "draft".',
+			),
+		visibility: z
+			.enum(platformOauthAppVisibilityValues)
+			.optional()
+			.describe(
+				'Catalog visibility. Only enabled + "published" apps appear on onboarding, account integrations, and the /connect/oauth chooser and accept new connects. "draft" hides the app from discovery while existing connections keep working. Defaults to "draft" on create; omit to keep the stored value.',
 			),
 		logoBase64: z
 			.string()
@@ -97,7 +104,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminPlatformOauthAppSave',
 		description:
-			'Create or update a platform (built-in) OAuth app that every user can connect through /connect/oauth without registering their own provider app. The client secret is encrypted at rest outside the user secret store and is never returned. Admin-only.',
+			'Create or update a platform (built-in) OAuth app. Once enabled and published, users can connect it through /connect/oauth without registering their own provider app; new apps start as drafts. The client secret is encrypted at rest outside the user secret store and is never returned. Admin-only.',
 		keywords: [
 			'admin',
 			'platform',
@@ -162,6 +169,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 								defaultScopes: args.defaultScopes,
 								requiredHosts: args.requiredHosts,
 								enabled: args.enabled,
+								visibility: args.visibility,
 							},
 						})
 						if (args.logoBase64 !== undefined) {

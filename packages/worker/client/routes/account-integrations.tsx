@@ -61,6 +61,9 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	let integrations: Array<AccountIntegrationListItem> = []
 	let apps: Array<AccountOauthAppListItem> = []
 	let savedPackages: Array<{ id: string; kodyId: string }> = []
+	let platformCatalog: NonNullable<
+		AccountIntegrationsLoaderData['platformCatalog']
+	> = []
 	let approval: AccountIntegrationsLoaderData['approval'] = null
 	let usageDrafts = new Map<string, IntegrationUsageDraft>()
 	let usageSavingName: string | null = null
@@ -374,6 +377,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		integrations = payload.integrations
 		apps = payload.apps ?? []
 		savedPackages = payload.savedPackages ?? []
+		platformCatalog = payload.platformCatalog ?? []
 		approval = payload.approval ?? null
 		message = null
 	}
@@ -542,7 +546,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready'
-					? renderIntegrationsSetupSections(setupIntro)
+					? renderIntegrationsSetupSections(setupIntro, platformCatalog)
 					: null}
 
 				<p mix={css({ margin: 0 })}>

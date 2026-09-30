@@ -173,6 +173,9 @@ export function OnboardingRoute(handle: Handle) {
 	let hasSecondMcpClient = false
 	let secondAgentGiftActive = false
 	let connectedAgents: OnboardingPayload['connectedAgents'] = []
+	let featuredPlatformIntegrations: NonNullable<
+		OnboardingPayload['featuredPlatformIntegrations']
+	> = []
 	let accessWinMemorySubject: string | null = null
 	let persistedPackageName: string | null = null
 	let initializedStep = false
@@ -224,6 +227,7 @@ export function OnboardingRoute(handle: Handle) {
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
 		discoveryPrompt = payload.discoveryPrompt
+		featuredPlatformIntegrations = payload.featuredPlatformIntegrations ?? []
 		hasAccessWin =
 			source === 'snapshot'
 				? hasAccessWin || payload.hasAccessWin
@@ -563,6 +567,7 @@ export function OnboardingRoute(handle: Handle) {
 									hasMcpClient,
 									hasAccessWin,
 									discoveryPrompt,
+									featuredPlatformIntegrations,
 									selectedAgentLabel: connectedAgentLabel,
 									connectedAgents,
 									search: readRouterSearch(handle),

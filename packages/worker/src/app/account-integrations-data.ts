@@ -3,12 +3,15 @@ import {
 	type AccountOauthAppListItem,
 	type ConnectOauthExistingConnection,
 } from '#universal/loader-data.ts'
+import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
+import { loadPlatformIntegrationCatalog } from '#app/platform-integration-catalog.ts'
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
 	findOauthAppForProviderSetup,
+	getAvailablePlatformApp,
 	getJoinedIntegration,
 	getOauthApp,
 	listJoinedIntegrations,
@@ -19,6 +22,7 @@ import {
 	type PlatformOauthApp,
 } from '#worker/integrations/service.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { isPlatformOauthAppDiscoverable } from '#worker/integrations/platform-apps.ts'
 import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
 import { backfillMissingUserOauthAppFavicons } from '#worker/integrations/user-oauth-app-favicon.ts'
 import {
@@ -62,9 +66,51 @@ function toAccountIntegrationRecord(
 }
 
 /**
- * Existing platform connections stay listed so tokens can keep refreshing,
- * but reconnect is always bring-your-own: keep endpoints and scopes, drop
- * the operator client id and platform-lane flags so the setup form appears.
+ * Connect-flow payload for a discoverable (enabled + published) platform app
+ * the user is connecting under `requestedName`. No client secret appears:
+ * the operator owns the app registration and token exchange runs host-side.
+ */
+function toPlatformAppPrefillRecord(
+	app: PlatformOauthApp,
+	requestedName: string,
+): AccountIntegrationRecord {
+	const providerKey = canonicalIntegrationName(requestedName) || app.slug
+	return {
+		name: providerKey,
+		appSlug: app.slug,
+		provider: app.provider,
+		appLabel: app.label,
+		accountLabel: null,
+		tokenUrl: app.tokenUrl,
+		apiBaseUrl: app.apiBaseUrl,
+		flow: app.flow,
+		...(typeof app.usePkce === 'boolean' ? { usePkce: app.usePkce } : {}),
+		clientId: app.clientId,
+		hasClientSecret: false,
+		requiredHosts: app.requiredHosts,
+		...(app.tokenExchangeStyle
+			? { tokenExchangeStyle: app.tokenExchangeStyle }
+			: {}),
+		authorization: {
+			authorizeUrl: app.authorizeUrl,
+			scopes: app.defaultScopes,
+			scopeSeparator: app.scopeSeparator,
+			extraAuthorizeParams: app.extraAuthorizeParams,
+		},
+		platform: true,
+		platformAllowedScopes: app.allowedScopes,
+		platformLogoPath: buildPlatformOauthAppLogoPath(app),
+		platformDescription: app.description,
+		createdAt: app.createdAt,
+		updatedAt: app.updatedAt,
+	}
+}
+
+/**
+ * Existing connections on a draft (or disabled) platform app stay listed so
+ * tokens can keep refreshing, but reconnect is bring-your-own: keep
+ * endpoints and scopes, drop the operator client id and platform-lane flags
+ * so the setup form appears.
  */
 function toBringYourOwnReconnectRecord(
 	record: AccountIntegrationRecord,
@@ -263,14 +309,17 @@ export async function loadAccountIntegrationsData(
 		usageMode: 'any' | 'packages'
 		alreadyGranted: boolean
 	} | null
+	platformCatalog: Array<PlatformIntegrationCatalogItem>
 }> {
 	const userId = user.mcpUser.userId
-	const [joined, apps, savedPackages, marks] = await Promise.all([
-		listJoinedIntegrations({ env, userId }),
-		listOauthApps({ env, userId }),
-		listSavedPackagesByUserId(env.APP_DB, { userId }),
-		listPlatformProviderMarks({ db: env.APP_DB }),
-	])
+	const [joined, apps, savedPackages, marks, platformCatalog] =
+		await Promise.all([
+			listJoinedIntegrations({ env, userId }),
+			listOauthApps({ env, userId }),
+			listSavedPackagesByUserId(env.APP_DB, { userId }),
+			listPlatformProviderMarks({ db: env.APP_DB }),
+			loadPlatformIntegrationCatalog({ env, userId }),
+		])
 	const integrations = joined
 		.map((entry) =>
 			attachCatalogLogoPath(toAccountIntegrationRecord(entry), marks),
@@ -332,6 +381,7 @@ export async function loadAccountIntegrationsData(
 		),
 		savedPackages: packageRecords,
 		approval,
+		platformCatalog,
 	}
 }
 
@@ -364,9 +414,13 @@ export async function loadAccountOauthAppBySlug(
 
 export function readConnectOauthLookupOptions(searchParams: URLSearchParams) {
 	const appParam = searchParams.get('app')?.trim()
+	const platformParam = searchParams.get('platform')?.trim()
 	return {
 		appSlug: appParam
 			? (normalizeProviderKey(appParam) ?? undefined)
+			: undefined,
+		platformSlug: platformParam
+			? (normalizeProviderKey(platformParam) ?? undefined)
 			: undefined,
 	}
 }
@@ -382,11 +436,25 @@ async function resolveAccountIntegrationByName(
 		 * on inferring that app from the typed name.
 		 */
 		appSlug?: string
+		/**
+		 * Built-in intent from a discovery surface (`platform=<slug>`):
+		 * connect that platform app under `name`. Only enabled + published
+		 * apps resolve; any other slug falls through to bring-your-own.
+		 */
+		platformSlug?: string
 	},
 ): Promise<AccountIntegrationRecord | null> {
+	if (options?.platformSlug) {
+		const platformApp = await getAvailablePlatformApp({
+			env,
+			slug: options.platformSlug,
+		})
+		if (platformApp) return toPlatformAppPrefillRecord(platformApp, name)
+	}
+
 	// 1. Existing connection (reconnect) — connection name, not app slug.
-	// Platform-lane rows stay listed so tokens can keep refreshing, but
-	// reconnect is always bring-your-own.
+	// Platform-lane rows reconnect through the built-in only while it is
+	// discoverable; draft or disabled built-ins reconnect bring-your-own.
 	const joined = await getJoinedIntegration({
 		env,
 		userId: user.mcpUser.userId,
@@ -394,7 +462,10 @@ async function resolveAccountIntegrationByName(
 	})
 	if (joined) {
 		const record = toAccountIntegrationRecord(joined)
-		if (joined.lane === 'platform') {
+		if (
+			joined.lane === 'platform' &&
+			!isPlatformOauthAppDiscoverable(joined.app)
+		) {
 			return toBringYourOwnReconnectRecord(record)
 		}
 		return record
@@ -418,7 +489,9 @@ async function resolveAccountIntegrationByName(
 				entry.lane === 'platform' && entry.app.slug === options.appSlug,
 		)
 		if (platformSibling) {
-			return toBringYourOwnSetupFromPlatformConnection(platformSibling, name)
+			return isPlatformOauthAppDiscoverable(platformSibling.app)
+				? toPlatformAppPrefillRecord(platformSibling.app, name)
+				: toBringYourOwnSetupFromPlatformConnection(platformSibling, name)
 		}
 	}
 

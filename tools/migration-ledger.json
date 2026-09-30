@@ -295,6 +295,10 @@
 		{
 			"filename": "0073-integration-refresh-policy.sql",
 			"sha256": "d78cd06a261188255524e86e7c3805d4184b81509adf0428116a49852517de41"
+		},
+		{
+			"filename": "0074-platform-oauth-app-visibility.sql",
+			"sha256": "a1bd5dbbed71909f1c8b3f72194a61819d32c6783a99be439b99a3e43eaa8514"
 		}
 	]
 }

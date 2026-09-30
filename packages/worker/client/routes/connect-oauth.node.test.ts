@@ -208,16 +208,16 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			platformAllowedScopes: ['openid', 'email', 'profile'],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: ['openid', 'email'],
+				scopes: ['openid', 'email', 'https://www.googleapis.com/auth/drive'],
 				scopeSeparator: null,
 				extraAuthorizeParams: {},
 			},
 		}),
 	).toMatchObject({
 		scopes: ['openid', 'email'],
-		platformAppSlug: null,
-		platformAllowedScopes: [],
-		clientId: '',
+		platformAppSlug: 'google',
+		platformAllowedScopes: ['openid', 'email', 'profile'],
+		clientId: 'platform-google-client',
 	})
 
 	expect(merge(spotifyQuery)).toMatchObject({

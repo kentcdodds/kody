@@ -42,6 +42,10 @@ import {
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
+import {
+	loadPlatformIntegrationCatalog,
+	onboardingFeaturedPlatformIntegrationSlugs,
+} from '#app/platform-integration-catalog.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import {
@@ -227,14 +231,21 @@ async function loadOnboardingChooserFields(
 	request: Request,
 	userId?: string | null,
 ) {
-	const [featuredListings, chooser] = await Promise.all([
-		loadOnboardingFeaturedListings(env, request),
-		loadOnboardingChooserMcpState(env, request, userId),
-	])
+	const [featuredListings, chooser, featuredPlatformIntegrations] =
+		await Promise.all([
+			loadOnboardingFeaturedListings(env, request),
+			loadOnboardingChooserMcpState(env, request, userId),
+			loadPlatformIntegrationCatalog({
+				env,
+				userId: userId ?? null,
+				order: onboardingFeaturedPlatformIntegrationSlugs,
+			}),
+		])
 	return {
 		featuredListings,
 		featuredMcpServers: chooser.featuredMcpServers,
 		customMcpServers: chooser.customMcpServers,
+		featuredPlatformIntegrations,
 		persistContext: {
 			connectedWorkspaceLabel: firstConnectedOnboardingWorkspaceLabel({
 				featuredMcpServers: chooser.featuredMcpServers,

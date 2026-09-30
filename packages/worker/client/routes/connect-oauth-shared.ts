@@ -88,6 +88,8 @@ export function buildConnectOauthIntegrationLookupHref(
 	searchParams: URLSearchParams,
 ) {
 	const params = new URLSearchParams({ name: providerKey })
+	const platform = searchParams.get('platform')?.trim()
+	if (platform) params.set('platform', platform)
 	const app = searchParams.get('app')?.trim()
 	if (app) params.set('app', app)
 	return `/account/integrations.json?${params.toString()}`
@@ -95,7 +97,7 @@ export function buildConnectOauthIntegrationLookupHref(
 
 /**
  * SPA-navigation prefetch mirroring the server handler's SSR embed: the
- * stored bring-your-own record for `?provider=` visits, resolved before the
+ * stored or built-in record for `?provider=` visits, resolved before the
  * route renders. Callback returns (`code`/`error`) restore config from
  * sessionStorage and bare visits redirect server-side, so both prefetch
  * nothing.

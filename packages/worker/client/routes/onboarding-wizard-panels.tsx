@@ -39,6 +39,8 @@ import {
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
 import { OnboardingStep2Prompt } from '#client/routes/onboarding-step-2-prompt.tsx'
+import { renderPlatformIntegrationCatalog } from '#client/routes/platform-integration-catalog.tsx'
+import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
 import {
 	WizardNavigation,
 	connectStatusContent,
@@ -116,6 +118,7 @@ export function renderAccessPanel(
 		hasMcpClient: boolean
 		hasAccessWin: boolean
 		discoveryPrompt: string
+		featuredPlatformIntegrations?: ReadonlyArray<PlatformIntegrationCatalogItem>
 		selectedAgentLabel: string | null
 		connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 	},
@@ -183,6 +186,21 @@ export function renderAccessPanel(
 					) : null}
 				</div>
 			)}
+			{props.featuredPlatformIntegrations &&
+			props.featuredPlatformIntegrations.length > 0 ? (
+				<div
+					data-testid="onboarding-platform-integrations"
+					mix={css(promptBlockCss)}
+				>
+					<p mix={css(panelLedeCss)}>
+						Or connect a service with Kody's built-in app:
+					</p>
+					{renderPlatformIntegrationCatalog({
+						items: props.featuredPlatformIntegrations,
+						testId: 'onboarding-platform-integration-list',
+					})}
+				</div>
+			) : null}
 			<WizardNavigation
 				activeStep={props.activeStep}
 				onSelectStep={props.onSelectStep}

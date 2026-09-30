@@ -275,6 +275,99 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 	expect(byoLookups.filter(([loaded]) => loaded?.platform)).toEqual([])
 })
 
+test('published built-ins prefill connects, reconnect in-lane, and feed the account catalog', async () => {
+	const userId = 'user-platform-published'
+	const { env, user, platformEnv, lookup } = createEnv(userId)
+	const githubApp = {
+		slug: 'github-platform',
+		label: 'GitHub',
+		description: 'Read-only repo access.',
+		clientId: 'platform-github-client',
+		clientSecret: 'platform-github-secret',
+		tokenUrl: githubTokenUrl,
+		authorizeUrl: githubAuthorizeUrl,
+		flow: 'confidential' as const,
+		defaultScopes: ['read:user'],
+		allowedScopes: ['read:user', 'repo'],
+	}
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: githubApp,
+	})
+
+	// Draft: `platform=` does not resolve, and nothing is in the catalog.
+	expect(
+		await lookup('github-platform', { platformSlug: 'github-platform' }),
+	).toBeNull()
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([])
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'published' },
+	})
+	const prefill = await lookup('github-platform', {
+		platformSlug: 'github-platform',
+	})
+	expect(prefill).toMatchObject({
+		name: 'github-platform',
+		platform: true,
+		appSlug: 'github-platform',
+		clientId: 'platform-github-client',
+		hasClientSecret: false,
+		platformAllowedScopes: ['read:user', 'repo'],
+		platformDescription: 'Read-only repo access.',
+		authorization: { authorizeUrl: githubAuthorizeUrl, scopes: ['read:user'] },
+	})
+	expect(JSON.stringify(prefill)).not.toContain('platform-github-secret')
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([
+		expect.objectContaining({
+			slug: 'github-platform',
+			label: 'GitHub',
+			description: 'Read-only repo access.',
+			connectHref:
+				'/connect/oauth?provider=github-platform&platform=github-platform',
+		}),
+	])
+
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'github-platform',
+		name: 'github-platform',
+		scopes: ['read:user'],
+	})
+	expect(await lookup('github-platform')).toMatchObject({
+		name: 'github-platform',
+		platform: true,
+		clientId: 'platform-github-client',
+	})
+	expect(
+		await lookup('github-work', { appSlug: 'github-platform' }),
+	).toMatchObject({ name: 'github-work', platform: true })
+	// Connected already: the catalog drops it.
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([])
+
+	// Back to draft: the existing connection still exists but reconnects BYO.
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'draft' },
+	})
+	expect(await lookup('github-platform')).toMatchObject({
+		name: 'github-platform',
+		platform: false,
+		clientId: '',
+	})
+})
+
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
 	const userId = 'user-integrations-apps-loader'
 	const { env, user } = createEnv(userId)

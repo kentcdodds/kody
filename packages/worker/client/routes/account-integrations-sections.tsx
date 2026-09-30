@@ -1,4 +1,5 @@
 import { type AccountIntegrationsLoaderData } from '#universal/loader-data.ts'
+import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { css } from 'remix/ui'
@@ -7,6 +8,7 @@ import { on } from '#client/event-mixin.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
+import { renderPlatformIntegrationCatalog } from '#client/routes/platform-integration-catalog.tsx'
 import { recordBodyCss } from '#client/routes/record-table.tsx'
 import {
 	buildCustomIntegrationSetupPrompt,
@@ -165,9 +167,28 @@ export function renderRecordNotFound(kind: 'connection' | 'integration') {
 	)
 }
 
-export function renderIntegrationsSetupSections(setupIntro: string) {
+export function renderIntegrationsSetupSections(
+	setupIntro: string,
+	platformCatalog: ReadonlyArray<PlatformIntegrationCatalogItem>,
+) {
 	return (
 		<>
+			{platformCatalog.length > 0 ? (
+				<section mix={css({ display: 'grid', gap: spacing.lg })}>
+					<div mix={css({ display: 'grid', gap: spacing.xs })}>
+						<h2 mix={css(sectionTitleCss)}>Connect with Kody</h2>
+						<p mix={css(descriptionCss)}>
+							These use Kody's built-in OAuth apps, so there is nothing to set
+							up first.
+						</p>
+					</div>
+					{renderPlatformIntegrationCatalog({
+						items: platformCatalog,
+						testId: 'integrations-platform-catalog',
+					})}
+				</section>
+			) : null}
+
 			<details
 				mix={css(advancedDetailsCss)}
 				data-testid="integrations-how-connections-work"

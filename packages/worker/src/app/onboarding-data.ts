@@ -8,6 +8,7 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
 import {
 	countConnectedAgentEcosystems,
 	hasSecondConnectedMcpClient,
@@ -157,6 +158,8 @@ export async function loadOnboardingData(input: {
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
 	/** Non-featured MCP servers the viewer added, loaded by the handler. */
 	customMcpServers?: Array<OnboardingCustomMcpServer>
+	/** Published built-ins from the onboarding allowlist, loaded by the handler. */
+	featuredPlatformIntegrations?: Array<PlatformIntegrationCatalogItem>
 	/** Contextual persist prompt, computed by the handler. */
 	persistContext?: {
 		connectedWorkspaceLabel?: string | null
@@ -234,6 +237,9 @@ export async function loadOnboardingData(input: {
 				listDisconnectedOnboardingFeaturedMcpServers())
 			: [],
 		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
+		featuredPlatformIntegrations: input.emailVerified
+			? (input.featuredPlatformIntegrations ?? [])
+			: [],
 		persistedPackageName: input.emailVerified
 			? (input.persistedPackageName ?? null)
 			: null,

@@ -7,6 +7,7 @@ import {
 	type OnboardingFeaturedMcpServer,
 } from '#universal/loader-data.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
 /**
@@ -33,6 +34,7 @@ export type OnboardingPayload = {
 	featuredListings: Array<OnboardingFeaturedListing>
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	customMcpServers: Array<OnboardingCustomMcpServer>
+	featuredPlatformIntegrations?: Array<PlatformIntegrationCatalogItem>
 	/**
 	 * Most recently updated saved-package user-facing name (`@scope/kody-id`)
 	 * after persist. Null when logged out, unverified, or the listing fails

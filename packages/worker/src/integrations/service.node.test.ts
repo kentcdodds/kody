@@ -620,7 +620,20 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 		await deleteIntegration({ env, userId: 'user-deletes', name: 'github' }),
 	).toBe(true)
 	expect(await listIntegrations({ env, userId: 'user-deletes' })).toEqual([])
-	expect(await getAvailablePlatformApp({ env, slug: 'github' })).not.toBeNull()
+	// The shared app survives; draft keeps it off discovery until published.
+	expect(await getAvailablePlatformApp({ env, slug: 'github' })).toBeNull()
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: { ...githubPlatformApp, visibility: 'published' },
+	})
+	expect(await getAvailablePlatformApp({ env, slug: 'github' })).toMatchObject({
+		slug: 'github',
+		visibility: 'published',
+	})
+	expect(
+		(await listAvailablePlatformApps({ env })).map((app) => app.slug),
+	).toEqual(['github'])
 
 	const disabled = createEnv()
 	const disabledApp = await provisionGithubPlatformApp(disabled.env)
@@ -634,6 +647,7 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			authorizeUrl: disabledApp.authorizeUrl,
 			flow: disabledApp.flow,
 			enabled: false,
+			visibility: 'published',
 		},
 	})
 	expect(await listAvailablePlatformApps({ env: disabled.env })).toEqual([])

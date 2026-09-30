@@ -141,10 +141,38 @@ test('admin save and delete require admin and return HTTP shapes without echoing
 	expect(createdPayload.apps[0]).toMatchObject({
 		slug: 'github',
 		hasClientSecret: true,
+		enabled: true,
+		visibility: 'draft',
 	})
 	expect(JSON.stringify(createdPayload)).not.toContain(
 		'platform-github-client-secret-value',
 	)
+
+	// The admin UI's Publish / Move to draft buttons post the edit shape plus
+	// `visibility`; enable/disable is untouched.
+	const publish = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'published',
+	})
+	expect(publish.status).toBe(200)
+	expect(((await publish.json()) as AppsPayload).apps[0]).toMatchObject({
+		enabled: true,
+		visibility: 'published',
+	})
+	const kept = await invoke({ ...editGithubBody, slug: 'github' })
+	expect(((await kept.json()) as AppsPayload).apps[0]).toMatchObject({
+		visibility: 'published',
+	})
+	const unpublish = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'draft',
+	})
+	expect(((await unpublish.json()) as AppsPayload).apps[0]).toMatchObject({
+		enabled: true,
+		visibility: 'draft',
+	})
 
 	connectGithubUser()
 	const blocked = await invoke({ action: 'delete', slug: 'github' })

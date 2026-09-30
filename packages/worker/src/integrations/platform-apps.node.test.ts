@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -5,10 +6,12 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	countConnectionsForPlatformApp,
 	deletePlatformOauthApp,
+	getDiscoverablePlatformOauthApp,
 	getPlatformOauthAppBySlug,
 	getPlatformOauthAppClientSecret,
+	isPlatformOauthAppDiscoverable,
+	listDiscoverablePlatformOauthApps,
 	listPlatformOauthApps,
-	listTopPlatformAppsByUse,
 	PlatformOauthAppValidationError,
 	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
@@ -176,25 +179,93 @@ test('deletePlatformOauthApp refuses while user connections reference the app', 
 	expect(await deletePlatformOauthApp({ db, slug: 'github' })).toBe(true)
 })
 
-test('listTopPlatformAppsByUse orders enabled apps by connection count and hides disabled', async () => {
-	const { db, upsert, connect } = createHarness()
-	for (const slug of ['github', 'google', 'notion', 'slack']) {
-		await upsert({ ...baseGithubApp, slug, enabled: slug !== 'slack' })
+test('visibility defaults to draft, survives partial saves, and only enabled + published apps are discoverable', async () => {
+	const { sqlite, db, env, upsert } = createHarness()
+	const created = await upsert(baseGithubApp)
+	expect(created.visibility).toBe('draft')
+	expect(isPlatformOauthAppDiscoverable(created)).toBe(false)
+	expect(await listDiscoverablePlatformOauthApps({ db })).toEqual([])
+	expect(
+		await getDiscoverablePlatformOauthApp({ db, slug: 'github' }),
+	).toBeNull()
+	// Draft still resolves for existing-connection paths (refresh, fetch).
+	expect(await getPlatformOauthAppBySlug({ db, slug: 'github' })).toMatchObject(
+		{ enabled: true, visibility: 'draft' },
+	)
+
+	const published = await upsert({ ...coreGithubApp, visibility: 'published' })
+	expect(published.visibility).toBe('published')
+	expect(isPlatformOauthAppDiscoverable(published)).toBe(true)
+	expect(
+		(await listDiscoverablePlatformOauthApps({ db })).map((app) => app.slug),
+	).toEqual(['github'])
+	expect(
+		await getDiscoverablePlatformOauthApp({ db, slug: 'github' }),
+	).toMatchObject({ slug: 'github', visibility: 'published' })
+
+	const retained = await upsert({ ...coreGithubApp, label: 'GitHub' })
+	expect(retained.visibility).toBe('published')
+
+	// Disable is the hard kill: a published app stops being discoverable
+	// without losing its visibility.
+	const disabled = await upsert({ ...coreGithubApp, enabled: false })
+	expect(disabled.visibility).toBe('published')
+	expect(await listDiscoverablePlatformOauthApps({ db })).toEqual([])
+	expect(
+		await getDiscoverablePlatformOauthApp({ db, slug: 'github' }),
+	).toBeNull()
+
+	await upsert({ ...coreGithubApp, enabled: true, visibility: 'draft' })
+	expect(await listDiscoverablePlatformOauthApps({ db })).toEqual([])
+
+	await upsert({ ...coreGithubApp, visibility: 'published' })
+	const renamed = await renamePlatformOauthApp({
+		db,
+		env,
+		slug: 'github',
+		newSlug: 'github-platform',
+	})
+	expect(renamed.visibility).toBe('published')
+
+	expect(() =>
+		sqlite
+			.prepare('UPDATE platform_oauth_apps SET visibility = ? WHERE slug = ?')
+			.run('public', 'github-platform'),
+	).toThrow(/CHECK/i)
+})
+
+test('migration leaves pre-existing platform apps draft', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const visibilityMigration = '0074-platform-oauth-app-visibility.sql'
+	const migrationFiles = readdirSync(migrationsDirectory)
+		.filter((file) => file.endsWith('.sql'))
+		.sort()
+	const applyMigrations = (files: Array<string>) => {
+		for (const file of files) {
+			sqlite.exec(readFileSync(new URL(file, migrationsDirectory), 'utf8'))
+		}
 	}
-	for (const [userId, slug] of [
-		['user-1', 'google'],
-		['user-2', 'google'],
-		['user-1', 'notion'],
-		['user-1', 'slack'],
-		['user-2', 'slack'],
-		['user-3', 'slack'],
-	] as const) {
-		connect(userId, slug)
-	}
-	const topSlugs = async (limit: number) =>
-		(await listTopPlatformAppsByUse({ db, limit })).map((app) => app.slug)
-	expect(await topSlugs(3)).toEqual(['google', 'notion', 'github'])
-	expect(await topSlugs(2)).toEqual(['google', 'notion'])
+	applyMigrations(migrationFiles.filter((file) => file < visibilityMigration))
+	sqlite
+		.prepare(
+			`INSERT INTO platform_oauth_apps (
+				slug, provider, client_id, token_url, authorize_url, flow, enabled
+			) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+		)
+		.run(
+			'google-platform',
+			'google',
+			'client',
+			'https://oauth2.googleapis.com/token',
+			'https://accounts.google.com/o/oauth2/v2/auth',
+			'pkce',
+		)
+	applyMigrations(migrationFiles.filter((file) => file >= visibilityMigration))
+	expect(
+		sqlite
+			.prepare('SELECT visibility FROM platform_oauth_apps WHERE slug = ?')
+			.get('google-platform'),
+	).toEqual({ visibility: 'draft' })
 })
 
 test('renamePlatformOauthApp carries the secret and moves connections atomically', async () => {

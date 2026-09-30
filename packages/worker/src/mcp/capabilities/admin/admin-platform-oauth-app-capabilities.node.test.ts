@@ -69,10 +69,27 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		slug: 'github',
 		clientId: 'platform-github-client-id',
 		enabled: true,
+		visibility: 'draft',
 	})
 	expect(JSON.stringify(saved)).not.toContain(
 		'platform-github-client-secret-value',
 	)
+
+	const published = await adminPlatformOauthAppSaveCapability.handler(
+		{
+			slug: 'github',
+			clientId: saveInput.clientId,
+			tokenUrl: saveInput.tokenUrl,
+			authorizeUrl: saveInput.authorizeUrl,
+			flow: 'confidential',
+			visibility: 'published',
+		},
+		ctx,
+	)
+	expect(published.app).toMatchObject({
+		enabled: true,
+		visibility: 'published',
+	})
 
 	const disabled = await adminPlatformOauthAppSaveCapability.handler(
 		{
@@ -86,6 +103,8 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		ctx,
 	)
 	expect(disabled.app.enabled).toBe(false)
+	// Disable is independent of visibility.
+	expect(disabled.app.visibility).toBe('published')
 	await expect(
 		getPlatformOauthAppClientSecret({
 			db: env.APP_DB,
@@ -114,6 +133,7 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		.prepare('SELECT action, result FROM audit_events ORDER BY id ASC')
 		.all() as Array<{ action: string; result: string }>
 	expect(auditActions).toEqual([
+		{ action: 'adminPlatformOauthAppSave', result: 'success' },
 		{ action: 'adminPlatformOauthAppSave', result: 'success' },
 		{ action: 'adminPlatformOauthAppSave', result: 'success' },
 		{ action: 'adminPlatformOauthAppList', result: 'success' },

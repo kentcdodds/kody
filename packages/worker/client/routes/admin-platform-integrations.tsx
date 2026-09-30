@@ -300,6 +300,25 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		)
 	}
 
+	function handleToggleVisibility(app: AdminPlatformIntegrationApp) {
+		const visibility = app.visibility === 'published' ? 'draft' : 'published'
+		void submitAdminAction(
+			{
+				action: 'save',
+				slug: app.slug,
+				clientId: app.clientId,
+				tokenUrl: app.tokenUrl,
+				authorizeUrl: app.authorizeUrl,
+				flow: app.flow,
+				visibility,
+			},
+			'toggling-visibility',
+			visibility === 'published'
+				? `Published ${app.slug}.`
+				: `Moved ${app.slug} to draft.`,
+		)
+	}
+
 	function handleDelete(app: AdminPlatformIntegrationApp) {
 		void submitAdminAction(
 			{
@@ -373,7 +392,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin platform integrations"
-					description="Manage operator-provisioned OAuth apps stored in the platform_oauth_apps table."
+					description="Manage operator-provisioned OAuth apps stored in the platform_oauth_apps table. Users only discover and newly connect apps that are both enabled and published; drafts keep serving existing connections."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
@@ -442,6 +461,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 							{ key: 'provider', label: 'Provider' },
 							{ key: 'label', label: 'Label', drop: 1 },
 							{ key: 'enabled', label: 'Enabled' },
+							{ key: 'visibility', label: 'Visibility' },
 							{
 								key: 'connections',
 								label: 'Connections',
@@ -479,6 +499,13 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 										title={app.enabled ? 'Enabled' : 'Disabled'}
 									/>
 								),
+								visibility: (
+									<span
+										data-testid={`platform-integration-visibility-${app.slug}`}
+									>
+										{app.visibility === 'published' ? 'Published' : 'Draft'}
+									</span>
+								),
 								connections: String(app.connectionCount),
 								updated: (
 									<span mix={css(recordStampCss)}>
@@ -505,6 +532,7 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 										handle.update()
 									},
 									onToggleEnabled: handleToggleEnabled,
+									onToggleVisibility: handleToggleVisibility,
 									onDelete: handleDelete,
 									onCancel: cancelEditor,
 								})

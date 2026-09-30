@@ -21,6 +21,7 @@ import {
 	getPlatformOauthAppBySlug,
 	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
+	type PlatformOauthAppVisibility,
 } from '#worker/integrations/platform-apps.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
@@ -167,6 +168,7 @@ async function handleSaveAction(input: {
 				defaultScopes: readOptionalStringArray(record, 'defaultScopes'),
 				requiredHosts: readOptionalStringArray(record, 'requiredHosts'),
 				enabled: readOptionalBoolean(record, 'enabled') ?? undefined,
+				visibility: readVisibility(record),
 			},
 		})
 		const logoBase64 = record.logoBase64
@@ -311,6 +313,13 @@ function readOptionalRecord(record: Record<string, unknown>, key: string) {
 			(entry): entry is [string, string] => typeof entry[1] === 'string',
 		),
 	)
+}
+
+function readVisibility(
+	record: Record<string, unknown>,
+): PlatformOauthAppVisibility | undefined {
+	const value = record.visibility
+	return value === 'draft' || value === 'published' ? value : undefined
 }
 
 function readTokenExchangeStyle(record: Record<string, unknown>) {

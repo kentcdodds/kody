@@ -30,6 +30,10 @@ import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clien
 import { type EmailNotificationDestination } from '#universal/email-destinations.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
+import {
+	type ConnectOauthChooserOption,
+	type PlatformIntegrationCatalogItem,
+} from '#universal/oauth-connect.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
 import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
 import {
@@ -515,7 +519,10 @@ export type AdminPlatformIntegrationApp = {
 	allowedScopes: Array<string>
 	defaultScopes: Array<string>
 	requiredHosts: Array<string>
+	/** Hard kill for connect. */
 	enabled: boolean
+	/** Discovery surfaces offer only enabled + published apps. */
+	visibility: 'draft' | 'published'
 	logoPath: string | null
 	connectionCount: number
 	createdAt: string
@@ -1197,6 +1204,12 @@ export type OnboardingLoaderData = {
 	/** Non-featured MCP servers the viewer added themselves. */
 	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**
+	 * Built-in integrations from the onboarding allowlist that are published,
+	 * enabled, and not yet connected. Empty (or absent) while every built-in is
+	 * draft.
+	 */
+	featuredPlatformIntegrations?: Array<PlatformIntegrationCatalogItem>
+	/**
 	 * Most recently updated saved-package user-facing name (`@scope/kody-id`)
 	 * for Step 3 "You made …" chrome. Null when logged out, unverified, or
 	 * the listing fails open.
@@ -1539,14 +1552,16 @@ export type AccountIntegrationsLoaderData = {
 		usageMode: 'any' | 'packages'
 		alreadyGranted: boolean
 	} | null
+	/** Enabled + published built-ins the viewer has not connected yet. */
+	platformCatalog?: Array<PlatformIntegrationCatalogItem>
 }
 
 export type AccountIntegrationDetailLoaderData = {
 	ok: true
 	integration: AccountIntegrationListItem | null
 	/**
-	 * Always false. Platform connect is retired; the field stays so older
-	 * clients keep a stable loader shape.
+	 * Always false. Built-in connects start from `platform=<slug>` discovery
+	 * links instead; the field stays so older clients keep a stable shape.
 	 */
 	builtInAvailable?: boolean
 	/** See {@link ConnectOauthExistingConnection}. */
@@ -1593,20 +1608,11 @@ export type ConnectOauthLoaderData = {
 	redirectUri?: string
 	/**
 	 * Signed-in bare `/connect/oauth` visits: saved connections that can
-	 * start from `?provider=` alone. Omitted on provider/callback visits.
+	 * start from `?provider=` alone, then published built-ins not yet
+	 * connected. Omitted on provider/callback visits.
 	 */
 	chooser?: {
-		options: Array<{
-			id: string
-			href: string
-			label: string
-			detail: string
-			providerKey: string
-			logoPath: string | null
-			autoLogoPath: string | null
-			catalogLogoPath: string | null
-			kind: 'connection'
-		}>
+		options: Array<ConnectOauthChooserOption>
 	}
 }
 
