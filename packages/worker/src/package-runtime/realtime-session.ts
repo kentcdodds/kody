@@ -960,7 +960,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 }
 
 type PackageRealtimeSessionRpc = {
-	fetch: (request: Request) => Promise<Response>
+	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 function getPackageRealtimeNamespace(env: Env) {
