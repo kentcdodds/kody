@@ -744,7 +744,6 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 		userId: input.userId,
 		endpoint: input.endpoint,
 		verification: declared.verification,
-		migrateLegacySecretNameToEndpoint: true,
 	})
 }
 

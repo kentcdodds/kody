@@ -174,6 +174,7 @@ const redactedFailure = { ok: false, leaked: [], redacted: true }
 async function setupOwner(
 	input: {
 		verification?: boolean | 'package-owned' | 'secret-name'
+		legacySecretValue?: string
 	} = {},
 ) {
 	const verificationMode =
@@ -182,6 +183,10 @@ async function setupOwner(
 			: input.verification === false || input.verification === undefined
 				? null
 				: input.verification
+	const legacyMintHmac =
+		verificationMode === 'secret-name'
+			? (input.legacySecretValue ?? 'legacy_minted_hmac_value')
+			: null
 	vi.mocked(loadPackageManifestBySourceId).mockResolvedValue({
 		manifest: {
 			name: '@owner/sentry-bridge',
@@ -253,6 +258,14 @@ async function setupOwner(
 		)
 		.bind(userId)
 		.run()
+	if (legacyMintHmac) {
+		secretMocks.resolveSecret.mockResolvedValue({
+			found: true,
+			value: legacyMintHmac,
+			allowedHosts: [],
+			scope: 'user',
+		})
+	}
 	const { handle } = await mintWebhookUrlForUser({
 		env,
 		userId,
@@ -267,6 +280,7 @@ async function setupOwner(
 		db,
 		env,
 		handle,
+		legacyMintHmac,
 		reveal: async () =>
 			(
 				await revealWebhookUrlForWebsite({
@@ -586,14 +600,13 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 })
 
-test('webhookUrlApply migrates legacy verification.secretName onto the endpoint', async () => {
-	const { db, handle, reveal, apply } = await setupOwner({
+test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a live secrets lookup', async () => {
+	const { db, handle, legacyMintHmac, reveal, apply } = await setupOwner({
 		verification: 'secret-name',
 	})
 	const url = await reveal()
 	mockIntegration()
-	const hookSecret = 'legacy_pr_desk_hmac'
-	mockSecret(hookSecret)
+	expect(legacyMintHmac).toBeTruthy()
 	const endpointId = parseWebhookUrlHandle(handle)
 	expect(endpointId).toBeTruthy()
 	expect(
@@ -605,7 +618,7 @@ test('webhookUrlApply migrates legacy verification.secretName onto the endpoint'
 				.bind(endpointId)
 				.first<{ hmac_secret_encrypted: string | null }>()
 		)?.hmac_secret_encrypted,
-	).toBeNull()
+	).toBeTruthy()
 
 	using fetchMock = fetchResponding(JSON.stringify({ id: 42 }), {
 		status: 201,
@@ -616,27 +629,12 @@ test('webhookUrlApply migrates legacy verification.secretName onto the endpoint'
 
 	expect(applied).toMatchObject({ ok: true, remoteId: '42' })
 	expect(JSON.parse(String(requestOf(fetchMock).init.body)).config).toEqual(
-		expect.objectContaining({ url, secret: hookSecret }),
+		expect.objectContaining({ url, secret: legacyMintHmac }),
 	)
-	expect(secretMocks.resolveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({ name: 'githubWebhookSecret' }),
-	)
-	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
-	const migrated = await db
-		.prepare(`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`)
-		.bind(endpointId)
-		.first<{ hmac_secret_encrypted: string | null }>()
-	expect(migrated?.hmac_secret_encrypted).toBeTruthy()
-
-	secretMocks.resolveSecret.mockClear()
-	using fetchMock2 = fetchResponding(JSON.stringify({ id: 43 }), {
-		status: 201,
-	})
-	await apply(githubHooksHttpDestination({ includeWebhookSecret: true }))
+	// Apply must not re-resolve verification.secretName (prevents post-Allow
+	// secret swaps into an already-approved destination).
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
-	expect(
-		JSON.parse(String(requestOf(fetchMock2).init.body)).config.secret,
-	).toBe(hookSecret)
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 })
 
 test('webhookUrlApply still requires host Allow for destination.secretName Bearer auth', async () => {
@@ -660,10 +658,11 @@ test('webhookUrlApply still requires host Allow for destination.secretName Beare
 
 test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error bodies', async () => {
 	{
-		const { apply } = await setupOwner({ verification: 'secret-name' })
-		const hookSecret = 'hook_signing_secret_for_redaction'
+		const { apply, legacyMintHmac } = await setupOwner({
+			verification: 'secret-name',
+		})
+		const hookSecret = legacyMintHmac!
 		mockIntegration()
-		mockSecret(hookSecret)
 		using _fetch = fetchResponding(`invalid secret ${hookSecret}`, {
 			status: 400,
 		})
@@ -676,9 +675,11 @@ test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error
 	}
 
 	{
-		const { apply } = await setupOwner({ verification: 'secret-name' })
-		const spacedSecret = 'hook secret with spaces'
-		mockSecret(spacedSecret, 'hooks.example')
+		const { apply, legacyMintHmac } = await setupOwner({
+			verification: 'secret-name',
+			legacySecretValue: 'hook secret with spaces',
+		})
+		const spacedSecret = legacyMintHmac!
 		const formEncoded = new URLSearchParams({ v: spacedSecret })
 			.toString()
 			.slice('v='.length)

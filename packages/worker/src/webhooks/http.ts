@@ -655,6 +655,7 @@ export async function handleWebhookIngressRequest(
 				userId: liveEndpoint.userId,
 				endpoint: liveEndpoint,
 				verification: declared.verification,
+				allowLegacySecretNameFallback: true,
 			})
 		} catch {
 			return rejectUnauthorized(

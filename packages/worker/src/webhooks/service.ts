@@ -39,10 +39,7 @@ import {
 	setWebhookEndpointEnabled,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
-import {
-	mintPackageOwnedWebhookHmacCiphertext,
-	shouldMintPackageOwnedWebhookHmac,
-} from './signing-secret.ts'
+import { resolveHmacCiphertextForMint } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
@@ -307,9 +304,6 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 	let endpointId = existing?.id ?? crypto.randomUUID()
-	const mintPackageHmac =
-		shouldMintPackageOwnedWebhookHmac(declared.verification) &&
-		!existing?.hmacSecretEncrypted
 	let stored: WebhookEndpointRecord | null = null
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const encrypted = await encryptWebhookUrlSecret(
@@ -317,15 +311,14 @@ export async function mintWebhookUrlForUser(input: {
 			urlSecret,
 			userWebhookUrlSecretContext(input.userId, endpointId),
 		)
-		const hmacSecretEncrypted = mintPackageHmac
-			? (
-					await mintPackageOwnedWebhookHmacCiphertext({
-						env: input.env,
-						userId: input.userId,
-						endpointId,
-					})
-				).encrypted
-			: undefined
+		const hmacSecretEncrypted = await resolveHmacCiphertextForMint({
+			env: input.env,
+			userId: input.userId,
+			endpointId,
+			packageId: savedPackage.id,
+			verification: declared.verification,
+			existingHmacEncrypted: existing?.hmacSecretEncrypted,
+		})
 		try {
 			stored = await upsertWebhookEndpointSecret({
 				db: input.env.APP_DB,

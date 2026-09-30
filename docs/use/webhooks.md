@@ -160,14 +160,16 @@ Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
 and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
 required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
 stored on the minted webhook URL record (not a user secrets-list entry, and not
-host-gated). When a legacy package still declares `verification.secretName`, the
-first successful `{{webhookSecret}}` apply copies that value onto the endpoint
-so the secrets-list entry can be deleted afterward. Destination `secretName` /
-`integration` Bearer auth still requires host approval / integration allowlists.
-Destination URLs must be `https://`. Redirects are not followed. Auth is
-optional via `secretName` or `integration` (Bearer), or a caller-supplied
-`Authorization` header — not both. Destination `secretName` / `integration`
-authorize the outbound request; they are not the webhook HMAC signing secret.
+host-gated). When a legacy package still declares `verification.secretName`,
+reminting (or rotating) the URL copies that value onto the endpoint when the
+named secret exists — apply never does a live `secretName` lookup for
+`{{webhookSecret}}` (so changing the name after destination Allow cannot swap
+credentials). Destination `secretName` / `integration` Bearer auth still
+requires host approval / integration allowlists. Destination URLs must be
+`https://`. Redirects are not followed. Auth is optional via `secretName` or
+`integration` (Bearer), or a caller-supplied `Authorization` header — not both.
+Destination `secretName` / `integration` authorize the outbound request; they
+are not the webhook HMAC signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
