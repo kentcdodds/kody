@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
+import { onboardingMobileFeaturedAgentIds } from './onboarding-mcp-clients.ts'
 import {
 	isValidWalkthroughHostPick,
 	joinWalkthroughHostLabels,
@@ -148,6 +149,76 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 			)
 			.map((host) => host.icon),
 	).toEqual([])
+})
+
+test('phone slot offers chat apps plus coding hosts with a real phone surface', () => {
+	const phoneIds = listChatWalkthroughHosts().map((host) => host.id)
+	expect([...phoneIds].sort()).toEqual([
+		'chatgpt',
+		'claude',
+		'claude-code',
+		'codex',
+		'copilot',
+		'cursor',
+		'devin',
+		'gemini',
+		'grok',
+		'grok-bot',
+		'openclaw',
+	])
+	expect(listCodingWalkthroughHosts().map((host) => host.id)).toEqual(
+		expect.arrayContaining([
+			'claude-code',
+			'codex',
+			'copilot',
+			'cursor',
+			'devin',
+			'openclaw',
+		]),
+	)
+
+	const walkthroughIdByMobileAgent = {
+		chatgpt: 'chatgpt',
+		'claude-desktop': 'claude',
+		'copilot-app': 'copilot',
+		gemini: 'gemini',
+		grok: 'grok',
+		'grok-bot': 'grok-bot',
+	} as const satisfies Record<
+		(typeof onboardingMobileFeaturedAgentIds)[number],
+		string
+	>
+	for (const id of onboardingMobileFeaturedAgentIds) {
+		expect(phoneIds).toContain(walkthroughIdByMobileAgent[id])
+	}
+
+	const pick = replaceWalkthroughHost(
+		replaceWalkthroughHost(
+			replaceWalkthroughHost(
+				pickWalkthroughHosts(() => 0),
+				'coding',
+				'dots',
+			),
+			'invoke',
+			'gemini',
+		),
+		'notify',
+		'claude',
+	)
+	expect(
+		listWalkthroughHostOptions(pick, 'invoke').map((host) => host.label),
+	).toEqual([
+		'ChatGPT',
+		'Claude Code',
+		'Codex',
+		'Copilot',
+		'Cursor',
+		'Devin',
+		'Gemini',
+		'Grok',
+		'Grok Bot',
+		'OpenClaw',
+	])
 })
 
 test('pickWalkthroughHosts uses the injected rng, maps acts, and supports host replacement', () => {
