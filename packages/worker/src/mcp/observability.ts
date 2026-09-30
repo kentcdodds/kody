@@ -32,7 +32,7 @@ import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/tok
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
-export type McpToolKind = 'search' | 'execute' | 'capability' | 'app'
+export type McpToolKind = 'search' | 'execute' | 'api' | 'capability' | 'app'
 
 export type McpFailurePhase = 'parse_input' | 'handler' | 'parse_output'
 
