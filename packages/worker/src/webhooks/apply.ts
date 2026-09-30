@@ -1,7 +1,7 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
-import { resolveSecretForHost } from '#mcp/secrets/service.ts'
+import { resolveSecret, resolveSecretForHost } from '#mcp/secrets/service.ts'
 import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
 import { resolveIntegrationAccessToken } from '#worker/integrations/credentials.ts'
 import { getJoinedIntegration } from '#worker/integrations/service.ts'
@@ -31,7 +31,9 @@ export const webhookUrlApplyPlaceholder = '{{webhookUrl}}'
 
 /**
  * Server-side substitution token for the package webhook's declared
- * verification.secretName value (resolved for the destination host).
+ * verification.secretName value (HMAC signing material). Injected only after
+ * the owner Approves the apply destination; does not require a separate secret
+ * host Allow for that destination (unlike destination.secretName Bearer auth).
  */
 export const webhookUrlApplySecretPlaceholder = '{{webhookSecret}}'
 
@@ -721,7 +723,6 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 	packageId: string
 	savedPackage: SavedPackageRecord
 	webhookName: string
-	destinationHost: string
 }): Promise<string> {
 	const declared = await loadDeclaredWebhookIfPresent({
 		env: input.env,
@@ -736,7 +737,13 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 			`Destination includes ${webhookUrlApplySecretPlaceholder} but webhook "${input.webhookName}" has no verification.secretName.`,
 		)
 	}
-	const resolved = await resolveSecretForHost({
+	// HMAC signing secrets are registration config, not outbound auth toward
+	// the destination host. Destination approval already covers injecting
+	// {{webhookSecret}} into that exact request; requiring a second secret→host
+	// Allow (e.g. prDeskGithubWebhookSecret → api.github.com) is double-prompt
+	// friction. Inbound verification also resolves without a host gate.
+	// Destination Bearer auth (destination.secretName) still requires host Allow.
+	const resolved = await resolveSecret({
 		env: input.env,
 		userId: input.userId,
 		name: secretName,
@@ -745,27 +752,10 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 			appId: null,
 			packageId: input.packageId,
 		},
-		host: input.destinationHost,
 	})
 	if (!resolved.found || !resolved.value) {
 		throw new McpCallerError(
 			`Secret "${secretName}" was not found for this user.`,
-		)
-	}
-	if (!resolved.allowedHosts.includes(input.destinationHost)) {
-		const approvalUrl = buildSecretHostApprovalUrl({
-			baseUrl: input.baseUrl,
-			name: secretName,
-			scope: resolved.scope ?? 'user',
-			requestedHost: input.destinationHost,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: input.packageId,
-			},
-		})
-		throw new McpCallerError(
-			`Secret "${secretName}" is not approved for host "${input.destinationHost}". Approve it at ${approvalUrl}.`,
 		)
 	}
 	return resolved.value
@@ -796,7 +786,9 @@ async function dispatchHttpApply(input: {
 		headers,
 		body,
 	})
-	const hostProbeUrl = assertHttpsDestinationUrl(
+	// Validate the destination URL (with placeholders substituted) before
+	// resolving secrets / sending the outbound request.
+	assertHttpsDestinationUrl(
 		substituteApplyPlaceholders(
 			urlTemplate,
 			input.webhookUrl,
@@ -804,7 +796,6 @@ async function dispatchHttpApply(input: {
 			true,
 		),
 	)
-	const destinationHost = normalizeHost(hostProbeUrl.hostname)
 	const webhookSecret = needsWebhookSecret
 		? await resolveWebhookVerificationSecretForDestination({
 				env: input.env,
@@ -813,7 +804,6 @@ async function dispatchHttpApply(input: {
 				packageId: input.packageId,
 				savedPackage: input.savedPackage,
 				webhookName: input.webhookName,
-				destinationHost,
 			})
 		: null
 	const resolvedUrl = assertHttpsDestinationUrl(

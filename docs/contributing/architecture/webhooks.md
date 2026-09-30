@@ -218,13 +218,14 @@ current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
 (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
 and registers the URL through an outbound HTTPS request (`type: "http"` with
 server-side `{{webhookUrl}}` substitution, and optional `{{webhookSecret}}` from
-the webhook's `verification.secretName` resolved for the destination host).
-Apply is interactive-only and reuses the account owner approval flow (same
-family as `/connect/secrets` host approval, secret package grants, and
-locked-package publish approval): deny with `approval_url` to
-`/connect/webhook-apply`, owner Allow writes a durable destination fingerprint
-grant, then retry. Silent model-chosen apply is rejected. GitHub repository
-hooks use the same `http` path against
+the webhook's `verification.secretName`). HMAC injection does not require a
+separate secret→host Allow for the destination host after destination approval
+(unlike destination Bearer `secretName`). Apply is interactive-only and reuses
+the account owner approval flow (same family as `/connect/secrets` host
+approval, secret package grants, and locked-package publish approval): deny with
+`approval_url` to `/connect/webhook-apply`, owner Allow writes a durable
+destination fingerprint grant, then retry. Silent model-chosen apply is
+rejected. GitHub repository hooks use the same `http` path against
 `https://api.github.com/repos/{owner}/{repo}/hooks` with `{{webhookSecret}}` in
 `config.secret` when HMAC is declared. The credential and signing secret are
 injected server-side and never returned to the model. Delivery history is in the

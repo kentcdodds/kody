@@ -18,6 +18,7 @@ const integrationMocks = vi.hoisted(() => ({
 
 const secretMocks = vi.hoisted(() => ({
 	resolveSecretForHost: vi.fn(),
+	resolveSecret: vi.fn(),
 }))
 
 vi.mock('#worker/integrations/service.ts', () => ({
@@ -66,6 +67,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecretForHost: (...args: Array<unknown>) =>
 		secretMocks.resolveSecretForHost(...args),
+	resolveSecret: (...args: Array<unknown>) =>
+		secretMocks.resolveSecret(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -97,6 +100,27 @@ function mockSecret(value: string, host = 'api.github.com') {
 		found: true,
 		value,
 		allowedHosts: [host],
+		scope: 'user',
+	})
+	secretMocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value,
+		allowedHosts: [host],
+		scope: 'user',
+	})
+}
+
+function mockVerificationSecretWithoutHostAllow(value: string) {
+	secretMocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value,
+		allowedHosts: [],
+		scope: 'user',
+	})
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value,
+		allowedHosts: [],
 		scope: 'user',
 	})
 }
@@ -561,12 +585,62 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from verification.s
 		expect(raw).toContain(JSON.stringify(hookSecret).slice(1, -1))
 		expect(JSON.parse(raw).config).toMatchObject({ url, secret: hookSecret })
 	}
-	expect(secretMocks.resolveSecretForHost).toHaveBeenCalledWith(
+	expect(secretMocks.resolveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'githubWebhookSecret',
-			host: 'api.github.com',
 		}),
 	)
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'githubWebhookSecret',
+		}),
+	)
+})
+
+test('webhookUrlApply injects {{webhookSecret}} without a separate secret host Allow for the destination', async () => {
+	// Regression: after destination Allow, HMAC signing secrets must not demand
+	// a second Allow for the apply host (e.g. prDeskGithubWebhookSecret →
+	// api.github.com). Destination Bearer auth still requires host Allow.
+	const { reveal, apply } = await setupOwner({ verification: true })
+	const url = await reveal()
+	mockIntegration()
+	const hookSecret = 'pr_desk_hmac_without_host_allow'
+	mockVerificationSecretWithoutHostAllow(hookSecret)
+	using fetchMock = fetchResponding(JSON.stringify({ id: 42 }), {
+		status: 201,
+	})
+
+	const applied = await apply(
+		githubHooksHttpDestination({ includeWebhookSecret: true }),
+	)
+
+	expect(applied).toMatchObject({ ok: true, remoteId: '42' })
+	expect(JSON.parse(String(requestOf(fetchMock).init.body)).config).toEqual(
+		expect.objectContaining({ url, secret: hookSecret }),
+	)
+	expect(secretMocks.resolveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({ name: 'githubWebhookSecret' }),
+	)
+	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply still requires host Allow for destination.secretName Bearer auth', async () => {
+	const { apply } = await setupOwner()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: true,
+		value: 'tok_unapproved',
+		allowedHosts: [],
+		scope: 'user',
+	})
+
+	await expect(
+		apply({
+			type: 'http',
+			url: hooksRegister,
+			body: '{"url":"{{webhookUrl}}"}',
+			secretName: 'hooksRegistrationToken',
+		}),
+	).rejects.toThrow(/not approved for host "hooks\.example"/)
 })
 
 test('webhookUrlApply redacts {{webhookSecret}} from JSON and form-encoded error bodies', async () => {

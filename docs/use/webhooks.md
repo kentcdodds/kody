@@ -156,9 +156,13 @@ Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
 and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
 required. `{{webhookSecret}}` injects the **resolved value** of the package
 webhook's declared `verification.secretName` (the HMAC key material, not the
-secret name string), resolved for the destination request host under the same
-host-approval rules as other secrets — never returned to MCP. Destination URLs
-must be `https://`. Redirects are not followed. Auth is optional via
+secret name string). After the owner Approves the apply destination, that HMAC
+injection does **not** require a second secret→host Allow for the destination
+host — signing secrets are registration config for the approved request, not
+outbound auth toward that host (same as inbound delivery verification, which
+also resolves without a host gate). Destination `secretName` / `integration`
+Bearer auth still requires host approval / integration allowlists. Destination
+URLs must be `https://`. Redirects are not followed. Auth is optional via
 `secretName` or `integration` (Bearer), or a caller-supplied `Authorization`
 header — not both. Destination `secretName` / `integration` authorize the
 outbound request; they are not the webhook HMAC signing secret.
@@ -228,9 +232,12 @@ await kody.webhooks.webhookUrlApply({
 
 `{{webhookSecret}}` injects the **resolved HMAC secret value** from the named
 secret in `verification.secretName` (not the name string itself). If the
-placeholder is present but that declaration is missing, or the secret is missing
-/ not approved for the destination host, apply fails with a clear error. Omit
-`{{webhookSecret}}` when the webhook has no HMAC verification.
+placeholder is present but that declaration is missing, or the secret is
+missing, apply fails with a clear error. Destination approval already authorizes
+injecting the HMAC value into that exact request — there is no second
+secret→host Allow for the apply destination (for example
+`prDeskGithubWebhookSecret` → `api.github.com`). Omit `{{webhookSecret}}` when
+the webhook has no HMAC verification.
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,

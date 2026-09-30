@@ -64,3 +64,7 @@ node tools/control-kody.ts request GET /account/webhooks.json
   `type: "http"` from interactive MCP as that user, then open the returned
   `approval_url`.
 - Every intent writes an `account` audit event (`webhook_url_reveal`, …).
+- Generic `http` apply destination Allow covers injecting `{{webhookSecret}}`
+  (HMAC from `verification.secretName`) into that destination. A second
+  secret→host Allow for the apply host is not required for the signing secret.
+  Destination Bearer `secretName` still needs host Allow.
