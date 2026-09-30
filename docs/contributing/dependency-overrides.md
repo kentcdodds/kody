@@ -4,8 +4,8 @@ This file documents every `overrides` entry in the root `package.json` and
 explains why it exists. `npm run overrides:check` (part of `npm run validate`
 and the CI static job) fails when an override has no `###` heading here whose
 first code span is the overridden package (nested overrides also name each
-parent in backticks), when a heading documents a package with no override, or
-when `package.json` repeats a key.
+parent in backticks before the `→`), when a heading documents a package or
+parent with no matching override, or when `package.json` repeats a key.
 
 After changing overrides, `npm run audit:prod` is the production-dependency
 check. It is part of `npm run validate` and the CI static job (see

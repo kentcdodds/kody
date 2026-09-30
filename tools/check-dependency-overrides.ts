@@ -16,7 +16,8 @@ export type OverrideTarget = {
 
 export type OverrideDocHeading = {
 	line: number
-	codeSpans: Array<string>
+	packageName: string | undefined
+	parents: Array<string>
 }
 
 export type DependencyOverridesCheckResult = {
@@ -110,16 +111,46 @@ export function listOverrideTargets(
 	return targets
 }
 
+const fencePattern = /^ {0,3}(?<fence>`{3,}|~{3,})/
+
+/**
+ * Only code spans before `→` identify the override (package, then nested
+ * parents); spans after it are version ranges.
+ */
 export function parseOverrideDocHeadings(
 	markdown: string,
 ): Array<OverrideDocHeading> {
-	return markdown.split('\n').flatMap((text, index) => {
-		if (!text.startsWith('### ')) return []
-		const codeSpans = [...text.matchAll(/`([^`]+)`/g)].flatMap((match) =>
+	const headings: Array<OverrideDocHeading> = []
+	let openFence: string | null = null
+	for (const [index, text] of markdown.split('\n').entries()) {
+		const fence = fencePattern.exec(text)?.groups?.fence
+		if (openFence) {
+			if (
+				fence !== undefined &&
+				fence[0] === openFence[0] &&
+				fence.length >= openFence.length &&
+				text.trim() === fence
+			) {
+				openFence = null
+			}
+			continue
+		}
+		if (fence) {
+			openFence = fence
+			continue
+		}
+		if (!text.startsWith('### ')) continue
+		const identity = text.split('→')[0] ?? ''
+		const codeSpans = [...identity.matchAll(/`([^`]+)`/g)].flatMap((match) =>
 			match[1] ? [match[1]] : [],
 		)
-		return [{ line: index + 1, codeSpans }]
-	})
+		headings.push({
+			line: index + 1,
+			packageName: codeSpans[0],
+			parents: codeSpans.slice(1),
+		})
+	}
+	return headings
 }
 
 function describeTarget(target: OverrideTarget): string {
@@ -136,8 +167,8 @@ export function findOverrideDocumentationErrors(input: {
 	for (const target of input.targets) {
 		const documented = input.headings.some(
 			(heading) =>
-				heading.codeSpans[0] === target.packageName &&
-				target.parents.every((parent) => heading.codeSpans.includes(parent)),
+				heading.packageName === target.packageName &&
+				target.parents.every((parent) => heading.parents.includes(parent)),
 		)
 		if (!documented) {
 			const parentHint =
@@ -149,19 +180,29 @@ export function findOverrideDocumentationErrors(input: {
 			)
 		}
 	}
-	const overriddenPackages = new Set(
-		input.targets.map((target) => target.packageName),
-	)
 	for (const heading of input.headings) {
-		const packageName = heading.codeSpans[0]
+		const { packageName } = heading
 		if (packageName === undefined) {
 			errors.push(
 				`${docPath}:${heading.line} heading must start with the overridden package name in backticks.`,
 			)
-		} else if (!overriddenPackages.has(packageName)) {
+			continue
+		}
+		const packageTargets = input.targets.filter(
+			(target) => target.packageName === packageName,
+		)
+		if (packageTargets.length === 0) {
 			errors.push(
 				`${docPath}:${heading.line} documents \`${packageName}\`, but package.json has no override for it. Remove the stale section.`,
 			)
+			continue
+		}
+		for (const parent of heading.parents) {
+			if (!packageTargets.some((target) => target.parents.includes(parent))) {
+				errors.push(
+					`${docPath}:${heading.line} names \`${parent}\` for \`${packageName}\`, but package.json has no "${parent} > ${packageName}" override. Remove the stale parent.`,
+				)
+			}
 		}
 	}
 	return errors
