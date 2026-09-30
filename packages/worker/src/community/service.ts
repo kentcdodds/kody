@@ -62,7 +62,14 @@ import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
-import { enqueueCommunityListingPublishedDispatch } from './listing-published-dispatch-queue-producer.ts'
+import {
+	hasCommunityListingReleaseChanged,
+	type CommunityListingRelease,
+} from './fork-upstream-updated-subscription-event.ts'
+import {
+	enqueueCommunityForkUpstreamUpdatedDispatch,
+	enqueueCommunityListingPublishedDispatch,
+} from './listing-published-dispatch-queue-producer.ts'
 import { type CommunityListingPublishedProjection } from './listing-published-subscription-event.ts'
 import {
 	deletePackageKodyIdRedirects,
@@ -210,6 +217,29 @@ async function enqueuePublishedCommunityListing(input: {
 		})
 	} catch (error) {
 		console.error('community-listing-published-dispatch-enqueue-failed', error)
+	}
+}
+
+async function enqueueCommunityForkUpstreamUpdated(input: {
+	env: Env
+	listingId: string
+	previous: CommunityListingRelease
+	current: CommunityListingRelease
+	publishedAt: string
+}) {
+	try {
+		await enqueueCommunityForkUpstreamUpdatedDispatch({
+			queue: input.env.COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE,
+			listingId: input.listingId,
+			previous: input.previous,
+			current: input.current,
+			publishedAt: input.publishedAt,
+		})
+	} catch (error) {
+		console.error(
+			'community-fork-upstream-updated-dispatch-enqueue-failed',
+			error,
+		)
 	}
 }
 
@@ -784,6 +814,21 @@ export async function publishCommunityListing(input: {
 			env: input.env,
 			listingId,
 		})
+	} else {
+		const previous = {
+			pinnedCommit: existingListing.pinnedCommit,
+			packageVersion: existingListing.version ?? null,
+		}
+		const current = { pinnedCommit: publishedCommit, packageVersion }
+		if (hasCommunityListingReleaseChanged({ previous, current })) {
+			await enqueueCommunityForkUpstreamUpdated({
+				env: input.env,
+				listingId,
+				previous,
+				current,
+				publishedAt: now,
+			})
+		}
 	}
 	invalidateCommunityPublicCache()
 	return listing

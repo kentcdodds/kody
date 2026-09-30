@@ -16,14 +16,14 @@ export {
 	readRetryablePackageInvocationInfrastructureCode,
 }
 
-type LoadedAdminPackageSubscription = {
+export type LoadedPackageSubscription = {
 	savedPackage: SavedPackageRecord
 	subscription: ReturnType<typeof listPackageSubscriptions>[number]
 }
 
 const adminPackageSubscriptionConcurrency = 5
 
-async function mapSettledInChunks<T, TResult>(
+export async function mapSettledInChunks<T, TResult>(
 	items: ReadonlyArray<T>,
 	mapper: (item: T) => Promise<TResult>,
 ) {
@@ -44,7 +44,11 @@ function isMissingSavedPackagesTableError(error: unknown) {
 	)
 }
 
-async function loadMatchingSubscriptions(input: {
+/**
+ * One user's saved packages that declare `topic`. Missing `saved_packages`
+ * resolves empty; per-package manifest load failures are collected, not thrown.
+ */
+export async function loadMatchingPackageSubscriptions(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
 	baseUrl: string
 	userId: string
@@ -77,10 +81,10 @@ async function loadMatchingSubscriptions(input: {
 			return {
 				savedPackage,
 				subscription,
-			} satisfies LoadedAdminPackageSubscription
+			} satisfies LoadedPackageSubscription
 		},
 	)
-	const subscriptions: Array<LoadedAdminPackageSubscription> = []
+	const subscriptions: Array<LoadedPackageSubscription> = []
 	const discoveryErrors: Array<unknown> = []
 	for (const [index, result] of settled.entries()) {
 		if (result.status === 'fulfilled') {
@@ -124,14 +128,14 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 	const discovered = await mapSettledInChunks(
 		adminUserIds,
 		async (userId) =>
-			await loadMatchingSubscriptions({
+			await loadMatchingPackageSubscriptions({
 				env: input.env,
 				baseUrl: input.baseUrl,
 				userId,
 				topic: input.topic,
 			}),
 	)
-	const subscriptions: Array<LoadedAdminPackageSubscription> = []
+	const subscriptions: Array<LoadedPackageSubscription> = []
 	const discoveryErrors: Array<unknown> = []
 	for (const [index, result] of discovered.entries()) {
 		if (result.status === 'fulfilled') {

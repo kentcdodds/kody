@@ -19,6 +19,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			'stripe_customer_id',
 			'stripe_plan',
 			'stripe_plan_refreshed_at',
+			'experiments_opt_in',
 		],
 	})
 	await ensureUserStorageBucketsTestSchema(db)
@@ -144,6 +145,8 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_community_forks_forked_package_id
 			ON community_forks(forked_package_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_community_forks_listing_id
+			ON community_forks(listing_id)`,
 		...communityForksDeleteCascadeStatements,
 		`CREATE TABLE IF NOT EXISTS community_ratings (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -230,6 +233,23 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			dependencies_json TEXT NOT NULL DEFAULT '[]',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS feature_flags (
+			key TEXT PRIMARY KEY NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+			rollout_percent INTEGER CHECK (rollout_percent BETWEEN 0 AND 100),
+			audience TEXT NOT NULL DEFAULT 'everyone',
+			note TEXT NOT NULL DEFAULT '',
+			updated_by INTEGER,
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		)`,
+		`CREATE TABLE IF NOT EXISTS feature_flag_user_overrides (
+			flag_key TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+			updated_by INTEGER,
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (flag_key, user_id)
 		)`,
 	]
 	for (const statement of statements) {

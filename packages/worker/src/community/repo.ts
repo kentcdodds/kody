@@ -1055,6 +1055,22 @@ export async function listCommunityForksByListingAndUser(
 	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
 }
 
+export async function listCommunityForksByListingId(
+	db: D1Database,
+	input: { listingId: string },
+): Promise<Array<CommunityForkRecord>> {
+	const result = await db
+		.prepare(
+			`SELECT ${communityForkSelectColumns}
+			FROM community_forks
+			WHERE listing_id = ?
+			ORDER BY created_at ASC`,
+		)
+		.bind(input.listingId)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
+}
+
 /**
  * Viewer forks for a set of listings. `ORDER BY created_at` applies inside
  * each D1 chunk only; callers that need a global order must sort themselves.
