@@ -234,14 +234,14 @@ await kody.webhooks.webhookUrlApply({
 })
 ```
 
-`{{webhookSecret}}` injects package-owned HMAC from the webhook URL record (or
-migrates a legacy `verification.secretName` value onto that record on first
-apply). If the placeholder is present but verification is undeclared, or neither
-package-owned HMAC nor a resolvable legacy secret exists, apply fails with a
-clear error. Omit `{{webhookSecret}}` when the webhook has no HMAC verification.
-Packages that still declare `verification.secretName` for GitHub-style hooks can
-delete that secrets-list entry after one successful apply (or after reminting
-without `secretName`).
+`{{webhookSecret}}` injects package-owned HMAC from the webhook URL record (or a
+value copied from legacy `verification.secretName` at mint/rotate). If the
+placeholder is present but verification is undeclared, or package-owned HMAC is
+missing, apply fails with a clear error. Omit `{{webhookSecret}}` when the
+webhook has no HMAC verification. Packages that still declare
+`verification.secretName` for GitHub-style hooks can delete that secrets-list
+entry after reminting (with the named secret still present so it can be copied)
+or after reminting without `secretName`.
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,

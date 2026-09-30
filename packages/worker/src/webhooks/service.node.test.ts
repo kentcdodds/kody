@@ -20,6 +20,15 @@ import {
 	setWebhookEnabledForUser,
 } from './service.ts'
 
+vi.mock('#mcp/secrets/service.ts', () => ({
+	resolveSecret: vi.fn(async () => ({
+		found: true,
+		value: 'legacy-sentry-webhook-secret',
+		allowedHosts: [],
+		scope: 'user',
+	})),
+}))
+
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) => {
 		if (
@@ -189,6 +198,12 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	for (const secretKey of ['url', 'urlSecret', 'url_secret']) {
 		expect(minted).not.toHaveProperty(secretKey)
 	}
+
+	const mintedEndpointId = parseWebhookUrlHandle(minted.handle)!
+	const mintedHmac = await owner.readEndpoint<{
+		hmac_secret_encrypted: string | null
+	}>(mintedEndpointId, 'hmac_secret_encrypted')
+	expect(mintedHmac?.hmac_secret_encrypted).toBeTruthy()
 
 	const reveal = (
 		target: Parameters<typeof revealWebhookUrlForWebsite>[0]['target'],

@@ -223,8 +223,8 @@ the path secret). `webhookUrlMint` / `webhookUrlRotate` return an opaque
 `handle` (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle
 inside Kody and registers the URL through an outbound HTTPS request
 (`type: "http"` with server-side `{{webhookUrl}}` substitution, and optional
-`{{webhookSecret}}` from package-owned HMAC on the endpoint — or a one-time
-migrate from legacy `verification.secretName`). HMAC injection is not a
+`{{webhookSecret}}` from package-owned HMAC on the endpoint — copied from legacy
+`verification.secretName` at mint/rotate when present). HMAC injection is not a
 user-secrets host Allow (unlike destination Bearer `secretName`). Apply is
 interactive-only and reuses the account owner approval flow (same family as
 `/connect/secrets` host approval, secret package grants, and locked-package
