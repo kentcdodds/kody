@@ -121,6 +121,8 @@ async function publishPackage(
 	description: string,
 	exportName: string,
 	entrySource: string,
+	kodyExtra: Record<string, unknown> = {},
+	extraFiles: Record<string, string> = {},
 ) {
 	const unique = crypto.randomUUID()
 	const packageId = `pkg-${unique}`
@@ -167,12 +169,15 @@ async function publishPackage(
 		now,
 		now,
 	)
-	const { entryPoint, sourceFiles } = makePackageFiles(
+	const packageFiles = makePackageFiles(
 		kodyId,
 		description,
 		exportName,
 		entrySource,
+		kodyExtra,
 	)
+	const { entryPoint } = packageFiles
+	const sourceFiles = { ...packageFiles.sourceFiles, ...extraFiles }
 	await persistPublishedSourceSnapshot({
 		env,
 		userId,
@@ -442,6 +447,110 @@ export default async function run() {
 			},
 			outerBucketId: buildPackageStorageId(outerPackageId),
 		})
+	},
+)
+
+test(
+	'a package reached only through another package static import keeps its own bucket from ad hoc execute',
+	{ timeout: 90_000 },
+	async () => {
+		const userId = await setupUser()
+		const inner = await publishPackage(
+			userId,
+			'wake',
+			'Inner storage owner',
+			'./whoami',
+			`import { packageStorage } from 'kody:runtime'
+export default async function whoami() {
+	return { bucketId: packageStorage().id, owner: await packageStorage().get('owner') }
+}`,
+		)
+		await packageBucketRunner(userId, inner.packageId).setValue({
+			key: 'owner',
+			value: 'wake-bucket',
+		})
+		const outer = await publishPackage(
+			userId,
+			'relay',
+			'Outer package importing wake',
+			'./run',
+			`import whoami from 'kody:@kentcdodds/wake/whoami'
+export default async function run() {
+	return { inner: await whoami() }
+}`,
+			{ dependencies: { '@kentcdodds/wake': '*' } },
+		)
+
+		const bundle = await buildEntry(
+			userId,
+			`import run from 'kody:@kentcdodds/relay/run'
+export default async function main() {
+	return await run()
+}`,
+		)
+		expect(bundle.dependencies).toMatchObject([
+			{ packageId: outer.packageId },
+			{ packageId: inner.packageId, transitive: true },
+		])
+		expect(bundle.dependencies[0]).not.toHaveProperty('transitive')
+
+		const result = await runBundle(userId, bundle)
+		expect(result.error).toBeUndefined()
+		expect(result.result).toEqual({
+			inner: {
+				bucketId: buildPackageStorageId(inner.packageId),
+				owner: 'wake-bucket',
+			},
+		})
+	},
+)
+
+test(
+	'a dependency file unreachable from the imported export does not grant its imports a bucket',
+	{ timeout: 90_000 },
+	async () => {
+		const userId = await setupUser()
+		const victim = await publishPackage(
+			userId,
+			'vault',
+			'Holds private data',
+			'./noop',
+			'export default async function noop() { return null }',
+		)
+		await packageBucketRunner(userId, victim.packageId).setValue({
+			key: 'secret',
+			value: 'do-not-leak',
+		})
+		const outer = await publishPackage(
+			userId,
+			'courier',
+			'Outer package with an unrelated file importing vault',
+			'./run',
+			'export default async function run() { return null }',
+			{ dependencies: { '@kentcdodds/vault': '*' } },
+			{
+				'src/unrelated.ts': `import noop from 'kody:@kentcdodds/vault/noop'
+export default noop`,
+			},
+		)
+
+		const bundle = await buildEntry(
+			userId,
+			`import { kody } from 'kody:runtime'
+import run from 'kody:@kentcdodds/courier/run'
+export default async function main() {
+	await run()
+	return await kody.packageStorageGet({ packageId: ${JSON.stringify(victim.packageId)}, key: 'secret' })
+}`,
+		)
+		expect(bundle.dependencies).toMatchObject([{ packageId: outer.packageId }])
+		expect(bundle.dependencies).toHaveLength(1)
+
+		const result = await runBundle(userId, bundle)
+		expect(result.error).toContain(
+			createPackageStorageAccessDeniedMessage(victim.packageId),
+		)
+		expect(result.error).not.toContain('do-not-leak')
 	},
 )
 

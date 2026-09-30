@@ -11,6 +11,7 @@ import {
 	buildPublishedBundleArtifactKvKey,
 	deletePublishedBundleArtifact,
 	hasPublishedRuntimeArtifacts,
+	isDirectBundleDependency,
 	readPublishedBundleArtifact,
 	readPublishedSourceSnapshot,
 	writePublishedBundleArtifact,
@@ -446,6 +447,7 @@ async function publishedPackageArtifactDependenciesMatchCurrent(input: {
 	dependencies: ReadonlyArray<BundleArtifactDependency>
 }) {
 	for (const dependency of input.dependencies) {
+		if (!isDirectBundleDependency(dependency)) continue
 		if (!dependency.publishedCommit) return false
 		const source = dependency.platformOwned
 			? await getEntitySourceById(input.env.APP_DB, dependency.sourceId)

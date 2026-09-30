@@ -96,7 +96,10 @@ import {
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
-import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	isDirectBundleDependency,
+	type BundleArtifactDependency,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
@@ -615,6 +618,7 @@ export async function runModuleWithRegistry(
 	const conversationId = options?.conversationId?.trim()
 	if (conversationId && userId) {
 		const packageIds = bundled.dependencies
+			.filter(isDirectBundleDependency)
 			.map((dependency) => dependency.packageId)
 			.filter((packageId): packageId is string => Boolean(packageId))
 		if (packageIds.length > 0) {
@@ -1084,17 +1088,18 @@ export async function runBundledModuleWithRegistry(
 			}
 		}
 		// Static package export calls report through a sandbox bridge with a
-		// bundler-stamped callee package id; only ids recorded as *static*
-		// bundle dependencies at build time are accepted (mismatches are
+		// bundler-stamped callee package id; only ids recorded as *direct*
+		// static bundle dependencies at build time are accepted (mismatches are
 		// dropped host-side). This is deliberately tighter than the
 		// packageStorage grant set, which additionally includes the run's own
-		// package id and dynamic-import dependencies — neither of which the
-		// bundler ever stamps into a metered static import proxy.
+		// package id, dynamic-import dependencies, and transitive static
+		// dependencies.
 		const staticCallMeterTools = createPackageStaticCallMeterTools({
 			env,
 			userId: callerContext.user?.userId ?? null,
 			grantedPackageIds: new Set(
 				(bundle.dependencies ?? [])
+					.filter(isDirectBundleDependency)
 					.map((dependency) => dependency.packageId)
 					.filter((packageId): packageId is string => Boolean(packageId)),
 			),

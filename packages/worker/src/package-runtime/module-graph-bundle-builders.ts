@@ -25,7 +25,7 @@ import {
 	prepareKodyGraphFiles,
 } from './module-graph-import-rewriting.ts'
 import { moduleSourceDeclaresDefaultExport } from './module-export-names.ts'
-import { resolveDirectKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
+import { resolveKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
 import { withPlatformRemixFiles } from './package-app-remix.ts'
 import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import {
@@ -242,7 +242,7 @@ export async function buildKodyModuleBundle(input: {
 		return {
 			mainModule: bundle.mainModule,
 			modules,
-			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
+			dependencies: await resolveKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
 				allowPlatformScopes,
@@ -319,7 +319,7 @@ export async function buildKodyImportableModuleBundle(input: {
 	return {
 		mainModule: bundle.mainModule,
 		modules,
-		dependencies: await resolveDirectKodyDependenciesForEntryPoint({
+		dependencies: await resolveKodyDependenciesForEntryPoint({
 			...input,
 			loadedPackages: packages,
 			allowPlatformScopes,
@@ -382,7 +382,7 @@ export async function buildKodyAppBundle(input: {
 		return {
 			mainModule: bundle.mainModule,
 			modules,
-			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
+			dependencies: await resolveKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
 				allowPlatformScopes,
