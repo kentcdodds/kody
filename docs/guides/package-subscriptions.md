@@ -383,13 +383,16 @@ agent, or otherwise react when something in the user's account fails.
 ## `integration.auth.failed`
 
 When host-side OAuth token refresh fails with reconnectable caller state —
-missing refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
-host-approval gaps, or invalid connection config — Kody dispatches
-`integration.auth.failed` to packages saved by that same user that declare the
-topic. Every classified attempt emits. The platform does not coalesce repeats;
-notifier packages decide how often to ping, typically by pairing this topic with
-`integration.auth.succeeded` and storing last-known health in package storage.
-Provider HTTP 5xx and missing connections do not emit.
+missing refresh token on a sign-in that expires, provider HTTP 4xx /
+`invalid_grant`, missing secrets, host-approval gaps, or invalid connection
+config — Kody dispatches `integration.auth.failed` to packages saved by that
+same user that declare the topic. Every classified attempt emits. The platform
+does not coalesce repeats; notifier packages decide how often to ping, typically
+by pairing this topic with `integration.auth.succeeded` and storing last-known
+health in package storage. Provider HTTP 5xx and missing connections do not
+emit. Neither does a non-expiring grant (no refresh token and no access-token
+expiry at connect): refresh returns `refreshed: false` and emits neither auth
+topic.
 
 Delivery is best-effort after the refresh caller error is classified — there is
 no Queue / DLQ for this topic. Failures during subscriber discovery or

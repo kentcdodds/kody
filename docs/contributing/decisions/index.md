@@ -109,6 +109,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
   at $0, usage past the include stops; no customer-facing fund-to-unlock rates
   and no free past-include burn; 50× is a credits ceiling, not a tier
+- [0052 — OAuth refresh expectation comes from the token response](./0052-oauth-refresh-policy-from-token-response.md)
+  — no app/adapter refresh defaults and no blanket `missing_refresh_token`
+  Waiting suppression; wait only when the connect response implied refresh
 
 ## Historical / UI / implementation
 

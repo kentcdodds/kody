@@ -150,7 +150,10 @@ GitHub supports S256 PKCE and recommends it. The client secret stays required at
 the token endpoint, so the Kody flow is `confidential`. OAuth App tokens have no
 scheduled expiry and there are no refresh tokens, but GitHub revokes a token
 after a year without use; revoke the grant from GitHub settings to kill one
-sooner.
+sooner. Kody sees no refresh token and no expiry at connect, records the
+connection as non-expiring, and does not ask you to reconnect for a missing
+refresh token. If you later turn on token expiration for the app, reconnect so
+Kody picks up the refresh token.
 
 ### Connect to Kody
 

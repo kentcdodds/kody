@@ -114,35 +114,47 @@ Both lanes refresh host-side by default through `createAuthenticatedFetch`.
 `packages/worker/src/integrations/token-refresh.ts`) resolves the refresh token
 and client secret server-side, POSTs to the provider token URL, persists rotated
 tokens on the connection, and returns only
-`{ ok, refreshedAt, refreshTokenRotated }` — never token values. Platform
-connections require this path — the shared client secret stays on the platform
-app row. User-lane connections may also refresh through it. Refresh enforces the
-connection's `requiredHosts` against the token host. `integrationSave` cannot
-add new hosts or retarget `tokenUrl` to an unapproved host; reconnect at
-`/connect/oauth` to approve a new destination. Platform-lane destinations are
-operator-pinned rows, so no user-secret allowlist applies.
+`{ ok, refreshed, skippedReason, refreshedAt, refreshTokenRotated }` — never
+token values. Platform connections require this path — the shared client secret
+stays on the platform app row. User-lane connections may also refresh through
+it. Refresh enforces the connection's `requiredHosts` against the token host.
+`integrationSave` cannot add new hosts or retarget `tokenUrl` to an unapproved
+host; reconnect at `/connect/oauth` to approve a new destination. Platform-lane
+destinations are operator-pinned rows, so no user-secret allowlist applies.
+
+Each `/connect/oauth` token persist writes `user_integrations.refresh_policy`
+from the provider token response (`refresh-policy.ts`): `required` when it
+carries a refresh token or an access-token expiry (`expires_in` / `expires_at`),
+otherwise `not_applicable`. Reconnect overwrites it; a successful refresh stamps
+`required`; `NULL` (no token persisted yet) behaves like `required`. A
+`not_applicable` connection is a non-expiring grant (for example a GitHub OAuth
+App with token expiration off): refresh returns `refreshed: false` without
+calling the provider, `createAuthenticatedFetch` hands back the original 401
+instead of retrying, and a stale `missing_refresh_token` snapshot is hidden from
+every surface. There are no app- or provider-level refresh defaults; see
+[decision 0052](../decisions/0052-oauth-refresh-policy-from-token-response.md).
 
 Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing
-refresh token, provider HTTP 4xx / `invalid_grant`, user-lane missing secrets,
-host-approval gaps, invalid connection config) persist a last-failure snapshot
-on `user_integrations` (`auth_failed_*`) and best-effort dispatch
-`integration.auth.failed` to the owning user's packages that declare the topic.
-Successful refreshes and successful `/connect/oauth` token persists clear that
-snapshot and dispatch `integration.auth.succeeded`. Sequential classified
-attempts each emit; the platform does not coalesce those repeats. Concurrent
-in-flight refreshes of the same connection share one provider POST, persist, and
-event so a 401 stampede cannot rotate the refresh token out from under itself.
-Provider HTTP 5xx and token endpoint timeouts persist `provider_unavailable` for
-Integrations / `integrationGet` without emitting failed and without a Waiting
-card. Missing connections do not write or emit failed. Both payloads are
-metadata-first (connection name, lane, account label, description, scopes,
-connect/refresh timestamps, and for failed: reason, optional provider error
-fields, trusted `reconnect_url` and `account_url`; for succeeded: `source` and
-trusted `account_url`) and never include token or secret values. When
-`account_label` is an email, `reconnect_url` includes `loginHint` so the
-provider account chooser can preselect it. A successful Google refresh that
-still has no `account_label` persists `userinfo.email` onto the connection. See
-[Package subscriptions](../../guides/package-subscriptions.md).
+refresh token on a `required` connection, provider HTTP 4xx / `invalid_grant`,
+user-lane missing secrets, host-approval gaps, invalid connection config)
+persist a last-failure snapshot on `user_integrations` (`auth_failed_*`) and
+best-effort dispatch `integration.auth.failed` to the owning user's packages
+that declare the topic. Successful refreshes and successful `/connect/oauth`
+token persists clear that snapshot and dispatch `integration.auth.succeeded`.
+Sequential classified attempts each emit; the platform does not coalesce those
+repeats. Concurrent in-flight refreshes of the same connection share one
+provider POST, persist, and event so a 401 stampede cannot rotate the refresh
+token out from under itself. Provider HTTP 5xx and token endpoint timeouts
+persist `provider_unavailable` for Integrations / `integrationGet` without
+emitting failed and without a Waiting card. Missing connections do not write or
+emit failed. Both payloads are metadata-first (connection name, lane, account
+label, description, scopes, connect/refresh timestamps, and for failed: reason,
+optional provider error fields, trusted `reconnect_url` and `account_url`; for
+succeeded: `source` and trusted `account_url`) and never include token or secret
+values. When `account_label` is an email, `reconnect_url` includes `loginHint`
+so the provider account chooser can preselect it. A successful Google refresh
+that still has no `account_label` persists `userinfo.email` onto the connection.
+See [Package subscriptions](../../guides/package-subscriptions.md).
 
 On 401, `createAuthenticatedFetch` calls `integrationTokenRefresh` then retries
 with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens never

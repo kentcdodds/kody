@@ -18,7 +18,9 @@ Typical items:
 - finish OAuth or reconnect an MCP server that is authenticating, failed, or
   disconnected — unless the error looks like a vendor outage
 - reconnect a third-party grant that last refresh classified as yours to fix
-  (`invalid_grant`, missing refresh token, missing user credential)
+  (`invalid_grant`, missing user credential, or a missing refresh token on a
+  sign-in that expires; a non-expiring grant such as a GitHub OAuth App token
+  with no refresh token is healthy and does not appear)
 - update an expired user-scope secret (up to three, then a “more” card)
 - review a locked package (published code stays put until you promote or unlock)
 - confirm a pending email change
