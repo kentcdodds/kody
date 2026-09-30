@@ -295,6 +295,10 @@
 		{
 			"filename": "0073-integration-refresh-policy.sql",
 			"sha256": "d78cd06a261188255524e86e7c3805d4184b81509adf0428116a49852517de41"
+		},
+		{
+			"filename": "0074-api-tokens.sql",
+			"sha256": "8765e566ba22b689f6f9d536d0f93b3583d2c375884532487d5804503454e144"
 		}
 	]
 }
