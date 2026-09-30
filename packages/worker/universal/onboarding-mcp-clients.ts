@@ -439,10 +439,10 @@ export const wajoSiteUrl = 'https://wajo.ai'
 export const cueSiteUrl = 'https://cue.im'
 
 /**
- * Kody guide for wiring CopilotKit OpenMuse to Kody over MCP (not
- * openmuse.ai). Distinct from Muse Code (`muse`).
+ * OpenMuse and Kody guide (same-origin docs path — not openmuse.ai).
+ * Distinct from Muse Code (`muse`).
  */
-export const openMuseGuideUrl = 'https://kody.codes/docs/openmuse'
+export const openMuseGuideUrl = '/docs/openmuse'
 
 /** OpenAI Dots product intro (personal agent / MCP peer). */
 export const dotsIntroUrl = 'https://openai.com/index/introducing-dots/'
