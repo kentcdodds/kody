@@ -170,6 +170,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run mermaid:check
 
+      - name: 🩹 Dependency overrides
+        if: ${{ !cancelled() }}
+        run: npm run overrides:check
+
       - name: 🔐 Production dependency audit
         if: ${{ !cancelled() }}
         run: npm run audit:prod
