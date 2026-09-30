@@ -52,6 +52,8 @@ const cacheableAnonymousRouteMatchers = [
 const matcherOrigin = 'https://kody.local'
 
 export function isVisibilityGatedAnonymousPath(pathname: string) {
+	// Read-only smart HTTP clone URLs must never enter the HTML edge cache.
+	if (pathname.includes('.git/') || pathname.endsWith('.git')) return false
 	const url = new URL(pathname, matcherOrigin)
 	return cacheableAnonymousRouteMatchers.some(
 		(matcher) => matcher.match(url) !== null,

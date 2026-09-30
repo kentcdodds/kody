@@ -21,6 +21,7 @@ D1 saved_packages.is_private = 0 + community_listings row
         ▼
 Public /community + /@username/:name + /tree/:ref + /settings
         │
+        │   also: /@username/:name.git  (read-only smart HTTP → Artifacts)
         ▼
 Visitor forks ──► communityFork ──► entity_sources (no saved_packages row)
         │                              copy of HEAD, inert until publish
@@ -66,6 +67,25 @@ Activity actor columns store the MCP **stable user id**
 (`packageUpdate` / `repoUpdate`), not a `package.json#private` projection.
 Active community listings backfill to public; leftover `"private": false`
 teasers stay private.
+
+### Public `.git` smart HTTP
+
+`/@owner/kody-id.git` is a **read-only** Git smart HTTP proxy for active public
+listings (`packages/worker/src/repo/public-package-git-http.ts`). The origin
+Worker handles it before the anonymous HTML edge cache and Remix. Flow:
+
+1. Resolve the listing via `resolveCommunityPackageUrl` (404 when missing /
+   private / delisted — same non-leak posture as package pages).
+2. Load `entity_sources` + mint an Artifacts **read** token server-side.
+3. Advertise only the immutable published snapshot commit (`published_commit`,
+   else listing `pinned_commit`) on `HEAD` / `refs/heads/<defaultBranch>`.
+4. Proxy `git-upload-pack` to Artifacts with `Authorization: Bearer …`. Strip
+   `Location` / `WWW-Authenticate` / `Set-Cookie` so the Artifacts host and
+   credentials never reach the client.
+5. Reject `git-receive-pack` and `?service=git-receive-pack` with 403.
+
+Owner authoring remotes remain `packageGetGitRemote` (signed-in). See
+[Public packages (usage)](../use/community-packages.md#clone-a-public-package-read-only-git).
 
 Profile activity reads stored `community_activity_events` plus public forks from
 `community_forks`. Forks appear only while the forker's saved package copy has

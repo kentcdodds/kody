@@ -28,6 +28,10 @@ import {
 	handleWebhookIngressRequest,
 	isWebhookIngressRequest,
 } from './webhooks/http.ts'
+import {
+	handlePublicPackageGitHttpRequest,
+	isPublicPackageGitHttpRequest,
+} from '#worker/repo/public-package-git-http.ts'
 import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkAuthRateLimit } from '#app/rate-limit.ts'
@@ -548,6 +552,14 @@ async function fetchWithDynamicWorkerBudget(
 	// single-worker local dev) the in-process handlers below keep serving.
 	if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
 		return env.RUNTIME_WORKER.fetch(request)
+	}
+
+	// Public package `.git` smart HTTP must run before the anonymous HTML edge
+	// cache: `/@owner/pkg.git` can otherwise match the community package route
+	// matcher as a visibility-gated HTML path.
+	if (isPublicPackageGitHttpRequest(url.pathname)) {
+		const gitResponse = await handlePublicPackageGitHttpRequest(request, env)
+		if (gitResponse) return gitResponse
 	}
 
 	return serveAnonymousHtmlFromCache(request, env, ctx, () =>

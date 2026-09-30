@@ -524,8 +524,12 @@ primitives:
     summary: Canonical published git source for packages and jobs.
     code:
       - packages/worker/src/repo/artifacts.ts
+      - packages/worker/src/repo/public-package-git-http.ts
+      - packages/worker/src/repo/git-pkt-line.ts
     docs:
       - docs/contributing/architecture/data-storage.md
+      - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
 
   - id: bundle-artifacts-kv
     group: storage
