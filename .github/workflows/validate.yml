@@ -263,9 +263,12 @@ jobs:
       # Wrangler's local workerd occasionally crashes mid-suite ("Broken
       # pipe" → "Network connection lost"), which kills the Playwright
       # webServer and fails every remaining test with ECONNREFUSED /
-      # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Retry the
-      # whole suite once with a fresh server, but only when the failure
-      # matches that crash signature — genuine test failures never retry.
+      # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Vite +
+      # @cloudflare/vite-plugin can also die on first start with
+      # `ReferenceError: __LOAD__ is not defined` during live export-type
+      # inspection (Validate #36669175020). Retry the whole suite once
+      # with a fresh server, but only when the failure matches that
+      # crash signature — genuine test failures never retry.
       - name: 🎭 Playwright E2E
         run: |
           # No pipefail: the runner's implicit `bash -e` would abort on the
@@ -277,13 +280,10 @@ jobs:
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          # Anchor connection-refused matches to the e2e webServer origin
-          # (port 3847, see playwright.config.ts) so an unrelated test
-          # failure that merely mentions a refused connection never retries.
-          if ! grep -qE 'E2eWebServerDeadError|ECONNREFUSED (127\.0\.0\.1|localhost):3847|ERR_CONNECTION_REFUSED at https?://(127\.0\.0\.1|localhost):3847' e2e-attempt-1.log; then
+          if ! node tools/ci/is-retryable-e2e-failure.ts e2e-attempt-1.log; then
             exit "$status"
           fi
-          echo "::warning::Playwright webServer (wrangler) died mid-suite; retrying the E2E suite once with a fresh server."
+          echo "::warning::Playwright webServer died on start or mid-suite; retrying the E2E suite once with a fresh server."
           npm run test:e2e:run
 
       # Wrangler writes fatal mid-suite exits under WRANGLER_LOG_PATH

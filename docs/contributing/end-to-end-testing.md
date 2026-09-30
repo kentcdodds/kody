@@ -103,8 +103,15 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   after Ready. Opt in with `X_LOCAL_EXPLORER=true`. `wrangler-env.ts` also sets
   `WRANGLER_DISABLE_BUNDLE_WATCH=true` in the test env so esbuild's source-graph
   watcher does not rebuild after the first compile on Cloud Agent overlay FS
-  (Friction #1789). On CI, the `🎭 E2E` job uploads `logs.local/` as the
-  `e2e-wrangler-logs` artifact when the suite fails.
+  (Friction #1789). `tools/e2e-web-server.ts` restarts Vite once if the first
+  process exits before Playwright reaches `/health`. On CI, the `🎭 E2E` job
+  also retries the suite once when `tools/ci/is-retryable-e2e-failure.ts`
+  matches a webServer start crash
+  (`Process from config.webServer was not able to start`, including Vite
+  `__LOAD__ is not defined` during Cloudflare export-type inspection) or a
+  mid-suite death on port 3847. Genuine assertion failures do not retry. The job
+  uploads `logs.local/` as the `e2e-wrangler-logs` artifact when the suite
+  fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.
