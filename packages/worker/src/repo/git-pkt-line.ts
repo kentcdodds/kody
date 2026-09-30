@@ -5,6 +5,7 @@
 
 const flushPkt = '0000'
 const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
 
 export function encodeGitPktLine(payload: string): string {
 	const length = textEncoder.encode(payload).byteLength + 4
@@ -16,6 +17,41 @@ export function encodeGitPktLine(payload: string): string {
 
 export function encodeGitFlushPkt(): string {
 	return flushPkt
+}
+
+export function splitGitPktLines(body: string): Array<string | null> {
+	const packets: Array<string | null> = []
+	let offset = 0
+	while (offset + 4 <= body.length) {
+		const lengthHex = body.slice(offset, offset + 4)
+		if (lengthHex === flushPkt) {
+			packets.push(null)
+			offset += 4
+			continue
+		}
+		const length = Number.parseInt(lengthHex, 16)
+		if (!Number.isFinite(length) || length < 4) break
+		const payload = body.slice(offset + 4, offset + length)
+		packets.push(payload)
+		offset += length
+	}
+	return packets
+}
+
+const requiredUploadPackCapabilities = [
+	'allow-tip-sha1-in-want',
+	'allow-reachable-sha1-in-want',
+] as const
+
+function withRequiredUploadPackCapabilities(capabilities: Array<string>) {
+	const seen = new Set(capabilities)
+	for (const required of requiredUploadPackCapabilities) {
+		if (!seen.has(required)) {
+			capabilities.push(required)
+			seen.add(required)
+		}
+	}
+	return capabilities
 }
 
 /**
@@ -33,7 +69,7 @@ export function buildUploadPackAdvertisement(input: {
 	}
 	const branch = input.defaultBranch.trim() || 'main'
 	const headRef = `refs/heads/${branch}`
-	const capabilities = [
+	const capabilities = withRequiredUploadPackCapabilities([
 		'multi_ack',
 		'thin-pack',
 		'side-band',
@@ -46,12 +82,10 @@ export function buildUploadPackAdvertisement(input: {
 		'no-progress',
 		'include-tag',
 		'multi_ack_detailed',
-		'allow-tip-sha1-in-want',
-		'allow-reachable-sha1-in-want',
 		'no-done',
 		`symref=HEAD:${headRef}`,
 		`agent=${input.agent ?? 'kody'}`,
-	].join(' ')
+	]).join(' ')
 
 	const body =
 		encodeGitPktLine('# service=git-upload-pack\n') +
@@ -81,7 +115,7 @@ export function rewriteUploadPackAdvertisement(input: {
 	}
 	const branch = input.defaultBranch.trim() || 'main'
 	const headRef = `refs/heads/${branch}`
-	const text = new TextDecoder().decode(input.upstreamBody)
+	const text = textDecoder.decode(input.upstreamBody)
 	const packets = splitGitPktLines(text)
 	let capabilities: string | null = null
 	for (const packet of packets) {
@@ -91,11 +125,17 @@ export function rewriteUploadPackAdvertisement(input: {
 		if (nullIndex === -1) continue
 		const rest = packet.slice(nullIndex + 1).replace(/\n$/, '')
 		if (rest.length > 0) {
-			capabilities = rest
-				.split(' ')
-				.filter((part) => part.length > 0 && !part.startsWith('symref='))
-				.concat([`symref=HEAD:${headRef}`, `agent=${input.agent ?? 'kody'}`])
-				.join(' ')
+			capabilities = withRequiredUploadPackCapabilities(
+				rest
+					.split(' ')
+					.filter(
+						(part) =>
+							part.length > 0 &&
+							!part.startsWith('symref=') &&
+							!part.startsWith('agent='),
+					)
+					.concat([`symref=HEAD:${headRef}`, `agent=${input.agent ?? 'kody'}`]),
+			).join(' ')
 			break
 		}
 	}
@@ -112,21 +152,35 @@ export function rewriteUploadPackAdvertisement(input: {
 	return textEncoder.encode(body)
 }
 
-function splitGitPktLines(body: string): Array<string | null> {
-	const packets: Array<string | null> = []
-	let offset = 0
-	while (offset + 4 <= body.length) {
-		const lengthHex = body.slice(offset, offset + 4)
-		if (lengthHex === flushPkt) {
-			packets.push(null)
-			offset += 4
-			continue
+/**
+ * Extract `want <oid>` object ids from a protocol-v1 upload-pack request body.
+ * Ignores have/shallow/deepen/done and capability suffixes on the first want.
+ */
+export function extractUploadPackWantOids(body: Uint8Array): Array<string> {
+	const text = textDecoder.decode(body)
+	const wants: Array<string> = []
+	for (const packet of splitGitPktLines(text)) {
+		if (packet === null) continue
+		const line = packet.replace(/\n$/, '')
+		if (!line.startsWith('want ')) continue
+		const oid = line.slice('want '.length).split(' ', 1)[0]?.toLowerCase()
+		if (oid && /^[0-9a-f]{40}$/.test(oid)) {
+			wants.push(oid)
 		}
-		const length = Number.parseInt(lengthHex, 16)
-		if (!Number.isFinite(length) || length < 4) break
-		const payload = body.slice(offset + 4, offset + length)
-		packets.push(payload)
-		offset += length
 	}
-	return packets
+	return wants
+}
+
+/**
+ * True when every `want` targets the published snapshot (or there are no wants
+ * yet — deepen/have-only negotiation packets).
+ */
+export function uploadPackWantsOnlySnapshot(input: {
+	body: Uint8Array
+	snapshotCommit: string
+}) {
+	const snapshot = input.snapshotCommit.trim().toLowerCase()
+	const wants = extractUploadPackWantOids(input.body)
+	if (wants.length === 0) return true
+	return wants.every((oid) => oid === snapshot)
 }

@@ -554,6 +554,15 @@ async function fetchWithDynamicWorkerBudget(
 		return env.RUNTIME_WORKER.fetch(request)
 	}
 
+	// Host isolation for hosted package apps before first-party surfaces,
+	// including the public `.git` proxy (which must also stay ahead of the
+	// anonymous HTML edge cache).
+	const packageAppOriginResponse = await handlePackageAppOriginRequest(
+		request,
+		env,
+	)
+	if (packageAppOriginResponse) return packageAppOriginResponse
+
 	// Public package `.git` smart HTTP must run before the anonymous HTML edge
 	// cache: `/@owner/pkg.git` can otherwise match the community package route
 	// matcher as a visibility-gated HTML path.

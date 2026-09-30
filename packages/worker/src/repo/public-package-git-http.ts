@@ -13,6 +13,7 @@ import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	buildUploadPackAdvertisement,
 	rewriteUploadPackAdvertisement,
+	uploadPackWantsOnlySnapshot,
 } from '#worker/repo/git-pkt-line.ts'
 
 const gitUploadPackService = 'git-upload-pack'
@@ -20,6 +21,8 @@ const gitReceivePackService = 'git-receive-pack'
 const publicGitProxyAgent = 'kody-public-git'
 const publicGitTokenTtlSeconds = 300
 const publicGitRateLimit = { maxRequests: 120, windowSeconds: 60 } as const
+/** Anonymous upload-pack bodies are tiny (want/have negotiation). Cap memory. */
+const publicGitUploadPackMaxBodyBytes = 256 * 1024
 
 const hopByHopResponseHeaders = new Set([
 	'connection',
@@ -144,6 +147,29 @@ function pushRejectedResponse() {
 			},
 		},
 	)
+}
+
+function wantRejectedResponse() {
+	return new Response(
+		'Public package git remotes only serve the published snapshot commit.',
+		{
+			status: 403,
+			headers: {
+				'Cache-Control': 'no-store',
+				'Content-Type': 'text/plain; charset=utf-8',
+			},
+		},
+	)
+}
+
+function payloadTooLargeResponse() {
+	return new Response('Upload-pack request body too large.', {
+		status: 413,
+		headers: {
+			'Cache-Control': 'no-store',
+			'Content-Type': 'text/plain; charset=utf-8',
+		},
+	})
 }
 
 function rateLimitedResponse(retryAfterSeconds: number) {
@@ -322,11 +348,57 @@ function artifactsAuthHeaders(tokenPlaintext: string): HeadersInit {
 	}
 }
 
+async function readUploadPackRequestBody(
+	request: Request,
+): Promise<{ ok: true; body: Uint8Array } | { ok: false; response: Response }> {
+	const contentLengthHeader = request.headers.get('Content-Length')
+	if (contentLengthHeader != null) {
+		const contentLength = Number.parseInt(contentLengthHeader, 10)
+		if (
+			Number.isFinite(contentLength) &&
+			contentLength > publicGitUploadPackMaxBodyBytes
+		) {
+			return { ok: false, response: payloadTooLargeResponse() }
+		}
+	}
+
+	const reader = request.body?.getReader()
+	if (!reader) {
+		return { ok: true, body: new Uint8Array() }
+	}
+
+	const chunks: Array<Uint8Array> = []
+	let size = 0
+	for (;;) {
+		const { done, value } = await reader.read()
+		if (done) break
+		if (!value || value.byteLength === 0) continue
+		size += value.byteLength
+		if (size > publicGitUploadPackMaxBodyBytes) {
+			try {
+				await reader.cancel()
+			} catch {
+				// Ignore cancel errors; the size limit response is what matters.
+			}
+			return { ok: false, response: payloadTooLargeResponse() }
+		}
+		chunks.push(value)
+	}
+
+	const body = new Uint8Array(size)
+	let offset = 0
+	for (const chunk of chunks) {
+		body.set(chunk, offset)
+		offset += chunk.byteLength
+	}
+	return { ok: true, body }
+}
+
 async function proxyArtifactsUploadPack(input: {
 	target: ResolvedPublicGitTarget
 	request: Request
 	fetchImpl?: typeof fetch
-}) {
+}): Promise<Response> {
 	const fetchImpl = input.fetchImpl ?? fetch
 	// Authenticated URL builder validates the remote protocol; credentials go
 	// in Authorization so proxied responses never need to echo a credentialed URL.
@@ -341,18 +413,26 @@ async function proxyArtifactsUploadPack(input: {
 	if (contentType) headers.set('Content-Type', contentType)
 	const accept = input.request.headers.get('Accept')
 	if (accept) headers.set('Accept', accept)
-	headers.set(
-		'Git-Protocol',
-		input.request.headers.get('Git-Protocol') ?? 'version=1',
-	)
+	// Advertisement is always protocol v1; never forward a client version=2
+	// header that would make Artifacts mis-parse the want body.
+	headers.set('Git-Protocol', 'version=1')
 
-	// Buffer the client body. Streaming duplex request bodies are awkward in
-	// Workers typings and package packs are small enough to hold briefly.
-	const body = await input.request.arrayBuffer()
+	const bodyResult = await readUploadPackRequestBody(input.request)
+	if (!bodyResult.ok) return bodyResult.response
+
+	if (
+		!uploadPackWantsOnlySnapshot({
+			body: bodyResult.body,
+			snapshotCommit: input.target.snapshotCommit,
+		})
+	) {
+		return wantRejectedResponse()
+	}
+
 	const upstream = await fetchImpl(upstreamUrl, {
 		method: 'POST',
 		headers,
-		body,
+		body: Uint8Array.from(bodyResult.body),
 		signal: AbortSignal.timeout(60_000),
 	})
 

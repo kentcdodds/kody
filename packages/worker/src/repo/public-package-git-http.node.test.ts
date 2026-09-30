@@ -285,8 +285,14 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 			headers: {
 				'Content-Type': 'application/x-git-upload-pack-request',
 				Accept: 'application/x-git-upload-pack-result',
+				'Git-Protocol': 'version=2',
 			},
-			body: '0000want-body',
+			body:
+				encodeGitPktLine(
+					`want ${publishedCommit} multi_ack side-band-64k ofs-delta\n`,
+				) +
+				encodeGitFlushPkt() +
+				encodeGitPktLine('done\n'),
 		}),
 		envStub(),
 		{ fetchImpl: fetchImpl as unknown as typeof fetch },
@@ -301,6 +307,46 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 	expect(uploadPack!.headers.get('Set-Cookie')).toBeNull()
 	expect(await uploadPack!.text()).toBe('PACK-FAKE')
 	expect(fetchImpl).toHaveBeenCalledTimes(2)
+	const uploadCall = fetchImpl.mock.calls.find(([url]) =>
+		String(url).endsWith('/git-upload-pack'),
+	)
+	expect(uploadCall).toBeDefined()
+	expect(new Headers(uploadCall?.[1]?.headers).get('Git-Protocol')).toBe(
+		'version=1',
+	)
+
+	const unpublishedWant = await handlePublicPackageGitHttpRequest(
+		new Request('https://kody.codes/@kody/cloudflare.git/git-upload-pack', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-git-upload-pack-request',
+			},
+			body:
+				encodeGitPktLine(`want ${liveCommit}\n`) +
+				encodeGitFlushPkt() +
+				encodeGitPktLine('done\n'),
+		}),
+		envStub(),
+		{ fetchImpl: fetchImpl as unknown as typeof fetch },
+	)
+	expect(unpublishedWant!.status).toBe(403)
+	expect(await unpublishedWant!.text()).toMatch(/published snapshot/i)
+	// Rejected before upstream fetch.
+	expect(fetchImpl).toHaveBeenCalledTimes(2)
+
+	const oversized = await handlePublicPackageGitHttpRequest(
+		new Request('https://kody.codes/@kody/cloudflare.git/git-upload-pack', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-git-upload-pack-request',
+				'Content-Length': String(300 * 1024),
+			},
+			body: new Uint8Array(300 * 1024),
+		}),
+		envStub(),
+		{ fetchImpl: fetchImpl as unknown as typeof fetch },
+	)
+	expect(oversized!.status).toBe(413)
 })
 
 test('public package git HTTP rejects push and hides private packages', async () => {
