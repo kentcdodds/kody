@@ -1,6 +1,6 @@
 import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { css } from 'remix/ui'
+import { css, unsafeHTML } from 'remix/ui'
 import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -284,8 +284,8 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 								title="Email HTML preview"
 								sandbox=""
 								referrerPolicy="no-referrer"
-								srcdoc={buildAdminEmailHtmlPreviewDocument(
-									selectedMessage.html_body,
+								srcdoc={unsafeHTML(
+									buildAdminEmailHtmlPreviewDocument(selectedMessage.html_body),
 								)}
 								mix={emailHtmlPreviewIframeCss}
 							/>

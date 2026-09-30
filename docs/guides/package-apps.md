@@ -163,7 +163,7 @@ for `packageStorage()`, `packageSecrets`, `kody`, `createAuthenticatedFetch`,
 `clientModuleUrl`) without wiring a middleware.
 
 **Do not depend on `@remix-run/*` or npm `remix`.** The platform supplies every
-`remix/<subpath>` import at the version Kody's origin ships (`3.0.0-rc.2`);
+`remix/<subpath>` import at the version Kody's origin ships (`3.0.0-rc.4`);
 publish **rejects** any `@remix-run/*` entry in `package.json#dependencies`, and
 a `remix` entry there is ignored. No `esm.sh`, no vendored browser build in
 `public/`, no `client.externals` / import map for Remix: `remix/ui` is inlined
@@ -190,7 +190,7 @@ runtime field: the default export is the app.
 {
 	"name": "@you/notes",
 	"exports": { ".": "./src/index.ts" },
-	"devDependencies": { "remix": "3.0.0-rc.2" },
+	"devDependencies": { "remix": "3.0.0-rc.4" },
 	"kody": {
 		"id": "notes",
 		"description": "Notes with a hosted Remix app",
@@ -616,7 +616,7 @@ only), so a types-only `remix` dev dependency never reaches the bundle and the
 runtime always uses the platform copy.
 
 **Version pin.** There is exactly one Remix version per platform deploy: the
-origin's `remix@3.0.0-rc.2`. A package never selects it. When the platform
+origin's `remix@3.0.0-rc.4`. A package never selects it. When the platform
 upgrades Remix, a **republish** picks the new version up for both the server
 bundle and the browser module; artifacts already published keep the Remix they
 were built with until then (they are sticky, not rebuilt behind your back). A
@@ -624,7 +624,18 @@ were built with until then (they are sticky, not rebuilt behind your back). A
 so the types match what publish compiles. Older kit pins such as
 `@remix-run/ui@0.9.0` are obsolete — `remix/ui` comes from the platform.
 
-Local development: `npm i -D remix@3.0.0-rc.2` and a `tsconfig.json` with
+**Republishing on rc.4.** Artifacts republished against `remix@3.0.0-rc.4` pick
+up its breaking changes: `innerHTML` and iframe `srcdoc` props need
+`unsafeHTML()` from `remix/ui` (plain strings are a type error and render
+nothing); `createFetchProxy()` returns upstream redirects unless you pass
+`redirect: 'follow'`; route context augmentation is
+`declare module 'remix' { interface RouterTypes { ... } }`; `href()` throws
+`CreateHrefError` for wildcard values containing `.` or `..` segments;
+`remix/tar-parser` rejects absolute or `..` entry paths and enforces 2 MiB per
+entry, 20 MiB total, and 5,000 entries by default. See
+`node_modules/remix/CHANGELOG.md`.
+
+Local development: `npm i -D remix@3.0.0-rc.4` and a `tsconfig.json` with
 `"jsx": "react-jsx"`, `"jsxImportSource": "remix/ui"`, and
 `"allowImportingTsExtensions": true` gives editors the same types the bundle
 compiles against. `kody:runtime` types come from the repo's generated
@@ -706,7 +717,7 @@ router in the client — moves to a Remix router in one publish:
 1. **Dependencies.** Delete `@remix-run/*` from `dependencies` (publish rejects
    them), drop the `client.externals` entry and the `<script type="importmap">`
    for Remix, and remove the vendored `public/vendor/remix-ui.js` (or the
-   `esm.sh` URL). Add `"remix": "3.0.0-rc.2"` to `devDependencies` for types.
+   `esm.sh` URL). Add `"remix": "3.0.0-rc.4"` to `devDependencies` for types.
 2. **Manifest.** Point `entry` at `./app/router.ts` and `client` at
    `./app/assets/entry.ts`. `assets` stays `./public`. Do not set
    `kody.app.runtime`.

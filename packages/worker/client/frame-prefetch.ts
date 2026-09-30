@@ -1,6 +1,7 @@
 import {
 	frameFetchUrl,
 	isFullHtmlDocumentPrefix,
+	REMIX_FRAME_HEADER,
 	REMIX_FRAME_TARGET_HEADER,
 } from '#universal/frame-constants.ts'
 
@@ -30,6 +31,7 @@ export async function prefetchFrame(
 	clearPrefetchedFrames()
 	try {
 		const headers = new Headers({ Accept: 'text/html' })
+		headers.set(REMIX_FRAME_HEADER, 'true')
 		if (target) {
 			headers.set(REMIX_FRAME_TARGET_HEADER, target)
 		}

@@ -4,6 +4,7 @@ import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {
 	frameFetchUrl,
 	isFullHtmlDocumentPrefix,
+	REMIX_FRAME_HEADER,
 	REMIX_FRAME_TARGET_HEADER,
 } from '#universal/frame-constants.ts'
 
@@ -22,6 +23,7 @@ function prefetchedFrameResponse(html: string) {
  */
 export function createFrameResolveInit(options?: ResolveFrameOptions) {
 	const headers = new Headers({ Accept: 'text/html' })
+	headers.set(REMIX_FRAME_HEADER, 'true')
 	if (options?.target) {
 		headers.set(REMIX_FRAME_TARGET_HEADER, options.target)
 	}

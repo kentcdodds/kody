@@ -1,6 +1,9 @@
 /** Request header the client sends when reloading a named `<Frame>`. */
 export const REMIX_FRAME_TARGET_HEADER = 'x-remix-target'
 
+/** Request header Remix sends on every browser frame fetch. */
+export const REMIX_FRAME_HEADER = 'x-remix-frame'
+
 /**
  * Query param added only to frame fetches. Anonymous HTML is cached by URL
  * (browser cache, the Worker Cache API, and Cloudflare), not by

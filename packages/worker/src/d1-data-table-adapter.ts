@@ -11,6 +11,7 @@ import {
 	type TransactionOptions,
 	type TransactionToken,
 } from 'remix/data-table'
+import { compileOrderByDirection } from 'remix/data-table/sql-helpers'
 
 type SqliteCompileContext = {
 	values: Array<unknown>
@@ -656,6 +657,11 @@ function compileUpsertStatement(
 
 	const updateValues = statement.update ?? statement.values
 	const updateColumns = Object.keys(updateValues)
+	const insertValues = insertColumns
+		.map((column) =>
+			pushValue(context, (statement.values as Record<string, unknown>)[column]),
+		)
+		.join(', ')
 	let conflictClause = ''
 
 	if (updateColumns.length === 0) {
@@ -688,14 +694,7 @@ function compileUpsertStatement(
 			' (' +
 			insertColumns.map((column) => quotePath(column)).join(', ') +
 			') values (' +
-			insertColumns
-				.map((column) =>
-					pushValue(
-						context,
-						(statement.values as Record<string, unknown>)[column],
-					),
-				)
-				.join(', ') +
+			insertValues +
 			')' +
 			conflictClause +
 			compileReturningClause(statement.returning),
@@ -778,7 +777,7 @@ function compileOrderByClause(orderBy: Array<unknown>) {
 				return (
 					quotePath(typedClause.column) +
 					' ' +
-					typedClause.direction.toUpperCase()
+					compileOrderByDirection(typedClause.direction)
 				)
 			})
 			.join(', ')
