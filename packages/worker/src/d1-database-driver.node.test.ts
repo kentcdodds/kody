@@ -1,7 +1,58 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { column as c, table } from 'remix/data-table'
+import { D1DatabaseDriver } from './d1-data-table-adapter.ts'
 import { createDb } from '#worker/db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+
+const accountsTable = table({
+	name: 'accounts',
+	columns: {
+		id: c.text(),
+		status: c.text(),
+		email: c.text(),
+	},
+	primaryKey: 'id',
+})
+
+const d1Driver = new D1DatabaseDriver({} as D1Database)
+
+test('D1 database driver compiles upsert bindings in placeholder order', () => {
+	const statement = d1Driver.compileSql({
+		kind: 'upsert',
+		table: accountsTable,
+		values: { status: 'enabled', email: 'contact@remix.run' },
+		conflictTarget: ['id'],
+		update: { email: 'info@remix.run' },
+	})[0]!
+
+	expect(statement.text).toBe(
+		'insert into "accounts" ("status", "email") values (?, ?) on conflict ("id") do update set "email" = ?',
+	)
+	expect(statement.values).toEqual([
+		'enabled',
+		'contact@remix.run',
+		'info@remix.run',
+	])
+})
+
+test('D1 database driver rejects invalid order by directions', () => {
+	expect(() =>
+		d1Driver.compileSql({
+			kind: 'select',
+			table: accountsTable,
+			select: '*',
+			distinct: false,
+			joins: [],
+			where: [],
+			groupBy: [],
+			having: [],
+			orderBy: [{ column: 'email', direction: 'ascending' as 'asc' }],
+		}),
+	).toThrowError(
+		new TypeError('Invalid order by direction: expected "asc" or "desc"'),
+	)
+})
 
 test('D1 database driver queries, wipes, and closes through the Remix Database API', async () => {
 	const sqlite = new DatabaseSync(':memory:')

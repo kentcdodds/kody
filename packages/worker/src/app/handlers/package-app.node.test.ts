@@ -297,6 +297,18 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 	expect(connectRequest.headers.get('X-Custom-Package-Header')).toBe('kept')
 })
 
+test('handlePackageAppRequest accepts case-insensitive Upgrade values for realtime', async () => {
+	mockModule.packageRealtimeConnect.mockClear()
+	const response = await request('/@test-user/packages/example/ws', {
+		headers: {
+			Upgrade: 'WebSocket',
+		},
+	})
+	expect(response.status).toBe(200)
+	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+})
+
 test('handlePackageAppRequest forwards package code a request stripped of owner credentials', async () => {
 	const forwardedRequests: Array<Request> = []
 	servePackageEntrypoint(async (forwarded) => {

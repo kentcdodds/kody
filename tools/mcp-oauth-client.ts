@@ -47,6 +47,19 @@ export async function loginToApp(
 	user: AppAuthUser,
 	fetchImpl: FetchLike = fetch,
 ) {
+	// Prefer login. MCP e2e Cloudflare-mock servers seed the user in D1 so
+	// authentication never depends on the Email Sending mock (a configured
+	// sender that 503s or returns an empty body rolls signup back).
+	const loginResponse = await authenticateAppUser(
+		origin,
+		user,
+		'login',
+		fetchImpl,
+	)
+	if (loginResponse.ok) {
+		return readCookieHeader(loginResponse)
+	}
+
 	const signupResponse = await authenticateAppUser(
 		origin,
 		user,
@@ -63,21 +76,21 @@ export async function loginToApp(
 		return readCookieHeader(signupResponse)
 	}
 
-	const loginResponse = await authenticateAppUser(
+	const retryLoginResponse = await authenticateAppUser(
 		origin,
 		user,
 		'login',
 		fetchImpl,
 	)
-	if (!loginResponse.ok) {
+	if (!retryLoginResponse.ok) {
 		const signupBody = await signupResponse.text()
-		const loginBody = await loginResponse.text()
+		const loginBody = await retryLoginResponse.text()
 		throw new Error(
-			`Failed to authenticate test user.\nSignup: ${signupResponse.status} ${signupBody}\nLogin: ${loginResponse.status} ${loginBody}`,
+			`Failed to authenticate test user.\nSignup: ${signupResponse.status} ${signupBody}\nLogin: ${retryLoginResponse.status} ${loginBody}`,
 		)
 	}
 
-	return readCookieHeader(loginResponse)
+	return readCookieHeader(retryLoginResponse)
 }
 
 export async function registerOAuthClient(

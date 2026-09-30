@@ -15,6 +15,10 @@ import {
 	isComputeOverageLimitError,
 } from '#worker/entitlements/errors.ts'
 import { buildPackageAppWorker } from './package-app.ts'
+import {
+	isWebSocketUpgradeRequest,
+	webSocketUpgradeFetchHeaders,
+} from '#worker/package-runtime/websocket-upgrade.ts'
 
 const includeUsedUpCloseReason = 'include-used-up'
 
@@ -756,7 +760,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
-		if (request.headers.get('Upgrade') === 'websocket') {
+		if (isWebSocketUpgradeRequest(request)) {
 			const body = (await request.json()) as PackageRealtimeConnectPayload
 			return await this.handleConnectRequest(body)
 		}
@@ -956,7 +960,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 }
 
 type PackageRealtimeSessionRpc = {
-	fetch: (request: Request) => Promise<Response>
+	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 function getPackageRealtimeNamespace(env: Env) {
@@ -999,21 +1003,27 @@ export function packageRealtimeSessionRpc(input: {
 	const stub = getPackageRealtimeStub(input)
 	return {
 		async connect(request: Request, facet?: string | null) {
-			const forwardedRequest = new Request(request.url, {
+			// Pass Upgrade on a plain-object headers init (not `new Request` +
+			// headers.set). Sentry's Fetcher instrumentation rebuilds Requests and
+			// drops forbidden headers including Upgrade; Object.assign on a plain
+			// map keeps Upgrade through that merge.
+			const body = JSON.stringify({
+				binding,
+				facet,
+				request: {
+					url: request.url,
+					method: request.method,
+					headers: toPlainHeaders(request.headers),
+				},
+			} satisfies PackageRealtimeConnectPayload)
+			return await stub.fetch(request.url, {
 				method: 'POST',
-				headers: request.headers,
-				body: JSON.stringify({
-					binding,
-					facet,
-					request: {
-						url: request.url,
-						method: request.method,
-						headers: toPlainHeaders(request.headers),
-					},
-				} satisfies PackageRealtimeConnectPayload),
+				headers: {
+					...webSocketUpgradeFetchHeaders(request.headers),
+					'Content-Type': 'application/json',
+				},
+				body,
 			})
-			forwardedRequest.headers.set('Upgrade', 'websocket')
-			return await stub.fetch(forwardedRequest)
 		},
 		async emit(
 			sessionId: string,

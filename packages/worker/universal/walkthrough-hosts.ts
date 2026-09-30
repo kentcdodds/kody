@@ -1,8 +1,10 @@
 /**
  * Hosts that can appear as the three conversations in the How Kody works
  * walkthrough (and the homepage factory loop). Coding hosts create the
- * package; invoke is a chat/phone host; notify can be either kind. Grok Bot
- * counts as both. A random pick never shows two hosts from the same company.
+ * package; invoke is a chat/phone host; notify can be either kind. A coding
+ * host with a real phone surface (its own mobile app, a mobile tab in its
+ * company's chat app, or a chat-app bridge) is `both`, so it also fills the
+ * phone slot. A random pick never shows two hosts from the same company.
  */
 
 type WalkthroughHostCompany =
@@ -55,21 +57,21 @@ export const walkthroughHostCatalog = [
 		label: 'Cursor',
 		icon: 'cursor',
 		company: 'spacexai',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'claude-code',
 		label: 'Claude Code',
 		icon: 'claudecode',
 		company: 'anthropic',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'copilot',
 		label: 'Copilot',
 		icon: 'githubcopilot',
 		company: 'github',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'opencode',
@@ -83,7 +85,7 @@ export const walkthroughHostCatalog = [
 		label: 'Codex',
 		icon: 'codex',
 		company: 'openai',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'chatgpt',
@@ -153,7 +155,7 @@ export const walkthroughHostCatalog = [
 		label: 'Devin',
 		icon: 'devin',
 		company: 'cognition',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'pi',
@@ -167,7 +169,7 @@ export const walkthroughHostCatalog = [
 		label: 'OpenClaw',
 		icon: 'openclaw',
 		company: 'openclaw',
-		kind: 'coding',
+		kind: 'both',
 	},
 	{
 		id: 'muse',

@@ -200,7 +200,7 @@ test('runRepoChecks treats a types-only remix devDependency as no npm dependency
 				'package.json',
 				createManifest({
 					app: { entry: './app/router.ts' },
-					devDependencies: { remix: '3.0.0-rc.2', typescript: '^6.0.0' },
+					devDependencies: { remix: '3.0.0-rc.4', typescript: '^6.0.0' },
 				}),
 			],
 			...remixAppFiles,
@@ -228,7 +228,7 @@ test('runRepoChecks notes that a declared remix dependency is not installed', as
 				'package.json',
 				createManifest({
 					app: { entry: './app/router.ts' },
-					dependencies: { remix: '3.0.0-rc.2' },
+					dependencies: { remix: '3.0.0-rc.4' },
 				}),
 			],
 			...remixAppFiles,

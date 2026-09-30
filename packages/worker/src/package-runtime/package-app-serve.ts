@@ -32,6 +32,7 @@ import {
 	type PackageAppTrustedDispatch,
 } from '#worker/package-runtime/package-app-synthetic.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
+import { isWebSocketUpgradeRequest } from '#worker/package-runtime/websocket-upgrade.ts'
 import { wantsJson } from '#worker/utils.ts'
 import {
 	getRuntimeWorkerService,
@@ -431,7 +432,7 @@ export async function servePackageAppRequest(input: {
 	}
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
-	if (packageRealtimePath && request.headers.get('Upgrade') === 'websocket') {
+	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
 			return await packageRealtimeSessionRpc({
 				env,

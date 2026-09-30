@@ -1,6 +1,6 @@
 import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css, unsafeHTML } from 'remix/ui'
 import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -322,8 +322,10 @@ export function AdminSystemEmailRoute(handle: Handle) {
 																title="Email HTML preview"
 																sandbox=""
 																referrerPolicy="no-referrer"
-																srcdoc={buildAdminEmailHtmlPreviewDocument(
-																	selectedMessage.html_body,
+																srcdoc={unsafeHTML(
+																	buildAdminEmailHtmlPreviewDocument(
+																		selectedMessage.html_body,
+																	),
 																)}
 																mix={emailHtmlPreviewIframeCss}
 															/>

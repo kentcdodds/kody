@@ -15,7 +15,7 @@ export function createRemixPackageAppFiles(input: {
 		exports: { '.': './src/index.ts' },
 		// Types only: publish installs `dependencies`, never `devDependencies`,
 		// so the platform copy of remix is what the bundle uses.
-		devDependencies: { remix: '3.0.0-rc.2' },
+		devDependencies: { remix: '3.0.0-rc.4' },
 		kody: {
 			id: input.kodyId,
 			description:

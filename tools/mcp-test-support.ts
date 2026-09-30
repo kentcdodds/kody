@@ -1,3 +1,4 @@
+import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -27,7 +28,7 @@ import {
 	registerOAuthClient,
 	type AppAuthUser,
 } from './mcp-oauth-client.ts'
-import { buildRoleAssignmentSql } from './seed-sql.ts'
+import { buildRoleAssignmentSql, stableUserIdFromEmail } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
 const primaryUserEmail = 'kody@example.com'
@@ -218,6 +219,14 @@ async function startDevServerWithCloudflareMock() {
 		const env = await worker.getEnv()
 		return {
 			origin: url.origin,
+			// Seed before /auth. These workers point CLOUDFLARE_API_* at the
+			// mock so package publish can snapshot sources; a configured
+			// sender then tries to deliver the verification email. The mock
+			// Email DO can still 503 / return an empty body after /__mocks/meta
+			// looks ready, and signup rolls the user back.
+			async ensureUser(user: TestUser) {
+				await seedMcpTestUser(env.APP_DB, user)
+			},
 			async markEmailVerified(email: string) {
 				await env.APP_DB.prepare(
 					`UPDATE users
@@ -241,6 +250,38 @@ WHERE email = ?`,
 		await cloudflareMock[Symbol.asyncDispose]()
 		throw error
 	}
+}
+
+export async function seedMcpTestUser(db: D1Database, user: TestUser) {
+	const passwordHash = await createPasswordHash(user.password)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'free')
+ON CONFLICT(email) DO UPDATE SET
+	username = excluded.username,
+	password_hash = excluded.password_hash,
+	email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
+	stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+	plan = COALESCE(users.plan, excluded.plan),
+	updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(
+			user.username,
+			user.email,
+			passwordHash,
+			stableUserIdFromEmail(user.email),
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ? AND r.name = 'user'`,
+		)
+		.bind(user.email)
+		.run()
 }
 
 export async function markEmailVerifiedInMcpTestDatabase(input: {
@@ -360,10 +401,14 @@ export async function createMcpClient(
 		// marked verified in the local D1 database before connecting.
 		persistDir: string
 		extraHeaders?: Record<string, string>
+		ensureUser?: (user: TestUser) => Promise<void>
 		markEmailVerified?: (email: string) => Promise<void>
 	},
 ) {
 	const extraHeaders = options.extraHeaders
+	if (options.ensureUser) {
+		await options.ensureUser(user)
+	}
 	const cookieHeader = await loginToApp(origin, user)
 	if (options.markEmailVerified) {
 		await options.markEmailVerified(user.email)

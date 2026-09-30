@@ -62,6 +62,7 @@ import { handleStatusIncidentEventRequest } from '#worker/status-incidents/maint
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
+import { fetchPreservingWebSocketUpgrade } from '#worker/package-runtime/websocket-upgrade.ts'
 import {
 	isNamespacedAppEndpointPath,
 	isNamespacedPackageInvocationEndpointPath,
@@ -551,7 +552,9 @@ async function fetchWithDynamicWorkerBudget(
 	// wholesale to the `kody-runtime` Worker. Without the binding (tests,
 	// single-worker local dev) the in-process handlers below keep serving.
 	if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
-		return env.RUNTIME_WORKER.fetch(request)
+		// Sentry instruments Fetcher.fetch and rebuilds Requests, dropping the
+		// forbidden Upgrade header. Preserve WebSocket upgrades explicitly.
+		return fetchPreservingWebSocketUpgrade(env.RUNTIME_WORKER, request)
 	}
 
 	// Host isolation for hosted package apps before first-party surfaces,

@@ -40,6 +40,7 @@ test('a Remix package app publishes and serves SSR routes, a form action, middle
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user
