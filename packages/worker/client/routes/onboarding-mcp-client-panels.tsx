@@ -19,6 +19,8 @@ import {
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
 	claudeDesktopToolHint,
+	cueSiteUrl,
+	dotsIntroUrl,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
 	isDefaultKodyMcpUrl,
@@ -31,6 +33,8 @@ import {
 	museMcpGuideUrl,
 	museMcpLoginCommand,
 	openClawMcpLoginCommand,
+	openMuseGuideUrl,
+	wajoSiteUrl,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
@@ -415,7 +419,7 @@ export function renderPanelContent(
 					<p>
 						Wajo (Fo) connects ChatGPT and Claude through Wajo sign-in. Paste
 						the MCP URL where Wajo asks for a custom MCP server (
-						<a href="https://wajo.ai" target="_blank" rel="noreferrer">
+						<a href={wajoSiteUrl} target="_blank" rel="noreferrer">
 							wajo.ai
 						</a>
 						).
@@ -433,7 +437,7 @@ export function renderPanelContent(
 				<>
 					<p>
 						Cue is a personal AI agent host (
-						<a href="https://cue.im" target="_blank" rel="noreferrer">
+						<a href={cueSiteUrl} target="_blank" rel="noreferrer">
 							cue.im
 						</a>
 						). When Cue exposes a custom MCP connector, paste this URL and
@@ -453,7 +457,7 @@ export function renderPanelContent(
 					<p>
 						OpenMuse (CopilotKit) does not ship a Kody connector — wire Kody
 						into the harness behind your OpenMuse fork. See the{' '}
-						<a href="/docs/openmuse">OpenMuse and Kody</a> guide.
+						<a href={openMuseGuideUrl}>OpenMuse and Kody</a> guide.
 					</p>
 					<ConnectCopyCard
 						highlights={highlights}
@@ -468,11 +472,7 @@ export function renderPanelContent(
 				<>
 					<p>
 						Dots is OpenAI&apos;s personal agent (
-						<a
-							href="https://openai.com/index/introducing-dots/"
-							target="_blank"
-							rel="noreferrer"
-						>
+						<a href={dotsIntroUrl} target="_blank" rel="noreferrer">
 							introducing Dots
 						</a>
 						). When Dots exposes a custom MCP connector, paste this URL and

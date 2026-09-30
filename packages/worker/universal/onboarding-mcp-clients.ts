@@ -97,7 +97,7 @@ export const onboardingDesktopFeaturedAgentIds = [
  * Get started (and on Account → Connections via the full catalog), not in
  * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
  */
-export const onboardingSecondaryAgentIds = [
+const onboardingSecondaryAgentIds = [
 	'wajo',
 	'cue',
 	'openmuse',
