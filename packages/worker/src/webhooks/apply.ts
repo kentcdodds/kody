@@ -144,7 +144,8 @@ async function authorizeApplyRequest(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	authorization: string | null
-	retryAuthorization: (() => Promise<string>) | null
+	/** Resolves `null` when no fresher credential exists, so apply keeps the original 401. */
+	retryAuthorization: (() => Promise<string | null>) | null
 }> {
 	const secretName = input.secretName?.trim() ?? ''
 	const integrationName = input.integration?.trim() ?? ''
@@ -236,7 +237,7 @@ async function authorizeApplyRequest(input: {
 	return {
 		authorization: await readToken(),
 		retryAuthorization: async () => {
-			await refreshIntegrationTokens({
+			const refresh = await refreshIntegrationTokens({
 				env: input.env,
 				userId: input.userId,
 				userEmail: input.userEmail ?? undefined,
@@ -246,7 +247,7 @@ async function authorizeApplyRequest(input: {
 				packageKodyId: input.packageKodyId,
 				waitUntil: input.waitUntil,
 			})
-			return readToken()
+			return refresh.refreshed ? readToken() : null
 		},
 	}
 }
@@ -345,7 +346,7 @@ async function sendAuthorizedApplyRequest(input: {
 	headers: Record<string, string>
 	body?: string
 	authorization: string | null
-	retryAuthorization: (() => Promise<string>) | null
+	retryAuthorization: (() => Promise<string | null>) | null
 	secrets: ReadonlyArray<string>
 }): Promise<WebhookUrlApplyResult> {
 	const headers = new Headers(input.headers)
@@ -369,9 +370,12 @@ async function sendAuthorizedApplyRequest(input: {
 		}
 	}
 	let secrets = [...input.secrets]
-	if (response.status === 401 && input.retryAuthorization) {
+	const retryAuthorization =
+		response.status === 401 && input.retryAuthorization
+			? await input.retryAuthorization()
+			: null
+	if (retryAuthorization) {
 		await response.body?.cancel()
-		const retryAuthorization = await input.retryAuthorization()
 		secrets = [
 			...secrets,
 			...collectAuthorizationSecretsForRedaction({

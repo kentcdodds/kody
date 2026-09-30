@@ -547,7 +547,11 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 	integrationMocks.resolveIntegrationAccessToken
 		.mockResolvedValueOnce(initialToken)
 		.mockResolvedValue(refreshedToken)
-	integrationMocks.refreshIntegrationTokens.mockResolvedValue(undefined)
+	integrationMocks.refreshIntegrationTokens.mockResolvedValue({
+		refreshed: true,
+		refreshedAt: new Date(0).toISOString(),
+		refreshTokenRotated: false,
+	})
 	using _fetch = stubFetch(
 		vi.fn(async (_url: string, init?: RequestInit) => {
 			const auth = new Headers(init?.headers).get('Authorization') ?? ''
@@ -573,6 +577,33 @@ test('webhookUrlApply redacts refreshed Authorization tokens after 401 retry', a
 		]),
 	).toEqual(redactedFailure)
 	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalled()
+})
+
+test('webhookUrlApply returns the original 401 when the integration refresh is not applicable', async () => {
+	const { apply } = await setupOwner()
+	mockIntegration('hooks', 'hooks.example')
+	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue(
+		'gho_non_expiring',
+	)
+	integrationMocks.refreshIntegrationTokens.mockResolvedValue({
+		refreshed: false,
+		skippedReason: 'refresh_not_applicable',
+		refreshedAt: null,
+		refreshTokenRotated: false,
+	})
+	using fetchMock = fetchResponding('bad credentials', { status: 401 })
+
+	const applied = await apply({
+		type: 'http',
+		url: hooksRegister,
+		body: '{"url":"{{webhookUrl}}"}',
+		integration: 'hooks',
+	})
+
+	expect(applied).toMatchObject({ ok: false, httpStatus: 401 })
+	expect(applied.error).toContain('bad credentials')
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalledTimes(1)
 })
 
 test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned HMAC', async () => {

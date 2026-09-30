@@ -332,6 +332,6 @@ runtime path if this budget is raised again.
   `not_applicable` refresh skip, `refresh_policy` mapping and stale-snapshot
   filtering, and the `integrationTokenRefresh` `refreshed` / `skippedReason`
   output on the integrations graph both workers already evaluate (about 890
-  bytes per worker over main). Local dry-run runtime 3_912_258 against the
+  bytes per worker over main). Local dry-run runtime 3_912_276 against the
   previous 3_912_000 budget, reviewed ceiling 3_912_500; platform local dry-run
-  5_238_378 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
+  5_238_396 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
