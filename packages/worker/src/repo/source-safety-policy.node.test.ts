@@ -148,6 +148,15 @@ test('package source overwrite and private-visibility changes require explicit c
 			'packageSave would overwrite existing package source "source-1".',
 		),
 	).toBe(false)
+
+	expect(() =>
+		assertPackagePrivateVisibilityChangeAllowed({
+			beforeContent: '{"name":"@x/y","private":true}',
+			afterContent: '{"name":"@x/y"}',
+			isNewPackage: false,
+			operation: 'packageSave',
+		}),
+	).not.toThrow()
 })
 
 test('restorable package source snapshot verification rejects corrupt snapshots and accepts manifest-bearing backups', async () => {
