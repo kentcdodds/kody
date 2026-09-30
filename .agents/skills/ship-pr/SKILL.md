@@ -43,9 +43,17 @@ import triggerBugbot from 'kody:@kentcdodds/bugbot'
 await triggerBugbot({ prUrl })
 ```
 
+When `triggerBugbot` returns `code: 'github_account_mismatch'` (or
+`posted: false` with that code), **do not wait** for a Bugbot check or review —
+none will appear. Cursor requires the PR author to match the Cursor-linked
+GitHub account (`kentcdodds`). For medium risk, proceed with CI and other
+reviewers (for example CodeRabbit when available) without Bugbot. This is Cursor
+platform policy, not a package bug.
+
 **CodeRabbit:** if it is rate-limited, errored, or otherwise unavailable, **do
-not wait** on it for low/medium risk — proceed with Bugbot + CI. Only wait on
-CodeRabbit when the change is **high** risk (or the user explicitly asks).
+not wait** on it for low/medium risk — proceed with CI and whatever Bugbot
+actually ran (skip waiting on Bugbot after `github_account_mismatch`). Only wait
+on CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
 ## Loop
 
