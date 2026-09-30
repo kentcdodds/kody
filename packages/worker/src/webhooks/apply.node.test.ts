@@ -606,6 +606,31 @@ test('webhookUrlApply returns the original 401 when the integration refresh is n
 	expect(integrationMocks.refreshIntegrationTokens).toHaveBeenCalledTimes(1)
 })
 
+test('webhookUrlApply cancels the original 401 body when the integration refresh throws', async () => {
+	const { apply } = await setupOwner()
+	mockIntegration('hooks', 'hooks.example')
+	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue('ya29_lost')
+	integrationMocks.refreshIntegrationTokens.mockRejectedValue(
+		new Error('missing refresh token'),
+	)
+	const cancel = vi.fn()
+	using _fetch = stubFetch(
+		vi.fn(
+			async () => new Response(new ReadableStream({ cancel }), { status: 401 }),
+		),
+	)
+
+	await expect(
+		apply({
+			type: 'http',
+			url: hooksRegister,
+			body: '{"url":"{{webhookUrl}}"}',
+			integration: 'hooks',
+		}),
+	).rejects.toThrow('missing refresh token')
+	expect(cancel).toHaveBeenCalledTimes(1)
+})
+
 test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned HMAC', async () => {
 	const { db, env, handle, userId, reveal, apply } = await setupOwner({
 		verification: 'package-owned',

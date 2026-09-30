@@ -370,10 +370,15 @@ async function sendAuthorizedApplyRequest(input: {
 		}
 	}
 	let secrets = [...input.secrets]
-	const retryAuthorization =
-		response.status === 401 && input.retryAuthorization
-			? await input.retryAuthorization()
-			: null
+	let retryAuthorization: string | null = null
+	if (response.status === 401 && input.retryAuthorization) {
+		try {
+			retryAuthorization = await input.retryAuthorization()
+		} catch (error) {
+			await response.body?.cancel()
+			throw error
+		}
+	}
 	if (retryAuthorization) {
 		await response.body?.cancel()
 		secrets = [
