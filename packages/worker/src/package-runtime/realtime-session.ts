@@ -15,10 +15,7 @@ import {
 	isComputeOverageLimitError,
 } from '#worker/entitlements/errors.ts'
 import { buildPackageAppWorker } from './package-app.ts'
-import {
-	isWebSocketUpgradeRequest,
-	webSocketUpgradeFetchHeaders,
-} from '#worker/package-runtime/websocket-upgrade.ts'
+import { isWebSocketUpgradeRequest } from '#worker/package-runtime/websocket-upgrade.ts'
 
 const includeUsedUpCloseReason = 'include-used-up'
 
@@ -213,28 +210,6 @@ function toPlainHeaders(headers: Headers) {
 // handshake and drops the request body, so the connect payload travels in a
 // header instead.
 const packageRealtimeConnectHeaderName = 'X-Kody-Realtime-Connect'
-
-function encodeConnectPayload(payload: PackageRealtimeConnectPayload) {
-	const bytes = new TextEncoder().encode(JSON.stringify(payload))
-	let binary = ''
-	for (const byte of bytes) binary += String.fromCharCode(byte)
-	return btoa(binary)
-}
-
-function decodeConnectPayload(
-	headers: Headers,
-): PackageRealtimeConnectPayload | null {
-	const encoded = headers.get(packageRealtimeConnectHeaderName)
-	if (!encoded) return null
-	try {
-		const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))
-		return JSON.parse(
-			new TextDecoder().decode(bytes),
-		) as PackageRealtimeConnectPayload
-	} catch {
-		return null
-	}
-}
 
 function serializeOutboundMessage(value: unknown) {
 	if (typeof value === 'string') {
@@ -788,13 +763,17 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
 		if (isWebSocketUpgradeRequest(request)) {
-			const payload = decodeConnectPayload(request.headers)
+			const payload = request.headers.get(packageRealtimeConnectHeaderName)
 			if (!payload) {
 				return new Response('Missing realtime connect payload.', {
 					status: 400,
 				})
 			}
-			return await this.handleConnectRequest(payload)
+			return await this.handleConnectRequest(
+				JSON.parse(
+					decodeURIComponent(payload),
+				) as PackageRealtimeConnectPayload,
+			)
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/sessions')) {
@@ -1035,20 +1014,22 @@ export function packageRealtimeSessionRpc(input: {
 	const stub = getPackageRealtimeStub(input)
 	return {
 		async connect(request: Request, facet?: string | null) {
+			const payload: PackageRealtimeConnectPayload = {
+				binding,
+				facet,
+				request: {
+					url: request.url,
+					method: request.method,
+					headers: toPlainHeaders(request.headers),
+				},
+			}
 			// Plain-object headers survive Sentry's Fetcher instrumentation merge.
 			return await stub.fetch(request.url, {
-				method: 'GET',
 				headers: {
-					...webSocketUpgradeFetchHeaders(),
-					[packageRealtimeConnectHeaderName]: encodeConnectPayload({
-						binding,
-						facet,
-						request: {
-							url: request.url,
-							method: request.method,
-							headers: toPlainHeaders(request.headers),
-						},
-					}),
+					Upgrade: 'websocket',
+					[packageRealtimeConnectHeaderName]: encodeURIComponent(
+						JSON.stringify(payload),
+					),
 				},
 			})
 		},
