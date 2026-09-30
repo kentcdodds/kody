@@ -312,4 +312,5 @@ runtime path if this budget is raised again.
   DIY connect panels, and walkthrough host catalog entries pull additional agent
   labels/help URLs into the origin/runtime shared onboarding graph CI already
   evaluates. CI dry-run runtime 3_905_770 against the previous 3_905_500 budget,
-  reviewed ceiling 3_906_500.
+  reviewed ceiling 3_906_500; platform CI dry-run 5_233_076 against the previous
+  5_233_000 budget, reviewed ceiling 5_233_500.
