@@ -1,14 +1,13 @@
 /**
  * WebSocket upgrade helpers for package-app realtime.
  *
- * `@sentry/cloudflare` instruments Fetcher / Durable Object `fetch` and rebuilds
- * outbound Requests while injecting `sentry-trace`. That reconstruction drops
- * Fetch "forbidden request headers", including `Upgrade` and the `Sec-*`
- * family. A browser upgrade that loses `Upgrade: websocket` never reaches
- * `PackageRealtimeSession` (host falls through to package `app_fetch` → 426).
+ * `@sentry/cloudflare` instruments Fetcher / Durable Object `fetch` and merges
+ * `sentry-trace` into outbound headers. Plain-object `headers` inits keep every
+ * header through that merge.
  *
- * Passing `Upgrade` on a plain-object `headers` init keeps it through Sentry's
- * `Object.assign` merge; constructing `new Request(input, { headers })` does not.
+ * workerd sends any `fetch` carrying `Upgrade: websocket` as a WebSocket
+ * handshake and drops the request body, so upgrade forwards cannot carry data
+ * in the body (see `packageRealtimeSessionRpc.connect`).
  */
 
 export function isWebSocketUpgradeRequest(request: Request) {

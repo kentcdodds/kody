@@ -151,6 +151,39 @@ Requests are handled in this order:
   `text/markdown`. DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a
   Worker route.
 
+## Package-app realtime (WebSocket)
+
+A browser
+`new WebSocket('wss://{username}.kody.run/packages/{kodyId}/ws[/facet]')`
+reaches `kody-runtime` directly through the `*.kody.run` zone routes (inline
+dev/preview reaches it through the origin `RUNTIME_WORKER` forward).
+`servePackageAppRequest` recognizes the upgrade (`Upgrade` compared
+case-insensitively) before any package `app_fetch` runs and calls
+`packageRealtimeSessionRpc(...).connect`, which forwards to the
+`PackageRealtimeSession` Durable Object. The DO runs the package connect hook
+(one `app_realtime` run) and returns `101` with the client socket.
+
+workerd sends any `fetch` that carries `Upgrade: websocket` as a WebSocket
+handshake and **drops the request body**, so the DO connect payload (binding,
+facet, browser request) travels in the `X-Kody-Realtime-Connect` header, never
+the body. Only a real cross-isolate stub call proves this; calling the DO
+instance's `fetch` in-process keeps the body and hides the bug
+(`realtime-session.workers.test.ts` uses the real stub).
+
+Post-deploy check for a package with realtime hooks (for example PR Desk):
+
+1. `GET https://kody.run/__runtime/health` reports the merge `commitSha`.
+2. Open `https://{username}.kody.run/packages/{kodyId}` signed in. DevTools →
+   Network → WS shows the `/ws` request with status `101 Switching Protocols`.
+3. From Kody MCP, `runList` for that package with `surface: 'app_realtime'`
+   since the reopen shows a connect run, and `sessionList({ package_id })` lists
+   the open session.
+
+A non-101 `/ws` with no `app_realtime` row means the host or DO failed before
+the hook ran (look for Sentry `package_app.phase: realtime-connect`). An
+`app_fetch` `426` row on `/ws` means the upgrade was not recognized and fell
+through to package code.
+
 ## Workflow runtime
 
 All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.

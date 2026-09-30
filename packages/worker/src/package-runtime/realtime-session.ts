@@ -209,6 +209,33 @@ function toPlainHeaders(headers: Headers) {
 	return Object.fromEntries(headers.entries())
 }
 
+// workerd sends a `fetch` carrying `Upgrade: websocket` as a WebSocket
+// handshake and drops the request body, so the connect payload travels in a
+// header instead.
+const packageRealtimeConnectHeaderName = 'X-Kody-Realtime-Connect'
+
+function encodeConnectPayload(payload: PackageRealtimeConnectPayload) {
+	const bytes = new TextEncoder().encode(JSON.stringify(payload))
+	let binary = ''
+	for (const byte of bytes) binary += String.fromCharCode(byte)
+	return btoa(binary)
+}
+
+function decodeConnectPayload(
+	headers: Headers,
+): PackageRealtimeConnectPayload | null {
+	const encoded = headers.get(packageRealtimeConnectHeaderName)
+	if (!encoded) return null
+	try {
+		const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))
+		return JSON.parse(
+			new TextDecoder().decode(bytes),
+		) as PackageRealtimeConnectPayload
+	} catch {
+		return null
+	}
+}
+
 function serializeOutboundMessage(value: unknown) {
 	if (typeof value === 'string') {
 		return value
@@ -761,8 +788,13 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
 		if (isWebSocketUpgradeRequest(request)) {
-			const body = (await request.json()) as PackageRealtimeConnectPayload
-			return await this.handleConnectRequest(body)
+			const payload = decodeConnectPayload(request.headers)
+			if (!payload) {
+				return new Response('Missing realtime connect payload.', {
+					status: 400,
+				})
+			}
+			return await this.handleConnectRequest(payload)
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/sessions')) {
@@ -1003,26 +1035,21 @@ export function packageRealtimeSessionRpc(input: {
 	const stub = getPackageRealtimeStub(input)
 	return {
 		async connect(request: Request, facet?: string | null) {
-			// Pass Upgrade on a plain-object headers init (not `new Request` +
-			// headers.set). Sentry's Fetcher instrumentation rebuilds Requests and
-			// drops forbidden headers including Upgrade; Object.assign on a plain
-			// map keeps Upgrade through that merge.
-			const body = JSON.stringify({
-				binding,
-				facet,
-				request: {
-					url: request.url,
-					method: request.method,
-					headers: toPlainHeaders(request.headers),
-				},
-			} satisfies PackageRealtimeConnectPayload)
+			// Plain-object headers survive Sentry's Fetcher instrumentation merge.
 			return await stub.fetch(request.url, {
-				method: 'POST',
+				method: 'GET',
 				headers: {
-					...webSocketUpgradeFetchHeaders(request.headers),
-					'Content-Type': 'application/json',
+					...webSocketUpgradeFetchHeaders(),
+					[packageRealtimeConnectHeaderName]: encodeConnectPayload({
+						binding,
+						facet,
+						request: {
+							url: request.url,
+							method: request.method,
+							headers: toPlainHeaders(request.headers),
+						},
+					}),
 				},
-				body,
 			})
 		},
 		async emit(

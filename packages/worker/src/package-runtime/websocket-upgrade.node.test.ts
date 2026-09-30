@@ -7,8 +7,8 @@ import {
 
 /**
  * Mirrors `@sentry/cloudflare` `instrumentFetcher`: when tracing headers are
- * present it rebuilds `new Request(input, { headers })`, which drops Fetch
- * forbidden request headers (`Upgrade`, `Sec-*`).
+ * present it rebuilds `new Request(input, { headers })` or merges a plain
+ * headers init.
  */
 function sentryStyleInstrumentFetcher(fetchFn: typeof fetch): typeof fetch {
 	return ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -66,8 +66,8 @@ test('Sentry-style Request rebuild is the fragile path; plain-object headers kee
 	})
 
 	// Sentry instrumentFetcher Request branch: new Request(input, { headers }).
-	// In workerd this can drop the upgrade bit / Upgrade header; we do not rely
-	// on that path. The fix uses plain-object headers (Object.assign merge).
+	// Helpers do not rely on that branch; they pass plain-object headers
+	// (Object.assign merge) instead.
 	const headers = new Headers(upgradeRequest.headers)
 	headers.set('sentry-trace', '00-trace-00')
 	const rebuilt = new Request(upgradeRequest, { headers })
