@@ -272,7 +272,6 @@ const registryKeys = [
 	'secret-providers',
 	'jev-search-rerank',
 	'execute-invoke',
-	'fork-upstream-update-events',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {
@@ -474,7 +473,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(9)
+	expect(listed).toHaveLength(8)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',
@@ -489,14 +488,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },
 		],
 		['execute-invoke', { defaultAudience: 'experiments_opt_in' }],
-		[
-			'fork-upstream-update-events',
-			{
-				defaultEnabled: true,
-				defaultAudience: 'experiments_opt_in',
-				successMetric: null,
-			},
-		],
 		['compact-mcp-server-instructions', { successMetric: executeMetric }],
 		[
 			'demo-indicator',
@@ -636,27 +627,4 @@ test('execute-invoke first insert without audience uses registry defaultAudience
 	await setGlobal(db, true, { key: 'execute-invoke' })
 	expect(db.globals.get('execute-invoke')?.audience).toBe('experiments_opt_in')
 	expect(await enabledFor(db, [7, 8], 'execute-invoke')).toEqual([true, false])
-})
-
-test('fork-upstream-update-events defaults on only for experiments opt-in accounts; global off and overrides still win', async () => {
-	const db = createFeatureFlagsTestDb({
-		users: [
-			{ id: 7, username: 'opted', experiments_opt_in: 1 },
-			{ id: 8, username: 'plain', experiments_opt_in: 0 },
-		],
-	})
-	const key = 'fork-upstream-update-events'
-
-	expect(await enabledFor(db, [7, 8, null], key)).toEqual([true, false, false])
-
-	await setFeatureFlagUserOverride(db, {
-		key,
-		userId: 8,
-		enabled: true,
-		updatedBy: 1,
-	})
-	expect(await enabledFor(db, [8], key)).toEqual([true])
-
-	await setGlobal(db, false, { key })
-	expect(await enabledFor(db, [7], key)).toEqual([false])
 })

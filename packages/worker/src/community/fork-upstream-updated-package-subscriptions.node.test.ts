@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
 	loadPackageManifestBySourceId: vi.fn(),
 	listCommunityForksByListingId: vi.fn(),
 	getCommunityListingPublishedForAdmin: vi.fn(),
-	isFeatureEnabled: vi.fn(),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -21,9 +20,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: mocks.loadPackageManifestBySourceId,
-}))
-vi.mock('#worker/feature-flags/service.ts', () => ({
-	isFeatureEnabled: mocks.isFeatureEnabled,
 }))
 vi.mock('./repo.ts', () => ({
 	listCommunityForksByListingId: mocks.listCommunityForksByListingId,
@@ -36,24 +32,9 @@ vi.mock('./service.ts', () => ({
 const { dispatchCommunityForkUpstreamUpdatedSubscriptionEvents } =
 	await import('./fork-upstream-updated-package-subscriptions.ts')
 
-const numericUserIdByStableId: Record<string, number> = {
-	'stable-opted': 1,
-	'stable-plain': 2,
-	'stable-second-opted': 3,
-}
-
 function createEnv() {
 	return {
-		APP_DB: {
-			prepare: () => ({
-				bind: (stableUserId: string) => ({
-					first: async () => {
-						const id = numericUserIdByStableId[stableUserId]
-						return id === undefined ? null : { id }
-					},
-				}),
-			}),
-		} as unknown as D1Database,
+		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 		APP_BASE_URL: 'https://heykody.dev',
 	}
@@ -73,7 +54,7 @@ function forkRow(overrides: Partial<CommunityForkRecord>): CommunityForkRecord {
 	return {
 		id: 'fork-1',
 		listingId: 'listing-1',
-		forkerUserId: 'stable-opted',
+		forkerUserId: 'stable-forker-a',
 		originCommit: 'commit-1',
 		forkedPackageId: 'forked-package-1',
 		forkedSourceId: 'forked-source-1',
@@ -109,12 +90,9 @@ const message = {
 	publishedAt: '2026-09-30T12:00:00.000Z',
 }
 
-function enableFlagFor(numericIds: Array<number>) {
-	mocks.isFeatureEnabled.mockImplementation(
-		async (_db: unknown, key: string, userId: number) => {
-			expect(key).toBe('fork-upstream-update-events')
-			return numericIds.includes(userId)
-		},
+function invokedPackageIds() {
+	return mocks.invokePackageSubscription.mock.calls.map(
+		([call]) => (call as { savedPackage: { id: string } }).savedPackage.id,
 	)
 }
 
@@ -124,15 +102,15 @@ beforeEach(() => {
 	mocks.listSavedPackagesByUserId.mockImplementation(
 		async (_db: unknown, input: { userId: string }) => {
 			switch (input.userId) {
-				case 'stable-opted':
+				case 'stable-forker-a':
 					return [
-						savedPackage('stable-opted', 'auto-rebase'),
-						savedPackage('stable-opted', 'unrelated'),
+						savedPackage('stable-forker-a', 'auto-rebase'),
+						savedPackage('stable-forker-a', 'unrelated'),
 					]
-				case 'stable-plain':
-					return [savedPackage('stable-plain', 'plain-notifier')]
-				case 'stable-second-opted':
-					return [savedPackage('stable-second-opted', 'discord-ping')]
+				case 'stable-forker-b':
+					return [savedPackage('stable-forker-b', 'plain-notifier')]
+				case 'stable-forker-c':
+					return [savedPackage('stable-forker-c', 'discord-ping')]
 				default:
 					return []
 			}
@@ -146,8 +124,7 @@ beforeEach(() => {
 	)
 })
 
-test('delivers one event per fork to subscribed packages of forkers that pass the experiments gate', async () => {
-	enableFlagFor([1, 3])
+test('delivers one event per fork to subscribed packages of every forker behind the new pinned commit', async () => {
 	mocks.listCommunityForksByListingId.mockResolvedValue([
 		forkRow({ id: 'fork-1' }),
 		forkRow({
@@ -155,13 +132,13 @@ test('delivers one event per fork to subscribed packages of forkers that pass th
 			forkedPackageId: 'forked-package-2',
 			targetKodyId: 'discord-gateway-2',
 		}),
-		forkRow({ id: 'fork-plain', forkerUserId: 'stable-plain' }),
+		forkRow({ id: 'fork-b', forkerUserId: 'stable-forker-b' }),
 		forkRow({
-			id: 'fork-second',
-			forkerUserId: 'stable-second-opted',
+			id: 'fork-c',
+			forkerUserId: 'stable-forker-c',
 			originCommit: 'commit-0',
 		}),
-		forkRow({ id: 'fork-unknown-user', forkerUserId: 'stable-missing' }),
+		forkRow({ id: 'fork-no-packages', forkerUserId: 'stable-missing' }),
 		forkRow({ id: 'fork-current', originCommit: 'commit-2' }),
 	])
 
@@ -192,8 +169,12 @@ test('delivers one event per fork to subscribed packages of forkers that pass th
 			'community-fork-upstream-updated:event-1:fork-2:auto-rebase',
 		],
 		[
+			'plain-notifier',
+			'community-fork-upstream-updated:event-1:fork-b:plain-notifier',
+		],
+		[
 			'discord-ping',
-			'community-fork-upstream-updated:event-1:fork-second:discord-ping',
+			'community-fork-upstream-updated:event-1:fork-c:discord-ping',
 		],
 	])
 	for (const call of calls) {
@@ -224,11 +205,15 @@ test('delivers one event per fork to subscribed packages of forkers that pass th
 	const discoveredUsers = mocks.listSavedPackagesByUserId.mock.calls.map(
 		([, input]) => (input as { userId: string }).userId,
 	)
-	expect(discoveredUsers).toEqual(['stable-opted', 'stable-second-opted'])
+	expect(discoveredUsers).toEqual([
+		'stable-forker-a',
+		'stable-forker-b',
+		'stable-forker-c',
+		'stable-missing',
+	])
 })
 
 test('does nothing when the listing has no forks behind the new pinned commit', async () => {
-	enableFlagFor([1])
 	mocks.listCommunityForksByListingId.mockResolvedValue([])
 	await expect(
 		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
@@ -247,41 +232,23 @@ test('does nothing when the listing has no forks behind the new pinned commit', 
 		}),
 	).resolves.toEqual([])
 
-	expect(mocks.isFeatureEnabled).not.toHaveBeenCalled()
-	expect(mocks.getCommunityListingPublishedForAdmin).not.toHaveBeenCalled()
-	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
-})
-
-test('does nothing when no forker passes the flag', async () => {
-	enableFlagFor([])
-	mocks.listCommunityForksByListingId.mockResolvedValue([
-		forkRow({ id: 'fork-plain', forkerUserId: 'stable-plain' }),
-		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
-	])
-
-	await expect(
-		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
-			env: createEnv(),
-			message,
-		}),
-	).resolves.toEqual([])
-
-	expect(mocks.isFeatureEnabled).toHaveBeenCalledTimes(2)
 	expect(mocks.getCommunityListingPublishedForAdmin).not.toHaveBeenCalled()
 	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
-test('skips a forker whose flag evaluation fails and rejects for Queue retry', async () => {
-	consoleWarn.mockImplementation(() => {})
-	mocks.isFeatureEnabled.mockImplementation(
-		async (_db: unknown, _key: string, userId: number) => {
-			if (userId === 1) throw new Error('D1 unavailable')
-			return userId === 3
+test('skips a forker whose saved-package lookup fails, delivers to siblings, and rejects for Queue retry', async () => {
+	mocks.listSavedPackagesByUserId.mockImplementation(
+		async (_db: unknown, input: { userId: string }) => {
+			if (input.userId === 'stable-forker-a') {
+				throw new Error('D1 unavailable')
+			}
+			return [savedPackage(input.userId, 'discord-ping')]
 		},
 	)
 	mocks.listCommunityForksByListingId.mockResolvedValue([
-		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
+		forkRow({ id: 'fork-a', forkerUserId: 'stable-forker-a' }),
+		forkRow({ id: 'fork-c', forkerUserId: 'stable-forker-c' }),
 	])
 
 	await expect(
@@ -290,35 +257,10 @@ test('skips a forker whose flag evaluation fails and rejects for Queue retry', a
 			message,
 		}),
 	).rejects.toThrow('subscription discovery failed')
-	expect(mocks.getCommunityListingPublishedForAdmin).not.toHaveBeenCalled()
-	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
-
-	mocks.listCommunityForksByListingId.mockResolvedValue([
-		forkRow({ id: 'fork-opted', forkerUserId: 'stable-opted' }),
-		forkRow({ id: 'fork-second', forkerUserId: 'stable-second-opted' }),
-	])
-	await expect(
-		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
-			env: createEnv(),
-			message,
-		}),
-	).rejects.toThrow('subscription discovery failed')
-	expect(
-		mocks.invokePackageSubscription.mock.calls.map(
-			([call]) => (call as { savedPackage: { id: string } }).savedPackage.id,
-		),
-	).toEqual(['discord-ping'])
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'community-fork-upstream-updated-flag-evaluation-failed',
-		expect.objectContaining({
-			forkerUserId: 'stable-opted',
-			error: expect.any(Error),
-		}),
-	)
+	expect(invokedPackageIds()).toEqual(['discord-ping'])
 })
 
 test('cancels when the listing is no longer active', async () => {
-	enableFlagFor([1])
 	mocks.listCommunityForksByListingId.mockResolvedValue([forkRow({})])
 	mocks.getCommunityListingPublishedForAdmin.mockResolvedValue(null)
 
@@ -328,15 +270,15 @@ test('cancels when the listing is no longer active', async () => {
 			message,
 		}),
 	).rejects.toBeInstanceOf(CommunityListingPublishedDispatchCancelledError)
+	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
 test('rejects for Queue retry after siblings finish when invocation infrastructure fails', async () => {
 	consoleWarn.mockImplementation(() => {})
-	enableFlagFor([1, 3])
 	mocks.listCommunityForksByListingId.mockResolvedValue([
 		forkRow({ id: 'fork-1' }),
-		forkRow({ id: 'fork-second', forkerUserId: 'stable-second-opted' }),
+		forkRow({ id: 'fork-c', forkerUserId: 'stable-forker-c' }),
 	])
 	mocks.invokePackageSubscription.mockImplementation(
 		async (input: { savedPackage: { id: string } }) =>
@@ -361,9 +303,8 @@ test('rejects for Queue retry after siblings finish when invocation infrastructu
 	)
 })
 
-test('rejects for Queue retry when subscriber discovery fails', async () => {
+test('rejects for Queue retry when subscriber manifest discovery fails', async () => {
 	consoleWarn.mockImplementation(() => {})
-	enableFlagFor([1])
 	mocks.listCommunityForksByListingId.mockResolvedValue([forkRow({})])
 	mocks.loadPackageManifestBySourceId.mockRejectedValue(
 		new Error('KV unavailable'),

@@ -412,10 +412,10 @@ message on the same queue. `previous` and `current` are
 `{ pinnedCommit, packageVersion }`. Change detection lives in
 `publishCommunityListing` (`hasCommunityListingReleaseChanged`); the consumer is
 `dispatchCommunityForkUpstreamUpdatedSubscriptionEvents`. It lists every
-`community_forks` row for the listing, skips forks already at the new pin,
-evaluates `fork-upstream-update-events` per forker, and invokes
-`community.fork.upstream_updated` on that forker's own subscribed packages, one
-event per fork. Forking is required: there is no listing watch. Payload:
+`community_forks` row for the listing, skips forks already at the new pin, and
+invokes `community.fork.upstream_updated` on each forker's own subscribed
+packages, one event per fork. Forking is required: there is no listing watch.
+Payload:
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## Inert fork mechanism

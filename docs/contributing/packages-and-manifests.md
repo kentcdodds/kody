@@ -471,7 +471,7 @@ enqueue failures are logged and never fail `communityPublish`.
 A republish that moves the pinned commit enqueues
 `community.fork.upstream_updated` on the same queue. That topic is not
 admin-only. It reaches each forking account's own subscribed packages, one event
-per fork, gated per forker by the `fork-upstream-update-events` flag. See
+per fork. See
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.

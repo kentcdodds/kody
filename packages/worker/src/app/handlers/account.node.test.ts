@@ -244,7 +244,6 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
-		'fork-upstream-update-events': false,
 	})
 	expect(Object.keys(body.loaderData).sort()).toEqual([
 		'accountConnections',

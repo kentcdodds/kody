@@ -430,8 +430,7 @@ that listing. Each forker receives public listing metadata (id, name, package
 name leaf, `public_url`, publisher username, pinned commits and versions) plus
 identifiers of their own fork. The event never carries the publisher's stable
 id, email, or source, and never names other forkers. Delivery goes only to
-packages owned by that forker and is gated per forker by
-`fork-upstream-update-events` at processing time.
+packages owned by that forker.
 
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort
