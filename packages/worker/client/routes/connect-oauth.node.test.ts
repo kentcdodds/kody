@@ -752,6 +752,7 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 			allowedHosts: ['www.googleapis.com'],
 		}),
 	)
+	if (!config) throw new Error('expected a merged OAuth config')
 	const prompt = 'ask the agent about google-work next steps'
 	const render = (
 		nextSteps: Parameters<typeof renderSuccessCard>[0]['nextSteps'],

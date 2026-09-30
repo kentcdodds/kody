@@ -166,8 +166,11 @@ function isolatedEnv(
 	runIsolatedCheckPhase: (request: Record<string, unknown>) => unknown,
 ) {
 	const kv = {
-		put: vi.fn(async () => undefined),
-		delete: vi.fn(async () => undefined),
+		put: vi.fn(
+			async (_key: string, _value: string, _options: KVNamespacePutOptions) =>
+				undefined,
+		),
+		delete: vi.fn(async (_key: string) => undefined),
 	}
 	const namespace = {
 		idFromName: vi.fn((name: string) => ({ name })),
@@ -904,11 +907,7 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 	expect(result.ok).toBe(true)
 	// The staged snapshot is written once with a TTL and cleaned up after.
 	expect(kv.put).toHaveBeenCalledTimes(1)
-	const [stagingKey, stagedBody, stagedOptions] = kv.put.mock.calls[0] as [
-		string,
-		string,
-		{ expirationTtl: number },
-	]
+	const [stagingKey, stagedBody, stagedOptions] = kv.put.mock.calls[0]!
 	expect(stagingKey.startsWith('repo-checks-staging:v1:user-123:')).toBe(true)
 	expect(JSON.parse(stagedBody).sourceFiles['src/a.ts']).toContain(
 		'export default',

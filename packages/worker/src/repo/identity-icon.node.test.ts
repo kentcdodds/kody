@@ -9,10 +9,13 @@ import {
 } from './identity-icon.ts'
 import { type EntitySourceRow } from './types.ts'
 import { createFakeImagesBinding } from '#worker/test-support/images-binding.ts'
+import type * as EntitySources from './entity-sources.ts'
 
 const mocks = vi.hoisted(() => ({
 	readFirstArtifactFileAtCommit: vi.fn(),
-	updateEntitySource: vi.fn(async () => true),
+	updateEntitySource: vi.fn<typeof EntitySources.updateEntitySource>(
+		async () => true,
+	),
 }))
 
 vi.mock('./artifact-file.ts', () => ({
@@ -21,8 +24,9 @@ vi.mock('./artifact-file.ts', () => ({
 }))
 
 vi.mock('./entity-sources.ts', () => ({
-	updateEntitySource: (...args: Array<unknown>) =>
-		mocks.updateEntitySource(...args),
+	updateEntitySource: (
+		...args: Parameters<typeof EntitySources.updateEntitySource>
+	) => mocks.updateEntitySource(...args),
 }))
 
 function createPngHeader(width: number, height: number) {
@@ -63,9 +67,9 @@ function createFakeKv() {
 }
 
 function createFakeR2() {
-	const values = new Map<string, Uint8Array>()
+	const values = new Map<string, Uint8Array<ArrayBuffer>>()
 	const bucket = {
-		async put(key: string, value: Uint8Array) {
+		async put(key: string, value: Uint8Array<ArrayBuffer>) {
 			values.set(key, value)
 			return { key }
 		},
@@ -119,7 +123,7 @@ function iconEnv() {
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	} as unknown as Env
 	return { env, kvValues, r2Values }
 }
 

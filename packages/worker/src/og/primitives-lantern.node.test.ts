@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { landingHomePrimitives } from '#universal/landing-home-copy.ts'
 import { landingPrimitiveIds } from '#universal/landing-lantern.ts'
-import { ensureOgBinaryAssetsReady } from '#worker/og/og-image-assets.ts'
+import { ensureOgBinaryAssetsReady } from '#worker/og/og-binary-assets.node.ts'
 import { getOgPalette } from '#worker/og/palette.ts'
 import { type SatoriChild, type SatoriElement } from '#worker/og/render.ts'
 import {

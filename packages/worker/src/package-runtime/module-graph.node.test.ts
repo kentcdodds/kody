@@ -10,6 +10,7 @@ import {
 	createLoadedPackageSource,
 	type RuntimeModule,
 } from '#worker/test-support/module-graph.ts'
+import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	importWorkerBundler: async () => ({
@@ -18,8 +19,7 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: (...args: Array<unknown>) =>
-		mockModule.getPlatformAccountByUsername(...args),
+	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
 	isPlatformAccountStableUserId: async () => false,
 	listPlatformAccountUsernames: async () => [],
 }))
@@ -118,7 +118,7 @@ function appCacheKey(sourceId: string, entryPoint = 'app.js') {
 }
 
 async function withRuntimeGraph(
-	modules: Record<string, string>,
+	modules: WorkerLoaderModules,
 	fn: (
 		runEntry: (
 			entryPath: string,
@@ -147,7 +147,7 @@ async function withRuntimeGraph(
 }
 
 async function runWithRuntimeEntry(
-	modules: Record<string, string>,
+	modules: WorkerLoaderModules,
 	runtime: Record<string, unknown>,
 ) {
 	const moduleGraph = await createTemporaryModuleGraph(modules)

@@ -93,7 +93,7 @@ export function AccountSecretsRoute(handle: Handle) {
 	let completedPackageApproval: ApprovalAction | null = null
 	let packageApprovalHref: string | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
-	let retryTimeout: ReturnType<typeof setTimeout> | null = null
+	let retryTimeout: number | null = null
 	let showSecretValue = false
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AccountSecretsLoaderData | null = null

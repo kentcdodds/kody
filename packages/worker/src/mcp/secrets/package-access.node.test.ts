@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	parsePackageAccessRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
@@ -149,7 +150,7 @@ function mountCaller(
 	options: { userId?: string | null; storageId?: string } = {},
 ) {
 	const userId = options.userId === undefined ? 'user-1' : options.userId
-	return {
+	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: userId
 			? { userId, email: `${userId}@example.com`, displayName: userId }
@@ -157,10 +158,11 @@ function mountCaller(
 		repoContext: null,
 		storageContext: {
 			sessionId: null,
+			appId: null,
 			packageId: storagePackageId,
 			storageId: options.storageId ?? storagePackageId ?? 'pkg-1',
 		},
-	}
+	})
 }
 
 test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
@@ -311,7 +313,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 				{ name: 'xRefreshToken', scope: 'user' },
 				{ name: 'xAccessToken', scope: 'user' },
 			],
-			storageContext: { sessionId: null, packageId: 'pkg-1' },
+			storageContext: { sessionId: null, appId: null, packageId: 'pkg-1' },
 		}),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
 	expect(mockModule.resolveSecret).toHaveBeenCalled()

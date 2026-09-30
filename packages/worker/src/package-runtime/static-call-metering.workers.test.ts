@@ -111,6 +111,8 @@ async function publishSource(
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
 		created_at: now,
 		updated_at: now,
 	}

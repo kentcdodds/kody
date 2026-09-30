@@ -76,7 +76,7 @@ function stripeUser(
 	const env = createSuccessfulDeletionEnv(db, {
 		CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectors },
 		...envOverrides,
-	} as unknown as Partial<Env>)
+	})
 	return {
 		rows,
 		deleteVectors,

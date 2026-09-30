@@ -17,6 +17,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { packageOwnedJobDeleteErrorMessage } from './job-retention.ts'
 import { buildPackageJobId } from './package-job-id.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
 import {
 	repoMockModule,
 	jobManagerMockModule,
@@ -112,6 +113,32 @@ async function expectCallerError(promise: Promise<unknown>, message: string) {
 	expect(error).toMatchObject({ message })
 }
 
+function createRepoSessionRow(input: {
+	id: string
+	userId: string
+	sourceId: string
+}): RepoSessionRow {
+	return {
+		id: input.id,
+		user_id: input.userId,
+		source_id: input.sourceId,
+		source_repo_id: 'source-repo-1',
+		session_branch: `sessions/${input.id}`,
+		source_branch: 'main',
+		base_commit: 'published-commit-1',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+}
+
 test('updateJob and deleteJob sync the job manager alarm', async () => {
 	const { env, callerContext, userId } = setup({
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
@@ -141,7 +168,11 @@ test('updateJob and deleteJob sync the job manager alarm', async () => {
 
 	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 	repoMockModule.listRepoSessionsBySource.mockResolvedValueOnce([
-		{ id: 'session-1' },
+		createRepoSessionRow({
+			id: 'session-1',
+			userId,
+			sourceId: leftover.sourceId,
+		}),
 	])
 	repoMockModule.cleanupArtifactReposForSource.mockResolvedValueOnce({
 		deleted: 1,
@@ -175,7 +206,12 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 			email: 'other@example.com',
 			displayName: 'Other User',
 		},
-		storageContext: { sessionId: null, appId: 'app-999' },
+		storageContext: {
+			sessionId: null,
+			appId: 'app-999',
+			packageId: null,
+			storageId: null,
+		},
 	}) as PersistedJobCallerContext
 	const notFound = `Job "${created.id}" was not found.`
 
@@ -396,7 +432,6 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	const inspected = await inspectJobsForUser({
 		env,
 		userId,
-		now: new Date('2026-04-20T10:10:00.000Z'),
 	})
 
 	expect(jobManagerMockModule.getJobManagerDebugState).toHaveBeenCalledWith({
@@ -443,7 +478,6 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		env,
 		userId,
 		jobId: created.id,
-		now: new Date('2026-04-20T18:00:00.000Z'),
 	})
 
 	expect(inspected.job).toMatchObject({

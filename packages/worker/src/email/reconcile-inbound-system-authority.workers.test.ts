@@ -55,8 +55,9 @@ async function seedStaleUserDelivery(label: string, createdAt: string) {
 		reason: 'test-stale-delivery',
 		now: sweepNow,
 	})
+	const authorityEnv = { ...env, APP_BASE_URL: appBaseUrl }
 	const authority = createUserInboundDeliveryAuthority({
-		env: { ...env, APP_BASE_URL: appBaseUrl },
+		env: authorityEnv,
 		userId,
 	})
 	expect(await authority.get(deliveryId)).toMatchObject({

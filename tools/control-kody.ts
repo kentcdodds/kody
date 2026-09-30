@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, type ExecFileSyncOptions } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -702,7 +702,11 @@ export function isGitAncestor(
 	ancestor: string,
 	descendant: string,
 	options: {
-		execFile?: typeof execFileSync
+		execFile?: (
+			file: string,
+			args: ReadonlyArray<string>,
+			options: ExecFileSyncOptions,
+		) => unknown
 		cwd?: string
 	} = {},
 ) {

@@ -17,9 +17,7 @@ import {
 function createKv(initial: Record<string, string> = {}) {
 	const values = new Map(Object.entries(initial))
 	const puts: Array<{ key: string; value: string; expirationTtl?: number }> = []
-	return {
-		values,
-		puts,
+	const kv = {
 		async get(key: string) {
 			return values.get(key) ?? null
 		},
@@ -34,7 +32,8 @@ function createKv(initial: Record<string, string> = {}) {
 		async delete(key: string) {
 			values.delete(key)
 		},
-	}
+	} as KVNamespace
+	return Object.assign(kv, { values, puts })
 }
 
 function createParams(body: string) {

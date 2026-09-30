@@ -1,25 +1,45 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as StorageRunner from '#worker/storage-runner.ts'
+import type * as StorageBucketsService from './service.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readInventoriedStorageBucketEstimatedBytes: vi.fn(),
-	listStorageBucketsMissingEstimates: vi.fn(),
-	registerMissingRepoSessionStorageBuckets: vi.fn(async () => 0),
-	updateStorageBucketEstimate: vi.fn(async () => true),
+	readInventoriedStorageBucketEstimatedBytes:
+		vi.fn<typeof StorageRunner.readInventoriedStorageBucketEstimatedBytes>(),
+	listStorageBucketsMissingEstimates:
+		vi.fn<typeof StorageBucketsService.listStorageBucketsMissingEstimates>(),
+	registerMissingRepoSessionStorageBuckets: vi.fn<
+		typeof StorageBucketsService.registerMissingRepoSessionStorageBuckets
+	>(async () => 0),
+	updateStorageBucketEstimate: vi.fn<
+		typeof StorageBucketsService.updateStorageBucketEstimate
+	>(async () => true),
 }))
 
 vi.mock('#worker/storage-runner.ts', () => ({
-	readInventoriedStorageBucketEstimatedBytes: (...args: Array<unknown>) =>
-		mockModule.readInventoriedStorageBucketEstimatedBytes(...args),
+	readInventoriedStorageBucketEstimatedBytes: (
+		...args: Parameters<
+			typeof StorageRunner.readInventoriedStorageBucketEstimatedBytes
+		>
+	) => mockModule.readInventoriedStorageBucketEstimatedBytes(...args),
 }))
 
 vi.mock('./service.ts', () => ({
-	listStorageBucketsMissingEstimates: (...args: Array<unknown>) =>
-		mockModule.listStorageBucketsMissingEstimates(...args),
-	registerMissingRepoSessionStorageBuckets: (...args: Array<unknown>) =>
-		mockModule.registerMissingRepoSessionStorageBuckets(...args),
-	updateStorageBucketEstimate: (...args: Array<unknown>) =>
-		mockModule.updateStorageBucketEstimate(...args),
+	listStorageBucketsMissingEstimates: (
+		...args: Parameters<
+			typeof StorageBucketsService.listStorageBucketsMissingEstimates
+		>
+	) => mockModule.listStorageBucketsMissingEstimates(...args),
+	registerMissingRepoSessionStorageBuckets: (
+		...args: Parameters<
+			typeof StorageBucketsService.registerMissingRepoSessionStorageBuckets
+		>
+	) => mockModule.registerMissingRepoSessionStorageBuckets(...args),
+	updateStorageBucketEstimate: (
+		...args: Parameters<
+			typeof StorageBucketsService.updateStorageBucketEstimate
+		>
+	) => mockModule.updateStorageBucketEstimate(...args),
 }))
 
 const { backfillStorageBucketEstimates } =
@@ -37,7 +57,7 @@ test('backfill tolerates per-bucket probe failures and keeps sweeping peers', as
 		{ userId: 'user-2', storageId: 'exec:healthy-b', kind: 'execute' },
 	])
 	mockModule.readInventoriedStorageBucketEstimatedBytes.mockImplementation(
-		async (input: { storageId: string }) => {
+		async (input) => {
 			if (input.storageId === 'repo-session:unreachable') {
 				throw new Error('estimate read failed after every attempt')
 			}

@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -76,11 +77,17 @@ function resetMocks() {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue(personalOwner)
 }
 
-function getRemote(
+type GitRemoteResult = {
+	expires_at: string
+	authenticated_remote: string
+	setup_commands: Array<string>
+}
+
+async function getRemote(
 	args: Record<string, unknown>,
 	{ snapshot = createPublishedSnapshot() }: { snapshot?: unknown } = {},
 ) {
-	return getGitRemoteCapability.handler(args, {
+	const result = await getGitRemoteCapability.handler(args, {
 		env: {
 			APP_DB: {},
 			BUNDLE_ARTIFACTS_KV: {
@@ -89,17 +96,16 @@ function getRemote(
 				},
 			},
 		} as unknown as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: 'user-1',
 				email: 'user-1@example.com',
 				displayName: 'user-1',
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	})
+	return result as GitRemoteResult
 }
 
 function createPublishedSnapshot() {

@@ -1,10 +1,14 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as SecretsService from '#mcp/secrets/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageWithCommunityProvenanceById: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
-	listPackageSecretsByPackageIds: vi.fn(async () => new Map()),
+	listPackageSecretsByPackageIds: vi.fn<
+		typeof SecretsService.listPackageSecretsByPackageIds
+	>(async () => new Map()),
 }))
 
 vi.mock('#worker/community/fork-listing-relation.ts', () => ({
@@ -32,8 +36,9 @@ vi.mock('#worker/package-registry/package-owner.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	listPackageSecretsByPackageIds: (...args: Array<unknown>) =>
-		mockModule.listPackageSecretsByPackageIds(...args),
+	listPackageSecretsByPackageIds: (
+		...args: Parameters<typeof SecretsService.listPackageSecretsByPackageIds>
+	) => mockModule.listPackageSecretsByPackageIds(...args),
 }))
 
 const { getPackageCapability } = await import('./get-package.ts')
@@ -54,7 +59,7 @@ function getPackage(
 		{ package_id: 'package-1', ...args },
 		{
 			env: { APP_DB: {} } as Env,
-			callerContext: {
+			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: {
 					userId: 'user-1',
@@ -62,9 +67,7 @@ function getPackage(
 					displayName: 'Kody',
 					username: 'kody',
 				},
-				storageContext: null,
-				repoContext: null,
-			},
+			}),
 		},
 	)
 }

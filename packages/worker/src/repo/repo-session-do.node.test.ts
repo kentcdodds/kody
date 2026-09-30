@@ -1,13 +1,25 @@
 import { expect, test, vi } from 'vitest'
-import { createWorkspaceStateBackend } from '@cloudflare/shell'
+import { createWorkspaceStateBackend, type Workspace } from '@cloudflare/shell'
+import type git from 'isomorphic-git'
 import {
 	consoleError,
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
+import type * as Checks from './checks.ts'
+import type * as EntitySources from './entity-sources.ts'
+import type * as ExternalPublishClone from './external-publish-clone.ts'
+import type * as Manifest from './manifest.ts'
+import type * as RepoSessions from './repo-sessions.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	type PublishedSourceManifestSnapshot,
+	type PublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import type * as PublishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
+import type * as SavedPackageRepo from '#worker/package-registry/repo.ts'
+import type * as StorageBuckets from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionMockModule as mockModule,
 	restoreRepoSessionMockBaseline,
@@ -21,7 +33,7 @@ import {
 } from '#worker/test-support/repo-session-do.ts'
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<CloudflareWorkers>()
+	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
 		DurableObject: class {
@@ -51,11 +63,11 @@ vi.mock('@cloudflare/shell', () => ({
 		writeFileBytes(path: string, content: Uint8Array) {
 			return mockModule.workspaceWriteFileBytes(path, content)
 		}
-		mkdir(path: string, options: unknown) {
-			return mockModule.workspaceMkdir(path, options)
+		mkdir(...args: Parameters<Workspace['mkdir']>) {
+			return mockModule.workspaceMkdir(...args)
 		}
-		rm(path: string, options: unknown) {
-			return mockModule.workspaceRm(path, options)
+		rm(...args: Parameters<Workspace['rm']>) {
+			return mockModule.workspaceRm(...args)
 		}
 		glob(pattern: string) {
 			return mockModule.workspaceGlob(pattern)
@@ -107,9 +119,10 @@ vi.mock('@cloudflare/shell/git', () => ({
 
 vi.mock('isomorphic-git', () => ({
 	default: {
-		push: (...args: Array<unknown>) => mockModule.rawPush(...args),
-		commit: (...args: Array<unknown>) => mockModule.rawCommit(...args),
-		readBlob: (...args: Array<unknown>) => mockModule.readBlob(...args),
+		push: (...args: Parameters<typeof git.push>) => mockModule.rawPush(...args),
+		commit: (...args: Parameters<typeof git.commit>) =>
+			mockModule.rawCommit(...args),
+		readBlob: mockModule.readBlob,
 	},
 }))
 
@@ -118,52 +131,67 @@ vi.mock('isomorphic-git/http/web', () => ({
 }))
 
 vi.mock('./repo-sessions.ts', () => ({
-	getRepoSessionById: (...args: Array<unknown>) =>
-		mockModule.getRepoSessionById(...args),
+	getRepoSessionById: (
+		...args: Parameters<typeof RepoSessions.getRepoSessionById>
+	) => mockModule.getRepoSessionById(...args),
 	insertRepoSession: vi.fn(async () => undefined),
-	updateRepoSession: (...args: Array<unknown>) =>
-		mockModule.updateRepoSession(...args),
+	updateRepoSession: (
+		...args: Parameters<typeof RepoSessions.updateRepoSession>
+	) => mockModule.updateRepoSession(...args),
 	deleteRepoSession: vi.fn(async () => undefined),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
-	updateEntitySource: (...args: Array<unknown>) =>
-		mockModule.updateEntitySource(...args),
-	markEntitySourcePendingExternalReconcile: (...args: Array<unknown>) =>
-		mockModule.markEntitySourcePendingExternalReconcile(...args),
+	getEntitySourceById: (
+		...args: Parameters<typeof EntitySources.getEntitySourceById>
+	) => mockModule.getEntitySourceById(...args),
+	updateEntitySource: (
+		...args: Parameters<typeof EntitySources.updateEntitySource>
+	) => mockModule.updateEntitySource(...args),
+	markEntitySourcePendingExternalReconcile: (
+		...args: Parameters<
+			typeof EntitySources.markEntitySourcePendingExternalReconcile
+		>
+	) => mockModule.markEntitySourcePendingExternalReconcile(...args),
 }))
 
 vi.mock('./artifacts.ts', async () => {
-	const actual = await vi.importActual<Artifacts>('./artifacts.ts')
+	const actual = await vi.importActual<typeof Artifacts>('./artifacts.ts')
 	return {
 		...actual,
-		resolveArtifactSourceRepo: (...args: Array<unknown>) =>
-			mockModule.resolveArtifactSourceRepo(...args),
-		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
-			mockModule.resolveExistingArtifactSourceRepo(...args),
-		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
-			mockModule.resolveArtifactDefaultBranchHead(...args),
-		resolveArtifactSourceHead: (...args: Array<unknown>) =>
-			mockModule.resolveArtifactSourceHead(...args),
-		listArtifactServerRefs: (...args: Array<unknown>) =>
-			mockModule.listArtifactServerRefs(...args),
+		resolveArtifactSourceRepo: (
+			...args: Parameters<typeof Artifacts.resolveArtifactSourceRepo>
+		) => mockModule.resolveArtifactSourceRepo(...args),
+		resolveExistingArtifactSourceRepo: (
+			...args: Parameters<typeof Artifacts.resolveExistingArtifactSourceRepo>
+		) => mockModule.resolveExistingArtifactSourceRepo(...args),
+		resolveArtifactDefaultBranchHead: (
+			...args: Parameters<typeof Artifacts.resolveArtifactDefaultBranchHead>
+		) => mockModule.resolveArtifactDefaultBranchHead(...args),
+		resolveArtifactSourceHead: (
+			...args: Parameters<typeof Artifacts.resolveArtifactSourceHead>
+		) => mockModule.resolveArtifactSourceHead(...args),
+		listArtifactServerRefs: (
+			...args: Parameters<typeof Artifacts.listArtifactServerRefs>
+		) => mockModule.listArtifactServerRefs(...args),
 	}
 })
 
 vi.mock('./manifest.ts', () => ({
-	parseRepoManifest: (...args: Array<unknown>) =>
+	parseRepoManifest: (...args: Parameters<typeof Manifest.parseRepoManifest>) =>
 		mockModule.parseRepoManifest(...args),
 	normalizeRepoWorkspacePath: (path: string) => path.trim().replace(/^\/+/, ''),
 }))
 
 vi.mock('./checks.ts', () => ({
-	runRepoChecks: (...args: Array<unknown>) => mockModule.runRepoChecks(...args),
-	validatePackageBundles: (...args: Array<unknown>) =>
-		mockModule.validatePackageBundles(...args),
-	runPackageTypecheckLanguageService: (...args: Array<unknown>) =>
-		mockModule.runPackageTypecheckLanguageService(...args),
+	runRepoChecks: (...args: Parameters<typeof Checks.runRepoChecks>) =>
+		mockModule.runRepoChecks(...args),
+	validatePackageBundles: (
+		...args: Parameters<typeof Checks.validatePackageBundles>
+	) => mockModule.validatePackageBundles(...args),
+	runPackageTypecheckLanguageService: (
+		...args: Parameters<typeof Checks.runPackageTypecheckLanguageService>
+	) => mockModule.runPackageTypecheckLanguageService(...args),
 }))
 
 vi.mock('./external-publish-clone.ts', () => ({
@@ -173,22 +201,34 @@ vi.mock('./external-publish-clone.ts', () => ({
 		/string or blob too big/i.test(message),
 	buildWorkspaceSqliteTooBigCallerMessage: (operation: string) =>
 		`${operation} failed because a git object exceeded the Durable Object SQLite 2 MiB row limit`,
-	cloneExternalPublishWorkspace: (...args: Array<unknown>) =>
-		mockModule.cloneExternalPublishWorkspace(...args),
+	cloneExternalPublishWorkspace: (
+		...args: Parameters<
+			typeof ExternalPublishClone.cloneExternalPublishWorkspace
+		>
+	) => mockModule.cloneExternalPublishWorkspace(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
-	const actual = await vi.importActual<PublishedRuntimeArtifacts>(
+	const actual = await vi.importActual<typeof PublishedRuntimeArtifacts>(
 		'#worker/package-runtime/published-runtime-artifacts.ts',
 	)
 	return {
 		...actual,
-		writePublishedSourceSnapshot: (...args: Array<unknown>) =>
-			mockModule.writePublishedSourceSnapshot(...args),
-		loadPublishedSourceSnapshot: (...args: Array<unknown>) =>
-			mockModule.loadPublishedSourceSnapshot(...args),
-		loadPublishedSourceManifestSnapshot: (...args: Array<unknown>) =>
-			mockModule.loadPublishedSourceManifestSnapshot(...args),
+		writePublishedSourceSnapshot: (
+			...args: Parameters<
+				typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+			>
+		) => mockModule.writePublishedSourceSnapshot(...args),
+		loadPublishedSourceSnapshot: (
+			...args: Parameters<
+				typeof PublishedRuntimeArtifacts.loadPublishedSourceSnapshot
+			>
+		) => mockModule.loadPublishedSourceSnapshot(...args),
+		loadPublishedSourceManifestSnapshot: (
+			...args: Parameters<
+				typeof PublishedRuntimeArtifacts.loadPublishedSourceManifestSnapshot
+			>
+		) => mockModule.loadPublishedSourceManifestSnapshot(...args),
 	}
 })
 
@@ -198,18 +238,28 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
 	)
 	return {
 		...actual,
-		isPublishedPackageArtifactBuiltForCommit: (...args: Array<unknown>) =>
-			mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
-		persistPublishedPackageArtifactTarget: (...args: Array<unknown>) =>
-			mockModule.persistPublishedPackageArtifactTarget(...args),
-		deletePublishedArtifactsForSource: (...args: Array<unknown>) =>
-			mockModule.deletePublishedArtifactsForSource(...args),
+		isPublishedPackageArtifactBuiltForCommit: (
+			...args: Parameters<
+				typeof PublishedBundleArtifactsModule.isPublishedPackageArtifactBuiltForCommit
+			>
+		) => mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
+		persistPublishedPackageArtifactTarget: (
+			...args: Parameters<
+				typeof PublishedBundleArtifactsModule.persistPublishedPackageArtifactTarget
+			>
+		) => mockModule.persistPublishedPackageArtifactTarget(...args),
+		deletePublishedArtifactsForSource: (
+			...args: Parameters<
+				typeof PublishedBundleArtifactsModule.deletePublishedArtifactsForSource
+			>
+		) => mockModule.deletePublishedArtifactsForSource(...args),
 	}
 })
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+	getSavedPackageById: (
+		...args: Parameters<typeof SavedPackageRepo.getSavedPackageById>
+	) => mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('#worker/package-registry/service.ts', () => ({
@@ -225,12 +275,15 @@ vi.mock('#worker/community/community-icon.ts', () => ({
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
-	deleteStorageBucketInventory: (...args: Array<unknown>) =>
-		mockModule.deleteStorageBucketInventory(...args),
-	maybeRefreshStorageBucketEstimate: (...args: Array<unknown>) =>
-		mockModule.maybeRefreshStorageBucketEstimate(...args),
-	registerStorageBucketAndWait: (...args: Array<unknown>) =>
-		mockModule.registerStorageBucketAndWait(...args),
+	deleteStorageBucketInventory: (
+		...args: Parameters<typeof StorageBuckets.deleteStorageBucketInventory>
+	) => mockModule.deleteStorageBucketInventory(...args),
+	maybeRefreshStorageBucketEstimate: (
+		...args: Parameters<typeof StorageBuckets.maybeRefreshStorageBucketEstimate>
+	) => mockModule.maybeRefreshStorageBucketEstimate(...args),
+	registerStorageBucketAndWait: (
+		...args: Parameters<typeof StorageBuckets.registerStorageBucketAndWait>
+	) => mockModule.registerStorageBucketAndWait(...args),
 	repoSessionStorageBucketId: (sessionId: string) =>
 		`repo-session:${sessionId}`,
 }))
@@ -284,8 +337,8 @@ function sourceRow(overrides: Record<string, unknown> = {}) {
 
 function publishedSnapshot(
 	files: Record<string, string>,
-	overrides: Record<string, unknown> = {},
-) {
+	overrides: Partial<PublishedSourceSnapshot> = {},
+): PublishedSourceSnapshot {
 	return {
 		version: 1,
 		sourceId: 'source-1',
@@ -502,7 +555,8 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 			force: true,
 		}),
 	)
-	for (const call of mockModule.git.push.mock.calls) {
+	const gitPushCalls: Array<Array<unknown>> = mockModule.git.push.mock.calls
+	for (const call of gitPushCalls) {
 		expect(call[0]).not.toHaveProperty('token')
 	}
 
@@ -907,13 +961,16 @@ test('applyEdits rejects replace on an existing file over the unified-diff line 
 
 test('applyEdits remaps raw Cloudflare shell EFBIG from applyEditPlan', async () => {
 	setCommonSessionFixtures()
-	vi.mocked(createWorkspaceStateBackend).mockImplementationOnce(() => ({
-		planEdits: vi.fn(),
-		applyEditPlan: vi.fn(async () => {
-			throw new Error('EFBIG: content too large for diff (max 10000 lines)')
-		}),
-		walkTree: vi.fn(),
-	}))
+	vi.mocked(createWorkspaceStateBackend).mockImplementationOnce(
+		() =>
+			({
+				planEdits: vi.fn(),
+				applyEditPlan: vi.fn(async () => {
+					throw new Error('EFBIG: content too large for diff (max 10000 lines)')
+				}),
+				walkTree: vi.fn(),
+			}) as unknown as ReturnType<typeof createWorkspaceStateBackend>,
+	)
 
 	await expect(
 		repoSession().applyEdits({
@@ -1019,7 +1076,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	await openSession('session-preview-namespace', {}, {
 		APP_DB: {},
 		ARTIFACTS_NAMESPACE: 'preview',
-	} as Env)
+	} as unknown as Env)
 	expect(insertRepoSession).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -1312,7 +1369,7 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	await publish()
 
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
-	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0][0]
+	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0]![0]
 	expect(snapshotCall.source.id).toBe('source-1')
 	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
 	expect(snapshotCall.files).toEqual(files)
@@ -1407,7 +1464,9 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 			phase: 'typecheck',
 			stagingKey,
 			userId: 'user-1',
-			typecheckTargets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
+			typecheckTargets: [
+				{ path: 'src/index.ts', kind: 'callable', emittedEventTopics: [] },
+			],
 		})
 
 	const bundleOutcome = await checkRepo.runIsolatedCheckPhase({
@@ -1430,7 +1489,9 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 	expect(typecheckOutcome.ok).toBe(true)
 	expect(mockModule.runPackageTypecheckLanguageService).toHaveBeenCalledWith({
 		sourceFiles: staged.sourceFiles,
-		targets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
+		targets: [
+			{ path: 'src/index.ts', kind: 'callable', emittedEventTopics: [] },
+		],
 	})
 
 	const rebuildKv = {
@@ -1551,7 +1612,9 @@ test('published artifact rebuild stages the published snapshot first and falls b
 			}
 		).sourceFiles
 	}
-	const manifestSnapshot = (manifestContent: string) => ({
+	const manifestSnapshot = (
+		manifestContent: string,
+	): PublishedSourceManifestSnapshot => ({
 		version: 1,
 		sourceId: 'source-1',
 		publishedCommit: 'commit-1',
@@ -1926,6 +1989,6 @@ test('confirmed destructive overwrite replaces history with an orphan root commi
 		}),
 	)
 	const publishedFiles =
-		mockModule.writePublishedSourceSnapshot.mock.calls[0][0].files
+		mockModule.writePublishedSourceSnapshot.mock.calls[0]![0].files
 	expect(JSON.stringify(publishedFiles)).not.toContain('FAKE-CANARY-7f3a')
 })

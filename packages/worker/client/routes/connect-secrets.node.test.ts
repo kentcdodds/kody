@@ -4,6 +4,10 @@ import {
 	readConnectSecretsView,
 } from './connect-secrets.tsx'
 
+type ApprovalView = Parameters<
+	typeof isConnectSecretsAlreadyAllowed
+>[0]['approval']
+
 const secret = {
 	id: 'user:googleAccessToken',
 	name: 'googleAccessToken',
@@ -19,7 +23,7 @@ const secret = {
 	ttlMs: null,
 }
 
-const approval = {
+const approval: ApprovalView = {
 	name: 'googleAccessToken',
 	names: ['googleAccessToken'],
 	scope: 'user' as const,

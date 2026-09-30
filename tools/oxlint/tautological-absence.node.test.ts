@@ -3,7 +3,6 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { expect, test } from 'vitest'
-// @ts-expect-error - the oxlint helper is plain JS with no type declarations.
 import {
 	checkTautologicalAbsence,
 	findTautologicalAbsenceMatches,

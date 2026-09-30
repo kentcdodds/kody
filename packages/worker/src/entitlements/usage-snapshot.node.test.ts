@@ -110,6 +110,7 @@ function readSnapshot(
 		usageUserId,
 		plan: options.plan ?? 'free',
 		ladder: options.ladder ?? 'public',
+		creditWallet: 'none',
 		now: at,
 	})
 }

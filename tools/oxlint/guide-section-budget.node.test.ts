@@ -15,7 +15,6 @@ import {
 	guideSearchBodyBudget as runtimeSearchBodyBudget,
 	guideSectionModeLine as runtimeSectionModeLine,
 } from '../../packages/worker/src/mcp/tools/guide-search-budget.ts'
-// @ts-expect-error - the oxlint helper is plain JS with no type declarations.
 import {
 	buildGuideDetailHeaderLines,
 	findOversizedDocumentSections,

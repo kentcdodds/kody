@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as packageInvocationsModule from '#worker/package-invocations/service.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	mcpServerDisconnectedTopic,
@@ -7,7 +8,9 @@ import {
 } from './connection-episodes.ts'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
+	invokePackageSubscription: vi.fn<
+		typeof packageInvocationsModule.invokePackageSubscription
+	>(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	listEnabledMcpServerSettingRows: vi.fn(),

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
+import { type RepoSessionIndexRpc } from './repo-session-index-do.ts'
 import { type RepoSessionRow } from './types.ts'
 import {
 	deleteEntitySource,
@@ -79,10 +80,12 @@ test('source deletion removes only its repo-session storage inventory', async ()
 	`)
 	const db = createD1FromSqlite(sqlite)
 	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
+	const indexNamespace = indexEnv.REPO_SESSION_INDEX as unknown as {
+		idFromName(name: string): DurableObjectId
+		get(id: DurableObjectId): RepoSessionIndexRpc
+	}
 	const indexFor = (userId: string) =>
-		indexEnv.REPO_SESSION_INDEX.get(
-			indexEnv.REPO_SESSION_INDEX.idFromName(userId),
-		)
+		indexNamespace.get(indexNamespace.idFromName(userId))
 	await indexFor('user-a').insertSession({
 		ownerId: 'user-a',
 		row: catalogSessionRow({

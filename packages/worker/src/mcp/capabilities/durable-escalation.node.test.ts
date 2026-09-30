@@ -212,7 +212,10 @@ const keyFor = (userId: string, parts: ReadonlyArray<string> = publishParts) =>
 	buildCallerScopedIdempotencyKey({ userId, parts })
 
 test('runWithDurableEscalation returns the inline result when work finishes within budget', async () => {
-	const run = vi.fn(async () => ({ status: 'published', commit: 'abc' }))
+	const run = vi.fn(async (_signal: AbortSignal) => ({
+		status: 'published',
+		commit: 'abc',
+	}))
 	const outcome = await escalate({
 		idempotencyParts: ['publish', 'pkg-1', 'commit-1'],
 		budgetMs: 5_000,
@@ -449,7 +452,7 @@ test('budget abort dispatches while the inline attempt is still in flight', asyn
 		return created('dynwf-overlap-1')
 	})
 
-	let releaseInline: (() => void) | null = null
+	let releaseInline = null as (() => void) | null
 	const outcome = await escalate({
 		idempotencyParts: ['publish', 'pkg-1', 'overlap'],
 		run: async (signal: AbortSignal) => {

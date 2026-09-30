@@ -33,6 +33,7 @@ test('build-deploy-info collects git, PR, and Actions metadata for /health', asy
 		url: 'https://github.com/kentcdodds/kody/pull/1799',
 		title: 'Richer /health metadata',
 	})
+	if (!fromEnv.pullRequest) throw new Error('expected pull request info')
 
 	const info = await buildDeployInfo({
 		...fromEnv,

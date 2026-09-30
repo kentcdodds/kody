@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { expect, test } from 'vitest'
 import { resolveOAuthHelpers } from './oauth-helpers.ts'
 
@@ -41,7 +42,7 @@ test('resolveOAuthHelpers loads the deferred provider module in workerd and revo
 		),
 	])
 
-	const helpers = await resolveOAuthHelpers(env)
+	const helpers = await resolveOAuthHelpers<OAuthHelpers>(env)
 	expect(helpers).toBeDefined()
 	if (!helpers) throw new Error('unreachable')
 

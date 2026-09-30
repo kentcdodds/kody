@@ -183,7 +183,12 @@ function setup({
 			} as unknown as D1Database,
 		} as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: 'user-1', email: 'user@test.invalid', username: 'user' },
+			user: {
+				userId: 'user-1',
+				email: 'user@test.invalid',
+				displayName: 'User',
+				username: 'user',
+			},
 			baseUrl: 'https://kody.test',
 		}),
 	}

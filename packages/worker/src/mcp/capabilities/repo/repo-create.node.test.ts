@@ -102,7 +102,7 @@ function createDatabase(
 }
 
 const userEmail = 'repo-create@test.invalid'
-const stableUserId = createStableUserIdFromEmail(userEmail)
+const stableUserId = await createStableUserIdFromEmail(userEmail)
 
 test('repoCreate creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
 	mockModule.ensureEntitySource.mockResolvedValue({
@@ -115,7 +115,7 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ctx = {
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail },
+			user: { userId: stableUserId, email: userEmail, displayName: 'User' },
 			baseUrl: 'https://kody.test',
 		}),
 	}
@@ -150,7 +150,7 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ceilingCtx = {
 		env: { APP_DB: atCeiling } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail },
+			user: { userId: stableUserId, email: userEmail, displayName: 'User' },
 			baseUrl: 'https://kody.test',
 		}),
 	}

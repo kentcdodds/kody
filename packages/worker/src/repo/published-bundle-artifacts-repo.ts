@@ -152,6 +152,7 @@ export async function countStaticDependentBundleArtifactPackages(
 					AND artifact.source_id != ?
 					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
+					AND json_extract(dependency.value, '$.transitive') IS NULL
 			)
 			SELECT
 				COUNT(DISTINCT package_id) AS total_packages,
@@ -213,6 +214,7 @@ export async function listStaticDependentBundleArtifactRows(
 					AND artifact.source_id != ?
 					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
+					AND json_extract(dependency.value, '$.transitive') IS NULL
 			),
 			package_rollup AS (
 				SELECT

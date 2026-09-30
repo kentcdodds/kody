@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import type * as InfrastructureCodes from '#worker/package-invocations/infrastructure-codes.ts'
+import type * as WebhookDelivery from './delivery.ts'
+import type * as WebhookHeaders from './headers.ts'
+import type * as WebhookParams from './params.ts'
 
 const mocks = vi.hoisted(() => ({
 	resolveSavedPackage: vi.fn(),
@@ -7,38 +11,41 @@ const mocks = vi.hoisted(() => ({
 	listPackageWebhooks: vi.fn(),
 	getWebhookEndpointByKey: vi.fn(),
 	dispatchWebhookInvocation: vi.fn(),
-	readWebhookInvocationResult: vi.fn((body: unknown) =>
+	readWebhookInvocationResult: vi.fn<
+		typeof WebhookDelivery.readWebhookInvocationResult
+	>((body) =>
 		body && typeof body === 'object'
 			? (body as Record<string, unknown>)['result']
 			: undefined,
 	),
 	recordWebhookDelivery: vi.fn(),
-	readPreExecutionPackageInvocationInfrastructureCode: vi.fn(() => null),
-	collectSafeWebhookHeaders: vi.fn(() => ({
+	readPreExecutionPackageInvocationInfrastructureCode: vi.fn<
+		typeof InfrastructureCodes.readPreExecutionPackageInvocationInfrastructureCode
+	>(() => null),
+	collectSafeWebhookHeaders: vi.fn<
+		typeof WebhookHeaders.collectSafeWebhookHeaders
+	>(() => ({
 		'content-type': 'application/json',
 	})),
-	buildWebhookExportParams: vi.fn(
-		(input: {
-			packageKodyId: string
-			webhookName: string
-			bodyText: string
-			receivedAt: string
-		}) => ({
-			webhook: {
-				packageKodyId: input.packageKodyId,
-				name: input.webhookName,
-				receivedAt: input.receivedAt,
-			},
-			request: {
-				method: 'POST',
-				contentType: 'application/json',
-				headers: { 'content-type': 'application/json' },
-				body: input.bodyText,
-				json: input.bodyText ? JSON.parse(input.bodyText) : null,
-			},
-		}),
-	),
-	resolveWebhookParamsModeFirstArg: vi.fn((json: unknown) => {
+	buildWebhookExportParams: vi.fn<
+		typeof WebhookParams.buildWebhookExportParams
+	>((input) => ({
+		webhook: {
+			packageKodyId: input.packageKodyId,
+			name: input.webhookName,
+			receivedAt: input.receivedAt,
+		},
+		request: {
+			method: 'POST',
+			contentType: 'application/json',
+			headers: { 'content-type': 'application/json' },
+			body: input.bodyText,
+			json: input.bodyText ? JSON.parse(input.bodyText) : null,
+		},
+	})),
+	resolveWebhookParamsModeFirstArg: vi.fn<
+		typeof WebhookParams.resolveWebhookParamsModeFirstArg
+	>((json) => {
 		if (!json || typeof json !== 'object' || Array.isArray(json)) {
 			return { ok: false as const, code: 'invalid_params' as const }
 		}
@@ -73,28 +80,34 @@ vi.mock('./repo.ts', () => ({
 vi.mock('./delivery.ts', () => ({
 	dispatchWebhookInvocation: (...args: Array<unknown>) =>
 		mocks.dispatchWebhookInvocation(...args),
-	readWebhookInvocationResult: (...args: Array<unknown>) =>
-		mocks.readWebhookInvocationResult(...args),
+	readWebhookInvocationResult: (
+		...args: Parameters<typeof WebhookDelivery.readWebhookInvocationResult>
+	) => mocks.readWebhookInvocationResult(...args),
 	recordWebhookDelivery: (...args: Array<unknown>) =>
 		mocks.recordWebhookDelivery(...args),
 }))
 
 vi.mock('#worker/package-invocations/infrastructure-codes.ts', () => ({
 	readPreExecutionPackageInvocationInfrastructureCode: (
-		...args: Array<unknown>
+		...args: Parameters<
+			typeof InfrastructureCodes.readPreExecutionPackageInvocationInfrastructureCode
+		>
 	) => mocks.readPreExecutionPackageInvocationInfrastructureCode(...args),
 }))
 
 vi.mock('./headers.ts', () => ({
-	collectSafeWebhookHeaders: (...args: Array<unknown>) =>
-		mocks.collectSafeWebhookHeaders(...args),
+	collectSafeWebhookHeaders: (
+		...args: Parameters<typeof WebhookHeaders.collectSafeWebhookHeaders>
+	) => mocks.collectSafeWebhookHeaders(...args),
 }))
 
 vi.mock('./params.ts', () => ({
-	buildWebhookExportParams: (...args: Array<unknown>) =>
-		mocks.buildWebhookExportParams(...args),
-	resolveWebhookParamsModeFirstArg: (...args: Array<unknown>) =>
-		mocks.resolveWebhookParamsModeFirstArg(...args),
+	buildWebhookExportParams: (
+		...args: Parameters<typeof WebhookParams.buildWebhookExportParams>
+	) => mocks.buildWebhookExportParams(...args),
+	resolveWebhookParamsModeFirstArg: (
+		...args: Parameters<typeof WebhookParams.resolveWebhookParamsModeFirstArg>
+	) => mocks.resolveWebhookParamsModeFirstArg(...args),
 }))
 
 const { dispatchSyntheticWebhookForUser } = await import('./service.ts')

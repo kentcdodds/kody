@@ -5,6 +5,7 @@ import {
 	loadAccountWorkflowsData,
 	readAccountWorkflowsSelectedWorkflowId,
 } from '#app/account-workflows-data.ts'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type WorkflowRunInspection } from '#worker/package-runtime/package-workflows.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -19,12 +20,16 @@ vi.mock('#worker/run-records/service.ts', () => ({
 	getWorkflowProjection: mockModule.getWorkflowProjection,
 }))
 
-const user = {
+const user: AuthenticatedAppUser = {
 	sessionUserId: '42',
 	userId: 42,
 	username: 'test-user',
 	email: 'user@example.com',
+	emailVerified: true,
+	emailVerificationDelivery: null,
 	displayName: 'user',
+	roles: [],
+	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
 		userId: 'stable-user-1',

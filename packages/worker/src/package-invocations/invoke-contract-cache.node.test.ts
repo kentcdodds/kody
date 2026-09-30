@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { type PackageInvokeInput } from '#worker/mcp/runtime-helper-manifest.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 import {
 	invalidateInvokeContractFreshness,
@@ -125,7 +127,7 @@ function createFixture(input: {
 }) {
 	const suffix = input.suffix ?? input.userId
 	const sourceId = `source-${suffix}`
-	const savedPackage = {
+	const savedPackage: SavedPackageRecord = {
 		id: `pkg-${suffix}`,
 		userId: input.userId,
 		name: input.packageName ?? '@kentcdodds/sentry-triage',
@@ -137,6 +139,7 @@ function createFixture(input: {
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		lockedAt: null,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	}
@@ -264,7 +267,7 @@ function createEnv() {
 
 async function runContractCheck(input: {
 	userId: string
-	specifier?: string
+	specifier?: PackageInvokeInput['specifier']
 	callerKind?: 'package' | 'execute'
 	callingPackageId?: string
 }) {
@@ -352,6 +355,8 @@ test('person package runtimes cannot invoke official platform packages', async (
 			...caller,
 		})
 		expect(denied.result.ok).toBe(false)
+		if (denied.result.ok)
+			throw new Error('Expected the contract check to deny.')
 		expect(denied.result.message).toContain(
 			'not runnable from a person account',
 		)
@@ -478,6 +483,9 @@ test('warm platform contract checks perform zero D1/KV loads until invalidation 
 
 	const afterDelete = await check()
 	expect(afterDelete.result.ok).toBe(false)
+	if (afterDelete.result.ok) {
+		throw new Error('Expected the contract check to fail after delete.')
+	}
 	expect(afterDelete.result.message).toContain('could not be resolved')
 })
 

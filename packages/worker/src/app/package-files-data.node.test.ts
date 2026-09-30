@@ -1,36 +1,71 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUser from '#app/authenticated-user.ts'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import type * as highlightCode from '#app/highlight-code.ts'
+import type * as profileRepo from '#worker/community/profile-repo.ts'
+import { type UserSocialRow } from '#worker/community/profile-repo.ts'
+import type * as communityRepo from '#worker/community/repo.ts'
+import type * as communitySnapshot from '#worker/community/snapshot.ts'
+import {
+	type CommunityListingRecord,
+	type CommunitySnapshot,
+	type ProfileVisibility,
+} from '#worker/community/types.ts'
+import type * as publishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { type PublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as artifactFile from '#worker/repo/artifact-file.ts'
+import type * as artifactHeadCache from '#worker/repo/artifact-head-cache.ts'
+import type * as entitySources from '#worker/repo/entity-sources.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 const mockModule = vi.hoisted(() => ({
-	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
-	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
-	resolveArtifactSourceHead: vi.fn<() => Promise<unknown>>(),
-	readPublishedSourceSnapshot: vi.fn<() => Promise<unknown>>(),
-	readCommunitySnapshot: vi.fn<() => Promise<unknown>>(),
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
-	highlightMarkdownFences: vi.fn(async () => []),
-	highlightSnippets: vi.fn(async () => []),
-	readArtifactFileAtCommit: vi.fn<() => Promise<unknown>>(),
-	getUserSocialRowByUsername: vi.fn<() => Promise<unknown>>(),
+	getCommunityListingById:
+		vi.fn<typeof communityRepo.getCommunityListingById>(),
+	getEntitySourceById: vi.fn<typeof entitySources.getEntitySourceById>(),
+	resolveArtifactSourceHead:
+		vi.fn<typeof artifactHeadCache.resolveCachedArtifactSourceHead>(),
+	readPublishedSourceSnapshot:
+		vi.fn<typeof publishedRuntimeArtifacts.readPublishedSourceSnapshot>(),
+	readCommunitySnapshot:
+		vi.fn<typeof communitySnapshot.readCommunitySnapshot>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof authenticatedUser.readAuthenticatedAppUser>(),
+	highlightMarkdownFences: vi.fn<typeof highlightCode.highlightMarkdownFences>(
+		async () => [],
+	),
+	highlightSnippets: vi.fn<typeof highlightCode.highlightSnippets>(
+		async () => [],
+	),
+	readArtifactFileAtCommit:
+		vi.fn<typeof artifactFile.readArtifactFileAtCommit>(),
+	getUserSocialRowByUsername:
+		vi.fn<typeof profileRepo.getUserSocialRowByUsername>(),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
-	getCommunityListingById: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingById(...args),
+	getCommunityListingById: (
+		...args: Parameters<typeof communityRepo.getCommunityListingById>
+	) => mockModule.getCommunityListingById(...args),
 }))
 
 vi.mock('#worker/community/profile-repo.ts', () => ({
-	getUserSocialRowByUsername: (...args: Array<unknown>) =>
-		mockModule.getUserSocialRowByUsername(...args),
+	getUserSocialRowByUsername: (
+		...args: Parameters<typeof profileRepo.getUserSocialRowByUsername>
+	) => mockModule.getUserSocialRowByUsername(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: (
+		...args: Parameters<typeof entitySources.getEntitySourceById>
+	) => mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
-	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
-		mockModule.resolveArtifactSourceHead(...args),
+	resolveCachedArtifactSourceHead: (
+		...args: Parameters<
+			typeof artifactHeadCache.resolveCachedArtifactSourceHead
+		>
+	) => mockModule.resolveArtifactSourceHead(...args),
 }))
 
 vi.mock('#worker/repo/artifact-source-snapshot.ts', () => ({
@@ -38,30 +73,38 @@ vi.mock('#worker/repo/artifact-source-snapshot.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
-	readPublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.readPublishedSourceSnapshot(...args),
+	readPublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof publishedRuntimeArtifacts.readPublishedSourceSnapshot
+		>
+	) => mockModule.readPublishedSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/community/snapshot.ts', () => ({
-	readCommunitySnapshot: (...args: Array<unknown>) =>
-		mockModule.readCommunitySnapshot(...args),
+	readCommunitySnapshot: (
+		...args: Parameters<typeof communitySnapshot.readCommunitySnapshot>
+	) => mockModule.readCommunitySnapshot(...args),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/highlight-code.ts', () => ({
-	highlightMarkdownFences: (...args: Array<unknown>) =>
-		mockModule.highlightMarkdownFences(...args),
-	highlightSnippets: (...args: Array<unknown>) =>
-		mockModule.highlightSnippets(...args),
+	highlightMarkdownFences: (
+		...args: Parameters<typeof highlightCode.highlightMarkdownFences>
+	) => mockModule.highlightMarkdownFences(...args),
+	highlightSnippets: (
+		...args: Parameters<typeof highlightCode.highlightSnippets>
+	) => mockModule.highlightSnippets(...args),
 }))
 
 vi.mock('#worker/repo/artifact-file.ts', () => ({
-	readArtifactFileAtCommit: (...args: Array<unknown>) =>
-		mockModule.readArtifactFileAtCommit(...args),
+	readArtifactFileAtCommit: (
+		...args: Parameters<typeof artifactFile.readArtifactFileAtCommit>
+	) => mockModule.readArtifactFileAtCommit(...args),
 }))
 
 const {
@@ -72,16 +115,112 @@ const {
 } = await import('./package-files-data.ts')
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
-const listing = {
+const listing: CommunityListingRecord = {
 	id: 'listing-1',
 	ownerUserId: 'owner-1',
+	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'sentry',
 	name: '@kentcdodds/sentry',
 	description: 'Sentry package',
+	tags: [],
+	category: 'other',
+	searchText: null,
+	readmeContent: null,
+	license: 'MIT',
 	pinnedCommit: 'abc123',
 	iconCommit: 'abc123',
+	status: 'active',
+	trustedCommit: null,
+	trustedAt: null,
+	trusted: false,
+	featuredAt: null,
+	featured: false,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
+	publishedAt: '2026-01-01T00:00:00.000Z',
 }
+
+function ownerSocialRow(profileVisibility: ProfileVisibility): UserSocialRow {
+	return {
+		id: 1,
+		username: 'kentcdodds',
+		email: 'owner@example.com',
+		stable_user_id: 'owner-1',
+		display_name: null,
+		bio: null,
+		avatar_key: null,
+		profile_visibility: profileVisibility,
+		created_at: '2026-01-01T00:00:00.000Z',
+	}
+}
+
+const entitySource: EntitySourceRow = {
+	id: 'src-1',
+	user_id: 'owner-1',
+	entity_kind: 'package',
+	entity_id: 'pkg-1',
+	repo_id: 'repo-1',
+	published_commit: 'abc123',
+	indexed_commit: null,
+	manifest_path: 'package.json',
+	source_root: '/',
+	last_external_check_at: null,
+	external_check_until: null,
+	created_at: '2026-01-01T00:00:00.000Z',
+	updated_at: '2026-01-01T00:00:00.000Z',
+}
+
+function publishedSnapshot(
+	files: Record<string, string>,
+): PublishedSourceSnapshot {
+	return {
+		version: 1,
+		sourceId: 'src-1',
+		repoId: 'repo-1',
+		entityKind: 'package',
+		entityId: 'pkg-1',
+		publishedCommit: 'abc123',
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files,
+		createdAt: '2026-01-01T00:00:00.000Z',
+	}
+}
+
+function communitySnapshotWithFiles(
+	files: Record<string, string>,
+): CommunitySnapshot {
+	return {
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'abc123',
+		files,
+		createdAt: '2026-01-01T00:00:00.000Z',
+	}
+}
+
+function viewer(userId: string): AuthenticatedAppUser {
+	return {
+		sessionUserId: '42',
+		userId: 42,
+		username: 'viewer',
+		email: 'viewer@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
+		displayName: 'viewer',
+		roles: [],
+		permissions: [],
+		artifactOwnerIds: [],
+		mcpUser: {
+			userId,
+			email: 'viewer@example.com',
+			username: 'viewer',
+			displayName: 'viewer',
+		},
+	}
+}
+
 const pngBytes = Uint8Array.from([
 	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
 ])
@@ -91,23 +230,22 @@ function publishListing({
 	files = { 'README.md': '# Sentry\n' } as Record<string, string> | null,
 	headCommit = 'abc123',
 	viewerUserId = null as string | null,
-	profileVisibility = 'public',
+	profileVisibility = 'public' as ProfileVisibility,
 } = {}) {
 	mockModule.getCommunityListingById.mockResolvedValue(listing)
-	mockModule.getUserSocialRowByUsername.mockResolvedValue({
-		profile_visibility: profileVisibility,
-	})
-	mockModule.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'abc123',
-	})
+	mockModule.getUserSocialRowByUsername.mockResolvedValue(
+		ownerSocialRow(profileVisibility),
+	)
+	mockModule.getEntitySourceById.mockResolvedValue(entitySource)
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: headCommit,
 	})
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue(files && { files })
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(
+		files && publishedSnapshot(files),
+	)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		viewerUserId && { mcpUser: { userId: viewerUserId } },
+		viewerUserId ? viewer(viewerUserId) : null,
 	)
 }
 
@@ -169,7 +307,7 @@ test('listed package tree chrome marks the owner, links only a public owner prof
 })
 
 test('package page reports AGENTS.md only when a non-empty root file exists', async () => {
-	const cases = [
+	const cases: Array<{ files: Record<string, string>; expected: boolean }> = [
 		{ files: { 'README.md': '# Sentry\n' }, expected: false },
 		{
 			files: {
@@ -181,7 +319,9 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 		{ files: { 'docs/AGENTS.md': 'Nested only.\n' }, expected: false },
 	]
 	for (const { files, expected } of cases) {
-		mockModule.readCommunitySnapshot.mockResolvedValue({ files })
+		mockModule.readCommunitySnapshot.mockResolvedValue(
+			communitySnapshotWithFiles(files),
+		)
 		const hasAgentsDocs = await loadPackagePageHasAgentsDocs({
 			env,
 			request: new Request('https://example.com/@kentcdodds/sentry'),
@@ -262,9 +402,9 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 test('community raw 404s a hex that only has the listing pin snapshot', async () => {
 	const missingHex = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
 	publishListing({ files: null })
-	mockModule.readCommunitySnapshot.mockResolvedValue({
-		files: { 'logo.png': png },
-	})
+	mockModule.readCommunitySnapshot.mockResolvedValue(
+		communitySnapshotWithFiles({ 'logo.png': png }),
+	)
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(null)
 
 	expect(await loadTree('logo.png', missingHex)).toBeNull()

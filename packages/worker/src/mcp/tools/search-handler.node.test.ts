@@ -1,8 +1,18 @@
 import { expect, test, vi } from 'vitest'
+import type * as CapabilityRegistry from '#mcp/capabilities/registry.ts'
+import type * as SecretsService from '#mcp/secrets/service.ts'
+import type * as ValuesService from '#mcp/values/service.ts'
+import type * as DeriveWaiting from '#mcp/waiting/derive-waiting.ts'
+import type * as CommunityService from '#worker/community/service.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
+import type * as PackageRepo from '#worker/package-registry/repo.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import type * as PackageRetrievers from '#worker/package-retrievers/service.ts'
 import type * as SearchRateLimit from '#worker/search-rate-limit.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as MemoryToolContext from './memory-tool-context.ts'
+import type * as OnboardingNotice from './search-onboarding-notice.ts'
 import {
 	SEARCH_DEADLINE_MS,
 	SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
@@ -29,42 +39,71 @@ function capabilitySpec(name: string, overrides: Record<string, unknown> = {}) {
 }
 
 const mockModule = vi.hoisted(() => ({
-	getCapabilityRegistryForContext: vi.fn(async () => ({
-		capabilitySpecs: {
-			search_docs: {
-				name: 'search_docs',
-				description: 'Search docs capability',
-				domain: 'meta',
-				keywords: [],
-				inputFields: [],
-				requiredInputFields: [],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				inputSchema: { type: 'object', properties: {} },
+	getCapabilityRegistryForContext: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof CapabilityRegistry.getCapabilityRegistryForContext
+			>
+		) => ({
+			capabilitySpecs: {
+				search_docs: {
+					name: 'search_docs',
+					description: 'Search docs capability',
+					domain: 'meta',
+					keywords: [],
+					inputFields: [],
+					requiredInputFields: [],
+					outputFields: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: { type: 'object', properties: {} },
+				},
 			},
-		},
-	})),
+		}),
+	),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
-	listSavedPackagesByUserId: vi.fn(async () => []),
-	listUserSecretsForSearch: vi.fn(async () => []),
-	listValues: vi.fn(async () => []),
-	listJoinedIntegrations: vi.fn(async () => []),
-	getJoinedIntegration: vi.fn(async () => null),
+	listSavedPackagesByUserId: vi.fn<
+		typeof PackageRepo.listSavedPackagesByUserId
+	>(async () => []),
+	listUserSecretsForSearch: vi.fn<
+		typeof SecretsService.listUserSecretsForSearch
+	>(async () => []),
+	listValues: vi.fn<typeof ValuesService.listValues>(async () => []),
+	listJoinedIntegrations: vi.fn<
+		typeof IntegrationsService.listJoinedIntegrations
+	>(async () => []),
+	getJoinedIntegration: vi.fn<typeof IntegrationsService.getJoinedIntegration>(
+		async () => null,
+	),
 	loadPackageSourceBySourceId: vi.fn(),
-	loadRelevantMemoriesForTool: vi.fn(async () => null),
-	acknowledgeToolMemories: vi.fn(async () => undefined),
-	runPackageRetrievers: vi.fn(async () => ({ results: [], warnings: [] })),
-	searchCommunityListings: vi.fn(async () => []),
-	deriveWaitingItemsForStableUser: vi.fn(async () => []),
-	buildOnboardingSearchNotice: vi.fn(async () => null),
+	loadRelevantMemoriesForTool: vi.fn<
+		typeof MemoryToolContext.loadRelevantMemoriesForTool
+	>(async () => null),
+	acknowledgeToolMemories: vi.fn<
+		typeof MemoryToolContext.acknowledgeToolMemories
+	>(async () => undefined),
+	runPackageRetrievers: vi.fn<typeof PackageRetrievers.runPackageRetrievers>(
+		async () => ({ results: [], warnings: [] }),
+	),
+	searchCommunityListings: vi.fn<
+		typeof CommunityService.searchCommunityListings
+	>(async () => []),
+	deriveWaitingItemsForStableUser: vi.fn<
+		typeof DeriveWaiting.deriveWaitingItemsForStableUser
+	>(async () => []),
+	buildOnboardingSearchNotice: vi.fn<
+		typeof OnboardingNotice.buildOnboardingSearchNotice
+	>(async () => null),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
-		mockModule.getCapabilityRegistryForContext(...args),
+	getCapabilityRegistryForContext: (
+		...args: Parameters<
+			typeof CapabilityRegistry.getCapabilityRegistryForContext
+		>
+	) => mockModule.getCapabilityRegistryForContext(...args),
 }))
 
 vi.mock('#worker/package-registry/platform-packages.ts', () => ({
@@ -89,10 +128,12 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
-	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof PackageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesWithCommunityProvenanceByUserId: (
+		...args: Parameters<typeof PackageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -101,12 +142,14 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	listUserSecretsForSearch: (...args: Array<unknown>) =>
-		mockModule.listUserSecretsForSearch(...args),
+	listUserSecretsForSearch: (
+		...args: Parameters<typeof SecretsService.listUserSecretsForSearch>
+	) => mockModule.listUserSecretsForSearch(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
+	listValues: (...args: Parameters<typeof ValuesService.listValues>) =>
+		mockModule.listValues(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async () => {
@@ -115,10 +158,12 @@ vi.mock('#worker/integrations/service.ts', async () => {
 	)
 	return {
 		...actual,
-		listJoinedIntegrations: (...args: Array<unknown>) =>
-			mockModule.listJoinedIntegrations(...args),
-		getJoinedIntegration: (...args: Array<unknown>) =>
-			mockModule.getJoinedIntegration(...args),
+		listJoinedIntegrations: (
+			...args: Parameters<typeof IntegrationsService.listJoinedIntegrations>
+		) => mockModule.listJoinedIntegrations(...args),
+		getJoinedIntegration: (
+			...args: Parameters<typeof IntegrationsService.getJoinedIntegration>
+		) => mockModule.getJoinedIntegration(...args),
 	}
 })
 
@@ -126,31 +171,37 @@ vi.mock('./memory-tool-context.ts', async () => {
 	const actual = await vi.importActual('./memory-tool-context.ts')
 	return {
 		...actual,
-		loadRelevantMemoriesForTool: (...args: Array<unknown>) =>
-			mockModule.loadRelevantMemoriesForTool(...args),
-		acknowledgeToolMemories: (...args: Array<unknown>) =>
-			mockModule.acknowledgeToolMemories(...args),
+		loadRelevantMemoriesForTool: (
+			...args: Parameters<typeof MemoryToolContext.loadRelevantMemoriesForTool>
+		) => mockModule.loadRelevantMemoriesForTool(...args),
+		acknowledgeToolMemories: (
+			...args: Parameters<typeof MemoryToolContext.acknowledgeToolMemories>
+		) => mockModule.acknowledgeToolMemories(...args),
 	}
 })
 
 vi.mock('#worker/package-retrievers/service.ts', () => ({
-	runPackageRetrievers: (...args: Array<unknown>) =>
-		mockModule.runPackageRetrievers(...args),
+	runPackageRetrievers: (
+		...args: Parameters<typeof PackageRetrievers.runPackageRetrievers>
+	) => mockModule.runPackageRetrievers(...args),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
-	searchCommunityListings: (...args: Array<unknown>) =>
-		mockModule.searchCommunityListings(...args),
+	searchCommunityListings: (
+		...args: Parameters<typeof CommunityService.searchCommunityListings>
+	) => mockModule.searchCommunityListings(...args),
 }))
 
 vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
-	deriveWaitingItemsForStableUser: (...args: Array<unknown>) =>
-		mockModule.deriveWaitingItemsForStableUser(...args),
+	deriveWaitingItemsForStableUser: (
+		...args: Parameters<typeof DeriveWaiting.deriveWaitingItemsForStableUser>
+	) => mockModule.deriveWaitingItemsForStableUser(...args),
 }))
 
 vi.mock('./search-onboarding-notice.ts', () => ({
-	buildOnboardingSearchNotice: (...args: Array<unknown>) =>
-		mockModule.buildOnboardingSearchNotice(...args),
+	buildOnboardingSearchNotice: (
+		...args: Parameters<typeof OnboardingNotice.buildOnboardingSearchNotice>
+	) => mockModule.buildOnboardingSearchNotice(...args),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
@@ -260,8 +311,8 @@ const packageIdsOf = (response: SearchResponse) =>
 
 function savedPackage(
 	id: string,
-	overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
+	overrides: Partial<SavedPackageRecord> = {},
+): SavedPackageRecord {
 	return {
 		id,
 		userId: 'user-1',
@@ -274,6 +325,7 @@ function savedPackage(
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		lockedAt: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
 		...overrides,

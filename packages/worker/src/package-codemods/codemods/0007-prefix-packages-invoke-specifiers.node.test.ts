@@ -2,9 +2,8 @@ import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { expect, test } from 'vitest'
 import { parseModuleSource } from '#worker/module-source.ts'
+import { type PackageCodemodFinding as Finding } from '../types.ts'
 import { prefixPackagesInvokeSpecifiersCodemod as codemod } from './0007-prefix-packages-invoke-specifiers.ts'
-
-type Finding = { path: string; message: string }
 
 const paths = (findings: Array<Finding>) =>
 	findings.map((finding) => finding.path)

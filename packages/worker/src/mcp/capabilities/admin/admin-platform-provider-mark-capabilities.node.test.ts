@@ -44,7 +44,7 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	} as unknown as Env
 	const ctx = {
 		env,
 		callerContext: createMcpCallerContext({
@@ -112,10 +112,10 @@ test('delete provider mark fails when logo storage is missing', async () => {
 		},
 		ctx,
 	)
-	const missingStorageCtx = {
+	const missingStorageCtx: CapabilityContext = {
 		...ctx,
-		env: { ...env, COMMUNITY_ASSETS: undefined },
-	} as typeof ctx
+		env: { ...env, COMMUNITY_ASSETS: undefined } as unknown as Env,
+	}
 
 	await expect(
 		adminPlatformProviderMarkDeleteCapability.handler(

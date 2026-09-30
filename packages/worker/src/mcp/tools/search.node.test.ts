@@ -96,7 +96,9 @@ function cap(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
+		source: 'builtin',
 		inputSchema: { type: 'object' as const, properties: {} },
+		inputTypeDefinition: '',
 		handler: async () => null,
 		...overrides,
 	}
@@ -195,7 +197,6 @@ function leanPackageRow(
 			tags: record.tags,
 			searchText: record.searchText,
 			hasApp: record.hasApp,
-			hidden: false,
 			isPrivate: false,
 			appEntry: null,
 			exports: [],
@@ -249,7 +250,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 					name: 'alpha-secret',
 					scope: 'user',
 					description: 'beta gamma delta secret',
-					appId: null,
+					packageId: null,
 					updatedAt: now,
 				},
 			],
@@ -428,7 +429,7 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 	])
 	const findsAdminCapability = async (roles: Array<string>) => {
 		const result = await search({
-			env: { SENTRY_ENVIRONMENT: 'test' } as Env,
+			env: { SENTRY_ENVIRONMENT: 'test' } as unknown as Env,
 			query: 'admin users roles',
 			userId: undefined,
 			registry: filterCapabilityRegistryForCaller(
@@ -687,7 +688,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 	}
 	const idSchema = {
 		type: 'object' as const,
-		properties: { id: { type: 'string' } },
+		properties: { id: { type: 'string' as const } },
 		required: ['id'],
 	}
 	const registry = registryOf('mcp:widgets', [
@@ -1021,7 +1022,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 					name: 'webhook_api_key',
 					scope: 'user',
 					description: 'Webhook API key for outbound hooks',
-					appId: null,
+					packageId: null,
 					updatedAt: now,
 				},
 			],

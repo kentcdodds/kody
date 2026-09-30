@@ -181,7 +181,7 @@ test('account deletion reports missing bindings and remains retryable', async ()
 		[
 			// Jobs live in the jobs worker's D1, so an unbound JOBS must not
 			// fall back to scanning APP_DB.
-			{ JOBS: undefined } as unknown as Partial<Env>,
+			{ JOBS: undefined },
 			AccountDeletionInventoryError,
 			{
 				inventoryErrors: expect.arrayContaining([

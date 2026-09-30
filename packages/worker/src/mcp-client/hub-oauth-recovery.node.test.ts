@@ -73,7 +73,7 @@ vi.mock('@sentry/cloudflare', () => ({
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<CloudflareWorkers>()
+	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
 		DurableObject: class {
@@ -93,12 +93,15 @@ vi.mock('agents/mcp/do-oauth-client-provider', () => ({
 		serverId = ''
 		clientId: string | undefined
 		authUrl: string | undefined
+		readonly redirectUrl: string
 
 		constructor(
 			_storage: DurableObjectStorage,
 			_clientName: string,
-			readonly redirectUrl: string,
-		) {}
+			redirectUrl: string,
+		) {
+			this.redirectUrl = redirectUrl
+		}
 	},
 }))
 

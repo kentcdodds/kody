@@ -1,3 +1,4 @@
+import { type ErrorEvent } from '@sentry/core'
 import { expect, test } from 'vitest'
 import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
 import {
@@ -28,8 +29,9 @@ import {
 
 function exceptionEvent(
 	...values: Array<string | { type: string; value: string }>
-) {
+): ErrorEvent {
 	return {
+		type: undefined,
 		exception: {
 			values: values.map((value) =>
 				typeof value === 'string' ? { value } : value,
@@ -203,7 +205,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	]
 	expect(
 		droppedMessages.filter(
-			(message) => filterSentryEvent({ message }) !== null,
+			(message) => filterSentryEvent({ type: undefined, message }) !== null,
 		),
 	).toEqual([])
 

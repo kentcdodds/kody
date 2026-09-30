@@ -361,7 +361,7 @@ test('listPublicProfilePackages ahead filter ignores post-publish updated_at ske
 	for (const [kodyId, pinnedCommit] of [
 		['grok-bot', 'commit-head'],
 		['skills', 'commit-listed'],
-	]) {
+	] as const) {
 		const id = await insertSavedPackage(owner, kodyId, { updatedAt })
 		await insertListing(owner, id, kodyId, {
 			publishedAt,

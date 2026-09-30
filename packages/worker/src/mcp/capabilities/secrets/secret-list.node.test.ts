@@ -78,17 +78,27 @@ test('secretList matches implicit user-secret read access and still lists packag
 		env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
-			user: { userId: 'user-1' },
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
 		}),
 	}
 	const packageContext = {
 		env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
-			user: { userId: 'user-1' },
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
 			storageContext: {
 				sessionId: null,
+				appId: null,
 				packageId: 'pkg-1',
+				storageId: null,
 			},
 		}),
 	}
@@ -174,7 +184,7 @@ test('secretList from execute returns caller-owned package metadata with package
 			env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://example.com',
-				user: { userId },
+				user: { userId, email: `${userId}@example.com`, displayName: userId },
 			}),
 		},
 	)

@@ -69,15 +69,17 @@ export type CapabilityDefinition<
 	handler: (
 		args: InferCapabilitySchema<TInputSchema>,
 		ctx: CapabilityContext,
-	) => Promise<
-		TOutputSchema extends CapabilitySchemaDefinition
-			? InferCapabilitySchema<TOutputSchema>
-			: CapabilityResult
-	>
+	) => Promise<CapabilityOutput<TOutputSchema>>
 }
 
-// Runtime/registry shape after schema normalization.
-export type Capability = {
+export type CapabilityOutput<TOutputSchema> =
+	TOutputSchema extends CapabilitySchemaDefinition
+		? InferCapabilitySchema<TOutputSchema>
+		: CapabilityResult
+
+// Runtime/registry shape after schema normalization. `TResult` keeps the
+// declared output type for direct callers; the registry uses the default.
+export type Capability<TResult = CapabilityResult> = {
 	name: string
 	domain: CapabilityDomain
 	description: string
@@ -97,7 +99,7 @@ export type Capability = {
 	handler: (
 		args: Record<string, unknown>,
 		ctx: CapabilityContext,
-	) => Promise<CapabilityResult>
+	) => Promise<TResult>
 }
 
 export type CapabilitySpec = {

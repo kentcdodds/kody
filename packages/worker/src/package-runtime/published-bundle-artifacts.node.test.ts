@@ -54,8 +54,11 @@ vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
 			mockModule.insertPublishedBundleArtifactRow(...args),
 		updatePublishedBundleArtifactRow: (...args: Array<unknown>) =>
 			mockModule.updatePublishedBundleArtifactRow(...args),
-		upsertPublishedBundleArtifactRow: (...args: Array<unknown>) =>
-			mockModule.upsertPublishedBundleArtifactRow(...args),
+		upsertPublishedBundleArtifactRow: (
+			...args: Parameters<
+				typeof PublishedBundleArtifactRepo.upsertPublishedBundleArtifactRow
+			>
+		) => mockModule.upsertPublishedBundleArtifactRow(...args),
 	}
 })
 
@@ -156,6 +159,8 @@ function makeRebuildInput(input: {
 			indexed_commit: null,
 			manifest_path: 'package.json',
 			source_root: '/',
+			last_external_check_at: null,
+			external_check_until: null,
 			created_at: '2026-04-30T00:00:00.000Z',
 			updated_at: '2026-04-30T00:00:00.000Z',
 		},
@@ -171,6 +176,7 @@ function makeRebuildInput(input: {
 			hasApp: input.hasApp ?? false,
 			hidden: false,
 			isPrivate: false,
+			lockedAt: null,
 			createdAt: '2026-04-30T00:00:00.000Z',
 			updatedAt: '2026-04-30T00:00:00.000Z',
 		},
@@ -180,6 +186,7 @@ function makeRebuildInput(input: {
 			kody: { id: kodyId, description: input.description, ...input.kody },
 		},
 		buildAppBundle: input.buildAppBundle ?? vi.fn(),
+		buildAppClientBundle: vi.fn(),
 		buildModuleBundle: input.buildModuleBundle ?? vi.fn(),
 		buildImportableModuleBundle: input.buildImportableModuleBundle ?? vi.fn(),
 	} as RebuildInput

@@ -309,6 +309,7 @@ function mcpToken({
 		createdAt,
 		expiresAt,
 		audience: `${origin}${mcpResourcePath}`,
+		scope: oauthScopes,
 		grant: { clientId, scope: oauthScopes, props },
 	}
 }
@@ -776,7 +777,7 @@ test('mcp request heals a leftover UserMeter tombstone for a live account', asyn
 	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })
 
-function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
+function instrumentWriteLeaseRpcs(namespace: Env['USER_METER']) {
 	const calls: Array<string> = []
 	return {
 		calls,
@@ -795,10 +796,10 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 								calls.push(String(prop))
 								return (
 									target as unknown as Record<
-										string,
+										typeof prop,
 										(args: unknown) => Promise<unknown>
 									>
-								)[String(prop)](args)
+								)[prop](args)
 							}
 						}
 						const value = (target as unknown as Record<PropertyKey, unknown>)[
@@ -811,13 +812,13 @@ function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
 										PropertyKey,
 										(...args: Array<unknown>) => unknown
 									>
-								)[prop](...args)
+								)[prop]!(...args)
 						}
 						return value
 					},
 				})
 			},
-		} as unknown as DurableObjectNamespace,
+		} as unknown as Env['USER_METER'],
 	}
 }
 

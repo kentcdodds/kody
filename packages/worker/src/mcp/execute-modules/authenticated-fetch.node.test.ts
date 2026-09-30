@@ -9,6 +9,8 @@ import {
 import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
+type RecordedRequest = Pick<Request, 'url' | 'headers'>
+
 const fakeAccessToken = 'test-access-token-abc123'
 const spotifyAccessTokenPlaceholder = 'Bearer {{integration-token:spotify}}'
 
@@ -21,7 +23,11 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.com', 'cdn.spotify.com'],
 }
 
-function createKody(integration = spotifyIntegration) {
+type SpotifyIntegration = Omit<typeof spotifyIntegration, 'apiBaseUrl'> & {
+	apiBaseUrl: string | null
+}
+
+function createKody(integration: SpotifyIntegration = spotifyIntegration) {
 	const kody = {
 		async integrationGet(args: CapabilityArgs) {
 			expect(args.name).toBe('spotify')
@@ -39,7 +45,7 @@ function createKody(integration = spotifyIntegration) {
 	return kody
 }
 
-function createSpotifyHandlers(fetchCalls: Array<Request>) {
+function createSpotifyHandlers(fetchCalls: Array<RecordedRequest>) {
 	return [
 		http.post(spotifyIntegration.tokenUrl, () =>
 			HttpResponse.json({ access_token: fakeAccessToken }),
@@ -60,7 +66,7 @@ function createSpotifyHandlers(fetchCalls: Array<Request>) {
 
 test('createAuthenticatedFetch enforces integration host allowlists and fails closed without configured hosts', async () => {
 	const kody = createKody()
-	const fetchCalls: Array<Request> = []
+	const fetchCalls: Array<RecordedRequest> = []
 
 	using _server = createMswNodeServer(createSpotifyHandlers(fetchCalls))
 	const authenticatedFetch = await createAuthenticatedFetch(kody, 'spotify')
@@ -106,7 +112,7 @@ test('createAuthenticatedFetch enforces integration host allowlists and fails cl
 		assertIntegrationHostAllowed('spotify', spotifyIntegration, '/v1/me'),
 	).not.toThrow()
 
-	const emptyAllowlistFetchCalls: Array<Request> = []
+	const emptyAllowlistFetchCalls: Array<RecordedRequest> = []
 	using _emptyAllowlistServer = createMswNodeServer([
 		http.post(spotifyIntegration.tokenUrl, () =>
 			HttpResponse.json({ access_token: fakeAccessToken }),

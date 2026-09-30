@@ -2,21 +2,18 @@ import { expect, test, vi } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
+import type * as StorageBucketsService from '#worker/storage-buckets/service.ts'
 
 const mockModule = vi.hoisted(() => ({
-	listUserStorageBucketEstimates: vi.fn(
-		async (): Promise<
-			Array<{
-				storageId: string
-				kind: 'unknown'
-				estimatedBytes: number | null
-			}>
-		> => [
-			{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
-			{ storageId: 'bucket-b', kind: 'unknown', estimatedBytes: null },
-		],
-	),
-	readStorageBytesFromUserMeter: vi.fn(async () => 0),
+	listUserStorageBucketEstimates: vi.fn<
+		typeof StorageBucketsService.listUserStorageBucketEstimates
+	>(async () => [
+		{ storageId: 'bucket-a', kind: 'unknown', estimatedBytes: null },
+		{ storageId: 'bucket-b', kind: 'unknown', estimatedBytes: null },
+	]),
+	readStorageBytesFromUserMeter: vi.fn<
+		typeof EntitlementsService.readStorageBytesFromUserMeter
+	>(async () => 0),
 	registerStorageBucket: vi.fn(),
 	recordStorageBucketEstimate: vi.fn(),
 	maybeRefreshStorageBucketEstimate: vi.fn(),
@@ -38,8 +35,11 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
-	listUserStorageBucketEstimates: (...args: Array<unknown>) =>
-		mockModule.listUserStorageBucketEstimates(...args),
+	listUserStorageBucketEstimates: (
+		...args: Parameters<
+			typeof StorageBucketsService.listUserStorageBucketEstimates
+		>
+	) => mockModule.listUserStorageBucketEstimates(...args),
 	registerStorageBucket: (...args: Array<unknown>) =>
 		mockModule.registerStorageBucket(...args),
 	recordStorageBucketEstimate: (...args: Array<unknown>) =>
@@ -61,8 +61,11 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		readStorageBytesFromUserMeter: (...args: Array<unknown>) =>
-			mockModule.readStorageBytesFromUserMeter(...args),
+		readStorageBytesFromUserMeter: (
+			...args: Parameters<
+				typeof EntitlementsService.readStorageBytesFromUserMeter
+			>
+		) => mockModule.readStorageBytesFromUserMeter(...args),
 	}
 })
 

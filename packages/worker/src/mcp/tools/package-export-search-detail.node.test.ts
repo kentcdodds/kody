@@ -290,7 +290,10 @@ test('package file fragments focus headings and line ranges without replacing ex
 			heading: { slug: 'intent', title: 'Intent' },
 		},
 	})
-	if (heading.structured.detailMode !== 'file') {
+	if (
+		!('detailMode' in heading.structured) ||
+		heading.structured.detailMode !== 'file'
+	) {
 		throw new Error('expected package file detail')
 	}
 	expect(heading.structured.content).toContain('Control shades and lights.')

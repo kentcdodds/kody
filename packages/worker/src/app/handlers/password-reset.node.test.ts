@@ -1,4 +1,6 @@
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareEmail from '#app/email/cloudflare-email.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -25,7 +27,11 @@ const mockModule = vi.hoisted(() => ({
 			}
 		},
 	),
-	sendCloudflareEmail: vi.fn(async () => ({ ok: true })),
+	sendCloudflareEmail: vi.fn(
+		async (
+			..._args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+		) => ({ ok: true }),
+	),
 }))
 
 vi.mock('#worker/db.ts', () => ({
@@ -52,8 +58,9 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 })
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		mockModule.sendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+	) => mockModule.sendCloudflareEmail(...args),
 }))
 
 const { createPasswordResetRequestHandler, createPasswordResetConfirmHandler } =
@@ -84,11 +91,9 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 }
 
 function post(url: string, body: Record<string, unknown>) {
-	return {
-		request: new Request(url, { method: 'POST', body: JSON.stringify(body) }),
-		url: new URL(url),
-		params: {},
-	}
+	return new RequestContext(
+		new Request(url, { method: 'POST', body: JSON.stringify(body) }),
+	)
 }
 
 // The request handler defers token creation and the email send past the

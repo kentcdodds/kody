@@ -81,7 +81,9 @@ test('community activity dispatch builds metadata-only events through admin pack
 			retryInvocationInfrastructureFailures: true,
 		},
 	})
-	const payload = result[0]?.params as Record<string, unknown>
+	const [dispatched] = result
+	const payload =
+		dispatched && 'params' in dispatched ? dispatched.params : undefined
 	expect(payload).toEqual({
 		event: 'community.activity.recorded',
 		event_id: 'event-1',

@@ -1,4 +1,3 @@
-import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 import {
 	type RepoSessionIndexCleanupResult,
 	type RepoSessionIndexExportResult,
@@ -19,7 +18,9 @@ export function createInMemoryRepoSessionIndexEnv(
 			throw new Error('APP_DB is not configured on this in-memory index env.')
 		},
 	} as unknown as D1Database,
-): RepoSessionIndexEnv & {
+): {
+	REPO_SESSION_INDEX: Env['REPO_SESSION_INDEX']
+	APP_DB: D1Database
 	indexes: Map<string, Map<string, RepoSessionRow>>
 } {
 	const indexes = new Map<string, Map<string, RepoSessionRow>>()
@@ -180,7 +181,7 @@ export function createInMemoryRepoSessionIndexEnv(
 			const userId = String((id as unknown as { name: string }).name)
 			return stubFor(userId)
 		},
-	} as unknown as DurableObjectNamespace
+	} as unknown as Env['REPO_SESSION_INDEX']
 
 	return {
 		REPO_SESSION_INDEX: namespace,

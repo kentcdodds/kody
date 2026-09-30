@@ -98,20 +98,26 @@ function createCapabilityContext(input?: {
 			PLATFORM_FEEDBACK_DISPATCH_QUEUE: {
 				send: mockModule.queueSend,
 			},
-		} as Env,
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: input?.executionOrigin,
 			storageContext:
 				input?.packageId === undefined
 					? undefined
-					: { appId: 'package-app-1', packageId: input.packageId },
+					: {
+							sessionId: null,
+							appId: 'package-app-1',
+							packageId: input.packageId,
+							storageId: null,
+						},
 			...(input
 				? {
 						user: {
 							userId: input.userId ?? 'user-1',
 							username: `${input.userId ?? 'user-1'}-name`,
 							email: `${input.userId ?? 'user-1'}@example.com`,
+							displayName: `${input.userId ?? 'user-1'}-name`,
 							roles: input.roles,
 						},
 					}

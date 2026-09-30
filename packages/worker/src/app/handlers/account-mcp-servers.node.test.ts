@@ -1,18 +1,32 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as authSession from '#app/auth-session.ts'
+import type * as settingsService from '#worker/mcp-client/settings-service.ts'
+import type * as hubClient from '#worker/mcp-client/hub-client.ts'
+import { type McpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { type McpServerSettingMetadata } from '#worker/mcp-client/settings-types.ts'
+import { type McpServerLastError } from '#worker/mcp-client/types.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as ProviderMarks from '#worker/integrations/provider-marks.ts'
 
 const mockModule = vi.hoisted(() => {
 	const epoch = new Date(0).toISOString()
-	const setting = (overrides: Record<string, unknown> = {}) => ({
+	const setting = (
+		overrides: Partial<McpServerSettingMetadata> = {},
+	): McpServerSettingMetadata => ({
 		id: 'server-1',
 		name: 'linear',
 		url: 'https://mcp.example.com/mcp',
 		enabled: true,
 		createdAt: epoch,
 		updatedAt: epoch,
-		usageMode: 'any' as const,
-		allowedPackageIds: [] as Array<string>,
+		logoKey: null,
+		logoContentType: null,
+		logoSource: null,
+		faviconSourceHost: null,
+		usageMode: 'any',
+		allowedPackageIds: [],
+		lastError: null,
 		...overrides,
 	})
 	const mcpUser = {
@@ -23,23 +37,39 @@ const mockModule = vi.hoisted(() => {
 	}
 	return {
 		epoch,
-		waitUntil: vi.fn(),
-		readAuthenticatedAppUser: vi.fn(async () => ({
+		waitUntil: vi.fn<typeof CloudflareWorkers.waitUntil>(),
+		readAuthenticatedAppUser: vi.fn<
+			typeof authenticatedUserModule.readAuthenticatedAppUser
+		>(async () => ({
 			sessionUserId: '42',
 			userId: 42,
 			username: 'test-user',
 			email: 'user@example.com',
+			emailVerified: true,
+			emailVerificationDelivery: null,
 			displayName: 'user',
+			roles: ['user'],
+			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser,
 		})),
-		readAuthSessionResult: vi.fn(async () => ({
-			session: { userId: '42' },
-			setCookie: null,
-		})),
-		listMcpServerSettings: vi.fn(async () => [setting()]),
-		getMcpServerSettingById: vi.fn(async () => setting()),
-		addMcpServer: vi.fn(async () => ({
+		readAuthSessionResult: vi.fn<typeof authSession.readAuthSessionResult>(
+			async () => ({
+				session: {
+					stableUserId: 'stable-user-1',
+					email: 'user@example.com',
+					rememberMe: false,
+				},
+				setCookie: null,
+			}),
+		),
+		listMcpServerSettings: vi.fn<typeof settingsService.listMcpServerSettings>(
+			async () => [setting()],
+		),
+		getMcpServerSettingById: vi.fn<
+			typeof settingsService.getMcpServerSettingById
+		>(async () => setting()),
+		addMcpServer: vi.fn<typeof settingsService.addMcpServer>(async () => ({
 			setting: setting({
 				id: 'server-2',
 				name: 'notion',
@@ -53,14 +83,25 @@ const mockModule = vi.hoisted(() => {
 				toolCount: 0,
 			},
 		})),
-		setMcpServerEnabled: vi.fn(async () => setting({ enabled: false })),
-		setMcpServerUsage: vi.fn(async () =>
-			setting({ usageMode: 'packages', allowedPackageIds: ['pkg-drafts'] }),
+		setMcpServerEnabled: vi.fn<typeof settingsService.setMcpServerEnabled>(
+			async () => setting({ enabled: false }),
 		),
-		deleteMcpServer: vi.fn(async () => true),
-		setMcpServerLastError: vi.fn(async () => true),
-		persistMcpServerLastErrorIfChanged: vi.fn(async () => undefined),
-		getCachedMcpClientHubSnapshot: vi.fn(async () => ({
+		setMcpServerUsage: vi.fn<typeof settingsService.setMcpServerUsage>(
+			async () =>
+				setting({ usageMode: 'packages', allowedPackageIds: ['pkg-drafts'] }),
+		),
+		deleteMcpServer: vi.fn<typeof settingsService.deleteMcpServer>(
+			async () => true,
+		),
+		setMcpServerLastError: vi.fn<typeof settingsService.setMcpServerLastError>(
+			async () => true,
+		),
+		persistMcpServerLastErrorIfChanged: vi.fn<
+			typeof settingsService.persistMcpServerLastErrorIfChanged
+		>(async () => undefined),
+		getCachedMcpClientHubSnapshot: vi.fn<
+			typeof hubClient.getCachedMcpClientHubSnapshot
+		>(async () => ({
 			servers: [
 				{
 					serverId: 'server-1',
@@ -77,15 +118,17 @@ const mockModule = vi.hoisted(() => {
 				},
 			],
 		})),
-		handleOAuthCallback: vi.fn(async () => ({
-			serverId: 'server-1',
-			authSuccess: true,
-			authError: null,
-			serverName: 'linear',
-			authorizationNeeded: false,
-			lastError: null,
-		})),
-		reconnectServer: vi.fn(async () => ({
+		handleOAuthCallback: vi.fn<McpClientHubClient['handleOAuthCallback']>(
+			async () => ({
+				serverId: 'server-1',
+				authSuccess: true,
+				authError: null,
+				serverName: 'linear',
+				authorizationNeeded: false,
+				lastError: null,
+			}),
+		),
+		reconnectServer: vi.fn<McpClientHubClient['reconnectServer']>(async () => ({
 			serverId: 'server-1',
 			state: 'authenticating',
 			authUrl: 'https://auth.example.com/authorize?state=fresh.server-1',
@@ -99,18 +142,21 @@ vi.mock('cloudflare:workers', async (importOriginal) => {
 	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
-		waitUntil: (...args: Array<unknown>) => mockModule.waitUntil(...args),
+		waitUntil: (...args: Parameters<typeof CloudflareWorkers.waitUntil>) =>
+			mockModule.waitUntil(...args),
 	}
 })
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: (
+		...args: Parameters<typeof authSession.readAuthSessionResult>
+	) => mockModule.readAuthSessionResult(...args),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -123,21 +169,31 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
-	listMcpServerSettings: (...args: Array<unknown>) =>
-		mockModule.listMcpServerSettings(...args),
-	getMcpServerSettingById: (...args: Array<unknown>) =>
-		mockModule.getMcpServerSettingById(...args),
-	addMcpServer: (...args: Array<unknown>) => mockModule.addMcpServer(...args),
-	setMcpServerEnabled: (...args: Array<unknown>) =>
-		mockModule.setMcpServerEnabled(...args),
-	setMcpServerUsage: (...args: Array<unknown>) =>
-		mockModule.setMcpServerUsage(...args),
-	deleteMcpServer: (...args: Array<unknown>) =>
-		mockModule.deleteMcpServer(...args),
-	setMcpServerLastError: (...args: Array<unknown>) =>
-		mockModule.setMcpServerLastError(...args),
-	persistMcpServerLastErrorIfChanged: (...args: Array<unknown>) =>
-		mockModule.persistMcpServerLastErrorIfChanged(...args),
+	listMcpServerSettings: (
+		...args: Parameters<typeof settingsService.listMcpServerSettings>
+	) => mockModule.listMcpServerSettings(...args),
+	getMcpServerSettingById: (
+		...args: Parameters<typeof settingsService.getMcpServerSettingById>
+	) => mockModule.getMcpServerSettingById(...args),
+	addMcpServer: (...args: Parameters<typeof settingsService.addMcpServer>) =>
+		mockModule.addMcpServer(...args),
+	setMcpServerEnabled: (
+		...args: Parameters<typeof settingsService.setMcpServerEnabled>
+	) => mockModule.setMcpServerEnabled(...args),
+	setMcpServerUsage: (
+		...args: Parameters<typeof settingsService.setMcpServerUsage>
+	) => mockModule.setMcpServerUsage(...args),
+	deleteMcpServer: (
+		...args: Parameters<typeof settingsService.deleteMcpServer>
+	) => mockModule.deleteMcpServer(...args),
+	setMcpServerLastError: (
+		...args: Parameters<typeof settingsService.setMcpServerLastError>
+	) => mockModule.setMcpServerLastError(...args),
+	persistMcpServerLastErrorIfChanged: (
+		...args: Parameters<
+			typeof settingsService.persistMcpServerLastErrorIfChanged
+		>
+	) => mockModule.persistMcpServerLastErrorIfChanged(...args),
 	resolveMcpServerOAuthClientUrls: (input: {
 		env: { APP_BASE_URL?: string | null }
 		requestUrl?: string | URL | null
@@ -171,13 +227,16 @@ vi.mock('#worker/integrations/provider-marks.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
-	getCachedMcpClientHubSnapshot: (...args: Array<unknown>) =>
-		mockModule.getCachedMcpClientHubSnapshot(...args),
+	getCachedMcpClientHubSnapshot: (
+		...args: Parameters<typeof hubClient.getCachedMcpClientHubSnapshot>
+	) => mockModule.getCachedMcpClientHubSnapshot(...args),
 	createMcpClientHubClient: () => ({
-		handleOAuthCallback: (...args: Array<unknown>) =>
-			mockModule.handleOAuthCallback(...args),
-		reconnectServer: (...args: Array<unknown>) =>
-			mockModule.reconnectServer(...args),
+		handleOAuthCallback: (
+			...args: Parameters<McpClientHubClient['handleOAuthCallback']>
+		) => mockModule.handleOAuthCallback(...args),
+		reconnectServer: (
+			...args: Parameters<McpClientHubClient['reconnectServer']>
+		) => mockModule.reconnectServer(...args),
 		refreshServer: vi.fn(async () => ({
 			serverId: 'server-1',
 			state: 'ready',
@@ -200,20 +259,18 @@ const userScope = { userId: 'stable-user-1', id: 'server-1' }
 
 function discoveryFailure(attemptId: string, suffix = '') {
 	const message = `Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id ${attemptId}).${suffix}`
-	return {
+	const lastError: McpServerLastError = {
 		message,
-		lastError: {
-			message,
-			phase: 'server/discover',
-			httpStatus: null,
-			httpBodySnippet: null,
-			mcpEndpoint: 'https://mcp.example.com/mcp',
-			resource: null,
-			authServer: null,
-			attemptId,
-			at: '2026-09-08T00:00:00.000Z',
-		},
+		phase: 'server/discover',
+		httpStatus: null,
+		httpBodySnippet: null,
+		mcpEndpoint: 'https://mcp.example.com/mcp',
+		resource: null,
+		authServer: null,
+		attemptId,
+		at: '2026-09-08T00:00:00.000Z',
 	}
+	return { message, lastError }
 }
 
 function createApiClient() {
@@ -403,6 +460,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 		authError: 'Invalid state.',
 		serverName: null,
 		authorizationNeeded: false,
+		lastError: null,
 	})
 	const failure = await callback('error=access_denied')
 	expect(failure.response.status).toBe(303)
@@ -416,6 +474,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 		authError: 'Invalid origin uri https://example.com',
 		serverName: 'linear',
 		authorizationNeeded: false,
+		lastError: null,
 	})
 	const originFailure = await callback('error=invalid_origin')
 	expect(originFailure.response.status).toBe(303)
@@ -432,6 +491,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 		authError: authorizationNeeded,
 		serverName: 'linear',
 		authorizationNeeded: true,
+		lastError: null,
 	})
 	const recovery = await callback('code=abc&state=used.server-1')
 	expect(recovery.response.status).toBe(303)
@@ -445,6 +505,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 		authError: authorizationNeeded,
 		serverName: null,
 		authorizationNeeded: true,
+		lastError: null,
 	})
 	const unknownRecovery = await callback('error=access_denied')
 	expect(unknownRecovery.location.pathname).toBe('/account/mcp-servers')

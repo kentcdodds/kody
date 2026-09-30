@@ -79,7 +79,9 @@ test('community listing published dispatch builds metadata-only events through a
 			retryInvocationInfrastructureFailures: true,
 		},
 	})
-	const payload = result[0]?.params as Record<string, unknown>
+	const [dispatched] = result
+	const payload =
+		dispatched && 'params' in dispatched ? dispatched.params : undefined
 	expect(payload).toEqual({
 		event: 'community.listing.published',
 		event_id: 'event-1',

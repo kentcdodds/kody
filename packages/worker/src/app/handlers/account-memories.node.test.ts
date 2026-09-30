@@ -1,4 +1,7 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as memoryRepo from '#mcp/memory/repo.ts'
+import type * as memoryService from '#mcp/memory/service.ts'
 import { buildMemoriesExportFilename } from '#universal/memory-export.ts'
 
 const mockModule = vi.hoisted(() => {
@@ -36,12 +39,18 @@ const mockModule = vi.hoisted(() => {
 	return {
 		memoryRow,
 		memoryDbRow,
-		readAuthenticatedAppUser: vi.fn(async () => ({
+		readAuthenticatedAppUser: vi.fn<
+			typeof authenticatedUserModule.readAuthenticatedAppUser
+		>(async () => ({
 			sessionUserId: '42',
 			userId: 42,
 			username: 'test-user',
 			email: 'user@example.com',
+			emailVerified: true,
+			emailVerificationDelivery: null,
 			displayName: 'user',
+			roles: ['user'],
+			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser: {
 				userId: 'stable-user-1',
@@ -51,10 +60,14 @@ const mockModule = vi.hoisted(() => {
 			},
 		})),
 		readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-		listMemoriesByUserId: vi.fn(async () => [memoryDbRow]),
-		listMemoriesByUserIdPage: vi.fn(async () => [memoryDbRow]),
-		getMemory: vi.fn(async () => memoryRow),
-		deleteMemory: vi.fn(async () => ({
+		listMemoriesByUserId: vi.fn<typeof memoryRepo.listMemoriesByUserId>(
+			async () => [memoryDbRow],
+		),
+		listMemoriesByUserIdPage: vi.fn<typeof memoryRepo.listMemoriesByUserIdPage>(
+			async () => [memoryDbRow],
+		),
+		getMemory: vi.fn<typeof memoryService.getMemory>(async () => memoryRow),
+		deleteMemory: vi.fn<typeof memoryService.deleteMemory>(async () => ({
 			...memoryRow,
 			status: 'deleted' as const,
 		})),
@@ -64,13 +77,13 @@ const mockModule = vi.hoisted(() => {
 const { memoryRow } = mockModule
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -83,15 +96,19 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#mcp/memory/repo.ts', () => ({
-	listMemoriesByUserId: (...args: Array<unknown>) =>
-		mockModule.listMemoriesByUserId(...args),
-	listMemoriesByUserIdPage: (...args: Array<unknown>) =>
-		mockModule.listMemoriesByUserIdPage(...args),
+	listMemoriesByUserId: (
+		...args: Parameters<typeof memoryRepo.listMemoriesByUserId>
+	) => mockModule.listMemoriesByUserId(...args),
+	listMemoriesByUserIdPage: (
+		...args: Parameters<typeof memoryRepo.listMemoriesByUserIdPage>
+	) => mockModule.listMemoriesByUserIdPage(...args),
 }))
 
 vi.mock('#mcp/memory/service.ts', () => ({
-	getMemory: (...args: Array<unknown>) => mockModule.getMemory(...args),
-	deleteMemory: (...args: Array<unknown>) => mockModule.deleteMemory(...args),
+	getMemory: (...args: Parameters<typeof memoryService.getMemory>) =>
+		mockModule.getMemory(...args),
+	deleteMemory: (...args: Parameters<typeof memoryService.deleteMemory>) =>
+		mockModule.deleteMemory(...args),
 }))
 
 const { createAccountMemoriesApiHandler, createAccountMemoriesExportHandler } =

@@ -222,7 +222,12 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 	const emptyDiff = { files: [], omittedCount: 0 }
-	const publishedReadmeTree = async (input: { commit: string | null }) => ({
+	const publishedReadmeTree = async (input: {
+		commit: string | null
+	}): Promise<{
+		files: Record<string, string>
+		fromListingSnapshot: boolean
+	}> => ({
 		files:
 			input.commit === publishedCommit ? { 'README.md': '# published\n' } : {},
 		fromListingSnapshot: false,
@@ -231,7 +236,7 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	mockModule.getEntitySourceById.mockResolvedValue(sourceRow(publishedCommit))
 	mockModule.loadPublicTreeFiles.mockImplementation(publishedReadmeTree)
 	mockModule.readArtifactTreeAtCommit.mockImplementation(
-		async (input: { commit: string }) =>
+		async (input: { commit: string }): Promise<Record<string, string>> =>
 			input.commit === pendingCommit ? { 'README.md': '# head\n' } : {},
 	)
 

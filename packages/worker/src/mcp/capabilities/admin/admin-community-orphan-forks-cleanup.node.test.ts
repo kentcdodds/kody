@@ -23,6 +23,7 @@ function createContext(roles: Array<string>) {
 				userId: 'actor-1',
 				username: 'actor',
 				email: 'actor@example.com',
+				displayName: 'Actor',
 				roles,
 			},
 		}),

@@ -2,12 +2,25 @@ import { vi } from 'vitest'
 import * as stripeClient from '#worker/billing/stripe-client.ts'
 import { createTestDb } from '#worker/test-support/account-deletion.ts'
 
-export function stripeSubscription(id: string, status: string) {
+export function stripeSubscription(
+	id: string,
+	status: string,
+): stripeClient.StripeSubscription {
 	return {
 		id,
 		status,
 		cancel_at: null,
-		items: { data: [{ price: { id: 'price_pro' } }] },
+		current_period_end: undefined,
+		metadata: undefined,
+		items: {
+			data: [
+				{
+					id: undefined,
+					price: { id: 'price_pro' },
+					current_period_end: undefined,
+				},
+			],
+		},
 	}
 }
 
@@ -83,7 +96,7 @@ export function paidInvoice(input: {
 	id: string
 	amountPaid: number
 	lines?: Array<PaidInvoiceLineInput>
-}) {
+}): stripeClient.StripePaidInvoice {
 	const lines = input.lines ?? [
 		{ id: `il_${input.id}`, amount: input.amountPaid },
 	]
@@ -99,9 +112,7 @@ export function paidInvoice(input: {
 					start: refundPeriodStart,
 					end: refundPeriodEnd,
 				},
-				...(line.discount_amounts
-					? { discount_amounts: line.discount_amounts }
-					: {}),
+				discount_amounts: line.discount_amounts,
 			})),
 		},
 	}

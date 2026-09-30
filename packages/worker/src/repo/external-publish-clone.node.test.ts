@@ -1,19 +1,29 @@
+import type git from 'isomorphic-git'
 import { expect, test, vi } from 'vitest'
 import { isWorkspaceSqliteTooBigMessage } from './external-publish-clone.ts'
 
 const gitMocks = vi.hoisted(() => ({
-	clone: vi.fn(async () => undefined),
-	log: vi.fn(async () => [{ oid: 'commit-head' }]),
-	checkout: vi.fn(async () => undefined),
-	listFiles: vi.fn(async () => ['package.json', 'src/index.ts']),
+	clone: vi.fn(async (..._args: Parameters<typeof git.clone>) => undefined),
+	log: vi.fn(async (..._args: Parameters<typeof git.log>) => [
+		{ oid: 'commit-head' },
+	]),
+	checkout: vi.fn(
+		async (..._args: Parameters<typeof git.checkout>) => undefined,
+	),
+	listFiles: vi.fn(async (..._args: Parameters<typeof git.listFiles>) => [
+		'package.json',
+		'src/index.ts',
+	]),
 }))
 
 vi.mock('isomorphic-git', () => ({
 	default: {
-		clone: (...args: Array<unknown>) => gitMocks.clone(...args),
-		log: (...args: Array<unknown>) => gitMocks.log(...args),
-		checkout: (...args: Array<unknown>) => gitMocks.checkout(...args),
-		listFiles: (...args: Array<unknown>) => gitMocks.listFiles(...args),
+		clone: (...args: Parameters<typeof git.clone>) => gitMocks.clone(...args),
+		log: (...args: Parameters<typeof git.log>) => gitMocks.log(...args),
+		checkout: (...args: Parameters<typeof git.checkout>) =>
+			gitMocks.checkout(...args),
+		listFiles: (...args: Parameters<typeof git.listFiles>) =>
+			gitMocks.listFiles(...args),
 	},
 }))
 

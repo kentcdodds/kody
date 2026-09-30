@@ -132,11 +132,11 @@ type StorageDeleteResult = {
 	deleted: boolean
 }
 
-type StorageClearResult = {
+export type StorageClearResult = {
 	ok: true
 }
 
-type StorageEstimateResult = {
+export type StorageEstimateResult = {
 	estimatedBytes: number
 }
 
@@ -686,6 +686,7 @@ export const StorageRunner = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	StorageRunnerBase,
 )
+export type StorageRunner = InstanceType<typeof StorageRunner>
 
 export function storageRunnerRpc(input: {
 	env: Env

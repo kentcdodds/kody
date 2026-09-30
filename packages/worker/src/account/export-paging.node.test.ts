@@ -340,7 +340,7 @@ test('run_records section exports runs, ledger, and dedicated state and pages ac
 		jobRunObservability: [jobRunObservability],
 		packageRunSuccesses: [packageRunSuccess],
 		activationMilestones: [activationMilestone],
-		nextStartAfter: null,
+		nextStartAfter: null as string | null,
 		truncated: false,
 	}
 	const exportRuns = vi.fn(async () => fullPage)

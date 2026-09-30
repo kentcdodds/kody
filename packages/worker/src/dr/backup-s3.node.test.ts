@@ -13,6 +13,18 @@ const config = {
 	secretAccessKey: 'secret',
 }
 
+function drBackupEnv(
+	vars: Record<
+		| 'DR_BACKUP_ACCOUNT_ID'
+		| 'DR_BACKUP_BUCKET_NAME'
+		| 'DR_BACKUP_ACCESS_KEY_ID'
+		| 'DR_BACKUP_SECRET_ACCESS_KEY',
+		string
+	>,
+) {
+	return vars as Parameters<typeof readDrBackupS3Config>[0]
+}
+
 function jsonResponse(
 	status: number,
 	body = '',
@@ -29,12 +41,14 @@ test('DR backup S3 client retries transient failures and fails closed otherwise'
 	expect(isTransientDrBackupHttpStatus(412)).toBe(false)
 
 	expect(
-		readDrBackupS3Config({
-			DR_BACKUP_ACCOUNT_ID: 'a',
-			DR_BACKUP_BUCKET_NAME: 'b',
-			DR_BACKUP_ACCESS_KEY_ID: 'c',
-			DR_BACKUP_SECRET_ACCESS_KEY: 'd',
-		}),
+		readDrBackupS3Config(
+			drBackupEnv({
+				DR_BACKUP_ACCOUNT_ID: 'a',
+				DR_BACKUP_BUCKET_NAME: 'b',
+				DR_BACKUP_ACCESS_KEY_ID: 'c',
+				DR_BACKUP_SECRET_ACCESS_KEY: 'd',
+			}),
+		),
 	).toEqual({
 		accountId: 'a',
 		bucketName: 'b',
@@ -42,12 +56,14 @@ test('DR backup S3 client retries transient failures and fails closed otherwise'
 		secretAccessKey: 'd',
 	})
 	expect(
-		readDrBackupS3Config({
-			DR_BACKUP_ACCOUNT_ID: 'a',
-			DR_BACKUP_BUCKET_NAME: '',
-			DR_BACKUP_ACCESS_KEY_ID: 'c',
-			DR_BACKUP_SECRET_ACCESS_KEY: 'd',
-		}),
+		readDrBackupS3Config(
+			drBackupEnv({
+				DR_BACKUP_ACCOUNT_ID: 'a',
+				DR_BACKUP_BUCKET_NAME: '',
+				DR_BACKUP_ACCESS_KEY_ID: 'c',
+				DR_BACKUP_SECRET_ACCESS_KEY: 'd',
+			}),
+		),
 	).toBeNull()
 
 	const putFetch = vi

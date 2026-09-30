@@ -68,10 +68,23 @@ export async function createTestDatabase() {
 	}
 }
 
+type DevServer = {
+	origin: string
+	[Symbol.asyncDispose](): Promise<void>
+}
+
+export function startDevServer(
+	persistDir: string,
+	options: { withCloudflareMock: true },
+): ReturnType<typeof startDevServerWithCloudflareMock>
+export function startDevServer(
+	persistDir: string,
+	options?: { withCloudflareMock?: boolean },
+): Promise<DevServer>
 export async function startDevServer(
 	persistDir: string,
 	options?: { withCloudflareMock?: boolean },
-) {
+): Promise<DevServer> {
 	if (options?.withCloudflareMock) {
 		return startDevServerWithCloudflareMock()
 	}

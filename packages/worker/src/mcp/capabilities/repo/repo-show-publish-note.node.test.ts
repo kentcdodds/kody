@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceByIdForUser: vi.fn(),
@@ -43,16 +44,14 @@ function resetMocks() {
 function createContext(userId = 'user-1') {
 	return {
 		env: { APP_DB: {} } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId,
 				email: `${userId}@example.com`,
 				displayName: userId,
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 

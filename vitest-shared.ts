@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
-import { type UserConfig } from 'vitest/config'
+import { type ViteUserConfig } from 'vitest/config'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
@@ -76,4 +76,4 @@ export const sharedProjectConfig = {
 		// experimental localStorage warning in every fork that loads it.
 		execArgv: ['--disable-warning=ExperimentalWarning'],
 	},
-} satisfies UserConfig
+} satisfies ViteUserConfig

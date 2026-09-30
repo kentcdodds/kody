@@ -12,6 +12,7 @@ import { computeNextRunAt, toJobView } from '#worker/jobs/schedule.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { buildPackageJobId } from '#worker/jobs/package-job-id.ts'
+import { type EntityKind } from '#worker/repo/types.ts'
 import {
 	type JobRecord,
 	type JobSchedule,
@@ -44,6 +45,8 @@ export function mockRepoPersistence() {
 				indexed_commit: null,
 				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
 				source_root: sourceRoot ?? '/',
+				last_external_check_at: null,
+				external_check_until: null,
 				created_at: '2026-04-18T00:00:00.000Z',
 				updated_at: '2026-04-18T00:00:00.000Z',
 				bootstrapAccess: null,
@@ -87,6 +90,8 @@ export function mockRepoPersistence() {
 							indexed_commit: null,
 							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
 							source_root: String(existing['source_root'] ?? '/'),
+							last_external_check_at: null,
+							external_check_until: null,
 							created_at: String(
 								existing['created_at'] ?? '2026-04-16T00:00:00.000Z',
 							),
@@ -1019,7 +1024,7 @@ export async function insertPublishedEntitySource(input: {
 	env?: Env
 	kv?: KVNamespace
 	sourceId: string
-	entityKind?: 'job' | 'package'
+	entityKind?: EntityKind
 	entityId: string
 	publishedCommit: string
 	manifestPath?: string
@@ -1069,6 +1074,8 @@ export async function insertPublishedEntitySource(input: {
 				indexed_commit: null,
 				manifest_path: input.manifestPath ?? 'kody.json',
 				source_root: input.sourceRoot ?? '/',
+				last_external_check_at: null,
+				external_check_until: null,
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 			},
@@ -1088,6 +1095,8 @@ export function createBaseCallerContext(): PersistedJobCallerContext {
 		storageContext: {
 			sessionId: null,
 			appId: 'app-123',
+			packageId: null,
+			storageId: null,
 		},
 	}) as PersistedJobCallerContext
 }

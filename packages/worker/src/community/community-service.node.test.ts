@@ -187,8 +187,11 @@ const testBundleArtifactsKv = {
 		list_complete: true,
 	})),
 } as unknown as KVNamespace
+const testCommunityAssetsDelete = vi.fn<R2Bucket['delete']>(
+	async () => undefined,
+)
 const testCommunityAssets = {
-	delete: vi.fn(async () => undefined),
+	delete: testCommunityAssetsDelete,
 	list: vi.fn(async () => ({
 		objects: [
 			{ key: 'community-icon:v1/listing-1/commit-1/asset' },
@@ -570,7 +573,7 @@ test('publish and adopt treat missing packages as CommunityActionError', async (
 test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.deleteCommunityListing.mockResolvedValue(true)
-	testCommunityAssets.delete.mockRejectedValue(new Error('r2 unavailable'))
+	testCommunityAssetsDelete.mockRejectedValue(new Error('r2 unavailable'))
 	consoleError.mockImplementation(() => {})
 
 	await unpublishCommunityListing({
@@ -592,7 +595,7 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 	}
 	expect(
 		mockModule.deleteCommunityListing.mock.invocationCallOrder[0],
-	).toBeLessThan(testCommunityAssets.delete.mock.invocationCallOrder[0] ?? 0)
+	).toBeLessThan(testCommunityAssetsDelete.mock.invocationCallOrder[0] ?? 0)
 	expect(consoleError).toHaveBeenCalledWith(
 		'community-icon-delete-failed',
 		'unpublish',

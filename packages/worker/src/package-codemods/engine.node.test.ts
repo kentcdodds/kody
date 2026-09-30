@@ -479,9 +479,9 @@ test('package codemod engine enforces resume scope, binary paging, fleet progres
 		new Error('publish exploded'),
 	)
 	const applyPublish = {
-		mode: 'apply',
+		mode: 'apply' as const,
 		filters: { packageIds: ['pkg-publish'] },
-	} as const
+	}
 	const failedPublish = await step(env, applyPublish)
 	expect(failedPublish.items).toHaveLength(1)
 	expect(failedPublish.items[0]?.status).toBe('failed')

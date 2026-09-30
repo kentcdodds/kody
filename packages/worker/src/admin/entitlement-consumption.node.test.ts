@@ -1,10 +1,15 @@
 import { expect, test, vi } from 'vitest'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
-const readCurrentEntitlementResourceUsage = vi.fn()
+const readCurrentEntitlementResourceUsage =
+	vi.fn<typeof EntitlementsService.readCurrentEntitlementResourceUsage>()
 
 vi.mock('#worker/entitlements/service.ts', () => ({
-	readCurrentEntitlementResourceUsage: (...args: Array<unknown>) =>
-		readCurrentEntitlementResourceUsage(...args),
+	readCurrentEntitlementResourceUsage: (
+		...args: Parameters<
+			typeof EntitlementsService.readCurrentEntitlementResourceUsage
+		>
+	) => readCurrentEntitlementResourceUsage(...args),
 }))
 
 const { readAdminEntitlementConsumption } =
@@ -23,6 +28,7 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 			usageUserId: 'grant',
 			plan: 'standard',
 			ladder: 'public',
+			creditWallet: 'none',
 			now,
 		}),
 		readAdminEntitlementConsumption({
@@ -30,6 +36,7 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 			usageUserId: 'grant',
 			plan: 'standard',
 			ladder: 'legacy',
+			creditWallet: 'none',
 			now,
 		}),
 	])

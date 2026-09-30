@@ -27,16 +27,12 @@ function makeCandidate(
 	return {
 		match: {
 			type: 'capability',
-			id: overrides.id,
-			entityRef: `capability:${overrides.id}`,
+			name: overrides.id,
 			title: overrides.title,
 			description: `${overrides.title} description`,
 			domain: 'meta',
-			usage: 'example',
 		},
 		type: 'capability',
-		id: overrides.id,
-		title: overrides.title,
 		searchFields: [overrides.title],
 		scoreComponents: {
 			base: 1,
@@ -96,7 +92,7 @@ type ScoreBody = { questions: Record<string, unknown> }
 function scoreRun(
 	scoreForKey: (key: string) => { score: number; confidence: number },
 ) {
-	return vi.fn(async (_model: string, body: ScoreBody) => ({
+	return vi.fn(async (_model: string, body: ScoreBody, _options?: unknown) => ({
 		answers: scoreAnswersForQuestions(body.questions, scoreForKey),
 	}))
 }
@@ -410,16 +406,18 @@ test('rerankSearchCandidatesWithJev batches Score questions, sums usage, and fai
 		{ length: jevSearchScoreQuestionBatchSize },
 		(_, index) => `c${String(index)}`,
 	)
-	const multiBatchRun = vi.fn(async (_model: string, body: ScoreBody) => ({
-		answers: scoreAnswersForQuestions(body.questions, (key) =>
-			key === `c${String(widePool.length - 1)}`
-				? { score: 2.8, confidence: 0.96 }
-				: { score: 0.3, confidence: 0.9 },
-		),
-		usage: Object.keys(body.questions).includes('c0')
-			? { prompt_tokens: 40, completion_tokens: 12 }
-			: { input_tokens: 18, output_tokens: 7 },
-	}))
+	const multiBatchRun = vi.fn(
+		async (_model: string, body: ScoreBody, _options?: unknown) => ({
+			answers: scoreAnswersForQuestions(body.questions, (key) =>
+				key === `c${String(widePool.length - 1)}`
+					? { score: 2.8, confidence: 0.96 }
+					: { score: 0.3, confidence: 0.9 },
+			),
+			usage: Object.keys(body.questions).includes('c0')
+				? { prompt_tokens: 40, completion_tokens: 12 }
+				: { input_tokens: 18, output_tokens: 7 },
+		}),
+	)
 	const multiBatch = await rerank(multiBatchRun, { candidates: widePool })
 	expect(multiBatch).toMatchObject({
 		outcome: 'applied',
@@ -448,15 +446,16 @@ test('rerankSearchCandidatesWithJev batches Score questions, sums usage, and fai
 		)
 	}
 
-	const partialBatchRun = vi.fn(async (_model: string, body: ScoreBody) =>
-		Object.keys(body.questions).includes('c0')
-			? {
-					answers: scoreAnswersForQuestions(body.questions, () => ({
-						score: 2.1,
-						confidence: 0.9,
-					})),
-				}
-			: { answers: {} },
+	const partialBatchRun = vi.fn(
+		async (_model: string, body: ScoreBody, _options?: unknown) =>
+			Object.keys(body.questions).includes('c0')
+				? {
+						answers: scoreAnswersForQuestions(body.questions, () => ({
+							score: 2.1,
+							confidence: 0.9,
+						})),
+					}
+				: { answers: {} },
 	)
 	const partialBatch = await rerank(partialBatchRun, { candidates: widePool })
 	expect(partialBatch).toMatchObject({

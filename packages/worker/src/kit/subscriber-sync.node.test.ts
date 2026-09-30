@@ -133,12 +133,10 @@ test('syncExistingKitSubscriber skips missing subscribers and never creates them
 
 test('maybeSyncKitSubscriber no-ops without Kit config and swallows failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const sync = (
-		env: Parameters<typeof maybeSyncKitSubscriber>[0]['env'],
-		fetchImpl: typeof fetch,
-	) =>
+	type KitEnv = Parameters<typeof maybeSyncKitSubscriber>[0]['env']
+	const sync = (env: Partial<KitEnv>, fetchImpl: typeof fetch) =>
 		maybeSyncKitSubscriber({
-			env,
+			env: env as KitEnv,
 			email: 'ada@example.com',
 			facts: kitFactsFromUserRow({}),
 			fetchImpl,

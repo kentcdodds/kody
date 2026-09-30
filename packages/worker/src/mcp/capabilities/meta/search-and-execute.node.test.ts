@@ -4,7 +4,9 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
-	assertCallerCanAccessCapability: vi.fn(async () => undefined),
+	assertCallerCanAccessCapability: vi.fn<
+		typeof AccessControlModule.assertCallerCanAccessCapability
+	>(async () => undefined),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -18,8 +20,11 @@ vi.mock(
 		const actual = await importOriginal()
 		return {
 			...actual,
-			assertCallerCanAccessCapability: (...args: Array<unknown>) =>
-				mockModule.assertCallerCanAccessCapability(...args),
+			assertCallerCanAccessCapability: (
+				...args: Parameters<
+					typeof AccessControlModule.assertCallerCanAccessCapability
+				>
+			) => mockModule.assertCallerCanAccessCapability(...args),
 		}
 	},
 )

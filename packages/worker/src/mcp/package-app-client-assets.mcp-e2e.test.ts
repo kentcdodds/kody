@@ -157,7 +157,7 @@ export default async function main(input) {
 }
 `,
 				params: {
-					files: buildPackageFiles({ username, kodyId, ...input }),
+					files: buildPackageFiles({ username, ...input }),
 				},
 			},
 		})) as CallToolResult

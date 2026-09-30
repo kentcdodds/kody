@@ -1,8 +1,13 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as serviceModule from '#worker/package-invocations/service.ts'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
+	invokePackageSubscription: vi.fn(
+		async (
+			_input: Parameters<typeof serviceModule.invokePackageSubscription>[0],
+		) => ({ status: 200, body: {} }),
+	),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 }))

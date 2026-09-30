@@ -51,10 +51,10 @@ function postSession(
 }
 
 function getStub(binding: ReturnType<typeof createBinding>) {
-	return env.PACKAGE_REALTIME_SESSION.get(
-		env.PACKAGE_REALTIME_SESSION.idFromName(
-			JSON.stringify([binding.userId, binding.packageId]),
-		),
+	const namespace =
+		env.PACKAGE_REALTIME_SESSION as DurableObjectNamespace<PackageRealtimeSession>
+	return namespace.get(
+		namespace.idFromName(JSON.stringify([binding.userId, binding.packageId])),
 	)
 }
 

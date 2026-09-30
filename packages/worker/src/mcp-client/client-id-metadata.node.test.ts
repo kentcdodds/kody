@@ -61,9 +61,13 @@ test('CIMD resolves only for HTTPS, serves the origin-bound document, and wires 
 
 function createMemoryStorage() {
 	const values = new Map<string, unknown>()
+	const hooks: {
+		afterPut?: (key: string, value: unknown) => Promise<void>
+	} = {}
 	const storage = {
 		put: async (key: string, value: unknown) => {
 			values.set(key, value)
+			await hooks.afterPut?.(key, value)
 		},
 		get: async (key: string) => values.get(key),
 		delete: async (key: string | Array<string>) => {
@@ -78,7 +82,7 @@ function createMemoryStorage() {
 				),
 			),
 	} as unknown as DurableObjectStorage
-	return { storage, values }
+	return { storage, values, hooks }
 }
 
 function makeProvider(storage: DurableObjectStorage, clientId?: string) {
@@ -129,7 +133,7 @@ test('OAuth provider saveTokens keeps a refresh token and discovery when the AS 
 })
 
 test('OAuth invalidate infers a missing client id, drops leftover token blobs, and keeps a newer rotated grant', async () => {
-	const { storage, values } = createMemoryStorage()
+	const { storage, values, hooks } = createMemoryStorage()
 	await makeProvider(storage, 'client-1').saveTokens(bearer('old-at', 'old-rt'))
 	values.set(
 		'/Kody/server-home/client-stale/token',
@@ -150,9 +154,7 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 		Promise.withResolvers<void>()
 	const { promise: saveStarted, resolve: markSaveStarted } =
 		Promise.withResolvers<void>()
-	const originalPut = storage.put.bind(storage)
-	storage.put = async (key, value) => {
-		const written = await originalPut(key, value)
+	hooks.afterPut = async (key, value) => {
 		if (
 			key === refreshKey &&
 			(value as { refresh_token?: string } | undefined)?.refresh_token ===
@@ -161,7 +163,6 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 			markSaveStarted()
 			await blockSave
 		}
-		return written
 	}
 
 	const saveRotated = rotating.saveTokens(bearer('rotated-at', 'rotated-rt'))

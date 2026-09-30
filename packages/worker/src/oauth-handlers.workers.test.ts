@@ -7,7 +7,7 @@ import {
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
-import { env, exports } from 'cloudflare:workers'
+import { env } from 'cloudflare:workers'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	createAuthCookie,
@@ -18,6 +18,7 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { invalidClientIdMismatchMessage } from '@kody-internal/shared/oauth-messages.ts'
 import { honeypotFieldName } from '#universal/public-form-protection.ts'
 import { oauthAuthorizeClobberedResubmitMessage } from './oauth-authorize-clobber.ts'
+import { originWorkerHandler } from './origin-handler.ts'
 import {
 	handleAuthorizeInfo,
 	handleAuthorizeRequest,
@@ -248,8 +249,10 @@ async function workerFetch(
 	request: Request,
 	workerEnv: Env = env,
 ): Promise<Response> {
+	const handleFetch = originWorkerHandler.fetch
+	if (!handleFetch) throw new Error('Expected the origin fetch handler.')
 	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, workerEnv, ctx)
+	const response = await handleFetch(request, workerEnv, ctx)
 	await waitOnExecutionContext(ctx)
 	return response
 }

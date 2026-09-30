@@ -53,6 +53,12 @@ vi.mock('#worker/package-runtime/module-graph.ts', async () => {
 })
 
 type ProviderFns = Record<string, (args: unknown) => Promise<unknown>>
+
+function requireFn<Fn>(fns: Record<string, Fn>, name: string): Fn {
+	const fn = fns[name]
+	if (!fn) throw new Error(`Expected kody function "${name}"`)
+	return fn
+}
 type Providers = Array<{ fns: ProviderFns }>
 type CapabilityRegistry = Awaited<
 	ReturnType<typeof registryModule.getCapabilityRegistryForContext>
@@ -183,6 +189,9 @@ function createWorkflowEnv(savedPackageRow: Record<string, unknown> | null) {
 					status: async () => ({ status: 'queued' }),
 				} as WorkflowInstance
 			},
+			createBatch: async () => {
+				throw new Error('createBatch is not supported in this test')
+			},
 		} as Workflow<unknown>,
 	} as Env
 	return { workflowEnv, created }
@@ -223,7 +232,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 		{ capabilityRegistry: registry },
 	)
 
-	await expect(tools.adminUserList({})).rejects.toThrow(
+	await expect(requireFn(tools, 'adminUserList')({})).rejects.toThrow(
 		'MCP user lacks required role "admin" for capability "adminUserList".',
 	)
 })
@@ -250,12 +259,12 @@ test('package workflow tools create instances from package context and honor cal
 	}
 	const workflowTools = createWorkflowTools({
 		env: workflowEnv,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://app.example.com',
 			user: { userId: 'user-1', email: 'me@example.com', displayName: 'Me' },
 			storageContext: null,
 			repoContext: null,
-		},
+		}),
 		packageContext,
 	})
 
@@ -304,7 +313,12 @@ export default async function run() {
 		{ packageContext, workflowTools: customWorkflowTools },
 	)
 	await expect(
-		executor.fns().packageWorkflowCreate({ workflowName: 'custom' }),
+		requireFn(
+			executor.fns(),
+			'packageWorkflowCreate',
+		)({
+			workflowName: 'custom',
+		}),
 	).resolves.toEqual({ ok: true, id: 'custom-workflow' })
 	expect(customWorkflowTools.create).toHaveBeenCalledWith({
 		workflowName: 'custom',
@@ -317,7 +331,10 @@ test('runModuleWithRegistry queues inline workflows.create calls without runAt o
 	const inlineCode =
 		'export default async function main() { return { ok: true } }'
 	const executor = mockExecutor(async (providers) => ({
-		result: await providers[0]!.fns.packageWorkflowCreate({ code: inlineCode }),
+		result: await requireFn(
+			providers[0]!.fns,
+			'packageWorkflowCreate',
+		)({ code: inlineCode }),
 		logs: [],
 	}))
 
@@ -379,7 +396,12 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},
-		storageContext: { sessionId: null, appId: 'app-123', storageId: null },
+		storageContext: {
+			sessionId: null,
+			appId: 'app-123',
+			packageId: null,
+			storageId: null,
+		},
 	}) as PersistedJobCallerContext
 	const userId = callerContext.user.userId
 	const jobId = '504513c3-f29e-47f0-9ea1-402569ebef54'
@@ -481,7 +503,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 
 	const kody = await buildKodyFns(env, callerContext)
 	await expect(
-		kody.jobUpdate({ id: jobId, enabled: false }),
+		requireFn(kody, 'jobUpdate')({ id: jobId, enabled: false }),
 	).resolves.toMatchObject({
 		job_id: jobId,
 		name: 'hrv-discord-reaction-poller',
@@ -492,7 +514,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	expect(jobManagerSyncPayloads).toMatchObject([{ userId }])
 	await expect(readJobRow()).resolves.toMatchObject({ enabled: 0 })
 
-	await expect(kody.jobDelete({ id: jobId })).resolves.toEqual({
+	await expect(requireFn(kody, 'jobDelete')({ id: jobId })).resolves.toEqual({
 		job_id: jobId,
 		deleted: true,
 	})
@@ -511,7 +533,11 @@ test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts the
 	)
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
 	})
 	const trackedSecretValues: Array<string> = []
 	const trackedKody = await buildKodyFns({} as Env, callerContext, {
@@ -520,7 +546,10 @@ test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts the
 		},
 	})
 	await expect(
-		trackedKody.secretSet({
+		requireFn(
+			trackedKody,
+			'secretSet',
+		)({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		}),
@@ -528,7 +557,10 @@ test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts the
 	expect(trackedSecretValues).toEqual(['fresh-access-token'])
 
 	mockExecutor(async (providers) => {
-		await providers[0]!.fns.secretSet({
+		await requireFn(
+			providers[0]!.fns,
+			'secretSet',
+		)({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		})
@@ -602,7 +634,11 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 			env,
 			createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
+				user: {
+					userId: 'user-123',
+					email: 'user@example.com',
+					displayName: 'User Example',
+				},
 			}),
 			{ packageStorageTools: { grantedPackageIds: new Set(['pkg-1']) } },
 		),
@@ -616,10 +652,15 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
 		storageContext: {
 			sessionId: null,
 			appId: 'package-123',
+			packageId: null,
 			storageId: 'package-123',
 		},
 	})
@@ -660,12 +701,14 @@ export default async function run() {
 	)
 	expect(result.result).toBe('ok')
 	const fns = executor.fns()
-	await expect(fns.packageSecretHas({ alias: 'token' })).resolves.toEqual({
+	const packageSecretHas = requireFn(fns, 'packageSecretHas')
+	const packageSecretGet = requireFn(fns, 'packageSecretGet')
+	await expect(packageSecretHas({ alias: 'token' })).resolves.toEqual({
 		has: true,
 	})
-	await expect(
-		fns.packageSecretHas({ alias: 'missing-token' }),
-	).resolves.toEqual({ has: false })
+	await expect(packageSecretHas({ alias: 'missing-token' })).resolves.toEqual({
+		has: false,
+	})
 
 	// Forged packageId args (with or without a secret-authority arg) still
 	// resolve as the run's trusted package.
@@ -679,7 +722,7 @@ export default async function run() {
 		},
 	]) {
 		resolveMountedSpy.mockClear()
-		await expect(fns.packageSecretGet(args)).resolves.toEqual({
+		await expect(packageSecretGet(args)).resolves.toEqual({
 			value: mountedRef,
 		})
 		expect(resolveMountedSpy).toHaveBeenCalledExactlyOnceWith({
@@ -763,6 +806,7 @@ test('runModuleWithRegistry keeps WorkerCode stable across params and packageCon
 					input.sourceFiles['entry.ts'] ??
 					'export default async function main() { return null }',
 			},
+			dependencies: [],
 		}),
 	)
 

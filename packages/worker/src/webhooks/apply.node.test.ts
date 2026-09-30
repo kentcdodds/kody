@@ -80,6 +80,8 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: vi.fn(),
 }))
 
+type Destination = Parameters<typeof applyWebhookUrlForUser>[0]['destination']
+
 const redirectError = 'Destination redirected. Apply does not follow redirects.'
 const hooksRegister = 'https://hooks.example/register'
 

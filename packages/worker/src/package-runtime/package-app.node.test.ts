@@ -9,6 +9,8 @@ import type * as ModuleGraph from './module-graph.ts'
 import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
 import type * as McpAuthUserContext from '#worker/mcp-auth-user-context.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
+import type * as Registry from '#mcp/capabilities/registry.ts'
+import type * as PackageInvocationsService from '#worker/package-invocations/service.ts'
 
 const packageAppSourceText = await readFile(
 	new URL('./package-app.ts', import.meta.url),
@@ -144,7 +146,7 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 	}
 	type McpNamespace = Record<
 		string,
-		Record<string, (args: unknown) => Promise<unknown>>
+		{ set_pin: (args: unknown) => Promise<unknown> }
 	>
 
 	expect(kodyProxySource).toContain(`'${secretAuthorityArgName}'`)
@@ -164,6 +166,7 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 	)
 	// Get stays open even when ownKeys is empty (Node destructure uses Get).
 	const { home: openGetHome } = withoutNames.mcp as McpNamespace
+	if (!openGetHome) throw new Error('Expected open Get for mcp.home.')
 	await expect(openGetHome.set_pin({ pin: '9' })).resolves.toEqual({ ok: true })
 
 	for (const [names, pin] of [
@@ -268,12 +271,12 @@ test('package app workflows proxy validates input and forwards to the runtime br
 
 const packageAppRuntimeMock = vi.hoisted(() => ({
 	buildKodyAppBundle: vi.fn(),
-	hydrateKodyRuntimeModules: vi.fn(
-		async ({ modules }: { modules: Record<string, string> }) => ({
-			modules,
-			dynamicDependencyPackageIds: [] as Array<string>,
-		}),
-	),
+	hydrateKodyRuntimeModules: vi.fn<
+		typeof ModuleGraph.hydrateKodyRuntimeModules
+	>(async ({ modules }) => ({
+		modules,
+		dynamicDependencyPackageIds: [],
+	})),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 	persistPublishedBundleArtifact: vi.fn(),
 	assertPublishedSourceCanRebuildWithoutInstallingDeps: vi.fn(),
@@ -281,16 +284,36 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 	packageAppRuntimeBridge: vi.fn((input: unknown) => input),
 	resolvePackageMountedSecret: vi.fn(),
 	beginRunRecord: vi.fn(),
-	finishRunRecord: vi.fn(async () => {}),
-	getCapabilityRegistryForContext: vi.fn(async () => ({
-		capabilityMap: {},
-	})),
-	createPackageRuntimeInvokeTools: vi.fn(async () => ({
-		invoke: vi.fn(async () => ({})),
-	})),
-	createPackageEventTools: vi.fn(async () => ({
-		dispatch: vi.fn(async () => ({})),
-	})),
+	finishRunRecord: vi.fn(
+		async (
+			..._args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => {},
+	),
+	getCapabilityRegistryForContext: vi.fn(
+		async (
+			..._args: Parameters<typeof Registry.getCapabilityRegistryForContext>
+		) => ({
+			capabilityMap: {},
+		}),
+	),
+	createPackageRuntimeInvokeTools: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof PackageInvocationsService.createPackageRuntimeInvokeTools
+			>
+		) => ({
+			invoke: vi.fn(async () => ({})),
+		}),
+	),
+	createPackageEventTools: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof PackageInvocationsService.createPackageEventTools
+			>
+		) => ({
+			dispatch: vi.fn(async () => ({})),
+		}),
+	),
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
@@ -310,8 +333,9 @@ vi.mock('./module-graph.ts', async () => {
 		...actual,
 		buildKodyAppBundle: (...args: Array<unknown>) =>
 			packageAppRuntimeMock.buildKodyAppBundle(...args),
-		hydrateKodyRuntimeModules: (...args: Array<unknown>) =>
-			packageAppRuntimeMock.hydrateKodyRuntimeModules(...args),
+		hydrateKodyRuntimeModules: (
+			...args: Parameters<typeof ModuleGraph.hydrateKodyRuntimeModules>
+		) => packageAppRuntimeMock.hydrateKodyRuntimeModules(...args),
 	}
 })
 
@@ -357,15 +381,22 @@ vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
 })
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.getCapabilityRegistryForContext(...args),
+	getCapabilityRegistryForContext: (
+		...args: Parameters<typeof Registry.getCapabilityRegistryForContext>
+	) => packageAppRuntimeMock.getCapabilityRegistryForContext(...args),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.createPackageRuntimeInvokeTools(...args),
-	createPackageEventTools: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.createPackageEventTools(...args),
+	createPackageRuntimeInvokeTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
+		>
+	) => packageAppRuntimeMock.createPackageRuntimeInvokeTools(...args),
+	createPackageEventTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createPackageEventTools
+		>
+	) => packageAppRuntimeMock.createPackageEventTools(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
@@ -374,8 +405,9 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 		...actual,
 		beginRunRecord: (...args: Array<unknown>) =>
 			packageAppRuntimeMock.beginRunRecord(...args),
-		finishRunRecord: (...args: Array<unknown>) =>
-			packageAppRuntimeMock.finishRunRecord(...args),
+		finishRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => packageAppRuntimeMock.finishRunRecord(...args),
 	}
 })
 
@@ -390,6 +422,8 @@ function createPackageAppTestSource() {
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
 		created_at: '2026-04-30T00:00:00.000Z',
 		updated_at: '2026-04-30T00:00:00.000Z',
 	}
@@ -594,7 +628,10 @@ test('buildPackageAppWorker claims the unique Dynamic Worker day with its surfac
 	})
 	const recordSpy = vi
 		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
-		.mockImplementation(async () => await claimGate)
+		.mockImplementation(async () => {
+			await claimGate
+			return undefined
+		})
 	const waitUntilTasks: Array<Promise<unknown>> = []
 	const { env } = createPackageAppTestEnv()
 	const failing = createPackageAppTestEnv()
@@ -964,7 +1001,9 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'pkg-a'],
 	})
-	for (const [input, resolvedPackageId] of [
+	const cases: Array<
+		[{ alias: string; packageId: string; [key: string]: string }, string]
+	> = [
 		[{ alias: 'api-token', packageId: 'pkg-a' }, 'package-1'],
 		[
 			{
@@ -974,7 +1013,8 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 			},
 			'pkg-a',
 		],
-	] as const) {
+	]
+	for (const [input, resolvedPackageId] of cases) {
 		packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
 		await expect(bridge.packageSecretGet(input)).resolves.toEqual({
 			value: ref,
@@ -1107,7 +1147,7 @@ test('buildPackageAppWorker passes packageStorage grant ids from root, static, a
 		}),
 	)
 	packageAppRuntimeMock.hydrateKodyRuntimeModules.mockImplementation(
-		async ({ modules }: { modules: Record<string, string> }) => ({
+		async ({ modules }) => ({
 			modules,
 			dynamicDependencyPackageIds: ['dynamic-dep-package'],
 		}),

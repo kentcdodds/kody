@@ -102,11 +102,11 @@ test('cold MCP session owner discovery reads persisted Agents SDK props', async 
 			displayName: 'User A',
 		},
 	})
-	const storage = {
-		async get<T>(key: string) {
+	const storage: Pick<DurableObjectStorage, 'get'> = {
+		get: (async (key: string | Array<string>) => {
 			expect(key).toBe('props')
-			return props as T
-		},
+			return props
+		}) as DurableObjectStorage['get'],
 	}
 	await expect(
 		readPersistedMcpAgentOwner({

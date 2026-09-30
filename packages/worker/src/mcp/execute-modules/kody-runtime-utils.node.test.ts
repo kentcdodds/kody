@@ -22,6 +22,8 @@ type SandboxHelpers = {
 	oauthClientCredentials: typeof oauthClientCredentials
 }
 
+type RecordedRequest = Pick<Request, 'url' | 'headers'>
+
 type ApiResponseSpec = {
 	status: number
 	body: Record<string, unknown>
@@ -76,7 +78,7 @@ function createKody(integration: TestIntegration) {
 }
 
 function createFetchInterceptor(options: {
-	fetchCalls: Array<Request>
+	fetchCalls: Array<RecordedRequest>
 	apiErrors: Array<Error>
 	apiResponses: Array<ApiResponseSpec>
 }) {
@@ -161,7 +163,7 @@ test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on 
 	]
 	for (const scenario of scenarios) {
 		const { name } = scenario.integration
-		const fetchCalls: Array<Request> = []
+		const fetchCalls: Array<RecordedRequest> = []
 		const { kody, tokenRefreshCalls } = createKody(scenario.integration)
 		{
 			using _interceptor = createFetchInterceptor({ fetchCalls, ...scenario })
@@ -238,7 +240,7 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 	await platformHelpers.createAuthenticatedFetch('github')
 	expect(platformCalls).toEqual(['integrationGet'])
 
-	const clientCredentialsCalls: Array<Request> = []
+	const clientCredentialsCalls: Array<RecordedRequest> = []
 	{
 		using _server = createMswNodeServer([
 			http.post(

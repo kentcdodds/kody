@@ -15,6 +15,7 @@ import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 import * as integrationService from '#worker/integrations/service.ts'
@@ -88,7 +89,7 @@ function savedPackage(
 	id: string,
 	kodyId: string,
 	{ userId = 'user-123', owner = 'user', sourceId = 'source-1' } = {},
-) {
+): SavedPackageRecord {
 	return {
 		id,
 		userId,
@@ -100,6 +101,7 @@ function savedPackage(
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		lockedAt: null,
 		sourceId,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
@@ -124,14 +126,14 @@ function communityFork(forkedPackageId: string, targetKodyId: string) {
 function userSecret(
 	value: string,
 	allowedHosts: Array<string>,
-	allowedPackages?: Array<string>,
-) {
+	allowedPackages: Array<string> = [],
+): secretService.ResolvedSecret {
 	return {
 		found: true,
 		value,
-		scope: 'user' as const,
+		scope: 'user',
 		allowedHosts,
-		...(allowedPackages ? { allowedPackages } : {}),
+		allowedPackages,
 	}
 }
 
@@ -523,7 +525,10 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		]),
 		encoder.encode(`\r\n--${boundary}--\r\n`),
 	)
-	const discordMultipart = (contentBoundary: string, body: Uint8Array) =>
+	const discordMultipart = (
+		contentBoundary: string,
+		body: Uint8Array<ArrayBuffer>,
+	) =>
 		new Request('https://discord.com/api/channels/1/messages', {
 			method: 'POST',
 			headers: {
@@ -571,7 +576,13 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 	resolveSpy.mockImplementation(async ({ name }) =>
 		name === 'discordBotToken'
 			? userSecret('secret-value', ['discord.com'])
-			: { found: false, value: null, scope: null, allowedHosts: [] },
+			: {
+					found: false,
+					value: null,
+					scope: null,
+					allowedHosts: [],
+					allowedPackages: [],
+				},
 	)
 	const transformedTextMultipart = await expand(
 		discordMultipart(textBoundary, textMultipartBody),
@@ -663,7 +674,13 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 		resolveSpy.mockImplementation(async ({ name }) =>
 			name in hostsByName
 				? userSecret(values[name]!, hostsByName[name]!)
-				: { found: false, value: null, scope: null, allowedHosts: [] },
+				: {
+						found: false,
+						value: null,
+						scope: null,
+						allowedHosts: [],
+						allowedPackages: [],
+					},
 		)
 	const tokenRequest = (authorization: string, init: RequestInit = {}) =>
 		new Request('https://api-m.paypal.com/v1/oauth2/token', {
@@ -701,13 +718,14 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 		'Secret "paypalClientSecret" was not found.',
 	)
 
-	for (const [blockedSecretName, hostsByName] of [
+	const blockedCases: Array<[string, Record<string, Array<string>>]> = [
 		['paypalClientId', { paypalClientId: [], paypalClientSecret: paypalHost }],
 		[
 			'paypalClientSecret',
 			{ paypalClientId: paypalHost, paypalClientSecret: [] },
 		],
-	] as const) {
+	]
+	for (const [blockedSecretName, hostsByName] of blockedCases) {
 		mockPaypalSecrets(hostsByName)
 		const approvals = await readHostApprovals(expand(tokenRequest(placeholder)))
 		expect(approvals?.entries[0]).toMatchObject({

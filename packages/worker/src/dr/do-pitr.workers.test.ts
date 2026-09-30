@@ -2,6 +2,8 @@ import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { type DurableObjectPitrRpc, pitrUnavailableCode } from './do-pitr.ts'
+import { type RunLog } from '#worker/run-records/run-log-do.ts'
+import { type StorageRunner } from '#worker/storage-runner.ts'
 import {
 	mailboxDurableObjectName,
 	runLogDurableObjectName,
@@ -20,12 +22,17 @@ async function expectPitrUnavailable(object: DurableObjectPitrRpc) {
 
 test('all user-scoped Durable Objects expose PITR RPCs and degrade clearly in local Workers', async () => {
 	const userId = `pitr-${crypto.randomUUID()}`
+	const runLogNamespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	const storageRunnerNamespace =
+		env.STORAGE_RUNNER as DurableObjectNamespace<StorageRunner>
 	await runInDurableObject(
 		env.MAILBOX.get(env.MAILBOX.idFromName(mailboxDurableObjectName(userId))),
 		expectPitrUnavailable,
 	)
 	await runInDurableObject(
-		env.RUN_LOG.get(env.RUN_LOG.idFromName(runLogDurableObjectName(userId))),
+		runLogNamespace.get(
+			runLogNamespace.idFromName(runLogDurableObjectName(userId)),
+		),
 		expectPitrUnavailable,
 	)
 	await runInDurableObject(
@@ -35,8 +42,8 @@ test('all user-scoped Durable Objects expose PITR RPCs and degrade clearly in lo
 		expectPitrUnavailable,
 	)
 	await runInDurableObject(
-		env.STORAGE_RUNNER.get(
-			env.STORAGE_RUNNER.idFromName(
+		storageRunnerNamespace.get(
+			storageRunnerNamespace.idFromName(
 				storageRunnerDurableObjectName(userId, 'package:pitr-test'),
 			),
 		),

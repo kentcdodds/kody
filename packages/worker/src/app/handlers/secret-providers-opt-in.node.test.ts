@@ -7,7 +7,9 @@ import { createSecretProvidersOptInHandler } from './secret-providers-opt-in.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
-	setFeatureFlagUserOverride: vi.fn(async () => undefined),
+	setFeatureFlagUserOverride: vi.fn<
+		typeof FeatureFlagService.setFeatureFlagUserOverride
+	>(async () => undefined),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({

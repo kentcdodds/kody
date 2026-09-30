@@ -59,7 +59,7 @@ test('community report POST enforces auth, validation, and error mapping', async
 		url: new URL('https://example.com/community/listing-1/report.json'),
 	} as never)
 	expect(invalidReason.status).toBe(400)
-	expect((await invalidReason.json()).ok).toBe(false)
+	expect(((await invalidReason.json()) as { ok: boolean }).ok).toBe(false)
 	expect(mockModule.reportCommunityListing).not.toHaveBeenCalled()
 
 	mockModule.reportCommunityListing.mockResolvedValue({ id: 'report-1' })

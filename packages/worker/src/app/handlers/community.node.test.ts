@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createCommunityApiHandler } from './community.tsx'
+import { type CommunityIndexLoaderData } from '#universal/loader-data.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -98,7 +99,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		params: {},
 		url: new URL('https://example.com/community.json'),
 	} as never)
-	const listBody = await listResponse.json()
+	const listBody = (await listResponse.json()) as CommunityIndexLoaderData
 
 	expect(listBody.ok).toBe(true)
 	expect(listBody.listings).toHaveLength(1)
@@ -119,7 +120,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		params: {},
 		url: new URL('https://example.com/community.json?q=github'),
 	} as never)
-	const searchBody = await searchResponse.json()
+	const searchBody = (await searchResponse.json()) as CommunityIndexLoaderData
 
 	expect(searchBody.ok).toBe(true)
 	expect(searchBody.query).toBe('github')
@@ -136,7 +137,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		params: {},
 		url: new URL('https://example.com/community.json?sort=newest'),
 	} as never)
-	const newestBody = await newestResponse.json()
+	const newestBody = (await newestResponse.json()) as CommunityIndexLoaderData
 	expect(newestBody.sort).toBe('newest')
 	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledWith({
 		env,

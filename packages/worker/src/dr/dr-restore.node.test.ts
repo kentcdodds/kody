@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
+	backupStagingSchemaVersion,
 	stagingArtifactsIndexKey,
 	stagingR2IndexKey,
 	stagingStorageDumpKey,
@@ -102,7 +103,7 @@ function createSealedS3(input: {
 		__testOnlySealedObjectKey(day, stagingKey)
 	const seed: Record<string, string | Uint8Array> = {
 		[sealed(stagingStorageIndexKey(day))]: JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: backupStagingSchemaVersion,
 			day,
 			entries: input.storage ?? [],
 		} satisfies StorageIndex),
@@ -116,7 +117,7 @@ function createSealedS3(input: {
 	}
 	if (input.artifacts) {
 		seed[sealed(stagingArtifactsIndexKey(day))] = JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: backupStagingSchemaVersion,
 			day,
 			entries: input.artifacts,
 		} satisfies ArtifactsIndex)

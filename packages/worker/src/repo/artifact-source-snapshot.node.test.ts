@@ -24,7 +24,7 @@ const baseEnv = {
 	CLOUDFLARE_ACCOUNT_ID: 'acct',
 	CLOUDFLARE_API_TOKEN: 'token',
 	ARTIFACTS_NAMESPACE: 'default',
-} as Env
+} as unknown as Env
 
 test('reads return null and make no request unless the API opts in', async () => {
 	mocks.rawRequest.mockReset()

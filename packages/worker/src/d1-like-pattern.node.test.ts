@@ -5,6 +5,8 @@ import {
 	escapeLikePattern,
 } from './d1-like-pattern.ts'
 
+type WellFormedString = string & { isWellFormed(): boolean }
+
 const byteLength = (value: string) => new TextEncoder().encode(value).length
 
 test('short queries are escaped and wrapped in wildcards', () => {
@@ -30,7 +32,7 @@ test('long queries are trimmed to fit the D1 pattern limit', () => {
 	// lands inside the surrogate pair and must drop the whole code point.
 	const surrogateEdge = d1ContainsLikePattern(`${'a'.repeat(45)}🙂🙂`)
 	expect(surrogateEdge).toBe(`%${'a'.repeat(45)}%`)
-	expect(surrogateEdge.isWellFormed()).toBe(true)
+	expect((surrogateEdge as WellFormedString).isWellFormed()).toBe(true)
 })
 
 test('trimming never leaves a dangling escape before the closing wildcard', () => {

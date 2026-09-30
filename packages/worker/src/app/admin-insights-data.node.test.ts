@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
+import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
 import { type AdminInsightsLaunchSignals } from '#universal/loader-data.ts'
 import {
 	platformPublicOpenedAt,
@@ -10,6 +11,7 @@ import {
 	adminInsightsRunLogSnapshotKvKey,
 	type AggregatedRunLogInsights,
 } from '#worker/admin/insights-runlog-snapshot.ts'
+import type * as fleetPackageErrorRate from '#worker/usage/fleet-package-error-rate.ts'
 import {
 	buildAuthDays,
 	buildEmailDays,
@@ -48,7 +50,9 @@ const fleetUsageMocks = vi.hoisted(() => ({
 			riskConsumers: [],
 		},
 	})),
-	loadFleetPackageErrorRateSnapshot: vi.fn(async () => null),
+	loadFleetPackageErrorRateSnapshot: vi.fn<
+		typeof fleetPackageErrorRate.loadFleetPackageErrorRateSnapshot
+	>(async () => null),
 }))
 
 vi.mock('#worker/admin/launch-signals.ts', () => ({
@@ -461,6 +465,10 @@ function createInsightsTestDb() {
 	return db
 }
 
+function createPartialEnv(bindings: { [Key in keyof Env]?: unknown }) {
+	return bindings as Env
+}
+
 function loadLocalInsights(env: Partial<Env> = {}) {
 	const db = createInsightsTestDb()
 	return {
@@ -674,7 +682,7 @@ test('admin insights surfaces the fleet package error-rate snapshot', async () =
 		combined: { events, errors, rate: errors / events },
 		by_metric: [],
 	})
-	const concentration = {
+	const concentration: FleetPackageErrorRateConcentration = {
 		kind: 'one_account',
 		recent_errors: 90,
 		owner_count: 1,
@@ -742,7 +750,7 @@ test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async (
 	consoleWarn.mockImplementation(() => {})
 	const db = createInsightsTestDb()
 	const data = await loadAdminInsightsData(
-		{ APP_DB: db, AUDIT_DB: db } as Env,
+		createPartialEnv({ APP_DB: db, AUDIT_DB: db }),
 		now,
 	)
 
@@ -770,13 +778,13 @@ test('admin insights reads email reporting from Analytics Engine and degrades wh
 			],
 		}),
 	)
-	const env = {
+	const env = createPartialEnv({
 		APP_DB: createInsightsTestDb(),
 		EMAIL_EVENTS: {} as AnalyticsEngineDataset,
 		CLOUDFLARE_ACCOUNT_ID: 'account-1',
 		CLOUDFLARE_API_TOKEN: 'token-1',
 		SENTRY_ENVIRONMENT: 'preview',
-	} as Env
+	})
 	env.AUDIT_DB = env.APP_DB
 
 	const data = await loadAdminInsightsData(env, now)

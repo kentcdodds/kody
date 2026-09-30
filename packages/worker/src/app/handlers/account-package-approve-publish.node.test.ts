@@ -1,11 +1,14 @@
 import { expect, test, vi } from 'vitest'
+import type * as ssrRender from '#app/ssr-render.tsx'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	loadAccountPackageApprovePublishData: vi.fn(),
 	loadPackagePage: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
-	renderAppPage: vi.fn(async () => new Response('ok')),
+	renderAppPage: vi.fn<typeof ssrRender.renderAppPage>(
+		async () => new Response('ok'),
+	),
 	requireAuthenticatedPageUser: vi.fn(),
 }))
 
@@ -26,7 +29,8 @@ vi.mock('#app/page-auth.ts', () => ({
 		mockModule.requireAuthenticatedPageUser(...args),
 }))
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: (...args: Array<unknown>) => mockModule.renderAppPage(...args),
+	renderAppPage: (...args: Parameters<typeof ssrRender.renderAppPage>) =>
+		mockModule.renderAppPage(...args),
 }))
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>

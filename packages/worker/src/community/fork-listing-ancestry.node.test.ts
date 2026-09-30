@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest'
+import type * as artifactsModule from '#worker/repo/artifacts.ts'
 import { listingPinIsAncestorOfForkTip } from './fork-listing-ancestry.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -7,7 +8,9 @@ const mocks = vi.hoisted(() => ({
 	init: vi.fn(),
 	log: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
-	isLoopbackArtifactsRemote: vi.fn(() => false),
+	isLoopbackArtifactsRemote: vi.fn<
+		typeof artifactsModule.isLoopbackArtifactsRemote
+	>(() => false),
 }))
 
 vi.mock('isomorphic-git', () => ({
@@ -26,8 +29,9 @@ vi.mock('isomorphic-git/http/web', () => ({
 vi.mock('#worker/repo/artifacts.ts', () => ({
 	buildArtifactsGitAuth: () => ({ username: 'x', password: 'token' }),
 	buildAuthenticatedArtifactsRemote: ({ remote }: { remote: string }) => remote,
-	isLoopbackArtifactsRemote: (...args: Array<unknown>) =>
-		mocks.isLoopbackArtifactsRemote(...args),
+	isLoopbackArtifactsRemote: (
+		...args: Parameters<typeof artifactsModule.isLoopbackArtifactsRemote>
+	) => mocks.isLoopbackArtifactsRemote(...args),
 	resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 		mocks.resolveExistingArtifactSourceRepo(...args),
 }))

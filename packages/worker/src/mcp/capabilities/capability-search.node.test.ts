@@ -168,7 +168,7 @@ test('offline capability search ranks lexical matches and returns structured det
 	const env = {
 		SENTRY_ENVIRONMENT: 'test',
 		AI: {} as Ai,
-	} as Env
+	} as unknown as Env
 
 	const oauthGuide = await searchCapabilities({
 		env,

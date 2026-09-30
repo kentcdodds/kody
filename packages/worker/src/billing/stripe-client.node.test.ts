@@ -807,7 +807,9 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 	// throwing or issuing a note above the cap; the caller decides what a
 	// missing refund means.
 	{
-		using fetchMock = stubFetch(vi.fn(async () => previewTotalling(1705)))
+		using fetchMock = stubFetch(
+			vi.fn<typeof fetch>(async () => previewTotalling(1705)),
+		)
 		await expect(
 			refund([{ invoiceLineItemId: 'il_pro', amount: 2610 }], 1700),
 		).resolves.toEqual({ outcome: 'unfittable', lastPreviewMinor: 1705 })
