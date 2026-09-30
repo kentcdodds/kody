@@ -303,3 +303,8 @@ runtime path if this budget is raised again.
   reviewed ceiling 3_903_500; platform local dry-run 5_229_587 against the
   previous 5_228_000 budget, reviewed ceiling 5_230_500. Signup grant helpers
   live in `signup-welcome-credits.ts` so they stay off the debit graph.
+- Package-owned webhook HMAC (#2724): endpoint `hmac_secret_encrypted` mint /
+  resolve helpers on the webhooks MCP graph runtime already evaluates: local /
+  CI dry-run runtime 3_905_392 against the previous 3_903_500 budget, reviewed
+  ceiling 3_905_500; platform local dry-run 5_232_529 against the previous
+  5_230_500 budget, reviewed ceiling 5_233_000.
