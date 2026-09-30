@@ -1399,13 +1399,16 @@ on write unless a migration backfills existing rows.
   [Run records](./run-records.md)); the current D1 schema has no
   `package_invocations` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
-  `0057-webhook-url-secret-encrypted.sql`) stores per-user minted URL state for
+  `0057-webhook-url-secret-encrypted.sql`,
+  `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for
   `package.json#kody.webhooks`, keyed by `(user_id, package_id, webhook_name)`.
   URL secrets are SHA-256 hashed for ingress and AES-GCM encrypted
-  (`url_secret_encrypted`) for server-side apply. MCP capabilities never return
-  the plaintext URL. Verification secrets stay in the secrets primitive
-  (`secretName` at delivery time). Delivery history is recorded as `webhook`
-  surface run records (see [Run records](./run-records.md) and
+  (`url_secret_encrypted`) for server-side apply. Package-owned HMAC signing
+  material lives on the same row (`hmac_secret_encrypted`) when verification
+  omits `secretName`; provider-issued secrets still use the secrets primitive
+  via optional `verification.secretName`. MCP capabilities never return the
+  plaintext URL or HMAC. Delivery history is recorded as `webhook` surface run
+  records (see [Run records](./run-records.md) and
   [Inbound webhooks](./webhooks.md)), not as D1 rows.
 - `system_email_daily_counters` (`0001-squashed-init.sql`) stores fixed
   per-local daily receive counters for operator-owned system inboxes. These

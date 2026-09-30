@@ -64,7 +64,10 @@ node tools/control-kody.ts request GET /account/webhooks.json
   `type: "http"` from interactive MCP as that user, then open the returned
   `approval_url`.
 - Every intent writes an `account` audit event (`webhook_url_reveal`, …).
-- Generic `http` apply destination Allow covers injecting `{{webhookSecret}}`
-  (HMAC from `verification.secretName`) into that destination. A second
-  secret→host Allow for the apply host is not required for the signing secret.
-  Destination Bearer `secretName` still needs host Allow.
+- HMAC for GitHub-style hooks is **package-owned** on the webhook URL record
+  (`hmac_secret_encrypted`), minted when verification omits `secretName`. It is
+  not listed in account secrets and never needs a secret→host Allow.
+  `{{webhookSecret}}` apply injects that material (or migrates a legacy
+  `verification.secretName` onto the endpoint once). Destination Bearer
+  `secretName` still needs host Allow. Provider-issued secrets (Sentry, …) still
+  use `verification.secretName` in the secret store.

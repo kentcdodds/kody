@@ -1273,7 +1273,7 @@ export type AccountConnectedAgentsLoaderData = {
 type PackageWebhookVerification = {
 	type: 'hmac-sha256' | 'hmac-sha1'
 	header: string
-	secretName: string
+	secretName?: string
 	encoding: 'hex' | 'base64'
 	prefix?: string
 	signedPayload?: 'body' | 'timestamp.body'

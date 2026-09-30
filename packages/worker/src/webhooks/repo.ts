@@ -11,6 +11,7 @@ type WebhookEndpointRow = {
 	webhook_name: string
 	url_secret_hash: string
 	url_secret_encrypted?: string | null
+	hmac_secret_encrypted?: string | null
 	previous_url_secret_hash?: string | null
 	previous_url_secret_expires_at?: string | null
 	enabled: number
@@ -26,6 +27,7 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		webhookName: row.webhook_name,
 		urlSecretHash: row.url_secret_hash,
 		urlSecretEncrypted: row.url_secret_encrypted ?? null,
+		hmacSecretEncrypted: row.hmac_secret_encrypted ?? null,
 		previousUrlSecretHash: row.previous_url_secret_hash ?? null,
 		previousUrlSecretExpiresAt: row.previous_url_secret_expires_at ?? null,
 		enabled: row.enabled === 1,
@@ -44,6 +46,10 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
  *
  * On update, the outgoing hash becomes the previous secret for the rotate
  * overlap window (`previousExpiresAt`, default 24h from `now`).
+ *
+ * `hmacSecretEncrypted`: when provided, written on insert and update. When
+ * omitted on update, any existing package-owned HMAC is preserved across URL
+ * rotate (HMAC is independent of the path secret).
  */
 export async function upsertWebhookEndpointSecret(input: {
 	db: D1Database
@@ -53,6 +59,7 @@ export async function upsertWebhookEndpointSecret(input: {
 	webhookName: string
 	urlSecretHash: string
 	urlSecretEncrypted: string
+	hmacSecretEncrypted?: string | null
 	enabled?: boolean
 	updateEnabledOnConflict?: boolean
 	now?: string
@@ -72,47 +79,95 @@ export async function upsertWebhookEndpointSecret(input: {
 		}
 		const previousExpiresAt =
 			input.previousExpiresAt ?? webhookUrlRotationGraceExpiresAt(now)
+		const writeHmac = input.hmacSecretEncrypted !== undefined
+		const hmacValue = input.hmacSecretEncrypted ?? null
 		const result = input.updateEnabledOnConflict
-			? await input.db
-					.prepare(
-						`UPDATE webhook_endpoints
-						SET previous_url_secret_hash = url_secret_hash,
-							previous_url_secret_expires_at = ?,
-							url_secret_hash = ?,
-							url_secret_encrypted = ?,
-							rotated_at = ?,
-							enabled = ?
-						WHERE user_id = ? AND id = ?`,
-					)
-					.bind(
-						previousExpiresAt,
-						input.urlSecretHash,
-						input.urlSecretEncrypted,
-						now,
-						enabled,
-						input.userId,
-						existing.id,
-					)
-					.run()
-			: await input.db
-					.prepare(
-						`UPDATE webhook_endpoints
-						SET previous_url_secret_hash = url_secret_hash,
-							previous_url_secret_expires_at = ?,
-							url_secret_hash = ?,
-							url_secret_encrypted = ?,
-							rotated_at = ?
-						WHERE user_id = ? AND id = ?`,
-					)
-					.bind(
-						previousExpiresAt,
-						input.urlSecretHash,
-						input.urlSecretEncrypted,
-						now,
-						input.userId,
-						existing.id,
-					)
-					.run()
+			? writeHmac
+				? await input.db
+						.prepare(
+							`UPDATE webhook_endpoints
+							SET previous_url_secret_hash = url_secret_hash,
+								previous_url_secret_expires_at = ?,
+								url_secret_hash = ?,
+								url_secret_encrypted = ?,
+								hmac_secret_encrypted = ?,
+								rotated_at = ?,
+								enabled = ?
+							WHERE user_id = ? AND id = ?`,
+						)
+						.bind(
+							previousExpiresAt,
+							input.urlSecretHash,
+							input.urlSecretEncrypted,
+							hmacValue,
+							now,
+							enabled,
+							input.userId,
+							existing.id,
+						)
+						.run()
+				: await input.db
+						.prepare(
+							`UPDATE webhook_endpoints
+							SET previous_url_secret_hash = url_secret_hash,
+								previous_url_secret_expires_at = ?,
+								url_secret_hash = ?,
+								url_secret_encrypted = ?,
+								rotated_at = ?,
+								enabled = ?
+							WHERE user_id = ? AND id = ?`,
+						)
+						.bind(
+							previousExpiresAt,
+							input.urlSecretHash,
+							input.urlSecretEncrypted,
+							now,
+							enabled,
+							input.userId,
+							existing.id,
+						)
+						.run()
+			: writeHmac
+				? await input.db
+						.prepare(
+							`UPDATE webhook_endpoints
+							SET previous_url_secret_hash = url_secret_hash,
+								previous_url_secret_expires_at = ?,
+								url_secret_hash = ?,
+								url_secret_encrypted = ?,
+								hmac_secret_encrypted = ?,
+								rotated_at = ?
+							WHERE user_id = ? AND id = ?`,
+						)
+						.bind(
+							previousExpiresAt,
+							input.urlSecretHash,
+							input.urlSecretEncrypted,
+							hmacValue,
+							now,
+							input.userId,
+							existing.id,
+						)
+						.run()
+				: await input.db
+						.prepare(
+							`UPDATE webhook_endpoints
+							SET previous_url_secret_hash = url_secret_hash,
+								previous_url_secret_expires_at = ?,
+								url_secret_hash = ?,
+								url_secret_encrypted = ?,
+								rotated_at = ?
+							WHERE user_id = ? AND id = ?`,
+						)
+						.bind(
+							previousExpiresAt,
+							input.urlSecretHash,
+							input.urlSecretEncrypted,
+							now,
+							input.userId,
+							existing.id,
+						)
+						.run()
 		if ((result.meta.changes ?? 0) === 0) {
 			throw new Error('Unable to upsert webhook endpoint.')
 		}
@@ -121,8 +176,8 @@ export async function upsertWebhookEndpointSecret(input: {
 			.prepare(
 				`INSERT INTO webhook_endpoints (
 					id, user_id, package_id, webhook_name, url_secret_hash,
-					url_secret_encrypted, enabled, created_at, rotated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					url_secret_encrypted, hmac_secret_encrypted, enabled, created_at, rotated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				input.id,
@@ -131,6 +186,7 @@ export async function upsertWebhookEndpointSecret(input: {
 				input.webhookName,
 				input.urlSecretHash,
 				input.urlSecretEncrypted,
+				input.hmacSecretEncrypted ?? null,
 				enabled,
 				now,
 				now,
@@ -147,6 +203,29 @@ export async function upsertWebhookEndpointSecret(input: {
 		throw new Error('Unable to upsert webhook endpoint.')
 	}
 	return record
+}
+
+/** Persist package-owned HMAC without rotating the URL secret. */
+export async function setWebhookEndpointHmacSecret(input: {
+	db: D1Database
+	userId: string
+	endpointId: string
+	hmacSecretEncrypted: string
+}): Promise<WebhookEndpointRecord | null> {
+	const result = await input.db
+		.prepare(
+			`UPDATE webhook_endpoints
+			SET hmac_secret_encrypted = ?
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(input.hmacSecretEncrypted, input.userId, input.endpointId)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getWebhookEndpointByIdForUser({
+		db: input.db,
+		userId: input.userId,
+		endpointId: input.endpointId,
+	})
 }
 
 export async function listWebhookEndpointsForUser(input: {

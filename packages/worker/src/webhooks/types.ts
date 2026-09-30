@@ -22,7 +22,11 @@ export type WebhookTimestampFormat =
 export type WebhookVerificationConfig = {
 	type: WebhookHmacAlgorithm
 	header: string
-	secretName: string
+	/**
+	 * Optional legacy / provider-issued secret-store name. Omit for
+	 * package-owned HMAC minted onto the webhook endpoint record.
+	 */
+	secretName?: string
 	encoding: WebhookSignatureEncoding
 	prefix?: string
 	signedPayload?: WebhookSignedPayload
@@ -45,6 +49,8 @@ export type WebhookEndpointRecord = {
 	webhookName: string
 	urlSecretHash: string
 	urlSecretEncrypted: string | null
+	/** Package-owned HMAC signing material (not listed in user secrets). */
+	hmacSecretEncrypted: string | null
 	previousUrlSecretHash: string | null
 	previousUrlSecretExpiresAt: string | null
 	enabled: boolean

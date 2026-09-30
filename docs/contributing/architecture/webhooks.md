@@ -21,12 +21,13 @@ Packages declare webhooks as an array under `kody.webhooks`. Each entry has a
 slug `name`, an `export` that must exist in `package.json#exports` (one name ↔
 one export; no `*`), optional `responseMode` (`ack` default / `sync`), optional
 `inputMode` (`request` default / `params`), optional `rateLimitPerMinute`
-(default 60, max 600), optional HMAC `verification` that references a
-secret-store name (`secretName`) — never an inline secret — optional `challenge`
-for platform-handled ownership quizzes on the same minted URL, and optional
-`replay` for timestamp windows and delivery-id dedupe. Parsing and export
-existence checks live in `parseAuthoredPackageJson` / `listPackageWebhooks`
-(`packages/worker/src/package-registry/`).
+(default 60, max 600), optional HMAC `verification` (algorithm / header /
+encoding; optional `secretName` only for provider-issued secrets in the secret
+store — omit `secretName` for package-owned HMAC minted onto the webhook URL
+record), optional `challenge` for platform-handled ownership quizzes on the same
+minted URL, and optional `replay` for timestamp windows and delivery-id dedupe.
+Parsing and export existence checks live in `parseAuthoredPackageJson` /
+`listPackageWebhooks` (`packages/worker/src/package-registry/`).
 
 `challenge` is answered entirely by the ingress worker
 (`packages/worker/src/webhooks/challenge.ts`). Supported types:
@@ -111,13 +112,15 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    delivery row. Non-matching POSTs continue. GET without a matching challenge
    declaration → **405**.
 7. Payload cap 1 MB → **413**. When verification is declared, resolve
-   `secretName` from the owner's secret store (user/package scope via package
-   storage context). Missing secret or HMAC mismatch → **401**, with a clear
-   delivery-log error for missing secrets. When `replay.timestampHeader` is
-   declared, a missing, unparseable, or stale timestamp is rejected with the
-   same generic **401** before dispatch (and before any run record that implies
-   acceptance). When `replay.deliveryIdHeader` is declared, a missing id is
-   rejected the same way; present ids become the invocation idempotency key.
+   package-owned HMAC from `webhook_endpoints.hmac_secret_encrypted`, or fall
+   back to legacy `verification.secretName` in the secret store (user/package
+   scope via package storage context). Missing secret or HMAC mismatch →
+   **401**, with a clear delivery-log error for missing secrets. When
+   `replay.timestampHeader` is declared, a missing, unparseable, or stale
+   timestamp is rejected with the same generic **401** before dispatch (and
+   before any run record that implies acceptance). When
+   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
+   present ids become the invocation idempotency key.
 8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
 9. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
@@ -210,24 +213,28 @@ binding, or apply result may return the credential URL.
 
 Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
 `packages/worker/migrations/0001-squashed-init.sql`, with `url_secret_encrypted`
-added in `0057-webhook-url-secret-encrypted.sql` and rotate-overlap columns in
-`0062-webhook-url-rotation-grace.sql`. Rotate copies the outgoing hash to
+added in `0057-webhook-url-secret-encrypted.sql`, rotate-overlap columns in
+`0062-webhook-url-rotation-grace.sql`, and package-owned `hmac_secret_encrypted`
+in `0072-webhook-hmac-secret-encrypted.sql`. Rotate copies the outgoing hash to
 `previous_url_secret_hash` with `previous_url_secret_expires_at` 24 hours out.
 The previous ciphertext is not stored: reveal and apply always rebuild the
-current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
-(`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
-and registers the URL through an outbound HTTPS request (`type: "http"` with
-server-side `{{webhookUrl}}` substitution, and optional `{{webhookSecret}}` from
-the webhook's `verification.secretName`). HMAC injection does not require a
-separate secret→host Allow for the destination host after destination approval
-(unlike destination Bearer `secretName`). Apply is interactive-only and reuses
-the account owner approval flow (same family as `/connect/secrets` host
-approval, secret package grants, and locked-package publish approval): deny with
-`approval_url` to `/connect/webhook-apply`, owner Allow writes a durable
-destination fingerprint grant, then retry. Silent model-chosen apply is
-rejected. GitHub repository hooks use the same `http` path against
-`https://api.github.com/repos/{owner}/{repo}/hooks` with `{{webhookSecret}}` in
-`config.secret` when HMAC is declared. The credential and signing secret are
-injected server-side and never returned to the model. Delivery history is in the
-per-user `RunLog` Durable Object (`webhook` surface), not in D1. See
-[Data storage](./data-storage.md) and [Run records](./run-records.md).
+current URL. Package-owned HMAC is preserved across URL rotate (independent of
+the path secret). `webhookUrlMint` / `webhookUrlRotate` return an opaque
+`handle` (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle
+inside Kody and registers the URL through an outbound HTTPS request
+(`type: "http"` with server-side `{{webhookUrl}}` substitution, and optional
+`{{webhookSecret}}` from package-owned HMAC on the endpoint — or a one-time
+migrate from legacy `verification.secretName`). HMAC injection is not a
+user-secrets host Allow (unlike destination Bearer `secretName`). Apply is
+interactive-only and reuses the account owner approval flow (same family as
+`/connect/secrets` host approval, secret package grants, and locked-package
+publish approval): deny with `approval_url` to `/connect/webhook-apply`, owner
+Allow writes a durable destination fingerprint grant, then retry. Silent
+model-chosen apply is rejected. GitHub repository hooks use the same `http` path
+against `https://api.github.com/repos/{owner}/{repo}/hooks` with
+`{{webhookSecret}}` in `config.secret` when HMAC is declared (prefer omitting
+`verification.secretName` so mint stores package-owned HMAC). The credential and
+signing secret are injected server-side and never returned to the model.
+Delivery history is in the per-user `RunLog` Durable Object (`webhook` surface),
+not in D1. See [Data storage](./data-storage.md) and
+[Run records](./run-records.md).

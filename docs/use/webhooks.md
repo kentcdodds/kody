@@ -62,10 +62,11 @@ Rules:
   `params` (see [Trusted clients](#trusted-clients)).
 - `rateLimitPerMinute` is optional. Default **60**. Maximum **600** (gateway
   fan-in). A leaked URL is still bounded; there is no unlimited setting.
-- `verification.secretName` references a **named secret in your secret store** —
-  never an inline secret value. The platform resolves it at delivery time; if
-  the secret is missing, the delivery is rejected and logged. First-party
-  trusted clients omit `verification` and rely on the URL secret.
+- `verification.secretName` is **optional**. Omit it for GitHub-style hooks
+  where Kody mints package-owned HMAC onto the webhook URL record at
+  `webhookUrlMint` (not listed in account secrets, no host Allow). Set it only
+  for **provider-issued** signing secrets that must live in the secret store
+  (for example Sentry). Never put an inline secret value in the manifest.
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
@@ -85,8 +86,11 @@ Declaring a webhook does **not** open ingress by itself.
 Use the MCP `webhooks` domain:
 
 1. Save/publish the package with `kody.webhooks`.
-2. Store the HMAC secret with `secretSet` under the name used in
-   `verification.secretName` (for example `sentryWebhookSecret`).
+2. For provider-issued HMAC only, store that secret with `secretSet` under
+   `verification.secretName` (for example `sentryWebhookSecret`). GitHub-style
+   hooks that use `{{webhookSecret}}` on apply should **omit**
+   `verification.secretName` — Kody mints package-owned signing material when
+   you mint the URL.
 3. Call `webhookUrlMint` with the scoped package name (or `package_id` when the
    name is not known) and `webhookName`.
 4. Call `webhookUrlApply` with the returned `handle` and a `type: "http"`
@@ -154,18 +158,16 @@ outbound request runs.
 Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
 `{{webhookUrl}}` (and optional `{{webhookSecret}}`) into `url`, header values,
 and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
-required. `{{webhookSecret}}` injects the **resolved value** of the package
-webhook's declared `verification.secretName` (the HMAC key material, not the
-secret name string). After the owner Approves the apply destination, that HMAC
-injection does **not** require a second secret→host Allow for the destination
-host — signing secrets are registration config for the approved request, not
-outbound auth toward that host (same as inbound delivery verification, which
-also resolves without a host gate). Destination `secretName` / `integration`
-Bearer auth still requires host approval / integration allowlists. Destination
-URLs must be `https://`. Redirects are not followed. Auth is optional via
-`secretName` or `integration` (Bearer), or a caller-supplied `Authorization`
-header — not both. Destination `secretName` / `integration` authorize the
-outbound request; they are not the webhook HMAC signing secret.
+required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
+stored on the minted webhook URL record (not a user secrets-list entry, and not
+host-gated). When a legacy package still declares `verification.secretName`, the
+first successful `{{webhookSecret}}` apply copies that value onto the endpoint
+so the secrets-list entry can be deleted afterward. Destination `secretName` /
+`integration` Bearer auth still requires host approval / integration allowlists.
+Destination URLs must be `https://`. Redirects are not followed. Auth is
+optional via `secretName` or `integration` (Bearer), or a caller-supplied
+`Authorization` header — not both. Destination `secretName` / `integration`
+authorize the outbound request; they are not the webhook HMAC signing secret.
 
 That path is **interactive MCP only** and reuses the same **account owner
 approval flow** as secret host approval (`/connect/secrets`), secret package
@@ -197,9 +199,9 @@ GitHub repository hooks use the same `http` path against the Hooks API
 (`POST https://api.github.com/repos/{owner}/{repo}/hooks`). Put `{{webhookUrl}}`
 in `config.url`, include `User-Agent: kody` (GitHub requires a User-Agent), send
 the GitHub Accept / API-Version headers, and authorize with
-`integration: 'github'` (or a host-approved token via `secretName`). When the
-package webhook declares HMAC `verification.secretName`, put `{{webhookSecret}}`
-in `config.secret` so GitHub signs deliveries:
+`integration: 'github'` (or a host-approved token via `secretName`). Declare
+HMAC `verification` **without** `secretName` so mint stores package-owned
+signing material, and put `{{webhookSecret}}` in `config.secret`:
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -230,14 +232,14 @@ await kody.webhooks.webhookUrlApply({
 })
 ```
 
-`{{webhookSecret}}` injects the **resolved HMAC secret value** from the named
-secret in `verification.secretName` (not the name string itself). If the
-placeholder is present but that declaration is missing, or the secret is
-missing, apply fails with a clear error. Destination approval already authorizes
-injecting the HMAC value into that exact request — there is no second
-secret→host Allow for the apply destination (for example
-`prDeskGithubWebhookSecret` → `api.github.com`). Omit `{{webhookSecret}}` when
-the webhook has no HMAC verification.
+`{{webhookSecret}}` injects package-owned HMAC from the webhook URL record (or
+migrates a legacy `verification.secretName` value onto that record on first
+apply). If the placeholder is present but verification is undeclared, or neither
+package-owned HMAC nor a resolvable legacy secret exists, apply fails with a
+clear error. Omit `{{webhookSecret}}` when the webhook has no HMAC verification.
+Packages that still declare `verification.secretName` for GitHub-style hooks can
+delete that secrets-list entry after one successful apply (or after reminting
+without `secretName`).
 
 Prefer `http` for Workers and any provider API that accepts a callback URL
 field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,
@@ -394,11 +396,13 @@ export async function handleSentryWebhook(input) {
 
 ### GitHub
 
+Omit `secretName` so `webhookUrlMint` stores package-owned HMAC on the URL
+record (not in account secrets). Use `{{webhookSecret}}` on apply:
+
 ```json
 {
 	"type": "hmac-sha256",
 	"header": "x-hub-signature-256",
-	"secretName": "githubWebhookSecret",
 	"encoding": "hex",
 	"prefix": "sha256="
 }
@@ -414,7 +418,6 @@ replayed `X-GitHub-Delivery` is acknowledged without running the export again:
 	"verification": {
 		"type": "hmac-sha256",
 		"header": "x-hub-signature-256",
-		"secretName": "githubWebhookSecret",
 		"encoding": "hex",
 		"prefix": "sha256="
 	},

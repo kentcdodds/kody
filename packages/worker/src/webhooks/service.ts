@@ -40,6 +40,10 @@ import {
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
 import {
+	mintPackageOwnedWebhookHmacCiphertext,
+	shouldMintPackageOwnedWebhookHmac,
+} from './signing-secret.ts'
+import {
 	isWebhookPreviousUrlLive,
 	webhookIdempotencyKeyHeader,
 	webhookMaxPayloadBytes,
@@ -286,7 +290,7 @@ export async function mintWebhookUrlForUser(input: {
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
-	await loadDeclaredWebhook({
+	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl,
 		userId: input.userId,
@@ -303,6 +307,9 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 	let endpointId = existing?.id ?? crypto.randomUUID()
+	const mintPackageHmac =
+		shouldMintPackageOwnedWebhookHmac(declared.verification) &&
+		!existing?.hmacSecretEncrypted
 	let stored: WebhookEndpointRecord | null = null
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const encrypted = await encryptWebhookUrlSecret(
@@ -310,6 +317,15 @@ export async function mintWebhookUrlForUser(input: {
 			urlSecret,
 			userWebhookUrlSecretContext(input.userId, endpointId),
 		)
+		const hmacSecretEncrypted = mintPackageHmac
+			? (
+					await mintPackageOwnedWebhookHmacCiphertext({
+						env: input.env,
+						userId: input.userId,
+						endpointId,
+					})
+				).encrypted
+			: undefined
 		try {
 			stored = await upsertWebhookEndpointSecret({
 				db: input.env.APP_DB,
@@ -319,6 +335,7 @@ export async function mintWebhookUrlForUser(input: {
 				webhookName,
 				urlSecretHash,
 				urlSecretEncrypted: encrypted,
+				...(hmacSecretEncrypted !== undefined ? { hmacSecretEncrypted } : {}),
 				enabled: true,
 				updateEnabledOnConflict: activate,
 			})
@@ -540,6 +557,7 @@ export async function applyWebhookUrlForUser(input: {
 		packageKodyId: resolved.savedPackage.kodyId,
 		webhookName: resolved.endpoint.webhookName,
 		savedPackage: resolved.savedPackage,
+		endpoint: resolved.endpoint,
 		webhookUrl: resolved.url,
 		urlSecret: resolved.urlSecret,
 		urlHost: resolved.urlHost,
