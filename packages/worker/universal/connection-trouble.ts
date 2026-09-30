@@ -217,7 +217,7 @@ function integrationAuthFailureWhy(
 ) {
 	switch (reason) {
 		case 'missing_refresh_token':
-			return 'This connection has no refresh token, so Kody cannot renew the sign-in.'
+			return 'This sign-in expires, but Kody has no refresh token to renew it.'
 		case 'provider_rejected':
 			return providerDetail
 				? `The provider rejected the saved sign-in (${providerDetail}).`

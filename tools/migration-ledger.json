@@ -291,6 +291,10 @@
 		{
 			"filename": "0072-webhook-hmac-secret-encrypted.sql",
 			"sha256": "2592bfe5abde38660709516f82d52e43faade226283d828a5ae2bbdb56fd188f"
+		},
+		{
+			"filename": "0073-integration-refresh-policy.sql",
+			"sha256": "d78cd06a261188255524e86e7c3805d4184b81509adf0428116a49852517de41"
 		}
 	]
 }

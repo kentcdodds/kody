@@ -52,6 +52,7 @@ import {
 	resolveUserOauthAppClientSecret,
 } from '#worker/integrations/credentials.ts'
 import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
+import { inferIntegrationRefreshPolicy } from '#worker/integrations/refresh-policy.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
@@ -405,6 +406,7 @@ async function handleConnectOauthAction(input: {
 		name: integrationName,
 		accessToken,
 		refreshToken,
+		refreshPolicy: inferIntegrationRefreshPolicy(tokenRecord),
 	})
 	const clientSecret = await resolveConnectClientSecret({
 		env: input.env,

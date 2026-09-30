@@ -10,6 +10,7 @@ import {
 	resolveIntegrationRefreshToken,
 } from './credentials.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
+import { inferIntegrationRefreshPolicy } from './refresh-policy.ts'
 import { writeIntegrationAuthFailure } from './repo.ts'
 import {
 	getJoinedIntegration,
@@ -118,6 +119,7 @@ async function seedUserTokens(env: Env, userId: string, name: string) {
 		name,
 		accessToken: 'stale-access-token',
 		refreshToken: 'current-refresh-token',
+		refreshPolicy: 'required',
 	})
 }
 
@@ -496,6 +498,134 @@ test('in-flight refreshes of the same connection share one provider POST and one
 		await refreshIntegrationTokens({ env, userId, name: 'github' })
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 		expect(succeededEvents).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('refresh policy follows each connect: non-expiring grants skip refresh, expiring grants without a refresh token still wait', async () => {
+	const { env } = createHarness()
+	const userId = 'user-refresh-policy'
+	const name = 'github-kent'
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name,
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'pkce' as const,
+			clientId: 'kent-github-client-id',
+			requiredHosts: ['api.github.com', 'github.com'],
+		},
+	})
+	const connect = (tokenPayload: Record<string, unknown>) =>
+		persistIntegrationTokens({
+			env,
+			userId,
+			name,
+			accessToken: String(tokenPayload.access_token),
+			refreshToken:
+				typeof tokenPayload.refresh_token === 'string'
+					? tokenPayload.refresh_token
+					: null,
+			refreshPolicy: inferIntegrationRefreshPolicy(tokenPayload),
+		})
+	const writeFailure = (
+		reason: 'missing_refresh_token' | 'provider_rejected',
+	) =>
+		writeIntegrationAuthFailure({
+			db: env.APP_DB,
+			userId,
+			name,
+			reason,
+			reconnectable: true,
+			expectedTokenRefreshedAt: null,
+		})
+	const readConnection = async () =>
+		(await getJoinedIntegration({ env, userId, name }))?.connection
+
+	await connect({
+		access_token: 'gho_non_expiring',
+		token_type: 'bearer',
+		scope: 'repo',
+	})
+	await writeFailure('missing_refresh_token')
+	expect(await readConnection()).toMatchObject({
+		refreshPolicy: 'not_applicable',
+		lastAuthFailure: null,
+	})
+
+	const fetchMock = vi.fn(async () =>
+		jsonResponse({
+			access_token: 'ghu_refreshed',
+			refresh_token: 'ghr_rotated',
+			expires_in: 28_800,
+		}),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(
+			refreshIntegrationTokens({ env, userId, name }),
+		).resolves.toEqual({
+			refreshed: false,
+			skippedReason: 'refresh_not_applicable',
+			refreshedAt: null,
+			refreshTokenRotated: false,
+		})
+		expect(fetchMock).not.toHaveBeenCalled()
+		expect(failedEvents).not.toHaveBeenCalled()
+		expect(succeededEvents).not.toHaveBeenCalled()
+		expect((await readConnection())?.lastAuthFailure).toBeNull()
+
+		await writeFailure('provider_rejected')
+		expect((await readConnection())?.lastAuthFailure).toMatchObject({
+			reason: 'provider_rejected',
+			reconnectable: true,
+		})
+
+		await connect({ access_token: 'ghu_expiring', expires_in: 28_800 })
+		expect(await readConnection()).toMatchObject({
+			refreshPolicy: 'required',
+			lastAuthFailure: null,
+		})
+		await expect(
+			refreshIntegrationTokens({ env, userId, name }),
+		).rejects.toSatisfy(isCallerError('missing_refresh_token'))
+		expect(fetchMock).not.toHaveBeenCalled()
+		expect(failedEvents).toHaveBeenCalledWith(
+			expect.objectContaining({ userId, reason: 'missing_refresh_token' }),
+		)
+		expect((await readConnection())?.lastAuthFailure).toMatchObject({
+			reason: 'missing_refresh_token',
+			reconnectable: true,
+		})
+
+		await connect({
+			access_token: 'ghu_expiring_2',
+			refresh_token: 'ghr_current',
+			expires_in: 28_800,
+		})
+		await expect(
+			refreshIntegrationTokens({ env, userId, name }),
+		).resolves.toMatchObject({ refreshed: true, refreshTokenRotated: true })
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(await readConnection()).toMatchObject({
+			refreshPolicy: 'required',
+			lastAuthFailure: null,
+		})
+		expect(await resolveIntegrationAccessToken({ env, userId, name })).toBe(
+			'ghu_refreshed',
+		)
+
+		await connect({ access_token: 'gho_non_expiring_again' })
+		expect((await readConnection())?.refreshPolicy).toBe('not_applicable')
+		expect(await resolveIntegrationRefreshToken({ env, userId, name })).toBe(
+			'ghr_rotated',
+		)
+		await expect(
+			refreshIntegrationTokens({ env, userId, name }),
+		).resolves.toMatchObject({ refreshed: false })
+		expect(fetchMock).toHaveBeenCalledTimes(1)
 	} finally {
 		vi.unstubAllGlobals()
 	}

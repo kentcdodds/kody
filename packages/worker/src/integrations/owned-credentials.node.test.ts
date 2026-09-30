@@ -69,7 +69,13 @@ function createHarness(userId: string) {
 		tokens = { accessToken: 'access-live', refreshToken: 'refresh-live' },
 	) => {
 		await upsertIntegration({ env, userId, config: { ...googleConfig, name } })
-		await persistIntegrationTokens({ env, userId, name, ...tokens })
+		await persistIntegrationTokens({
+			env,
+			userId,
+			name,
+			refreshPolicy: 'required',
+			...tokens,
+		})
 	}
 	const persistClientSecret = () =>
 		persistUserOauthAppClientSecret({

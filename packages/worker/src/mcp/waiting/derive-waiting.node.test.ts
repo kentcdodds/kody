@@ -1,7 +1,14 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as secretsService from '#mcp/secrets/service.ts'
+import { persistIntegrationTokens } from '#worker/integrations/credentials.ts'
+import { inferIntegrationRefreshPolicy } from '#worker/integrations/refresh-policy.ts'
+import { writeIntegrationAuthFailure } from '#worker/integrations/repo.ts'
 import type * as integrationsService from '#worker/integrations/service.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
 import { buildWaitingItems, waitingFirstUseIds } from '#universal/waiting.ts'
 import { collectWaitingSignals } from './derive-waiting.ts'
@@ -325,4 +332,68 @@ test('waiting onboarding checklist reuses first-use probes and falls back to its
 	})
 	expect(fallback.onboardingRemaining).not.toContain('give-access')
 	expect(fallback.onboardingRemaining).not.toContain('install-starter')
+})
+
+test('waiting shows missing_refresh_token only for connections whose refresh is expected', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const env = {
+		APP_DB: createD1FromSqlite(sqlite),
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	} as Env
+	const actual = await vi.importActual<typeof integrationsService>(
+		'#worker/integrations/service.ts',
+	)
+	for (const [name, tokenPayload] of [
+		['github-bot', { access_token: 'gho_bot' }],
+		['github-kent', { access_token: 'gho_kent', scope: 'repo' }],
+		['google', { access_token: 'ya29', expires_in: 3599 }],
+	] as const) {
+		await actual.upsertIntegration({
+			env,
+			userId: user.stableUserId,
+			config: {
+				name,
+				tokenUrl: 'https://example.com/oauth/token',
+				flow: 'pkce',
+				clientId: `${name}-client`,
+				requiredHosts: ['example.com'],
+			},
+		})
+		await persistIntegrationTokens({
+			env,
+			userId: user.stableUserId,
+			name,
+			accessToken: tokenPayload.access_token,
+			refreshPolicy: inferIntegrationRefreshPolicy(tokenPayload),
+		})
+		await writeIntegrationAuthFailure({
+			db: env.APP_DB,
+			userId: user.stableUserId,
+			name,
+			reason: 'missing_refresh_token',
+			reconnectable: true,
+			expectedTokenRefreshedAt: null,
+		})
+	}
+	mockModule.listJoinedIntegrations.mockResolvedValueOnce(
+		(await actual.listJoinedIntegrations({
+			env,
+			userId: user.stableUserId,
+		})) as never,
+	)
+
+	const signals = await collectWaitingSignals({ env: stubEnv(), user })
+	expect(signals.integrationAuth).toEqual([
+		expect.objectContaining({
+			name: 'google',
+			reason: 'missing_refresh_token',
+		}),
+	])
+	expect(
+		buildWaitingItems(signals)
+			.filter((item) => item.kind === 'integration-auth')
+			.map((item) => item.id),
+	).toEqual(['integration-auth:google'])
 })

@@ -19,10 +19,23 @@ import { getPlatformOauthAppClientSecret } from './platform-apps.ts'
 import { getJoinedIntegration } from './service.ts'
 import { type JoinedIntegration } from './types.ts'
 
-export type IntegrationTokenRefreshResult = {
-	refreshedAt: string
-	refreshTokenRotated: boolean
-}
+/**
+ * `refreshed: false` is the clear skip for `not_applicable` connections
+ * (non-expiring grant, no refresh token issued at connect): no provider call,
+ * no failure snapshot, no Waiting card, and no auth events.
+ */
+export type IntegrationTokenRefreshResult =
+	| {
+			refreshed: true
+			refreshedAt: string
+			refreshTokenRotated: boolean
+	  }
+	| {
+			refreshed: false
+			skippedReason: 'refresh_not_applicable'
+			refreshedAt: null
+			refreshTokenRotated: false
+	  }
 
 export const integrationAuthFailedReasons = [
 	'missing_refresh_token',
@@ -309,6 +322,10 @@ function scheduleSubscriptionEmit(
  * client secret has no user-facing secret name by design. User-lane
  * connections may also refresh here (`integrationTokenRefresh`).
  *
+ * Connections whose refresh policy is `not_applicable` return
+ * `refreshed: false` without touching the provider, even if a stale refresh
+ * token is still stored from an earlier grant.
+ *
  * Reconnectable caller-errors emit `integration.auth.failed` once per attempt
  * and persist a last-failure snapshot for Waiting / Integrations. Provider
  * HTTP 5xx and timeouts persist `provider_unavailable` without emitting
@@ -422,6 +439,14 @@ async function refreshIntegrationTokensOrThrow(input: {
 		})
 	}
 	const { app, connection } = joined
+	if (connection.refreshPolicy === 'not_applicable') {
+		return {
+			refreshed: false,
+			skippedReason: 'refresh_not_applicable',
+			refreshedAt: null,
+			refreshTokenRotated: false,
+		}
+	}
 	const integration = snapshotJoinedIntegration(joined)
 	const reconnectPath = connectOauthPath(connection.name)
 	const fail = (
@@ -464,7 +489,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 	})
 	if (!refreshToken) {
 		throw fail(
-			`Integration "${connection.name}" does not have a stored refresh token. Reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integrationTokenRefresh for this integration.`,
+			`Integration "${connection.name}" does not have a stored refresh token, but its sign-in expires. Reconnect at ${reconnectPath} so the provider issues a refresh token.`,
 			{ reason: 'missing_refresh_token' },
 		)
 	}
@@ -603,6 +628,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 		refreshToken: refreshTokenRotated
 			? (payload.refresh_token as string)
 			: null,
+		refreshPolicy: 'required',
 	})
 
 	const refreshedAt = new Date().toISOString()
@@ -638,7 +664,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 	})
 	await scheduleSubscriptionEmit(input.waitUntil, pending)
 
-	return { refreshedAt, refreshTokenRotated }
+	return { refreshed: true, refreshedAt, refreshTokenRotated }
 }
 
 async function persistAuthFailureSnapshot(input: {

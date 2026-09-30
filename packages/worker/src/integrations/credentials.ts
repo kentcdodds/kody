@@ -15,6 +15,7 @@ import {
 	updateIntegrationCredentialCiphertexts,
 	updateOauthAppClientSecretCiphertext,
 } from './repo.ts'
+import { type IntegrationRefreshPolicy } from './refresh-policy.ts'
 
 type CredentialEnv = Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 
@@ -28,6 +29,12 @@ export async function persistIntegrationTokens(input: {
 	name: string
 	accessToken: string
 	refreshToken?: string | null
+	/**
+	 * Overwrites the stored policy. `/connect/oauth` passes
+	 * `inferIntegrationRefreshPolicy(tokenPayload)` so a reconnect re-decides
+	 * it; a successful refresh passes `required`.
+	 */
+	refreshPolicy: IntegrationRefreshPolicy
 }): Promise<void> {
 	const context = userIntegrationCredentialContext(input.userId, input.name)
 	const accessTokenEncrypted = await encryptUserOauthAccessToken(
@@ -45,6 +52,7 @@ export async function persistIntegrationTokens(input: {
 		name: input.name,
 		accessTokenEncrypted,
 		refreshTokenEncrypted,
+		refreshPolicy: input.refreshPolicy,
 	})
 	try {
 		await clearIntegrationAuthFailure({
