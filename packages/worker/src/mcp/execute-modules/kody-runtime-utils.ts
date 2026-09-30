@@ -558,7 +558,6 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
   // Both lanes refresh host-side and retry with a placeholder header the
   // gateway resolves to the fresh token, so the raw token never enters the
   // sandbox.
-  // Null when the connection has nothing to refresh (non-expiring grant).
   const retryAuthorizationHeader = async () => {
     const refreshed = await __kodyRefreshIntegrationTokensHostSide(providerName);
     return refreshed

@@ -18,11 +18,7 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	ok: z.literal(true),
-	refreshed: z
-		.boolean()
-		.describe(
-			'False when the connection has a non-expiring grant (no refresh token and no access-token expiry at connect), so there is nothing to refresh.',
-		),
+	refreshed: z.boolean(),
 	skippedReason: z.enum(['refresh_not_applicable']).nullable(),
 	refreshedAt: z.string().nullable(),
 	refreshTokenRotated: z.boolean(),
