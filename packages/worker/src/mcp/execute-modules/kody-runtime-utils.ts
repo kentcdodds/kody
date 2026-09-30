@@ -99,12 +99,14 @@ async function refreshIntegrationTokensHostSide(
 	}
 	const result = (await tokenRefresh({ name: providerName })) as {
 		ok?: unknown
+		refreshed?: unknown
 	} | null
 	if (result?.ok !== true) {
 		throw new Error(
 			`Host-side token refresh for integration "${providerName}" did not succeed.`,
 		)
 	}
+	return result.refreshed !== false
 }
 
 export async function createAuthenticatedFetch(
@@ -120,9 +122,13 @@ export async function createAuthenticatedFetch(
 	// raw token never enters the sandbox. The user lane enforces each
 	// secret's allowed_hosts against the token URL host-side — the same
 	// containment the gateway applied when this refresh ran in-sandbox.
+	// Null when the connection has nothing to refresh (non-expiring grant);
+	// retrying with the same token would only repeat the failure.
 	const retryAuthorizationHeader = async () => {
-		await refreshIntegrationTokensHostSide(kody, providerName)
-		return buildAccessTokenAuthorizationHeader(providerName, integration)
+		const refreshed = await refreshIntegrationTokensHostSide(kody, providerName)
+		return refreshed
+			? buildAccessTokenAuthorizationHeader(providerName, integration)
+			: null
 	}
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
@@ -141,16 +147,16 @@ export async function createAuthenticatedFetch(
 			)
 		} catch (error) {
 			if (!isMissingAccessTokenSecretError(error, providerName)) throw error
-			return fetch(
-				createBearerRequest(retryRequest, await retryAuthorizationHeader()),
-			)
+			const retryAuthorization = await retryAuthorizationHeader()
+			if (!retryAuthorization) throw error
+			return fetch(createBearerRequest(retryRequest, retryAuthorization))
 		}
 		if (response.status !== 401) return response
 
+		const retryAuthorization = await retryAuthorizationHeader()
+		if (!retryAuthorization) return response
 		await response.body?.cancel()
-		return fetch(
-			createBearerRequest(retryRequest, await retryAuthorizationHeader()),
-		)
+		return fetch(createBearerRequest(retryRequest, retryAuthorization))
 	}
 }
 
@@ -545,15 +551,19 @@ const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
       \`Host-side token refresh for integration "\${providerName}" did not succeed.\`,
     );
   }
+  return result.refreshed !== false;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
   // Both lanes refresh host-side and retry with a placeholder header the
   // gateway resolves to the fresh token, so the raw token never enters the
   // sandbox.
+  // Null when the connection has nothing to refresh (non-expiring grant).
   const retryAuthorizationHeader = async () => {
-    await __kodyRefreshIntegrationTokensHostSide(providerName);
-    return __kodyBuildAccessTokenAuthorizationHeader(providerName, integration);
+    const refreshed = await __kodyRefreshIntegrationTokensHostSide(providerName);
+    return refreshed
+      ? __kodyBuildAccessTokenAuthorizationHeader(providerName, integration)
+      : null;
   };
   return async (input, init) => {
     const resolvedUrl = __kodyResolveRequestUrl(input, integration);
@@ -570,15 +580,15 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
       );
     } catch (error) {
       if (!__kodyIsMissingAccessTokenSecretError(error, providerName)) throw error;
-      return fetch(
-        __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
-      );
+      const retryAuthorization = await retryAuthorizationHeader();
+      if (!retryAuthorization) throw error;
+      return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
     }
     if (response.status !== 401) return response;
+    const retryAuthorization = await retryAuthorizationHeader();
+    if (!retryAuthorization) return response;
     await response.body?.cancel();
-    return fetch(
-      __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
-    );
+    return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
   };
 };
 const __kodyOauthClientCredentials = async (input) => {

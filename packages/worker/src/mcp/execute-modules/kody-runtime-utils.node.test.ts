@@ -56,7 +56,16 @@ const githubPlatformIntegration: TestIntegration = {
 	platform: true,
 }
 
-function createKody(integration: TestIntegration) {
+function createKody(
+	integration: TestIntegration,
+	refreshResult: Record<string, unknown> = {
+		ok: true,
+		refreshed: true,
+		skippedReason: null,
+		refreshedAt: new Date().toISOString(),
+		refreshTokenRotated: false,
+	},
+) {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
 	const kody = {
 		async integrationGet(args: CapabilityArgs) {
@@ -65,14 +74,27 @@ function createKody(integration: TestIntegration) {
 		},
 		async integrationTokenRefresh(args: CapabilityArgs) {
 			tokenRefreshCalls.push(args)
-			return {
-				ok: true,
-				refreshedAt: new Date().toISOString(),
-				refreshTokenRotated: false,
-			}
+			return refreshResult
 		},
 	} satisfies KodyNamespace
 	return { kody, tokenRefreshCalls }
+}
+
+const createSandboxHelpers = new Function(
+	'__kodyCallDispatcher',
+	`${createExecuteHelperPrelude()}; return { createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+) as (
+	dispatch: (name: string, args: CapabilityArgs) => Promise<unknown>,
+) => SandboxHelpers
+
+function dispatchFor(kody: KodyNamespace) {
+	return async (name: string, args: CapabilityArgs) => {
+		const tool = kody[name]
+		if (typeof tool !== 'function') {
+			throw new Error(`${name} is not available in this sandbox.`)
+		}
+		return await tool(args)
+	}
 }
 
 function createFetchInterceptor(options: {
@@ -187,24 +209,46 @@ test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on 
 	}
 })
 
-test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
-	const prelude = createExecuteHelperPrelude()
-	const createSandboxHelpers = new Function(
-		'__kodyCallDispatcher',
-		`${prelude}; return { createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
-	) as (
-		dispatch: (name: string, args: CapabilityArgs) => Promise<unknown>,
-	) => SandboxHelpers
-	const dispatchFor = (kody: KodyNamespace) => {
-		return async (name: string, args: CapabilityArgs) => {
-			const tool = kody[name]
-			if (typeof tool !== 'function') {
-				throw new Error(`${name} is not available in this sandbox.`)
-			}
-			return await tool(args)
-		}
+test('createAuthenticatedFetch returns the original 401 without a retry when the connection has nothing to refresh', async () => {
+	const implementations = {
+		host: (kody: KodyNamespace) => createAuthenticatedFetch(kody, 'spotify'),
+		sandbox: (kody: KodyNamespace) =>
+			createSandboxHelpers(dispatchFor(kody)).createAuthenticatedFetch(
+				'spotify',
+			),
 	}
+	for (const [label, create] of Object.entries(implementations)) {
+		const fetchCalls: Array<Request> = []
+		const { kody, tokenRefreshCalls } = createKody(spotifyIntegration, {
+			ok: true,
+			refreshed: false,
+			skippedReason: 'refresh_not_applicable',
+			refreshedAt: null,
+			refreshTokenRotated: false,
+		})
+		{
+			using _interceptor = createFetchInterceptor({
+				fetchCalls,
+				apiErrors: [],
+				apiResponses: [{ status: 401, body: { error: 'bad_credentials' } }],
+			})
+			const authenticatedFetch = await create(kody)
+			const response = await authenticatedFetch('/me')
+			expect({ label, status: response.status }).toEqual({
+				label,
+				status: 401,
+			})
+			expect(await response.json()).toEqual({ error: 'bad_credentials' })
+		}
+		expect({ label, tokenRefreshCalls, requests: fetchCalls.length }).toEqual({
+			label,
+			tokenRefreshCalls: [{ name: 'spotify' }],
+			requests: 1,
+		})
+	}
+})
 
+test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
 	const helpers = createSandboxHelpers(
 		dispatchFor(createKody(spotifyIntegration).kody),
 	)
