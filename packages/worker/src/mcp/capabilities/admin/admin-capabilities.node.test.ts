@@ -58,7 +58,9 @@ const jane: SeedUser = {
 
 function createAdminCapabilityTest(
 	users: Array<SeedUser>,
-	blobs?: Pick<R2Bucket, 'get'>,
+	blobs?: {
+		get: (key: string) => Promise<{ text: () => Promise<string> } | null>
+	},
 ) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(

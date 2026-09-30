@@ -1,6 +1,7 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareEmail from '#app/email/cloudflare-email.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -11,11 +12,16 @@ import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { hashPasswordResetToken } from '#worker/identity/password-reset-tokens.ts'
 
-const mockSendCloudflareEmail = vi.fn(async () => ({ ok: true }))
+const mockSendCloudflareEmail = vi.fn(
+	async (..._args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>) => ({
+		ok: true,
+	}),
+)
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		mockSendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+	) => mockSendCloudflareEmail(...args),
 }))
 
 const { createPasswordResetConfirmHandler } =

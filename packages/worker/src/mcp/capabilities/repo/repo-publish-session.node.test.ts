@@ -45,6 +45,7 @@ function createCtx() {
 			user: {
 				userId: 'user-1',
 				email: 'user@test.invalid',
+				displayName: 'User',
 				username: 'user',
 			},
 			baseUrl: 'https://kody.test',

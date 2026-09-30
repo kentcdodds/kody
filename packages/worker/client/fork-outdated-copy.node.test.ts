@@ -82,7 +82,7 @@ test('Escape dismisses the copy-prompt tooltip while the button stays focused', 
 		dataset: {
 			copyText: 'absorb these listing changes',
 			copyTooltip: 'Click to copy an update prompt',
-		},
+		} as { copyText: string; copyTooltip: string; tooltipDismissed?: string },
 		querySelector: () => null,
 		contains: () => false,
 	}

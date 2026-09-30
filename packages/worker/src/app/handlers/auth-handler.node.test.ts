@@ -1,13 +1,16 @@
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
+import type * as signupWelcomeCredits from '#worker/billing/signup-welcome-credits.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
 }))
 
 const welcomeCreditMocks = vi.hoisted(() => ({
-	maybeGrantSignupWelcomeCredits: vi.fn(async () => ({
+	maybeGrantSignupWelcomeCredits: vi.fn<
+		typeof signupWelcomeCredits.maybeGrantSignupWelcomeCredits
+	>(async () => ({
 		applied: true,
 		entryId: 'signup_welcome:test',
 		balanceMicroUsd: 5_000_000,
@@ -22,8 +25,11 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 }))
 
 vi.mock('#worker/billing/signup-welcome-credits.ts', () => ({
-	maybeGrantSignupWelcomeCredits: (...args: Array<unknown>) =>
-		welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
+	maybeGrantSignupWelcomeCredits: (
+		...args: Parameters<
+			typeof signupWelcomeCredits.maybeGrantSignupWelcomeCredits
+		>
+	) => welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
 }))
 
 const { createAuthHandler } = await import('#app/handlers/auth.ts')
@@ -163,8 +169,9 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						const columnMatch = normalizedQuery.match(
 							/insert into "users" \(([^)]+)\)/,
 						)
-						const columns = columnMatch
-							? columnMatch[1]
+						const columnList = columnMatch?.[1]
+						const columns = columnList
+							? columnList
 									.split(',')
 									.map((column) => column.trim().replaceAll('"', ''))
 							: []

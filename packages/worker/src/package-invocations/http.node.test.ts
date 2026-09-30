@@ -47,7 +47,7 @@ async function createEnv(
 				JSON.stringify(['./dispatch-message-created']),
 			created_at: '2026-04-27T00:00:00.000Z',
 			updated_at: '2026-04-27T00:00:00.000Z',
-			last_used_at: null,
+			last_used_at: null as string | null,
 			revoked_at: options.tokenRow?.revoked_at ?? null,
 		},
 	]
@@ -160,15 +160,15 @@ async function createEnv(
 		JOB_MANAGER: {
 			idFromName: () => ({ toString: () => 'job-manager-id' }),
 			get: () => ({}) as DurableObjectStub,
-		} as DurableObjectNamespace,
+		},
 		STORAGE_RUNNER: {
 			idFromName: () => ({ toString: () => 'storage-runner-id' }),
 			get: () => ({}) as DurableObjectStub,
-		} as DurableObjectNamespace,
+		},
 		PACKAGE_REALTIME_SESSION: {
 			idFromName: () => ({ toString: () => 'package-realtime-id' }),
 			get: () => ({}) as DurableObjectStub,
-		} as DurableObjectNamespace,
+		},
 	} as unknown as Env
 }
 

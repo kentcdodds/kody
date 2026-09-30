@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import type * as Artifacts from './artifacts.ts'
+import type * as IdentityIcon from './identity-icon.ts'
 
 const mocks = vi.hoisted(() => ({
 	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
@@ -13,13 +15,17 @@ const mocks = vi.hoisted(() => ({
 		skipped: false,
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
-	resolveArtifactSourceHead: vi.fn(async () => ({
-		branch: 'main',
-		commit: 'def789ghi012def789ghi012def789ghi012def7',
-	})),
+	resolveArtifactSourceHead: vi.fn<typeof Artifacts.resolveArtifactSourceHead>(
+		async () => ({
+			branch: 'main',
+			commit: 'def789ghi012def789ghi012def789ghi012def7',
+		}),
+	),
 	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
 	isDeletedArtifactRefCommit: (commit: string) => /^0+$/.test(commit),
-	refreshIdentityIconForSource: vi.fn(async () => {}),
+	refreshIdentityIconForSource: vi.fn<
+		typeof IdentityIcon.refreshIdentityIconForSource
+	>(async () => {}),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({

@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import type * as cloudflareEmailModule from '#app/email/cloudflare-email.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	lookupTransactionalEmailDelivery,
@@ -10,14 +11,17 @@ import {
 	transactionalEmailVerificationKind,
 } from './verification-delivery.ts'
 
-const sendCloudflareEmail = vi.fn(async () => ({
+const sendCloudflareEmail = vi.fn<
+	typeof cloudflareEmailModule.sendCloudflareEmail
+>(async () => ({
 	ok: true,
 	messageId: 'cf-destination-1',
 }))
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		sendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof cloudflareEmailModule.sendCloudflareEmail>
+	) => sendCloudflareEmail(...args),
 }))
 
 const { createEmailVerification } = await import('#app/email-verification.ts')
@@ -42,7 +46,7 @@ async function createOwnerEnv() {
 		APP_DB: createD1FromSqlite(sqlite),
 		APP_BASE_URL: 'http://example.com',
 		SENTRY_ENVIRONMENT: 'test',
-	} as Env
+	} as unknown as Env
 	return { sqlite, env }
 }
 

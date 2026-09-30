@@ -542,7 +542,11 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	)
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
-		.get('koala-fan@example.com') as Record<string, unknown>
+		.get('koala-fan@example.com') as {
+		id: number
+		username: string
+		email_verified_at: string | null
+	}
 	expect(user).toBeTruthy()
 	expect(user.username).toBe('koala-fan')
 	expect(user.email_verified_at).toBeTruthy()

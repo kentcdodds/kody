@@ -1,15 +1,30 @@
 import { expect, test, vi } from 'vitest'
+import type * as PackageFilesData from '#app/package-files-data.ts'
 
 const mockModule = vi.hoisted(() => ({
-	loadAccessiblePackageFileRaw: vi.fn<() => Promise<unknown>>(),
-	loadCommunityPackageFileRaw: vi.fn<() => Promise<unknown>>(),
+	loadAccessiblePackageFileRaw:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof PackageFilesData.loadAccessiblePackageFileRaw
+				>
+			) => Promise<unknown>
+		>(),
+	loadCommunityPackageFileRaw:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackageFilesData.loadCommunityPackageFileRaw>
+			) => Promise<unknown>
+		>(),
 }))
 
 vi.mock('#app/package-files-data.ts', () => ({
-	loadAccessiblePackageFileRaw: (...args: Array<unknown>) =>
-		mockModule.loadAccessiblePackageFileRaw(...args),
-	loadCommunityPackageFileRaw: (...args: Array<unknown>) =>
-		mockModule.loadCommunityPackageFileRaw(...args),
+	loadAccessiblePackageFileRaw: (
+		...args: Parameters<typeof PackageFilesData.loadAccessiblePackageFileRaw>
+	) => mockModule.loadAccessiblePackageFileRaw(...args),
+	loadCommunityPackageFileRaw: (
+		...args: Parameters<typeof PackageFilesData.loadCommunityPackageFileRaw>
+	) => mockModule.loadCommunityPackageFileRaw(...args),
 }))
 
 const { createCommunityDetailRawHandler, createCommunityPackageRawHandler } =

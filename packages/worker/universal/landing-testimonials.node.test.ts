@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
+	type LandingTestimonial,
 	landingTestimonials,
 	shuffleTestimonials,
 	testimonialAttribution,
@@ -96,7 +97,7 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	expect(testimonialStoryHref(gabriel)).toBe(
 		'/blog/early-kody-users#gabriel-alegria',
 	)
-	const erik = landingTestimonials.find(
+	const erik: LandingTestimonial | undefined = landingTestimonials.find(
 		(entry) => entry.name === 'Erik Rasmussen',
 	)
 	if (!erik) {
@@ -106,7 +107,9 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	expect(testimonialStoryHref({})).toBeNull()
 	expect(
 		landingTestimonials
-			.filter((entry) => testimonialStoryHref(entry) != null)
+			.filter(
+				(entry: LandingTestimonial) => testimonialStoryHref(entry) != null,
+			)
 			.map((entry) => entry.name),
 	).toEqual(['Josh Tomaino', 'Jett Hays', 'Gabriel Alegría'])
 })

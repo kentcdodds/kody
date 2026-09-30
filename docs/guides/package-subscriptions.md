@@ -627,17 +627,13 @@ account that declare the topic. There is one event per fork of that listing
 same pinned commit do not emit, and forks already at the new pinned commit are
 skipped. Watching a listing without forking it is not supported.
 
-This topic is behind the `fork-upstream-update-events` feature flag. It is on
-for accounts that opted into experiments at `/account/experiments`. The flag is
-checked for each forking account when the event is delivered.
-
 Delivery is durable: `communityPublish` enqueues the republish on the
 `kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
 are logged and never fail the publish. The consumer reads the forks and your
-subscribed packages when it runs. Flag evaluation, subscriber discovery, and
-pre-handler infrastructure failures retry. Idempotency keys include the event
-id, fork id, and subscriber package id, so Queue redelivery replays stored
-results instead of re-running handlers.
+subscribed packages when it runs. Subscriber discovery and pre-handler
+infrastructure failures retry. Idempotency keys include the event id, fork id,
+and subscriber package id, so Queue redelivery replays stored results instead of
+re-running handlers.
 
 Handlers receive a metadata-only payload:
 

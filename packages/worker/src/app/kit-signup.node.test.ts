@@ -6,6 +6,12 @@ import {
 } from '#app/kit-signup.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
+type KitSignupEnv = Pick<Env, 'KIT_API_KEY' | 'KIT_SIGNED_UP_TAG_ID'>
+
+function kitEnv(env: Partial<KitSignupEnv>) {
+	return env as KitSignupEnv
+}
+
 test('tagExistingKitSubscriberOnSignup tags existing subscribers, skips unknowns, and classifies client failures', async () => {
 	const existingCalls: Array<{ url: string; method: string; body: unknown }> =
 		[]
@@ -99,7 +105,7 @@ test('maybeTagKitSubscriberOnSignup no-ops without Kit config and swallows failu
 	consoleWarn.mockImplementation(() => {})
 	const idleFetch = vi.fn()
 	await maybeTagKitSubscriberOnSignup({
-		env: {},
+		env: kitEnv({}),
 		email: 'ada@example.com',
 		fetchImpl: idleFetch as typeof fetch,
 	})
@@ -121,7 +127,7 @@ test('maybeTagKitSubscriberOnSignup no-ops without Kit config and swallows failu
 		Response.json({ errors: ['boom'] }, { status: 500 }),
 	)
 	await maybeTagKitSubscriberOnSignup({
-		env: { KIT_API_KEY: 'key' },
+		env: kitEnv({ KIT_API_KEY: 'key' }),
 		email: 'ada@example.com',
 		fetchImpl: failingFetch as typeof fetch,
 	})

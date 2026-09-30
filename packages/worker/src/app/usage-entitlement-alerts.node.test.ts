@@ -6,6 +6,7 @@ import {
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import { type FleetEntitlementCrossedEvent } from '#worker/usage/fleet-entitlement-crossing-subscription-event.ts'
+import type * as fleetEntitlementCrossingSubscriptions from '#worker/usage/fleet-entitlement-crossing-subscriptions.ts'
 
 const loadFleetEntitlementCrossingSnapshots =
 	vi.fn<
@@ -26,11 +27,15 @@ vi.mock('#worker/admin/fleet-usage-insights.ts', () => ({
 	fleetRuntimeDurationAlertThresholdMs: 24 * 60 * 60 * 1000,
 }))
 
-const dispatchFleetEntitlementCrossingSubscriptionEvent = vi.fn(async () => [])
+const dispatchFleetEntitlementCrossingSubscriptionEvent = vi.fn<
+	typeof fleetEntitlementCrossingSubscriptions.dispatchFleetEntitlementCrossingSubscriptionEvent
+>(async () => [])
 
 vi.mock('#worker/usage/fleet-entitlement-crossing-subscriptions.ts', () => ({
 	dispatchFleetEntitlementCrossingSubscriptionEvent: (
-		...args: Array<unknown>
+		...args: Parameters<
+			typeof fleetEntitlementCrossingSubscriptions.dispatchFleetEntitlementCrossingSubscriptionEvent
+		>
 	) => dispatchFleetEntitlementCrossingSubscriptionEvent(...args),
 }))
 

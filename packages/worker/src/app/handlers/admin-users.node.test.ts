@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
+import { type AdminUsersMutationData } from '#universal/loader-data.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -189,7 +190,7 @@ function setupAdminUsers(
 		list: async (search: string) => {
 			const response = await send(search)
 			expect(response.status).toBe(200)
-			return response.json()
+			return (await response.json()) as AdminUsersMutationData
 		},
 	}
 }
@@ -232,7 +233,7 @@ test('admin users list payload exposes only account metadata fields', async () =
 	const response = await get()
 
 	expect(response.status).toBe(200)
-	const payload = await response.json()
+	const payload = (await response.json()) as AdminUsersMutationData
 	expect(Object.keys(payload).sort()).toEqual(
 		[
 			'availablePlans',
@@ -385,8 +386,8 @@ test('assign role action updates user roles and logs audit event', async () => {
 	})
 
 	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.users[0].roles).toContain('admin')
+	const payload = (await response.json()) as AdminUsersMutationData
+	expect(payload.users[0]?.roles).toContain('admin')
 	// Mutations return the updated target so the client can patch it into
 	// an infinite-scroll window without resetting to the first page.
 	expect(payload.updatedUser).toEqual(
@@ -420,10 +421,11 @@ test('remove role rejects the last admin and removes admin when another admin re
 	const response = await post(removeAdmin(2))
 
 	expect(response.status).toBe(200)
-	const payload = await response.json()
+	const payload = (await response.json()) as AdminUsersMutationData
 	const secondAdmin = payload.users.find(
-		(user: { stableUserId: string }) => user.stableUserId === stableUserId(2),
+		(user) => user.stableUserId === stableUserId(2),
 	)
+	if (!secondAdmin) throw new Error('Expected second admin in payload')
 	expect(secondAdmin.roles).not.toContain('admin')
 	expectAdminAudit('remove_role')
 })
@@ -441,7 +443,9 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 		plan: 'pro',
 	})
 	expect(setPlanResponse.status).toBe(200)
-	expect((await setPlanResponse.json()).users[0].plan).toBe('pro')
+	expect(
+		((await setPlanResponse.json()) as AdminUsersMutationData).users[0]?.plan,
+	).toBe('pro')
 	expectAdminAudit('update_plan', `target_stable_user_id=${target};plan=pro`)
 
 	const clearPlanResponse = await post({
@@ -450,7 +454,9 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
-	expect((await clearPlanResponse.json()).users[0].plan).toBe('free')
+	expect(
+		((await clearPlanResponse.json()) as AdminUsersMutationData).users[0]?.plan,
+	).toBe('free')
 	expectAdminAudit('update_plan', `target_stable_user_id=${target};plan=free`)
 
 	for (const body of [
@@ -484,18 +490,25 @@ test('suspend, unsuspend, and resume email actions update flags and log audit ev
 
 	const suspendResponse = await act('suspend_user')
 	expect(suspendResponse.status).toBe(200)
-	expect((await suspendResponse.json()).users[0].suspended_at).toBeTruthy()
+	expect(
+		((await suspendResponse.json()) as AdminUsersMutationData).users[0]
+			?.suspended_at,
+	).toBeTruthy()
 	expectAdminAudit('suspend_user', targetReason)
 
 	const unsuspendResponse = await act('unsuspend_user')
 	expect(unsuspendResponse.status).toBe(200)
-	expect((await unsuspendResponse.json()).users[0].suspended_at).toBeNull()
+	expect(
+		((await unsuspendResponse.json()) as AdminUsersMutationData).users[0]
+			?.suspended_at,
+	).toBeNull()
 	expectAdminAudit('unsuspend_user', targetReason)
 
 	const resumeResponse = await act('resume_email_outbound')
 	expect(resumeResponse.status).toBe(200)
 	expect(
-		(await resumeResponse.json()).users[0].email_outbound_paused_at,
+		((await resumeResponse.json()) as AdminUsersMutationData).users[0]
+			?.email_outbound_paused_at,
 	).toBeNull()
 	expectAdminAudit('resume_email_outbound', targetReason)
 
@@ -537,18 +550,18 @@ test('mark email verified and mint verify url actions update the account and log
 
 	const mintResponse = await act('mint_verify_url')
 	expect(mintResponse.status).toBe(200)
-	const minted = await mintResponse.json()
+	const minted = (await mintResponse.json()) as AdminUsersMutationData
 	expect(minted.verifyUrl).toMatch(
 		/^https:\/\/example.com\/verify-email\?token=/,
 	)
-	expect(minted.users[0].email_verified).toBe(false)
+	expect(minted.users[0]?.email_verified).toBe(false)
 	expectAdminAudit('mint_verify_url', targetReason)
 
 	const verifyResponse = await act('mark_email_verified')
 	expect(verifyResponse.status).toBe(200)
-	const verified = await verifyResponse.json()
-	expect(verified.users[0].email_verified).toBe(true)
-	expect(verified.users[0].email_verification_delivery).toBeNull()
+	const verified = (await verifyResponse.json()) as AdminUsersMutationData
+	expect(verified.users[0]?.email_verified).toBe(true)
+	expect(verified.users[0]?.email_verification_delivery).toBeNull()
 	expectAdminAudit('mark_email_verified', targetReason)
 
 	expect((await act('mint_verify_url')).status).toBe(400)
@@ -588,7 +601,7 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
 	const created = await post(createBody)
 	expect(created.status).toBe(200)
-	const createdPayload = await created.json()
+	const createdPayload = (await created.json()) as AdminUsersMutationData
 	expect(createdPayload.createdUser).toEqual(createdUserPayload)
 	expect(createdPayload.updatedUser).toEqual(
 		expect.objectContaining({
@@ -614,9 +627,11 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 		)
 		const response = await post(createBody, search)
 		expect(response.status).toBe(200)
-		expect([search, (await response.json()).createdUserInFilteredList]).toEqual(
-			[search, inList],
-		)
+		const payload = (await response.json()) as AdminUsersMutationData
+		expect([search, payload.createdUserInFilteredList]).toEqual([
+			search,
+			inList,
+		])
 	}
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
@@ -658,7 +673,8 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 			username: 'refresh-fail',
 		})
 		expect(refreshFailed.status).toBe(200)
-		const refreshFailedPayload = await refreshFailed.json()
+		const refreshFailedPayload =
+			(await refreshFailed.json()) as AdminUsersMutationData
 		expect(refreshFailedPayload.ok).toBe(true)
 		expect(refreshFailedPayload.listRefreshFailed).toBe(true)
 		expect(refreshFailedPayload.createdUser).toEqual(createdUserPayload)

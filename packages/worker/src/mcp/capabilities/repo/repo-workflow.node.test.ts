@@ -1,9 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as RepoSessions from '#worker/repo/repo-sessions.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
-	countActiveRepoSessions: vi.fn(async () => 0),
+	countActiveRepoSessions: vi.fn<typeof RepoSessions.countActiveRepoSessions>(
+		async () => 0,
+	),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
@@ -13,8 +16,9 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
-	countActiveRepoSessions: (...args: Array<unknown>) =>
-		mockModule.countActiveRepoSessions(...args),
+	countActiveRepoSessions: (
+		...args: Parameters<typeof RepoSessions.countActiveRepoSessions>
+	) => mockModule.countActiveRepoSessions(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({

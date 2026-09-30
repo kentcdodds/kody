@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type McpStorageContext } from '@kody-internal/shared/chat.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchSyntheticWebhookForUser: vi.fn(),
@@ -17,11 +18,7 @@ const { webhookSyntheticDispatchCapability } =
 function createCtx(
 	overrides?: Partial<{
 		executionOrigin: 'interactive' | 'background'
-		storageContext: {
-			packageId?: string | null
-			appId?: string | null
-			storageId?: string | null
-		} | null
+		storageContext: McpStorageContext | null
 	}>,
 ) {
 	return {
@@ -135,6 +132,7 @@ test('webhookSyntheticDispatch returns synthetic run metadata and rejects runtim
 		{
 			ctx: createCtx({
 				storageContext: {
+					sessionId: null,
 					packageId: 'pkg-1',
 					appId: null,
 					storageId: 'package:pkg-1',

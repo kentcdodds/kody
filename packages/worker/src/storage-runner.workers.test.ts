@@ -78,14 +78,28 @@ function setMeterBytes(userId: string, bytes: number) {
 	})
 }
 
+const storageRunnerNamespace =
+	env.STORAGE_RUNNER as DurableObjectNamespace<StorageRunner>
+
 function runnerFor(userId: string, storageId = createExecuteStorageId()) {
 	return storageRunnerRpc({ env, userId, storageId })
 }
 
 function storageRunnerStub(userId: string, storageId: string) {
-	return env.STORAGE_RUNNER.get(
-		env.STORAGE_RUNNER.idFromName(JSON.stringify([userId, storageId])),
+	return storageRunnerNamespace.get(
+		storageRunnerNamespace.idFromName(JSON.stringify([userId, storageId])),
 	)
+}
+
+function writableStorageTools(
+	input: Parameters<typeof createStorageKodyTools>[0],
+) {
+	const tools = createStorageKodyTools(input)
+	const { storageSet, storageDelete } = tools
+	if (!storageSet || !storageDelete) {
+		throw new Error('Expected writable storage tools.')
+	}
+	return { ...tools, storageSet, storageDelete }
 }
 
 async function entitlementRejection(promise: Promise<unknown>) {
@@ -132,7 +146,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	const limit = proStorageLimit()
 	const pro = await seedPlannedStorageUser('storage-planned', 'pro', limit)
 	const proStorageId = createExecuteStorageId()
-	const proTools = createStorageKodyTools({
+	const proTools = writableStorageTools({
 		env,
 		...pro,
 		storageId: proStorageId,
@@ -153,7 +167,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	).resolves.toEqual({ key: 'new-key', value: null })
 
 	const max = await seedPlannedStorageUser('storage-max', 'max', limit)
-	const maxTools = createStorageKodyTools({
+	const maxTools = writableStorageTools({
 		env,
 		...max,
 		storageId: createExecuteStorageId(),
@@ -489,8 +503,8 @@ test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject
 		env: { USAGE_EVENTS: { writeDataPoint() {} } },
 		userId,
 		doClass: 'StorageRunner',
-		stub: env.STORAGE_RUNNER.get(
-			env.STORAGE_RUNNER.idFromName(
+		stub: storageRunnerNamespace.get(
+			storageRunnerNamespace.idFromName(
 				storageRunnerDurableObjectName(userId, createExecuteStorageId()),
 			),
 		),
@@ -528,7 +542,7 @@ test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject
 		value: null,
 	})
 
-	const tools = createStorageKodyTools({
+	const tools = writableStorageTools({
 		env,
 		userId,
 		storageId: createExecuteStorageId(),
@@ -586,7 +600,7 @@ test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject
 		columns: expect.any(Array),
 		rows: expect.any(Array),
 	})
-	const factoryTools = createStorageKodyTools({
+	const factoryTools = writableStorageTools({
 		env: meteredEnv,
 		userId: factoryUserId,
 		storageId: createExecuteStorageId(),

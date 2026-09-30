@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -36,13 +37,17 @@ vi.mock('#app/account-packages-data.ts', () => ({
 const { handleAccountPackageVisibilityAction } =
 	await import('./account-package-visibility.ts')
 
-function createUser() {
+function createUser(): AuthenticatedAppUser {
 	return {
 		sessionUserId: '42',
 		userId: 42,
 		username: 'user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: [],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
 			userId: 'stable-user-1',

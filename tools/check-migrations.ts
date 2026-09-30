@@ -24,7 +24,8 @@ export const expectedMigrationBaselineSha256 =
  * squash (0001-squashed-init.sql) retired every historical duplicate, so
  * this list is empty; new duplicates are always rejected.
  */
-export const allowedHistoricalDuplicateMigrationFilenames = [] as const
+export const allowedHistoricalDuplicateMigrationFilenames: ReadonlyArray<string> =
+	[]
 
 const allowedHistoricalDuplicateMigrationFilenameSet = new Set<string>(
 	allowedHistoricalDuplicateMigrationFilenames,

@@ -71,7 +71,8 @@ function baseContext(overrides?: Partial<RunRecordContext>): RunRecordContext {
 }
 
 function runLogStub(userId: string) {
-	return env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const namespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	return namespace.get(namespace.idFromName(userId))
 }
 
 function handleFor(

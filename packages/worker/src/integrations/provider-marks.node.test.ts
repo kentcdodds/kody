@@ -38,7 +38,7 @@ function createHarness() {
 				const stored = objects.get(key)
 				if (!stored) return null
 				return {
-					body: new Blob([stored]).stream(),
+					body: new Blob([stored.slice()]).stream(),
 					size: stored.byteLength,
 					httpEtag: `"etag-${key}"`,
 					arrayBuffer: async () => stored.slice().buffer,
@@ -49,7 +49,7 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	}
 	return { env, objects }
 }
 

@@ -1,4 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import type * as onboardingData from '#app/onboarding-data.ts'
+import type * as pageAuth from '#app/page-auth.ts'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
 import { StripeApiError } from '#worker/billing/stripe-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -9,9 +13,11 @@ import {
 } from './account-billing.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
-	requireAuthenticatedPageUser: vi.fn<() => Promise<unknown>>(),
-	userHasMcpOAuthGrants: vi.fn<() => Promise<boolean>>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof authenticatedUserModule.readAuthenticatedAppUser>(),
+	requireAuthenticatedPageUser:
+		vi.fn<typeof pageAuth.requireAuthenticatedPageUser>(),
+	userHasMcpOAuthGrants: vi.fn<typeof onboardingData.userHasMcpOAuthGrants>(),
 	linkStripeCustomerFromCheckoutSessionAttribution:
 		vi.fn<(...args: Array<unknown>) => Promise<unknown>>(),
 	createCheckoutSession:
@@ -30,18 +36,21 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/page-auth.ts', () => ({
-	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
-		mockModule.requireAuthenticatedPageUser(...args),
+	requireAuthenticatedPageUser: (
+		...args: Parameters<typeof pageAuth.requireAuthenticatedPageUser>
+	) => mockModule.requireAuthenticatedPageUser(...args),
 }))
 
 vi.mock('#app/onboarding-data.ts', () => ({
-	userHasMcpOAuthGrants: (...args: Array<unknown>) =>
-		mockModule.userHasMcpOAuthGrants(...args),
+	userHasMcpOAuthGrants: (
+		...args: Parameters<typeof onboardingData.userHasMcpOAuthGrants>
+	) => mockModule.userHasMcpOAuthGrants(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -87,11 +96,22 @@ vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
 
 const retiredStandardPriceId = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
 
-const authenticatedUser = {
+const authenticatedUser: AuthenticatedAppUser = {
+	sessionUserId: '9',
 	userId: 9,
 	username: 'ada',
 	email: 'ada@example.com',
-	mcpUser: { userId: 'stable-ada' },
+	emailVerified: false,
+	emailVerificationDelivery: null,
+	displayName: 'ada',
+	roles: ['user'],
+	permissions: [],
+	artifactOwnerIds: ['9'],
+	mcpUser: {
+		userId: 'stable-ada',
+		email: 'ada@example.com',
+		displayName: 'ada',
+	},
 }
 
 function createBillingDb(customerId: string | null = null) {

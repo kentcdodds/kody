@@ -197,7 +197,7 @@ test('saveUserAvatar removes an in-flight upload when deletion starts', async ()
 				async delete(key: string) {
 					deleted.push(key)
 				},
-			} as R2Bucket,
+			} as unknown as R2Bucket,
 			USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
 		},
 		numericUserId: 1,

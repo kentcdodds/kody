@@ -33,6 +33,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 			isPrivate: false,
 			createdAt: '',
 			updatedAt: '',
+			lockedAt: null,
 		},
 		topic: 'email.message.received',
 		params: {
@@ -79,6 +80,7 @@ test('invokePackageSubscriptionWithToolFactories preserves synthetic markers onl
 			isPrivate: false,
 			createdAt: '',
 			updatedAt: '',
+			lockedAt: null,
 		},
 		topic: 'email.message.received',
 		params: {

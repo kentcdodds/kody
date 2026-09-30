@@ -19,7 +19,9 @@ const mockModule = vi.hoisted(() => ({
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
-	loadOnboardingAccessWin: vi.fn(async () => false),
+	loadOnboardingAccessWin: vi.fn<
+		typeof OnboardingChecklist.loadOnboardingAccessWin
+	>(async () => false),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -51,8 +53,9 @@ vi.mock('#mcp/onboarding-checklist.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof OnboardingChecklist>()
 	return {
 		...actual,
-		loadOnboardingAccessWin: (...args: Array<unknown>) =>
-			mockModule.loadOnboardingAccessWin(...args),
+		loadOnboardingAccessWin: (
+			...args: Parameters<typeof actual.loadOnboardingAccessWin>
+		) => mockModule.loadOnboardingAccessWin(...args),
 	}
 })
 

@@ -1,4 +1,6 @@
+import type git from 'isomorphic-git'
 import { expect, test, vi } from 'vitest'
+import type * as Artifacts from './artifacts.ts'
 import {
 	readArtifactFileAtCommit,
 	readArtifactTreeAtCommit,
@@ -10,9 +12,11 @@ const mocks = vi.hoisted(() => ({
 	init: vi.fn(),
 	readBlob: vi.fn(),
 	walk: vi.fn(),
-	TREE: vi.fn((input: { ref: string }) => input),
+	TREE: vi.fn((input?: Parameters<typeof git.TREE>[0]) => input),
 	resolveExistingArtifactSourceRepo: vi.fn(),
-	isLoopbackArtifactsRemote: vi.fn(() => false),
+	isLoopbackArtifactsRemote: vi.fn<typeof Artifacts.isLoopbackArtifactsRemote>(
+		() => false,
+	),
 	readArtifactSourceSnapshot: vi.fn(),
 }))
 
@@ -23,7 +27,7 @@ vi.mock('isomorphic-git', () => ({
 		init: (...args: Array<unknown>) => mocks.init(...args),
 		readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
 		walk: (...args: Array<unknown>) => mocks.walk(...args),
-		TREE: (...args: Array<unknown>) => mocks.TREE(...args),
+		TREE: (...args: Parameters<typeof git.TREE>) => mocks.TREE(...args),
 	},
 }))
 
@@ -32,8 +36,9 @@ vi.mock('./artifacts.ts', () => {
 		buildArtifactsGitAuth: () => ({ username: 'x', password: 'token' }),
 		buildAuthenticatedArtifactsRemote: ({ remote }: { remote: string }) =>
 			remote,
-		isLoopbackArtifactsRemote: (...args: Array<unknown>) =>
-			mocks.isLoopbackArtifactsRemote(...args),
+		isLoopbackArtifactsRemote: (
+			...args: Parameters<typeof Artifacts.isLoopbackArtifactsRemote>
+		) => mocks.isLoopbackArtifactsRemote(...args),
 		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 			mocks.resolveExistingArtifactSourceRepo(...args),
 	}

@@ -86,7 +86,12 @@ function createValueTestDb() {
 								normalizedQuery.startsWith('select') &&
 								normalizedQuery.includes('from value_buckets')
 							) {
-								const [userId, scope, bindingKey, now] = params as Array<string>
+								const [userId, scope, bindingKey, now] = params as [
+									string,
+									string,
+									string,
+									string,
+								]
 								const bucket =
 									buckets.get(getBucketKey(userId, scope, bindingKey)) ?? null
 								if (
@@ -102,7 +107,7 @@ function createValueTestDb() {
 								normalizedQuery.includes('from value_entries') &&
 								normalizedQuery.includes('where bucket_id = ? and name = ?')
 							) {
-								const [bucketId, name] = params as Array<string>
+								const [bucketId, name] = params as [string, string]
 								const entry = entries.get(getEntryKey(bucketId, name)) ?? null
 								return entry ? ({ ...entry } as T) : null
 							}
@@ -188,7 +193,7 @@ function createValueTestDb() {
 									value,
 									createdAt,
 									updatedAt,
-								] = params as Array<string>
+								] = params as [string, string, string, string, string, string]
 								const key = getEntryKey(bucketId, name)
 								const existing = entries.get(key)
 								entries.set(key, {
@@ -206,7 +211,11 @@ function createValueTestDb() {
 									'delete from value_buckets where user_id = ? and scope = ? and binding_key = ?',
 								)
 							) {
-								const [userId, scope, bindingKey] = params as Array<string>
+								const [userId, scope, bindingKey] = params as [
+									string,
+									string,
+									string,
+								]
 								const bucketKey = getBucketKey(userId, scope, bindingKey)
 								const bucket = buckets.get(bucketKey)
 								if (!bucket) {
@@ -221,7 +230,7 @@ function createValueTestDb() {
 								return { meta: { changes: 1 } }
 							}
 							if (normalizedQuery.startsWith('delete from value_entries')) {
-								const [bucketId, name] = params as Array<string>
+								const [bucketId, name] = params as [string, string]
 								const deleted = entries.delete(getEntryKey(bucketId, name))
 								return { meta: { changes: deleted ? 1 : 0 } }
 							}

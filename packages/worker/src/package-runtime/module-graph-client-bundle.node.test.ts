@@ -245,8 +245,8 @@ render(Button, useState);
 	const [plugin] =
 		call.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired ?? []
 	expect(plugin?.name).toBe('kody-package-app-client-externals')
-	let resolve: ((args: { path: string }) => unknown) | null = null
-	let filter: RegExp | null = null
+	let resolve = null as ((args: { path: string }) => unknown) | null
+	let filter = null as RegExp | null
 	plugin?.setup({
 		onResolve(options, callback) {
 			filter = options.filter

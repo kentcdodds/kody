@@ -1,10 +1,13 @@
 import { expect, test, vi } from 'vitest'
 import { type PackageAppServeOwner } from './package-app-serve.ts'
 import { packageAppRuntimeForwardUnavailableMessage } from '#worker/runtime-worker-service.ts'
+import type * as RuntimeWorkerServiceModule from '#worker/runtime-worker-service.ts'
 
 const runtimeForwardMock = vi.hoisted(() => ({
 	hasLocalPackageAppRuntimeBridge: vi.fn(() => true),
-	getRuntimeWorkerService: vi.fn(() => null),
+	getRuntimeWorkerService: vi.fn<
+		typeof RuntimeWorkerServiceModule.getRuntimeWorkerService
+	>(() => null),
 	servePackageApp: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
 	resolveSavedPackage: vi.fn(),
@@ -12,14 +15,16 @@ const runtimeForwardMock = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/runtime-worker-service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/runtime-worker-service.ts')>()
+	const actual = await importOriginal<typeof RuntimeWorkerServiceModule>()
 	return {
 		...actual,
 		hasLocalPackageAppRuntimeBridge: () =>
 			runtimeForwardMock.hasLocalPackageAppRuntimeBridge(),
-		getRuntimeWorkerService: (...args: Array<unknown>) =>
-			runtimeForwardMock.getRuntimeWorkerService(...args),
+		getRuntimeWorkerService: (
+			...args: Parameters<
+				typeof RuntimeWorkerServiceModule.getRuntimeWorkerService
+			>
+		) => runtimeForwardMock.getRuntimeWorkerService(...args),
 	}
 })
 

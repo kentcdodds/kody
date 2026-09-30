@@ -439,6 +439,7 @@ test('sendOutboundEmail sender gates: suspended, unverified, reserved usernames,
 	)
 
 	await expect(
+		// @ts-expect-error missing APP_BASE_URL exercises the unconfigured-domain runtime guard
 		sendAs(blog, { env: { ...bindingEnv(), APP_BASE_URL: undefined } }),
 	).rejects.toThrow('no platform email domain is configured')
 })

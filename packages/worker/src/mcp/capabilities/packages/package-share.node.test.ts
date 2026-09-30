@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -35,12 +36,10 @@ async function insertUser(db: D1Database, username: Username) {
 function as(db: D1Database, username: Username) {
 	return {
 		env: { APP_DB: db } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
 			baseUrl: 'https://kody.codes',
 			user: { ...users[username], displayName: username, username },
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 

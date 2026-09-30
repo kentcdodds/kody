@@ -1,4 +1,10 @@
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import type * as packageSource from '#worker/package-registry/source.ts'
+import type * as entitySources from '#worker/repo/entity-sources.ts'
+import type * as invocationRepo from '#worker/package-invocations/repo.ts'
+import type * as communityRepo from '#worker/community/repo.ts'
 
 const mockModule = vi.hoisted(() => {
 	const savedPackage = {
@@ -32,12 +38,18 @@ const mockModule = vi.hoisted(() => {
 	}
 	return {
 		savedPackage,
-		readAuthenticatedAppUser: vi.fn(async () => ({
+		readAuthenticatedAppUser: vi.fn<
+			typeof authenticatedUserModule.readAuthenticatedAppUser
+		>(async () => ({
 			sessionUserId: '42',
 			userId: 42,
 			username: 'test-user',
 			email: 'user@example.com',
+			emailVerified: true,
+			emailVerificationDelivery: null,
 			displayName: 'user',
+			roles: ['user'],
+			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser: {
 				userId: 'stable-user-1',
@@ -46,12 +58,18 @@ const mockModule = vi.hoisted(() => {
 				displayName: 'user',
 			},
 		})),
-		searchSavedPackagesByUserId: vi.fn(async () => ({
+		searchSavedPackagesByUserId: vi.fn<
+			typeof packageRepo.searchSavedPackagesByUserId
+		>(async () => ({
 			items: [savedPackage],
 			total: 1,
 		})),
-		getSavedPackageById: vi.fn(async () => savedPackage),
-		getSavedPackageWithCommunityProvenanceById: vi.fn(async () => ({
+		getSavedPackageById: vi.fn<typeof packageRepo.getSavedPackageById>(
+			async () => savedPackage,
+		),
+		getSavedPackageWithCommunityProvenanceById: vi.fn<
+			typeof packageRepo.getSavedPackageWithCommunityProvenanceById
+		>(async () => ({
 			...savedPackage,
 			sourceListingId: null,
 			listingCurrent: null,
@@ -63,33 +81,74 @@ const mockModule = vi.hoisted(() => {
 			listingAhead: null,
 			forkListingRelation: null,
 		})),
-		listSavedPackageCommunityProvenanceByIds: vi.fn(
-			async (): Promise<Array<unknown>> => [],
+		listSavedPackageCommunityProvenanceByIds: vi.fn<
+			typeof packageRepo.listSavedPackageCommunityProvenanceByIds
+		>(async () => []),
+		getEntitySourceById: vi.fn<typeof entitySources.getEntitySourceById>(
+			async () => null,
 		),
-		getEntitySourceById: vi.fn(async () => null),
-		listPackageInvocationTokensByPackageId: vi.fn(async () => [tokenRecord]),
-		hashPackageInvocationBearerToken: vi.fn(async () => 'hashed-raw-token'),
-		insertPackageInvocationToken: vi.fn(async () => undefined),
-		updatePackageInvocationToken: vi.fn(async () => true),
-		revokePackageInvocationToken: vi.fn(async () => true),
-		reinstatePackageInvocationToken: vi.fn(async () => true),
-		deletePackageInvocationToken: vi.fn(async () => true),
+		listPackageInvocationTokensByPackageId: vi.fn<
+			typeof invocationRepo.listPackageInvocationTokensByPackageId
+		>(async () => [tokenRecord]),
+		hashPackageInvocationBearerToken: vi.fn<
+			typeof invocationRepo.hashPackageInvocationBearerToken
+		>(async () => 'hashed-raw-token'),
+		insertPackageInvocationToken: vi.fn<
+			typeof invocationRepo.insertPackageInvocationToken
+		>(async () => undefined),
+		updatePackageInvocationToken: vi.fn<
+			typeof invocationRepo.updatePackageInvocationToken
+		>(async () => true),
+		revokePackageInvocationToken: vi.fn<
+			typeof invocationRepo.revokePackageInvocationToken
+		>(async () => true),
+		reinstatePackageInvocationToken: vi.fn<
+			typeof invocationRepo.reinstatePackageInvocationToken
+		>(async () => true),
+		deletePackageInvocationToken: vi.fn<
+			typeof invocationRepo.deletePackageInvocationToken
+		>(async () => true),
 		getAppBaseUrl: () => 'https://example.com',
-		loadPackageManifestBySourceId: vi.fn(async () => ({
+		loadPackageManifestBySourceId: vi.fn<
+			typeof packageSource.loadPackageManifestBySourceId
+		>(async () => ({
+			source: {
+				id: 'source-1',
+				user_id: 'stable-user-1',
+				entity_kind: 'package',
+				entity_id: 'pkg-1',
+				repo_id: 'repo-1',
+				published_commit: 'commit-1',
+				indexed_commit: 'commit-1',
+				manifest_path: 'package.json',
+				source_root: '/',
+				last_external_check_at: null,
+				external_check_until: null,
+				created_at: new Date(0).toISOString(),
+				updated_at: new Date(0).toISOString(),
+			},
 			manifest: {
+				name: '@test/discord-gateway',
 				exports: {
 					'./dispatch-message-created': { import: './src/index.ts' },
 				},
+				kody: {
+					id: 'discord-gateway',
+					description: 'Dispatch Discord gateway events.',
+				},
 			},
 		})),
-		getCommunityListingByOwnerAndPackage: vi.fn(async () => null),
+		getCommunityListingByOwnerAndPackage: vi.fn<
+			typeof communityRepo.getCommunityListingByOwnerAndPackage
+		>(async () => null),
 		requireAuthenticatedPageUser: vi.fn(),
 	}
 })
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
@@ -107,8 +166,11 @@ vi.mock('#app/page-auth.ts', () => ({
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
-	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingByOwnerAndPackage(...args),
+	getCommunityListingByOwnerAndPackage: (
+		...args: Parameters<
+			typeof communityRepo.getCommunityListingByOwnerAndPackage
+		>
+	) => mockModule.getCommunityListingByOwnerAndPackage(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -117,7 +179,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+	getAppBaseUrl: () => mockModule.getAppBaseUrl(),
 }))
 
 vi.mock('#worker/community/fork-listing-relation.ts', () => ({
@@ -129,41 +191,60 @@ vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	searchSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.searchSavedPackagesByUserId(...args),
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
-	listSavedPackageCommunityProvenanceByIds: (...args: Array<unknown>) =>
-		mockModule.listSavedPackageCommunityProvenanceByIds(...args),
+	searchSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.searchSavedPackagesByUserId>
+	) => mockModule.searchSavedPackagesByUserId(...args),
+	getSavedPackageById: (
+		...args: Parameters<typeof packageRepo.getSavedPackageById>
+	) => mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceById: (
+		...args: Parameters<
+			typeof packageRepo.getSavedPackageWithCommunityProvenanceById
+		>
+	) => mockModule.getSavedPackageWithCommunityProvenanceById(...args),
+	listSavedPackageCommunityProvenanceByIds: (
+		...args: Parameters<
+			typeof packageRepo.listSavedPackageCommunityProvenanceByIds
+		>
+	) => mockModule.listSavedPackageCommunityProvenanceByIds(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
-	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
-		mockModule.loadPackageManifestBySourceId(...args),
+	loadPackageManifestBySourceId: (
+		...args: Parameters<typeof packageSource.loadPackageManifestBySourceId>
+	) => mockModule.loadPackageManifestBySourceId(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: (
+		...args: Parameters<typeof entitySources.getEntitySourceById>
+	) => mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/package-invocations/repo.ts', () => ({
-	listPackageInvocationTokensByPackageId: (...args: Array<unknown>) =>
-		mockModule.listPackageInvocationTokensByPackageId(...args),
-	hashPackageInvocationBearerToken: (...args: Array<unknown>) =>
-		mockModule.hashPackageInvocationBearerToken(...args),
-	insertPackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.insertPackageInvocationToken(...args),
-	updatePackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.updatePackageInvocationToken(...args),
-	revokePackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.revokePackageInvocationToken(...args),
-	reinstatePackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.reinstatePackageInvocationToken(...args),
-	deletePackageInvocationToken: (...args: Array<unknown>) =>
-		mockModule.deletePackageInvocationToken(...args),
+	listPackageInvocationTokensByPackageId: (
+		...args: Parameters<
+			typeof invocationRepo.listPackageInvocationTokensByPackageId
+		>
+	) => mockModule.listPackageInvocationTokensByPackageId(...args),
+	hashPackageInvocationBearerToken: (
+		...args: Parameters<typeof invocationRepo.hashPackageInvocationBearerToken>
+	) => mockModule.hashPackageInvocationBearerToken(...args),
+	insertPackageInvocationToken: (
+		...args: Parameters<typeof invocationRepo.insertPackageInvocationToken>
+	) => mockModule.insertPackageInvocationToken(...args),
+	updatePackageInvocationToken: (
+		...args: Parameters<typeof invocationRepo.updatePackageInvocationToken>
+	) => mockModule.updatePackageInvocationToken(...args),
+	revokePackageInvocationToken: (
+		...args: Parameters<typeof invocationRepo.revokePackageInvocationToken>
+	) => mockModule.revokePackageInvocationToken(...args),
+	reinstatePackageInvocationToken: (
+		...args: Parameters<typeof invocationRepo.reinstatePackageInvocationToken>
+	) => mockModule.reinstatePackageInvocationToken(...args),
+	deletePackageInvocationToken: (
+		...args: Parameters<typeof invocationRepo.deletePackageInvocationToken>
+	) => mockModule.deletePackageInvocationToken(...args),
 }))
 
 const { createAccountPackagesApiHandler, createAccountPackagesHandler } =

@@ -26,9 +26,14 @@ function subscription(input: {
 		id: input.id ?? 'sub_test',
 		status: input.status,
 		cancel_at: input.cancel_at ?? null,
+		current_period_end: undefined,
 		metadata: input.metadata,
 		items: {
-			data: (input.priceIds ?? []).map((id) => ({ price: { id } })),
+			data: (input.priceIds ?? []).map((id) => ({
+				id: undefined,
+				price: { id },
+				current_period_end: undefined,
+			})),
 		},
 	}
 }

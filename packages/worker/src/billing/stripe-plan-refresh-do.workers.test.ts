@@ -46,6 +46,7 @@ async function seedStripeRefreshUser(prefix: string, stripeCustomerId: string) {
 		fireAlarmNow: () =>
 			runInDurableObject(stub, async (instance, state) => {
 				await state.storage.deleteAlarm()
+				if (!instance.alarm) throw new Error('StripePlanRefresh has no alarm()')
 				await instance.alarm()
 			}),
 	}

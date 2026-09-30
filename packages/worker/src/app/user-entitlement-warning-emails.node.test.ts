@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type EntitlementResource } from '#universal/plans.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as cloudflareEmail from '#app/email/cloudflare-email.ts'
 
 const readAdminEntitlementConsumption = vi.fn()
 
@@ -11,11 +12,14 @@ vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
 	entitlementWarningThreshold: 0.8,
 }))
 
-const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
+const sendCloudflareEmail = vi.fn<typeof cloudflareEmail.sendCloudflareEmail>(
+	async () => ({ ok: true }),
+)
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		sendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof cloudflareEmail.sendCloudflareEmail>
+	) => sendCloudflareEmail(...args),
 }))
 
 const {

@@ -1,37 +1,93 @@
 import { expect, test, vi } from 'vitest'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
+import type * as CommunityPackageRoute from '#app/community-package-route.ts'
+import type * as PackageFilesData from '#app/package-files-data.ts'
+import type * as PackagePage from '#app/package-page.ts'
+import type * as PageAuth from '#app/page-auth.ts'
+import type * as SsrRender from '#app/ssr-render.tsx'
+import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
-	requireAuthenticatedPageUser: vi.fn<() => Promise<unknown>>(),
-	loadCommunityPackageFilesData: vi.fn<() => Promise<unknown>>(),
-	loadAccountPackageFilesData: vi.fn<() => Promise<unknown>>(),
-	loadAccessiblePackageFilesData: vi.fn<() => Promise<unknown>>(),
-	loadPackagePage: vi.fn<() => Promise<unknown>>(),
-	getSavedPackageById: vi.fn<() => Promise<unknown>>(),
-	resolveCommunityFilesRoute: vi.fn<() => Promise<unknown>>(),
-	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(
+	readAuthenticatedAppUser:
+		vi.fn<
+			(
+				...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+			) => Promise<unknown>
+		>(),
+	requireAuthenticatedPageUser:
+		vi.fn<
+			(
+				...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
+			) => Promise<unknown>
+		>(),
+	loadCommunityPackageFilesData:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof PackageFilesData.loadCommunityPackageFilesData
+				>
+			) => Promise<unknown>
+		>(),
+	loadAccountPackageFilesData:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackageFilesData.loadAccountPackageFilesData>
+			) => Promise<unknown>
+		>(),
+	loadAccessiblePackageFilesData:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof PackageFilesData.loadAccessiblePackageFilesData
+				>
+			) => Promise<unknown>
+		>(),
+	loadPackagePage:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackagePage.loadPackagePage>
+			) => Promise<unknown>
+		>(),
+	getSavedPackageById:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackageRegistryRepo.getSavedPackageById>
+			) => Promise<unknown>
+		>(),
+	resolveCommunityFilesRoute:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof CommunityPackageRoute.resolveCommunityFilesRoute
+				>
+			) => Promise<unknown>
+		>(),
+	renderAppPage: vi.fn<typeof SsrRender.renderAppPage>(
 		async () => new Response('ok'),
 	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/page-auth.ts', () => ({
-	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
-		mockModule.requireAuthenticatedPageUser(...args),
+	requireAuthenticatedPageUser: (
+		...args: Parameters<typeof PageAuth.requireAuthenticatedPageUser>
+	) => mockModule.requireAuthenticatedPageUser(...args),
 }))
 
 vi.mock('#app/package-page.ts', () => ({
-	loadPackagePage: (...args: Array<unknown>) =>
+	loadPackagePage: (...args: Parameters<typeof PackagePage.loadPackagePage>) =>
 		mockModule.loadPackagePage(...args),
 }))
 
 vi.mock('#app/community-package-route.ts', () => ({
-	resolveCommunityFilesRoute: (...args: Array<unknown>) =>
-		mockModule.resolveCommunityFilesRoute(...args),
+	resolveCommunityFilesRoute: (
+		...args: Parameters<typeof CommunityPackageRoute.resolveCommunityFilesRoute>
+	) => mockModule.resolveCommunityFilesRoute(...args),
 	resolveCanonicalFilesPath: async () => null,
 	treeHrefFromPackageHome: (
 		packageHref: string,
@@ -46,17 +102,21 @@ vi.mock('#app/community-package-route.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
+	getSavedPackageById: (
+		...args: Parameters<typeof PackageRegistryRepo.getSavedPackageById>
+	) => mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('#app/package-files-data.ts', () => ({
-	loadCommunityPackageFilesData: (...args: Array<unknown>) =>
-		mockModule.loadCommunityPackageFilesData(...args),
-	loadAccountPackageFilesData: (...args: Array<unknown>) =>
-		mockModule.loadAccountPackageFilesData(...args),
-	loadAccessiblePackageFilesData: (...args: Array<unknown>) =>
-		mockModule.loadAccessiblePackageFilesData(...args),
+	loadCommunityPackageFilesData: (
+		...args: Parameters<typeof PackageFilesData.loadCommunityPackageFilesData>
+	) => mockModule.loadCommunityPackageFilesData(...args),
+	loadAccountPackageFilesData: (
+		...args: Parameters<typeof PackageFilesData.loadAccountPackageFilesData>
+	) => mockModule.loadAccountPackageFilesData(...args),
+	loadAccessiblePackageFilesData: (
+		...args: Parameters<typeof PackageFilesData.loadAccessiblePackageFilesData>
+	) => mockModule.loadAccessiblePackageFilesData(...args),
 	readPackageFilesSelectedPath: (requestUrl: string) => {
 		const url = new URL(requestUrl, 'http://localhost')
 		const raw = url.searchParams.get('path')
@@ -67,7 +127,8 @@ vi.mock('#app/package-files-data.ts', () => ({
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: (...args: Array<unknown>) => mockModule.renderAppPage(...args),
+	renderAppPage: (...args: Parameters<typeof SsrRender.renderAppPage>) =>
+		mockModule.renderAppPage(...args),
 }))
 
 const {

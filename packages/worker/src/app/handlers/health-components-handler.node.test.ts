@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { RequestContext } from 'remix/router'
 import {
 	collectHealthComponents,
 	createHealthComponentsHandler,
@@ -42,9 +41,7 @@ function component(report: HealthComponentsReport, id: string) {
 function fetchComponents(
 	handler: ReturnType<typeof createHealthComponentsHandler>,
 ) {
-	return handler.handler(
-		new RequestContext(new Request('https://example.com/health/components')),
-	)
+	return handler.handler()
 }
 
 test('collectHealthComponents reports healthy, failed, and unavailable bindings', async () => {

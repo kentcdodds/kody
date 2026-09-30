@@ -239,6 +239,7 @@ async function runThreeBlockingEvaluations(env: Env) {
 					gatewayProps: {
 						baseUrl: 'https://example.com',
 						userId: 'user-1',
+						email: null,
 						storageContext: null,
 					},
 				}).execute(`async () => ${index}`, [{ name: 'kody', fns: {} }])

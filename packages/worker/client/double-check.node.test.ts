@@ -18,9 +18,12 @@ type RecordedMixin = {
 	handler: (event: Event) => void
 }
 
+function recorded(mixin: unknown) {
+	return mixin as RecordedMixin
+}
+
 function invoke(mixin: unknown, event: Event) {
-	const recordedMixin = mixin as RecordedMixin
-	recordedMixin.handler(event)
+	recorded(mixin).handler(event)
 }
 
 test('double check button mix requires two clicks, resets on blur, then invokes action', () => {
@@ -36,8 +39,8 @@ test('double check button mix requires two clicks, resets on blur, then invokes 
 	})
 
 	expect(mix).toHaveLength(2)
-	expect((mix[0] as RecordedMixin).type).toBe('blur')
-	expect((mix[1] as RecordedMixin).type).toBe('click')
+	expect(recorded(mix[0]).type).toBe('blur')
+	expect(recorded(mix[1]).type).toBe('click')
 
 	const firstClick = {
 		preventDefault: vi.fn(),

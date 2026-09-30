@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import * as Sentry from '@sentry/cloudflare'
 import { env, runInDurableObject } from 'cloudflare:test'
 import type * as SystemEmail from '#worker/email/system-email.ts'
+import type * as D1StorageReconciliation from '#worker/entitlements/d1-storage-reconciliation.ts'
 import {
 	oauthPurgeContinuationStorageKey,
 	type OAuthPurgeCoordinator,
@@ -42,11 +43,17 @@ const mocks = vi.hoisted(() => ({
 		updated: 0,
 		failed: 0,
 	})),
-	reconcileD1StorageBytes: vi.fn(async () => ({
-		scanned: 0,
-		updated: 0,
-		failed: 0,
-	})),
+	reconcileD1StorageBytes: vi.fn(
+		async (
+			_input: Parameters<
+				typeof D1StorageReconciliation.reconcileD1StorageBytes
+			>[0],
+		) => ({
+			scanned: 0,
+			updated: 0,
+			failed: 0,
+		}),
+	),
 }))
 
 vi.mock('./jobs/reconcile-artifacts-pushes.ts', () => ({

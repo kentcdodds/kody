@@ -1,17 +1,37 @@
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
+import type * as AccountIntegrationsData from '#app/account-integrations-data.ts'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
+import type * as ConnectOauthChooser from '#app/connect-oauth-chooser.ts'
+import type * as PageAuth from '#app/page-auth.ts'
 import {
 	createConnectOauthHandler,
 	isBareConnectOauthVisit,
 } from '#app/handlers/connect-oauth.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
-	requirePageSession: vi.fn<() => Promise<Response | null>>(),
-	loadAccountIntegrationByName: vi.fn<() => Promise<unknown>>(),
-	loadExistingConnectionSummary: vi.fn<() => Promise<unknown>>(),
-	hasStoredConnectClientSecret: vi.fn<() => Promise<boolean>>(),
-	loadConnectOauthChooser: vi.fn(async () => ({ options: [] })),
+	readAuthenticatedAppUser:
+		vi.fn<
+			(
+				...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+			) => Promise<unknown>
+		>(),
+	requirePageSession: vi.fn<typeof PageAuth.requirePageSession>(),
+	loadAccountIntegrationByName:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof AccountIntegrationsData.loadAccountIntegrationByName
+				>
+			) => Promise<unknown>
+		>(),
+	loadExistingConnectionSummary:
+		vi.fn<typeof AccountIntegrationsData.loadExistingConnectionSummary>(),
+	hasStoredConnectClientSecret:
+		vi.fn<typeof AccountIntegrationsData.hasStoredConnectClientSecret>(),
+	loadConnectOauthChooser: vi.fn<
+		typeof ConnectOauthChooser.loadConnectOauthChooser
+	>(async () => ({ options: [] })),
 	readConnectOauthLookupOptions: (searchParams: URLSearchParams) => {
 		const appParam = searchParams.get('app')?.trim()
 		return {
@@ -22,27 +42,39 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/page-auth.ts', () => ({
-	requirePageSession: (...args: Array<unknown>) =>
-		mockModule.requirePageSession(...args),
+	requirePageSession: (
+		...args: Parameters<typeof PageAuth.requirePageSession>
+	) => mockModule.requirePageSession(...args),
 }))
 
 vi.mock('#app/connect-oauth-chooser.ts', () => ({
-	loadConnectOauthChooser: (...args: Array<unknown>) =>
-		mockModule.loadConnectOauthChooser(...args),
+	loadConnectOauthChooser: (
+		...args: Parameters<typeof ConnectOauthChooser.loadConnectOauthChooser>
+	) => mockModule.loadConnectOauthChooser(...args),
 }))
 
 vi.mock('#app/account-integrations-data.ts', () => ({
-	loadAccountIntegrationByName: (...args: Array<unknown>) =>
-		mockModule.loadAccountIntegrationByName(...args),
-	loadExistingConnectionSummary: (...args: Array<unknown>) =>
-		mockModule.loadExistingConnectionSummary(...args),
-	hasStoredConnectClientSecret: (...args: Array<unknown>) =>
-		mockModule.hasStoredConnectClientSecret(...args),
+	loadAccountIntegrationByName: (
+		...args: Parameters<
+			typeof AccountIntegrationsData.loadAccountIntegrationByName
+		>
+	) => mockModule.loadAccountIntegrationByName(...args),
+	loadExistingConnectionSummary: (
+		...args: Parameters<
+			typeof AccountIntegrationsData.loadExistingConnectionSummary
+		>
+	) => mockModule.loadExistingConnectionSummary(...args),
+	hasStoredConnectClientSecret: (
+		...args: Parameters<
+			typeof AccountIntegrationsData.hasStoredConnectClientSecret
+		>
+	) => mockModule.hasStoredConnectClientSecret(...args),
 	readConnectOauthLookupOptions: (searchParams: URLSearchParams) =>
 		mockModule.readConnectOauthLookupOptions(searchParams),
 }))

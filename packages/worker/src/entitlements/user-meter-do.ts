@@ -1783,6 +1783,7 @@ export const UserMeter = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	UserMeterBase,
 )
+export type UserMeter = InstanceType<typeof UserMeter>
 
 export type UserMeterRpc = DurableObjectPitrRpc & {
 	initialize: (input: {

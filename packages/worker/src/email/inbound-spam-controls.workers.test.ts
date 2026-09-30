@@ -19,8 +19,12 @@ const platformDomain = 'inbox.kody.example.com'
 const systemDomain = 'kody.example.com'
 
 const packageSubscriptionMocks = vi.hoisted(() => ({
-	dispatchInboundEmailSubscriptionEvents: vi.fn(async () => []),
-	dispatchSystemInboundEmailSubscriptionEvents: vi.fn(async () => []),
+	dispatchInboundEmailSubscriptionEvents: vi.fn<
+		typeof PackageSubscriptionsModule.dispatchInboundEmailSubscriptionEvents
+	>(async () => []),
+	dispatchSystemInboundEmailSubscriptionEvents: vi.fn<
+		typeof PackageSubscriptionsModule.dispatchSystemInboundEmailSubscriptionEvents
+	>(async () => []),
 }))
 
 vi.mock('./package-subscriptions.ts', async () => {

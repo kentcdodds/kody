@@ -240,7 +240,7 @@ test('kody namespaced proxy dispatches, enumerates tools, and reports entry/capa
 		},
 	)
 
-	await expect(mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
@@ -259,7 +259,8 @@ test('kody namespaced proxy dispatches, enumerates tools, and reports entry/capa
 	expect('home' in mcp).toBe(true)
 	expect(Object.keys(mcp).sort()).toEqual(['home', 'lights'])
 	const { home } = mcp
-	await expect(home.set_pin({ pin: '9999' })).resolves.toEqual({ ok: true })
+	if (!home) throw new Error('Expected home MCP server proxy')
+	await expect(home.set_pin?.({ pin: '9999' })).resolves.toEqual({ ok: true })
 	expect(Object.keys(home)).toEqual(['set_pin'])
 	expect(() => {
 		const { missing_tool } = home
@@ -276,11 +277,12 @@ test('kody namespaced proxy dispatches, enumerates tools, and reports entry/capa
 		},
 	)
 	const disconnectedHome = disconnected.home
+	if (!disconnectedHome) throw new Error('Expected home MCP server proxy')
 	expect(Object.keys(disconnectedHome)).toEqual(['sonos_list_players'])
 	expect(Object.entries(disconnectedHome).map(([name]) => name)).toEqual([
 		'sonos_list_players',
 	])
-	await expect(disconnectedHome.sonos_list_players({})).rejects.toThrow(
+	await expect(disconnectedHome.sonos_list_players?.({})).rejects.toThrow(
 		notConnected('home'),
 	)
 })
@@ -375,7 +377,7 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 		[key: string]: unknown
 	}
 
-	await expect(kody.mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(kody.mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
@@ -386,7 +388,8 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	)
 	expect('mcp' in kody).toBe(true)
 	const { home } = kody.mcp
-	await expect(home.set_pin({ pin: '5678' })).resolves.toEqual({ ok: true })
+	if (!home) throw new Error('Expected home MCP server proxy')
+	await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({ ok: true })
 	expect(() => kody.mcp['missing']).toThrow(
 		'Unknown MCP server "missing". Available MCP servers: "home".',
 	)
@@ -1027,21 +1030,21 @@ test('createToolDispatchers counts host-mediated attempts, rejects sanitized-nam
 		undefined,
 		sideEffects,
 	)
-	await expect(
-		parseCall(dispatchers.kody.call('search', '{}')),
-	).resolves.toEqual({ error: 'search failed after starting' })
+	const kodyDispatcher = dispatchers.kody
+	const meterDispatcher = dispatchers.__kodyStaticCallMeterRuntimeBridge
+	if (!kodyDispatcher || !meterDispatcher) {
+		throw new Error('Expected kody and static call meter dispatchers')
+	}
+	await expect(parseCall(kodyDispatcher.call('search', '{}'))).resolves.toEqual(
+		{ error: 'search failed after starting' },
+	)
 	expect(searchCalls).toBe(1)
 	expect(sideEffects.snapshot()).toEqual({
 		dispatcherAttempts: 1,
 		fetchAttempts: 0,
 	})
 	await expect(
-		parseCall(
-			dispatchers.__kodyStaticCallMeterRuntimeBridge.call(
-				'record',
-				JSON.stringify([{}]),
-			),
-		),
+		parseCall(meterDispatcher.call('record', JSON.stringify([{}]))),
 	).resolves.toEqual({ result: { ok: true } })
 	expect(sideEffects.snapshot()).toEqual({
 		dispatcherAttempts: 1,
@@ -1078,6 +1081,7 @@ test('createToolDispatchers counts host-mediated attempts, rejects sanitized-nam
 		],
 		{ active: true },
 	).state
+	if (!state) throw new Error('Expected state dispatcher')
 	for (const [name, args, result] of [
 		['readFile', ['/tmp/foo'], '/tmp/foo'],
 		['merge', ['a', 'b'], ['a', 'b']],
@@ -1446,7 +1450,10 @@ test('executor maps secret errors, formats guidance, and truncates on UTF-8 boun
 		new Error('kody is not defined'),
 		new Error(unboundStorageMessage),
 	]) {
-		const output = formatExecutionOutput({ error } as const)
+		const output = formatExecutionOutput({
+			result: undefined,
+			error: error.message,
+		})
 		const plainOutput = `Error: ${error.message}`
 		expect(output).toContain(plainOutput)
 		expect(output.length).toBeGreaterThan(plainOutput.length)

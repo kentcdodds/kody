@@ -1,4 +1,16 @@
 import { vi } from 'vitest'
+import { type Workspace } from '@cloudflare/shell'
+import type isomorphicGit from 'isomorphic-git'
+import type * as publishedBundleArtifactsModule from '#worker/package-runtime/published-bundle-artifacts.ts'
+import type * as publishedRuntimeArtifactsModule from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as savedPackageRepoModule from '#worker/package-registry/repo.ts'
+import type * as artifactsModule from '#worker/repo/artifacts.ts'
+import type * as checksModule from '#worker/repo/checks.ts'
+import type * as entitySourcesModule from '#worker/repo/entity-sources.ts'
+import type * as externalPublishCloneModule from '#worker/repo/external-publish-clone.ts'
+import type * as manifestModule from '#worker/repo/manifest.ts'
+import type * as repoSessionsModule from '#worker/repo/repo-sessions.ts'
+import type * as storageBucketsModule from '#worker/storage-buckets/service.ts'
 
 const sourceRepoRemote =
 	'https://acct.artifacts.cloudflare.net/git/default/source-repo.git'
@@ -94,31 +106,41 @@ export const repoSessionMockModule = (() => {
 		diff: vi.fn(async () => []),
 	}
 
+	const workspaceFiles = new Map<string, string>()
+
 	return {
 		git,
 		gitState,
-		rawPush: vi.fn(async () => ({ ok: true, refs: {} })),
-		rawCommit: vi.fn(async () => 'commit-orphan-root'),
+		rawPush: vi.fn<typeof isomorphicGit.push>(async () => ({
+			ok: true,
+			error: null,
+			refs: {},
+		})),
+		rawCommit: vi.fn<typeof isomorphicGit.commit>(
+			async () => 'commit-orphan-root',
+		),
 		readBlob: vi.fn(async () => ({
 			blob: new TextEncoder().encode('restored content\n'),
 		})),
-		workspaceExists: vi.fn(
-			async (path: string) => path === '/session/.git/config',
+		workspaceExists: vi.fn<Workspace['exists']>(
+			async (path) => path === '/session/.git/config',
 		),
-		workspaceFiles: new Map<string, string>(),
-		workspaceReadFile: vi.fn(
-			async (path: string) =>
-				repoSessionMockModule.workspaceFiles.get(path) ??
+		workspaceFiles,
+		workspaceReadFile: vi.fn<Workspace['readFile']>(
+			async (path) =>
+				workspaceFiles.get(path) ??
 				'{"version":1,"kind":"job","entrypoint":"src/job.ts"}',
 		),
-		workspaceWriteFile: vi.fn(async () => undefined),
-		workspaceWriteFileBytes: vi.fn(async () => undefined),
-		workspaceMkdir: vi.fn(async () => undefined),
-		workspaceRm: vi.fn(async () => undefined),
-		workspaceGlob: vi.fn(async () => []),
-		cloneExternalPublishWorkspace: vi.fn(async () =>
-			createExternalClone('commit-head'),
+		workspaceWriteFile: vi.fn<Workspace['writeFile']>(async () => undefined),
+		workspaceWriteFileBytes: vi.fn<Workspace['writeFileBytes']>(
+			async () => undefined,
 		),
+		workspaceMkdir: vi.fn<Workspace['mkdir']>(async () => undefined),
+		workspaceRm: vi.fn<Workspace['rm']>(async () => undefined),
+		workspaceGlob: vi.fn<Workspace['glob']>(async () => []),
+		cloneExternalPublishWorkspace: vi.fn<
+			typeof externalPublishCloneModule.cloneExternalPublishWorkspace
+		>(async () => createExternalClone('commit-head')),
 		storageGet: vi.fn(async () => ({
 			runId: 'run-1',
 			treeHash: '',
@@ -129,23 +151,43 @@ export const repoSessionMockModule = (() => {
 		storagePut: vi.fn(async () => undefined),
 		getRepoSessionById: vi.fn(),
 		getEntitySourceById: vi.fn(),
-		updateRepoSession: vi.fn(async () => undefined),
-		updateEntitySource: vi.fn(async () => undefined),
-		markEntitySourcePendingExternalReconcile: vi.fn(async () => true),
+		updateRepoSession: vi.fn(
+			async (
+				..._args: Parameters<typeof repoSessionsModule.updateRepoSession>
+			) => undefined,
+		),
+		updateEntitySource: vi.fn(
+			async (
+				..._args: Parameters<typeof entitySourcesModule.updateEntitySource>
+			) => undefined,
+		),
+		markEntitySourcePendingExternalReconcile: vi.fn<
+			typeof entitySourcesModule.markEntitySourcePendingExternalReconcile
+		>(async () => true),
 		resolveArtifactSourceRepo: vi.fn(),
 		resolveExistingArtifactSourceRepo: vi.fn(),
-		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
+		resolveArtifactDefaultBranchHead: vi.fn<
+			typeof artifactsModule.resolveArtifactDefaultBranchHead
+		>(async () => ({
 			defaultBranch: 'main',
 			commit: 'commit-base',
 			remote: sourceRepoRemote,
 		})),
-		resolveArtifactSourceHead: vi.fn(async () => ({
+		resolveArtifactSourceHead: vi.fn<
+			typeof artifactsModule.resolveArtifactSourceHead
+		>(async () => ({
 			branch: 'main',
 			commit: 'commit-base',
 		})),
-		listArtifactServerRefs: vi.fn(async () => []),
-		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
-		runRepoChecks: vi.fn(async () => ({
+		listArtifactServerRefs: vi.fn<
+			typeof artifactsModule.listArtifactServerRefs
+		>(async () => []),
+		parseRepoManifest: vi.fn(
+			(..._args: Parameters<typeof manifestModule.parseRepoManifest>) => ({
+				sourceRoot: '/',
+			}),
+		),
+		runRepoChecks: vi.fn<typeof checksModule.runRepoChecks>(async () => ({
 			ok: true,
 			results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
 			manifest: {
@@ -158,29 +200,54 @@ export const repoSessionMockModule = (() => {
 				'index.ts': 'export const ready = true\n',
 			},
 		})),
-		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
-		loadPublishedSourceSnapshot: vi.fn(async () => null),
-		loadPublishedSourceManifestSnapshot: vi.fn(async () => null),
-		validatePackageBundles: vi.fn(async () => ({
-			ok: true,
-			message: 'Bundled 2 package target(s) successfully.',
-		})),
-		runPackageTypecheckLanguageService: vi.fn(async () => ({
+		writePublishedSourceSnapshot: vi.fn<
+			typeof publishedRuntimeArtifactsModule.writePublishedSourceSnapshot
+		>(async () => 'snapshot-key'),
+		loadPublishedSourceSnapshot: vi.fn<
+			typeof publishedRuntimeArtifactsModule.loadPublishedSourceSnapshot
+		>(async () => null),
+		loadPublishedSourceManifestSnapshot: vi.fn<
+			typeof publishedRuntimeArtifactsModule.loadPublishedSourceManifestSnapshot
+		>(async () => null),
+		validatePackageBundles: vi.fn<typeof checksModule.validatePackageBundles>(
+			async () => ({
+				ok: true,
+				message: 'Bundled 2 package target(s) successfully.',
+			}),
+		),
+		runPackageTypecheckLanguageService: vi.fn<
+			typeof checksModule.runPackageTypecheckLanguageService
+		>(async () => ({
 			ok: true,
 			message:
 				'No semantic diagnostics for 1 callable package runtime entrypoint(s).',
 		})),
-		isPublishedPackageArtifactBuiltForCommit: vi.fn(async () => false),
-		persistPublishedPackageArtifactTarget: vi.fn(async () => 'kv:artifact'),
-		deletePublishedArtifactsForSource: vi.fn(async () => undefined),
-		registerStorageBucketAndWait: vi.fn(async () => undefined),
-		maybeRefreshStorageBucketEstimate: vi.fn(),
-		deleteStorageBucketInventory: vi.fn(async () => true),
-		getSavedPackageById: vi.fn(async () => ({
-			id: 'package-1',
-			kodyId: 'demo',
-			sourceId: 'source-1',
-		})),
+		isPublishedPackageArtifactBuiltForCommit: vi.fn<
+			typeof publishedBundleArtifactsModule.isPublishedPackageArtifactBuiltForCommit
+		>(async () => false),
+		persistPublishedPackageArtifactTarget: vi.fn<
+			typeof publishedBundleArtifactsModule.persistPublishedPackageArtifactTarget
+		>(async () => 'kv:artifact'),
+		deletePublishedArtifactsForSource: vi.fn<
+			typeof publishedBundleArtifactsModule.deletePublishedArtifactsForSource
+		>(async () => undefined),
+		registerStorageBucketAndWait: vi.fn<
+			typeof storageBucketsModule.registerStorageBucketAndWait
+		>(async () => undefined),
+		maybeRefreshStorageBucketEstimate:
+			vi.fn<typeof storageBucketsModule.maybeRefreshStorageBucketEstimate>(),
+		deleteStorageBucketInventory: vi.fn<
+			typeof storageBucketsModule.deleteStorageBucketInventory
+		>(async () => true),
+		getSavedPackageById: vi.fn(
+			async (
+				..._args: Parameters<typeof savedPackageRepoModule.getSavedPackageById>
+			) => ({
+				id: 'package-1',
+				kodyId: 'demo',
+				sourceId: 'source-1',
+			}),
+		),
 	}
 })()
 

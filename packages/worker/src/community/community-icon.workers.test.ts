@@ -111,6 +111,9 @@ test('community icon ingest fits an oversized PNG to 256px WebP via Images', asy
 	if (info.format === 'image/svg+xml') {
 		throw new Error('Fitted icon info reported SVG instead of a raster.')
 	}
+	if (!('width' in info)) {
+		throw new Error('Fitted icon info is missing raster dimensions.')
+	}
 	expect(info.format).toBe('image/webp')
 	expect(Math.max(info.width, info.height)).toBeLessThanOrEqual(
 		iconFitMaxDimension,

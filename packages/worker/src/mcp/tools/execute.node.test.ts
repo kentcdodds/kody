@@ -22,6 +22,7 @@ import {
 	executeInvokeMutualExclusionMessage,
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
+import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -36,17 +37,35 @@ const mockModule = vi.hoisted(() => ({
 	createExecutePackageInvokeTools: vi.fn(),
 	createPackageRuntimeInvokeTools: vi.fn(),
 	createPackageEventTools: vi.fn(),
-	getCapabilityRegistryForContext: vi.fn(async () => ({
-		capabilityHandlers: {
-			codingGuideGet: true,
-		},
-	})),
-	getRunRecordByIdempotencyKey: vi.fn(async () => null),
-	claimRunRecord: vi.fn(async () => null),
-	finishRunRecord: vi.fn(async () => undefined),
-	resolveCallerFeatureFlags: vi.fn(async () => ({
-		'execute-invoke': false,
-	})),
+	getCapabilityRegistryForContext: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof CapabilityRegistryModule.getCapabilityRegistryForContext
+			>
+		) => ({
+			capabilityHandlers: {
+				codingGuideGet: true,
+			},
+		}),
+	),
+	getRunRecordByIdempotencyKey: vi.fn<
+		typeof RunRecordsServiceModule.getRunRecordByIdempotencyKey
+	>(async () => null),
+	claimRunRecord: vi.fn<typeof RunRecordsServiceModule.claimRunRecord>(
+		async () => null,
+	),
+	finishRunRecord: vi.fn(
+		async (
+			..._args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => undefined,
+	),
+	resolveCallerFeatureFlags: vi.fn(
+		async (
+			..._args: Parameters<typeof AccessControlModule.resolveCallerFeatureFlags>
+		) => ({
+			'execute-invoke': false,
+		}),
+	),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -55,8 +74,11 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
-		mockModule.getCapabilityRegistryForContext(...args),
+	getCapabilityRegistryForContext: (
+		...args: Parameters<
+			typeof CapabilityRegistryModule.getCapabilityRegistryForContext
+		>
+	) => mockModule.getCapabilityRegistryForContext(...args),
 }))
 
 vi.mock(
@@ -65,8 +87,11 @@ vi.mock(
 		const actual = await importOriginal()
 		return {
 			...actual,
-			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-				mockModule.resolveCallerFeatureFlags(...args),
+			resolveCallerFeatureFlags: (
+				...args: Parameters<
+					typeof AccessControlModule.resolveCallerFeatureFlags
+				>
+			) => mockModule.resolveCallerFeatureFlags(...args),
 		}
 	},
 )
@@ -86,12 +111,17 @@ vi.mock('#worker/run-records/service.ts', async () => {
 	)
 	return {
 		...actual,
-		getRunRecordByIdempotencyKey: (...args: Array<unknown>) =>
-			mockModule.getRunRecordByIdempotencyKey(...args),
-		claimRunRecord: (...args: Array<unknown>) =>
-			mockModule.claimRunRecord(...args),
-		finishRunRecord: (...args: Array<unknown>) =>
-			mockModule.finishRunRecord(...args),
+		getRunRecordByIdempotencyKey: (
+			...args: Parameters<
+				typeof RunRecordsServiceModule.getRunRecordByIdempotencyKey
+			>
+		) => mockModule.getRunRecordByIdempotencyKey(...args),
+		claimRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.claimRunRecord>
+		) => mockModule.claimRunRecord(...args),
+		finishRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => mockModule.finishRunRecord(...args),
 	}
 })
 

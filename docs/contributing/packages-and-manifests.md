@@ -180,10 +180,11 @@ A saved package is a repo with the package extension activated. Four concepts:
   `packageStorage()` bucket access and stamp-aligned secret authority are
   granted only from host-controlled provenance metadata: the run's own package
   context, the `packageId` entries recorded in the bundle's static dependency
-  metadata, and published static dependency artifacts installed during
-  hydration. Sandbox-supplied strings never extend the grant set, so
-  hand-written source claiming an arbitrary package id is rejected (`packageId`
-  on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
+  metadata (direct imports plus `transitive` entries reached through a
+  dependency's reachable source), and published static dependency artifacts
+  installed during hydration. Sandbox-supplied strings never extend the grant
+  set, so hand-written source claiming an arbitrary package id is rejected
+  (`packageId` on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
   `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
   `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
   because storage runner names are keyed by the calling user's id.
@@ -471,7 +472,7 @@ enqueue failures are logged and never fail `communityPublish`.
 A republish that moves the pinned commit enqueues
 `community.fork.upstream_updated` on the same queue. That topic is not
 admin-only. It reaches each forking account's own subscribed packages, one event
-per fork, gated per forker by the `fork-upstream-update-events` flag. See
+per fork. See
 [Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.

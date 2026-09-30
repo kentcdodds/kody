@@ -545,6 +545,7 @@ test('a cleanup error keeps a claim-created fence so the damaged account retries
 			revokedOAuthGrants: 0,
 			clearedDurableObjects: {},
 			deletedVectors: 0,
+			stripeRefunds: [],
 			warnings: ['simulated cleanup'],
 		})
 	})

@@ -74,7 +74,7 @@ async function createSeededDb() {
 			'source-missing',
 			'plaid-fork-test-cleanup',
 		],
-	]) {
+	] as const) {
 		await insertCommunityFork(db, {
 			id,
 			listing_id: 'listing-plaid',

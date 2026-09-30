@@ -1,9 +1,14 @@
+import { type WorkflowStep } from 'cloudflare:workers'
 import { NonRetryableError } from 'cloudflare:workflows'
 import { expect, test, vi } from 'vitest'
+import type * as PackageInvocationsService from '#worker/package-invocations/service.ts'
+import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import {
 	AccountSuspendedError,
 	accountSuspendedMessage,
 } from '#worker/account/account-suspension.ts'
+import { type PackageInvocationStoredResponse } from '#worker/package-invocations/repo.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
 import { UserCodeError, isUserCodeError } from '#worker/user-code-error.ts'
 import {
@@ -11,6 +16,7 @@ import {
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
 	workflowExecutorTimeoutMs,
+	type DynamicCallableWorkflowPayload,
 } from './package-workflows.ts'
 import {
 	packageWorkflowsInvocationMocks as invocationMocks,
@@ -21,17 +27,25 @@ import {
 } from '#worker/test-support/package-workflows.ts'
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	invokePackageExport: (...args: Array<unknown>) =>
-		invocationMocks.invokePackageExport(...args),
-	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
-		invocationMocks.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
-		invocationMocks.createPackageRuntimeInvokeTools(...args),
+	invokePackageExport: (
+		...args: Parameters<typeof PackageInvocationsService.invokePackageExport>
+	) => invocationMocks.invokePackageExport(...args),
+	createExecutePackageInvokeTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createExecutePackageInvokeTools
+		>
+	) => invocationMocks.createExecutePackageInvokeTools(...args),
+	createPackageRuntimeInvokeTools: (
+		...args: Parameters<
+			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
+		>
+	) => invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
-	runModuleWithRegistry: (...args: Array<unknown>) =>
-		invocationMocks.runModuleWithRegistry(...args),
+	runModuleWithRegistry: (
+		...args: Parameters<typeof RunKodyRegistry.runModuleWithRegistry>
+	) => invocationMocks.runModuleWithRegistry(...args),
 }))
 
 const backgroundUserMocks = vi.hoisted(() => ({
@@ -49,10 +63,12 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
-	beginRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.beginRunRecord(...args),
-	finishRunRecord: (...args: Array<unknown>) =>
-		runRecordMocks.finishRunRecord(...args),
+	beginRunRecord: (
+		...args: Parameters<typeof RunRecordsServiceModule.beginRunRecord>
+	) => runRecordMocks.beginRunRecord(...args),
+	finishRunRecord: (
+		...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+	) => runRecordMocks.finishRunRecord(...args),
 	upsertWorkflowProjection: (...args: Array<unknown>) =>
 		runRecordMocks.upsertWorkflowProjection(
 			...(args as [
@@ -159,7 +175,12 @@ async function queueWorkflow(
 			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
 			env,
 		).run(
-			{ payload: payload as never, timestamp: new Date(), instanceId },
+			{
+				payload: payload as DynamicCallableWorkflowPayload,
+				timestamp: new Date(),
+				instanceId,
+				workflowName: 'dynamic-callable-workflow',
+			},
 			createInlineStep(),
 		)
 	return { env, binding, created, queued, run }
@@ -420,11 +441,7 @@ test('package export failures mark the run errored and classify user-code vs inf
 	const shadeToolMessage =
 		'Shade workflow event failed: Tool "kody.mcp[\\"home\\"].bond_shade_set_position" not found'
 	const cases: Array<
-		[
-			{ status: number; body: unknown },
-			string,
-			'user' | 'infrastructure' | null,
-		]
+		[PackageInvocationStoredResponse, string, 'user' | 'infrastructure' | null]
 	> = [
 		[failure(500, null, shadeToolMessage), shadeToolMessage, null],
 		[

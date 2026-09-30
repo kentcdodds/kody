@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { type ArtifactRepoHandle } from './artifacts.ts'
 
 const gitMocks = vi.hoisted(() => ({
 	listServerRefs: vi.fn(),
@@ -35,6 +36,10 @@ const restEnv = {
 	CLOUDFLARE_API_TOKEN: 'token-123',
 	CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
 } as Env
+
+function withArtifactsNamespace(env: Partial<Env>, namespace: string) {
+	return { ...env, ARTIFACTS_NAMESPACE: namespace } as unknown as Env
+}
 
 const remoteFor = (name: string, namespace = 'default') =>
 	`https://acct.artifacts.cloudflare.net/git/${namespace}/${name}.git`
@@ -145,10 +150,9 @@ test('artifacts REST client scopes API paths to configured or stored namespaces'
 	})
 
 	await expect(
-		getArtifactsBinding({
-			...restEnv,
-			ARTIFACTS_NAMESPACE: 'preview',
-		} as Env).get('repo-1'),
+		getArtifactsBinding(withArtifactsNamespace(restEnv, 'preview')).get(
+			'repo-1',
+		),
 	).resolves.toMatchObject({ status: 'ready' })
 	expect(fetchMock).toHaveBeenCalledTimes(1)
 
@@ -162,15 +166,15 @@ test('artifacts REST client scopes API paths to configured or stored namespaces'
 	})
 	await expect(
 		getArtifactsBinding(
-			{ ...restEnv, ARTIFACTS_NAMESPACE: 'preview' } as Env,
+			withArtifactsNamespace(restEnv, 'preview'),
 			' stored ',
 		).get('repo-1'),
 	).resolves.toMatchObject({ status: 'ready' })
 	expect(storedFetch).toHaveBeenCalledTimes(1)
 	expect(getArtifactsNamespace({} as Env)).toBe('default')
-	expect(
-		getArtifactsNamespace({ ARTIFACTS_NAMESPACE: ' preview ' } as Env),
-	).toBe('preview')
+	expect(getArtifactsNamespace(withArtifactsNamespace({}, ' preview '))).toBe(
+		'preview',
+	)
 })
 
 test('artifacts REST client supports get, create, token, and delete operations', async () => {
@@ -352,7 +356,9 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		scope: 'read',
 		expiresAt: '2026-10-09T08:55:00.000Z',
 	}
-	const createToken = vi.fn(async () => readToken as typeof readToken | object)
+	const createToken = vi.fn<ArtifactRepoHandle['createToken']>(
+		async () => readToken,
+	)
 	const info = vi.fn(async () => ({
 		id: 'repo_1',
 		name: 'repo-1',
@@ -400,6 +406,7 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 	expect(info).not.toHaveBeenCalled()
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
 
+	// @ts-expect-error createToken omits plaintext to exercise runtime validation
 	createToken.mockResolvedValueOnce({ ...readToken, plaintext: undefined })
 	await expect(resolveArtifactDefaultBranchHead({ repo })).rejects.toThrow(
 		'Artifacts createToken result is missing plaintext.',

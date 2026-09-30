@@ -20,7 +20,7 @@ test('ensureObjectHasOwn polyfills missing hasOwn and leaves an existing impleme
 	expect(objectWithoutHasOwn.hasOwn!(nullProto, 'own')).toBe(true)
 	expect(objectWithoutHasOwn.hasOwn!(nullProto, 'toString')).toBe(false)
 
-	const existing = () => true
+	const existing = (_object: object, _property: PropertyKey) => true
 	const objectWithHasOwn = { hasOwn: existing }
 
 	ensureObjectHasOwn(objectWithHasOwn)

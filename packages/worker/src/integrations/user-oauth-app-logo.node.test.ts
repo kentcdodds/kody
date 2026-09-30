@@ -41,7 +41,7 @@ function createInMemoryR2() {
 			if (!stored) return null
 			return {
 				...stored,
-				body: new Blob([stored.bytes]).stream(),
+				body: new Blob([stored.bytes.slice()]).stream(),
 				arrayBuffer: async () => stored.bytes.slice().buffer,
 			}
 		},

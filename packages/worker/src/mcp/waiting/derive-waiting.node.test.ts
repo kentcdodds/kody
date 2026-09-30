@@ -1,10 +1,19 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import type * as memoryRepo from '#mcp/memory/repo.ts'
+import { type McpMemoryRow } from '#mcp/memory/types.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
+import { type SecretMetadata } from '#mcp/secrets/types.ts'
+import type * as guildMembership from '#worker/discord/guild-membership.ts'
 import { persistIntegrationTokens } from '#worker/integrations/credentials.ts'
 import { inferIntegrationRefreshPolicy } from '#worker/integrations/refresh-policy.ts'
 import { writeIntegrationAuthFailure } from '#worker/integrations/repo.ts'
 import type * as integrationsService from '#worker/integrations/service.ts'
+import { type JoinedIntegration } from '#worker/integrations/types.ts'
+import type * as jobsDataModule from '#worker/jobs/jobs-data.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import type * as runRecordsService from '#worker/run-records/service.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
@@ -13,35 +22,51 @@ import { accountActivitySummaryWindowMs } from '#universal/account-activity-filt
 import { buildWaitingItems, waitingFirstUseIds } from '#universal/waiting.ts'
 import { collectWaitingSignals } from './derive-waiting.ts'
 
+type CountJobsForUser = ReturnType<
+	typeof jobsDataModule.jobsData
+>['countJobsForUser']
+
 const mockModule = vi.hoisted(() => ({
-	summarizeRunRecords: vi.fn(async () => ({
-		since: new Date(0).toISOString(),
-		total: 0,
-		errors: 0,
-		ignored: 0,
-		resolved: 0,
-		running: 0,
-		bySurface: [],
-	})),
-	listJoinedIntegrations: vi.fn(async () => []),
-	listSecrets: vi.fn(async () => []),
-	listSavedPackagesByUserId: vi.fn(async () => []),
-	listMemoriesByUserId: vi.fn(async () => []),
-	countJobsForUser: vi.fn(async () => 0),
-	readOfficialDiscordMembershipForUser: vi.fn(async () => false),
+	summarizeRunRecords: vi.fn<typeof runRecordsService.summarizeRunRecords>(
+		async () => ({
+			since: new Date(0).toISOString(),
+			total: 0,
+			errors: 0,
+			ignored: 0,
+			resolved: 0,
+			running: 0,
+			bySurface: [],
+		}),
+	),
+	listJoinedIntegrations: vi.fn<
+		typeof integrationsService.listJoinedIntegrations
+	>(async () => []),
+	listSecrets: vi.fn<typeof secretsService.listSecrets>(async () => []),
+	listSavedPackagesByUserId: vi.fn<
+		typeof packageRepo.listSavedPackagesByUserId
+	>(async () => []),
+	listMemoriesByUserId: vi.fn<typeof memoryRepo.listMemoriesByUserId>(
+		async () => [],
+	),
+	countJobsForUser: vi.fn<CountJobsForUser>(async () => 0),
+	readOfficialDiscordMembershipForUser: vi.fn<
+		typeof guildMembership.readOfficialDiscordMembershipForUser
+	>(async () => false),
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
-	summarizeRunRecords: (...args: Array<unknown>) =>
-		mockModule.summarizeRunRecords(...args),
+	summarizeRunRecords: (
+		...args: Parameters<typeof runRecordsService.summarizeRunRecords>
+	) => mockModule.summarizeRunRecords(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof integrationsService>()
 	return {
 		...actual,
-		listJoinedIntegrations: (...args: Array<unknown>) =>
-			mockModule.listJoinedIntegrations(...args),
+		listJoinedIntegrations: (
+			...args: Parameters<typeof integrationsService.listJoinedIntegrations>
+		) => mockModule.listJoinedIntegrations(...args),
 	}
 })
 
@@ -49,30 +74,36 @@ vi.mock('#mcp/secrets/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof secretsService>()
 	return {
 		...actual,
-		listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
+		listSecrets: (...args: Parameters<typeof secretsService.listSecrets>) =>
+			mockModule.listSecrets(...args),
 	}
 })
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
 }))
 
 vi.mock('#mcp/memory/repo.ts', () => ({
-	listMemoriesByUserId: (...args: Array<unknown>) =>
-		mockModule.listMemoriesByUserId(...args),
+	listMemoriesByUserId: (
+		...args: Parameters<typeof memoryRepo.listMemoriesByUserId>
+	) => mockModule.listMemoriesByUserId(...args),
 }))
 
 vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	jobsData: () => ({
-		countJobsForUser: (...args: Array<unknown>) =>
+		countJobsForUser: (...args: Parameters<CountJobsForUser>) =>
 			mockModule.countJobsForUser(...args),
 	}),
 }))
 
 vi.mock('#worker/discord/guild-membership.ts', () => ({
-	readOfficialDiscordMembershipForUser: (...args: Array<unknown>) =>
-		mockModule.readOfficialDiscordMembershipForUser(...args),
+	readOfficialDiscordMembershipForUser: (
+		...args: Parameters<
+			typeof guildMembership.readOfficialDiscordMembershipForUser
+		>
+	) => mockModule.readOfficialDiscordMembershipForUser(...args),
 }))
 
 function createStubDb(
@@ -167,11 +198,91 @@ const allStamped = {
 	first_saved_package_at: stampedAt,
 	onboarding_checklist_dismissed_at: stampedAt,
 }
-const demoPackage = {
+const fixtureTimestamp = '2026-08-01T00:00:00.000Z'
+const demoPackage: SavedPackageRecord = {
 	id: 'pkg-1',
+	userId: 'user-aaa',
 	name: 'demo',
 	kodyId: 'demo',
+	description: '',
+	tags: [],
+	searchText: null,
+	sourceId: 'source-1',
+	hasApp: false,
+	hidden: false,
+	isPrivate: false,
 	lockedAt: null,
+	createdAt: fixtureTimestamp,
+	updatedAt: fixtureTimestamp,
+}
+
+const commuteMemory: McpMemoryRow = {
+	id: 'mem-1',
+	user_id: 'user-aaa',
+	category: null,
+	status: 'active',
+	subject: 'Commute',
+	summary: '',
+	details: '',
+	tags_json: '[]',
+	source_uris_json: '[]',
+	dedupe_key: null,
+	created_at: fixtureTimestamp,
+	updated_at: fixtureTimestamp,
+	last_accessed_at: null,
+	deleted_at: null,
+}
+
+const githubIntegration: JoinedIntegration = {
+	lane: 'user',
+	app: {
+		userId: 'user-aaa',
+		slug: 'github',
+		provider: 'github',
+		label: null,
+		clientId: 'github-client-id',
+		hasClientSecret: true,
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		authorizeUrl: 'https://github.com/login/oauth/authorize',
+		apiBaseUrl: 'https://api.github.com',
+		flow: 'confidential',
+		usePkce: null,
+		tokenExchangeStyle: null,
+		scopeSeparator: null,
+		extraAuthorizeParams: {},
+		createdAt: fixtureTimestamp,
+		updatedAt: fixtureTimestamp,
+	},
+	connection: {
+		userId: 'user-aaa',
+		name: 'github',
+		appSlug: 'github',
+		platformAppSlug: null,
+		accountLabel: null,
+		description: '',
+		scopes: [],
+		requiredHosts: [],
+		usageMode: 'any',
+		allowedPackageIds: [],
+		connectedAt: fixtureTimestamp,
+		tokenRefreshedAt: null,
+		createdAt: fixtureTimestamp,
+		updatedAt: fixtureTimestamp,
+		lastAuthFailure: null,
+	},
+}
+
+const apiKeySecret: SecretMetadata = {
+	name: 'apiKey',
+	scope: 'user',
+	description: '',
+	packageId: null,
+	allowedHosts: [],
+	allowedPackages: [],
+	createdAt: fixtureTimestamp,
+	updatedAt: fixtureTimestamp,
+	expiresAt: null,
+	ttlMs: 60,
 }
 
 function stubEnv(stamps?: Parameters<typeof createStubDb>[0]) {
@@ -179,15 +290,11 @@ function stubEnv(stamps?: Parameters<typeof createStubDb>[0]) {
 }
 
 function mockFirstUseProbesPresent(discordMember: boolean) {
-	mockModule.listMemoriesByUserId.mockResolvedValue([
-		{ id: 'mem-1', subject: 'Commute' },
-	])
+	mockModule.listMemoriesByUserId.mockResolvedValue([commuteMemory])
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([demoPackage])
 	mockModule.countJobsForUser.mockResolvedValue(1)
-	mockModule.listJoinedIntegrations.mockResolvedValue([
-		{ connection: { name: 'github', lastAuthFailure: null } },
-	])
-	mockModule.listSecrets.mockResolvedValue([{ name: 'apiKey', ttlMs: 60 }])
+	mockModule.listJoinedIntegrations.mockResolvedValue([githubIntegration])
+	mockModule.listSecrets.mockResolvedValue([apiKeySecret])
 	mockModule.readOfficialDiscordMembershipForUser.mockResolvedValue(
 		discordMember,
 	)
@@ -378,10 +485,10 @@ test('waiting shows missing_refresh_token only for connections whose refresh is 
 		})
 	}
 	mockModule.listJoinedIntegrations.mockResolvedValueOnce(
-		(await actual.listJoinedIntegrations({
+		await actual.listJoinedIntegrations({
 			env,
 			userId: user.stableUserId,
-		})) as never,
+		}),
 	)
 
 	const signals = await collectWaitingSignals({ env: stubEnv(), user })

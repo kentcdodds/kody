@@ -19,9 +19,10 @@ const sentryMock = vi.hoisted(() => ({
 type ScopeStub = typeof sentryMock.scope
 
 vi.mock('@sentry/cloudflare', () => ({
-	isInitialized: (...args: Array<unknown>) => sentryMock.isInitialized(...args),
-	getClient: (...args: Array<unknown>) => sentryMock.getClient(...args),
-	withScope: (...args: Array<unknown>) => sentryMock.withScope(...args),
+	isInitialized: () => sentryMock.isInitialized(),
+	getClient: () => sentryMock.getClient(),
+	withScope: (callback: (scope: ScopeStub) => void) =>
+		sentryMock.withScope(callback),
 	captureException: (...args: Array<unknown>) =>
 		sentryMock.captureException(...args),
 	captureMessage: (...args: Array<unknown>) =>

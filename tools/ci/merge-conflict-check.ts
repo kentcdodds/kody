@@ -145,7 +145,7 @@ export async function pollMergeability(input: {
 		mergeableState: latest?.mergeableState ?? 'unknown',
 		draft: latest?.draft ?? false,
 		detail: staleBase
-			? `Pull request base ${latest.baseSha || 'is missing'}, not ${input.expectedBaseSha}.`
+			? `Pull request base ${latest?.baseSha || 'is missing'}, not ${input.expectedBaseSha}.`
 			: undefined,
 	}
 }

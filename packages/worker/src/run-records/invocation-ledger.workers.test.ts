@@ -25,6 +25,11 @@ function uniqueUserId(label: string) {
 	return `invocation-ledger-${label}-${crypto.randomUUID()}`
 }
 
+function runLogStub(userId: string) {
+	const namespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	return namespace.get(namespace.idFromName(userId))
+}
+
 function ledgerKey(overrides?: Partial<Record<string, string>>) {
 	return {
 		tokenId: overrides?.tokenId ?? 'token-1',
@@ -132,7 +137,7 @@ async function sqlExec(
 	query: string,
 	...bindings: Array<SqlStorageValue>
 ) {
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
 		state.storage.sql.exec(query, ...bindings)
@@ -390,7 +395,7 @@ test('DO-local retention prunes terminal ledger rows after 90 days and keeps in-
 	}
 
 	// Arm retention so the next finish runs a full pass.
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	await runInDurableObject(stub, async (instance: RunLog) => {
 		seedRunLogMeta(instance, {
 			finishesSinceRetention: runRecordRetentionEveryNFinishes - 1,

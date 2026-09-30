@@ -6,6 +6,7 @@ import {
 	storageEstimateReadTimeoutMs,
 } from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
+import type * as StorageBucketsService from '#worker/storage-buckets/service.ts'
 
 const totalRetryDelayMs = storageEstimateReadRetryDelaysMs.reduce(
 	(total, delay) => total + delay,
@@ -14,16 +15,22 @@ const totalRetryDelayMs = storageEstimateReadRetryDelaysMs.reduce(
 const maxEstimateReadAttempts = storageEstimateReadRetryDelaysMs.length + 1
 
 const mockModule = vi.hoisted(() => ({
-	listUserStorageBucketEstimates: vi.fn(),
-	readStorageBytesFromUserMeter: vi.fn(async () => 0),
+	listUserStorageBucketEstimates:
+		vi.fn<typeof StorageBucketsService.listUserStorageBucketEstimates>(),
+	readStorageBytesFromUserMeter: vi.fn<
+		typeof EntitlementsService.readStorageBytesFromUserMeter
+	>(async () => 0),
 	registerStorageBucket: vi.fn(),
 	recordStorageBucketEstimate: vi.fn(),
 	maybeRefreshStorageBucketEstimate: vi.fn(),
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
-	listUserStorageBucketEstimates: (...args: Array<unknown>) =>
-		mockModule.listUserStorageBucketEstimates(...args),
+	listUserStorageBucketEstimates: (
+		...args: Parameters<
+			typeof StorageBucketsService.listUserStorageBucketEstimates
+		>
+	) => mockModule.listUserStorageBucketEstimates(...args),
 	registerStorageBucket: (...args: Array<unknown>) =>
 		mockModule.registerStorageBucket(...args),
 	recordStorageBucketEstimate: (...args: Array<unknown>) =>
@@ -47,8 +54,11 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		readStorageBytesFromUserMeter: (...args: Array<unknown>) =>
-			mockModule.readStorageBytesFromUserMeter(...args),
+		readStorageBytesFromUserMeter: (
+			...args: Parameters<
+				typeof EntitlementsService.readStorageBytesFromUserMeter
+			>
+		) => mockModule.readStorageBytesFromUserMeter(...args),
 	}
 })
 
@@ -93,7 +103,7 @@ function assertWrite(
 function unestimatedBuckets(...storageIds: Array<string>) {
 	return storageIds.map((storageId) => ({
 		storageId,
-		kind: 'unknown',
+		kind: 'unknown' as const,
 		estimatedBytes: null,
 	}))
 }
@@ -272,7 +282,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
 		...peerStorageIds.map((storageId) => ({
 			storageId,
-			kind: 'package',
+			kind: 'package' as const,
 			estimatedBytes: 64,
 		})),
 		{ storageId: 'package:target', kind: 'package', estimatedBytes: 128 },

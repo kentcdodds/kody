@@ -36,7 +36,12 @@ the grant is the security boundary.
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
    - the run's `packageContext.packageId` (when the run _is_ a package)
-   - each static dependency `packageId` where `platformOwned !== true`
+   - each static dependency `packageId` where `platformOwned !== true`,
+     including `transitive: true` entries: packages that a dependency's export
+     statically imports from files reachable from that export
+     (`resolveKodyDependenciesForEntryPoint` in `module-graph-workspace.ts`).
+     Execute that imports only A still grants B when A's export imports B.
+     Static-call metering, popularity, and republish staleness stay direct-only.
    - dynamic-import artifact ids installed during hydration
 3. **Enforce.** `createPackageStorageKodyTools` rejects any sandbox-supplied
    `packageId` outside that set. Secret mounts (`packageSecrets`) do not take an

@@ -176,7 +176,10 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	expect(
 		desired.lockPolicy.rules.map((rule) => ({
 			prefix: rule.prefix,
-			maxAgeSeconds: rule.condition.maxAgeSeconds,
+			maxAgeSeconds:
+				rule.condition.type === 'Age'
+					? rule.condition.maxAgeSeconds
+					: undefined,
 			enabled: rule.enabled,
 		})),
 	).toEqual([
@@ -189,7 +192,10 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	expect(
 		desired.lifecyclePolicy.rules.map((rule) => ({
 			prefix: rule.conditions.prefix,
-			maxAge: rule.deleteObjectsTransition?.condition.maxAge,
+			maxAge:
+				rule.deleteObjectsTransition?.condition?.type === 'Age'
+					? rule.deleteObjectsTransition.condition.maxAge
+					: undefined,
 			enabled: rule.enabled,
 		})),
 	).toEqual([
@@ -381,12 +387,17 @@ test('apply preserves unknown legal holds and stronger managed retention', async
 			condition: { type: 'Age', maxAge: 7 * 86_400 },
 		},
 	}
+	const [dailyLock] = desired.lockPolicy.rules
+	const [dailyLifecycle] = desired.lifecyclePolicy.rules
+	if (!dailyLock || !dailyLifecycle) {
+		throw new Error('expected daily lock and lifecycle rules')
+	}
 	const strongerDailyLock = {
-		...desired.lockPolicy.rules[0],
+		...dailyLock,
 		condition: { type: 'Age' as const, maxAgeSeconds: 90 * 86_400 },
 	}
 	const strongerDailyLifecycle = {
-		...desired.lifecyclePolicy.rules[0],
+		...dailyLifecycle,
 		deleteObjectsTransition: {
 			condition: { type: 'Age' as const, maxAge: 90 * 86_400 },
 		},

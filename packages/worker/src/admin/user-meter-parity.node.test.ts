@@ -10,15 +10,20 @@ import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	/** Physical D1 payload recompute; the minimal test DB has no payload tables. */
-	calculateUserD1StorageBytes: vi.fn(async () => 0),
+	calculateUserD1StorageBytes: vi.fn<
+		typeof EntitlementsService.calculateUserD1StorageBytes
+	>(async () => 0),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		calculateUserD1StorageBytes: (...args: Array<unknown>) =>
-			mockModule.calculateUserD1StorageBytes(...args),
+		calculateUserD1StorageBytes: (
+			...args: Parameters<
+				typeof EntitlementsService.calculateUserD1StorageBytes
+			>
+		) => mockModule.calculateUserD1StorageBytes(...args),
 	}
 })
 

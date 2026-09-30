@@ -3,6 +3,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
+	type AccountExportD1Table,
+	type AccountExportFile,
 	createAccountExport,
 	createAccountExportManifest,
 	getAccountExportD1UserColumnCoverage,
@@ -25,6 +27,16 @@ const exportFor = (env: Env, dbUserId = 1, mcpUserId = 'user-aaa') =>
 		mcpUserId,
 		generatedAt: '2026-07-05T00:00:00.000Z',
 	})
+
+function d1Table(
+	accountExport: AccountExportFile,
+	table: string,
+): AccountExportD1Table {
+	const section = accountExport.d1[table]
+	expect(section, `d1.${table} export section`).toBeDefined()
+	if (!section) throw new Error(`Missing d1.${table} export section`)
+	return section
+}
 
 test('account export D1 coverage includes every live user-owned schema column', () => {
 	const db = new DatabaseSync(':memory:')
@@ -117,7 +129,7 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 
 	const accountExport = await exportFor({ APP_DB: db } as Env)
 
-	const feedbackRows = accountExport.d1.platform_feedback.rows
+	const feedbackRows = d1Table(accountExport, 'platform_feedback').rows
 	expect(feedbackRows).toEqual([
 		expect.objectContaining({
 			id: 'feedback-submitted-by-a',
@@ -136,7 +148,7 @@ test('account export includes submitted feedback but excludes reviewer-only rela
 	for (const column of reviewerColumns) {
 		expect(feedbackRows[0]).not.toHaveProperty(column)
 	}
-	expect(accountExport.d1.platform_feedback.redactedColumns).toEqual(
+	expect(d1Table(accountExport, 'platform_feedback').redactedColumns).toEqual(
 		reviewerColumns,
 	)
 	expect(
@@ -175,7 +187,7 @@ test('account export includes profile fields and social graph edges for either s
 
 	const accountExport = await exportFor({ APP_DB: db } as Env)
 
-	expect(accountExport.d1.users.rows).toEqual([
+	expect(d1Table(accountExport, 'users').rows).toEqual([
 		expect.objectContaining({
 			id: 1,
 			username: 'user-a',
@@ -185,9 +197,11 @@ test('account export includes profile fields and social graph edges for either s
 			profile_visibility: 'public',
 		}),
 	])
-	expect(accountExport.d1.users.rows[0]).not.toHaveProperty('password_hash')
+	expect(d1Table(accountExport, 'users').rows[0]).not.toHaveProperty(
+		'password_hash',
+	)
 
-	expect(accountExport.d1.community_activity_events.rows).toEqual([
+	expect(d1Table(accountExport, 'community_activity_events').rows).toEqual([
 		expect.objectContaining({
 			id: 'evt-a',
 			actor_user_id: 'user-aaa',
@@ -242,28 +256,28 @@ test('account export separates listing-owner deletion cascades from participant 
 		);
 	`)
 	const ownerExport = await exportFor({ APP_DB: db } as Env, 1, 'user-owner')
-	expect(ownerExport.d1.community_ratings.rows).toEqual([])
-	expect(ownerExport.d1.community_forks.rows).toEqual([])
-	expect(ownerExport.d1.community_reports.rows).toEqual([])
+	expect(d1Table(ownerExport, 'community_ratings').rows).toEqual([])
+	expect(d1Table(ownerExport, 'community_forks').rows).toEqual([])
+	expect(d1Table(ownerExport, 'community_reports').rows).toEqual([])
 
 	const participantExport = await exportFor(
 		{ APP_DB: db } as Env,
 		2,
 		'user-participant',
 	)
-	expect(participantExport.d1.community_ratings.rows).toEqual([
+	expect(d1Table(participantExport, 'community_ratings').rows).toEqual([
 		expect.objectContaining({
 			id: 'rating-private',
 			note: 'private rating note',
 		}),
 	])
-	expect(participantExport.d1.community_forks.rows).toEqual([
+	expect(d1Table(participantExport, 'community_forks').rows).toEqual([
 		expect.objectContaining({
 			id: 'fork-private',
 			adoption_note: 'private adoption note',
 		}),
 	])
-	expect(participantExport.d1.community_reports.rows).toEqual([
+	expect(d1Table(participantExport, 'community_reports').rows).toEqual([
 		expect.objectContaining({
 			id: 'report-private',
 			reason: 'private report reason',
@@ -296,14 +310,14 @@ test('account write lease repair export redacts the foreign party for both persp
 		);
 	`)
 	const targetExport = await exportFor({ APP_DB: db } as Env, 1, 'user-target')
-	expect(targetExport.d1.account_write_lease_repairs.rows).toEqual([
+	expect(d1Table(targetExport, 'account_write_lease_repairs').rows).toEqual([
 		expect.objectContaining({
 			target_user_id: 'user-target',
 			repaired_by_user_id: '[redacted]',
 		}),
 	])
 	const adminExport = await exportFor({ APP_DB: db } as Env, 2, 'user-admin')
-	expect(adminExport.d1.account_write_lease_repairs.rows).toEqual([
+	expect(d1Table(adminExport, 'account_write_lease_repairs').rows).toEqual([
 		expect.objectContaining({
 			target_user_id: '[redacted]',
 			repaired_by_user_id: 'user-admin',
@@ -361,10 +375,10 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	} as unknown as Env)
 
 	expect(accountExport.manifest.security.secretValuesExported).toBe(false)
-	expect(accountExport.d1.users.rows).toEqual([
+	expect(d1Table(accountExport, 'users').rows).toEqual([
 		expect.not.objectContaining({ password_hash: expect.anything() }),
 	])
-	expect(accountExport.d1.secret_entries.rows).toEqual([
+	expect(d1Table(accountExport, 'secret_entries').rows).toEqual([
 		expect.objectContaining({
 			bucket_id: 'secret-bucket-a',
 			name: 'api-key',
@@ -372,22 +386,22 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			allowed_packages: '["@user/pkg"]',
 		}),
 	])
-	expect(accountExport.d1.secret_entries.rows[0]).not.toHaveProperty(
+	expect(d1Table(accountExport, 'secret_entries').rows[0]).not.toHaveProperty(
 		'encrypted_value',
 	)
-	expect(accountExport.d1.secret_entries.rows[0]).not.toHaveProperty(
+	expect(d1Table(accountExport, 'secret_entries').rows[0]).not.toHaveProperty(
 		'lookup_hash',
 	)
-	expect(accountExport.d1.package_invocation_tokens.rows[0]).not.toHaveProperty(
+	expect(
+		d1Table(accountExport, 'package_invocation_tokens').rows[0],
+	).not.toHaveProperty('token_hash')
+	expect(d1Table(accountExport, 'password_resets').rows[0]).not.toHaveProperty(
 		'token_hash',
 	)
-	expect(accountExport.d1.password_resets.rows[0]).not.toHaveProperty(
-		'token_hash',
-	)
-	expect(accountExport.d1.value_entries.rows).toEqual([
+	expect(d1Table(accountExport, 'value_entries').rows).toEqual([
 		expect.objectContaining({ value: 'America/Denver' }),
 	])
-	expect(accountExport.d1.mcp_memories.rows).toEqual([
+	expect(d1Table(accountExport, 'mcp_memories').rows).toEqual([
 		expect.objectContaining({ id: 'memory-a', summary: 'Blue' }),
 	])
 	expect(
@@ -480,7 +494,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 
 	const env = { APP_DB: db, MAILBOX: createMailboxBinding() } as Env
 	const accountExport = await exportFor(env)
-	expect(accountExport.d1.mcp_memories.rows).toHaveLength(totalRows)
+	expect(d1Table(accountExport, 'mcp_memories').rows).toHaveLength(totalRows)
 	expect(accountExport.manifest.sections['d1.mcp_memories']?.count).toBe(
 		totalRows,
 	)

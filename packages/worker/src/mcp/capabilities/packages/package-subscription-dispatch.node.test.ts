@@ -1,9 +1,12 @@
 import { expect, test, vi } from 'vitest'
+import type * as PackageInvocations from '#worker/package-invocations/service.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({
+	invokePackageSubscription: vi.fn<
+		typeof PackageInvocations.invokePackageSubscription
+	>(async () => ({
 		status: 200,
 		body: { result: { ok: true } },
 	})),

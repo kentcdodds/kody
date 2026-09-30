@@ -1,6 +1,7 @@
 import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as AppBaseUrl from '#worker/app-base-url.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -8,7 +9,9 @@ const mockModule = vi.hoisted(() => ({
 	resolvePackageOwnerContext: vi.fn(),
 	servePackageAppRequest: vi.fn(),
 	findPlainRepoPromotionHint: vi.fn(),
-	getPackageAppBaseUrl: vi.fn(() => 'https://apps.example.com'),
+	getPackageAppBaseUrl: vi.fn<typeof AppBaseUrl.getPackageAppBaseUrl>(
+		() => 'https://apps.example.com',
+	),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -32,8 +35,9 @@ vi.mock('#worker/repo/user-repos.ts', () => ({
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
-	getPackageAppBaseUrl: (...args: Array<unknown>) =>
-		mockModule.getPackageAppBaseUrl(...args),
+	getPackageAppBaseUrl: (
+		...args: Parameters<typeof AppBaseUrl.getPackageAppBaseUrl>
+	) => mockModule.getPackageAppBaseUrl(...args),
 }))
 
 vi.mock('#worker/package-runtime/package-app-serve.ts', () => ({

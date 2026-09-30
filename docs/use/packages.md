@@ -311,15 +311,15 @@ the write when truncated — only the returned row list is capped. See
 `packageStorage()` identity comes from the bundler, not from source code: the
 publish pipeline stamps each module with the saved package it originated from,
 and execution grants bucket access only from that recorded provenance — the
-running package itself and the packages the bundle statically imported.
-Hand-written code cannot claim another package's id to read its bucket. Two
-consequences:
+running package itself and the packages the bundle statically imported, directly
+or through another imported package's export. Hand-written code cannot claim
+another package's id to read its bucket. Two consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
   an actionable error there. Statically import the owning package's export.
-- Provenance grants cover directly imported packages. For data owned by a
-  package that is not the running package and not statically imported by the
-  bundle, import that package's export and let its stamp do the reading.
+- When A's export statically imports B, importing A is enough: B's code keeps
+  B's bucket. You do not also import B. Only files reachable from the export you
+  import count, so A's unrelated exports grant nothing.
 
 User secrets follow the same stamp. An export that reads a secret locked to its
 declaring package (or declared in that package's `kody.secretMounts`) keeps that

@@ -1,7 +1,5 @@
-import { forkUpstreamUpdateEventsFlagKey } from '#universal/feature-flags/registry.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
 import {
 	loadMatchingPackageSubscriptions,
 	mapSettledInChunks,
@@ -22,26 +20,6 @@ import { type CommunityForkRecord } from './types.ts'
 const communityForkUpstreamUpdatedSubscriptionActorTokenId =
 	'internal:community-fork-upstream-updated-subscriptions'
 
-/**
- * Unknown stable ids are off. Evaluation errors reject so the dispatcher can
- * skip that forker for this attempt and still have the Queue retry.
- */
-export async function isForkUpstreamUpdateEventsEnabled(input: {
-	db: D1Database
-	stableUserId: string
-}): Promise<boolean> {
-	const row = await input.db
-		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
-		.bind(input.stableUserId)
-		.first<{ id: number }>()
-	if (!row) return false
-	return await isFeatureEnabled(
-		input.db,
-		forkUpstreamUpdateEventsFlagKey,
-		row.id,
-	)
-}
-
 function groupForksByForker(forks: ReadonlyArray<CommunityForkRecord>) {
 	const byForker = new Map<string, Array<CommunityForkRecord>>()
 	for (const fork of forks) {
@@ -55,10 +33,10 @@ function groupForksByForker(forks: ReadonlyArray<CommunityForkRecord>) {
 /**
  * Fans a listing republish out to every forker of that listing: one event per
  * fork, delivered to that forker's own packages that declare the topic.
- * Forks already at the new pinned commit are skipped. Each forker is gated by
- * `fork-upstream-update-events` at delivery time. Flag evaluation, discovery,
- * and pre-handler infrastructure failures reject after all siblings finish so
- * the Queue retries; per-invocation idempotency keys make redelivery replay.
+ * Forks already at the new pinned commit are skipped. A forker whose
+ * subscriber discovery fails is skipped for this attempt; discovery and
+ * pre-handler infrastructure failures reject after all siblings finish so the
+ * Queue retries, and per-invocation idempotency keys make redelivery replay.
  */
 export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
@@ -73,37 +51,6 @@ export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(inp
 	if (forks.length === 0) return []
 
 	const forksByForker = groupForksByForker(forks)
-	const enabledForkerIds: Array<string> = []
-	const discoveryErrors: Array<unknown> = []
-	for (const forkerUserId of forksByForker.keys()) {
-		try {
-			if (
-				await isForkUpstreamUpdateEventsEnabled({
-					db: input.env.APP_DB,
-					stableUserId: forkerUserId,
-				})
-			) {
-				enabledForkerIds.push(forkerUserId)
-			}
-		} catch (error) {
-			console.warn('community-fork-upstream-updated-flag-evaluation-failed', {
-				listingId: message.listingId,
-				forkerUserId,
-				error,
-			})
-			discoveryErrors.push(error)
-		}
-	}
-	if (enabledForkerIds.length === 0) {
-		if (discoveryErrors.length > 0) {
-			throw new Error(
-				'Community fork upstream-updated subscription discovery failed.',
-				{ cause: discoveryErrors[0] },
-			)
-		}
-		return []
-	}
-
 	const baseUrl = getAppBaseUrl({ env: input.env })
 	const listing = await getCommunityListingPublishedForAdmin({
 		db: input.env.APP_DB,
@@ -115,7 +62,7 @@ export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(inp
 	}
 
 	const discovered = await mapSettledInChunks(
-		enabledForkerIds,
+		[...forksByForker.keys()],
 		async (forkerUserId) => ({
 			forkerUserId,
 			...(await loadMatchingPackageSubscriptions({
@@ -130,6 +77,7 @@ export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(inp
 		fork: CommunityForkRecord
 		subscription: LoadedPackageSubscription
 	}> = []
+	const discoveryErrors: Array<unknown> = []
 	for (const result of discovered) {
 		if (result.status === 'rejected') {
 			discoveryErrors.push(result.reason)

@@ -57,7 +57,7 @@ function namedSection(html: string, id: string) {
 function anchors(html: string) {
 	return [
 		...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g),
-	].map(([, href, label]) => ({
+	].map(([, href, label = '']) => ({
 		href,
 		label: label.replace(/<[^>]+>/g, '').trim(),
 	}))

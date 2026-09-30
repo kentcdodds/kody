@@ -521,7 +521,7 @@ export function createJobsBindingStub(
 
 export function createSuccessfulDeletionEnv(
 	db: D1Database,
-	overrides: Partial<Env> & {
+	overrides: { [Key in keyof Env]?: unknown } & {
 		OAUTH_PROVIDER?: {
 			listUserGrants: (
 				userId: string,

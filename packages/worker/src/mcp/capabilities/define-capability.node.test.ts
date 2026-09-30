@@ -13,6 +13,7 @@ function createCapabilityContext() {
 			user: {
 				userId: 'user-1',
 				email: 'user@example.com',
+				displayName: 'User',
 			},
 		}),
 	}
@@ -40,6 +41,8 @@ test('Zod capability validation failures identify the capability, fields, and re
 		),
 		cause: expect.any(z.ZodError),
 	})
+	if (!(inputError instanceof Error))
+		throw new Error('Expected inputError to be an Error')
 	expect(inputError.message).toContain('package_id')
 	expect(inputHandler).not.toHaveBeenCalled()
 
@@ -66,6 +69,8 @@ test('Zod capability validation failures identify the capability, fields, and re
 		),
 		cause: expect.any(z.ZodError),
 	})
+	if (!(outputError instanceof Error))
+		throw new Error('Expected outputError to be an Error')
 	expect(outputError.message).toContain('package_id')
 })
 

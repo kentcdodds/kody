@@ -32,10 +32,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type CommunityActivityDispatchQueueMessage } from './activity-dispatch-queue-producer.ts'
-import {
-	dispatchCommunityForkUpstreamUpdatedSubscriptionEvents,
-	isForkUpstreamUpdateEventsEnabled,
-} from './fork-upstream-updated-package-subscriptions.ts'
+import { dispatchCommunityForkUpstreamUpdatedSubscriptionEvents } from './fork-upstream-updated-package-subscriptions.ts'
 import {
 	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
 	type CommunityListingPublishedDispatchQueueMessage,
@@ -117,7 +114,7 @@ function createFlowHarness() {
 		| CommunityListingPublishedDispatchQueueMessage
 		| CommunityForkUpstreamUpdatedDispatchQueueMessage
 	> = []
-	const testEnv = {
+	const testEnv: Env = {
 		...env,
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
 		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
@@ -126,7 +123,7 @@ function createFlowHarness() {
 			async send(message: CommunityActivityDispatchQueueMessage) {
 				queuedActivity.push(message)
 			},
-		},
+		} as unknown as Env['COMMUNITY_ACTIVITY_DISPATCH_QUEUE'],
 		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
 			async send(
 				message:
@@ -135,8 +132,8 @@ function createFlowHarness() {
 			) {
 				queuedListingPublished.push(message)
 			},
-		},
-	} as Env
+		} as unknown as Env['COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE'],
+	}
 	return {
 		testEnv,
 		queuedActivity,
@@ -465,19 +462,8 @@ test('public package flow works end-to-end through capability handlers', async (
 	}
 	const { kind: _kind, ...forkUpstreamMessage } = queuedForkUpstreamUpdated
 	queuedListingPublished.length = 0
-	const forkerGate = () =>
-		isForkUpstreamUpdateEventsEnabled({
-			db: testEnv.APP_DB,
-			stableUserId: forker.userId,
-		})
-	expect(await forkerGate()).toBe(false)
-	await runSql(
-		`UPDATE users SET experiments_opt_in = 1 WHERE stable_user_id = ?`,
-		forker.userId,
-	)
-	expect(await forkerGate()).toBe(true)
-	// Opted in, but the inert fork is the forker's only package and it has no
-	// saved package row, so there is no subscriber to invoke.
+	// The inert fork is the forker's only package and it has no saved package
+	// row, so there is no subscriber to invoke.
 	await expect(
 		dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
 			env: testEnv,

@@ -72,7 +72,7 @@ test('account avatar API auth, upload, remove, and invalid type', async () => {
 		params: {},
 	} as never)
 	expect(unauthorized.status).toBe(401)
-	expect((await unauthorized.json()).ok).toBe(false)
+	expect(((await unauthorized.json()) as { ok: boolean }).ok).toBe(false)
 
 	mocks.readAuthenticatedAppUser.mockResolvedValue(authedUser)
 	mocks.processUserAvatar.mockReturnValue({
@@ -147,5 +147,5 @@ test('account avatar API auth, upload, remove, and invalid type', async () => {
 		params: {},
 	} as never)
 	expect(invalid.status).toBe(400)
-	expect((await invalid.json()).ok).toBe(false)
+	expect(((await invalid.json()) as { ok: boolean }).ok).toBe(false)
 })

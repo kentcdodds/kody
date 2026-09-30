@@ -1,12 +1,16 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as CloudflareEmail from '#app/email/cloudflare-email.ts'
 import { type PlatformFeedbackRecord } from './types.ts'
 
-const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
+const sendCloudflareEmail = vi.fn<typeof CloudflareEmail.sendCloudflareEmail>(
+	async () => ({ ok: true }),
+)
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		sendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+	) => sendCloudflareEmail(...args),
 }))
 
 const {
@@ -106,7 +110,7 @@ function send(
 }
 
 function lastSentEmail() {
-	return sendCloudflareEmail.mock.lastCall?.[1] as unknown as SentEmail
+	return sendCloudflareEmail.mock.lastCall?.[1] as SentEmail
 }
 
 function claimKey(feedbackId: string) {

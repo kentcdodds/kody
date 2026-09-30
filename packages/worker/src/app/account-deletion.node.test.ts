@@ -122,7 +122,7 @@ test('deleteUserAccount enumerates job vectors through JOBS against the real pos
 			listJobStorageIdsForUser: async () => [] as Array<string>,
 			purgeUser: purgeJobsUser,
 		},
-	} as unknown as Partial<Env>)
+	})
 
 	const result = await deleteUserAccount({ env, dbUserId, mcpUserId: userId })
 
@@ -451,7 +451,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				cursor: undefined,
 			}
 		},
-	} as unknown as KVNamespace
+	}
 
 	const deletedEmailBlobKeys: Array<string> = []
 	const mailboxCleanupOrder: Array<string> = []
@@ -477,7 +477,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				emailBlobKeys.delete(key)
 			}
 		},
-	} as unknown as R2Bucket
+	}
 	const deletedCommunityAssetKeys: Array<string> = []
 	const communityAssetKeys = new Set([
 		'user-avatars/user-aaa/abc123.png',
@@ -517,7 +517,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 				communityAssetKeys.delete(key)
 			}
 		},
-	} as unknown as R2Bucket
+	}
 
 	const clearStorageMock = vi.fn(async () => ({ ok: true as const }))
 	const clearRunLogMock = vi.fn(async () => ({ ok: true as const }))
@@ -568,9 +568,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			}),
 		},
 		USER_METER: {
-			idFromName: (name: string) => userMeter.env.USER_METER!.idFromName(name),
+			idFromName: (name: string) => userMeter.env.USER_METER.idFromName(name),
 			get: (id: DurableObjectId) => ({
-				...userMeter.env.USER_METER!.get(id),
+				...userMeter.env.USER_METER.get(id),
 				purge: async () => purgeUserMeterMock(),
 			}),
 		},
@@ -885,11 +885,11 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 				return { objects: [{ key }], delimitedPrefixes: [], truncated: false }
 			},
 			delete: deleteEmailBlob,
-		} as unknown as R2Bucket,
+		},
 		MAILBOX: {
 			idFromName,
 			get: () => ({ listBlobReferences, purge: purgeMailbox }),
-		} as unknown as DurableObjectNamespace,
+		},
 	})
 
 	await expect(
@@ -929,7 +929,7 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 				}),
 				purge: purgeAfterUnrelatedFailure,
 			}),
-		} as unknown as DurableObjectNamespace,
+		},
 	})
 	await expect(
 		deleteUserAccount({

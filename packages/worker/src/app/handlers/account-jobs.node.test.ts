@@ -1,4 +1,9 @@
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as appBaseUrl from '#worker/app-base-url.ts'
+import type * as jobRetention from '#worker/jobs/job-retention-cleanup.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
 
 const adHocJob = {
 	id: 'job-adhoc-1',
@@ -70,12 +75,18 @@ const alarmState = {
 }
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
 		sessionUserId: '42',
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
 			userId: 'stable-user-1',
@@ -88,19 +99,27 @@ const mockModule = vi.hoisted(() => ({
 	updateJob: vi.fn(),
 	deleteJob: vi.fn(),
 	runJobNowViaManager: vi.fn(),
-	getAppBaseUrl: vi.fn(() => 'https://example.com'),
+	getAppBaseUrl: vi.fn<typeof appBaseUrl.getAppBaseUrl>(
+		() => 'https://example.com',
+	),
 	listRunRecords: vi.fn(),
-	readJobRetentionPreferencesForUser: vi.fn(async () => ({
+	readJobRetentionPreferencesForUser: vi.fn<
+		typeof jobRetention.readJobRetentionPreferencesForUser
+	>(async () => ({
 		successOnceDays: 14,
 		failedOrNeverRanOnceDays: 60,
 		disabledRecurringDays: 90,
 	})),
-	updateJobRetentionPreferencesForUser: vi.fn(async (input) => ({
+	updateJobRetentionPreferencesForUser: vi.fn<
+		typeof jobRetention.updateJobRetentionPreferencesForUser
+	>(async (input) => ({
 		successOnceDays: input.successOnceDays,
 		failedOrNeverRanOnceDays: input.failedOrNeverRanOnceDays,
 		disabledRecurringDays: input.disabledRecurringDays,
 	})),
-	listSavedPackagesByUserId: vi.fn(async () => [
+	listSavedPackagesByUserId: vi.fn<
+		typeof packageRepo.listSavedPackagesByUserId
+	>(async () => [
 		{
 			id: 'pkg-1',
 			userId: 'stable-user-1',
@@ -113,6 +132,7 @@ const mockModule = vi.hoisted(() => ({
 			hasApp: false,
 			hidden: false,
 			isPrivate: true,
+			lockedAt: null,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
 		},
@@ -120,8 +140,9 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
@@ -138,7 +159,8 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+	getAppBaseUrl: (...args: Parameters<typeof appBaseUrl.getAppBaseUrl>) =>
+		mockModule.getAppBaseUrl(...args),
 }))
 
 vi.mock('#worker/jobs/inspect.ts', () => ({
@@ -157,10 +179,14 @@ vi.mock('#worker/jobs/manager-client.ts', () => ({
 }))
 
 vi.mock('#worker/jobs/job-retention-cleanup.ts', () => ({
-	readJobRetentionPreferencesForUser: (...args: Array<unknown>) =>
-		mockModule.readJobRetentionPreferencesForUser(...args),
-	updateJobRetentionPreferencesForUser: (...args: Array<unknown>) =>
-		mockModule.updateJobRetentionPreferencesForUser(...args),
+	readJobRetentionPreferencesForUser: (
+		...args: Parameters<typeof jobRetention.readJobRetentionPreferencesForUser>
+	) => mockModule.readJobRetentionPreferencesForUser(...args),
+	updateJobRetentionPreferencesForUser: (
+		...args: Parameters<
+			typeof jobRetention.updateJobRetentionPreferencesForUser
+		>
+	) => mockModule.updateJobRetentionPreferencesForUser(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -169,8 +195,9 @@ vi.mock('#worker/run-records/service.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
 }))
 
 const { createAccountJobsApiHandler } = await import('./account-jobs.ts')
@@ -203,8 +230,8 @@ function stubInspection(jobs: Array<typeof adHocJob | typeof packageJob>) {
 					startedAt: entry.startedAt,
 					finishedAt: entry.finishedAt,
 					durationMs: entry.durationMs,
-					errorName: entry.error ? 'Error' : null,
-					errorMessage: entry.error ?? null,
+					errorName: 'error' in entry ? 'Error' : null,
+					errorMessage: 'error' in entry ? entry.error : null,
 					metadata: {},
 					logCount: 0,
 				})),
@@ -220,16 +247,20 @@ function createJobsClient() {
 	const { handler } = createAccountJobsApiHandler(env)
 	return {
 		env,
-		get: (search = '') => handler({ request: new Request(jobsUrl + search) }),
+		get: (search = '') =>
+			handler(new RequestContext(new Request(jobsUrl + search))),
 		post: (body: Record<string, unknown>) =>
-			handler({
-				request: new Request(jobsUrl, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(body),
-				}),
-			}),
-		put: () => handler({ request: new Request(jobsUrl, { method: 'PUT' }) }),
+			handler(
+				new RequestContext(
+					new Request(jobsUrl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					}),
+				),
+			),
+		put: () =>
+			handler(new RequestContext(new Request(jobsUrl, { method: 'PUT' }))),
 	}
 }
 

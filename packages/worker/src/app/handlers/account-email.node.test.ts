@@ -1,11 +1,20 @@
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { type EmailMessageRecord } from '#worker/email/types.ts'
+import type * as emailVerification from '#app/email-verification.ts'
+import type * as emailRepo from '#worker/email/repo.ts'
+import type * as ownerEmailReader from '#worker/email/owner-email-reader.ts'
+import type * as emailService from '#worker/email/service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import type * as EmailPlatformAddress from '#worker/email/platform-address.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
+import { type resolvePlanLimit } from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
-const messageRecord = {
+const messageRecord: EmailMessageRecord = {
 	id: 'msg-1',
 	direction: 'inbound' as const,
 	userId: 'stable-user-1',
@@ -41,13 +50,14 @@ const messageRecord = {
 	updatedAt: new Date(0).toISOString(),
 }
 
-const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+const mockModule = vi.hoisted(() => {
+	const authenticatedUser: AuthenticatedAppUser = {
 		sessionUserId: '42',
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
 		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
 		roles: ['user'],
 		permissions: [],
@@ -58,95 +68,129 @@ const mockModule = vi.hoisted(() => ({
 			username: 'test-user',
 			displayName: 'user',
 		},
-	})),
-	isAccountEmailVerified: vi.fn(async () => true),
-	getUserPlan: vi.fn(async () => 'free' as const),
-	getUserEntitlement: vi.fn(async () => ({
-		plan: 'free' as const,
-		ladder: 'public' as const,
-	})),
-	readEntitlementResourceUsage: vi.fn(async () => 2),
-	resolvePlanLimit: vi.fn((_plan: string, resource: string) => {
-		switch (resource) {
-			case 'stored_email_messages':
-				return 100
-			case 'email_sends_per_day':
-				return 20
-			case 'email_receives_per_day':
-				return 50
-			case 'email_message_bytes':
-				return 1_000_000
-			default:
-				return 0
-		}
-	}),
-	getPlatformEmailDomain: vi.fn(() => 'inbox.example.com'),
-	listEmailInboxesForUser: vi.fn(async () => [
-		{
-			id: 'inbox-1',
-			userId: 'stable-user-1',
-			packageId: null,
-			name: 'default',
-			description: '',
-			enabled: true,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		},
-	]),
-	listEmailInboxAddressesForUser: vi.fn(async () => [
-		{
-			id: 'addr-1',
-			inboxId: 'inbox-1',
-			userId: 'stable-user-1',
-			address: 'test-user@inbox.example.com',
-			localPart: 'test-user',
-			domain: 'inbox.example.com',
-			enabled: true,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		},
-	]),
-	listOwnerEmailMessagesPage: vi.fn(async () => ({
-		total: 1,
-		messages: [messageRecord],
-	})),
-	getOwnerEmailMessageById: vi.fn(async () => messageRecord),
-	listOwnerEmailAttachmentsForMessage: vi.fn(async () => [
-		{
-			id: 'att-1',
-			messageId: 'msg-1',
-			filename: 'note.txt',
-			contentType: 'text/plain',
-			contentId: null,
-			disposition: 'attachment',
-			size: 12,
-			storageKind: 'inline',
-			storageKey: null,
-			createdAt: new Date(0).toISOString(),
-		},
-	]),
-	listOwnerEmailDeliveryEvents: vi.fn(async () => [
-		{
-			id: 'evt-1',
-			messageId: 'msg-1',
-			userId: 'stable-user-1',
-			inboxId: 'inbox-1',
-			eventType: 'received' as const,
-			provider: 'cloudflare',
-			providerMessageId: null,
-			providerEventId: null,
-			detailJson: '{}',
-			createdAt: new Date(0).toISOString(),
-		},
-	]),
-	setEmailMessageClassification: vi.fn(async () => true),
-	deleteEmailMessage: vi.fn(async () => true),
-	prepare: vi.fn(),
-}))
+	}
+	return {
+		authenticatedUser,
+		readAuthenticatedAppUser: vi.fn<
+			typeof authenticatedUserModule.readAuthenticatedAppUser
+		>(async () => authenticatedUser),
+		isAccountEmailVerified: vi.fn<
+			typeof emailVerification.isAccountEmailVerified
+		>(async () => true),
+		getUserPlan: vi.fn<typeof EntitlementService.getUserPlan>(
+			async () => 'free' as const,
+		),
+		getUserEntitlement: vi.fn<typeof EntitlementService.getUserEntitlement>(
+			async () => ({
+				plan: 'free' as const,
+				ladder: 'public' as const,
+				creditWallet: 'none',
+			}),
+		),
+		readEntitlementResourceUsage: vi.fn<
+			typeof EntitlementService.readEntitlementResourceUsage
+		>(async () => 2),
+		resolvePlanLimit: vi.fn<typeof resolvePlanLimit>((_plan, resource) => {
+			switch (resource) {
+				case 'stored_email_messages':
+					return 100
+				case 'email_sends_per_day':
+					return 20
+				case 'email_receives_per_day':
+					return 50
+				case 'email_message_bytes':
+					return 1_000_000
+				default:
+					return 0
+			}
+		}),
+		getPlatformEmailDomain: vi.fn<
+			typeof EmailPlatformAddress.getPlatformEmailDomain
+		>(() => 'inbox.example.com'),
+		listEmailInboxesForUser: vi.fn<typeof emailRepo.listEmailInboxesForUser>(
+			async () => [
+				{
+					id: 'inbox-1',
+					userId: 'stable-user-1',
+					packageId: null,
+					name: 'default',
+					description: '',
+					enabled: true,
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+				},
+			],
+		),
+		listEmailInboxAddressesForUser: vi.fn<
+			typeof emailRepo.listEmailInboxAddressesForUser
+		>(async () => [
+			{
+				id: 'addr-1',
+				inboxId: 'inbox-1',
+				userId: 'stable-user-1',
+				address: 'test-user@inbox.example.com',
+				localPart: 'test-user',
+				domain: 'inbox.example.com',
+				enabled: true,
+				createdAt: new Date(0).toISOString(),
+				updatedAt: new Date(0).toISOString(),
+			},
+		]),
+		listOwnerEmailMessagesPage: vi.fn<
+			typeof ownerEmailReader.listOwnerEmailMessagesPage
+		>(async () => ({
+			total: 1,
+			messages: [messageRecord],
+		})),
+		getOwnerEmailMessageById: vi.fn<
+			typeof ownerEmailReader.getOwnerEmailMessageById
+		>(async () => messageRecord),
+		listOwnerEmailAttachmentsForMessage: vi.fn<
+			typeof ownerEmailReader.listOwnerEmailAttachmentsForMessage
+		>(async () => [
+			{
+				id: 'att-1',
+				messageId: 'msg-1',
+				filename: 'note.txt',
+				contentType: 'text/plain',
+				contentId: null,
+				disposition: 'attachment',
+				size: 12,
+				storageKind: 'inline',
+				storageKey: null,
+				createdAt: new Date(0).toISOString(),
+			},
+		]),
+		listOwnerEmailDeliveryEvents: vi.fn<
+			typeof ownerEmailReader.listOwnerEmailDeliveryEvents
+		>(async () => [
+			{
+				id: 'evt-1',
+				messageId: 'msg-1',
+				userId: 'stable-user-1',
+				inboxId: 'inbox-1',
+				eventType: 'received' as const,
+				provider: 'cloudflare',
+				providerMessageId: null,
+				providerEventId: null,
+				detailJson: '{}',
+				createdAt: new Date(0).toISOString(),
+			},
+		]),
+		setEmailMessageClassification: vi.fn<
+			typeof emailService.setEmailMessageClassification
+		>(async () => true),
+		deleteEmailMessage: vi.fn<typeof emailService.deleteEmailMessage>(
+			async () => true,
+		),
+		prepare: vi.fn(),
+	}
+})
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
@@ -165,19 +209,25 @@ vi.mock('#app/ssr-render.tsx', () => ({
 vi.mock('#app/email-verification.ts', () => ({
 	emailVerificationRequiredMessage:
 		'Account email is not verified. Open the verification link sent to your account email, or resend it from /pending-verification or /account.',
-	isAccountEmailVerified: (...args: Array<unknown>) =>
-		mockModule.isAccountEmailVerified(...args),
+	isAccountEmailVerified: (
+		...args: Parameters<typeof emailVerification.isAccountEmailVerified>
+	) => mockModule.isAccountEmailVerified(...args),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementService>()
 	return {
 		...actual,
-		getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
-		getUserEntitlement: (...args: Array<unknown>) =>
-			mockModule.getUserEntitlement(...args),
-		readEntitlementResourceUsage: (...args: Array<unknown>) =>
-			mockModule.readEntitlementResourceUsage(...args),
+		getUserPlan: (...args: Parameters<typeof EntitlementService.getUserPlan>) =>
+			mockModule.getUserPlan(...args),
+		getUserEntitlement: (
+			...args: Parameters<typeof EntitlementService.getUserEntitlement>
+		) => mockModule.getUserEntitlement(...args),
+		readEntitlementResourceUsage: (
+			...args: Parameters<
+				typeof EntitlementService.readEntitlementResourceUsage
+			>
+		) => mockModule.readEntitlementResourceUsage(...args),
 		readCurrentEntitlementResourceUsage: (
 			input: Parameters<typeof actual.readCurrentEntitlementResourceUsage>[0],
 		) =>
@@ -191,8 +241,8 @@ vi.mock('#universal/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
 	return {
 		...actual,
-		resolvePlanLimit: (...args: Array<unknown>) =>
-			mockModule.resolvePlanLimit(...(args as [string, string])),
+		resolvePlanLimit: (...args: Parameters<typeof resolvePlanLimit>) =>
+			mockModule.resolvePlanLimit(...args),
 	}
 })
 
@@ -200,34 +250,45 @@ vi.mock('#worker/email/platform-address.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EmailPlatformAddress>()
 	return {
 		...actual,
-		getPlatformEmailDomain: (...args: Array<unknown>) =>
-			mockModule.getPlatformEmailDomain(...args),
+		getPlatformEmailDomain: (
+			...args: Parameters<typeof EmailPlatformAddress.getPlatformEmailDomain>
+		) => mockModule.getPlatformEmailDomain(...args),
 	}
 })
 
 vi.mock('#worker/email/repo.ts', () => ({
-	listEmailInboxesForUser: (...args: Array<unknown>) =>
-		mockModule.listEmailInboxesForUser(...args),
-	listEmailInboxAddressesForUser: (...args: Array<unknown>) =>
-		mockModule.listEmailInboxAddressesForUser(...args),
+	listEmailInboxesForUser: (
+		...args: Parameters<typeof emailRepo.listEmailInboxesForUser>
+	) => mockModule.listEmailInboxesForUser(...args),
+	listEmailInboxAddressesForUser: (
+		...args: Parameters<typeof emailRepo.listEmailInboxAddressesForUser>
+	) => mockModule.listEmailInboxAddressesForUser(...args),
 }))
 
 vi.mock('#worker/email/owner-email-reader.ts', () => ({
-	listOwnerEmailMessagesPage: (...args: Array<unknown>) =>
-		mockModule.listOwnerEmailMessagesPage(...args),
-	getOwnerEmailMessageById: (...args: Array<unknown>) =>
-		mockModule.getOwnerEmailMessageById(...args),
-	listOwnerEmailAttachmentsForMessage: (...args: Array<unknown>) =>
-		mockModule.listOwnerEmailAttachmentsForMessage(...args),
-	listOwnerEmailDeliveryEvents: (...args: Array<unknown>) =>
-		mockModule.listOwnerEmailDeliveryEvents(...args),
+	listOwnerEmailMessagesPage: (
+		...args: Parameters<typeof ownerEmailReader.listOwnerEmailMessagesPage>
+	) => mockModule.listOwnerEmailMessagesPage(...args),
+	getOwnerEmailMessageById: (
+		...args: Parameters<typeof ownerEmailReader.getOwnerEmailMessageById>
+	) => mockModule.getOwnerEmailMessageById(...args),
+	listOwnerEmailAttachmentsForMessage: (
+		...args: Parameters<
+			typeof ownerEmailReader.listOwnerEmailAttachmentsForMessage
+		>
+	) => mockModule.listOwnerEmailAttachmentsForMessage(...args),
+	listOwnerEmailDeliveryEvents: (
+		...args: Parameters<typeof ownerEmailReader.listOwnerEmailDeliveryEvents>
+	) => mockModule.listOwnerEmailDeliveryEvents(...args),
 }))
 
 vi.mock('#worker/email/service.ts', () => ({
-	setEmailMessageClassification: (...args: Array<unknown>) =>
-		mockModule.setEmailMessageClassification(...args),
-	deleteEmailMessage: (...args: Array<unknown>) =>
-		mockModule.deleteEmailMessage(...args),
+	setEmailMessageClassification: (
+		...args: Parameters<typeof emailService.setEmailMessageClassification>
+	) => mockModule.setEmailMessageClassification(...args),
+	deleteEmailMessage: (
+		...args: Parameters<typeof emailService.deleteEmailMessage>
+	) => mockModule.deleteEmailMessage(...args),
 }))
 
 const { createAccountEmailApiHandler } = await import('./account-email.ts')
@@ -268,26 +329,29 @@ function createEmailClient(env: Env) {
 	const { handler } = createAccountEmailApiHandler(env)
 	return {
 		get: (search = '') =>
-			handler({
-				request: new Request(`https://example.com/account/email.json${search}`),
-			}),
+			handler(
+				new RequestContext(
+					new Request(`https://example.com/account/email.json${search}`),
+				),
+			),
 		post: (body: Record<string, unknown>, search = '') =>
-			handler({
-				request: new Request(
-					`https://example.com/account/email.json${search}`,
-					{
+			handler(
+				new RequestContext(
+					new Request(`https://example.com/account/email.json${search}`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify(body),
-					},
+					}),
 				),
-			}),
+			),
 		put: () =>
-			handler({
-				request: new Request('https://example.com/account/email.json', {
-					method: 'PUT',
-				}),
-			}),
+			handler(
+				new RequestContext(
+					new Request('https://example.com/account/email.json', {
+						method: 'PUT',
+					}),
+				),
+			),
 	}
 }
 
@@ -510,11 +574,10 @@ test('email API deletes an owned message and refreshes usage without a selection
 })
 
 test('email API gates unverified accounts and skips mailbox queries', async () => {
-	const verifiedUser = await mockModule.readAuthenticatedAppUser()
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
-		...verifiedUser,
+		...mockModule.authenticatedUser,
 		emailVerified: false,
-	} as never)
+	})
 	mockModule.isAccountEmailVerified.mockResolvedValueOnce(false)
 
 	const response = await createEmailClient(createEnv()).get()

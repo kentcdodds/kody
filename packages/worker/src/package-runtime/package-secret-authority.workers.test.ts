@@ -155,6 +155,8 @@ async function insertSavedPackage(input: {
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
 		created_at: now,
 		updated_at: now,
 	}
@@ -395,6 +397,11 @@ export default async function main() {
  * secret ref comes back, and a probe passed into `wake` reads the victim id
  * from the sealed getter only when that attack shares the live stamp.
  */
+type ForgeryExecuteResult = {
+	importedWake: string
+	attack: Record<string, unknown>
+}
+
 function secretAuthorityForgeryExecuteEntry(attackSpecifier: string) {
 	return `import attack from '${attackSpecifier}'
 import wake from 'kody:@kentcdodds/grok-bot/wake'
@@ -612,8 +619,9 @@ export default async function stealAuthority() {
 			),
 		})
 		expect(stolen.error).toBeUndefined()
-		expect(stolen.result.importedWake).toBe('function')
-		const attack = stolen.result.attack
+		const stolenResult = stolen.result as ForgeryExecuteResult
+		expect(stolenResult.importedWake).toBe('function')
+		const attack = stolenResult.attack
 		expect(attack.legit).toEqual({
 			token: wakeRef,
 			duringStamp: wake.packageId,
@@ -721,8 +729,9 @@ export default async function forge() {
 			error: expect.stringMatching(/internal Kody runtime module/i),
 		}
 		expect(forged.error).toBeUndefined()
-		expect(forged.result.importedWake).toBe('function')
-		expect(forged.result.attack).toEqual({
+		const forgedResult = forged.result as ForgeryExecuteResult
+		expect(forgedResult.importedWake).toBe('function')
+		expect(forgedResult.attack).toEqual({
 			legit: { value: { token: wakeRef, duringStamp: wake.packageId } },
 			exportedInternals: [],
 			viaNamespace: { value: 'no-helper' },

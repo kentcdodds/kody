@@ -8,7 +8,7 @@ const sentryMock = vi.hoisted(() => ({
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
-	isInitialized: (...args: Array<unknown>) => sentryMock.isInitialized(...args),
+	isInitialized: () => sentryMock.isInitialized(),
 	setUser: (...args: Array<unknown>) => sentryMock.setUser(...args),
 	setTag: (...args: Array<unknown>) => sentryMock.setTag(...args),
 	setContext: (...args: Array<unknown>) => sentryMock.setContext(...args),

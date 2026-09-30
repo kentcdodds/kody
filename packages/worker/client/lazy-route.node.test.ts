@@ -78,7 +78,7 @@ test('a cold lazy route defers handle.update, renders a fallback, and retries on
 		const PendingLazyRoute = createLazyRoute(pendingArea)
 		const pendingRender = PendingLazyRoute({
 			props: {
-				render: (module) => module.value,
+				render: (module: { value: JSX.Element }) => module.value,
 			},
 			queueTask() {},
 			update: pendingUpdate,
@@ -97,9 +97,9 @@ test('a cold lazy route defers handle.update, renders a fallback, and retries on
 		const LazyRoute = createLazyRoute(area)
 		const render = LazyRoute({
 			props: {
-				render: (module) => module.value,
+				render: (module: { value: JSX.Element }) => module.value,
 			},
-			queueTask(task) {
+			queueTask(task: (signal: AbortSignal) => Promise<void> | void) {
 				queuedTask = task
 			},
 			update,

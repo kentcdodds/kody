@@ -552,10 +552,13 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 
 test('runtime evaluation replaces a configurable pre-planted authority forge', async () => {
 	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
-	const callAuthority = () =>
-		(globalThis as unknown as Record<symbol, () => string | null>)[
-			authoritySymbol
-		]()
+	const callAuthority = () => {
+		const authority = (
+			globalThis as unknown as Record<symbol, (() => string | null) | undefined>
+		)[authoritySymbol]
+		if (!authority) throw new Error('Expected a secret authority getter.')
+		return authority()
+	}
 	const existing = Object.getOwnPropertyDescriptor(globalThis, authoritySymbol)
 	if (existing && !existing.configurable) {
 		// A prior sealed install already applied — still prove redefine is denied.
@@ -643,7 +646,7 @@ try {
 	}
 }
 `,
-			{ eval: true, type: 'module' },
+			{ eval: true },
 		)
 		worker.on('message', resolve)
 		worker.on('error', reject)

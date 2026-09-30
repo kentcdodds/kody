@@ -44,7 +44,9 @@ function parseSourceD1(value: string): SourceD1Database {
 	}
 }
 
-function parseSourceD1Environment(value: string | undefined) {
+function parseSourceD1Environment(
+	value: string | undefined,
+): Array<SourceD1Database> {
 	if (!value) return []
 	let parsed: unknown
 	try {
@@ -69,9 +71,10 @@ function parseSourceD1Environment(value: string | undefined) {
 				'BACKUP_SOURCE_D1_ALLOWLIST entries require string UUID and name.',
 			)
 		}
+		const source = entry as SourceD1Database
 		return {
-			uuid: (entry as Record<string, string>).uuid,
-			name: (entry as Record<string, string>).name,
+			uuid: source.uuid,
+			name: source.name,
 		}
 	})
 }

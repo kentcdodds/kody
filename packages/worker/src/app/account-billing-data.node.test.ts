@@ -55,12 +55,12 @@ function createBillingEnv(input: {
 			}
 			return statement
 		},
-	} as unknown as D1Database
+	}
 	return {
 		APP_DB: db,
 		STRIPE_SECRET_KEY: 'sk_test',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
-	} as Env
+	} as unknown as Env
 }
 
 test('loadAccountBillingData refreshes Stripe status and degrades when refresh is unavailable', async () => {

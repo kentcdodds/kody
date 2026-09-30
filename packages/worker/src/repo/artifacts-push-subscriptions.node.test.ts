@@ -121,7 +121,7 @@ function createEnv(db: D1Database) {
 		CLOUDFLARE_API_TOKEN: 'token-123',
 		CLOUDFLARE_API_BASE_URL: apiOrigin,
 		ARTIFACTS_NAMESPACE: 'default',
-	} as Env
+	} as unknown as Env
 }
 
 type Route = () => Response | Promise<Response>

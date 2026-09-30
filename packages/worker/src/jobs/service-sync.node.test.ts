@@ -142,6 +142,8 @@ function createPlanUserCallerContext(input: { userId: string; email: string }) {
 		storageContext: {
 			sessionId: null,
 			appId: 'app-123',
+			packageId: null,
+			storageId: null,
 		},
 	}) as PersistedJobCallerContext
 }
@@ -558,6 +560,12 @@ test('blank-email package context uses the max plan for storage writes and neste
 		userId,
 		bytes: planLimits.free.maxStorageBytes + 1,
 	})
+	const stalePackageStorageContext = {
+		sessionId: null,
+		appId: 'package-1',
+		packageId: 'package-1',
+		storageId: 'job:package-job:package-1:parent',
+	}
 	const stalePackageContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		executionOrigin: 'background',
@@ -566,12 +574,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 			email: '',
 			displayName: 'Package Owner',
 		},
-		storageContext: {
-			sessionId: null,
-			appId: 'package-1',
-			packageId: 'package-1',
-			storageId: 'job:package-job:package-1:parent',
-		},
+		storageContext: stalePackageStorageContext,
 	}) as PersistedJobCallerContext
 
 	await expect(
@@ -582,7 +585,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 			scope: 'app',
 			name: 'checkpoint',
 			value: 'stored above the free-plan byte limit',
-			storageContext: stalePackageContext.storageContext,
+			storageContext: stalePackageStorageContext,
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
 	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({

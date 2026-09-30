@@ -1,51 +1,106 @@
 import { expect, test, vi } from 'vitest'
+import type * as PackagePage from '#app/package-page.ts'
+import type * as CommunityPackageUrl from '#worker/community/package-url.ts'
+import type * as CommunityRepo from '#worker/community/repo.ts'
+import type * as CommunitySnapshot from '#worker/community/snapshot.ts'
+import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as ArtifactFile from '#worker/repo/artifact-file.ts'
+import type * as EntitySources from '#worker/repo/entity-sources.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { tinyPngBytes } from '#worker/test-support/images-binding.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
 import { bytesToLatin1String } from '#universal/package-file-media.ts'
 
 const mocks = vi.hoisted(() => ({
-	resolveCommunityPackageUrl: vi.fn<() => Promise<unknown>>(),
-	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
-	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
-	readArtifactFileAtCommit: vi.fn<() => Promise<unknown>>(),
-	readPublishedSourceSnapshot: vi.fn<() => Promise<unknown>>(),
-	readCommunitySnapshot: vi.fn<() => Promise<unknown>>(),
-	loadPackagePage: vi.fn<() => Promise<unknown>>(),
+	resolveCommunityPackageUrl:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof CommunityPackageUrl.resolveCommunityPackageUrl
+				>
+			) => Promise<unknown>
+		>(),
+	getCommunityListingById:
+		vi.fn<
+			(
+				...args: Parameters<typeof CommunityRepo.getCommunityListingById>
+			) => Promise<unknown>
+		>(),
+	getEntitySourceById:
+		vi.fn<
+			(
+				...args: Parameters<typeof EntitySources.getEntitySourceById>
+			) => Promise<unknown>
+		>(),
+	readArtifactFileAtCommit:
+		vi.fn<
+			(
+				...args: Parameters<typeof ArtifactFile.readArtifactFileAtCommit>
+			) => Promise<unknown>
+		>(),
+	readPublishedSourceSnapshot:
+		vi.fn<
+			(
+				...args: Parameters<
+					typeof PublishedRuntimeArtifacts.readPublishedSourceSnapshot
+				>
+			) => Promise<unknown>
+		>(),
+	readCommunitySnapshot:
+		vi.fn<
+			(
+				...args: Parameters<typeof CommunitySnapshot.readCommunitySnapshot>
+			) => Promise<unknown>
+		>(),
+	loadPackagePage:
+		vi.fn<
+			(
+				...args: Parameters<typeof PackagePage.loadPackagePage>
+			) => Promise<unknown>
+		>(),
 }))
 
 vi.mock('#worker/community/package-url.ts', () => ({
-	resolveCommunityPackageUrl: (...args: Array<unknown>) =>
-		mocks.resolveCommunityPackageUrl(...args),
+	resolveCommunityPackageUrl: (
+		...args: Parameters<typeof CommunityPackageUrl.resolveCommunityPackageUrl>
+	) => mocks.resolveCommunityPackageUrl(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
-	getCommunityListingById: (...args: Array<unknown>) =>
-		mocks.getCommunityListingById(...args),
+	getCommunityListingById: (
+		...args: Parameters<typeof CommunityRepo.getCommunityListingById>
+	) => mocks.getCommunityListingById(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mocks.getEntitySourceById(...args),
+	getEntitySourceById: (
+		...args: Parameters<typeof EntitySources.getEntitySourceById>
+	) => mocks.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/repo/artifact-file.ts', () => ({
-	readArtifactFileAtCommit: (...args: Array<unknown>) =>
-		mocks.readArtifactFileAtCommit(...args),
+	readArtifactFileAtCommit: (
+		...args: Parameters<typeof ArtifactFile.readArtifactFileAtCommit>
+	) => mocks.readArtifactFileAtCommit(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
-	readPublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mocks.readPublishedSourceSnapshot(...args),
+	readPublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.readPublishedSourceSnapshot
+		>
+	) => mocks.readPublishedSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/community/snapshot.ts', () => ({
-	readCommunitySnapshot: (...args: Array<unknown>) =>
-		mocks.readCommunitySnapshot(...args),
+	readCommunitySnapshot: (
+		...args: Parameters<typeof CommunitySnapshot.readCommunitySnapshot>
+	) => mocks.readCommunitySnapshot(...args),
 }))
 
 vi.mock('#app/package-page.ts', () => ({
-	loadPackagePage: (...args: Array<unknown>) => mocks.loadPackagePage(...args),
+	loadPackagePage: (...args: Parameters<typeof PackagePage.loadPackagePage>) =>
+		mocks.loadPackagePage(...args),
 }))
 
 const {

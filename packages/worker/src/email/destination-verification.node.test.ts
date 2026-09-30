@@ -33,7 +33,7 @@ async function makeOwner() {
 		APP_DB: db,
 		APP_BASE_URL: 'http://example.com',
 		SENTRY_ENVIRONMENT: 'test',
-	} as Env
+	} as unknown as Env
 	return {
 		sqlite,
 		db,

@@ -1,12 +1,21 @@
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as valuesService from '#mcp/values/service.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
 		sessionUserId: '42',
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
 			userId: 'stable-user-1',
@@ -16,7 +25,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-	listValues: vi.fn(async () => [
+	listValues: vi.fn<typeof valuesService.listValues>(async () => [
 		{
 			name: 'theme',
 			scope: 'user' as const,
@@ -38,18 +47,18 @@ const mockModule = vi.hoisted(() => ({
 			ttlMs: null,
 		},
 	]),
-	getValue: vi.fn(async () => null),
-	deleteValue: vi.fn(async () => true),
+	getValue: vi.fn<typeof valuesService.getValue>(async () => null),
+	deleteValue: vi.fn<typeof valuesService.deleteValue>(async () => true),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -61,9 +70,12 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
-	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
-	deleteValue: (...args: Array<unknown>) => mockModule.deleteValue(...args),
+	listValues: (...args: Parameters<typeof valuesService.listValues>) =>
+		mockModule.listValues(...args),
+	getValue: (...args: Parameters<typeof valuesService.getValue>) =>
+		mockModule.getValue(...args),
+	deleteValue: (...args: Parameters<typeof valuesService.deleteValue>) =>
+		mockModule.deleteValue(...args),
 }))
 
 const { createAccountValuesApiHandler } = await import('./account-values.ts')
@@ -75,15 +87,18 @@ function createValuesClient() {
 		APP_DB: {} as D1Database,
 	} as Env)
 	return {
-		get: (search = '') => handler({ request: new Request(valuesUrl + search) }),
+		get: (search = '') =>
+			handler(new RequestContext(new Request(valuesUrl + search))),
 		post: (body: Record<string, unknown>) =>
-			handler({
-				request: new Request(valuesUrl, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(body),
-				}),
-			}),
+			handler(
+				new RequestContext(
+					new Request(valuesUrl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					}),
+				),
+			),
 	}
 }
 

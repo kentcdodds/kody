@@ -1,5 +1,4 @@
-import { env, exports } from 'cloudflare:workers'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
 	cliClientIdMetadataPath,
@@ -7,10 +6,7 @@ import {
 } from './cli-client-metadata.ts'
 
 async function workerFetch(request: Request) {
-	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, env, ctx)
-	await waitOnExecutionContext(ctx)
-	return response
+	return await exports.default.fetch(request)
 }
 
 test('worker serves CLI CIMD before the OAuth wrapper and reflects Origin for CORS', async () => {

@@ -314,11 +314,17 @@ runtime path if this budget is raised again.
   evaluates. CI dry-run runtime 3_905_770 against the previous 3_905_500 budget,
   reviewed ceiling 3_906_500; platform CI dry-run 5_233_076 against the previous
   5_233_000 budget, reviewed ceiling 5_233_500.
+- Transitive static `kody:@` dependency provenance (#2697): the
+  `collectTransitiveKodyDependencies` reachable-export walk in
+  `module-graph-workspace.ts` plus `isDirectBundleDependency` filters on the
+  execute, meter, and artifact-staleness paths. Local dry-run runtime 3_909_311
+  against the previous 3_907_500 budget, reviewed ceiling 3_910_000; platform
+  local dry-run 5_236_503 against the previous 5_235_000 budget, reviewed
+  ceiling 5_237_000.
 - Connect-time OAuth refresh policy (#2739): `refresh-policy.ts` inference, the
   `not_applicable` refresh skip, `refresh_policy` mapping and stale-snapshot
   filtering, and the `integrationTokenRefresh` `refreshed` / `skippedReason`
-  output on the integrations graph both workers already evaluate. Main measured
-  runtime 3_907_452 / platform 5_234_644 locally. Local dry-run runtime
-  3_908_725 against the previous 3_907_500 budget, reviewed ceiling 3_909_000;
-  platform local dry-run 5_235_918 against the previous 5_235_000 budget,
-  reviewed ceiling 5_236_500.
+  output on the integrations graph both workers already evaluate. Local dry-run
+  runtime 3_910_199 (+888 over main) against the previous 3_910_000 budget,
+  reviewed ceiling 3_910_500; platform local dry-run 5_237_390 (+887 over main)
+  against the previous 5_237_000 budget, reviewed ceiling 5_237_500.
