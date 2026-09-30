@@ -11,7 +11,7 @@ export const quickStartInstructions = `Start here
 - Blockers the signed-in human must clear (expired OAuth, expired secrets, MCP reconnects): \`waitingSummary\` or \`/account/waiting\`.`
 
 export const packageLifecycleInstructions = `Package lifecycle (primary mental model):
-1. Discover and invoke: \`search\` for an existing capability, connected surface, or saved package; open entity detail for the exact call shape; invoke rather than reimplement.
+1. Discover and call: \`search\` for an existing capability, connected surface, or saved package; open entity detail for the exact call shape; call it rather than reimplement. Known package exports use a static \`kody:@scope/package/export\` import; when the name is data use \`import(specifier)\`. There is no author-facing \`packages.invoke\`.
 2. Explore temporarily: \`execute\` for one-off work, composition, authenticated smoke tests, and experiments. Execute modules are ephemeral.
 3. Prefer a close public package before creating: catalog listings are excluded from general \`search\` — use \`communitySearch\`. If close, \`communityFork\`, review, adapt, publish. Create only when nothing suitable exists.
 4. Create or evolve a repo-backed package when behavior should be reused, maintained, tested, exposed as an app, or given a package-owned schedule, and step 3 found nothing. Search once more before creating so you extend an existing package when that fits.`

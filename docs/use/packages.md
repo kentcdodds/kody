@@ -815,12 +815,11 @@ publish checks run.
    with that `workflow_id` until the run finishes; do not retry the same publish
    while the run is active.
 
-Dynamic package invocation is different from static bundled imports. When a
-runtime feature invokes another package dynamically through the package
-execution path, it resolves the current published package at invocation time
-instead of embedding a source snapshot in the dependent bundle. Dynamic
-invocation should not require republishing a dependent package just because the
-called package was republished.
+Computed `import(specifier)` (and other runtime package loads) resolve the
+current published package at call time instead of embedding a source snapshot in
+the dependent bundle. Those loads do not require republishing a dependent just
+because the called package was republished. Static `kody:@` imports inside a
+saved package still snapshot at that dependent's publish.
 
 Choose the narrowest token scope that fits the task. Use `read` for inspection
 or local diffing, and `write` only when the git client needs to push. Keep TTLs

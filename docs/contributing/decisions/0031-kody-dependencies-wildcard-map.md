@@ -27,9 +27,13 @@ Legacy arrays are rejected at parse after fleet apply of
 
 ## Consequences
 
-The published bundle remains the lock. Execute and `packages.invoke` stay the
-live paths. Freeze by forking under another name (new `packageId`, new bucket),
-not by pinning a version onto shared storage.
+The published bundle remains the lock. Ad hoc execute and computed
+`import(specifier)` see the current published commit; static package-to-package
+imports snapshot at the dependent's publish. Authors compose with static
+`kody:@` imports and `import(specifier)`
+([0037](./0037-no-author-packages-invoke.md)). Freeze by forking under another
+name (new `packageId`, new bucket), not by pinning a version onto shared
+storage.
 
 Revisit only if a concrete consumer needs a pin that a fork cannot serve, and
 then prefer commit-SHA values in this map (0001) after deciding how those
