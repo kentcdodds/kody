@@ -129,7 +129,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	)
 	expect(
 		await sendCloudflareEmail(testApiConfig, message('Request failure')),
-	).toEqual({ ok: false, error: 'fetch failed' })
+	).toEqual({ ok: false, error: 'Failed to fetch' })
 	// Exactly the one expected warning; anything else the mock swallowed
 	// would be a regression hidden by the opt-in above.
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
