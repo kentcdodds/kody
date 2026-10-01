@@ -12,10 +12,6 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 	createWorkflowTools: () => ({ create: async () => null }),
 }))
 
-vi.mock('#worker/package-invocations/service.ts', () => ({
-	createExecutePackageInvokeTools: async () => ({ invoke: async () => null }),
-}))
-
 const secretValue = 'sk-live-very-secret-value'
 const apiToken = `kody_at_${'a'.repeat(20)}_${'b'.repeat(43)}`
 
@@ -95,5 +91,19 @@ test('platform failures outside the capability return a generic error and log de
 			path: 'kody.secret_set',
 			error: 'D1_ERROR: no such column: secret_ciphertext',
 		}),
+	)
+})
+
+test('packages.invoke is rejected as unbound', async () => {
+	const error = await runCapabilityProxyCall({
+		ctx,
+		call: {
+			path: ['packages', 'invoke'],
+			args: ['kody:@owner/pkg/export', { params: {} }],
+		},
+	}).catch((value: unknown) => value)
+	expect(error).toMatchObject({ status: 404, code: 'not_found' })
+	expect((error as ApiError).message).toContain(
+		'There is no author-facing packages.invoke',
 	)
 })

@@ -8,8 +8,6 @@ import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
-import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
-import { type PackageInvokeInput } from '#mcp/runtime-helper-manifest.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
 import { maxApiRequestBodyBytes } from './request-params.ts'
@@ -19,9 +17,10 @@ import { maxApiRequestBodyBytes } from './request-params.ts'
  * `@kodycodes/cli`). The CLI runs the module in a local workerd and forwards
  * every `kody:runtime` call here as `{ path, args }`; this dispatches it
  * through the same `kody.*` tool map ad hoc cloud execute builds, so
- * capabilities, `kody.mcp`, `workflows.create`, and `packages.invoke` behave
- * as they do in the cloud. Local CPU is never metered; each hop is one
- * `api_call`, and the capability behind it meters itself as usual.
+ * capabilities, `kody.mcp`, and `workflows.create` behave as they do in the
+ * cloud. There is no author-facing `packages.invoke`. Local CPU is never
+ * metered; each hop is one `api_call`, and the capability behind it meters
+ * itself as usual.
  */
 
 export const capabilityProxyLimits = {
@@ -43,7 +42,7 @@ export const capabilityProxyCallInputSchema = z
 			.min(2)
 			.max(capabilityProxyLimits.maxPathSegments)
 			.describe(
-				"`kody:runtime` property path, e.g. `['kody','emailSend']`, `['kody','mcp','home','lights_on']`, `['workflows','create']`, or `['packages','invoke']`.",
+				"`kody:runtime` property path, e.g. `['kody','emailSend']`, `['kody','mcp','home','lights_on']`, or `['workflows','create']`.",
 			),
 		args: z
 			.array(z.unknown())
@@ -184,23 +183,13 @@ async function dispatchCapabilityProxyCall(input: {
 		})
 		return invokeCapability(() => workflowTools.create(call.args[0] as never))
 	}
-	if (root === 'packages' && name === 'invoke' && call.path.length === 2) {
-		const tools = await createExecutePackageInvokeTools({
-			env: ctx.env,
-			baseUrl: ctx.callerContext.baseUrl,
-			callerContext: ctx.callerContext,
-			conversationId: call.conversationId ?? null,
-			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
-		})
-		return invokeCapability(() =>
-			tools.invoke({
-				specifier: call.args[0],
-				options: call.args[1],
-			} as PackageInvokeInput),
+	if (root === 'packages' && name === 'invoke') {
+		throw notFound(
+			`There is no author-facing packages.invoke. Use a static kody:@scope/package/export import when the name is known, or import(specifier) when the name is data.`,
 		)
 	}
 	throw notFound(
-		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.mcp.<server>.<tool>, workflows.create, and packages.invoke.`,
+		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.mcp.<server>.<tool>, and workflows.create.`,
 	)
 }
 
