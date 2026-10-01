@@ -46,6 +46,7 @@ import textYourAgent from '../../../../docs/guides/text-your-agent.md'
 import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
+import providerFigma from '../../../../docs/guides/providers/figma.md'
 import providerGithub from '../../../../docs/guides/providers/github.md'
 import providerGoogle from '../../../../docs/guides/providers/google.md'
 import providerNotion from '../../../../docs/guides/providers/notion.md'
@@ -112,6 +113,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
 	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'discord', raw: providerDiscord },
+	{ slug: 'figma', raw: providerFigma },
 	{ slug: 'github', raw: providerGithub },
 	{ slug: 'google', raw: providerGoogle },
 	{ slug: 'notion', raw: providerNotion },

@@ -72,6 +72,7 @@ Per-provider connect walkthroughs (`category: provider`). Indexed on the web at
 | File                                                 | MCP id                | Web slug     |
 | ---------------------------------------------------- | --------------------- | ------------ |
 | [providers/discord.md](./providers/discord.md)       | `provider_discord`    | `discord`    |
+| [providers/figma.md](./providers/figma.md)           | `provider_figma`      | `figma`      |
 | [providers/github.md](./providers/github.md)         | `provider_github`     | `github`     |
 | [providers/google.md](./providers/google.md)         | `provider_google`     | `google`     |
 | [providers/notion.md](./providers/notion.md)         | `provider_notion`     | `notion`     |
