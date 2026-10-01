@@ -204,6 +204,7 @@ primitives:
     docs:
       - docs/contributing/architecture/open-api.md
       - docs/contributing/decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md
+      - docs/contributing/decisions/0055-cli-mcp-oauth-local-execute-http.md
 
   - id: rbac
     group: auth

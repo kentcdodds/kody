@@ -28,8 +28,9 @@ They may change or go away.
 - **Local execute** — `@kodycodes/cli execute --local` runs your module in a
   local workerd and forwards each `kody:runtime` call through the
   CapabilityProxy (`/v1/capability-proxy/session` and
-  `/v1/capability-proxy/call`). Needs the `local-execute` flag and a token that
-  holds the `local-execute` scope.
+  `/v1/capability-proxy/call`). Needs the `local-execute` flag. Auth: `--token`
+  / `KODY_API_TOKEN` (`kody_at_…` with `local-execute` scope), or — when no API
+  token is set — the access token from `kody login` (MCP OAuth) as Bearer.
 
 ## How to get access
 
@@ -100,6 +101,18 @@ CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
 ## First local run
 
+**Preferred when already logged in:** `kody login`, then run with no
+`KODY_API_TOKEN`. The CLI sends the stored MCP OAuth access token as Bearer to
+CapabilityProxy and package-graph (same `local-execute` flag).
+
+```bash
+npx @kodycodes/cli login   # once
+npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+```
+
+**Or mint a scoped API token** (agents / CI / when you want scopes thinner than
+the full MCP grant):
+
 1. With MCP `api` available, mint a short-lived token (value returned once):
 
    ```json
@@ -129,10 +142,10 @@ CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
    ```
 
    Prefer the env var over `--token` so the secret is not visible in process
-   arguments.
+   arguments. When set, `KODY_API_TOKEN` wins over `kody login`.
 
-List and revoke tokens with MCP `api` (`tokenList`, `tokenRevoke`) or the same
-operations over HTTP.
+List and revoke API tokens with MCP `api` (`tokenList`, `tokenRevoke`) or the
+same operations over HTTP.
 
 ## Metering
 

@@ -75,6 +75,35 @@ test('forwards API routes with only safe headers and CORS on the response', asyn
 	expect(limited.join()).not.toContain('B'.repeat(43))
 })
 
+test('opaque OAuth bearers get a hashed per-credential rate-limit key', async () => {
+	const oauth = 'cli-oauth-access-token-not-kody-at'
+	const { env, forwarded, limited } = createEnv()
+	const response = await handleApiEdgeRequest(
+		new Request('https://api.kody.test/v1/capability-proxy/session', {
+			headers: {
+				Authorization: `Bearer ${oauth}`,
+				'CF-Connecting-IP': '203.0.113.9',
+			},
+		}),
+		env,
+	)
+	expect(response.status).toBe(200)
+	expect(forwarded).toHaveLength(1)
+	expect(limited[0]).toBe('ip:203.0.113.9')
+	expect(limited[1]).toMatch(/^bearer:[0-9a-f]{32}$/)
+	expect(limited.join()).not.toContain(oauth)
+
+	const tokenLimited = createEnv({ tokenAllowed: false })
+	const blocked = await handleApiEdgeRequest(
+		new Request('https://api.kody.test/v1/capability-proxy/session', {
+			headers: { Authorization: `Bearer ${oauth}` },
+		}),
+		tokenLimited.env,
+	)
+	expect(blocked.status).toBe(429)
+	expect(tokenLimited.forwarded).toHaveLength(0)
+})
+
 test('answers CORS preflight without forwarding', async () => {
 	const { env, forwarded } = createEnv()
 	const response = await handleApiEdgeRequest(

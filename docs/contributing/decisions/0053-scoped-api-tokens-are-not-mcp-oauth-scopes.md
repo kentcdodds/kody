@@ -38,5 +38,9 @@ device login. Kody does not push work from the cloud to a local venue.
 - Do not reuse package invocation tokens or webhook handles as account bearers
   ([0026](./0026-package-owned-invocation-tokens.md),
   [0048](./0048-webhooks-replace-invocation-tokens.md)).
+- **Amended by [0055](./0055-cli-mcp-oauth-local-execute-http.md):** CLI-owned
+  `kody login` MCP OAuth may authenticate CapabilityProxy and package-graph only
+  (full MCP grant + `local-execute` flag). Other Open API routes stay
+  `kody_at_`-only; the CLI still must not scavenge **host** MCP OAuth.
 - Revisit if an MCP host needs a weaker-than-owner MCP session that an API token
   plus the Open API cannot serve.
