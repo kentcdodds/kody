@@ -82,22 +82,27 @@ session, so a leftover local cookie is not sent to a preview and `--email` does
 not reuse another user's cookie for the same origin. `preview` uses
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
-`package-create` registers a stub saved package on a PR preview (or local
-origin) through MCP `packageGetGitRemote({ create: true, kody_id })`. Pass the
-package name leaf or `@owner/leaf` with `--package-name`. It reuses `--origin`,
-`--email`, `--password`, `--cookie-file`, and `--json`. Pass
+`package-create` registers a stub saved package on a PR preview through MCP
+`packageGetGitRemote({ create: true, kody_id })`. Pass the package name leaf or
+`@owner/leaf` with `--package-name`. It reuses `--origin`, `--email`,
+`--password`, `--cookie-file`, and `--json`. Pass
 `--package-name <leaf-or-@scope/leaf>` (required; `--kody-id` is an alias),
 `--description` (optional), and `--head-ahead` to push one unpublished commit so
 the package page can show **HEAD ahead of published**. Do not POST a create
 action to `/account/packages.json` — that endpoint has no package-create action.
 Logged-in preview testing does not require agents to hand-roll an MCP OAuth
 dance — the CLI does it for them. The command refuses `https://kody.codes`.
+Package source persistence (`packageGetGitRemote`, `packageSave`, publish) needs
+the remote `ARTIFACTS` binding, so run `package-create` against a PR preview,
+not `npm run dev`. See [Local limitations](./cloud-agents.md#local-limitations).
 
 `execute` and `search` use the same OAuth client against a preview or local
 origin. `execute` reads an ESM module from `--code-file` (default export) and
 optional JSON `--params-file`. `search` takes `--query`, and optionally
 `--domain`, `--entity`, and `--limit`. Both refuse `https://kody.codes`. Do not
-hand-write a throwaway MCP client script for preview fixtures.
+hand-write a throwaway MCP client script for preview fixtures. A module that
+calls `packageSave`, publish, or `packageGetGitRemote` must use
+`--origin <preview>`; the local origin cannot persist package repos.
 
 ## Daily garden
 

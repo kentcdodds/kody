@@ -66,6 +66,9 @@ before opening a Feature Map PR.
   local admin account plus Workers or unit tests
 - `execute` / `search` reuse the same seed session on preview or local; they
   refuse `https://kody.codes`
+- `packageSave`, publish, and `packageGetGitRemote` / `package-create` need the
+  remote `ARTIFACTS` binding. Use a PR preview origin, not `npm run dev`. See
+  [Local limitations](../../../docs/contributing/cloud-agents.md#local-limitations).
 
 ## Proof
 
