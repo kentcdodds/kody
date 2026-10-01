@@ -15,6 +15,7 @@ import {
 } from '#mcp/executor.ts'
 import {
 	callerDisconnectedSandboxLog,
+	callerDisconnectedSandboxMessage,
 	createCallerDisconnectedExecutionError,
 	isCallerDisconnectAbort,
 } from '#worker/caller-disconnect.ts'
@@ -117,6 +118,69 @@ import {
 	firstCapabilityDispatchWarnTag,
 	shouldWarnFirstCapabilityDispatch,
 } from './first-capability-dispatch.ts'
+
+/**
+ * Wall-clock budget for ad-hoc execute `prepareKodyGraphFiles` + esbuild
+ * before sandbox start. Sandbox has its own ~90s host deadline; this bounds
+ * the pre-run path so a hung dual heavy-export bundle (historically ~328s
+ * MCP client abort with no run row) finishes as a recorded error instead.
+ */
+export const executeBundleTimeoutMs = 90_000
+
+export function createExecuteBundleTimeoutMessage(timeoutMs: number) {
+	const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+	return `Execute module bundling exceeded ${seconds}s before sandbox start. Heavy multi-export package graphs (for example multiple zod-based exports from one package) can exceed this budget; prefer remix/data-schema for agent-facing export validation, or import one heavy export per execute module.`
+}
+
+export class ExecuteBundleTimeoutError extends Error {
+	override name = 'ExecuteBundleTimeoutError'
+	constructor(timeoutMs: number) {
+		super(createExecuteBundleTimeoutMessage(timeoutMs))
+	}
+}
+
+async function raceWithExecuteBundleDeadline<T>(
+	work: () => Promise<T>,
+	input: {
+		timeoutMs: number
+		signal?: AbortSignal
+	},
+): Promise<T> {
+	const { timeoutMs, signal } = input
+	if (signal?.aborted) {
+		const reason = signal.reason
+		if (reason instanceof Error) throw reason
+		throw new DOMException(callerDisconnectedSandboxMessage, 'AbortError')
+	}
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+		return await work()
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	let onAbort: (() => void) | undefined
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(new ExecuteBundleTimeoutError(timeoutMs))
+		}, timeoutMs)
+		if (!signal) return
+		onAbort = () => {
+			const reason = signal.reason
+			if (reason instanceof Error) {
+				reject(reason)
+				return
+			}
+			reject(new DOMException(callerDisconnectedSandboxMessage, 'AbortError'))
+		}
+		signal.addEventListener('abort', onAbort, { once: true })
+	})
+	try {
+		return await Promise.race([work(), timeoutPromise])
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
+		if (signal && onAbort) {
+			signal.removeEventListener('abort', onAbort)
+		}
+	}
+}
 
 type ExecuteServerTimingEntry = {
 	name: string
@@ -599,74 +663,124 @@ export async function runModuleWithRegistry(
 	if (isAdHocExecute && !options?.packageContext) {
 		recordExecuteInterpretableEvent(env, { source: code })
 	}
-	await reportExecutePhaseProgress(reportProgress, 'bundle')
-	const bundleStartedAtMs = Date.now()
-	const bundled = await buildKodyModuleBundle({
-		env,
-		baseUrl: callerContext.baseUrl,
-		userId,
-		sourceFiles: createAdHocExecuteSourceFiles(code),
-		entryPoint: 'entry.ts',
-		reuseCachedBundle: true,
-		bundleContext: 'ad-hoc-execute',
-	})
-	serverTiming.push({
-		name: 'bundle',
-		durationMs: Date.now() - bundleStartedAtMs,
-	})
-	const conversationId = options?.conversationId?.trim()
-	if (conversationId && userId) {
-		const packageIds = bundled.dependencies
-			.filter(isDirectBundleDependency)
-			.map((dependency) => dependency.packageId)
-			.filter((packageId): packageId is string => Boolean(packageId))
-		if (packageIds.length > 0) {
-			await scheduleAgentPackageConversationUses(
-				env,
-				{
-					userId,
-					packageIds,
-					conversationId,
-				},
-				options?.waitUntil,
-			)
-		}
-	}
-	const runStartedAtMs = Date.now()
-	const result = await runBundledModuleWithRegistry(
-		env,
-		callerContext,
-		{
-			mainModule: bundled.mainModule,
-			modules: bundled.modules,
-			dependencies: bundled.dependencies,
-		},
-		params,
-		{
-			...options,
-			executeShape,
-			packageContext: options?.packageContext ?? null,
-			workflowTools:
-				options?.workflowTools ??
-				createWorkflowTools({
-					env,
-					callerContext,
-					packageContext: options?.packageContext ?? null,
-				}),
-			packageEventTools: options?.packageEventTools,
-			conversationId: options?.conversationId ?? null,
-			reportProgress,
+	// Begin (or reuse a keyed claim) before bundling so a hung/timeout
+	// prepare+esbuild path still leaves a visible run row. Previously
+	// begin lived only inside runBundledModuleWithRegistry — after bundle —
+	// so dual heavy-export hangs produced MCP client aborts with no Activity.
+	const runRecordHandle =
+		options?.runRecordHandle ??
+		beginRunRecord({
+			env,
+			userId: callerContext.user?.userId ?? null,
+			context: options?.runRecord ?? null,
 			waitUntil: options?.waitUntil,
-		},
-	)
-	// Sub-phases (hydrate → provider-assembly → sandbox) report inside the
-	// bundled run so progress stays monotonic. `run` is only the enclosing
-	// serverTiming wall-clock span, not a client progress step.
-	serverTiming.push(...(result.serverTiming ?? []), {
-		name: 'run',
-		durationMs: Date.now() - runStartedAtMs,
-	})
-	return { ...result, serverTiming }
+		})
+	let enteredBundledRun = false
+	try {
+		await reportExecutePhaseProgress(reportProgress, 'bundle')
+		const bundleStartedAtMs = Date.now()
+		const bundled = await raceWithExecuteBundleDeadline(
+			async () =>
+				await buildKodyModuleBundle({
+					env,
+					baseUrl: callerContext.baseUrl,
+					userId,
+					sourceFiles: createAdHocExecuteSourceFiles(code),
+					entryPoint: 'entry.ts',
+					reuseCachedBundle: true,
+					bundleContext: 'ad-hoc-execute',
+				}),
+			{
+				timeoutMs: executeBundleTimeoutMs,
+				signal: options?.signal,
+			},
+		)
+		serverTiming.push({
+			name: 'bundle',
+			durationMs: Date.now() - bundleStartedAtMs,
+		})
+		const conversationId = options?.conversationId?.trim()
+		if (conversationId && userId) {
+			const packageIds = bundled.dependencies
+				.filter(isDirectBundleDependency)
+				.map((dependency) => dependency.packageId)
+				.filter((packageId): packageId is string => Boolean(packageId))
+			if (packageIds.length > 0) {
+				await scheduleAgentPackageConversationUses(
+					env,
+					{
+						userId,
+						packageIds,
+						conversationId,
+					},
+					options?.waitUntil,
+				)
+			}
+		}
+		const runStartedAtMs = Date.now()
+		enteredBundledRun = true
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: bundled.mainModule,
+				modules: bundled.modules,
+				dependencies: bundled.dependencies,
+			},
+			params,
+			{
+				...options,
+				executeShape,
+				runRecordHandle,
+				packageContext: options?.packageContext ?? null,
+				workflowTools:
+					options?.workflowTools ??
+					createWorkflowTools({
+						env,
+						callerContext,
+						packageContext: options?.packageContext ?? null,
+					}),
+				packageEventTools: options?.packageEventTools,
+				conversationId: options?.conversationId ?? null,
+				reportProgress,
+				waitUntil: options?.waitUntil,
+			},
+		)
+		// Sub-phases (hydrate → provider-assembly → sandbox) report inside the
+		// bundled run so progress stays monotonic. `run` is only the enclosing
+		// serverTiming wall-clock span, not a client progress step.
+		serverTiming.push(...(result.serverTiming ?? []), {
+			name: 'run',
+			durationMs: Date.now() - runStartedAtMs,
+		})
+		return { ...result, serverTiming }
+	} catch (error) {
+		if (runRecordHandle && !enteredBundledRun) {
+			const disconnect =
+				options?.signal &&
+				isCallerDisconnectAbort(options.signal) &&
+				!(error instanceof ExecuteBundleTimeoutError)
+			const recordedError = disconnect
+				? createCallerDisconnectedExecutionError()
+				: error
+			await finishRunRecord({
+				env,
+				handle: runRecordHandle,
+				status: 'error',
+				error: recordedError,
+			})
+			return {
+				result: undefined,
+				error: getErrorMessage(recordedError),
+				logs: [],
+				...(runRecordHandle.persistence === 'eager'
+					? { runId: runRecordHandle.id }
+					: {}),
+				serverTiming,
+			}
+		}
+		throw error
+	}
 }
 
 /**

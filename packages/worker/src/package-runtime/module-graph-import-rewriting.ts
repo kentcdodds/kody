@@ -87,6 +87,13 @@ export type LoadedKodyGraphPackage = LoadedPackageSource & {
 	platformScope: string | null
 	shareOwned?: boolean
 	storageOwnerUserId?: string
+	/**
+	 * True once this package's published source snapshot has been rewritten
+	 * into `RewriteState.files` for a live rebuild. Published importable
+	 * artifacts skip that materialization so dual heavy export graphs (for
+	 * example two zod trees from one package) do not inflate the bundler VFS.
+	 */
+	sourceMaterialized?: boolean
 }
 
 export type LoadedKodyGraphPackages = Map<string, LoadedKodyGraphPackage>
@@ -206,7 +213,12 @@ function assertReplacementsDoNotOverlap(
 	}
 }
 
-async function ensurePackageLoaded(
+/**
+ * Resolve a saved-package import into `state.packages` without rewriting its
+ * published source snapshot into the bundler VFS. Callers that need a live
+ * rebuild must {@link materializePackageSourceIntoFiles} after an artifact miss.
+ */
+async function ensurePackageResolved(
 	state: RewriteState,
 	specifier: string,
 	nestedShareOwnerUserId?: string,
@@ -240,7 +252,7 @@ async function ensurePackageLoaded(
 		userId: resolution.sourceOwnerUserId,
 		sourceId: row.sourceId,
 	})
-	const entry = {
+	const entry: LoadedKodyGraphPackage = {
 		...loaded,
 		row,
 		prefix: joinPath(packageSourcePrefix, packageKey),
@@ -248,12 +260,21 @@ async function ensurePackageLoaded(
 		platformScope: resolution.platformScope,
 		shareOwned: resolution.shareOwned,
 		storageOwnerUserId: resolution.storageOwnerUserId,
+		sourceMaterialized: false,
 	}
 	state.packages.set(packageKey, entry)
+	return entry
+}
+
+async function materializePackageSourceIntoFiles(
+	state: RewriteState,
+	loaded: LoadedKodyGraphPackage,
+) {
+	if (loaded.sourceMaterialized === true) return
 	for (const [filePath, content] of Object.entries(loaded.files)) {
 		const normalizedPath = normalizePackageWorkspacePath(filePath)
 		assertNoKodyVirtualModuleReference(normalizedPath, content)
-		const targetPath = joinPath(entry.prefix, normalizedPath)
+		const targetPath = joinPath(loaded.prefix, normalizedPath)
 		if (isTypeDeclarationFilePath(normalizedPath)) {
 			state.files[targetPath] = content
 			continue
@@ -262,10 +283,10 @@ async function ensurePackageLoaded(
 			state,
 			source: content,
 			modulePath: targetPath,
-			sourcePackageId: row.id,
+			sourcePackageId: loaded.row.id,
 		})
 	}
-	return entry
+	loaded.sourceMaterialized = true
 }
 
 async function ensurePackageProxy(
@@ -293,33 +314,35 @@ async function ensurePackageProxy(
 					}),
 				)
 			: await (async () => {
-					const loaded = await ensurePackageLoaded(
+					// Prefer a published importable artifact before rewriting the
+					// full package source (including node_modules) into the
+					// bundler VFS. Multiple heavy exports from one package
+					// otherwise stack unused source graphs beside each artifact.
+					const loaded = await ensurePackageResolved(
 						state,
 						specifier,
 						nestedShareOwnerUserId,
 					)
 					calleePackageId = loaded.row.id
-					return (
-						(await maybeEnsurePublishedArtifactTarget({
-							state,
-							specifier,
-							loaded,
-						})) ??
-						(() => {
-							assertPublishedSourceCanRebuildWithoutInstallingDeps({
-								sourceFiles: loaded.files,
-								bundleLabel: `Saved package export "${normalizePackageExportKey(
-									parsed.exportName,
-								)}"`,
-							})
-							const exportPath = resolvePackageExportSourcePath({
-								files: loaded.files,
-								manifest: loaded.manifest,
-								exportName: parsed.exportName,
-							})
-							return joinPath(loaded.prefix, exportPath)
-						})()
-					)
+					const publishedTarget = await maybeEnsurePublishedArtifactTarget({
+						state,
+						specifier,
+						loaded,
+					})
+					if (publishedTarget) return publishedTarget
+					await materializePackageSourceIntoFiles(state, loaded)
+					assertPublishedSourceCanRebuildWithoutInstallingDeps({
+						sourceFiles: loaded.files,
+						bundleLabel: `Saved package export "${normalizePackageExportKey(
+							parsed.exportName,
+						)}"`,
+					})
+					const exportPath = resolvePackageExportSourcePath({
+						files: loaded.files,
+						manifest: loaded.manifest,
+						exportName: parsed.exportName,
+					})
+					return joinPath(loaded.prefix, exportPath)
 				})()
 	const proxyPath = joinPath(
 		packageImportProxyPrefix,
@@ -631,8 +654,9 @@ export async function prepareKodyGraphFiles(input: {
 			files[normalizedSourcePath] = content
 		}
 		if (isBundlerRootDependencyPath(normalizedSourcePath)) {
-			// Same rewrite dependency packages get in ensurePackageLoaded, so
-			// computed import() in installed dependency code hits the guard.
+			// Same rewrite dependency packages get after an artifact miss in
+			// materializePackageSourceIntoFiles, so computed import() in
+			// installed dependency code hits the guard.
 			files[normalizedSourcePath] =
 				bundlerScriptSourcePathPattern.test(normalizedSourcePath) &&
 				!isTypeDeclarationFilePath(normalizedSourcePath)

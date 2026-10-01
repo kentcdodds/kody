@@ -106,7 +106,9 @@ Execute responses include Server-Timing-style phase entries under
 **`timing.serverTiming`** (public tool) or top-level **`serverTiming`**
 (`meta.execute`): each entry is `{ name, durationMs }`.
 
-- `bundle` — module-graph preparation and bundling.
+- `bundle` — module-graph preparation and bundling. Ad-hoc execute begins the
+  run record before this phase and caps it at ~90s so a hung dual heavy-export
+  graph finishes as a recorded error instead of a silent MCP client abort.
 - `hydrate` — refreshing nested runtime modules, including compatibility
   placeholders retained in already-published bundle snapshots.
 - `provider-assembly` — capability registry, runtime helper, and provider wiring

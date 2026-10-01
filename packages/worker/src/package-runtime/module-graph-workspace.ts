@@ -217,7 +217,7 @@ function collectTransitiveKodyDependencies(input: {
 		if (!next) continue
 		const parsed = parseKodyPackageSpecifier(next.specifier)
 		if (parsed.packageName === input.rootPackageName) continue
-		// Mirrors ensurePackageLoaded: imports inside a share-owned package
+		// Mirrors ensurePackageResolved: imports inside a share-owned package
 		// resolve under the share owner, keyed `${name}#${ownerUserId}`.
 		const nestedShareOwnerUserId =
 			next.importer?.shareOwned === true

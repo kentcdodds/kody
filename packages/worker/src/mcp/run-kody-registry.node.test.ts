@@ -8,8 +8,10 @@ import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
 import {
 	buildKodyFns,
 	createWorkflowTools,
+	executeBundleTimeoutMs,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
+import * as runRecords from '#worker/run-records/service.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
 import * as executeInterpretable from '#mcp/execute-interpretable.ts'
 import { createStableDynamicWorkerId } from '#mcp/dynamic-worker-id.ts'
@@ -880,4 +882,74 @@ export default async function main(params) { return { other: true, ...params } }
 	const ids = await Promise.all(executor.calls.map(mintFromRun))
 	expect(ids.slice(1, 3)).toEqual([ids[0], ids[0]])
 	expect(ids[3]).not.toBe(ids[0])
+})
+
+test('runModuleWithRegistry begins a run before bundling and records a clear timeout when bundling hangs', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.useFakeTimers()
+	const handle = {
+		id: 'run-bundle-timeout',
+		userId: 'user-1',
+		startedAt: '2026-10-01T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: { surface: 'execute' as const, name: null },
+	}
+	const beginSpy = vi
+		.spyOn(runRecords, 'beginRunRecord')
+		.mockReturnValue(handle)
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishRunRecord')
+		.mockResolvedValue(undefined as never)
+	try {
+		vi.mocked(moduleGraph.buildKodyModuleBundle).mockImplementation(
+			() => new Promise(() => {}),
+		)
+		vi.spyOn(
+			registryModule,
+			'getCapabilityRegistryForContext',
+		).mockResolvedValue(emptyRegistry)
+
+		const pending = runModuleWithRegistry(
+			{} as Env,
+			meCaller(),
+			'export default async function main() { return 1 }',
+			undefined,
+			{
+				runRecord: { surface: 'execute', name: null },
+			},
+		)
+		expect(beginSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				context: expect.objectContaining({ surface: 'execute' }),
+			}),
+		)
+		await vi.advanceTimersByTimeAsync(executeBundleTimeoutMs)
+		const result = await pending
+		expect(result.error).toMatch(/Execute module bundling exceeded/)
+		expect(result.runId).toBe('run-bundle-timeout')
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'error',
+				error: expect.objectContaining({
+					name: 'ExecuteBundleTimeoutError',
+				}),
+			}),
+		)
+	} finally {
+		vi.useRealTimers()
+		beginSpy.mockRestore()
+		finishSpy.mockRestore()
+		vi.mocked(moduleGraph.buildKodyModuleBundle).mockReset()
+		vi.mocked(moduleGraph.buildKodyModuleBundle).mockImplementation(
+			async () => ({
+				mainModule: 'entry.js',
+				modules: {
+					'entry.js':
+						'export default async function main(input = {}) { return input }',
+				},
+				dependencies: [],
+			}),
+		)
+	}
 })

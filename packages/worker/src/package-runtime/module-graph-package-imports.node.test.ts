@@ -486,6 +486,82 @@ export default [fooDot, fooDash]`,
 	expect(new Set(proxyPaths).size).toBe(2)
 })
 
+test('buildKodyModuleBundle skips package source materialization when published importable artifacts exist', async () => {
+	mockModule.createWorker.mockResolvedValue(
+		createBundleResult('artifact-skips-source-vfs'),
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		makeLoadedSource(
+			{
+				...examplePackage,
+				exports: {
+					'./list': './src/list.ts',
+					'./trigger': './src/trigger.ts',
+				},
+				dependencies: { zod: '^4.5.4' },
+			},
+			{
+				'src/list.ts':
+					'import { z } from "zod"\nexport default async function list() { return z.string() }',
+				'src/trigger.ts':
+					'import { z } from "zod"\nexport default async function trigger() { return z.number() }',
+				'node_modules/zod/package.json': '{"name":"zod","main":"index.js"}',
+				'node_modules/zod/index.js':
+					'export const z = { string: () => "string", number: () => "number" }',
+			},
+		),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockImplementation(
+		async (input: { artifactName?: string | null; entryPoint?: string }) => {
+			const name = input.artifactName ?? ''
+			if (name !== './list' && name !== './trigger') return null
+			const leaf = name.slice(2)
+			return makeArtifactHit({
+				artifactName: name,
+				entryPoint: input.entryPoint ?? `src/${leaf}.ts`,
+				mainModule: `dist/${leaf}.js`,
+				modules: {
+					[`dist/${leaf}.js`]: `export default async function ${leaf}() { return "${leaf}" }`,
+					'node_modules/zod/index.js':
+						'export const z = { string: () => "string", number: () => "number" }',
+				},
+			})
+		},
+	)
+
+	await buildLocal({
+		'index.js': `import list from "kody:@kentcdodds/example-package/list"
+import trigger from "kody:@kentcdodds/example-package/trigger"
+export default async function main() { return { list: typeof list, trigger: typeof trigger } }`,
+	})
+
+	const paths = Object.keys(bundlerFiles())
+	expect(
+		paths.filter((path) => path.includes('.__published_bundle__/')),
+	).toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('/dist/list.js'),
+			expect.stringContaining('/dist/trigger.js'),
+		]),
+	)
+	expect(
+		paths.some(
+			(path) =>
+				path.includes('.__kody_packages__/') &&
+				path.includes('/node_modules/zod/') &&
+				!path.includes('.__published_bundle__/'),
+		),
+	).toBe(false)
+	expect(
+		paths.some(
+			(path) =>
+				path.includes('.__kody_packages__/') &&
+				(path.endsWith('/src/list.ts') || path.endsWith('/src/trigger.ts')),
+		),
+	).toBe(false)
+})
+
 test('buildKodyModuleBundle resolves transitive imports back to the root package source during rebuilds', async () => {
 	mockModule.createWorker.mockResolvedValue(createBundleResult('root-cycle'))
 	const journaling = { name: '@kentcdodds/journaling', kodyId: 'journaling' }
