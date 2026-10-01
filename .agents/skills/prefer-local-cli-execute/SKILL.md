@@ -19,8 +19,9 @@ Canonical guide: [Open API and local execute](https://kody.codes/docs/open-api)
 
 ## Mint a token (once per machine / env)
 
-Use MCP `api` (or Open API `tokenCreate`) — the value is returned **once**. Put
-it in env or `--token`; **never paste the token into chat**.
+Use MCP `api` (or Open API `tokenCreate`) — the value is returned **once** in
+that tool result. Write it only into the environment (shell/`KODY_API_TOKEN`);
+**never paste the token into chat** again afterward.
 
 ```json
 {
@@ -43,10 +44,11 @@ export KODY_API_TOKEN='kody_at_…'   # do this yourself; never paste into chat
 ## Run locally
 
 ```bash
-npx @kodycodes/cli execute --local --token "$KODY_API_TOKEN" --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
-`--token` is optional when `KODY_API_TOKEN` is already set.
+Prefer `KODY_API_TOKEN` in the environment over `--token` so the secret is not
+visible in process arguments.
 
 ## Fallback
 

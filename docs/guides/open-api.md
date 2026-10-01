@@ -79,10 +79,11 @@ skill.
 3. Run a local module:
 
    ```bash
-   npx @kodycodes/cli execute --local --token "$KODY_API_TOKEN" --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+   npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
    ```
 
-   `--token` is optional when `KODY_API_TOKEN` is already set.
+   Prefer the env var over `--token` so the secret is not visible in process
+   arguments.
 
 List and revoke tokens with MCP `api` (`tokenList`, `tokenRevoke`) or the same
 operations over HTTP.

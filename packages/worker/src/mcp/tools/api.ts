@@ -38,7 +38,7 @@ export const apiToolDescription = [
 	'',
 	'Use `execute` instead when you need to compose several calls, transform results, or fetch external URLs.',
 	'',
-	'Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available: mint a short-lived scoped token with `{ "operationId": "tokenCreate", "params": { "name": "kody-cli-local", "scopes": ["local-execute", "account:read"] } }` (add scopes as needed). The result includes the token value once; pass it to `npx @kodycodes/cli execute --local --token "$KODY_API_TOKEN" --code \'…\'` (or export `KODY_API_TOKEN`) and do not repeat it in chat. Tokens slide their expiry on use (default 15 minutes idle) and can be revoked with `tokenRevoke`. Fall back to hosted MCP `execute` when local is not appropriate. See https://kody.codes/docs/open-api.',
+	'Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available: mint a short-lived scoped token with `{ "operationId": "tokenCreate", "params": { "name": "kody-cli-local", "scopes": ["local-execute", "account:read"] } }` (add scopes as needed). The result includes the token value once; set `KODY_API_TOKEN` in the environment, then run `npx @kodycodes/cli execute --local --code \'…\'` without passing the token in process arguments, and do not repeat it in chat. Tokens slide their expiry on use (default 15 minutes idle) and can be revoked with `tokenRevoke`. Fall back to hosted MCP `execute` when local is not appropriate. See https://kody.codes/docs/open-api.',
 ].join('\n')
 
 export const apiToolAnnotations = {
