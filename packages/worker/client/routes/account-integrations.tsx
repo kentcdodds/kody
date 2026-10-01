@@ -147,13 +147,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		)
 	}
 
-	function finishOptimisticRemoval(options?: { reload?: boolean }) {
+	function finishOptimisticRemoval() {
 		holdingOptimisticRemoval = false
-		// List and detail share one data latch key, so navigating between them
-		// never refetches on its own; queue the reload before either branch.
-		if (options?.reload) {
-			integrationsData.reload(handle, getCurrentHref())
-		}
+		// The server-filtered "Connect with Kody" catalog hides built-ins whose
+		// slug any connection holds, so every removal can re-offer one. List and
+		// detail share one data latch key, so navigating between them never
+		// refetches on its own; queue the reload before either branch.
+		integrationsData.reload(handle, getCurrentHref())
 		if (currentSelectionMissing()) {
 			navigate(listHref())
 			return
@@ -281,11 +281,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		accountLabel?: string | null
 	}) {
 		const snapshot = snapshotList()
-		// The server-filtered "Connect with Kody" catalog only re-offers a
-		// built-in after its last connection is gone, so refetch for those.
-		const wasPlatform = integrations.some(
-			(entry) => entry.name === connection.name && entry.platform === true,
-		)
 		removeConnectionLocally(connection.name)
 		getDisconnectCheck(connection.name).reset()
 		holdingOptimisticRemoval = true
@@ -300,7 +295,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'disconnect_connection',
 						name: connection.name,
 					})
-					finishOptimisticRemoval({ reload: wasPlatform })
+					finishOptimisticRemoval()
 				} catch (error) {
 					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)
