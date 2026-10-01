@@ -289,13 +289,13 @@ knobs; deprecated aliases remain for older manifests (see
 
 ### Generic `subscription-challenge`
 
-| Knob        | Role                                                                                                         |
-| ----------- | ------------------------------------------------------------------------------------------------------------ |
-| `method`    | `GET` or `POST`                                                                                              |
-| `challenge` | Where the token arrives: `{ in: "query" \| "json", key }`                                                    |
-| `when`      | Optional filters (`query` / `json`). GET mismatch → **400**; POST mismatch → not a quiz (delivery continues) |
-| `prove`     | `none`, `verify-token` (query secret match), `hmac` (CRC of token), or `request-hmac` (sign the request)     |
-| `respond`   | `text` echo, `json` echo under `key`, or `json-hmac` (CRC response)                                          |
+| Knob        | Role                                                                                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`    | `GET` or `POST`                                                                                                                                                                          |
+| `challenge` | Where the token arrives: `{ in: "query" \| "json", key }`                                                                                                                                |
+| `when`      | Optional filters (`query` / `json`). GET mismatch → **400**; POST mismatch → not a quiz (delivery continues). **Required for POST** (`when.json`) so ordinary event bodies fall through. |
+| `prove`     | `none`, `verify-token` (query secret match), `hmac` (CRC of token), or `request-hmac` (sign the request)                                                                                 |
+| `respond`   | `text` echo, `json` echo under `key`, or `json-hmac` (CRC response)                                                                                                                      |
 
 `prove.*.secretName` is the same named secret-store reference as
 `verification.secretName` — never an inline value. Later provider POSTs still go

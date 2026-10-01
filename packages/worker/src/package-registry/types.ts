@@ -176,7 +176,14 @@ export const webhookChallengeTypeValues = [
 ] as const
 export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
 
-const webhookChallengeParamKeySchema = z.string().min(1).max(128)
+const webhookChallengeParamKeySchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.regex(
+		/^(?!__proto__$|prototype$|constructor$)[A-Za-z0-9][A-Za-z0-9._-]*$/,
+		'Challenge keys must be alphanumeric (with . _ -) and must not be prototype property names.',
+	)
 
 const webhookChallengeWhenValueSchema = z.union([
 	z.string().min(1),
@@ -236,8 +243,6 @@ export const packageWebhookSubscriptionChallengeSchema = z.object({
 				timestampHeader: z.string().regex(httpFieldNamePattern),
 				signatureHeader: z.string().regex(httpFieldNamePattern),
 				signedPayload: z.literal('v0.timestamp.body'),
-				/** Default true when this prove block is present. */
-				required: z.boolean().optional(),
 			}),
 		])
 		.optional(),
@@ -305,6 +310,19 @@ export const packageWebhookChallengeSchema =
 				message: 'POST subscription challenges must read challenge.in=json.',
 			})
 		}
+		if (challenge.method === 'POST') {
+			const hasJsonWhen =
+				challenge.when?.json != null &&
+				Object.keys(challenge.when.json).length > 0
+			if (!hasJsonWhen) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['when', 'json'],
+					message:
+						'POST subscription challenges require when.json so ordinary event POSTs can fall through to delivery.',
+				})
+			}
+		}
 		if (
 			challenge.respond.as === 'json-hmac' &&
 			challenge.prove?.kind !== 'hmac'
@@ -314,6 +332,16 @@ export const packageWebhookChallengeSchema =
 				path: ['respond', 'as'],
 				message:
 					'respond.as=json-hmac requires prove.kind=hmac (CRC-style answer).',
+			})
+		}
+		if (
+			challenge.prove?.kind === 'hmac' &&
+			challenge.respond.as !== 'json-hmac'
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['respond', 'as'],
+				message: 'prove.kind=hmac requires respond.as=json-hmac.',
 			})
 		}
 	})

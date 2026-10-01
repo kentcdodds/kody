@@ -183,7 +183,6 @@ export function normalizeWebhookChallenge(
 							timestampHeader: 'x-slack-request-timestamp',
 							signatureHeader: 'x-slack-signature',
 							signedPayload: 'v0.timestamp.body',
-							required: true,
 						}
 					: { kind: 'none' },
 				respond: { as: 'json', key: 'challenge' },
@@ -355,7 +354,14 @@ async function handleNormalizedSubscriptionChallenge(input: {
 
 	if (challengeValue == null || challengeValue === '') {
 		if (config.method === 'POST') {
-			// Matched when.json (or no when) but missing challenge field.
+			// Without a matched when.json discriminator this is an ordinary
+			// event POST — fall through. With when matched, the quiz is missing
+			// its token field.
+			const matchedJsonWhen =
+				config.when?.json != null && Object.keys(config.when.json).length > 0
+			if (!matchedJsonWhen) {
+				return { kind: 'not_challenge' }
+			}
 			return {
 				kind: 'respond',
 				response: challengeBadRequestResponse(
@@ -435,7 +441,6 @@ async function handleNormalizedSubscriptionChallenge(input: {
 			}
 		}
 		case 'request-hmac': {
-			const required = prove.required !== false
 			const secret = await resolveChallengeSecret({
 				secretName: prove.secretName,
 				resolveSecret: input.resolveSecret,
@@ -448,7 +453,6 @@ async function handleNormalizedSubscriptionChallenge(input: {
 				signingSecret: secret.value,
 			})
 			if (!signatureOk) {
-				if (!required) break
 				return {
 					kind: 'respond',
 					response: challengeUnauthorizedResponse(

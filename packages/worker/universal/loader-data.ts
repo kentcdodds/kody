@@ -1328,7 +1328,6 @@ type PackageWebhookChallengeProve =
 			timestampHeader: string
 			signatureHeader: string
 			signedPayload: 'v0.timestamp.body'
-			required?: boolean
 	  }
 
 type PackageWebhookChallenge =

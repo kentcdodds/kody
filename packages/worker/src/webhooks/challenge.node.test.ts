@@ -368,3 +368,44 @@ test('subscription-challenge POST request-hmac preset matches slack alias', asyn
 		challenge: 'slack-challenge-token',
 	})
 })
+
+test('POST challenge without when falls through when challenge field is absent', async () => {
+	const body = JSON.stringify({ event: 'updated' })
+	expect(
+		await challengeOutcome({
+			request: new Request('https://example.test/hook', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body,
+			}),
+			challenge: {
+				type: 'subscription-challenge',
+				method: 'POST',
+				challenge: { in: 'json', key: 'challenge' },
+				respond: { as: 'json', key: 'challenge' },
+			},
+			bodyText: body,
+		}),
+	).toEqual({ kind: 'not_challenge' })
+})
+
+test('POST challenge with when rejects missing challenge field after match', async () => {
+	const body = JSON.stringify({ type: 'url_verification' })
+	expect(
+		await challengeOutcome({
+			request: new Request('https://example.test/hook', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body,
+			}),
+			challenge: {
+				type: 'subscription-challenge',
+				method: 'POST',
+				challenge: { in: 'json', key: 'challenge' },
+				when: { json: { type: 'url_verification' } },
+				respond: { as: 'json', key: 'challenge' },
+			},
+			bodyText: body,
+		}),
+	).toMatchObject({ status: 400 })
+})
