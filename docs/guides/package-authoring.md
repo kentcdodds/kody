@@ -127,7 +127,10 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-Call the root export from `execute` after publish.
+After publish, prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI
+
+- token are available ([Open API and local execute](./open-api.md)); else hosted
+  MCP `execute`.
 
 ## Edge cases
 

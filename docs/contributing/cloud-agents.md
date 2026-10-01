@@ -197,6 +197,17 @@ Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
 `SECRET_STORE_KEY` are required for local dev. The file does not create D1, KV,
 or Durable Object bindings.
 
+## Local Kody execute (CLI)
+
+When this VM has Node ≥22 (Cloud Agents use Node 26) and `@kodycodes/cli`,
+prefer `npx @kodycodes/cli execute --local` over hosted MCP `execute` for
+one-off modules and smoke tests. Put `KODY_API_TOKEN` in the Cloud
+**environment** secrets/vars (not in the prompt). Mint once via MCP `api`
+`tokenCreate` with scopes `local-execute` and `account:read` (add scopes as
+needed); never paste the token into chat. Guide:
+[Open API and local execute](../guides/open-api.md). Skill:
+[prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+
 ## Seeding a test account
 
 After `npm run migrate:local`, seed the local fixture logins per

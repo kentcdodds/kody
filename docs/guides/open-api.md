@@ -2,9 +2,10 @@
 id: open_api
 title: Open API and local execute
 summary:
-  Call Kody over HTTPS at api.kody.codes, mint scoped tokens from the MCP api
-  tool or CLI, and run execute modules locally with CapabilityProxy. Behind
-  experiments flags; signed-in users can turn them on from this page.
+  Prefer @kodycodes/cli execute --local when Node ≥22 is available. Call Kody
+  over HTTPS at api.kody.codes, mint scoped tokens from the MCP api tool or CLI,
+  and run execute modules locally with CapabilityProxy. Behind experiments
+  flags; signed-in users can turn them on from this page.
 category: platform
 ---
 
@@ -39,6 +40,18 @@ They may change or go away.
    per-user on overrides for both flags without joining the broader experiments
    cohort.
 
+## Prefer local CLI execute
+
+When **Node ≥22** and `@kodycodes/cli` are available, prefer
+`npx @kodycodes/cli execute --local` for one-off modules, smoke tests, and
+composition. Fall back to hosted MCP `execute` when local is not appropriate (no
+suitable Node, CLI missing, flags/scopes missing, or the host cannot run a local
+workerd). Cursor Cloud Agents need `KODY_API_TOKEN` in the environment (not in
+the prompt); see [Cursor Cloud Agent notes](../contributing/cloud-agents.md) and
+the
+[prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
+skill.
+
 ## First local run
 
 1. With MCP `api` available, mint a short-lived token (value returned once):
@@ -47,15 +60,15 @@ They may change or go away.
    {
    	"operationId": "tokenCreate",
    	"params": {
-   		"name": "kody-cli",
+   		"name": "kody-cli-local",
    		"scopes": ["local-execute", "account:read"]
    	}
    }
    ```
 
-   Or from a shell already holding `KODY_API_TOKEN` with `tokens:write` and
-   `local-execute`: use the CLI / MCP `api` helpers the same way. Prefer MCP
-   `tokenCreate` for the first token.
+   Add scopes as needed for the work. Or from a shell already holding
+   `KODY_API_TOKEN` with `tokens:write` and `local-execute`: use the CLI / MCP
+   `api` helpers the same way. Prefer MCP `tokenCreate` for the first token.
 
 2. Export the value (do not paste it back into chat):
 
@@ -66,11 +79,13 @@ They may change or go away.
 3. Run a local module:
 
    ```bash
-   npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+   npx @kodycodes/cli execute --local --token "$KODY_API_TOKEN" --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
    ```
 
+   `--token` is optional when `KODY_API_TOKEN` is already set.
+
 List and revoke tokens with MCP `api` (`tokenList`, `tokenRevoke`) or the same
-operations over HTTP. See the CLI package for flags such as `--token`.
+operations over HTTP.
 
 ## Metering
 

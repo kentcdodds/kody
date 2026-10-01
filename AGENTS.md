@@ -48,6 +48,10 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/cloudflare-agents-sdk.md](./docs/contributing/cloudflare-agents-sdk.md)
 - MCP capabilities (search/execute graph, domains, registry):
   - [docs/contributing/adding-capabilities.md](./docs/contributing/adding-capabilities.md)
+- Prefer local CLI execute when Node ≥22 + CLI are available (mint
+  `KODY_API_TOKEN`, fall back to hosted MCP `execute`):
+  - [docs/guides/open-api.md](./docs/guides/open-api.md) and
+    [.agents/skills/prefer-local-cli-execute/SKILL.md](./.agents/skills/prefer-local-cli-execute/SKILL.md)
 - Project setup references:
   - [docs/contributing/getting-started.md](./docs/contributing/getting-started.md)
   - [docs/contributing/environment-variables.md](./docs/contributing/environment-variables.md)

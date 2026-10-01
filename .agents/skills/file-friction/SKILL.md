@@ -23,9 +23,11 @@ not help the next agent. `create` / `file` soft-skip the same shapes.
 - Kody package → `{ host: 'kody', repo: '@owner/leaf' }` (wakes Patch; no GitHub
   issue).
 
-File leftovers with `kody:@kentcdodds/friction-log/file` via Kody MCP `execute`
-(`target` + `items`, one papercut each). Omit secrets. If there is nothing that
-meets the bar, skip the call. A single issue can use
+File leftovers with `kody:@kentcdodds/friction-log/file` via prefer-local CLI
+execute when available
+([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)); else hosted
+MCP `execute` (`target` + `items`, one papercut each). Omit secrets. If there is
+nothing that meets the bar, skip the call. A single issue can use
 `kody:@kentcdodds/friction-log/create` (same `target` contract).
 
 ```javascript

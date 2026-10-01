@@ -119,7 +119,9 @@ commits onto a merged PR. In-scope fixes belong in the loop above, while the PR
 is open.
 
 File leftovers that meet the bar with `kody:@kentcdodds/friction-log/file` via
-Kody MCP `execute`. Always pass required
+prefer-local CLI execute when available
+([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)); else hosted
+MCP `execute`. Always pass required
 `target: { host: 'github' | 'kody', repo: string }` plus `items` (one papercut
 each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and `cost`
 when known. Platform leftovers use
