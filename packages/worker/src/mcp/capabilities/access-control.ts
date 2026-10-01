@@ -266,6 +266,35 @@ export function filterCapabilityRegistryForCaller(
 		return registry
 	}
 
+	return projectCapabilityRegistry(registry, capabilityList)
+}
+
+/**
+ * Discovery surfaces (search, metaListCapabilities) hide package-locked MCP
+ * servers the caller cannot use. Runtime execute keeps those capabilities so
+ * an approved package export imported into execute can still dispatch; call
+ * time assertCanUseMcpServer enforces the grant.
+ */
+export function filterCapabilityRegistryMcpServersForCaller(
+	registry: BuiltCapabilityRegistry,
+	visibleServerIds: ReadonlySet<string>,
+): BuiltCapabilityRegistry {
+	const capabilityList = registry.capabilityList.filter((capability) => {
+		if (capability.source !== 'mcp-server' || !capability.mcpServer) {
+			return true
+		}
+		return visibleServerIds.has(capability.mcpServer.serverId)
+	})
+	if (capabilityList.length === registry.capabilityList.length) {
+		return registry
+	}
+	return projectCapabilityRegistry(registry, capabilityList)
+}
+
+function projectCapabilityRegistry(
+	registry: BuiltCapabilityRegistry,
+	capabilityList: Array<Capability>,
+): BuiltCapabilityRegistry {
 	const allowedNames = new Set(
 		capabilityList.map((capability) => capability.name),
 	)

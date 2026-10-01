@@ -4,6 +4,7 @@ import {
 	assertCallerCanAccessCapability,
 	callerCanAccessCapability,
 	filterCapabilityRegistryForCaller,
+	filterCapabilityRegistryMcpServersForCaller,
 	type CallerFeatureFlags,
 } from './access-control.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
@@ -175,5 +176,40 @@ test('featureFlag-gated capabilities require an authenticated caller', async () 
 		enabledFlags,
 	)
 	expect(filtered.capabilityMap.example_flagged).toBeUndefined()
+	expect(filtered.capabilityMap.example_open).toBeTruthy()
+})
+
+test('discovery filter hides package-locked MCP server capabilities by server id', () => {
+	const locked: Capability = {
+		...createCapability('mcp:notion:search'),
+		domain: 'mcp:notion',
+		source: 'mcp-server',
+		mcpServer: {
+			serverId: 'server-notion',
+			serverName: 'notion',
+			kodyName: 'notion',
+			mcpToolName: 'search',
+			toolName: 'search',
+		},
+	}
+	const anyContext: Capability = {
+		...createCapability('mcp:linear:list'),
+		domain: 'mcp:linear',
+		source: 'mcp-server',
+		mcpServer: {
+			serverId: 'server-linear',
+			serverName: 'linear',
+			kodyName: 'linear',
+			mcpToolName: 'list',
+			toolName: 'list',
+		},
+	}
+	const registry = createRegistry([locked, anyContext, open])
+	const filtered = filterCapabilityRegistryMcpServersForCaller(
+		registry,
+		new Set(['server-linear']),
+	)
+	expect(filtered.capabilityMap['mcp:notion:search']).toBeUndefined()
+	expect(filtered.capabilityMap['mcp:linear:list']).toBeTruthy()
 	expect(filtered.capabilityMap.example_open).toBeTruthy()
 })

@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	IntegrationTokenRefreshCallerError,
 	refreshIntegrationTokens,
@@ -49,6 +50,9 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const { authorityPackageId } = resolveCallerSecretAuthority({
+				storageContext: ctx.callerContext.storageContext,
+			})
 			try {
 				const result = await refreshIntegrationTokens({
 					env: ctx.env,
@@ -56,7 +60,7 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 					userEmail: user.email,
 					name: args.name,
 					baseUrl: ctx.callerContext.baseUrl,
-					packageId: ctx.callerContext.storageContext?.packageId ?? null,
+					packageId: authorityPackageId,
 					waitUntil: ctx.waitUntil,
 				})
 				return {

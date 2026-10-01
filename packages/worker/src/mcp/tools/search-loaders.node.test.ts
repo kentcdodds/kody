@@ -8,7 +8,19 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: async () => ({ capabilitySpecs: {} }),
+	getCapabilityRegistryForContext: async () => ({
+		capabilityList: [],
+		capabilityDomains: [],
+		capabilityDomainDescriptionsByName: {},
+		capabilityMap: {},
+		capabilitySpecs: {},
+		capabilityToolDescriptors: {},
+		capabilityHandlers: {},
+	}),
+}))
+
+vi.mock('#worker/mcp-client/settings-service.ts', () => ({
+	listVisibleEnabledMcpServerRefsCached: async () => [],
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({

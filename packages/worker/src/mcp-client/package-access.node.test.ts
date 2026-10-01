@@ -1,9 +1,27 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
+	assertCanUseMcpServer,
 	canCallerUseMcpServer,
+	createMcpServerExecuteAccessDeniedMessage,
 	filterEnabledMcpServerRefsForCaller,
+	McpServerPackageAccessDeniedError,
 	type EnabledMcpServerRef,
 } from './package-access.ts'
+import type * as SettingsRepo from './settings-repo.ts'
+
+const mocks = vi.hoisted(() => ({
+	getMcpServerSettingRowById: vi.fn(),
+}))
+
+vi.mock('./settings-repo.ts', async () => {
+	const actual =
+		await vi.importActual<typeof SettingsRepo>('./settings-repo.ts')
+	return {
+		...actual,
+		getMcpServerSettingRowById: (...args: Array<unknown>) =>
+			mocks.getMcpServerSettingRowById(...args),
+	}
+})
 
 function ref(
 	overrides: Partial<EnabledMcpServerRef> = {},
@@ -65,4 +83,41 @@ test('package-locked MCP servers are hidden from execute and other packages', ()
 		{ serverId: 'server-1', name: 'linear' },
 		{ serverId: 'server-2', name: 'notion' },
 	])
+})
+
+test('assertCanUseMcpServer denies execute with the account usage URL message', async () => {
+	mocks.getMcpServerSettingRowById.mockResolvedValue({
+		id: 'server-notion',
+		usage_mode: 'packages',
+		allowedPackageIds: ['pkg-notion-read'],
+	})
+	const denied = await assertCanUseMcpServer({
+		env: { APP_DB: {} } as Pick<Env, 'APP_DB'>,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		serverId: 'server-notion',
+		serverName: 'notion',
+		packageId: null,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(denied).toBeInstanceOf(McpServerPackageAccessDeniedError)
+	expect((denied as Error).message).toBe(
+		createMcpServerExecuteAccessDeniedMessage({
+			serverName: 'notion',
+			usageUrl: 'https://example.com/account/mcp-servers/server-notion',
+		}),
+	)
+
+	await expect(
+		assertCanUseMcpServer({
+			env: { APP_DB: {} } as Pick<Env, 'APP_DB'>,
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+			serverId: 'server-notion',
+			serverName: 'notion',
+			packageId: 'pkg-notion-read',
+		}),
+	).resolves.toBeUndefined()
 })

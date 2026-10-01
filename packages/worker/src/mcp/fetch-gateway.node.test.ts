@@ -427,6 +427,35 @@ test('fetch gateway gates integration tokens by the connection grant and require
 	expect(packageSpy).not.toHaveBeenCalled()
 	expect(forkSpy).not.toHaveBeenCalled()
 
+	// Package export imported into execute: run has no packageId, stamp header
+	// carries the callee package for integrationLock grants (same as secrets).
+	grantSpy.mockClear()
+	const stampedFromExecute = await expand(
+		(() => {
+			const headers = new Headers({
+				Authorization: 'Bearer {{integration-token:google}}',
+			})
+			headers.set('x-kody-secret-authority', 'pkg-1')
+			return new Request('https://example.com/api', { headers })
+		})(),
+		{
+			...props,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: null,
+				storageId: null,
+			},
+			grantedSecretAuthorityPackageIds: ['pkg-1'],
+		},
+	)
+	expect(stampedFromExecute.headers.get('Authorization')).toBe(
+		'Bearer oauth-access',
+	)
+	expect(grantSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ name: 'google', packageId: 'pkg-1' }),
+	)
+
 	// A host outside requiredHosts is refused.
 	joinedSpy.mockResolvedValue({
 		lane: 'user',
@@ -444,11 +473,11 @@ test('fetch gateway gates integration tokens by the connection grant and require
 	await expect(
 		expand(integrationRequest('https://evil.example/steal')),
 	).rejects.toThrow('does not have a stored access token')
-	expect(joinedSpy).toHaveBeenCalledTimes(3)
+	expect(joinedSpy).toHaveBeenCalledTimes(4)
 	expect(joinedSpy).toHaveBeenLastCalledWith(
 		expect.objectContaining({ userId: 'user-123', name: 'google' }),
 	)
-	expect(tokenSpy).toHaveBeenCalledTimes(3)
+	expect(tokenSpy).toHaveBeenCalledTimes(4)
 })
 
 test('opt-out header controls secret resolution and strips itself from forwarded requests', async () => {

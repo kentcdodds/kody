@@ -257,7 +257,7 @@ test('closed-world retriever runtime skips capabilities, hub snapshots, workflow
 		.spyOn(registryModule, 'getCapabilityRegistryForContext')
 		.mockResolvedValue({} as never)
 	const listMcpServerRefsSpy = vi
-		.spyOn(settingsService, 'listVisibleEnabledMcpServerRefsCached')
+		.spyOn(settingsService, 'listEnabledMcpServerRefsCached')
 		.mockResolvedValue([])
 	const getHubSnapshotSpy = vi
 		.spyOn(hubClient, 'getCachedMcpClientHubSnapshot')

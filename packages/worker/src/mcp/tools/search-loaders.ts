@@ -1,10 +1,12 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { filterCapabilityRegistryMcpServersForCaller } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
+import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	listPlatformPackagesForSearch,
 	type PlatformPackageForSearch,
@@ -87,7 +89,7 @@ export async function loadSearchRowsAndRegistry(input: {
 	userId: string | null
 	includeHiddenPackages?: boolean
 }) {
-	const [registry, optionalRows] = await Promise.all([
+	const [runtimeRegistry, optionalRows] = await Promise.all([
 		getCapabilityRegistryForContext({
 			env: input.env,
 			callerContext: input.callerContext,
@@ -199,6 +201,22 @@ export async function loadSearchRowsAndRegistry(input: {
 			},
 		}),
 	])
+	// Runtime registry keeps package-locked MCP servers for call-time grants;
+	// search must still hide servers the caller cannot use (execute / other pkgs).
+	const registry = input.userId
+		? filterCapabilityRegistryMcpServersForCaller(
+				runtimeRegistry,
+				new Set(
+					(
+						await listVisibleEnabledMcpServerRefsCached({
+							env: input.env,
+							userId: input.userId,
+							packageId: input.callerContext.storageContext?.packageId,
+						}).catch(() => [])
+					).map((ref) => ref.serverId),
+				),
+			)
+		: runtimeRegistry
 	return {
 		registry,
 		...optionalRows,

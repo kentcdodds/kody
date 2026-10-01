@@ -504,7 +504,7 @@ export async function expandSecretPlaceholders(input: {
 				baseUrl: input.props.baseUrl,
 				userId: callerUserId,
 				name,
-				packageId: input.props.storageContext?.packageId ?? null,
+				packageId: storageContext.packageId,
 			})
 			const value = await resolveIntegrationAccessToken({
 				env: input.env,
