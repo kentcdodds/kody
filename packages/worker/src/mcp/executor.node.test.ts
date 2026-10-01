@@ -5,6 +5,11 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
+import {
+	getSecretAuthorityScope,
+	resolveCallerSecretAuthority,
+	secretAuthorityArgName,
+} from '#mcp/secrets/secret-authority.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import {
 	kodyCallDispatcherName,
@@ -346,53 +351,81 @@ test('generated kody provider and executor module sources stay bundle-safe and g
 test('generated kody provider source wires mcp proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createKodyProviderProxySource({ providerName: 'kody' })
-	const kody = new Function(
-		'__dispatchers',
-		'__invocation',
-		`${source}; return ${kodyProviderEvaluateBindingName};`,
-	)(
-		{
-			kody: {
-				async call(name: string, argsJson: string) {
-					calls.push({ name, argsJson })
-					return JSON.stringify({ result: { ok: true } })
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-stamped',
+		configurable: true,
+		writable: true,
+	})
+	try {
+		const kody = new Function(
+			'__dispatchers',
+			'__invocation',
+			`${source}; return ${kodyProviderEvaluateBindingName};`,
+		)(
+			{
+				kody: {
+					async call(name: string, argsJson: string) {
+						calls.push({ name, argsJson })
+						return JSON.stringify({ result: { ok: true } })
+					},
 				},
 			},
-		},
-		{
-			mcpServers: [
-				{
-					name: 'home',
-					status: {
-						connected: true,
-						toolCount: 1,
-						unavailableMessage: 'The MCP server "home" is connected.',
+			{
+				mcpServers: [
+					{
+						name: 'home',
+						status: {
+							connected: true,
+							toolCount: 1,
+							unavailableMessage: 'The MCP server "home" is connected.',
+						},
+						capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
 					},
-					capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
-				},
-			],
-		},
-	) as {
-		mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-		[key: string]: unknown
-	}
+				],
+			},
+		) as {
+			mcp: Record<string, Record<string, (args?: unknown) => Promise<unknown>>>
+			[key: string]: unknown
+		}
 
-	await expect(kody.mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual({
-		ok: true,
-	})
-	expect(calls).toEqual([
-		{ name: 'mcphomeset_pin', argsJson: JSON.stringify({ pin: '1234' }) },
-	])
-	expect(() => kody['mcp:home:set_pin']).toThrow(
-		'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
-	)
-	expect('mcp' in kody).toBe(true)
-	const { home } = kody.mcp
-	if (!home) throw new Error('Expected home MCP server proxy')
-	await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({ ok: true })
-	expect(() => kody.mcp['missing']).toThrow(
-		'Unknown MCP server "missing". Available MCP servers: "home".',
-	)
+		await expect(kody.mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual(
+			{ ok: true },
+		)
+		expect(calls).toEqual([
+			{
+				name: 'mcphomeset_pin',
+				argsJson: JSON.stringify({
+					pin: '1234',
+					__kodySecretAuthorityPackageId: 'pkg-stamped',
+				}),
+			},
+		])
+		// Omitted args still carry the stamp (secret-free package exports often
+		// call tools with no object literal).
+		calls.length = 0
+		await expect(kody.mcp['home']?.set_pin?.()).resolves.toEqual({ ok: true })
+		expect(calls).toEqual([
+			{
+				name: 'mcphomeset_pin',
+				argsJson: JSON.stringify({
+					__kodySecretAuthorityPackageId: 'pkg-stamped',
+				}),
+			},
+		])
+		expect(() => kody['mcp:home:set_pin']).toThrow(
+			'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
+		)
+		expect('mcp' in kody).toBe(true)
+		const { home } = kody.mcp
+		if (!home) throw new Error('Expected home MCP server proxy')
+		await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({ ok: true })
+		expect(() => kody.mcp['missing']).toThrow(
+			'Unknown MCP server "missing". Available MCP servers: "home".',
+		)
+	} finally {
+		delete (globalThis as unknown as Record<symbol, unknown>)[authoritySymbol]
+	}
 })
 
 test('createExecuteExecutor aligns worker compatibility and gives the fetch gateway a deadline under the sandbox budget', async () => {
@@ -1003,6 +1036,69 @@ test('createExecuteExecutor rejects reserved provider names, keeps side-effect c
 	expect(JSON.parse(afterCompletion ?? '{}')).toEqual({
 		error: 'Execution has already completed.',
 	})
+})
+
+test('createToolDispatchers restores secret-authority grants after an ALS gap', async () => {
+	// Same Workers-RPC ALS drop as evaluation-budget restore: ambient
+	// runWithSecretAuthorityScope around evaluate does not survive into
+	// ToolDispatcher.call. Grants must be captured into createToolDispatchers.
+	const parseCall = async (result: Promise<string | undefined>) =>
+		JSON.parse((await result) ?? '{}') as {
+			result?: unknown
+			error?: string
+		}
+
+	const granted = new Set(['pkg-approved'])
+	let seenAuthority: string | null | undefined
+	let seenGrantSize: number | undefined
+	const dispatchers = createToolDispatchers(
+		[
+			{
+				name: 'kody',
+				fns: {
+					probe: async () => {
+						const scope = getSecretAuthorityScope()
+						seenGrantSize = scope?.grantedPackageIds.size
+						seenAuthority = resolveCallerSecretAuthority({
+							storageContext: {
+								sessionId: null,
+								appId: null,
+								packageId: null,
+								storageId: null,
+							},
+						}).authorityPackageId
+						return { authority: seenAuthority }
+					},
+				},
+			},
+		],
+		{ active: true },
+		undefined,
+		undefined,
+		granted,
+	)
+	const kodyDispatcher = dispatchers.kody
+	if (!kodyDispatcher) throw new Error('Expected kody dispatcher')
+
+	expect(getSecretAuthorityScope()).toBeNull()
+	const stamped = await parseCall(
+		kodyDispatcher.call(
+			'probe',
+			JSON.stringify({ [secretAuthorityArgName]: 'pkg-approved' }),
+		),
+	)
+	expect(stamped).toEqual({ result: { authority: 'pkg-approved' } })
+	expect(seenAuthority).toBe('pkg-approved')
+	expect(seenGrantSize).toBe(1)
+	expect(getSecretAuthorityScope()).toBeNull()
+
+	const forged = await parseCall(
+		kodyDispatcher.call(
+			'probe',
+			JSON.stringify({ [secretAuthorityArgName]: 'pkg-forged' }),
+		),
+	)
+	expect(forged).toEqual({ result: { authority: null } })
 })
 
 test('createToolDispatchers counts host-mediated attempts, rejects sanitized-name collisions, and forwards rest args', async () => {

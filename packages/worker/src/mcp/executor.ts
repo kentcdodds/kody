@@ -716,16 +716,23 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 						async (signal) =>
 							await withDynamicWorkerEvaluationPermit(async () => {
 								throwIfEvaluationDeadlineAborted(signal)
+								// Capture grants into dispatchers: sandbox → host
+								// capability RPC loses AsyncLocalStorage (same gap
+								// as evaluation-budget restore). Without this,
+								// runWithCurrentSecretAuthority reinstalls an empty
+								// grant set and stamped MCP/integration calls fail
+								// closed for package-via-execute.
+								const grantedSecretAuthorityPackageIds =
+									grantedSecretAuthorityPackageIdSet(
+										input.gatewayProps.grantedSecretAuthorityPackageIds,
+									)
 								const dispatchers = createToolDispatchers(
 									[...providers, createHostSideEffectProvider(sideEffects)],
 									executionState,
 									signal,
 									sideEffects,
+									grantedSecretAuthorityPackageIds,
 								)
-								const grantedSecretAuthorityPackageIds =
-									grantedSecretAuthorityPackageIdSet(
-										input.gatewayProps.grantedSecretAuthorityPackageIds,
-									)
 								const evaluate = () =>
 									entrypoint.evaluate(dispatchers, evaluateInvocation)
 								return grantedSecretAuthorityPackageIds
@@ -1091,8 +1098,16 @@ export function createToolDispatchers(
 	executionState: { active: boolean },
 	signal?: AbortSignal,
 	sideEffects?: EvaluationSideEffectTracker,
+	/**
+	 * Provenance grant set captured from gateway props. Reinstalled on every
+	 * dispatcher call because Workers RPC drops the host ALS that wraps
+	 * `evaluate`. Omit (null/undefined) for trusted host callers that are not
+	 * crossing the sandbox boundary.
+	 */
+	grantedSecretAuthorityPackageIds?: ReadonlySet<string> | null,
 ) {
 	const capturedEvaluationContext = getDynamicWorkerEvaluationContext()
+	const capturedGrantedPackageIds = grantedSecretAuthorityPackageIds ?? null
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
 		const sanitizedFns: Record<
@@ -1133,10 +1148,17 @@ export function createToolDispatchers(
 						}
 						const invoke = () =>
 							abortSignalToolNames.has(name) ? fn(...args, signal) : fn(...args)
-						return await runWithCurrentSecretAuthority(
-							requestedPackageId,
-							invoke,
-						)
+						// Mirror package-app callCapability: restore grants then
+						// stamp. Without grants, a peeled stamp installs an empty
+						// set and resolveCallerSecretAuthority fails closed.
+						const withStamp = () =>
+							runWithCurrentSecretAuthority(requestedPackageId, invoke)
+						return capturedGrantedPackageIds
+							? await runWithSecretAuthorityScope(
+									capturedGrantedPackageIds,
+									withStamp,
+								)
+							: await withStamp()
 					},
 				)
 			}

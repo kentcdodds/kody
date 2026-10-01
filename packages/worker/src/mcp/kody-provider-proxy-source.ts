@@ -71,10 +71,12 @@ export function createKodyProviderProxySource(input: { providerName: string }) {
         typeof __kodyGetSecretAuthority === 'function'
           ? String(__kodyGetSecretAuthority() ?? '').trim()
           : '';
+      // Object args (including omitted/undefined → {}) carry the stamp field.
+      // Non-object args cannot host the reserved key; leave them unchanged.
       const payload =
-        args != null && typeof args === 'object' && !Array.isArray(args)
+        args == null || (typeof args === 'object' && !Array.isArray(args))
           ? (() => {
-              const next = { ...args };
+              const next = { ...(args ?? {}) };
               delete next[${JSON.stringify(secretAuthorityArgName)}];
               if (__kodySecretAuthority) {
                 next[${JSON.stringify(secretAuthorityArgName)}] = __kodySecretAuthority;
