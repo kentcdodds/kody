@@ -2,8 +2,10 @@
 
 The Kody Open API is the public HTTP surface at `https://api.kody.codes`. It
 serves JSON only: `GET /openapi.json` (OpenAPI 3.1) and the versioned `/v1`
-operations. The same operations back the flag-gated MCP `api` tool, and two of
-them form the CapabilityProxy that local execute (`@kodycodes/cli`) calls.
+operations. Interactive HTML docs live on a separate Worker at
+`https://api-docs.kody.codes` (Scalar). The same operations back the flag-gated
+MCP `api` tool, and two of them form the CapabilityProxy that local execute
+(`@kodycodes/cli`) calls.
 
 The HTTP API itself is not feature-flagged. The MCP `api` tool (`mcp-api-tool`)
 and the CapabilityProxy (`local-execute`) are; see
@@ -13,14 +15,22 @@ and the CapabilityProxy (`local-execute`) are; see
 
 ```mermaid
 sequenceDiagram
+  participant B as Browser
+  participant D as kody-api-docs
   participant C as Client (CLI, script)
   participant E as kody-api (edge)
   participant O as kody-production KodyApi
-  participant D as D1 / capabilities
+  participant DB as D1 / capabilities
+  B->>D: HTTPS api-docs.kody.codes
+  D->>E: GET /openapi.json (proxy)
+  E->>O: service binding KODY_API
+  O-->>E: OpenAPI JSON
+  E-->>D: OpenAPI JSON
+  D-->>B: Scalar HTML + proxied spec
   C->>E: HTTPS api.kody.codes
   E->>E: CORS, path + method allowlist, rate limits, 5 MiB cap
   E->>O: service binding KODY_API (allowlisted headers only)
-  O->>D: authenticate token, flag gate, scope check, operation
+  O->>DB: authenticate token, flag gate, scope check, operation
   O-->>E: JSON
   E-->>C: JSON (no Set-Cookie)
 ```
@@ -33,16 +43,23 @@ sequenceDiagram
   `Authorization`, `Content-Type`, `Accept`, `User-Agent`, and
   `CF-Connecting-IP`. `Cookie` and `X-Kody-*` never reach origin, and origin
   `Set-Cookie` never reaches the client. CORS allows any origin because auth is
-  bearer-only.
+  bearer-only. It never serves HTML.
+- `kody-api-docs` (`packages/api-docs-worker/`) is the interactive docs host on
+  `api-docs.kody.codes`. It serves a Scalar shell at `/`, proxies
+  `/openapi.json` from the live API, and answers `/health`. DNS and the
+  certificate come from `custom_domain: true` on deploy (same as
+  `api.kody.codes`).
 - Origin exports `KodyApi` (`packages/worker/src/open-api/kody-api.ts`), a
   `WorkerEntrypoint` that lazy-loads the handler so the origin startup budget
   does not pay for it. Operations run on origin so they share the capability
   registry, D1, and account gates with MCP. The Remix UI does not call the Open
-  API; both use the same domain modules.
+  API; both use the same domain modules. The OpenAPI document's `externalDocs`
+  points at `https://api-docs.kody.codes`.
 - Custom domains create their own DNS record and certificate on deploy, so
-  `api.kody.codes` needs no manual DNS step as long as no conflicting record
-  already exists in the `kody.codes` zone. Previews deploy `kody-pr-<n>-api` on
-  `workers.dev`, bound to that preview's origin.
+  `api.kody.codes` and `api-docs.kody.codes` need no manual DNS step as long as
+  no conflicting record already exists in the `kody.codes` zone. Previews deploy
+  `kody-pr-<n>-api` on `workers.dev`, bound to that preview's origin. API docs
+  are production-only (they always proxy the live OpenAPI document).
 
 ## Operations
 

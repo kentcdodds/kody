@@ -112,6 +112,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run api:build
 
+      - name: 📚 API docs build
+        if: ${{ !cancelled() }}
+        run: npm run api-docs:build
+
       - name: 📦 Worker startup bundles
         if: ${{ !cancelled() }}
         run: npm run worker-startup-bundles:check

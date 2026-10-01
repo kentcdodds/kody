@@ -11,9 +11,9 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  *   imports those modules)
  * - Fleet-shared helpers (`d1-retry`, `chat` context types) → origin +
  *   platform + runtime + jobs; platform MCP imports those too
- * - `api.kody.codes` edge worker, backup/DR control plane, contributing docs,
- *   and usage docs → no app workers (the edge and backup workers have their
- *   own workflow jobs)
+ * - `api.kody.codes` edge / `api-docs.kody.codes` docs worker, backup/DR
+ *   control plane, contributing docs, and usage docs → no app workers (those
+ *   workers have their own workflow jobs)
  * - Shared backup modules → origin (origin parses full backup manifests)
  * - MCP sources, shared app modules, the deploy workflow, and unknown app
  *   sources → origin + platform + runtime. Jobs/highlight only when their
@@ -91,6 +91,7 @@ const runtimePathPrefixes = [
 
 const skipAppWorkerPathPrefixes = [
 	'packages/api-worker/',
+	'packages/api-docs-worker/',
 	'packages/backup-control-plane/',
 	'tools/disaster-recovery/',
 	'tools/ci/backup-resources',

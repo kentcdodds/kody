@@ -27,6 +27,9 @@
 		"packages/api-worker": {
 			"project": ["src/**/*.ts"]
 		},
+		"packages/api-docs-worker": {
+			"project": ["src/**/*.ts"]
+		},
 		"packages/backup-control-plane": {
 			"project": ["*.ts"]
 		},

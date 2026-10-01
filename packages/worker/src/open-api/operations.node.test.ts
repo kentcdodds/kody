@@ -187,6 +187,13 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	})
 	expect(document.openapi).toBe('3.1.0')
 	expect(document.servers).toEqual([{ url: 'https://api.kody.codes' }])
+	expect(document.externalDocs).toEqual({
+		description: 'Interactive Kody API docs (Scalar)',
+		url: 'https://api-docs.kody.codes',
+	})
+	expect(String(document.info['description'])).toContain(
+		'https://api-docs.kody.codes',
+	)
 
 	const operationIds = Object.values(document.paths).flatMap((pathItem) =>
 		Object.values(pathItem).map((operation) => operation.operationId),

@@ -128,6 +128,7 @@ test('production deploy path filter selects worker scripts only when their sourc
 		],
 		[['tools/ci/deploy-path-filter.ts'], originWorkers],
 		[['packages/api-worker/src/index.ts'], deploys()],
+		[['packages/api-docs-worker/src/index.ts'], deploys()],
 		[
 			[
 				'packages/api-worker/src/index.ts',

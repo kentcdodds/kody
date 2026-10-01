@@ -53,6 +53,7 @@ type OpenApiOperation = {
 export type OpenApiDocument = {
 	openapi: typeof openApiVersion
 	info: Record<string, unknown>
+	externalDocs?: { description: string; url: string }
 	servers: Array<{ url: string }>
 	tags: Array<{ name: string; description: string }>
 	security: Array<Record<string, Array<string>>>
@@ -63,6 +64,9 @@ export type OpenApiDocument = {
 		securitySchemes: Record<string, unknown>
 	}
 }
+
+/** Public interactive docs host (separate Worker; JSON stays on api.kody.codes). */
+export const kodyApiDocsUrl = 'https://api-docs.kody.codes'
 
 export type ResolvedApiOperation = {
 	operation: ApiOperation
@@ -344,9 +348,15 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 				'',
 				'`operationId` values match Kody capability names, so the same ids work with the MCP `api` tool (`{ operationId, params }`, where params hold path, query, and body fields flat).',
 				'',
+				`Interactive docs: ${kodyApiDocsUrl}`,
+				'',
 				'Scopes:',
 				scopeList,
 			].join('\n'),
+		},
+		externalDocs: {
+			description: 'Interactive Kody API docs (Scalar)',
+			url: kodyApiDocsUrl,
 		},
 		tags: Object.entries(tagDescriptions).map(([name, description]) => ({
 			name,
