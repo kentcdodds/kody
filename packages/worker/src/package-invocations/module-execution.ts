@@ -377,17 +377,6 @@ export async function runSavedPackageModuleOnce(
 					},
 				},
 				packageContext,
-				packageInvokeTools: input.toolFactories.createPackageRuntimeInvokeTools(
-					{
-						env: input.env,
-						baseUrl: input.baseUrl,
-						callerContext,
-						packageContext,
-						parentRunRecord: runRecord,
-						packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
-						waitUntil: input.waitUntil,
-					},
-				),
 				packageEventTools: input.toolFactories.createPackageEventTools({
 					env: input.env,
 					baseUrl: input.baseUrl,

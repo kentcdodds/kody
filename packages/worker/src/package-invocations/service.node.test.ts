@@ -18,8 +18,6 @@ import {
 	createEnv,
 	createToken,
 	seedPackageResolution,
-	seedRuntimeDispatchPackages,
-	createRuntimeDispatchTools,
 } from '#worker/test-support/package-invocations.ts'
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -226,9 +224,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	})
 	expect(runMock).toHaveBeenCalledTimes(1)
 	expect(runOptionsAt(0)).toMatchObject({ packageContext })
-	expect(runOptionsAt(0)?.packageInvokeTools?.invoke).toEqual(
-		expect.any(Function),
-	)
+	expect(runOptionsAt(0)).not.toHaveProperty('packageInvokeTools')
 })
 
 test('suspended owners are refused before package code loads, cannot replay stored responses, and the denial is not stored', async () => {
@@ -282,148 +278,6 @@ test('suspended owners are refused before package code loads, cannot replay stor
 		result: { reply: 'stored before suspension' },
 	})
 	expect(runMock).toHaveBeenCalledTimes(1)
-})
-
-test('package runtime can dynamically invoke the current published export from another package', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	let subscriberVersion = 'v1'
-	runMock.mockImplementation(
-		async (
-			_env: unknown,
-			_callerContext: unknown,
-			bundle: { mainModule: string },
-			params: { event?: { id?: string } } | undefined,
-			options: {
-				packageInvokeTools?: {
-					invoke(input: Record<string, unknown>): Promise<unknown>
-				}
-			},
-		) => {
-			if (bundle.mainModule === 'dist/gateway.js') {
-				return {
-					result: await options.packageInvokeTools?.invoke({
-						specifier: 'kody:@kentcdodds/discord-general-chat',
-						options: {
-							exportName: './handle-discord-message-created',
-							params: { event: params?.event },
-						},
-					}),
-					logs: [],
-				}
-			}
-			if (bundle.mainModule === 'dist/subscriber.js') {
-				return {
-					result: { version: subscriberVersion, eventId: params?.event?.id },
-					logs: [],
-				}
-			}
-			throw new Error(`Unexpected bundle ${bundle.mainModule}`)
-		},
-	)
-	const gatewayToken = createToken({ packageId: 'pkg-gateway' })
-	const dispatch = (messageId: string) =>
-		invoke(
-			db,
-			dispatchRequest(`gateway-${messageId}`, {
-				exportName: './dispatch-message-created',
-				params: { event: { id: messageId } },
-			}),
-			gatewayToken,
-		)
-
-	const first = await dispatch('message-1')
-	subscriberVersion = 'v2'
-	const second = await dispatch('message-2')
-
-	expect(first).toMatchObject({
-		status: 200,
-		body: { ok: true, result: { version: 'v1', eventId: 'message-1' } },
-	})
-	expect(second).toMatchObject({
-		status: 200,
-		body: { ok: true, result: { version: 'v2', eventId: 'message-2' } },
-	})
-	expect(runMock).toHaveBeenCalledTimes(4)
-	expect(runOptionsAt(0)?.packageInvokeTools?.invoke).toEqual(
-		expect.any(Function),
-	)
-	expect(runOptionsAt(1)).toMatchObject({
-		packageContext: {
-			packageId: 'pkg-subscriber',
-			kodyId: 'discord-general-chat',
-			sourceId: 'source-subscriber',
-		},
-	})
-	expect(runOptionsAt(1)?.packageInvokeTools?.invoke).toEqual(
-		expect.any(Function),
-	)
-})
-
-test('packages.invoke is lean when key-less and exactly-once when keyed', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	let executionCount = 0
-	runMock.mockImplementation(async () => {
-		executionCount += 1
-		return { result: { handled: true, executionCount }, logs: [] }
-	})
-	const tools = createRuntimeDispatchTools(db)
-	const request = (idempotencyKey?: string) => ({
-		specifier: 'kody:@kentcdodds/discord-general-chat' as const,
-		options: {
-			exportName: './handle-discord-message-created',
-			params: { event: { id: 'message-1' } },
-			...(idempotencyKey ? { idempotencyKey } : {}),
-		},
-	})
-
-	// Ephemeral semantics: identical key-less calls execute independently.
-	expect(await tools.invoke(request())).toEqual({
-		handled: true,
-		executionCount: 1,
-	})
-	expect(await tools.invoke(request())).toEqual({
-		handled: true,
-		executionCount: 2,
-	})
-	expect(runMock).toHaveBeenCalledTimes(2)
-	// No ledger row exists, so the run record carries neither an invocation id
-	// nor an idempotency key (which downgrades it to on-failure persistence).
-	expect(runOptionsAt(0)).toMatchObject({
-		runRecord: { surface: 'export', invocationId: null, idempotencyKey: null },
-	})
-	expect(db.runLog.ledgerRows).toEqual([])
-
-	expect(await tools.invoke(request('evt-keyed-1'))).toEqual({
-		handled: true,
-		executionCount: 3,
-	})
-	expect(await tools.invoke(request('evt-keyed-1'))).toEqual({
-		handled: true,
-		executionCount: 3,
-	})
-	expect(runMock).toHaveBeenCalledTimes(3)
-	// The keyed path owns its run record (claimed together with the ledger
-	// row in one DO call), so the registry must not open a second one.
-	expect(runOptionsAt(2)).toMatchObject({
-		runRecord: null,
-		runSurface: 'export',
-	})
-	const ledgerRow = db.runLog.ledgerRows.find(
-		(row) => row.idempotencyKey === 'evt-keyed-1',
-	)
-	expect(ledgerRow).toMatchObject({ status: 'completed' })
-	expect(
-		[...db.runLog.runRows.values()].find(
-			(row) => row['idempotencyKey'] === 'evt-keyed-1',
-		),
-	).toMatchObject({
-		surface: 'export',
-		status: 'success',
-		invocationId: ledgerRow?.id,
-		idempotencyKey: 'evt-keyed-1',
-	})
 })
 
 test('invokePackageExport enforces idempotency replay, mismatch, corruption, and persistence failures', async () => {

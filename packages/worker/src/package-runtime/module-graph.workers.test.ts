@@ -5,7 +5,6 @@ import {
 	createAdHocExecuteSourceFiles,
 	runBundledModuleWithRegistry,
 } from '#mcp/run-kody-registry.ts'
-import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	buildKodyAppClientBundle,
 	buildKodyImportableModuleBundle,
@@ -312,161 +311,6 @@ export default function main() {
 	},
 )
 
-test('ad hoc execute runtime exposes only packages.invoke', async () => {
-	silenceIncidentalRuntimeWarnings()
-	const bundle = await buildAdHoc(
-		'user-workers-test',
-		`import { kody, packageContext, packages } from 'kody:runtime'
-
-export default async function main(input = {}) {
-	// Direct kody.package_invoke_checked should reject; packages.invoke is the public API.
-	let directKodyInvokeChecked;
-	try {
-		await kody.package_invoke_checked({
-			kodyId: 'target-package',
-			exportName: './run',
-		});
-		directKodyInvokeChecked = 'resolved';
-	} catch (error) {
-		directKodyInvokeChecked = String(error?.message ?? error);
-	}
-	let removedObjectInvoke;
-	try {
-		await packages?.invoke({ kodyId: "target-package", exportName: "./run" });
-		removedObjectInvoke = 'resolved';
-	} catch (error) {
-		removedObjectInvoke = String(error?.message ?? error);
-	}
-	return {
-		packageContextIsNull: packageContext?.packageId == null,
-		directKodyInvokeChecked,
-		removedObjectInvoke,
-		invoked: await packages?.invoke(
-			"kody:@owner/target-package/run",
-			{ params: input },
-		),
-	}
-}`,
-	)
-	const invokedInputs: Array<Record<string, unknown>> = []
-	const result = await runBundle(
-		'user-workers-test',
-		bundle,
-		{ eventId: 'event-1' },
-		{
-			packageContext: null,
-			packageInvokeTools: {
-				invoke: async (input) => {
-					invokedInputs.push(input)
-					return { ok: true, input }
-				},
-			},
-		},
-	)
-
-	const invokedInput = {
-		specifier: 'kody:@owner/target-package/run',
-		options: { params: { eventId: 'event-1' } },
-	}
-	expect(result.error).toBeUndefined()
-	expect(result.result).toEqual({
-		packageContextIsNull: true,
-		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
-		removedObjectInvoke: expect.stringContaining(
-			'Object-only packages.invoke was removed',
-		),
-		invoked: { ok: true, input: invokedInput },
-	})
-	expect(invokedInputs).toEqual([invokedInput])
-})
-
-test(
-	'key-less packages.invoke runs the target package lean in its own realm',
-	{ timeout: 30_000 },
-	async () => {
-		silenceIncidentalRuntimeWarnings()
-		const { userId, callerContext } = await publishImportablePackage({
-			kodyId: 'lean-target',
-			description: 'Lean invoke probe target',
-			exportName: './probe',
-			entryPoint: 'src/probe.ts',
-			stampRoot: false,
-			files: {
-				'src/probe.ts': `import { packageContext } from 'kody:runtime'
-
-let isolateCallCount = 0
-
-export default async function probe(input: { marker?: string } = {}) {
-	isolateCallCount += 1
-	;(globalThis as Record<string, unknown>).__kodyLeanTargetMarker = 'target'
-	return {
-		marker: input.marker ?? null,
-		isolateCallCount,
-		targetKodyId: packageContext?.kodyId ?? null,
-		callerMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanCallerMarker !== 'undefined',
-	}
-}`,
-			},
-		})
-
-		const callerBundle = await buildAdHoc(
-			userId,
-			`import { packages } from 'kody:runtime'
-
-export default async function main() {
-	;(globalThis as Record<string, unknown>).__kodyLeanCallerMarker = 'caller'
-	const startedAt = Date.now()
-	const first = await packages?.invoke('kody:@kentcdodds/lean-target/probe', { params: { marker: 'first' } })
-	const firstDurationMs = Date.now() - startedAt
-	const second = await packages?.invoke('kody:@kentcdodds/lean-target/probe', { params: { marker: 'second' } })
-	return {
-		first,
-		second,
-		firstDurationMs,
-		targetMarkerVisible: typeof (globalThis as Record<string, unknown>).__kodyLeanTargetMarker !== 'undefined',
-	}
-}`,
-		)
-		const result = await runBundle(callerContext, callerBundle, undefined, {
-			packageContext: null,
-			packageInvokeTools: createExecutePackageInvokeTools({
-				env,
-				baseUrl,
-				callerContext,
-			}),
-		})
-
-		expect(result.error).toBeUndefined()
-		const payload = result.result as {
-			first: Record<string, unknown>
-			second: Record<string, unknown>
-			firstDurationMs: number
-			targetMarkerVisible: boolean
-		}
-		// The target ran in its own runtime (packageContext bound to the target
-		// package). Same user + published graph reuse one isolate; params arrive
-		// on evaluate RPC, so the second invoke sees the module-level counter.
-		for (const [key, isolateCallCount] of [
-			['first', 1],
-			['second', 2],
-		] as const) {
-			expect(payload[key]).toEqual({
-				marker: key,
-				isolateCallCount,
-				targetKodyId: 'lean-target',
-				callerMarkerVisible: false,
-			})
-		}
-		// Realm separation in the other direction: the target's globals never
-		// leak back into the caller realm.
-		expect(payload.targetMarkerVisible).toBe(false)
-		// Sanity bound only: workerd test timing is too noisy for a strict
-		// budget; the production lean-path latency claim is validated by live
-		// probes, not this test.
-		expect(payload.firstDurationMs).toBeLessThan(20_000)
-	},
-)
-
 test(
 	'named-only package exports build callable artifacts and stay importable',
 	{ timeout: 30_000 },
@@ -557,9 +401,8 @@ export default async function main() {
 }`,
 		)
 		const result = await runBundle(callerContext, callerBundle, undefined, {
+			// Gate 2: computed import works with `packages` unbound.
 			packageContext: null,
-			// Gate 2: computed import must work with packages.invoke unbound.
-			packageInvokeTools: undefined,
 		})
 
 		expect(result.error).toBeUndefined()

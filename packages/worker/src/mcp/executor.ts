@@ -1673,7 +1673,7 @@ const kodyRuntimeExportNames = new Set([
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	packages:
-		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts. Prefer a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Guard with `if (packages) { ... }` when this helper is optional.',
+		'There is no author-facing `packages.invoke`; `packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:

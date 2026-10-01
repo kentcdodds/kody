@@ -60,7 +60,6 @@ import {
 	type AdditionalKodyTools,
 	type EmailToolOptions,
 	type PackageEventTools,
-	type PackageInvokeTools,
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
@@ -161,7 +160,6 @@ export type {
 	PackageInvokeInput,
 	PackageInvokeNormalizedInput,
 	PackageInvokeOptions,
-	PackageInvokeTools,
 	PackageWorkflowTools,
 } from '#mcp/runtime-helper-manifest.ts'
 
@@ -553,7 +551,6 @@ export async function runModuleWithRegistry(
 		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
 		signal?: AbortSignal
-		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
@@ -654,7 +651,6 @@ export async function runModuleWithRegistry(
 					callerContext,
 					packageContext: options?.packageContext ?? null,
 				}),
-			packageInvokeTools: options?.packageInvokeTools,
 			packageEventTools: options?.packageEventTools,
 			conversationId: options?.conversationId ?? null,
 			reportProgress,
@@ -706,8 +702,8 @@ export function collectPackageStorageGrantIds(input: {
 
 /**
  * Host tools for computed `import(specifier)` of caller-owned `kody:@`
- * names. Bound independently of quarantined `packages.invoke` so Gate 2
- * loads succeed with `packages` unbound ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+ * names. `packages` is always unbound; there is no author-facing
+ * `packages.invoke` ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
  * Nested evaluate uses library-load semantics: caller's `packageContext`,
  * callee stamp grants via the importable-module artifact.
  */
@@ -716,7 +712,6 @@ export function createComputedPackageImportTools(input: {
 	baseUrl: string
 	callerContext: McpCallerContext
 	packageContext: PackageContextOptions
-	packageInvokeTools?: PackageInvokeTools
 	packageEventTools?: PackageEventTools
 	emailTools?: EmailToolOptions
 	workflowTools?: PackageWorkflowTools
@@ -799,7 +794,6 @@ export function createComputedPackageImportTools(input: {
 				rawInput.params,
 				{
 					packageContext: input.packageContext,
-					packageInvokeTools: input.packageInvokeTools,
 					packageEventTools: input.packageEventTools,
 					emailTools: input.emailTools,
 					workflowTools: input.workflowTools,
@@ -851,13 +845,11 @@ export async function runBundledModuleWithRegistry(
 		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
-		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		/**
 		 * Host bridge for computed `import(specifier)` of caller-owned
 		 * `kody:@` names. When omitted on an authenticated run (outside
-		 * closed-world retriever), a default bridge is created so loads do
-		 * not require author-facing `packages.invoke`.
+		 * closed-world retriever), a default bridge is created.
 		 */
 		computedPackageImportTools?: ComputedPackageImportTools
 		/** Nested depth for computed import library loads. */
@@ -1156,7 +1148,6 @@ export async function runBundledModuleWithRegistry(
 						baseUrl: callerContext.baseUrl,
 						callerContext,
 						packageContext: options?.packageContext ?? null,
-						packageInvokeTools: options?.packageInvokeTools,
 						packageEventTools: options?.packageEventTools,
 						emailTools: options?.emailTools,
 						workflowTools,
@@ -1220,9 +1211,6 @@ export async function runBundledModuleWithRegistry(
 			packageSecretTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
-			packageInvokeTools: closedWorldRetrieverRuntime
-				? undefined
-				: options?.packageInvokeTools,
 			packageEventTools: closedWorldRetrieverRuntime
 				? undefined
 				: options?.packageEventTools,

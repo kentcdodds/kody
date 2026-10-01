@@ -125,10 +125,6 @@ export type PackageInvokeCheckResult =
 			contract?: Partial<PackageInvokeContract>
 	  }
 
-export type PackageInvokeTools = {
-	invoke: (input: PackageInvokeInput, signal?: AbortSignal) => Promise<unknown>
-}
-
 export type PackageEventDispatchInput = {
 	topic?: unknown
 	idempotencyKey?: unknown
@@ -160,7 +156,6 @@ export type RuntimeHelperManifestContext = {
 	packageSecretTools?: PackageSecretToolOptions | undefined
 	emailTools?: EmailToolOptions | undefined
 	workflowTools?: PackageWorkflowTools | undefined
-	packageInvokeTools?: PackageInvokeTools | undefined
 	packageEventTools?: PackageEventTools | undefined
 	computedPackageImportTools?: ComputedPackageImportTools | undefined
 	staticCallMeterTools?: PackageStaticCallMeterTools | undefined
@@ -272,29 +267,9 @@ const workflows = {
 	`.trim()
 }
 
-const packageInvokeRuntimeBridgeProviderName =
-	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 const computedPackageImportRuntimeBridgeProviderName =
 	'__kodyComputedPackageImportRuntimeBridge'
-
-function createPackagesHelperPrelude() {
-	return `
-const packages = {
-  invoke: async (specifier, options) => {
-    if (typeof specifier !== 'string') {
-      throw new Error(
-        'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
-      );
-    }
-    return await ${packageInvokeRuntimeBridgeProviderName}.invoke({
-      specifier,
-      options: options ?? {},
-    });
-  },
-};
-	`.trim()
-}
 
 // Internal bridge for computed `import(specifier)` of caller-owned `kody:@`
 // names. Not an author-facing helper (no unbound-access rewrite name). The
@@ -428,27 +403,6 @@ function createWorkflowKodyTools(
 		packageWorkflowCreate: async (args: unknown) =>
 			await workflowTools.create(args as PackageWorkflowCreateInput),
 	}
-}
-
-function createPackageInvokeRuntimeBridgeProvider(
-	packageInvokeTools: PackageInvokeTools,
-): ResolvedProvider {
-	const provider: ToolProvider = {
-		name: packageInvokeRuntimeBridgeProviderName,
-		tools: {
-			invoke: {
-				execute: async (args: unknown, signal?: AbortSignal) =>
-					await packageInvokeTools.invoke(
-						(args ?? {}) as PackageInvokeInput,
-						signal,
-					),
-			},
-		},
-	}
-	return {
-		...resolveProvider(provider),
-		abortSignalToolNames: ['invoke'],
-	} as ResolvedProvider
 }
 
 function createPackageEventRuntimeBridgeProvider(
@@ -603,12 +557,7 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		runtimeName: 'packages',
 		runtimeBindings: [{ runtimeName: 'packages', absentValue: 'null' }],
 		unboundNames: ['packages'],
-		isBound: (context) => Boolean(context.packageInvokeTools),
-		createPrelude: () => createPackagesHelperPrelude(),
-		extraProviders: (context) =>
-			context.packageInvokeTools
-				? [createPackageInvokeRuntimeBridgeProvider(context.packageInvokeTools)]
-				: [],
+		isBound: () => false,
 	},
 	{
 		runtimeName: 'computedPackageImport',

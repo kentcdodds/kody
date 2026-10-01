@@ -1,9 +1,6 @@
 import { expect, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
-	createPackageRuntimeInvokeTools,
-	createPackageEventTools,
-} from '#worker/package-invocations/service.ts'
+import { createPackageEventTools } from '#worker/package-invocations/service.ts'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -908,37 +905,6 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 		},
 	)
 	return { gateway, manifests, sourceFiles, sources, subscriber }
-}
-
-export function createRuntimeDispatchTools(
-	db: ReturnType<typeof createDatabase>,
-) {
-	return createPackageRuntimeInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://kody.dev',
-			user: {
-				userId: 'user-123',
-				email: 'me@example.com',
-				displayName: 'Me',
-			},
-		}),
-		packageContext: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-		},
-		parentRunRecord: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-			surface: 'export',
-			name: './dispatch-message-created',
-			idempotencyKey: 'message-1',
-		},
-		packageInvokeDepth: 0,
-	})
 }
 
 export function createRuntimeEventTools(

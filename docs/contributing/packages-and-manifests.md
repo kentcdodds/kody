@@ -226,8 +226,8 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` still binds a quarantined `packages` helper for leftover
-published modules that call it
+`kody:runtime` exports `packages` only as an always-`null` leftover so old
+`if (packages)` guards keep bundling
 ([#1750](https://github.com/kentcdodds/kody/issues/1750)). There is no
 author-facing `packages.invoke`. Computed `import(specifier)` loads caller-owned
 modules through a separate host bridge. Fleet source migrates with package

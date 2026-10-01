@@ -128,7 +128,6 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		topic: 'email.message.received',
 		notFoundCode: 'subscription_not_found',
 		toolFactories: {
-			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
 		},
 	})

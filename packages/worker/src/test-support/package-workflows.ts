@@ -15,12 +15,6 @@ export const packageWorkflowsInvocationMocks = (() => ({
 		vi.fn<typeof packageInvocationsServiceModule.invokePackageExport>(),
 	runModuleWithRegistry:
 		vi.fn<typeof runKodyRegistryModule.runModuleWithRegistry>(),
-	createExecutePackageInvokeTools: vi.fn<
-		typeof packageInvocationsServiceModule.createExecutePackageInvokeTools
-	>(() => ({ invoke: vi.fn() })),
-	createPackageRuntimeInvokeTools: vi.fn<
-		typeof packageInvocationsServiceModule.createPackageRuntimeInvokeTools
-	>(() => ({ invoke: vi.fn() })),
 }))()
 
 export const packageWorkflowsRunRecordMocks = (() => {

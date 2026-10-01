@@ -16,8 +16,6 @@ import {
 	buildKodyFns,
 	collectPackageStorageGrantIds,
 	type PackageEventTools,
-	type PackageInvokeInput,
-	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
@@ -426,34 +424,6 @@ function createWorkflowsProxy(runtimeBridge) {
 	};
 }
 
-function createPackagesProxy(runtimeBridge) {
-	// Permanent teaching stubs reject unsupported helpers locally and name the
-	// replacement without a bridge round trip.
-	return {
-		check: () => {
-			throw new Error(
-				'packages.check was removed: statically import kody:@scope/package/export when the name is known, or import(specifier) when the name is data.',
-			);
-		},
-		invoke: async (specifier, options) => {
-			if (typeof specifier !== 'string') {
-				throw new Error(
-					'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
-				)
-			}
-			return await runtimeBridge.packageInvoke({
-				specifier,
-				options: options ?? {},
-			})
-		},
-		invokeChecked: () => {
-			throw new Error(
-				'packages.invokeChecked was removed: use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time, or import(specifier) when the name is data. Exactly-once work uses workflows.',
-			);
-		},
-	};
-}
-
 function createEventsProxy(runtimeBridge) {
 	return {
 		dispatch: async (input) =>
@@ -646,7 +616,7 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 		realtime: createRealtimeProxy(runtimeBridge),
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
-		packages: createPackagesProxy(runtimeBridge),
+		packages: null,
 		events: createEventsProxy(runtimeBridge),
 		packageContext,
 	};
@@ -938,7 +908,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	Env,
 	PackageAppRuntimeBridgeProps
 > {
-	private packageRuntimeInvokeTools: Promise<PackageInvokeTools> | null = null
 	private packageEventTools: Promise<PackageEventTools> | null = null
 	private readonly secretRedactor: ExecutionSecretRedactor =
 		createExecutionSecretRedactor()
@@ -1449,36 +1418,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	async createPackageRuntimeInvokeTools() {
-		if (this.packageRuntimeInvokeTools)
-			return await this.packageRuntimeInvokeTools
-
-		// Avoid a top-level package-app -> package-invocations cycle during worker
-		// startup; apps only need this helper when package code calls it.
-		this.packageRuntimeInvokeTools =
-			import('#worker/package-invocations/service.ts').then(
-				async ({ createPackageRuntimeInvokeTools }) => {
-					const packageContext = {
-						packageId: this.ctx.props.packageId,
-						kodyId: this.ctx.props.kodyId,
-						sourceId: this.ctx.props.sourceId,
-					}
-					return createPackageRuntimeInvokeTools({
-						env: this.env,
-						baseUrl: this.ctx.props.baseUrl,
-						callerContext: await this.createCallerContext(
-							this.ctx.props.packageId,
-						),
-						packageContext,
-						parentRunRecord: null,
-						packageInvokeDepth: 0,
-						runtimeSurface: 'app',
-					})
-				},
-			)
-		return await this.packageRuntimeInvokeTools
-	}
-
 	async createPackageEventTools() {
 		if (this.packageEventTools) return await this.packageEventTools
 
@@ -1505,11 +1444,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				},
 			)
 		return await this.packageEventTools
-	}
-
-	async packageInvoke(input: PackageInvokeInput) {
-		const tools = await this.createPackageRuntimeInvokeTools()
-		return await tools.invoke(input)
 	}
 
 	async packageEventDispatch(input: Record<string, unknown>) {

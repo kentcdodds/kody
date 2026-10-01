@@ -205,20 +205,19 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		)({ workflowName: 'custom' }),
 	).resolves.toEqual({ ok: true, input: { workflowName: 'custom' } })
 
-	const packageResult = await runOk({
+	const packageEventResult = await runOk({
 		skipCapabilityRegistry: false,
-		packageInvokeTools: { invoke: async (input) => ({ ok: true, input }) },
+		packageEventTools: { dispatch: async (input) => ({ ok: true, input }) },
 	})
-	expect(packageResult.result).toBe('ok')
-	// Main provider + packages bridge + computed-import bridge + static-call
-	// meter bridge (bound whenever the run has a user).
-	const packageProviders = executor.calls.at(-1)!.providers
-	expect(packageProviders).toHaveLength(4)
-	const specifier =
-		'kody:@kentcdodds/discord-general-chat/handle-discord-message-created'
+	expect(packageEventResult.result).toBe('ok')
+	// Main provider + computed-import bridge + package-events bridge +
+	// static-call meter bridge (bound whenever the run has a user). There is no
+	// packages.invoke bridge.
+	const packageEventProviders = executor.calls.at(-1)!.providers
+	expect(packageEventProviders).toHaveLength(4)
 	await expect(
-		requireFn(packageProviders[1]!.fns, 'invoke')({ specifier, options: {} }),
-	).resolves.toEqual({ ok: true, input: { specifier, options: {} } })
+		requireFn(packageEventProviders[2]!.fns, 'dispatch')({ topic: 'x' }),
+	).resolves.toEqual({ ok: true, input: { topic: 'x' } })
 
 	const { workflowEnv, created } = createWorkflowEnv()
 	await runBundledModuleWithRegistry(
@@ -273,9 +272,9 @@ test('closed-world retriever runtime skips capabilities, hub snapshots, workflow
 			kodyId: 'notes',
 			sourceId: 'source-1',
 		},
-		packageInvokeTools: {
-			invoke: async () => {
-				throw new Error('invoke should not be bound')
+		packageEventTools: {
+			dispatch: async () => {
+				throw new Error('dispatch should not be bound')
 			},
 		},
 	})

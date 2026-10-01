@@ -30,16 +30,6 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (
 		...args: Parameters<typeof PackageInvocationsService.invokePackageExport>
 	) => invocationMocks.invokePackageExport(...args),
-	createExecutePackageInvokeTools: (
-		...args: Parameters<
-			typeof PackageInvocationsService.createExecutePackageInvokeTools
-		>
-	) => invocationMocks.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (
-		...args: Parameters<
-			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
-		>
-	) => invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({

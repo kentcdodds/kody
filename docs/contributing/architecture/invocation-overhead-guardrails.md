@@ -2,10 +2,10 @@
 
 The static-first package model rests on a performance claim: static
 `kody:@scope/pkg/export` imports cost nothing at invocation time, and **package
-export runs** (HTTP invocation tokens, jobs, subscriptions, apps, and the
-quarantined runtime helper leftover) stay lean enough (tens of milliseconds of
-platform overhead) that agents never route around the contract-checked path.
-Author composition is static import / `import(specifier)` / workflows
+export runs** (HTTP invocation tokens, jobs, subscriptions, and apps) stay lean
+enough (tens of milliseconds of platform overhead) that agents never route
+around the contract-checked path. Author composition is static import /
+`import(specifier)` / workflows
 ([0037](../decisions/0037-no-author-packages-invoke.md)). This document records
 the guardrails that keep the hot-path claim true. It is about platform overhead
 per call, not about what user code does inside the call.

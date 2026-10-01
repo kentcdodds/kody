@@ -34,8 +34,6 @@ vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
-	createExecutePackageInvokeTools: vi.fn(),
-	createPackageRuntimeInvokeTools: vi.fn(),
 	createPackageEventTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(
 		async (
@@ -97,10 +95,6 @@ vi.mock(
 )
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
-		mockModule.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
-		mockModule.createPackageRuntimeInvokeTools(...args),
 	createPackageEventTools: (...args: Array<unknown>) =>
 		mockModule.createPackageEventTools(...args),
 }))
@@ -290,7 +284,7 @@ const timing = (durationMs: number) => ({
 const truncationNote = (bytes: number, limit: number) =>
 	`Returned value was ${String(bytes)} bytes, exceeding responseLimit ${String(limit)} bytes; output was truncated. Project fields before returning.`
 
-test('execute tool serializes successes and errors, passes package invoke tools, and truncates oversized returns', async () => {
+test('execute tool serializes successes and errors, binds no packages.invoke tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{
@@ -359,10 +353,6 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 		logs: [],
 	})
 
-	const packageInvokeTools = { invoke: vi.fn() }
-	mockModule.createExecutePackageInvokeTools.mockReturnValueOnce(
-		packageInvokeTools,
-	)
 	const callerContext = {
 		baseUrl: 'https://example.com',
 		user: { userId: 'user-123', email: 'me@example.com', displayName: 'Me' },
@@ -370,19 +360,12 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 	const authenticatedHandler = await getExecuteHandler(callerContext)
 	moduleReturns({ ok: true })
 	await authenticatedHandler({ code: okCode, conversationId: 'conv-packages' })
-	expect(mockModule.createExecutePackageInvokeTools).toHaveBeenCalledWith({
-		env: stubEnv,
-		baseUrl: 'https://example.com',
-		callerContext: expect.objectContaining(callerContext),
-		conversationId: 'conv-packages',
-	})
 	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining(callerContext),
 		okCode,
 		undefined,
 		expect.objectContaining({
-			packageInvokeTools,
 			conversationId: 'conv-packages',
 			runRecordHandle: null,
 			runRecord: {
@@ -394,6 +377,9 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 			},
 		}),
 	)
+	expect(
+		mockModule.runModuleWithRegistry.mock.lastCall?.[4],
+	).not.toHaveProperty('packageInvokeTools')
 
 	mockPerformanceSequence(20, 25)
 	moduleReturns('hello world')
