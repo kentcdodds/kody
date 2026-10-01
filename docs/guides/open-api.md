@@ -80,12 +80,21 @@ Package-graph prep meters as an observe-only Open API `api_call` (not
 the later local run still meter normally. Literal `import("kody:@…")` is not
 bound for local embedding yet — use a static import.
 
-**Local runtime gap:** local `kody:runtime` still leaves
-`createAuthenticatedFetch`, stamped `packageSecrets`, and `packageStorage`
-unbound. Packages that need those (for example `@kentcdodds/google` Gmail
-helpers) load via package-graph but cannot complete authenticated outbound fetch
-until a follow-up local auth-fetch model ships
-([#2810](https://github.com/kentcdodds/kody/issues/2810)).
+**Authenticated fetch and stamped host grants:** package-graph modules embed a
+local runtime shim that binds `createAuthenticatedFetch`, stamped
+`packageSecrets`, and stamped `packageStorage` through CapabilityProxy hops.
+`createAuthenticatedFetch` becomes `kody.authenticatedFetch` on origin, which
+expands `{{integration-token:…}}` via the same fetch gateway as cloud execute —
+long-lived OAuth tokens never enter local workerd. Stamped `packageStorage` /
+`packageSecrets` hop as `kody.packageStorage*` / `kody.packageSecret*` with
+per-call ownership / share grant checks. Gmail-style helpers such as
+`@kentcdodds/google` can complete authenticated outbound fetch under `--local`
+after package-graph download (responses over 4 MiB still need cloud execute or a
+smaller projection).
+
+Ad hoc modules that import `createAuthenticatedFetch` directly from
+`kody:runtime` (not via a stamped `kody:@…` package) still need a CLI runtime
+that exports the same CapabilityProxy-backed helper; package imports do not.
 
 CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 

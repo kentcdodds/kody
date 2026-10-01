@@ -11,6 +11,8 @@ import {
 import { type ApiInvocationContext } from './context.ts'
 import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
 import { maxApiRequestBodyBytes } from './request-params.ts'
+import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
+import { createCapabilityProxyPackageHostTools } from './capability-proxy-package-grants.ts'
 
 /**
  * CapabilityProxy: the cloud half of local execute (`kody execute --local`,
@@ -23,6 +25,12 @@ import { maxApiRequestBodyBytes } from './request-params.ts'
  * `kody.execute`. There is no author-facing `packages.invoke`. Local CPU is
  * never metered; each hop is one `api_call`, and the capability behind it
  * meters itself as usual.
+ *
+ * Authenticated outbound fetch uses `kody.authenticatedFetch` (placeholder +
+ * fetch-gateway on origin). Stamped `packageStorage` / `packageSecrets` hop as
+ * `kody.packageStorage*` / `kody.packageSecret*` with per-call ownership /
+ * share grant checks — long-lived OAuth tokens and secret plaintext never enter
+ * local workerd.
  */
 
 export const capabilityProxyLimits = {
@@ -115,11 +123,27 @@ async function callKodyPath(input: {
 	redactor: ExecutionSecretRedactor
 }) {
 	const { ctx, path, args, redactor } = input
+	const [, name] = path
+	if (path.length === 2 && name === 'authenticatedFetch') {
+		return invokeCapability(() =>
+			runCapabilityProxyAuthenticatedFetch({ ctx, args }),
+		)
+	}
+	const needsPackageHostTools =
+		typeof name === 'string' &&
+		(name.startsWith('packageStorage') || name.startsWith('packageSecret'))
+	const packageHostTools = needsPackageHostTools
+		? await createCapabilityProxyPackageHostTools({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+			})
+		: {}
 	const { tools, mcpServers } = await buildKodyToolContext(
 		ctx.env,
 		ctx.callerContext,
 		{
 			trackSecretInputValue: (value) => redactor.track(value),
+			additionalTools: packageHostTools,
 			workflowTools: createWorkflowTools({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
@@ -159,7 +183,6 @@ async function callKodyPath(input: {
 		}
 		return invokeCapability(() => tool(args[0]))
 	}
-	const [, name] = path
 	const tool = name && Object.hasOwn(tools, name) ? tools[name] : undefined
 	if (path.length !== 2 || !tool) {
 		throw notFound(`Unknown runtime function kody.${path.slice(1).join('.')}.`)
@@ -191,7 +214,7 @@ async function dispatchCapabilityProxyCall(input: {
 		)
 	}
 	throw notFound(
-		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.mcp.<server>.<tool>, and workflows.create.`,
+		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.authenticatedFetch, kody.mcp.<server>.<tool>, kody.packageStorage* / kody.packageSecret*, and workflows.create.`,
 	)
 }
 

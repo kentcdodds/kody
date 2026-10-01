@@ -162,10 +162,19 @@ returns published, stamped importable-module artifacts for embedding — it does
   `local-execute` scope (403 `insufficient_scope`). The flag runs first so the
   CLI can tell "not enabled for you" from "mint a token with the local-execute
   scope".
-- Not proxied: outbound `fetch`, secret substitution in fetch headers, and
-  `createAuthenticatedFetch`. Local stamped `packageSecrets` / `packageStorage`
-  host factories are also unbound until a follow-up; package-graph still returns
-  stamped modules so pure helpers can run locally.
+- Authenticated outbound fetch: `path: ['kody','authenticatedFetch']` with
+  `{ providerName, request: { url, method?, headers?, body? } }`. Origin runs
+  the same placeholder + fetch-gateway model as cloud execute (and host-side
+  `integrationTokenRefresh` on auth failure), then returns
+  `{ status, statusText, headers, bodyBase64 }`. Bodies over 4 MiB are rejected.
+  The package-graph runtime shim implements local `createAuthenticatedFetch` by
+  hopping here so OAuth access tokens never enter workerd.
+- Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
+  `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
+  `__kodySecretAuthorityPackageId`). Each hop authorizes the stamped package id
+  against ownership or an accepted share grant, then uses the ordinary storage /
+  mounted-secret tools. Ad hoc (unstamped) `packageStorage()` / `packageSecrets`
+  on the host `kody:runtime` remain unbound, matching cloud ad hoc execute.
 
 ## Errors
 

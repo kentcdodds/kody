@@ -112,10 +112,20 @@ async function refreshIntegrationTokensHostSide(
 export async function createAuthenticatedFetch(
 	kody: KodyNamespace,
 	providerName: string,
+	options?: {
+		/**
+		 * Outbound fetch implementation. Cloud / package-app sandboxes omit this
+		 * so ambient `fetch` hits the fetch gateway. CapabilityProxy local
+		 * execute passes `executeGatewayFetch` so placeholders expand on origin
+		 * and long-lived OAuth tokens never enter local workerd.
+		 */
+		fetch?: typeof globalThis.fetch
+	},
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
 	const integration = await readIntegrationConfig(kody, providerName)
+	const doFetch = options?.fetch ?? fetch
 
 	// Both lanes refresh host-side (integrationTokenRefresh) and retry with
 	// a placeholder header the gateway resolves to the fresh token, so the
@@ -139,7 +149,7 @@ export async function createAuthenticatedFetch(
 		const retryRequest: Request = request.clone() as Request
 		let response: Response
 		try {
-			response = await fetch(
+			response = await doFetch(
 				createBearerRequest(
 					request,
 					buildAccessTokenAuthorizationHeader(providerName, integration),
@@ -149,7 +159,7 @@ export async function createAuthenticatedFetch(
 			if (!isMissingAccessTokenSecretError(error, providerName)) throw error
 			const retryAuthorization = await retryAuthorizationHeader()
 			if (!retryAuthorization) throw error
-			return fetch(createBearerRequest(retryRequest, retryAuthorization))
+			return doFetch(createBearerRequest(retryRequest, retryAuthorization))
 		}
 		if (!(await responseIndicatesAuthFailure(response, integration))) {
 			return response
@@ -158,7 +168,7 @@ export async function createAuthenticatedFetch(
 		const retryAuthorization = await retryAuthorizationHeader()
 		if (!retryAuthorization) return response
 		await response.body?.cancel()
-		return fetch(createBearerRequest(retryRequest, retryAuthorization))
+		return doFetch(createBearerRequest(retryRequest, retryAuthorization))
 	}
 }
 

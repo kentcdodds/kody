@@ -172,6 +172,15 @@ export default async function main(params) { return greet(params.name) }`
 			(module) => module.name === '.__kody_virtual__/runtime.js',
 		)?.esModule,
 	).toContain('kody:runtime')
+	const runtimeShim = graph.modules.find(
+		(module) => module.name === '.__kody_virtual__/runtime.js',
+	)?.esModule
+	expect(runtimeShim).toContain('createAuthenticatedFetch')
+	expect(runtimeShim).toContain('kody.authenticatedFetch')
+	expect(runtimeShim).toContain('__kodyCreatePackageBoundStorage')
+	expect(runtimeShim).toContain('kody.packageStorageGet')
+	expect(runtimeShim).toContain('__kodyCreatePackageBoundSecrets')
+	expect(runtimeShim).toContain('__kodySecretAuthorityPackageId')
 	expect(
 		graph.modules.some((module) => module.name.startsWith('.__kody_root__/')),
 	).toBe(false)

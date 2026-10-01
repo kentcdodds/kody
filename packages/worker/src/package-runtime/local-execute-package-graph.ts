@@ -256,16 +256,15 @@ function mapPrepareFailure(
 /**
  * Local workerd supplies `kody:runtime` (CapabilityProxy bridge). Stamped
  * package modules still import `.__kody_virtual__/runtime.js` / package-runtime
- * facades; this shim re-exports the host runtime and provides no-op / unbound
- * stamp factories so modules load without cloud ALS or secret-authority host
- * wiring. Authenticated fetch, packageSecrets, and packageStorage remain
- * unbound until a follow-up local runtime model lands (kody#2810).
+ * facades; this shim re-exports the host runtime and binds stamped
+ * packageStorage / packageSecrets / createAuthenticatedFetch through
+ * CapabilityProxy hops so long-lived OAuth tokens never enter local workerd
+ * (kody#2810).
  */
 export function createLocalExecuteRuntimeShimSource() {
 	return `
-export {
+import {
 	kody,
-	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,
 	packageContext,
@@ -273,31 +272,118 @@ export {
 	workflows,
 	packages,
 	events,
-	packageStorage,
-	packageSecrets,
-	KodyRuntime,
-	default,
+	default as __kodyHostRuntimeDefault,
 } from "kody:runtime";
 
-export function __kodyCreatePackageBoundStorage(_packageId) {
-	return function packageStorage() {
-		throw new Error(
-			'packageStorage() is unbound in local execute: stamped package identity is present, but local workerd has no host packageStorage grant set yet. Use cloud execute for packageStorage, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
+export {
+	kody,
+	secretHeaders,
+	oauthClientCredentials,
+	packageContext,
+	email,
+	workflows,
+	packages,
+	events,
+};
+
+export async function createAuthenticatedFetch(providerName) {
+	const name = String(providerName ?? "").trim();
+	if (!name) {
+		throw new Error("Integration name is required.");
+	}
+	return async (input, init) => {
+		const url =
+			typeof input === "string"
+				? input
+				: input instanceof URL
+					? input.toString()
+					: input.url;
+		const method =
+			input instanceof Request ? input.method : (init?.method ?? "GET");
+		const headers = Object.fromEntries(
+			new Headers(
+				input instanceof Request ? input.headers : init?.headers,
+			).entries(),
 		);
+		let body;
+		if (input instanceof Request) {
+			body = await input.text();
+		} else if (typeof init?.body === "string") {
+			body = init.body;
+		} else if (init?.body != null) {
+			throw new Error(
+				"Local execute createAuthenticatedFetch only supports string request bodies.",
+			);
+		}
+		const result = await kody.authenticatedFetch({
+			providerName: name,
+			request: {
+				url,
+				method,
+				headers,
+				...(body !== undefined ? { body } : {}),
+			},
+		});
+		const binary = atob(result.bodyBase64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i += 1) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return new Response(bytes, {
+			status: result.status,
+			statusText: result.statusText,
+			headers: result.headers,
+		});
 	};
 }
 
-export function __kodyCreatePackageBoundSecrets(_packageId) {
+export function __kodyCreatePackageBoundStorage(packageId) {
+	return function packageStorage() {
+		return {
+			id: "package:" + encodeURIComponent(packageId),
+			get: async (key) =>
+				(await kody.packageStorageGet({ packageId, key })).value,
+			list: async (options = {}) =>
+				await kody.packageStorageList({ ...options, packageId }),
+			sql: async (query, params = []) =>
+				await kody.packageStorageSql({
+					packageId,
+					query,
+					params,
+					writable: true,
+				}),
+			set: async (key, value) =>
+				await kody.packageStorageSet({ packageId, key, value }),
+			delete: async (key) =>
+				await kody.packageStorageDelete({ packageId, key }),
+			clear: async () => await kody.packageStorageClear({ packageId }),
+		};
+	};
+}
+
+export function __kodyCreatePackageBoundSecrets(packageId) {
 	return {
-		get: async () => {
-			throw new Error(
-				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
-			);
+		get: async (alias) => {
+			const normalizedAlias = typeof alias === "string" ? alias.trim() : "";
+			if (!normalizedAlias) {
+				throw new Error("packageSecrets.get requires a non-empty alias.");
+			}
+			const result = await kody.packageSecretGet({
+				alias: normalizedAlias,
+				__kodySecretAuthorityPackageId: packageId,
+			});
+			return typeof result?.value === "string" ? result.value : "";
 		},
-		has: async () => {
-			throw new Error(
-				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
-			);
+		has: async (alias) => {
+			const normalizedAlias = typeof alias === "string" ? alias.trim() : "";
+			if (!normalizedAlias) {
+				throw new Error("packageSecrets.has requires a non-empty alias.");
+			}
+			const result = await kody.packageSecretHas({
+				alias: normalizedAlias,
+				__kodySecretAuthorityPackageId: packageId,
+			});
+			return result?.has === true;
 		},
 	};
 }
@@ -305,5 +391,44 @@ export function __kodyCreatePackageBoundSecrets(_packageId) {
 export function __kodyMeterStaticPackageExport(_packageId, exportValue) {
 	return exportValue;
 }
+
+export function packageStorage() {
+	throw new Error(
+		"packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. " +
+			"Ad hoc execute has no scratch SQLite helper. Persist durable state from a saved package with packageStorage().",
+	);
+}
+
+function __kodyPackageSecretsUnavailable() {
+	throw new Error(
+		"packageSecrets is not available in this execution context. It is bound for stamped saved-package modules and saved-package runtime contexts.",
+	);
+}
+
+export const packageSecrets = {
+	get: async () => __kodyPackageSecretsUnavailable(),
+	has: async () => __kodyPackageSecretsUnavailable(),
+};
+
+const __kodyLocalRuntimeDefault = Object.freeze({
+	...(__kodyHostRuntimeDefault && typeof __kodyHostRuntimeDefault === "object"
+		? __kodyHostRuntimeDefault
+		: {}),
+	kody,
+	packageStorage,
+	createAuthenticatedFetch,
+	secretHeaders,
+	oauthClientCredentials,
+	packageContext,
+	packageSecrets,
+	email,
+	workflows,
+	packages,
+	events,
+});
+export default __kodyLocalRuntimeDefault;
+export const KodyRuntime = Object.freeze({
+	defaultValue: __kodyLocalRuntimeDefault,
+});
 `.trim()
 }
