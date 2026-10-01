@@ -25,7 +25,9 @@ type RecordedRequest = Pick<Request, 'url' | 'headers'>
 
 type ApiResponseSpec = {
 	status: number
-	body: Record<string, unknown>
+	body?: Record<string, unknown> | string
+	contentType?: string
+	url?: string
 }
 
 type TestIntegration = {
@@ -56,6 +58,22 @@ const githubPlatformIntegration: TestIntegration = {
 	requiredHosts: ['api.github.test'],
 	platform: true,
 }
+
+const slackIntegration: TestIntegration = {
+	name: 'slack',
+	tokenUrl: 'https://slack.test/api/oauth.v2.access',
+	apiBaseUrl: 'https://slack.com/api',
+	flow: 'confidential',
+	clientId: 'slack-client',
+	requiredHosts: ['slack.com', 'files.slack.com'],
+}
+
+const SLACK_AUTH_ERRORS = [
+	'token_revoked',
+	'token_expired',
+	'invalid_auth',
+	'not_authed',
+] as const
 
 function createKody(
 	integration: TestIntegration,
@@ -112,15 +130,47 @@ function createFetchMock(options: {
 		const apiError = apiErrors.shift()
 		if (apiError) throw apiError
 		const apiResponse = apiResponses.shift()
-		return Response.json(apiResponse?.body ?? { ok: true }, {
-			status: apiResponse?.status ?? 200,
-			headers: { 'content-type': 'application/json' },
+		const status = apiResponse?.status ?? 200
+		const contentType =
+			apiResponse?.contentType ??
+			(typeof apiResponse?.body === 'string'
+				? 'text/plain'
+				: 'application/json')
+		const body =
+			apiResponse?.body === undefined
+				? JSON.stringify({ ok: true })
+				: typeof apiResponse.body === 'string'
+					? apiResponse.body
+					: JSON.stringify(apiResponse.body)
+		const response = new Response(body, {
+			status,
+			headers: { 'content-type': contentType },
 		})
+		if (apiResponse?.url) {
+			Object.defineProperty(response, 'url', {
+				value: apiResponse.url,
+				configurable: true,
+			})
+		}
+		return response
 	}
 	return {
 		[Symbol.dispose]() {
 			globalThis.fetch = originalFetch
 		},
+	}
+}
+
+function authenticatedFetchImplementations(
+	integration: TestIntegration,
+	kody: KodyNamespace,
+) {
+	return {
+		host: () => createAuthenticatedFetch(kody, integration.name),
+		sandbox: () =>
+			createSandboxHelpers(dispatchFor(kody)).createAuthenticatedFetch(
+				integration.name,
+			),
 	}
 }
 
@@ -232,6 +282,168 @@ test('createAuthenticatedFetch returns the original 401 without a retry when the
 			label,
 			tokenRefreshCalls: [{ name: 'spotify' }],
 			requests: 1,
+		})
+	}
+})
+
+test('createAuthenticatedFetch refreshes Slack on HTTP 200 ok:false auth errors', async () => {
+	for (const authError of SLACK_AUTH_ERRORS) {
+		const { kody, tokenRefreshCalls } = createKody(slackIntegration)
+		const implementations = authenticatedFetchImplementations(
+			slackIntegration,
+			kody,
+		)
+		for (const [label, create] of Object.entries(implementations)) {
+			tokenRefreshCalls.length = 0
+			const fetchCalls: Array<RecordedRequest> = []
+			{
+				using _fetchMock = createFetchMock({
+					fetchCalls,
+					apiErrors: [],
+					apiResponses: [
+						{ status: 200, body: { ok: false, error: authError } },
+						{ status: 200, body: { ok: true } },
+					],
+				})
+				const authenticatedFetch = await create()
+				const response = await authenticatedFetch('/auth.test')
+				expect({
+					label,
+					authError,
+					body: await response.json(),
+				}).toEqual({
+					label,
+					authError,
+					body: { ok: true },
+				})
+			}
+			expect({
+				label,
+				authError,
+				tokenRefreshCalls,
+				requestCount: fetchCalls.length,
+			}).toEqual({
+				label,
+				authError,
+				tokenRefreshCalls: [{ name: 'slack' }],
+				requestCount: 2,
+			})
+		}
+	}
+})
+
+test('createAuthenticatedFetch does not refresh Slack on non-auth ok:false errors', async () => {
+	const { kody, tokenRefreshCalls } = createKody(slackIntegration)
+	const implementations = authenticatedFetchImplementations(
+		slackIntegration,
+		kody,
+	)
+	for (const [label, create] of Object.entries(implementations)) {
+		tokenRefreshCalls.length = 0
+		const fetchCalls: Array<RecordedRequest> = []
+		{
+			using _fetchMock = createFetchMock({
+				fetchCalls,
+				apiErrors: [],
+				apiResponses: [
+					{ status: 200, body: { ok: false, error: 'channel_not_found' } },
+				],
+			})
+			const authenticatedFetch = await create()
+			const response = await authenticatedFetch('/conversations.info')
+			expect({ label, body: await response.json() }).toEqual({
+				label,
+				body: { ok: false, error: 'channel_not_found' },
+			})
+		}
+		expect({
+			label,
+			tokenRefreshCalls,
+			requestCount: fetchCalls.length,
+		}).toEqual({
+			label,
+			tokenRefreshCalls: [],
+			requestCount: 1,
+		})
+	}
+})
+
+test('createAuthenticatedFetch does not treat non-Slack ok:false auth-shaped errors as refresh triggers', async () => {
+	const { kody, tokenRefreshCalls } = createKody(spotifyIntegration)
+	const implementations = authenticatedFetchImplementations(
+		spotifyIntegration,
+		kody,
+	)
+	for (const [label, create] of Object.entries(implementations)) {
+		tokenRefreshCalls.length = 0
+		const fetchCalls: Array<RecordedRequest> = []
+		{
+			using _fetchMock = createFetchMock({
+				fetchCalls,
+				apiErrors: [],
+				apiResponses: [
+					{ status: 200, body: { ok: false, error: 'token_revoked' } },
+				],
+			})
+			const authenticatedFetch = await create()
+			const response = await authenticatedFetch('/me')
+			expect({ label, body: await response.json() }).toEqual({
+				label,
+				body: { ok: false, error: 'token_revoked' },
+			})
+		}
+		expect({
+			label,
+			tokenRefreshCalls,
+			requestCount: fetchCalls.length,
+		}).toEqual({
+			label,
+			tokenRefreshCalls: [],
+			requestCount: 1,
+		})
+	}
+})
+
+test('createAuthenticatedFetch refreshes Slack on files.slack.com HTML login responses', async () => {
+	const { kody, tokenRefreshCalls } = createKody(slackIntegration)
+	const implementations = authenticatedFetchImplementations(
+		slackIntegration,
+		kody,
+	)
+	for (const [label, create] of Object.entries(implementations)) {
+		tokenRefreshCalls.length = 0
+		const fetchCalls: Array<RecordedRequest> = []
+		{
+			using _fetchMock = createFetchMock({
+				fetchCalls,
+				apiErrors: [],
+				apiResponses: [
+					{
+						status: 200,
+						body: '<html><body>Sign in to Slack</body></html>',
+						contentType: 'text/html; charset=utf-8',
+						url: 'https://files.slack.com/files-pri/T000/F000/image.png',
+					},
+					{ status: 200, body: { ok: true }, contentType: 'application/json' },
+				],
+			})
+			const authenticatedFetch = await create()
+			const response = await authenticatedFetch(
+				'https://files.slack.com/files-pri/T000/F000/image.png',
+			)
+			expect({ label, body: await response.json() }).toEqual({
+				label,
+				body: { ok: true },
+			})
+		}
+		expect({
+			label,
+			tokenRefreshCalls,
+			requestCount: fetchCalls.length,
+		}).toEqual({
+			label,
+			tokenRefreshCalls: [{ name: 'slack' }],
+			requestCount: 2,
 		})
 	}
 })

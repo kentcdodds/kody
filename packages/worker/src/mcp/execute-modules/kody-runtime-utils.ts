@@ -151,12 +151,79 @@ export async function createAuthenticatedFetch(
 			if (!retryAuthorization) throw error
 			return fetch(createBearerRequest(retryRequest, retryAuthorization))
 		}
-		if (response.status !== 401) return response
+		if (!(await responseIndicatesAuthFailure(response, integration))) {
+			return response
+		}
 
 		const retryAuthorization = await retryAuthorizationHeader()
 		if (!retryAuthorization) return response
 		await response.body?.cancel()
 		return fetch(createBearerRequest(retryRequest, retryAuthorization))
+	}
+}
+
+const SLACK_AUTH_ERROR_CODES = new Set([
+	'token_expired',
+	'token_revoked',
+	'invalid_auth',
+	'not_authed',
+])
+
+function isSlackIntegration(integration: IntegrationConfig) {
+	if (integration.name.startsWith('slack')) return true
+	const apiBaseUrl = integration.apiBaseUrl ?? ''
+	if (hostLooksLikeSlack(apiBaseUrl)) return true
+	return (integration.requiredHosts ?? []).some((host) =>
+		hostLooksLikeSlack(host),
+	)
+}
+
+function hostLooksLikeSlack(value: string) {
+	const lower = value.toLowerCase()
+	return lower.includes('slack.com') || lower.includes('files.slack.com')
+}
+
+/**
+ * Detect auth failures that should trigger host-side refresh+retry.
+ * Always treats HTTP 401 as auth failure. For Slack integrations, also
+ * treats Web API `{ok:false}` auth error codes and files.slack.com HTML
+ * login redirects (dead token) as auth failures. Clones before reading
+ * JSON so non-auth ok:false bodies stay intact on the original response.
+ */
+async function responseIndicatesAuthFailure(
+	response: Response,
+	integration: IntegrationConfig,
+) {
+	if (response.status === 401) return true
+	if (!isSlackIntegration(integration)) return false
+
+	const contentType = response.headers.get('content-type') ?? ''
+	if (isSlackFilesHtmlLoginResponse(response, contentType)) return true
+
+	if (!contentType.toLowerCase().includes('application/json')) return false
+	try {
+		const body = (await response.clone().json()) as unknown
+		if (!body || typeof body !== 'object' || Array.isArray(body)) return false
+		const record = body as { ok?: unknown; error?: unknown }
+		return (
+			record.ok === false &&
+			typeof record.error === 'string' &&
+			SLACK_AUTH_ERROR_CODES.has(record.error)
+		)
+	} catch {
+		return false
+	}
+}
+
+function isSlackFilesHtmlLoginResponse(
+	response: Response,
+	contentType: string,
+) {
+	if (!contentType.toLowerCase().includes('text/html')) return false
+	try {
+		return new URL(response.url).hostname === 'files.slack.com'
+	} catch {
+		return false
 	}
 }
 
@@ -583,12 +650,57 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
       if (!retryAuthorization) throw error;
       return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
     }
-    if (response.status !== 401) return response;
+    if (!(await __kodyResponseIndicatesAuthFailure(response, integration))) {
+      return response;
+    }
     const retryAuthorization = await retryAuthorizationHeader();
     if (!retryAuthorization) return response;
     await response.body?.cancel();
     return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
   };
+};
+const __kodySlackAuthErrorCodes = new Set([
+  'token_expired',
+  'token_revoked',
+  'invalid_auth',
+  'not_authed',
+]);
+const __kodyHostLooksLikeSlack = (value) => {
+  const lower = String(value ?? '').toLowerCase();
+  return lower.includes('slack.com') || lower.includes('files.slack.com');
+};
+const __kodyIsSlackIntegration = (integration) => {
+  if (String(integration?.name ?? '').startsWith('slack')) return true;
+  if (__kodyHostLooksLikeSlack(integration?.apiBaseUrl ?? '')) return true;
+  return (integration?.requiredHosts ?? []).some((host) =>
+    __kodyHostLooksLikeSlack(host),
+  );
+};
+const __kodyIsSlackFilesHtmlLoginResponse = (response, contentType) => {
+  if (!String(contentType).toLowerCase().includes('text/html')) return false;
+  try {
+    return new URL(response.url).hostname === 'files.slack.com';
+  } catch {
+    return false;
+  }
+};
+const __kodyResponseIndicatesAuthFailure = async (response, integration) => {
+  if (response.status === 401) return true;
+  if (!__kodyIsSlackIntegration(integration)) return false;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (__kodyIsSlackFilesHtmlLoginResponse(response, contentType)) return true;
+  if (!contentType.toLowerCase().includes('application/json')) return false;
+  try {
+    const body = await response.clone().json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+    return (
+      body.ok === false &&
+      typeof body.error === 'string' &&
+      __kodySlackAuthErrorCodes.has(body.error)
+    );
+  } catch {
+    return false;
+  }
 };
 const __kodyOauthClientCredentials = async (input) => {
   const authStyle = input.authStyle ?? 'basic';
