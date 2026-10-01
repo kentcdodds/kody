@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	CloudflareApiError,
+	CloudflareRestClient,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
 import { createArtifactsGitHttp } from './artifacts-git-http.ts'
@@ -460,11 +461,37 @@ function adaptNativeArtifactsBinding(
 
 function createArtifactsRestBinding(env: Env, namespace: string) {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
-	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
+	const artifactsApiToken = env.CLOUDFLARE_ARTIFACTS_API_TOKEN?.trim()
+	const apiToken = artifactsApiToken || env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) {
 		return null
 	}
-	const client = createCloudflareRestClient(env)
+	// When the Worker binds real Artifacts (production/preview), createToken
+	// and fork mint via REST. Preview also sets CLOUDFLARE_API_BASE_URL to a
+	// per-PR mock for email/analytics — that mock does not hold the binding's
+	// repos, so create vs restore disagreed (#2749). Prefer the real Cloudflare
+	// API whenever the native binding is present, using CLOUDFLARE_ARTIFACTS_API_TOKEN
+	// when the shared CLOUDFLARE_API_TOKEN is the mock credential.
+	const native = readNativeArtifactsBinding(env)
+	const configuredBaseUrl = env.CLOUDFLARE_API_BASE_URL?.trim()
+	const usingNonDefaultApiBase = Boolean(
+		configuredBaseUrl &&
+		!configuredBaseUrl
+			.replace(/\/$/, '')
+			.startsWith('https://api.cloudflare.com'),
+	)
+	const client =
+		native && usingNonDefaultApiBase
+			? artifactsApiToken
+				? new CloudflareRestClient({
+						apiToken: artifactsApiToken,
+						baseUrl: 'https://api.cloudflare.com',
+					})
+				: null
+			: createCloudflareRestClient(env)
+	if (!client) {
+		return null
+	}
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
 	const getRepoInfo = async (
 		name: string,

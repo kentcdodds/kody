@@ -16,12 +16,20 @@ setup pages.
 - Jobs D1 database: shared `kody-preview-jobs` (ensured by
   `jobs-worker-resources.ts`; not per-PR)
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
+- KV namespace (published source snapshots / bundles):
+  `<preview-worker-name>-bundle-artifacts-kv`
+- Cloudflare Artifacts namespace: `<preview-worker-name>` (same as the app
+  worker name, for example `kody-pr-<n>`). Package create/publish/overwrite and
+  git remotes use this namespace via the `ARTIFACTS` binding and
+  `ARTIFACTS_NAMESPACE` var — not the shared committed `preview` namespace.
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
 When a PR is closed, the cleanup job deletes the preview
 app/platform/runtime/jobs Workers, mock Workers, Queues, per-preview D1/KV/R2,
-and these per-PR resources. It does not delete shared names such as
-`kody-preview-jobs` or any production name.
+the per-PR Artifacts namespace (repos emptied, then namespace deleted when the
+API allows), and these per-PR resources. It does not delete shared names such as
+`kody-preview-jobs`, the shared Artifacts namespaces `production` / `preview`,
+or any production name.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
@@ -68,14 +76,14 @@ secret with a token that has that permission. Cleanup intentionally fails when
 that secret is missing or under-scoped so permission regressions are visible.
 
 Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV, R2,
-Queues and their consumers) first passes through
+Queues and their consumers, Artifacts namespaces) first passes through
 `assertPreviewResourceName(name, kind)`, which throws unless the name matches
 `^kody-(pr-<number>|branch-<slug>)(-<segment>)*$`. Production names (`kody`,
-`kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...) and the shared
-`kody-preview*` names never match, so a bug or an empty PR number cannot compute
-a production name and delete it. `npm run deploy-guardrails:check` fails if a
-destructive call in that script is not preceded by the guard in the same
-function.
+`kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...), shared Artifacts
+namespaces (`production`, `preview`), and the shared `kody-preview*` names never
+match, so a bug or an empty PR number cannot compute a production name and
+delete it. `npm run deploy-guardrails:check` fails if a destructive call in that
+script is not preceded by the guard in the same function.
 
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path verifies that the selected

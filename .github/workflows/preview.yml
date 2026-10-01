@@ -256,9 +256,11 @@ jobs:
                 ;;
               CLOUDFLARE)
                 secret_env_key="CLOUDFLARE_API_TOKEN"
-                # The Cloudflare stand-in serves whole repo trees by commit;
-                # the real API does not, so only mock-backed runtimes opt in.
-                echo "CLOUDFLARE_API_SOURCE_SNAPSHOTS=true" >> "$OVERRIDES_FILE"
+                # Do not set CLOUDFLARE_API_SOURCE_SNAPSHOTS: preview package
+                # source restorability uses per-PR BUNDLE_ARTIFACTS_KV (same as
+                # production), not the mock whole-tree endpoint. Artifacts
+                # create/token/fork hit the real Artifacts API via the native
+                # ARTIFACTS binding + CLOUDFLARE_ARTIFACTS_API_TOKEN.
                 ;;
               *)
                 secret_env_key="${service_key}_API_KEY"
@@ -529,15 +531,18 @@ jobs:
 
           # Intentionally omit KIT_API_KEY so preview/E2E do not write to
           # production Kit.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --include-empty "${extra_args[@]}"
+          # CLOUDFLARE_ARTIFACTS_API_TOKEN carries the real deploy token so
+          # Artifacts createToken/fork REST hits api.cloudflare.com while
+          # CLOUDFLARE_API_TOKEN stays the per-PR mock credential for email.
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
           # The runtime worker intentionally reuses the same dotenv-based sync
           # here (unlike production, which uses a strict runtime-lane
           # allowlist): the preview values are .env.example placeholders plus
           # per-PR mock-endpoint overrides — capability execution on the
           # runtime worker needs the mock endpoints, and no production secret
           # is present in either file.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$RUNTIME_WORKER_NAME" --config "$RUNTIME_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$PLATFORM_WORKER_NAME" --config "$PLATFORM_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$RUNTIME_WORKER_NAME" --config "$RUNTIME_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$PLATFORM_WORKER_NAME" --config "$PLATFORM_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
 
       - name: 📤 Upload Worker source maps to Sentry
         env:

@@ -335,6 +335,12 @@ runtime path if this budget is raised again.
   bytes per worker over main). Local dry-run runtime 3_912_325 against the
   previous 3_912_000 budget, reviewed ceiling 3_912_500; platform local dry-run
   5_238_445 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
+- Per-PR Artifacts namespace for restorable preview package source (#2764 /
+  #2749): hybrid REST Artifacts client (`CLOUDFLARE_ARTIFACTS_API_TOKEN` + real
+  `api.cloudflare.com` when the binding is present), env-schema token wiring,
+  and related platform startup graph growth on top of #2739. Local / CI dry-run
+  platform 5_238_546 against the previous 5_238_500 budget, reviewed ceiling
+  5_238_600. Production `assertRestorablePackageSourceSnapshot` is unchanged.
 - Open API + MCP `api` tool + scoped API tokens: the platform `MCP` Durable
   Object registers the flag-gated `api` tool, which reaches the Open API
   operation catalog (`packages/worker/src/open-api/`, `api-tokens/`). The tool
@@ -347,4 +353,5 @@ runtime path if this budget is raised again.
   scope check, debounced sliding expiry) add about 100 platform bytes: local
   dry-run 5_276_098, reviewed ceiling 5_276_500. Splitting CapabilityProxy
   capability errors (per-call secret redactor) from generic platform failures
-  adds about 870 more: local dry-run 5_277_132, reviewed ceiling 5_277_500.
+  adds about 870 more: local dry-run 5_277_132 (5_277_389 with #2764), reviewed
+  ceiling 5_277_500.

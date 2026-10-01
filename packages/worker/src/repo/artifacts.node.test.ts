@@ -483,7 +483,10 @@ test('native createToken maps token when JSRPC omits plaintext and defers to RES
 	nativeCreateToken.mockClear()
 	const hybrid = await getArtifactsBinding({
 		...env,
-		...restEnv,
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'mock-email-token',
+		CLOUDFLARE_API_BASE_URL: 'https://kody-pr-42-mock-cloudflare.example',
+		CLOUDFLARE_ARTIFACTS_API_TOKEN: 'real-artifacts-token',
 	} as unknown as Env).get('repo-1')
 	if (hybrid.status !== 'ready') {
 		throw new Error('expected hybrid native repo to be ready')
@@ -496,6 +499,55 @@ test('native createToken maps token when JSRPC omits plaintext and defers to RES
 	})
 	expect(nativeCreateToken).not.toHaveBeenCalled()
 	expect(restFetch).toHaveBeenCalledTimes(1)
+	const restUrl = new URL(String(restFetch.mock.calls[0]?.[0]))
+	expect(restUrl.origin).toBe('https://api.cloudflare.com')
+	expect(restFetch.mock.calls[0]?.[1]).toMatchObject({
+		headers: expect.objectContaining({
+			authorization: 'Bearer real-artifacts-token',
+		}),
+	})
+})
+
+test('native ARTIFACTS with a mock API base and no Artifacts token skips REST createToken', async () => {
+	const nativeCreateToken = vi.fn(
+		async (): Promise<{
+			id: string
+			scope: 'read'
+			token?: string
+			plaintext?: string
+		}> => ({
+			id: 'tok_native',
+			token: 'art_v2_read?expires=1760000100',
+			scope: 'read',
+		}),
+	)
+	const restFetch = mockFetch(() => {
+		throw new Error('REST must not be called against the mock for Artifacts')
+	})
+	const binding = getArtifactsBinding({
+		ARTIFACTS_NAMESPACE: 'kody-pr-42',
+		ARTIFACTS: {
+			create: vi.fn(),
+			get: vi.fn(async () =>
+				nativeRepoHandle('repo-1', { createToken: nativeCreateToken }),
+			),
+			delete: vi.fn(),
+			list: vi.fn(async () => ({ repos: [], total: 0 })),
+		},
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'mock-email-token',
+		CLOUDFLARE_API_BASE_URL: 'https://kody-pr-42-mock-cloudflare.example',
+	} as unknown as Env)
+	const result = await binding.get('repo-1')
+	if (result.status !== 'ready') {
+		throw new Error('expected native repo to be ready')
+	}
+	await expect(result.repo.createToken('read', 120)).resolves.toMatchObject({
+		id: 'tok_native',
+		plaintext: 'art_v2_read?expires=1760000100',
+	})
+	expect(nativeCreateToken).toHaveBeenCalled()
+	expect(restFetch).not.toHaveBeenCalled()
 })
 
 test('getArtifactsBinding prefers the native ARTIFACTS binding for the env namespace', async () => {

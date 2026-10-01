@@ -13,9 +13,11 @@ import {
 } from './origin-production-deploy-state.ts'
 import {
 	CloudflareResourceError,
+	deleteArtifactsNamespace,
 	deleteCloudflareQueue,
 	deleteR2Bucket,
 	deleteWorkerScript,
+	ensureArtifactsNamespace,
 	ensureCloudflareQueue,
 	ensureR2Bucket,
 	fail,
@@ -33,7 +35,13 @@ import {
 
 type Command = 'ensure' | 'cleanup'
 
-export type PreviewResourceKind = 'worker' | 'd1' | 'kv' | 'r2' | 'queue'
+export type PreviewResourceKind =
+	| 'worker'
+	| 'd1'
+	| 'kv'
+	| 'r2'
+	| 'queue'
+	| 'artifacts'
 
 /**
  * Every preview resource name derives from the worker name the preview
@@ -42,9 +50,11 @@ export type PreviewResourceKind = 'worker' | 'd1' | 'kv' | 'r2' | 'queue'
  * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
  * `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
  * `-repo-session-blobs`, `-webhook-dispatch`, `-webhook-dispatch-dlq`
- * (`truncateWithSuffix` may shorten the base but keeps this shape). Production
- * names (`kody`, `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`,
- * `kody-oauth`, `kody-webhook-dispatch`, ...) and the shared preview-env names
+ * (`truncateWithSuffix` may shorten the base but keeps this shape). The
+ * Artifacts namespace uses the bare worker name (`kody-pr-<n>` /
+ * `kody-branch-<slug>`) with no suffix. Production names (`kody`,
+ * `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`, `kody-oauth`,
+ * `kody-webhook-dispatch`, ...) and the shared preview-env names
  * (`kody-preview*`, including `kody-preview-jobs`) never carry a `-pr-<number>`
  * or `-branch-<slug>` segment.
  */
@@ -205,6 +215,8 @@ export function buildPreviewResourceNames(workerName: string) {
 		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
+		/** Cloudflare Artifacts namespace: bare preview worker name. */
+		artifactsNamespace: workerName,
 	}
 }
 
@@ -456,6 +468,55 @@ export async function deletePreviewQueue(input: PreviewQueueInput) {
 	await deleteCloudflareQueue(input)
 }
 
+export async function deletePreviewArtifactsNamespace({
+	namespace,
+	dryRun,
+	accountId,
+	apiToken,
+	fetcher,
+	sleep,
+	maxAttempts,
+	deadlineMs,
+	now,
+}: {
+	namespace: string
+	dryRun: boolean
+	accountId?: string
+	apiToken?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
+}) {
+	assertPreviewResourceName(namespace, 'artifacts')
+	if (dryRun) {
+		console.error(`[dry-run] delete Artifacts namespace: ${namespace}`)
+		return
+	}
+	const resolvedAccountId =
+		accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const resolvedApiToken = apiToken ?? process.env.CLOUDFLARE_API_TOKEN?.trim()
+	if (!resolvedAccountId || !resolvedApiToken) {
+		throw new CloudflareResourceError(
+			'artifacts',
+			namespace,
+			`Failed to delete Artifacts namespace ${namespace}: missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN.`,
+		)
+	}
+	await deleteArtifactsNamespace({
+		accountId: resolvedAccountId,
+		apiToken: resolvedApiToken,
+		namespace,
+		dryRun,
+		fetcher,
+		sleep,
+		maxAttempts,
+		deadlineMs,
+		now,
+	})
+}
+
 async function ensurePreviewResources(options: CliOptions) {
 	const {
 		d1DatabaseName,
@@ -467,7 +528,13 @@ async function ensurePreviewResources(options: CliOptions) {
 		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
+		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
+	if (!previewResourceNamePattern.test(artifactsNamespace)) {
+		fail(
+			`Refusing to create Artifacts namespace "${artifactsNamespace}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}. Preview ensure only creates kody-pr-<number>* and kody-branch-<slug>* Artifacts namespaces.`,
+		)
+	}
 	const d1 = ensureD1Database({
 		name: d1DatabaseName,
 		location: options.d1Location,
@@ -523,6 +590,10 @@ async function ensurePreviewResources(options: CliOptions) {
 		name: webhookDispatchDeadLetterQueueName,
 		existingQueues,
 	})
+	await ensureArtifactsNamespace({
+		...queueClient,
+		namespace: artifactsNamespace,
+	})
 
 	// Same classifier as production (tools/ci/production-resources.ts), run
 	// against this preview's three script names. A dry run has no live fleet
@@ -566,6 +637,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
 		repoSessionBlobsBucketName: repoSessionBlobs.name,
+		artifactsNamespace,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
@@ -617,6 +689,7 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(
 		`webhook_dispatch_dead_letter_queue_name=${webhookDispatchDeadLetterQueueName}`,
 	)
+	console.log(`artifacts_namespace=${artifactsNamespace}`)
 }
 
 function listMockServerNames() {
@@ -696,6 +769,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
+		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
 	const workerNames = listPreviewWorkerNames(options.workerName)
 	for (const [name, kind] of [
@@ -709,6 +783,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		[repoSessionBlobsBucketName, 'r2'] as const,
 		[webhookDispatchQueueName, 'queue'] as const,
 		[webhookDispatchDeadLetterQueueName, 'queue'] as const,
+		[artifactsNamespace, 'artifacts'] as const,
 	]) {
 		assertPreviewResourceName(name, kind)
 	}
@@ -751,9 +826,9 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 	// registered as a queue consumer (code 10064), and a queue cannot be
 	// deleted while a Worker still binds it as a producer (400 "still
 	// referenced by a binding in a Worker"). So: consumers → Workers → queues.
-	// Independent leftovers (R2 / KV / D1) run after that chain so a Worker
-	// 504 cannot strand them. Permanent failures are recorded and the rest
-	// of the sweep continues.
+	// Independent leftovers (R2 / KV / D1 / Artifacts) run after that chain so
+	// a Worker 504 cannot strand them. Permanent failures are recorded and the
+	// rest of the sweep continues.
 	await attempt(`queue consumers ${webhookDispatchQueueName}`, async () => {
 		await removePreviewQueueConsumers({
 			...queueClient,
@@ -824,6 +899,16 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 			})
 		})
 	}
+	await attempt(`artifacts ${artifactsNamespace}`, async () => {
+		await deletePreviewArtifactsNamespace({
+			namespace: artifactsNamespace,
+			dryRun: options.dryRun,
+			accountId,
+			apiToken,
+			fetcher: options.fetcher,
+			...retry,
+		})
+	})
 
 	if (failures.length > 0) {
 		throw new Error(formatPreviewCleanupFailure(options.workerName, failures))
