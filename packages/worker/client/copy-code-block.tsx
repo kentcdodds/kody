@@ -62,18 +62,15 @@ export function CopyCodeBlock(handle: Handle<CopyCodeBlockProps>) {
 						type="button"
 						data-copy-state={copyState}
 						aria-label="Copy code to clipboard"
-						aria-describedby={`${handle.id}-copy-status`}
 						mix={[css(copyButtonCss), on('click', () => void copy())]}
 					>
 						{renderIcon(copyButtonIcon(copyState), { size: '1rem' })}
-						<span
-							id={`${handle.id}-copy-status`}
-							role="status"
-							mix={css(visuallyHiddenCss)}
-						>
-							{copyStatusText(copyState)}
-						</span>
 					</button>
+				) : null}
+				{showCopy ? (
+					<span role="status" mix={css(visuallyHiddenCss)}>
+						{copyStatusText(copyState)}
+					</span>
 				) : null}
 			</div>
 		)
