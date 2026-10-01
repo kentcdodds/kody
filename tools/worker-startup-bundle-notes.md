@@ -335,3 +335,9 @@ runtime path if this budget is raised again.
   bytes per worker over main). Local dry-run runtime 3_912_325 against the
   previous 3_912_000 budget, reviewed ceiling 3_912_500; platform local dry-run
   5_238_445 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
+- Per-PR Artifacts namespace for restorable preview package source (#2764 /
+  #2749): hybrid REST Artifacts client (`CLOUDFLARE_ARTIFACTS_API_TOKEN` + real
+  `api.cloudflare.com` when the binding is present), env-schema token wiring,
+  and related platform startup graph growth on top of #2739. Local / CI dry-run
+  platform 5_238_546 against the previous 5_238_500 budget, reviewed ceiling
+  5_238_600. Production `assertRestorablePackageSourceSnapshot` is unchanged.
