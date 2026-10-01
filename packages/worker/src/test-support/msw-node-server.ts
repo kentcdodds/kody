@@ -3,8 +3,7 @@ import { setupServer } from 'msw/node'
 
 export type MswNodeServerOptions = {
 	/**
-	 * Shared helper option name (matches Workers experimental `defineNetwork`).
-	 * Mapped to MSW node `server.listen({ onUnhandledRequest })`.
+	 * MSW v3 shared option (node `server.listen` and Workers `defineNetwork`).
 	 */
 	onUnhandledFrame?: 'error' | 'warn' | 'bypass'
 }
@@ -14,8 +13,8 @@ export function createMswNodeServer(
 	options: MswNodeServerOptions = {},
 ) {
 	const server = setupServer(...handlers)
-	const onUnhandledRequest = options.onUnhandledFrame ?? 'error'
-	server.listen({ onUnhandledRequest })
+	const onUnhandledFrame = options.onUnhandledFrame ?? 'error'
+	server.listen({ onUnhandledFrame })
 
 	return {
 		server,
