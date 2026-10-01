@@ -104,3 +104,23 @@ test('serializeAuthenticatedFetchResponse rejects oversized responses', async ()
 		serializeAuthenticatedFetchResponse(new Response(body)),
 	).rejects.toBeInstanceOf(ApiError)
 })
+
+test('serializeAuthenticatedFetchResponse rejects oversized Content-Length before reading', async () => {
+	const body = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new Uint8Array([1]))
+			controller.close()
+		},
+	})
+	await expect(
+		serializeAuthenticatedFetchResponse(
+			new Response(body, {
+				headers: {
+					'Content-Length': String(
+						capabilityProxyAuthenticatedFetchMaxBodyBytes + 1,
+					),
+				},
+			}),
+		),
+	).rejects.toBeInstanceOf(ApiError)
+})

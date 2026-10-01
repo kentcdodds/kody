@@ -1,4 +1,8 @@
 import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import {
+	BoundedBodyTooLargeError,
+	readBoundedBodyBytes,
+} from '#mcp/capabilities/integrations/read-bounded-body.ts'
 import { createAuthenticatedFetch } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
 import { buildKodyFns } from '#mcp/run-kody-registry.ts'
@@ -243,11 +247,19 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 export async function serializeAuthenticatedFetchResponse(
 	response: Response,
 ): Promise<CapabilityProxyAuthenticatedFetchResult> {
-	const buffer = new Uint8Array(await response.arrayBuffer())
-	if (buffer.byteLength > capabilityProxyAuthenticatedFetchMaxBodyBytes) {
-		throw invalidRequest(
-			`authenticatedFetch response body exceeds ${capabilityProxyAuthenticatedFetchMaxBodyBytes} bytes for local execute. Use a smaller response projection, or cloud execute for large payloads.`,
+	let buffer: Uint8Array
+	try {
+		buffer = await readBoundedBodyBytes(
+			response,
+			capabilityProxyAuthenticatedFetchMaxBodyBytes,
 		)
+	} catch (error) {
+		if (error instanceof BoundedBodyTooLargeError) {
+			throw invalidRequest(
+				`authenticatedFetch response body exceeds ${capabilityProxyAuthenticatedFetchMaxBodyBytes} bytes for local execute. Use a smaller response projection, or cloud execute for large payloads.`,
+			)
+		}
+		throw error
 	}
 	const headers: Record<string, string> = {}
 	response.headers.forEach((value, key) => {
