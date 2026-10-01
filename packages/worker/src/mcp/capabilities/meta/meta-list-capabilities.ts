@@ -114,25 +114,23 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				await import('#mcp/capabilities/registry.ts')
 			const { filterCapabilityRegistryMcpServersForCaller } =
 				await import('#mcp/capabilities/access-control.ts')
-			const { listVisibleEnabledMcpServerRefsCached } =
-				await import('#worker/mcp-client/settings-service.ts')
+			const { listVisibleMcpServerIdsForCaller } =
+				await import('#mcp/capabilities/visible-mcp-server-ids.ts')
 			const runtimeRegistry = await getCapabilityRegistryForContext({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
 			const userId = ctx.callerContext.user?.userId ?? null
+			// Stamp ALS packageId (same as assertCanUseMcpServer) so approved
+			// package exports via execute can list locked servers they can call.
 			const registry = userId
 				? filterCapabilityRegistryMcpServersForCaller(
 						runtimeRegistry,
-						new Set(
-							(
-								await listVisibleEnabledMcpServerRefsCached({
-									env: ctx.env,
-									userId,
-									packageId: ctx.callerContext.storageContext?.packageId,
-								}).catch(() => [])
-							).map((ref) => ref.serverId),
-						),
+						await listVisibleMcpServerIdsForCaller({
+							env: ctx.env,
+							userId,
+							callerContext: ctx.callerContext,
+						}),
 					)
 				: runtimeRegistry
 			if (!args.domain) {

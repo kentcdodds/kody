@@ -7,8 +7,12 @@
  */
 
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import {
+	filterCapabilityRegistryMcpServersForCaller,
+	resolveCallerFeatureFlags,
+} from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { listVisibleMcpServerIdsForCaller } from '#mcp/capabilities/visible-mcp-server-ids.ts'
 import { compactMcpServerInstructionsFlagKey } from '#mcp/instructions/compact-mcp-server-instructions.ts'
 import { loadActiveRetiringNoticeIds } from '#mcp/instructions/retiring-primitives.ts'
 import { buildMcpServerInstructions } from '#mcp/server-instructions.ts'
@@ -48,9 +52,22 @@ export async function assembleMcpServerInstructionsForCaller(input: {
 				: Promise.resolve([]),
 			loadActiveRetiringNoticeIds(input.env.APP_DB, userId),
 		])
+	// Runtime registry keeps package-locked MCP servers for dispatch. Instructions
+	// must count only searchable bindings (same visibility as search/metaList).
+	const instructionDomains =
+		userId !== null
+			? filterCapabilityRegistryMcpServersForCaller(
+					registry,
+					await listVisibleMcpServerIdsForCaller({
+						env: input.env,
+						userId,
+						callerContext: input.callerContext,
+					}),
+				).capabilityDomains
+			: registry.capabilityDomains
 	return buildMcpServerInstructions({
 		userOverlay: overlay,
-		domains: registry.capabilityDomains,
+		domains: instructionDomains,
 		popularPackages,
 		retiringNoticeIds,
 	})
