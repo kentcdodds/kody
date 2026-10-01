@@ -341,3 +341,10 @@ runtime path if this budget is raised again.
   and related platform startup graph growth on top of #2739. Local / CI dry-run
   platform 5_238_546 against the previous 5_238_500 budget, reviewed ceiling
   5_238_600. Production `assertRestorablePackageSourceSnapshot` is unchanged.
+- Per-PR Artifacts env-schema token (`CLOUDFLARE_ARTIFACTS_API_TOKEN` from #2764
+  / #2749) also spilled into the shared runtime startup graph, and the same
+  #2764 platform measurement sat 109 bytes under the local/CI dry-run after
+  merge: runtime 3_912_588 against the previous 3_912_500 budget, reviewed
+  ceiling 3_912_700; platform 5_238_709 against the previous 5_238_600 budget,
+  reviewed ceiling 5_238_800. Production `assertRestorablePackageSourceSnapshot`
+  is unchanged.
