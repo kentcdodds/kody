@@ -132,16 +132,17 @@ forwards each `kody:runtime` call here. This contract matches
 | `POST /v1/capability-proxy/call`   | `{ path, args, conversationId? }` | `{ result }`                                                                    |
 
 - `path` is the `kody:runtime` property path: `['kody', name]`,
-  `['kody', 'mcp', server, tool]`, `['workflows', 'create']`, or
-  `['packages', 'invoke']`. `args` are positional (at most 8; paths at most 8
-  segments). Unknown keys answer 400.
+  `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
+  positional (at most 8; paths at most 8 segments). Unknown keys answer 400.
+  `['packages', 'invoke']` is rejected: there is no author-facing
+  `packages.invoke` (use a static `kody:@` import or `import(specifier)`).
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
-  capability behavior, `kody.mcp`, workflows, and package invokes match the
-  cloud. Caller errors from a capability keep their status and message.
-  Unexpected capability failures return 500 `capability_error`, and their
-  message hides `kody_at_` tokens and any secret values the call wrote. Platform
-  failures outside the capability return the generic `internal_error`, and the
-  details are logged server-side.
+  capability behavior, `kody.mcp`, and workflows match the cloud. Caller errors
+  from a capability keep their status and message. Unexpected capability
+  failures return 500 `capability_error`, and their message hides `kody_at_`
+  tokens and any secret values the call wrote. Platform failures outside the
+  capability return the generic `internal_error`, and the details are logged
+  server-side.
 - Confused-deputy limits: the request is JSON arguments only. No caller header
   or cookie is forwarded into a capability, and the edge strips `Cookie` and
   `X-Kody-*` before origin sees the request.
@@ -150,8 +151,8 @@ forwards each `kody:runtime` call here. This contract matches
   `local-execute` scope (403 `insufficient_scope`). The flag runs first so the
   CLI can tell "not enabled for you" from "mint a token with the local-execute
   scope".
-- Not proxied yet: outbound `fetch`, secret substitution in fetch headers, and
-  `createAuthenticatedFetch`. The CLI fetches directly from workerd today.
+- Not proxied: outbound `fetch`, secret substitution in fetch headers, and
+  `createAuthenticatedFetch`. The CLI fetches those from local workerd.
 
 ## Errors
 

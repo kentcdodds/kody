@@ -179,11 +179,9 @@ the `local-execute` scope and every CapabilityProxy route
 (before the scope check) and `tokenCreate` rejects the scope. Production enables
 it for the `experiments_opt_in` audience. Signed-in users can opt themselves in
 from `/docs/open-api` (same button as `mcp-api-tool`). No `successMetric`: this
-is not an experiment. CapabilityProxy session start and failures record
-observe-only `api_call` events (entity id `capabilityProxySession` on success;
-`capabilityProxySession:<code>` on failure such as `feature_disabled` or
-`unauthorized`) so operators can distinguish them in usage / Analytics Engine
-without inventing billable execute meters.
+is not an experiment. CapabilityProxy hops record observe-only `api_call`
+events; see [Open API](./open-api.md#metering) and
+[usage metering](./usage-metering.md).
 
 ## Success metrics
 

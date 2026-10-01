@@ -48,3 +48,7 @@ JSON siblings under `/admin/*.json`. Same 403 for the preview seed.
 - `/admin/feature-flags` Audience is `everyone` or `experiments_opt_in`. That
   audience only includes users who opted in at `/account/experiments`. Per-user
   overrides win over the audience gate.
+- `/admin/platform-integrations` rows have `enabled` (hard kill) and
+  `visibility` (`draft` | `published`). Only enabled + published apps are
+  discoverable. Moving a live app to draft hides it without breaking existing
+  connections.

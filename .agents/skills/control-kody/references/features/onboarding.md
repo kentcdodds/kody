@@ -50,3 +50,5 @@ node tools/control-kody.ts preview -- \
 - The Discord invite sits below the step wizard. First-use setup (search,
   memory, execute, package, job, integration, secret, Discord membership) is on
   Waiting.
+- Step 2 lists featured built-in connects only when those slugs are published
+  and enabled. The list is empty while every built-in is draft.

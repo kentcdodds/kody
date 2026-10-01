@@ -29,3 +29,9 @@ node tools/control-kody.ts request GET /account/integrations.json
 - After a successful `/connect/oauth`, the success page shows a **What's next?**
   prompt the user can copy into chat. Agents `communitySearch` (prefer
   `trusted`) or create a helpers package.
+- Account Integrations **Connect with Kody**, the `/connect/oauth` chooser,
+  onboarding Step 2 featured buttons, and `integrationPlatformAppList` show only
+  enabled + published platform apps. Draft apps stay hidden and keep serving
+  existing connections. Never disable an app to hide it — move it to draft.
+  Admins flip `enabled` and `visibility` separately on
+  `/admin/platform-integrations`.

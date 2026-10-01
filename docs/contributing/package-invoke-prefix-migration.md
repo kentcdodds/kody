@@ -1,10 +1,10 @@
 # `packages.invoke` prefix migration
 
-Soak telemetry and codemod notes for the quarantined `kody:runtime`
-`packages.invoke` helper ([0037](./decisions/0037-no-author-packages-invoke.md),
-[#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors and agents do
-not get that helper; this page is for operators migrating leftover published
-calls.
+The `kody:runtime` `packages.invoke` helper is unbound
+([0037](./decisions/0037-no-author-packages-invoke.md),
+[#1750](https://github.com/kentcdodds/kody/issues/1750)). This page records the
+soak telemetry and prefix-codemod notes from that migration. Authors and agents
+do not get the helper.
 
 The string-first helper accepts both `kody:@owner/package[/export]` and the
 deprecated prefixless `@owner/package[/export]` form. The parser canonicalizes

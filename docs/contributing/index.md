@@ -67,7 +67,7 @@ style, tests, MCP capabilities, and runtime architecture.
   invoke)
 - [Package codemods](./package-codemods.md)
 - [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
-  (soak telemetry for the quarantined helper leftover)
+  (historical soak notes; the helper is unbound)
 - [Public packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md) (unadvertised
   drain; first-party HTTP is [inbound webhooks](../use/webhooks.md))

@@ -201,8 +201,8 @@ Only set up a connection when their use needs one. Say the difficulty first.
   `search({ entity: "guide:oauth" })` or a resolved
   `search({ entity: "guide:provider_<slug>" })`.
 
-A few providers may have a Kody built-in app. `integrationPlatformAppList` lists
-the ones that are published. If it lists the provider, send
+A few providers have a Kody built-in app. `integrationPlatformAppList` lists the
+ones that are enabled and published. If it lists the provider, send
 `/connect/oauth?provider=<slug>&platform=<slug>` so the user skips app
 registration. Otherwise the user brings their own app.
 

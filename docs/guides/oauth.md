@@ -29,12 +29,11 @@ a chooser of saved connections that can start from a name alone. Selecting one
 updates the URL to `?provider=<name>`. Anonymous visits go to login and return
 here.
 
-Kody may publish a built-in app for a few providers.
-`integrationPlatformAppList` returns the published ones (often none). If it
-lists the provider, send `/connect/oauth?provider=<slug>&platform=<slug>`: the
-user connects without registering a provider app, and scopes are limited to that
-app's allowed menu. Every other provider uses the bring-your-own path in this
-guide.
+Kody publishes built-in apps for some providers. `integrationPlatformAppList`
+returns the enabled + published ones. If it lists the provider, send
+`/connect/oauth?provider=<slug>&platform=<slug>`: the user connects without
+registering a provider app, and scopes are limited to that app's allowed menu.
+Every other provider uses the bring-your-own path in this guide.
 
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
