@@ -204,10 +204,14 @@ prefer `npx @kodycodes/cli execute --local` over hosted MCP `execute` for
 one-off modules and smoke tests — including modules with static `kody:@…`
 imports (CLI downloads stamped modules via
 `POST /v1/local-execute/package-graph` and embeds them in local workerd; keep
-`--local`). Put `KODY_API_TOKEN` in the Cloud **environment** secrets/vars (not
-in the prompt). Mint once via MCP `api` `tokenCreate` with scopes
-`local-execute` and `account:read` (add scopes as needed); never paste the token
-into chat. Guide: [Open API and local execute](../guides/open-api.md). Skill:
+`--local`).
+
+Interactive / desktop agents prefer `kody login` and omit `KODY_API_TOKEN` (no
+`tokenCreate`). Cloud Agents are headless, so put a scoped `kody_at_…`
+`KODY_API_TOKEN` in the Cloud **environment** secrets/vars (not in the prompt).
+Mint once via MCP `api` `tokenCreate` with scopes `local-execute` and
+`account:read` (add scopes as needed); never paste the token into chat. Guide:
+[Open API and local execute](../guides/open-api.md). Skill:
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
 
 ## Seeding a test account

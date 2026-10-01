@@ -2,10 +2,11 @@
 id: open_api
 title: Open API and local execute
 summary:
-  Prefer @kodycodes/cli execute --local when Node ≥22 is available. Call Kody
-  over HTTPS at api.kody.codes, mint scoped tokens from the MCP api tool or CLI,
-  and run execute modules locally with CapabilityProxy. Behind experiments
-  flags; signed-in users can turn them on from this page.
+  Prefer @kodycodes/cli execute --local when Node ≥22 is available. Interactive
+  agents use kody login (no tokenCreate); scoped kody_at_… tokens are for CI,
+  Cloud Agents, and other headless envs. Call Kody over HTTPS at api.kody.codes
+  with CapabilityProxy. Behind experiments flags; signed-in users can turn them
+  on from this page.
 category: platform
 ---
 
@@ -47,10 +48,13 @@ When **Node ≥22** and `@kodycodes/cli` are available, prefer
 `npx @kodycodes/cli execute --local` for one-off modules, smoke tests, and
 composition — including modules that `import` from `kody:@owner/name` (or
 `kody:@owner/name/path`). Keep `--local`; do not switch to hosted MCP `execute`
-for package imports. Fall back to hosted MCP `execute` only when local is not
-appropriate (no suitable Node, CLI missing, flags/scopes missing, or the host
-cannot run a local workerd). Cursor Cloud Agents need `KODY_API_TOKEN` in the
-environment (not in the prompt); see
+for package imports. Interactive / desktop agents: `kody login` once, then run
+`--local` with no `KODY_API_TOKEN` (do not mint via `tokenCreate`). Scoped
+`kody_at_…` tokens remain valid and preferred for CI, Cursor Cloud Agents, and
+other headless envs that cannot do interactive login — put `KODY_API_TOKEN` in
+the environment (not in the prompt). Fall back to hosted MCP `execute` only when
+local is not appropriate (no suitable Node, CLI missing, flags/scopes missing,
+or the host cannot run a local workerd). See
 [Cursor Cloud Agent notes](../contributing/cloud-agents.md) and the
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
 skill.
@@ -60,11 +64,11 @@ skill.
 Pure `kody.*` / `workflows.create` modules run in local workerd; each
 `kody:runtime` call is a CapabilityProxy hop. Modules with static `kody:@…`
 imports keep `--local`: the CLI calls `POST /v1/local-execute/package-graph`
-(same `local-execute` token + flag) to download published, stamped
-importable-module artifacts, embeds them next to your module + `kody:runtime`,
-and still uses CapabilityProxy only for per-call runtime hops. There is **no**
-silent whole-module defer to CapabilityProxy → `kody.execute`. Agents keep
-writing:
+(same `local-execute` flag + login OAuth or API token) to download published,
+stamped importable-module artifacts, embeds them next to your module +
+`kody:runtime`, and still uses CapabilityProxy only for per-call runtime hops.
+There is **no** silent whole-module defer to CapabilityProxy → `kody.execute`.
+Agents keep writing:
 
 ```ts
 import { searchMessages } from 'kody:@kentcdodds/google/gmail'
@@ -101,17 +105,18 @@ CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
 ## First local run
 
-**Preferred when already logged in:** `kody login`, then run with no
-`KODY_API_TOKEN`. The CLI sends the stored MCP OAuth access token as Bearer to
-CapabilityProxy and package-graph (same `local-execute` flag).
+**Preferred (interactive / desktop):** `kody login`, then run with no
+`KODY_API_TOKEN`. Do not call `tokenCreate` for this path. The CLI sends the
+stored MCP OAuth access token as Bearer to CapabilityProxy and package-graph
+(same `local-execute` flag).
 
 ```bash
 npx @kodycodes/cli login   # once
 npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
-**Or mint a scoped API token** (agents / CI / when you want scopes thinner than
-the full MCP grant):
+**Optional — scoped API token** (CI / Cloud Agents / headless, or when you want
+scopes thinner than the full MCP grant):
 
 1. With MCP `api` available, mint a short-lived token (value returned once):
 
@@ -127,7 +132,7 @@ the full MCP grant):
 
    Add scopes as needed for the work. Or from a shell already holding
    `KODY_API_TOKEN` with `tokens:write` and `local-execute`: use the CLI / MCP
-   `api` helpers the same way. Prefer MCP `tokenCreate` for the first token.
+   `api` helpers the same way.
 
 2. Export the value (do not paste it back into chat):
 

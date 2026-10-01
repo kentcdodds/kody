@@ -127,9 +127,9 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-After publish, prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI +
-token are available ([Open API and local execute](./open-api.md)); else hosted
-MCP `execute`.
+After publish, prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI
+are available (`kody login`, or `KODY_API_TOKEN` in headless envs —
+[Open API and local execute](./open-api.md)); else hosted MCP `execute`.
 
 ## Edge cases
 

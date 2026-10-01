@@ -45,8 +45,8 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
 - [docs/contributing/setup/](../docs/contributing/setup/index.md) - Setup
   documentation
 - [docs/contributing/cloud-agents.md](../docs/contributing/cloud-agents.md) —
-  Cloud Agent VM gotchas (canonical; this file is a quick reference). Includes
-  `KODY_API_TOKEN` for prefer-local CLI execute.
+  Cloud Agent VM gotchas (canonical; this file is a quick reference). Headless
+  prefer-local uses `KODY_API_TOKEN`; interactive agents prefer `kody login`.
 - [prefer-local-cli-execute skill](../.agents/skills/prefer-local-cli-execute/SKILL.md)
   — prefer `@kodycodes/cli execute --local` over hosted MCP `execute`
 - [docs/contributing/testing-principles.md](../docs/contributing/testing-principles.md) -

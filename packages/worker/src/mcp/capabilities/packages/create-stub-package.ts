@@ -56,7 +56,7 @@ export function buildStubPackageFiles(input: {
 			'## Smoke tests',
 			'',
 			'After publish, prefer `npx @kodycodes/cli execute --local` when Node ≥22',
-			'+ CLI + token are available (`guide:open_api`); else hosted MCP `execute`.',
+			'+ CLI are available (`kody login` or headless `KODY_API_TOKEN`; `guide:open_api`); else hosted MCP `execute`.',
 			'',
 			'## Edge cases',
 			'',

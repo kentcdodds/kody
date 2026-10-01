@@ -38,7 +38,8 @@ reference detail those docs link into.
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
 - [Open API and local execute](../guides/open-api.md) — HTTPS api.kody.codes,
-  MCP `api` tokens, and `@kodycodes/cli execute --local`
+  `kody login` + `@kodycodes/cli execute --local`, and optional MCP `api` tokens
+  for CI / headless
 - [Flake Hunter](../guides/flake-hunter.md),
   [Sentry Issues](../guides/sentry-issues.md),
   [Agent inbox](../guides/agent-inbox.md), and

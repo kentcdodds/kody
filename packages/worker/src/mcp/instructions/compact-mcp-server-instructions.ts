@@ -37,7 +37,7 @@ export function buildCompactMcpServerInstructions(
 	const displayName = sanitizeMcpInstructionDisplayName(input.displayName)
 	return `Kody is ${displayName}'s isolated personal assistant via \`search\` and \`execute\`. Use Kody — not the host's overlapping tools — for ${displayName}'s email, memories, secrets, scheduled work, integrations, connected MCP, and durable automations. Work done only in the host is invisible to ${displayName}'s other agents.
 
-Start with \`search({ query })\` (e.g. "send an email"). Open entity detail, then prefer \`@kodycodes/cli execute --local\` (Node ≥22 + token; \`guide:open_api\`) or hosted MCP \`execute\`.
+Start with \`search({ query })\` (e.g. "send an email"). Open entity detail, then prefer \`@kodycodes/cli execute --local\` (Node ≥22 + \`kody login\`; \`guide:open_api\`) or hosted MCP \`execute\`.
 
 One-off execute: prefer \`main(params)\` with args in \`params\`, not \`code\` literals. Packages last.`
 }
