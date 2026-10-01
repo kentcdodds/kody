@@ -7,10 +7,14 @@ export function createMswWorkerServer(
 	handlers: Array<HttpHandler> = [],
 	options: MswNodeServerOptions = {},
 ) {
+	// FetchInterceptor's published event-map generics currently disagree with
+	// InterceptorSource's union; cast keeps the documented MSW experimental
+	// Workers setup working under tsc until upstream types align.
+	const fetchInterceptor = new FetchInterceptor() as ConstructorParameters<
+		typeof InterceptorSource
+	>[0]['interceptors'][number]
 	const network = defineNetwork({
-		sources: [
-			new InterceptorSource({ interceptors: [new FetchInterceptor()] }),
-		],
+		sources: [new InterceptorSource({ interceptors: [fetchInterceptor] })],
 		handlers,
 		onUnhandledFrame: options.onUnhandledFrame ?? 'error',
 		context: { quiet: true },
