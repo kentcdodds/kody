@@ -1,10 +1,13 @@
 import { z } from 'zod'
-import { redactApiTokens } from '@kody-internal/shared/api-token-format.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	buildKodyToolContext,
 	createWorkflowTools,
 } from '#mcp/run-kody-registry.ts'
+import {
+	createExecutionSecretRedactor,
+	type ExecutionSecretRedactor,
+} from '#mcp/secrets/execution-secret-redactor.ts'
 import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import { type PackageInvokeInput } from '#mcp/runtime-helper-manifest.ts'
 import { type ApiInvocationContext } from './context.ts'
@@ -89,16 +92,33 @@ function describePath(path: ReadonlyArray<string>) {
 	return path.join('.')
 }
 
+class CapabilityInvocationError extends Error {
+	constructor(cause: unknown) {
+		super('Capability invocation failed.', { cause })
+		this.name = 'CapabilityInvocationError'
+	}
+}
+
+async function invokeCapability<T>(invoke: () => Promise<T> | T) {
+	try {
+		return await invoke()
+	} catch (error) {
+		throw new CapabilityInvocationError(error)
+	}
+}
+
 async function callKodyPath(input: {
 	ctx: ApiInvocationContext
 	path: ReadonlyArray<string>
 	args: ReadonlyArray<unknown>
+	redactor: ExecutionSecretRedactor
 }) {
-	const { ctx, path, args } = input
+	const { ctx, path, args, redactor } = input
 	const { tools, mcpServers } = await buildKodyToolContext(
 		ctx.env,
 		ctx.callerContext,
 		{
+			trackSecretInputValue: (value) => redactor.track(value),
 			workflowTools: createWorkflowTools({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
@@ -136,31 +156,33 @@ async function callKodyPath(input: {
 				}.`,
 			)
 		}
-		return tool(args[0])
+		return invokeCapability(() => tool(args[0]))
 	}
 	const [, name] = path
 	const tool = name && Object.hasOwn(tools, name) ? tools[name] : undefined
 	if (path.length !== 2 || !tool) {
 		throw notFound(`Unknown runtime function kody.${path.slice(1).join('.')}.`)
 	}
-	return tool(args[0])
+	return invokeCapability(() => tool(args[0]))
 }
 
 async function dispatchCapabilityProxyCall(input: {
 	ctx: ApiInvocationContext
 	call: CapabilityProxyCallInput
+	redactor: ExecutionSecretRedactor
 }) {
-	const { ctx, call } = input
+	const { ctx, call, redactor } = input
 	const [root, name] = call.path
 	if (root === 'kody') {
-		return callKodyPath({ ctx, path: call.path, args: call.args })
+		return callKodyPath({ ctx, path: call.path, args: call.args, redactor })
 	}
 	if (root === 'workflows' && name === 'create' && call.path.length === 2) {
-		return createWorkflowTools({
+		const workflowTools = createWorkflowTools({
 			env: ctx.env,
 			callerContext: ctx.callerContext,
 			packageContext: null,
-		}).create(call.args[0] as never)
+		})
+		return invokeCapability(() => workflowTools.create(call.args[0] as never))
 	}
 	if (root === 'packages' && name === 'invoke' && call.path.length === 2) {
 		const tools = await createExecutePackageInvokeTools({
@@ -170,10 +192,12 @@ async function dispatchCapabilityProxyCall(input: {
 			conversationId: call.conversationId ?? null,
 			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
 		})
-		return tools.invoke({
-			specifier: call.args[0],
-			options: call.args[1],
-		} as PackageInvokeInput)
+		return invokeCapability(() =>
+			tools.invoke({
+				specifier: call.args[0],
+				options: call.args[1],
+			} as PackageInvokeInput),
+		)
 	}
 	throw notFound(
 		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.mcp.<server>.<tool>, workflows.create, and packages.invoke.`,
@@ -182,22 +206,54 @@ async function dispatchCapabilityProxyCall(input: {
 
 /**
  * Run one proxied `kody:runtime` call. Errors the capability throws reach
- * local user code with the same message cloud execute would show; only
- * platform failures (not caller or capability errors) are hidden.
+ * local user code with the message cloud execute would show, minus secret
+ * values the call wrote and API tokens. Platform failures outside the
+ * capability return the generic internal error and are logged here.
  */
 export async function runCapabilityProxyCall(input: {
 	ctx: ApiInvocationContext
 	call: CapabilityProxyCallInput
 }) {
+	const redactor = createExecutionSecretRedactor()
 	try {
-		return { result: (await dispatchCapabilityProxyCall(input)) ?? null }
+		return {
+			result:
+				(await dispatchCapabilityProxyCall({ ...input, redactor })) ?? null,
+		}
 	} catch (error) {
-		const apiError = toApiError(error)
-		if (error instanceof ApiError || apiError.status < 500) throw apiError
-		throw new ApiError({
-			status: 500,
-			code: 'capability_error',
-			message: redactApiTokens(getErrorMessage(error)),
+		const fromCapability = error instanceof CapabilityInvocationError
+		const cause = fromCapability ? error.cause : error
+		const apiError = toApiError(cause)
+		if (cause instanceof ApiError || apiError.status < 500) {
+			throwRedacted(apiError, redactor)
+		}
+		if (fromCapability) {
+			throw new ApiError({
+				status: 500,
+				code: 'capability_error',
+				message: redactor.redactErrorMessage(getErrorMessage(cause)),
+			})
+		}
+		console.error('capability-proxy platform failure', {
+			path: describePath(input.call.path),
+			userId: input.ctx.callerContext.user?.userId ?? null,
+			error: redactor.redactErrorMessage(getErrorMessage(cause)),
 		})
+		throw apiError
 	}
+}
+
+function throwRedacted(
+	apiError: ApiError,
+	redactor: ExecutionSecretRedactor,
+): never {
+	const message = redactor.redactErrorMessage(apiError.message)
+	if (message === apiError.message) throw apiError
+	throw new ApiError({
+		status: apiError.status,
+		code: apiError.code,
+		message,
+		details: redactor.redactUnknown(apiError.details),
+		headers: apiError.headers,
+	})
 }

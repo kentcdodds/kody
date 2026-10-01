@@ -345,4 +345,6 @@ runtime path if this budget is raised again.
   output and the two flag registry entries: local dry-run 3_913_497 against the
   previous 3_912_500 budget, reviewed ceiling 3_914_000. Review fixes (rotation
   scope check, debounced sliding expiry) add about 100 platform bytes: local
-  dry-run 5_276_098, reviewed ceiling 5_276_500.
+  dry-run 5_276_098, reviewed ceiling 5_276_500. Splitting CapabilityProxy
+  capability errors (per-call secret redactor) from generic platform failures
+  adds about 870 more: local dry-run 5_277_132, reviewed ceiling 5_277_500.

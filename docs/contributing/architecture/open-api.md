@@ -116,8 +116,11 @@ forwards each `kody:runtime` call here. This contract matches
   segments). Unknown keys answer 400.
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
   capability behavior, `kody.mcp`, workflows, and package invokes match the
-  cloud. Capability errors return their own message; other 500s return
-  `capability_error` with a redacted message.
+  cloud. Caller errors from a capability keep their status and message.
+  Unexpected capability failures return 500 `capability_error`, and their
+  message hides `kody_at_` tokens and any secret values the call wrote. Platform
+  failures outside the capability return the generic `internal_error`, and the
+  details are logged server-side.
 - Confused-deputy limits: the request is JSON arguments only. No caller header
   or cookie is forwarded into a capability, and the edge strips `Cookie` and
   `X-Kody-*` before origin sees the request.
