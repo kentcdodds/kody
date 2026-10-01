@@ -341,11 +341,18 @@ runtime path if this budget is raised again.
   and related platform startup graph growth on top of #2739. Local / CI dry-run
   platform 5_238_546 against the previous 5_238_500 budget, reviewed ceiling
   5_238_600. Production `assertRestorablePackageSourceSnapshot` is unchanged.
+- Per-PR Artifacts env-schema token (`CLOUDFLARE_ARTIFACTS_API_TOKEN` from #2764
+  / #2749) also spilled into the shared runtime startup graph, and the same
+  #2764 platform measurement sat 109 bytes under the local/CI dry-run after
+  merge: runtime 3_912_588 against the previous 3_912_500 budget, reviewed
+  ceiling 3_912_700; platform 5_238_709 against the previous 5_238_600 budget,
+  reviewed ceiling 5_238_800. Production `assertRestorablePackageSourceSnapshot`
+  is unchanged.
 - Platform integration visibility (#2766): the `visibility` column in the
   `platform_oauth_apps` select/upsert/rename SQL, the discoverable
   (`enabled = 1 AND visibility = 'published'`) list/get queries, and the
   `integrationPlatformAppList` handler that now lists published apps, all on the
   integrations graph both workers already evaluate (about 1,380 bytes per worker
-  over main). Local dry-run on top of #2764: runtime 3_913_970 against the
-  previous 3_912_500 budget, reviewed ceiling 3_914_500; platform 5_240_090
-  against the previous 5_238_600 budget, reviewed ceiling 5_240_500.
+  over main). Local dry-run on top of #2764 and #2768: runtime 3_913_970 against
+  the previous 3_912_700 budget, reviewed ceiling 3_914_500; platform 5_240_090
+  against the previous 5_238_800 budget, reviewed ceiling 5_240_500.
