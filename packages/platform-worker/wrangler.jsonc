@@ -9,7 +9,17 @@
 	// origin Worker.
 	"name": "kody-platform",
 	"compatibility_date": "2026-04-16",
-	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Birthday Week 2026-10-01: pending I/O (service bindings, DO RPC/fetch,
+	// waitUntil, timers) keeps a DO from idle eviction for up to 15 minutes
+	// per operation with no connected client. Date-default on 2026-10-01;
+	// opt in via flag so we do not advance past 2026-04-16 (origin holds that
+	// date to avoid unrelated defaults such as enable_python_external_sdk).
+	// https://developers.cloudflare.com/workers/configuration/compatibility-flags/#durable-object-io-tasks-prevent-eviction
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+		"durable_object_io_tasks_prevent_eviction",
+	],
 	// Same Images binding as origin: MCP admin/integration logo uploads run
 	// on this script and must fit rasters before they land in R2. Wrangler
 	// does not inherit `images` into named envs — restate it on production
