@@ -415,6 +415,36 @@ package approval. Unadopted community-forked packages may need both;
 self-authored and adopted packages still need host approval when outbound calls
 require it.
 
+## Cross-package composition
+
+Call another package export the same way search entity detail shows: import it,
+then call it. There is no author-facing `packages.invoke`.
+
+- **Name known when you write the code** → static import, and list the package
+  in `package.json#kody.dependencies` when the call site is package source:
+
+  ```ts
+  import sendMail from 'kody:@scope/mailer/send'
+  await sendMail({ to, subject, text })
+  ```
+
+- **Name is data** (route table, config string, runtime choice) → computed
+  dynamic import:
+
+  ```ts
+  const mod = await import(specifier) // "kody:@scope/package/export"
+  await mod.default(params)
+  ```
+
+- **Exactly-once** → [workflows](../use/workflows.md), not a keyed invoke.
+- **External HTTP clients** → [inbound webhooks](../use/webhooks.md).
+
+README, `AGENTS.md`, and export `@example` blocks follow the same rules: import
+and call. Do not demo a `packages` helper. Package codemod
+`0008-packages-invoke-to-static-import` rewrites literal call sites and
+parseable Markdown examples; ambiguous or keyed sites need a manual edit as
+above.
+
 ## Verify your publish
 
 After publish succeeds — and after any required secret approvals — confirm every

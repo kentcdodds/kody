@@ -7,13 +7,13 @@
 
 Saved packages expose several runtime surfaces — exports, apps, subscriptions,
 services, jobs, and webhooks — but post-publish verification paths were uneven.
-`packages.invoke` covers export smoke tests in the package runtime (including
-secret mounts), yet package apps required a browser session handoff to the
-hosted origin, and subscription handlers could only be exercised by waiting for
-real platform events (inbound mail, repo pushes, run failures, and so on).
-Agents authoring packages over MCP need an owner-scoped way to invoke app fetch
-handlers and subscription handlers immediately after publish without external
-triggers or UI automation.
+Export smoke tests from package runtime (including secret mounts) were covered;
+package apps required a browser session handoff to the hosted origin, and
+subscription handlers could only be exercised by waiting for real platform
+events (inbound mail, repo pushes, run failures, and so on). Agents authoring
+packages over MCP need an owner-scoped way to invoke app fetch handlers and
+subscription handlers immediately after publish without external triggers or UI
+automation.
 
 Alternatives considered and rejected:
 
