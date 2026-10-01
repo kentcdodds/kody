@@ -42,8 +42,9 @@ sequenceDiagram
 - `kody-api` (`packages/api-worker/`) is a thin edge script on the
   `api.kody.codes` custom domain. It answers `/health` itself, allows only `/`,
   `/openapi.json`, and `/v1/*`, applies per-IP (`API_IP_RATE_LIMITER`, 600/min)
-  and per-token (`API_TOKEN_RATE_LIMITER`, 300/min, keyed by token id, never the
-  secret) limits, caps buffered bodies at 5 MiB (413), and forwards only
+  and per-token (`API_TOKEN_RATE_LIMITER`, 300/min, keyed by API token id or a
+  SHA-256 of an opaque Bearer such as CLI MCP OAuth — never the secret
+  plaintext) limits, caps buffered bodies at 5 MiB (413), and forwards only
   `Authorization`, `Content-Type`, `Accept`, `User-Agent`, and
   `CF-Connecting-IP`. `Cookie` and `X-Kody-*` never reach origin, and origin
   `Set-Cookie` never reaches the client. CORS allows any origin because auth is
@@ -86,10 +87,18 @@ Dynamic Worker. Writes hold the account write lease, like MCP tool calls.
 
 ## Tokens
 
-Scoped API tokens (`kody_at_<id>_<secret>`) are the only HTTP credential. They
-are a separate credential class from MCP OAuth
+Scoped API tokens (`kody_at_<id>_<secret>`) are the primary HTTP credential for
+the Open API. They are a separate credential class from MCP OAuth
 ([ADR 0053](../decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)).
 Kody stores only a SHA-256 hash; the value is returned once, on mint or rotate.
+
+On **local-execute HTTP only** (CapabilityProxy +
+`POST /v1/local-execute/package-graph`), a valid CLI MCP OAuth access token from
+`kody login` (official CLI CIMD client id) is also accepted as Bearer with the
+full MCP grant, still gated by the `local-execute` feature flag and without
+API-token scope checks
+([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)). Other `/v1`
+operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
 - Scopes: `<resource>:read` and `<resource>:write` for `account`, `memories`,
   `secrets`, `packages`, `repos`, `jobs`, `webhooks`, `email`, `integrations`,
@@ -157,11 +166,15 @@ returns published, stamped importable-module artifacts for embedding — it does
 - Confused-deputy limits: the request is JSON arguments only. No caller header
   or cookie is forwarded into a capability, and the edge strips `Cookie` and
   `X-Kody-*` before origin sees the request.
-- Order of checks: bearer token (401), then the `local-execute` flag (403
-  `feature_disabled`, `details.feature_flag: "local-execute"`), then the
-  `local-execute` scope (403 `insufficient_scope`). The flag runs first so the
-  CLI can tell "not enabled for you" from "mint a token with the local-execute
-  scope".
+- Order of checks: bearer credential (401), then the `local-execute` flag (403
+  `feature_disabled`, `details.feature_flag: "local-execute"`), then — for
+  `kody_at_` tokens only — the `local-execute` scope (403 `insufficient_scope`).
+  CLI MCP OAuth skips the scope check (full MCP grant on these routes). The flag
+  runs first so the CLI can tell "not enabled for you" from "mint a token with
+  the local-execute scope".
+- Auth: `kody_at_…` with `local-execute`, or a valid `kody login` MCP OAuth
+  access token for this origin
+  ([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)).
 - Authenticated outbound fetch: `path: ['kody','authenticatedFetch']` with
   `{ providerName, request: { url, method?, headers?, body? } }`. Origin runs
   the same placeholder + fetch-gateway model as cloud execute (and host-side

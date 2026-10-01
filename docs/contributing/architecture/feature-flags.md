@@ -174,13 +174,16 @@ or a per-user override. Remove the flag and gate sites when the experiment ends.
 
 `local-execute` is a rollout kill switch (default **off**, registry
 `defaultAudience: experiments_opt_in`) for local execute: minting tokens with
-the `local-execute` scope and every CapabilityProxy route
-(`/v1/capability-proxy/*`). When off, those routes answer 403 `feature_disabled`
-(before the scope check) and `tokenCreate` rejects the scope. Production enables
-it for the `experiments_opt_in` audience. Signed-in users can opt themselves in
-from `/docs/open-api` (same button as `mcp-api-tool`). No `successMetric`: this
-is not an experiment. CapabilityProxy hops record observe-only `api_call`
-events; see [Open API](./open-api.md#metering) and
+the `local-execute` scope, every CapabilityProxy route
+(`/v1/capability-proxy/*`), and `POST /v1/local-execute/package-graph`. When
+off, those routes answer 403 `feature_disabled` (before the API-token scope
+check) and `tokenCreate` rejects the scope. Auth may be a scoped `kody_at_`
+token or CLI `kody login` MCP OAuth
+([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)). Production
+enables it for the `experiments_opt_in` audience. Signed-in users can opt
+themselves in from `/docs/open-api` (same button as `mcp-api-tool`). No
+`successMetric`: this is not an experiment. CapabilityProxy hops record
+observe-only `api_call` events; see [Open API](./open-api.md#metering) and
 [usage metering](./usage-metering.md).
 
 ## Success metrics
