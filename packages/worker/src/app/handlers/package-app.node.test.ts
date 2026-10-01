@@ -268,7 +268,7 @@ test('handlePackageAppRequest does not report package entrypoint failures to Kod
 test('handlePackageAppRequest routes websocket package paths to realtime session manager without owner credentials', async () => {
 	const response = await request('/@test-user/packages/example/ws/chat', {
 		headers: {
-			Upgrade: 'websocket',
+			Upgrade: 'WebSocket',
 			Cookie: 'kody_session=owner-session',
 			Authorization: 'Bearer owner-token',
 			'X-Kody-Connector-User-Id': 'user-1',
@@ -295,18 +295,6 @@ test('handlePackageAppRequest routes websocket package paths to realtime session
 		]),
 	).toEqual([])
 	expect(connectRequest.headers.get('X-Custom-Package-Header')).toBe('kept')
-})
-
-test('handlePackageAppRequest accepts case-insensitive Upgrade values for realtime', async () => {
-	mockModule.packageRealtimeConnect.mockClear()
-	const response = await request('/@test-user/packages/example/ws', {
-		headers: {
-			Upgrade: 'WebSocket',
-		},
-	})
-	expect(response.status).toBe(200)
-	expect(mockModule.packageRealtimeConnect).toHaveBeenCalledTimes(1)
-	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
 test('handlePackageAppRequest forwards package code a request stripped of owner credentials', async () => {

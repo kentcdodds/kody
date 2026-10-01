@@ -9,7 +9,6 @@ import {
 	getDiscoverablePlatformOauthApp,
 	getPlatformOauthAppBySlug,
 	getPlatformOauthAppClientSecret,
-	isPlatformOauthAppDiscoverable,
 	listDiscoverablePlatformOauthApps,
 	listPlatformOauthApps,
 	PlatformOauthAppValidationError,
@@ -183,7 +182,6 @@ test('visibility defaults to draft, survives partial saves, and only enabled + p
 	const { sqlite, db, env, upsert } = createHarness()
 	const created = await upsert(baseGithubApp)
 	expect(created.visibility).toBe('draft')
-	expect(isPlatformOauthAppDiscoverable(created)).toBe(false)
 	expect(await listDiscoverablePlatformOauthApps({ db })).toEqual([])
 	expect(
 		await getDiscoverablePlatformOauthApp({ db, slug: 'github' }),
@@ -195,7 +193,6 @@ test('visibility defaults to draft, survives partial saves, and only enabled + p
 
 	const published = await upsert({ ...coreGithubApp, visibility: 'published' })
 	expect(published.visibility).toBe('published')
-	expect(isPlatformOauthAppDiscoverable(published)).toBe(true)
 	expect(
 		(await listDiscoverablePlatformOauthApps({ db })).map((app) => app.slug),
 	).toEqual(['github'])

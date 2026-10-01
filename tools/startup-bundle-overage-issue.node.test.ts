@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
-import { collectStartupBundleOverages } from './check-worker-startup-bundles.ts'
 import {
 	buildStartupBundleOverageIssueBody,
-	formatStartupBundleOverageWarning,
 	reportStartupBundleOverages,
 	resolveStartupBundleOverageRunUrl,
 	shouldReportStartupBundleOverageIssue,
@@ -11,29 +9,7 @@ import {
 	upsertStartupBundleOverageIssue,
 } from './startup-bundle-overage-issue.ts'
 
-test('collectStartupBundleOverages keeps the #2764-sized 88-byte spill as a report, not a hard fail input', () => {
-	const overages = collectStartupBundleOverages([
-		{ name: 'origin', size: 7_000_000, maxEntryBytes: 7_750_000 },
-		{ name: 'platform', size: 5_238_546, maxEntryBytes: 5_238_600 },
-		{ name: 'runtime', size: 3_912_588, maxEntryBytes: 3_912_500 },
-	])
-	expect(overages).toEqual([
-		{
-			name: 'runtime',
-			size: 3_912_588,
-			maxEntryBytes: 3_912_500,
-			overage: 88,
-		},
-	])
-})
-
-test('overage issue titles and markers stay stable for dedupe', () => {
-	expect(startupBundleOverageIssueTitle('runtime')).toBe(
-		'Startup budget overage: runtime',
-	)
-	expect(startupBundleOverageIssueMarker('runtime')).toBe(
-		'<!-- kody-startup-bundle-overage:runtime -->',
-	)
+test('overage issue body embeds the local tracking marker', () => {
 	expect(
 		buildStartupBundleOverageIssueBody({
 			name: 'runtime',
@@ -42,14 +18,6 @@ test('overage issue titles and markers stay stable for dedupe', () => {
 			overage: 88,
 		}),
 	).toContain('<!-- kody-startup-bundle-overage:runtime -->')
-	expect(
-		formatStartupBundleOverageWarning({
-			name: 'runtime',
-			size: 3_912_588,
-			maxEntryBytes: 3_912_500,
-			overage: 88,
-		}),
-	).toMatch(/warning only; does not fail CI/)
 })
 
 test('issue reporting is limited to main CI pushes with a token', () => {

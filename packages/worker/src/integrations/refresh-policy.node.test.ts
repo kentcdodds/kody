@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { inferIntegrationRefreshPolicy } from './refresh-policy.ts'
 
-test('a refresh token or an access-token expiry means refresh is required', () => {
+test('refresh is required when a refresh token or access-token expiry is present', () => {
 	for (const payload of [
 		{ access_token: 'a', refresh_token: 'r' },
 		{ access_token: 'a', refresh_token: 'r', expires_in: 28_800 },
@@ -12,9 +12,7 @@ test('a refresh token or an access-token expiry means refresh is required', () =
 	]) {
 		expect(inferIntegrationRefreshPolicy(payload)).toBe('required')
 	}
-})
 
-test('neither a refresh token nor an expiry is a non-expiring grant', () => {
 	for (const payload of [
 		{ access_token: 'a', token_type: 'bearer', scope: 'repo' },
 		{ access_token: 'a', refresh_token: '   ' },

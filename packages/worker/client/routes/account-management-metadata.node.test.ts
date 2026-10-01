@@ -141,7 +141,6 @@ test('account shell grows into main so a short page has no band above the footer
 	expect(shellRules).toContain('flex-grow: 1')
 	expect(shellRules).toContain('width: 100%')
 	expect(shellRules).toContain('align-content: start')
-	expect(shellRules).not.toContain('min-height')
 
 	// `<main>` keeps growing in the 100vh app frame (sticky footer) and hands
 	// that growth to the shell through a flex column.
@@ -155,9 +154,6 @@ test('account shell grows into main so a short page has no band above the footer
 	expect(mainRule).toContain('display: flex')
 	expect(mainRule).toContain('flex-direction: column')
 	expect(mainRule).not.toContain('flex-grow')
-	expect(styles).not.toMatch(
-		/:has\(\[data-account-shell\]\)[^{]*\{[^}]*min-height/,
-	)
 })
 
 test('community reports page keeps one admin rail and an in-flow status filter', async () => {

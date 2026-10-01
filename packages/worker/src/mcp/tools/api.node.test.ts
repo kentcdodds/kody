@@ -65,12 +65,10 @@ async function createAgent(input: { flag: boolean }) {
 	}
 }
 
-test('the api tool is absent when mcp-api-tool is off', async () => {
-	const { registerTool } = await createAgent({ flag: false })
-	expect(registerTool).not.toHaveBeenCalled()
-})
+test('the api tool is absent until the flag is on, then runs operations and re-checks per call', async () => {
+	const off = await createAgent({ flag: false })
+	expect(off.registerTool).not.toHaveBeenCalled()
 
-test('the api tool runs operations and re-checks the flag per call', async () => {
 	const agent = await createAgent({ flag: true })
 	expect(agent.registerTool).toHaveBeenCalledTimes(1)
 	expect(agent.registerTool.mock.calls[0]?.[0]).toBe('api')

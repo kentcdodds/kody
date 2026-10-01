@@ -58,9 +58,9 @@ test('mint returns the plaintext once, stores only a hash, and authenticates', a
 		scopes: ['packages:read', 'secrets:write'],
 		status: 'active',
 		token_type: 'Bearer',
-		idle_ttl_seconds: apiTokenPolicy.defaultIdleTtlSeconds,
-		expires_at: at(apiTokenPolicy.defaultIdleTtlSeconds).toISOString(),
-		max_expires_at: at(apiTokenPolicy.defaultMaxLifetimeSeconds).toISOString(),
+		idle_ttl_seconds: 15 * 60,
+		expires_at: at(15 * 60).toISOString(),
+		max_expires_at: at(24 * 60 * 60).toISOString(),
 	})
 	const parsed = parseApiToken(minted.token)
 	expect(parsed?.tokenId).toBe(minted.id)

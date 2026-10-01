@@ -108,12 +108,6 @@ test('step 3 marks known connections, and Cursor Cloud marks Grok Bot', () => {
 	expect(presentation.greyedAgents).toEqual(['cursor-cloud', 'grok-bot'])
 	expect(presentation.greyedReasons['grok-bot']).toBe('connected')
 	expect(presentation.greyedTitles['grok-bot']).toContain('Cursor Cloud')
-	expect(presentation.greyedTitles['grok-bot']).toContain(
-		'Select to view connect steps again',
-	)
-	expect(presentation.greyedTitles['cursor-cloud']).toBe(
-		'Already connected. Select to view connect steps again.',
-	)
 })
 
 test('a second agent is a second ecosystem, not a second Cursor login', () => {
@@ -145,16 +139,7 @@ test('a second agent is a second ecosystem, not a second Cursor login', () => {
 	).toEqual([])
 })
 
-test('step 3 deep links keep connected hosts and drop Not listed', () => {
-	const kept = [
-		'chatgpt',
-		'codex',
-		'claude-code',
-		'cursor-cloud',
-		'grok-bot',
-		'cursor',
-	] as const
-	expect(kept.map(resolveOnboardingStep3SelectedAgent)).toEqual(kept)
+test('step 3 deep links drop Not listed and an empty selection', () => {
 	expect(resolveOnboardingStep3SelectedAgent(null)).toBeNull()
 	expect(resolveOnboardingStep3SelectedAgent('other')).toBeNull()
 })

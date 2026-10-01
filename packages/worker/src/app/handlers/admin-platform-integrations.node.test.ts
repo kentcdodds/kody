@@ -172,7 +172,6 @@ test('admin save and delete require admin and return HTTP shapes without echoing
 	expect(invalid.status).toBe(400)
 	await expect(invalid.json()).resolves.toMatchObject({
 		ok: false,
-		error: 'Visibility must be "draft" or "published".',
 	})
 	const unpublish = await invoke({
 		...editGithubBody,

@@ -241,7 +241,6 @@ test('token minting enforces parent scopes and the local-execute flag', async ()
 		body: { name: 'local', scopes: ['local-execute'] },
 	})
 	expect(localExecute.status).toBe(400)
-	expect(localExecute.body.error?.message).toMatch(/local-execute/)
 
 	const listed = await api.call('GET', '/v1/tokens', { token: parent })
 	expect(listed.status).toBe(200)

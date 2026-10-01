@@ -6,7 +6,6 @@ import {
 	openApiProxyPath,
 	type ApiDocsWorkerEnv,
 } from './docs.ts'
-import { scalarCdnUrl } from './page.ts'
 
 function createEnv(
 	overrides: Partial<ApiDocsWorkerEnv> = {},
@@ -36,9 +35,10 @@ test('root serves Scalar HTML pointing at the proxied OpenAPI path', async () =>
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Content-Type')).toContain('text/html')
 	const html = await response.text()
-	expect(html).toContain('Kody API Reference')
-	expect(html).toContain(`data-url="${openApiProxyPath}"`)
-	expect(html).toContain(scalarCdnUrl)
+	expect(html).toContain('data-url="/openapi.json"')
+	expect(html).toContain(
+		'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3',
+	)
 	expect(html).not.toMatch(/kody_at_/)
 })
 

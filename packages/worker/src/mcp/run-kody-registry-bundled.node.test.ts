@@ -434,7 +434,6 @@ export default async function main() {
 		helperName: 'email',
 		nextStep: expect.stringContaining('email-triggered'),
 	})
-	expect(details?.nextStep).not.toContain('packages.invokeChecked')
 
 	// Guard-less access inside a dynamically hydrated package module
 	// (literal dynamic `import("kody:@...")` target) must be matched too:

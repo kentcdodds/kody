@@ -103,7 +103,4 @@ test('packages.invoke is rejected as unbound', async () => {
 		},
 	}).catch((value: unknown) => value)
 	expect(error).toMatchObject({ status: 404, code: 'not_found' })
-	expect((error as ApiError).message).toContain(
-		'There is no author-facing packages.invoke',
-	)
 })

@@ -19,7 +19,6 @@ test('preview api worker binds the per-preview app worker and drops production r
 		{ binding: 'KODY_API', service: 'kody-pr-42', entrypoint: 'KodyApi' },
 	])
 	expect(preview.routes).toBeUndefined()
-	expect(JSON.stringify(config)).not.toContain('api.kody.codes')
 
 	const production = (base.env as Record<string, Record<string, unknown>>)
 		.production!

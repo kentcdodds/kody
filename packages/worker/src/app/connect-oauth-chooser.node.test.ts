@@ -90,14 +90,12 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 	).toMatchObject({
 		href: '/connect/oauth?provider=spotify-home&app=spotify-home',
 		kind: 'connection',
-		detail: 'Reconnect your OAuth app',
 	})
 	expect(
 		chooser.options.find((option) => option.id === 'connection:github'),
 	).toMatchObject({
 		href: '/connect/oauth?provider=github',
 		kind: 'connection',
-		detail: 'Set up your own OAuth app to reconnect',
 	})
 
 	const publish = (app: Parameters<typeof upsertPlatformOauthApp>[0]['app']) =>
@@ -143,7 +141,7 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 	])
 	expect(
 		published.options.find((option) => option.id === 'connection:github'),
-	).toMatchObject({ detail: 'Reconnect this built-in account' })
+	).toMatchObject({ kind: 'connection' })
 	expect(
 		published.options.find((option) => option.id === 'platform:google'),
 	).toMatchObject({

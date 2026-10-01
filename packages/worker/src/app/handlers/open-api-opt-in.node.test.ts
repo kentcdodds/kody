@@ -1,10 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
-import {
-	localExecuteFlagKey,
-	mcpApiToolFlagKey,
-} from '#universal/feature-flags/registry.ts'
-import { routes } from '#universal/routes.ts'
 import type * as FeatureFlagService from '#worker/feature-flags/service.ts'
 import { createOpenApiOptInHandler } from './open-api-opt-in.ts'
 
@@ -84,12 +79,12 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 	const optedIn = await handler.handler(createPostRequest())
 	expect(optedIn.status).toBe(302)
 	expect(optedIn.headers.get('Location')).toBe(
-		`https://kody.example${routes.docDetail.href({ slug: 'open-api' })}`,
+		'https://kody.example/docs/open-api',
 	)
 	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledWith(
 		env.APP_DB,
 		{
-			key: mcpApiToolFlagKey,
+			key: 'mcp-api-tool',
 			userId: 7,
 			enabled: true,
 			updatedBy: 7,
@@ -98,7 +93,7 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledWith(
 		env.APP_DB,
 		{
-			key: localExecuteFlagKey,
+			key: 'local-execute',
 			userId: 7,
 			enabled: true,
 			updatedBy: 7,
@@ -110,7 +105,7 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 			action: 'feature_flag_self_opt_in',
 			result: 'success',
 			email: 'jane@example.com',
-			reason: `key=${mcpApiToolFlagKey},${localExecuteFlagKey}`,
+			reason: 'key=mcp-api-tool,local-execute',
 		}),
 	)
 
