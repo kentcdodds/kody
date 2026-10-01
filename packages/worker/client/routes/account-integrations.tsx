@@ -149,12 +149,14 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 	function finishOptimisticRemoval(options?: { reload?: boolean }) {
 		holdingOptimisticRemoval = false
+		// List and detail share one data latch key, so navigating between them
+		// never refetches on its own; queue the reload before either branch.
+		if (options?.reload) {
+			integrationsData.reload(handle, getCurrentHref())
+		}
 		if (currentSelectionMissing()) {
 			navigate(listHref())
 			return
-		}
-		if (options?.reload) {
-			integrationsData.reload(handle, getCurrentHref())
 		}
 		handle.update()
 	}
