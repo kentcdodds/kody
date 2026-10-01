@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	apiTokenScopeDescriptions,
+	apiTokenScopeSatisfies,
 	apiTokenScopes,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
@@ -16,7 +17,7 @@ import {
 	toApiTokenView,
 } from '#worker/api-tokens/service.ts'
 import { type ApiInvocationContext } from './context.ts'
-import { notFound } from './errors.ts'
+import { ApiError, notFound } from './errors.ts'
 import {
 	parseNativeInput,
 	requireTokenPrincipal,
@@ -121,7 +122,43 @@ function userIdOf(ctx: ApiInvocationContext) {
 	return ctx.callerContext.user.userId
 }
 
+/**
+ * Rotating returns a fresh secret for the target, so a token may only rotate
+ * another token it could have minted: every target scope held, and no later
+ * absolute expiry.
+ */
+async function assertCallerMayRotate(
+	ctx: ApiInvocationContext,
+	tokenId: string,
+) {
+	if (ctx.principal.kind !== 'token') return
+	const caller = ctx.principal.token
+	if (caller.id === tokenId) return
+	const target = await getApiTokenRecord({
+		db: ctx.env.APP_DB,
+		userId: userIdOf(ctx),
+		tokenId,
+	})
+	if (!target) return
+	const missing = target.scopes.filter(
+		(scope) => !apiTokenScopeSatisfies(caller.scopes, scope),
+	)
+	const outlives =
+		Date.parse(target.max_expires_at) > Date.parse(caller.max_expires_at)
+	if (missing.length === 0 && !outlives) return
+	throw new ApiError({
+		status: 403,
+		code: 'insufficient_scope',
+		message:
+			missing.length > 0
+				? `This API token cannot rotate a token with scopes it does not hold: ${missing.join(', ')}.`
+				: 'This API token cannot rotate a token that outlives it.',
+		details: { missing_scopes: missing },
+	})
+}
+
 async function rotateOrThrow(ctx: ApiInvocationContext, tokenId: string) {
+	await assertCallerMayRotate(ctx, tokenId)
 	const rotated = await rotateApiToken({
 		db: ctx.env.APP_DB,
 		userId: userIdOf(ctx),
@@ -255,7 +292,7 @@ export const tokenOperationDefinitions: Record<
 	tokenRotate: {
 		summary: 'Rotate an API token',
 		description:
-			'Replace an active token with a new value. The old value stops working immediately; scopes and max_expires_at are unchanged.',
+			'Replace an active token with a new value. The old value stops working immediately; scopes and max_expires_at are unchanged. A token-authenticated caller can only rotate tokens whose scopes it holds and that do not outlive it.',
 		inputSchema: tokenIdInputSchema,
 		outputSchema: tokenSecretViewSchema,
 		readOnly: false,

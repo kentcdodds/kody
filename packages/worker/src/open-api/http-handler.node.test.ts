@@ -230,6 +230,89 @@ test('token minting enforces parent scopes and the local-execute flag', async ()
 	expect(JSON.stringify(listed.body)).not.toContain(child.body['token'])
 })
 
+test('a token can only rotate tokens it could have minted', async () => {
+	const api = await createApi()
+	const rotator = await api.mint(['tokens:write'])
+	const stronger = await mintApiToken({
+		db: api.db,
+		userId: api.userId,
+		name: 'stronger',
+		scopes: ['secrets:write'],
+		createdVia: 'mcp-api',
+		allowLocalExecute: false,
+	})
+	const denied = await api.call('POST', `/v1/tokens/${stronger.id}/rotate`, {
+		token: rotator,
+	})
+	expect(denied.status).toBe(403)
+	expect(denied.body.error).toMatchObject({
+		code: 'insufficient_scope',
+		details: { missing_scopes: ['secrets:write'] },
+	})
+	expect(JSON.stringify(denied.body)).not.toMatch(/kody_at_/)
+	const stillWorks = await api.call('GET', '/v1/secrets', {
+		token: stronger.token,
+	})
+	expect(stillWorks.status).toBe(200)
+
+	const longerLived = await mintApiToken({
+		db: api.db,
+		userId: api.userId,
+		name: 'longer',
+		scopes: ['tokens:write'],
+		maxLifetimeSeconds: 7 * 24 * 60 * 60,
+		createdVia: 'mcp-api',
+		allowLocalExecute: false,
+	})
+	const outlives = await api.call(
+		'POST',
+		`/v1/tokens/${longerLived.id}/rotate`,
+		{ token: rotator },
+	)
+	expect(outlives.status).toBe(403)
+	expect(outlives.body.error?.message).toMatch(/outlives/)
+
+	const peer = await mintApiToken({
+		db: api.db,
+		userId: api.userId,
+		name: 'peer',
+		scopes: ['tokens:read'],
+		maxLifetimeSeconds: 60 * 60,
+		createdVia: 'api',
+		allowLocalExecute: false,
+	})
+	const allowed = await api.call('POST', `/v1/tokens/${peer.id}/rotate`, {
+		token: rotator,
+	})
+	expect(allowed.status).toBe(200)
+	expect(allowed.body['token']).toMatch(/^kody_at_/)
+})
+
+test('reported expiry includes the slide from the current request', async () => {
+	const api = await createApi()
+	const minted = await mintApiToken({
+		db: api.db,
+		userId: api.userId,
+		name: 'aged',
+		scopes: ['account:read'],
+		createdVia: 'api',
+		allowLocalExecute: false,
+		now: new Date(Date.now() - 5 * 60 * 1000),
+	})
+	const before = Date.now()
+	const current = await api.call('GET', '/v1/tokens/current', {
+		token: minted.token,
+	})
+	expect(current.status).toBe(200)
+	const reported = Date.parse(String(current.body['expires_at']))
+	expect(reported).toBeGreaterThan(Date.parse(minted.expires_at))
+	expect(reported).toBeGreaterThanOrEqual(before + 15 * 60 * 1000 - 1000)
+	const stored = api.sqlite
+		.prepare(`SELECT expires_at FROM api_tokens WHERE id = ?`)
+		.get(minted.id) as { expires_at: string }
+	expect(stored.expires_at).toBe(current.body['expires_at'])
+})
+
 test('local-execute tokens are mintable only with the flag and a holding parent', async () => {
 	const api = await createApi({ localExecuteFlag: true })
 	const parent = await mintWithLocalExecute(api)
@@ -321,6 +404,14 @@ test('capability proxy runs kody:runtime calls and meters each hop', async () =>
 	expect(unknown.status).toBe(404)
 	expect(unknown.body.error?.message).toContain('kody.noSuchCapability')
 
+	for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
+		const response = await api.call('POST', '/v1/capability-proxy/call', {
+			token,
+			body: { path: ['kody', inherited], args: [] },
+		})
+		expect(response.status).toBe(404)
+	}
+
 	const unknownRoot = await api.call('POST', '/v1/capability-proxy/call', {
 		token,
 		body: { path: ['fetch', 'raw'], args: [] },
@@ -345,7 +436,7 @@ test('capability proxy runs kody:runtime calls and meters each hop', async () =>
 			`SELECT event_count FROM usage_rollups WHERE metric = 'api_call' AND user_id = ?`,
 		)
 		.get(api.userId) as { event_count: number }
-	expect(usage.event_count).toBe(5)
+	expect(usage.event_count).toBe(8)
 	const executeUsage = api.sqlite
 		.prepare(
 			`SELECT COUNT(*) AS count FROM usage_rollups WHERE metric IN ('execute', 'dynamic_worker_day') AND user_id = ?`,

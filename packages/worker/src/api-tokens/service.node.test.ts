@@ -16,6 +16,7 @@ import {
 	mintApiToken,
 	revokeApiToken,
 	rotateApiToken,
+	slideApiTokenExpiry,
 	touchApiToken,
 } from './service.ts'
 
@@ -132,23 +133,50 @@ test('use slides expiry forward, debounced, and never past the absolute expiry',
 	})
 	const load = async () =>
 		(await getApiTokenRecord({ db, userId, tokenId: minted.id }))!
+	const touch = async (seconds: number) => {
+		const slid = slideApiTokenExpiry(await load(), at(seconds))
+		return slid ? touchApiToken({ db, record: slid }) : false
+	}
 
-	expect(await touchApiToken({ db, record: await load(), now: at(200) })).toBe(
-		true,
-	)
+	expect(await touch(200)).toBe(true)
 	expect((await load()).expires_at).toBe(at(500).toISOString())
+	expect((await load()).last_used_at).toBe(at(200).toISOString())
 
-	expect(await touchApiToken({ db, record: await load(), now: at(230) })).toBe(
-		false,
-	)
+	expect(await touch(230)).toBe(false)
 
-	expect(await touchApiToken({ db, record: await load(), now: at(450) })).toBe(
-		true,
-	)
+	expect(await touch(450)).toBe(true)
 	expect((await load()).expires_at).toBe(at(600).toISOString())
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(601) }),
 	).toEqual({ ok: false, reason: 'expired' })
+})
+
+test('a token used at its minimum idle TTL keeps at least three quarters of it', async () => {
+	const { db } = createDb()
+	const minted = await mintApiToken({
+		db,
+		userId,
+		name: 'minimum',
+		scopes: ['runs:read'],
+		idleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
+		createdVia: 'api',
+		allowLocalExecute: false,
+		now: start,
+	})
+	let record = (await getApiTokenRecord({ db, userId, tokenId: minted.id }))!
+	for (let seconds = 5; seconds <= 600; seconds += 5) {
+		const slid = slideApiTokenExpiry(record, at(seconds))
+		if (slid) {
+			await touchApiToken({ db, record: slid })
+			record = slid
+		}
+		expect(
+			Date.parse(record.expires_at) - at(seconds).getTime(),
+		).toBeGreaterThanOrEqual(apiTokenPolicy.minIdleTtlSeconds * 750)
+	}
+	expect(
+		await authenticateApiToken({ db, token: minted.token, now: at(601) }),
+	).toMatchObject({ ok: true })
 })
 
 test('rotate invalidates the old secret and keeps scopes and absolute expiry', async () => {

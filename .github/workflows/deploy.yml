@@ -165,7 +165,7 @@ jobs:
           fi
 
           if grep -E \
-            '^(\.github/workflows/deploy\.yml|packages/api-worker/)' \
+            '^(\.github/workflows/deploy\.yml|packages/api-worker/|packages/shared/src/(api-token-format|base64)\.ts$)' \
             "$PATH_FILTER_LIST" >/dev/null; then
             echo "deploy_api_worker=true" >> "$GITHUB_OUTPUT"
             echo "API worker deploy: path filter matched."

@@ -102,7 +102,13 @@ function mayContainApiToken(value: unknown) {
 	if (typeof value === 'string') return value.includes(apiTokenPrefix)
 	if (value === null || typeof value !== 'object') return false
 	try {
-		return JSON.stringify(value)?.includes(apiTokenPrefix) ?? false
+		return (
+			JSON.stringify(value, (_key, entry: unknown) =>
+				entry instanceof Error
+					? { message: entry.message, stack: entry.stack, cause: entry.cause }
+					: entry,
+			)?.includes(apiTokenPrefix) ?? false
+		)
 	} catch {
 		return true
 	}

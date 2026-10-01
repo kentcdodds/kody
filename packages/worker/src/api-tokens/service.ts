@@ -30,7 +30,10 @@ export const apiTokenPolicy = {
 	maxMaxLifetimeSeconds: 7 * 24 * 60 * 60,
 	maxActiveTokensPerUser: 50,
 	maxNameLength: 100,
-	/** Sliding-expiry writes are skipped when the last one is this recent. */
+	/**
+	 * Sliding-expiry writes are skipped when they would extend the expiry by
+	 * less than this (or a quarter of the idle TTL, whichever is smaller).
+	 */
 	touchDebounceSeconds: 60,
 	/** Revoked or expired rows are deleted this long after they stop working. */
 	inactiveRetentionSeconds: 7 * 24 * 60 * 60,
@@ -504,35 +507,46 @@ export async function authenticateApiToken(input: {
 }
 
 /**
- * Slide `expires_at` forward after a successful request, capped at the
- * absolute expiry. Skipped when the token was touched within the debounce
- * window so hot tokens do not write D1 on every call.
+ * The token as it stands after a successful request at `now`: `expires_at`
+ * slid forward by the idle TTL, capped at the absolute expiry. After the first
+ * use, returns `null` when the extension is smaller than the debounce window, so hot tokens do
+ * not write D1 on every call. The window is at most a quarter of the idle
+ * TTL, so a token in use always keeps at least three quarters of it.
  */
+export function slideApiTokenExpiry(
+	record: ApiTokenRecord,
+	now: Date = new Date(),
+): ApiTokenRecord | null {
+	const expiresAt = slidingExpiry({
+		now,
+		idleTtlSeconds: record.idle_ttl_seconds,
+		maxExpiresAt: record.max_expires_at,
+	})
+	const debounceMs =
+		Math.min(apiTokenPolicy.touchDebounceSeconds, record.idle_ttl_seconds / 4) *
+		1000
+	if (
+		record.last_used_at !== null &&
+		Date.parse(expiresAt) - Date.parse(record.expires_at) < debounceMs
+	) {
+		return null
+	}
+	return { ...record, expires_at: expiresAt, last_used_at: now.toISOString() }
+}
+
+/** Persist a record returned by `slideApiTokenExpiry`. */
 export async function touchApiToken(input: {
 	db: D1Database
 	record: ApiTokenRecord
-	now?: Date
 }) {
-	const now = input.now ?? new Date()
-	const lastUsedMs = input.record.last_used_at
-		? Date.parse(input.record.last_used_at)
-		: Number.NEGATIVE_INFINITY
-	if (now.getTime() - lastUsedMs < apiTokenPolicy.touchDebounceSeconds * 1000) {
-		return false
-	}
-	const expiresAt = slidingExpiry({
-		now,
-		idleTtlSeconds: input.record.idle_ttl_seconds,
-		maxExpiresAt: input.record.max_expires_at,
-	})
-	const nowIso = now.toISOString()
+	const usedAt = input.record.last_used_at ?? new Date().toISOString()
 	const result = await input.db
 		.prepare(
 			`UPDATE api_tokens
 			SET expires_at = ?, last_used_at = ?
 			WHERE id = ? AND revoked_at IS NULL AND expires_at > ?`,
 		)
-		.bind(expiresAt, nowIso, input.record.id, nowIso)
+		.bind(input.record.expires_at, usedAt, input.record.id, usedAt)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

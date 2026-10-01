@@ -15,6 +15,18 @@ test('redacts Kody API tokens without any tracked secret', () => {
 	expect(redactor.redactUnknown(untouched)).toBe(untouched)
 })
 
+test('redacts API tokens inside Error messages without tracked secrets', () => {
+	const redactor = createExecutionSecretRedactor()
+	const redacted = redactor.redactUnknown({
+		error: new Error(`fetch failed with ${apiToken}`),
+	}) as { error: unknown }
+	expect(JSON.stringify(redacted)).not.toContain(apiToken)
+	const direct = redactor.redactUnknown(new Error(`bad ${apiToken}`))
+	expect(direct instanceof Error ? direct.message : String(direct)).toBe(
+		'bad kody_at_[redacted]',
+	)
+})
+
 test('still redacts tracked secret values alongside API tokens', () => {
 	const redactor = createExecutionSecretRedactor()
 	redactor.track('hunter2')

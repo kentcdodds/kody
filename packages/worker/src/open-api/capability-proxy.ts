@@ -139,7 +139,7 @@ async function callKodyPath(input: {
 		return tool(args[0])
 	}
 	const [, name] = path
-	const tool = name ? tools[name] : undefined
+	const tool = name && Object.hasOwn(tools, name) ? tools[name] : undefined
 	if (path.length !== 2 || !tool) {
 		throw notFound(`Unknown runtime function kody.${path.slice(1).join('.')}.`)
 	}

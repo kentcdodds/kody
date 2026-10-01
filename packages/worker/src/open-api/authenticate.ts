@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	authenticateApiToken,
 	getApiTokenIssuedAtMs,
+	slideApiTokenExpiry,
 	touchApiToken,
 	type ApiTokenAuthenticationFailure,
 } from '#worker/api-tokens/service.ts'
@@ -102,13 +103,16 @@ export async function authenticateApiRequest(input: {
 			true,
 		)
 	}
-	input.waitUntil(
-		touchApiToken({ db: input.env.APP_DB, record, now }).catch(
-			(error: unknown) => {
-				console.warn('api-token-touch-failed', record.id, error)
-			},
-		),
-	)
+	const slid = slideApiTokenExpiry(record, now)
+	if (slid) {
+		input.waitUntil(
+			touchApiToken({ db: input.env.APP_DB, record: slid }).catch(
+				(error: unknown) => {
+					console.warn('api-token-touch-failed', record.id, error)
+				},
+			),
+		)
+	}
 	return createApiInvocationContext({
 		env: input.env,
 		callerContext: {
@@ -119,7 +123,7 @@ export async function authenticateApiRequest(input: {
 			}),
 			user: authContext.user,
 		},
-		principal: { kind: 'token', token: record },
+		principal: { kind: 'token', token: slid ?? record },
 		waitUntil: input.waitUntil,
 	})
 }
