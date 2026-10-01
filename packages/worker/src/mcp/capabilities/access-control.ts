@@ -279,6 +279,11 @@ export function filterCapabilityRegistryMcpServersForCaller(
 	registry: BuiltCapabilityRegistry,
 	visibleServerIds: ReadonlySet<string>,
 ): BuiltCapabilityRegistry {
+	// Discovery callers and tests sometimes pass a partial registry (specs
+	// only). Without a capabilityList there is nothing to hide.
+	if (!Array.isArray(registry.capabilityList)) {
+		return registry
+	}
 	const capabilityList = registry.capabilityList.filter((capability) => {
 		if (capability.source !== 'mcp-server' || !capability.mcpServer) {
 			return true
