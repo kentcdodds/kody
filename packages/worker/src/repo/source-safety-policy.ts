@@ -1,4 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	isCloudflareOpaqueInternalError,
+	isCloudflareOpaqueInternalErrorMessage,
+} from '#worker/cloudflare-opaque-internal-error.ts'
 import { loadPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	requiresPrivateVisibilityConfirmation,
@@ -86,6 +90,97 @@ export function buildArtifactsGitReadTimeoutMessage(input: {
 	}
 	lines.push(input.reason)
 	return lines.join(' ')
+}
+
+/**
+ * Stable phrase for Artifacts REST opaque internal errors (KODY-8F). Same
+ * retry-oriented class as `buildArtifactsGitReadTimeoutMessage` — not a
+ * source-recovery problem. Matched by MCP observability and Sentry beforeSend.
+ */
+export const artifactsOpaqueInternalRetryMessagePhrase =
+	'hit a transient Cloudflare Artifacts internal error.'
+
+export function buildArtifactsOpaqueInternalErrorMessage(input: {
+	operation: string
+	reason: string
+}) {
+	const lines = [
+		`${input.operation} ${artifactsOpaqueInternalRetryMessagePhrase}`,
+		'Retry the call.',
+	]
+	if (input.operation === 'packageGetGitRemote') {
+		lines.push(
+			'Package authoring can use packageSave when packageGetGitRemote keeps hitting this Artifacts platform error.',
+		)
+	}
+	lines.push(input.reason)
+	return lines.join(' ')
+}
+
+export function isArtifactsOpaqueInternalRetryMessage(message: string) {
+	return (
+		message.includes(artifactsOpaqueInternalRetryMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
+}
+
+/**
+ * Source-safety recovery wraps whose reason is the bare opaque Cloudflare /
+ * Artifacts internal-error sentence. Real recovery failures (missing
+ * snapshot, HEAD mismatch, repo not found, …) stay unmatched so Sentry still
+ * sees them. Backstop for paths that wrapped before the retry branch existed
+ * (KODY-8F).
+ */
+export function isSourceRecoveryOpaqueInternalErrorMessage(message: string) {
+	if (
+		!message.includes('stopped by the production package source safety policy.')
+	) {
+		return false
+	}
+	if (!message.includes('Stop and report this source recovery problem')) {
+		return false
+	}
+	const match =
+		/at published commit "[^"]*": (.+) Stop and report this source recovery problem/.exec(
+			message,
+		)
+	const reason = match?.[1]
+	return (
+		typeof reason === 'string' && isCloudflareOpaqueInternalErrorMessage(reason)
+	)
+}
+
+function rethrowPublishedPackageSourceRepoArtifactsError(input: {
+	source: EntitySourceRow
+	operation: string
+	error: unknown
+}): never {
+	if (isArtifactsGitTimeoutError(input.error)) {
+		throw new Error(
+			buildArtifactsGitReadTimeoutMessage({
+				operation: input.operation,
+				reason: getErrorMessage(input.error),
+			}),
+			{ cause: input.error },
+		)
+	}
+	if (isCloudflareOpaqueInternalError(input.error)) {
+		throw new Error(
+			buildArtifactsOpaqueInternalErrorMessage({
+				operation: input.operation,
+				reason: getErrorMessage(input.error),
+			}),
+			{ cause: input.error },
+		)
+	}
+	throw new Error(
+		buildSourceRecoveryProblemMessage({
+			source: input.source,
+			operation: input.operation,
+			reason: getErrorMessage(input.error),
+		}),
+		{ cause: input.error },
+	)
 }
 
 function buildDestructiveOverwriteConfirmationMessage(input: {
@@ -236,15 +331,11 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			input.source.repo_id,
 		)
 	} catch (error) {
-		const message = getErrorMessage(error)
-		throw new Error(
-			buildSourceRecoveryProblemMessage({
-				source: input.source,
-				operation: input.operation,
-				reason: message,
-			}),
-			{ cause: error },
-		)
+		rethrowPublishedPackageSourceRepoArtifactsError({
+			source: input.source,
+			operation: input.operation,
+			error,
+		})
 	}
 	if (!repo) {
 		throw new Error(
@@ -273,24 +364,11 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			head = await resolveArtifactDefaultBranchHead({ repo })
 		}
 	} catch (error) {
-		if (isArtifactsGitTimeoutError(error)) {
-			throw new Error(
-				buildArtifactsGitReadTimeoutMessage({
-					operation: input.operation,
-					reason: getErrorMessage(error),
-				}),
-				{ cause: error },
-			)
-		}
-		const message = getErrorMessage(error)
-		throw new Error(
-			buildSourceRecoveryProblemMessage({
-				source: input.source,
-				operation: input.operation,
-				reason: message,
-			}),
-			{ cause: error },
-		)
+		rethrowPublishedPackageSourceRepoArtifactsError({
+			source: input.source,
+			operation: input.operation,
+			error,
+		})
 	}
 	if (!head) {
 		throw new Error(

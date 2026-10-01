@@ -5,6 +5,11 @@ import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
 } from './entitlements/errors.ts'
+import {
+	buildArtifactsOpaqueInternalErrorMessage,
+	buildSourceRecoveryProblemMessage,
+} from './repo/source-safety-policy.ts'
+import { type EntitySourceRow } from './repo/types.ts'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
 	cloudflareArtifactsOpaqueInternalErrorMessage,
@@ -47,6 +52,27 @@ const cimdFetch404 =
 	'CIMD fetch failed for https://chatgpt.com/oauth/client.json: Failed to fetch client metadata: HTTP 404'
 const userModuleBuildFailure =
 	'Build failed with 1 error:\nvirtual:.__kody_root__/entry.ts:11:49: ERROR: Unexpected "^"'
+
+function packageSourceForSentry(
+	overrides: Partial<EntitySourceRow> = {},
+): EntitySourceRow {
+	return {
+		id: '3b0c33c6-20b2-447f-98b1-fd165f8fabfe',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'repo-1',
+		published_commit: '90b7cf67f0d3e29ea49eeccbf0710915cb6f9527',
+		indexed_commit: '90b7cf67f0d3e29ea49eeccbf0710915cb6f9527',
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: '2026-06-06T00:00:00.000Z',
+		updated_at: '2026-06-06T00:00:00.000Z',
+		...overrides,
+	}
+}
 
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
 	// Isolate resource-limit resets are the only DO resets that isolated
@@ -114,6 +140,17 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		// Opaque Cloudflare internal error.
 		cloudflareOpaqueInternalErrorMessage,
 		`Error: ${cloudflareOpaqueInternalErrorMessage}`,
+		// KODY-8F: source-safety retry wrapper and recovery wrap whose reason is
+		// the opaque Artifacts / Cloudflare sentence.
+		buildArtifactsOpaqueInternalErrorMessage({
+			operation: 'packageGetGitRemote',
+			reason: cloudflareOpaqueInternalErrorMessage,
+		}),
+		buildSourceRecoveryProblemMessage({
+			source: packageSourceForSentry(),
+			operation: 'packageGetGitRemote',
+			reason: cloudflareOpaqueInternalErrorMessage,
+		}),
 		// Artifacts git protocol HTTP 5xx wrappers (KODY-CLOUDFLARE-4Y / 4Z / 50),
 		// packfile corruption (KODY-CLOUDFLARE-55 / 56), remote timeouts.
 		`Artifacts listServerRefs failed for ${artifactsRepo}: HTTP Error: 500 Internal Server Error`,
@@ -163,6 +200,12 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		'queue is overloaded while uploading...',
 		'internal error',
 		`repoOpenSession could not recover: ${cloudflareOpaqueInternalErrorMessage}`,
+		// Genuine source-recovery wraps (missing snapshot, etc.) stay visible.
+		buildSourceRecoveryProblemMessage({
+			source: packageSourceForSentry(),
+			operation: 'packageGetGitRemote',
+			reason: 'no published source snapshot was found',
+		}),
 		'HTTP Error: 500 Internal Server Error',
 		'An internal error caused this command to fail.\n\nUnrelated isomorphic-git InternalError.',
 		'Cannot call write after a stream was destroyed',
@@ -219,6 +262,42 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			),
 		),
 	).toBeNull()
+	// KODY-8F: retry wrapper + bare opaque cause (or recovery wrap + cause).
+	expect(
+		filterSentryEvent(
+			exceptionEvent(
+				buildArtifactsOpaqueInternalErrorMessage({
+					operation: 'packageGetGitRemote',
+					reason: cloudflareOpaqueInternalErrorMessage,
+				}),
+				cloudflareOpaqueInternalErrorMessage,
+			),
+		),
+	).toBeNull()
+	expect(
+		filterSentryEvent(
+			exceptionEvent(
+				buildSourceRecoveryProblemMessage({
+					source: packageSourceForSentry(),
+					operation: 'packageGetGitRemote',
+					reason: cloudflareOpaqueInternalErrorMessage,
+				}),
+				cloudflareOpaqueInternalErrorMessage,
+			),
+		),
+	).toBeNull()
+	const missingSnapshotWrap = buildSourceRecoveryProblemMessage({
+		source: packageSourceForSentry(),
+		operation: 'packageGetGitRemote',
+		reason: 'no published source snapshot was found',
+	})
+	const missingSnapshotWithOpaqueCause = exceptionEvent(
+		missingSnapshotWrap,
+		cloudflareOpaqueInternalErrorMessage,
+	)
+	expect(filterSentryEvent(missingSnapshotWithOpaqueCause)).toBe(
+		missingSnapshotWithOpaqueCause,
+	)
 	for (const event of [
 		exceptionEvent(
 			'authorize could not recover after a CIMD metadata lookup.',

@@ -1,18 +1,36 @@
-import { expect, test } from 'vitest'
-import {
-	assertPackagePrivateVisibilityChangeAllowed,
-	assertPackageSourceOverwriteAllowed,
+import { expect, test, vi } from 'vitest'
+import { cloudflareOpaqueInternalErrorMessage } from '#worker/cloudflare-opaque-internal-error.ts'
+import { type EntitySourceRow } from './types.ts'
+
+const artifactsMock = vi.hoisted(() => ({
+	resolveExistingArtifactSourceRepo: vi.fn(),
+	resolveArtifactDefaultBranchHead: vi.fn(),
+}))
+
+vi.mock('./artifacts.ts', () => ({
+	resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
+		artifactsMock.resolveExistingArtifactSourceRepo(...args),
+	resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
+		artifactsMock.resolveArtifactDefaultBranchHead(...args),
+}))
+
+const {
+	assertPublishedPackageSourceRepoHead,
 	assertRestorablePackageSourceSnapshot,
 	buildArtifactsGitReadTimeoutMessage,
+	buildArtifactsOpaqueInternalErrorMessage,
 	buildPublishedCommitHeadMismatchCallerMessage,
 	buildSourceRecoveryProblemMessage,
 	destructiveOverwriteConfirmationField,
+	isArtifactsOpaqueInternalRetryMessage,
 	isDestructiveOverwriteConfirmationMessage,
 	isPrivateVisibilityChangeConfirmationMessage,
 	isPublishedCommitHeadMismatchMessage,
+	isSourceRecoveryOpaqueInternalErrorMessage,
 	privateVisibilityChangeConfirmationField,
-} from './source-safety-policy.ts'
-import { type EntitySourceRow } from './types.ts'
+	assertPackagePrivateVisibilityChangeAllowed,
+	assertPackageSourceOverwriteAllowed,
+} = await import('./source-safety-policy.ts')
 
 function packageSource(
 	overrides: Partial<EntitySourceRow> = {},
@@ -108,6 +126,62 @@ test('Artifacts git timeouts name packageSave only for packageGetGitRemote', () 
 		'repoOpenSession timed out reading the Artifacts git remote.',
 	)
 	expect(session).not.toContain('packageSave')
+})
+
+test('opaque Cloudflare Artifacts internals become retry messages, not source-recovery wraps', async () => {
+	const opaque = new Error(cloudflareOpaqueInternalErrorMessage)
+	artifactsMock.resolveExistingArtifactSourceRepo.mockReset()
+	artifactsMock.resolveArtifactDefaultBranchHead.mockReset()
+	artifactsMock.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(),
+		createToken: vi.fn(),
+	})
+	artifactsMock.resolveArtifactDefaultBranchHead.mockRejectedValue(opaque)
+
+	const rejected = await assertPublishedPackageSourceRepoHead({
+		env: {} as Env,
+		source: packageSource({
+			id: '3b0c33c6-20b2-447f-98b1-fd165f8fabfe',
+			published_commit: '90b7cf67f0d3e29ea49eeccbf0710915cb6f9527',
+		}),
+		operation: 'packageGetGitRemote',
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(rejected).toBeInstanceOf(Error)
+	const error = rejected as Error
+	expect(isArtifactsOpaqueInternalRetryMessage(error.message)).toBe(true)
+	expect(error.message).toContain('Retry the call.')
+	expect(error.message).toContain(cloudflareOpaqueInternalErrorMessage)
+	expect(error.message).not.toContain(
+		'stopped by the production package source safety policy',
+	)
+	expect(error.cause).toBe(opaque)
+
+	const wrap = buildSourceRecoveryProblemMessage({
+		source: packageSource(),
+		operation: 'packageGetGitRemote',
+		reason: cloudflareOpaqueInternalErrorMessage,
+	})
+	expect(isSourceRecoveryOpaqueInternalErrorMessage(wrap)).toBe(true)
+	expect(
+		isSourceRecoveryOpaqueInternalErrorMessage(
+			buildSourceRecoveryProblemMessage({
+				source: packageSource(),
+				operation: 'packageGetGitRemote',
+				reason: 'no published source snapshot was found',
+			}),
+		),
+	).toBe(false)
+	expect(
+		isArtifactsOpaqueInternalRetryMessage(
+			buildArtifactsOpaqueInternalErrorMessage({
+				operation: 'repoOpenSession',
+				reason: cloudflareOpaqueInternalErrorMessage,
+			}),
+		),
+	).toBe(true)
 })
 
 test('package source overwrite and private-visibility changes require explicit confirmation', async () => {

@@ -25,6 +25,7 @@ import {
 } from '#worker/repo/repo-session-caller-error.ts'
 import {
 	isDestructiveOverwriteConfirmationMessage,
+	isArtifactsOpaqueInternalRetryMessage,
 	isPrivateVisibilityChangeConfirmationMessage,
 } from '#worker/repo/source-safety-policy.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
@@ -223,6 +224,18 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
 					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Artifacts REST opaque internal errors remapped by source-safety to a
+	// retry-oriented message (KODY-8F). Same caller-retryable class as
+	// Artifacts git timeouts — keep volume on mcp-event lines.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				isArtifactsOpaqueInternalRetryMessage(entry.message),
 		)
 	) {
 		return true

@@ -3,6 +3,7 @@ import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
+import { isCloudflareOpaqueInternalErrorMessage } from './cloudflare-opaque-internal-error.ts'
 import { isCimdUnknownClientSentryMessage } from './oauth-cimd-error.ts'
 import {
 	isComputeOverageLimitError,
@@ -10,7 +11,17 @@ import {
 } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
+import {
+	isArtifactsOpaqueInternalRetryMessage,
+	isSourceRecoveryOpaqueInternalErrorMessage,
+} from './repo/source-safety-policy.ts'
 import { isUserCodeError } from './user-code-error.ts'
+
+export {
+	cloudflareArtifactsOpaqueInternalErrorMessage,
+	cloudflareOpaqueInternalErrorMessage,
+	isCloudflareOpaqueInternalErrorMessage,
+} from './cloudflare-opaque-internal-error.ts'
 
 function sentryEventMessages(event: ErrorEvent) {
 	return [
@@ -390,32 +401,26 @@ export function filterDurableObjectOverloadedSentryEvent(event: ErrorEvent) {
 /**
  * Bare Cloudflare platform "internal error" with no support reference and no
  * app context. Observed on `repoOpenSession` when Durable Object / Artifacts
- * infrastructure fails opaquely (KODY-CLOUDFLARE-4H). Distinct from D1/DO
- * storage resets that carry `reference = <id>`, and from bare `internal error`
- * which stays Sentry-visible because it is too short to attribute safely.
+ * infrastructure fails opaquely (KODY-CLOUDFLARE-4H) and on Artifacts REST
+ * during package source-safety checks (KODY-8F). Matcher lives in
+ * `cloudflare-opaque-internal-error.ts` so repo/ source-safety can share it
+ * without importing this Sentry options module.
  *
- * Also matches Artifacts `INTERNAL_ERROR` (10400) wording from the public docs.
- * Require the exact sentence (optional trailing period / `Error:` prefix) so
- * wrapped recovery messages stay visible.
+ * Drop when every non-empty exception / message value is one of:
+ * - the bare opaque Cloudflare / Artifacts sentence
+ * - the source-safety retry wrapper for that blip
+ * - a source-recovery wrap whose reason is that opaque sentence
+ *
+ * Real recovery wraps (missing snapshot, HEAD mismatch, repo not found, …)
+ * stay Sentry-visible.
  */
-export const cloudflareOpaqueInternalErrorMessage =
-	'An internal error occurred.'
-
-export const cloudflareArtifactsOpaqueInternalErrorMessage =
-	'An unexpected internal error occurred.'
-
-function normalizeCloudflareOpaqueInternalErrorMessage(message: string) {
-	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
-	return withoutErrorPrefix.endsWith('.')
-		? withoutErrorPrefix
-		: `${withoutErrorPrefix}.`
-}
-
-export function isCloudflareOpaqueInternalErrorMessage(message: string) {
-	const normalized = normalizeCloudflareOpaqueInternalErrorMessage(message)
+export function isDroppableCloudflareOpaqueInternalErrorMessage(
+	message: string,
+) {
 	return (
-		normalized === cloudflareOpaqueInternalErrorMessage ||
-		normalized === cloudflareArtifactsOpaqueInternalErrorMessage
+		isCloudflareOpaqueInternalErrorMessage(message) ||
+		isArtifactsOpaqueInternalRetryMessage(message) ||
+		isSourceRecoveryOpaqueInternalErrorMessage(message)
 	)
 }
 
@@ -426,7 +431,9 @@ export function isCloudflareOpaqueInternalErrorSentryEvent(event: ErrorEvent) {
 	)
 	return (
 		messages.length > 0 &&
-		messages.every((message) => isCloudflareOpaqueInternalErrorMessage(message))
+		messages.every((message) =>
+			isDroppableCloudflareOpaqueInternalErrorMessage(message),
+		)
 	)
 }
 
@@ -635,7 +642,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// are dropped the same way — see filterDurableObjectOverloadedSentryEvent.
 		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts
 		// INTERNAL_ERROR wording) with no support reference are dropped the
-		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
+		// same way, including source-safety retry wrappers and recovery wraps
+		// whose reason is that opaque sentence (KODY-8F) — see
+		// filterCloudflareOpaqueInternalErrorSentryEvent.
 		// Artifacts git protocol HTTP 5xx / 429 wrappers (listServerRefs /
 		// git fetch / git clone), stalled info/refs deadlines, and
 		// isomorphic-git "Packfile payload corrupted" events are dropped the

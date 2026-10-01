@@ -14,7 +14,7 @@ import {
 	buildPublishedCommitHeadMismatchCallerMessage,
 	isPublishedCommitHeadMismatchMessage,
 } from '#worker/repo/source-safety-policy.ts'
-import { isCloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
+import { isCloudflareOpaqueInternalErrorMessage } from '#worker/cloudflare-opaque-internal-error.ts'
 import { resolveRepoSourceReference } from './repo-resolve-target.ts'
 import {
 	repoOpenSessionInputSchema,

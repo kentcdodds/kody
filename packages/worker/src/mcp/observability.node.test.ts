@@ -467,6 +467,21 @@ test('package name, missing-import, execute-input, and description caller errors
 		expectNoSentry()
 	}
 
+	const opaqueRetry = new Error(
+		[
+			'packageGetGitRemote hit a transient Cloudflare Artifacts internal error.',
+			'Retry the call.',
+			'An internal error occurred.',
+		].join(' '),
+		{ cause: new Error('An internal error occurred.') },
+	)
+	captureMcpEvents(() => {
+		logMcpEvent(
+			handlerFailure('packageGetGitRemote', 'packages', 'Error', opaqueRetry),
+		)
+	})
+	expectNoSentry()
+
 	captureMcpEvents(() => {
 		logMcpEvent(
 			handlerFailure(
