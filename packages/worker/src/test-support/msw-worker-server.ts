@@ -1,59 +1,32 @@
+import { FetchInterceptor } from '@mswjs/interceptors/fetch'
+import { defineNetwork, InterceptorSource } from 'msw/experimental'
 import { type HttpHandler } from 'msw'
-
-type MswWorkerServerOptions = {
-	onUnhandledFrame?: 'error' | 'warn' | 'bypass'
-}
+import { type MswNodeServerOptions } from './msw-node-server.ts'
 
 export function createMswWorkerServer(
 	handlers: Array<HttpHandler> = [],
-	options: MswWorkerServerOptions = {},
+	options: MswNodeServerOptions = {},
 ) {
-	let activeHandlers = [...handlers]
-	const originalFetch = globalThis.fetch
-	const onUnhandledFrame = options.onUnhandledFrame ?? 'error'
-	let requestSequence = 0
+	const network = defineNetwork({
+		sources: [
+			new InterceptorSource({ interceptors: [new FetchInterceptor()] }),
+		],
+		handlers,
+		onUnhandledFrame: options.onUnhandledFrame ?? 'error',
+		context: { quiet: true },
+	})
 
-	const interceptedFetch: typeof globalThis.fetch = async (input, init) => {
-		const request = new Request(input, init)
-		for (const handler of activeHandlers) {
-			const result = await handler.run({
-				request: request.clone() as Parameters<
-					HttpHandler['run']
-				>[0]['request'],
-				requestId: `msw-worker-${++requestSequence}`,
-			})
-			if (result?.response) return result.response
-		}
-
-		if (onUnhandledFrame === 'error') {
-			throw new Error(`Unhandled ${request.method} request to ${request.url}.`)
-		}
-		if (onUnhandledFrame === 'warn') {
-			console.warn(`Unhandled ${request.method} request to ${request.url}.`)
-		}
-		return originalFetch(input, init)
-	}
-
-	globalThis.fetch = interceptedFetch
-
-	function resetHandlers() {
-		for (const handler of activeHandlers) handler.reset()
-		activeHandlers = [...handlers]
-	}
-
-	function use(...nextHandlers: Array<HttpHandler>) {
-		activeHandlers = [...nextHandlers, ...activeHandlers]
-	}
+	network.enable()
 
 	function close() {
-		globalThis.fetch = originalFetch
+		network.disable()
 	}
 
 	return {
-		server: { use, resetHandlers, close },
+		server: network,
 		close,
-		resetHandlers,
-		use,
+		resetHandlers: network.resetHandlers,
+		use: network.use,
 		[Symbol.dispose]: close,
 	}
 }

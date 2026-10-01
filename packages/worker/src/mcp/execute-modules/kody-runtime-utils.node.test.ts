@@ -1,4 +1,3 @@
-import { FetchInterceptor } from '@mswjs/interceptors/fetch'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import {
@@ -99,47 +98,7 @@ function dispatchFor(kody: KodyNamespace) {
 	}
 }
 
-function createFetchInterceptor(options: {
-	fetchCalls: Array<RecordedRequest>
-	apiErrors: Array<Error>
-	apiResponses: Array<ApiResponseSpec>
-}) {
-	// MSW HttpResponse bodies hang on response.body.cancel(), which
-	// createAuthenticatedFetch uses during 401 retry. Native Response
-	// objects from FetchInterceptor avoid that Node/Vitest issue.
-	const apiErrors = [...options.apiErrors]
-	const apiResponses = [...options.apiResponses]
-	const interceptor = new FetchInterceptor()
-	interceptor.on('request', ({ request, controller }) => {
-		void (async () => {
-			try {
-				options.fetchCalls.push(request.clone())
-				const apiError = apiErrors.shift()
-				if (apiError) {
-					controller.errorWith(apiError)
-					return
-				}
-				const apiResponse = apiResponses.shift()
-				await controller.respondWith(
-					Response.json(apiResponse?.body ?? { ok: true }, {
-						status: apiResponse?.status ?? 200,
-						headers: { 'content-type': 'application/json' },
-					}),
-				)
-			} catch (error) {
-				controller.errorWith(error)
-			}
-		})()
-	})
-	interceptor.apply()
-	return {
-		[Symbol.dispose]() {
-			interceptor.dispose()
-		},
-	}
-}
-
-function createDirectFetchMock(options: {
+function createFetchMock(options: {
 	fetchCalls: Array<RecordedRequest>
 	apiErrors: Array<Error>
 	apiResponses: Array<ApiResponseSpec>
@@ -214,11 +173,8 @@ test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on 
 		const fetchCalls: Array<RecordedRequest> = []
 		const { kody, tokenRefreshCalls } = createKody(scenario.integration)
 		{
-			const createFetchMock =
-				scenario.apiErrors.length > 0
-					? createDirectFetchMock
-					: createFetchInterceptor
-			using _interceptor = createFetchMock({ fetchCalls, ...scenario })
+			// Native Response bodies avoid hanging when 401 retry cancels one.
+			using _fetchMock = createFetchMock({ fetchCalls, ...scenario })
 			const authenticatedFetch = await createAuthenticatedFetch(kody, name)
 			const response = await authenticatedFetch(scenario.path, scenario.init)
 			expect(await response.json()).toEqual({ ok: true })
@@ -259,7 +215,7 @@ test('createAuthenticatedFetch returns the original 401 without a retry when the
 			refreshTokenRotated: false,
 		})
 		{
-			using _interceptor = createFetchInterceptor({
+			using _fetchMock = createFetchMock({
 				fetchCalls,
 				apiErrors: [],
 				apiResponses: [{ status: 401, body: { error: 'bad_credentials' } }],
