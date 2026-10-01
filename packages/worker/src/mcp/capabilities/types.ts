@@ -2,11 +2,22 @@ import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { z, type ZodType } from 'zod'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
+import { type ApiTokenRecord } from '#worker/api-tokens/service.ts'
 import { type CapabilityDomain } from './domain-metadata.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpReportProgress } from '#mcp/progress.ts'
 
 export const emptyCapabilityInputSchema = z.object({})
+
+/**
+ * When a capability is invoked via the Open API (HTTP or MCP `api`), the
+ * authenticated principal. Absent for hosted MCP `execute` / CapabilityProxy.
+ * Token principals must not escalate scopes when minting credentials.
+ */
+export type CapabilityOpenApiPrincipal =
+	| { kind: 'token'; token: ApiTokenRecord }
+	| { kind: 'mcp' }
+	| { kind: 'mcp-oauth' }
 
 export type CapabilityContext = {
 	env: Env
@@ -22,6 +33,8 @@ export type CapabilityContext = {
 	 * `ctx.waitUntil`) so publish/install responses stay snappy.
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
+	/** Set only when this capability runs as an Open API operation. */
+	openApiPrincipal?: CapabilityOpenApiPrincipal
 }
 
 export type CapabilityResult = unknown

@@ -51,6 +51,7 @@ export const nativeApiOperationIds = [
 	'tokenGet',
 	'tokenRotate',
 	'tokenRevoke',
+	'cliCredentialBootstrapRedeem',
 	'capabilityProxySession',
 	'capabilityProxyCall',
 	'localExecutePackageGraph',
@@ -313,6 +314,20 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 	]),
 	nativeRoute('GET', '/v1/tokens', 'tokenList', 'tokens:read'),
 	nativeRoute('POST', '/v1/tokens', 'tokenCreate', 'tokens:write'),
+	...capabilityRoutes('tokens', [
+		[
+			'POST',
+			'/v1/tokens/bootstrap',
+			'cliCredentialBootstrap',
+			{ scope: 'tokens:write' },
+		],
+	]),
+	nativeRoute(
+		'POST',
+		'/v1/tokens/bootstrap/redeem',
+		'cliCredentialBootstrapRedeem',
+		null,
+	),
 	nativeRoute('GET', '/v1/tokens/current', 'tokenGetCurrent', null),
 	nativeRoute('POST', '/v1/tokens/current/rotate', 'tokenRotateCurrent', null),
 	nativeRoute('DELETE', '/v1/tokens/current', 'tokenRevokeCurrent', null),

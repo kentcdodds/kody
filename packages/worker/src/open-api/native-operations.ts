@@ -17,6 +17,7 @@ import {
 import { type NativeApiOperationId } from './operations.ts'
 import {
 	emptyInputSchema,
+	cliCredentialBootstrapRedeemDefinition,
 	tokenOperationDefinitions,
 } from './token-operations.ts'
 
@@ -111,6 +112,7 @@ export const nativeApiOperationDefinitions: Record<
 	NativeApiOperationDefinition
 > = {
 	...tokenOperationDefinitions,
+	cliCredentialBootstrapRedeem: cliCredentialBootstrapRedeemDefinition,
 	...capabilityProxyOperationDefinitions,
 	...localExecutePackageGraphOperationDefinitions,
 }

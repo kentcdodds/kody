@@ -16,8 +16,11 @@ import {
 	rotateApiToken,
 	toApiTokenView,
 } from '#worker/api-tokens/service.ts'
+import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
+import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 import { type ApiInvocationContext } from './context.ts'
-import { ApiError, notFound } from './errors.ts'
+import { ApiError, invalidRequest, notFound } from './errors.ts'
 import {
 	parseNativeInput,
 	requireTokenPrincipal,
@@ -313,3 +316,57 @@ export const tokenOperationDefinitions: Record<
 		},
 	},
 }
+
+const bootstrapRedeemInputSchema = z
+	.object({
+		code: z
+			.string()
+			.min(1)
+			.describe(
+				'One-shot `kody_bc_…` bootstrap code from `cliCredentialBootstrap`.',
+			),
+	})
+	.strict()
+
+async function allowLocalExecuteForStableUserId(
+	db: D1Database,
+	stableUserId: string,
+) {
+	const stable = normalizeStableUserId(stableUserId)
+	if (!stable) return false
+	const row = await db
+		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.bind(stable)
+		.first<{ id: number }>()
+	if (!row) return false
+	return isFeatureEnabled(db, localExecuteFlagKey, row.id)
+}
+
+/**
+ * CLI-only redeem. Rejected for MCP `api` (returns the secret into chat).
+ * HTTP calls skip Bearer auth and authenticate solely by the one-shot code.
+ */
+export const cliCredentialBootstrapRedeemDefinition: NativeApiOperationDefinition =
+	{
+		summary: 'Redeem a CLI credential bootstrap code',
+		description:
+			'Exchange a one-shot `kody_bc_…` bootstrap code for a scoped `kody_at_…` API token. For `@kodycodes/cli auth bootstrap` only — not the MCP `api` tool. No Authorization header; the code is the credential. The code burns on first successful redeem.',
+		inputSchema: bootstrapRedeemInputSchema,
+		outputSchema: tokenSecretViewSchema,
+		readOnly: false,
+		async handler(params, ctx) {
+			if (ctx.principal.kind === 'mcp') {
+				throw invalidRequest(
+					'cliCredentialBootstrapRedeem is HTTP/CLI only. Call cliCredentialBootstrap for a one-shot code, then run `npx @kodycodes/cli auth bootstrap --code …` — do not redeem through MCP `api` (that would return a kody_at_ into chat).',
+				)
+			}
+			const input = parseNativeInput(bootstrapRedeemInputSchema, params)
+			const redeemed = await redeemCliCredentialBootstrap({
+				db: ctx.env.APP_DB,
+				code: input.code,
+				allowLocalExecuteForUser: (userId) =>
+					allowLocalExecuteForStableUserId(ctx.env.APP_DB, userId),
+			})
+			return redeemed.token
+		},
+	}

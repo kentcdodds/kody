@@ -3,6 +3,10 @@ import {
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
+import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
+import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
+import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { authenticateApiRequest } from './authenticate.ts'
 import {
@@ -10,13 +14,20 @@ import {
 	kodyApiVersion,
 	resolveApiOperation,
 } from './document.ts'
-import { ApiError, apiErrorResponse, notFound, toApiError } from './errors.ts'
+import {
+	ApiError,
+	apiErrorResponse,
+	invalidRequest,
+	notFound,
+	toApiError,
+} from './errors.ts'
 import {
 	assertApiScope,
 	assertNativeOperationEnabled,
 	capabilityProxyObservationEntityId,
 	invokeApiOperation,
 	isCapabilityProxyOperation,
+	isCliCredentialBootstrapRedeemOperation,
 } from './invoke.ts'
 import { apiOperationUsesQueryInputs, matchApiRoute } from './operations.ts'
 import {
@@ -97,6 +108,62 @@ async function handleOperation(input: {
 		}
 	}
 	const startedAt = Date.now()
+
+	// ADR 0056: CLI bootstrap redeem is code-authenticated only (no Bearer).
+	if (isCliCredentialBootstrapRedeemOperation(match.operation)) {
+		if (input.request.headers.get('Authorization')) {
+			throw invalidRequest(
+				'Do not send Authorization on bootstrap redeem; the one-shot code is the credential.',
+			)
+		}
+		const resolved = resolveApiOperation(
+			match.operation,
+			await getStaticRegistry(),
+		)
+		const params = await readOperationParams({
+			request: input.request,
+			url: input.url,
+			match,
+			inputSchema: resolved.inputSchema,
+		})
+		const code =
+			typeof params === 'object' &&
+			params !== null &&
+			'code' in params &&
+			typeof (params as { code: unknown }).code === 'string'
+				? (params as { code: string }).code
+				: ''
+		const redeemed = await redeemCliCredentialBootstrap({
+			db: input.env.APP_DB,
+			code,
+			allowLocalExecuteForUser: async (stableUserId) => {
+				const stable = normalizeStableUserId(stableUserId)
+				if (!stable) return false
+				const row = await input.env.APP_DB.prepare(
+					`SELECT id FROM users WHERE stable_user_id = ?`,
+				)
+					.bind(stable)
+					.first<{ id: number }>()
+				if (!row) return false
+				return isFeatureEnabled(input.env.APP_DB, localExecuteFlagKey, row.id)
+			},
+		})
+		input.waitUntil(
+			recordUsage(
+				input.env,
+				{
+					userId: redeemed.userId,
+					eventType: 'api_call',
+					entityId: match.operation.operationId,
+					durationMs: Date.now() - startedAt,
+					outcome: 'success',
+				},
+				{ waitUntil: input.waitUntil },
+			),
+		)
+		return json(redeemed.token)
+	}
+
 	let ctx
 	try {
 		ctx = await authenticateApiRequest({

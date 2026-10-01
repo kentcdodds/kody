@@ -115,6 +115,11 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   MCP grant). A token holding `tokens:write` can mint more, but only with scopes
   it holds and never outliving its own `max_expires_at`. The `local-execute`
   scope requires the `local-execute` flag. At most 50 active tokens per account.
+- **CLI bootstrap (ADR 0056):** `cliCredentialBootstrap` (capability +
+  `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
+  `kody_at_`). `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no
+  Bearer; rejected for MCP `api`) and mints a normal `kody_at_` with
+  `created_via: cli-bootstrap` for the CLI to store.
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.

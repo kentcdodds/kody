@@ -47,5 +47,8 @@ the CLI's own `kody login` store is used on the client.
 
 - Open API general operations stay `kody_at_`-only (0053's core split holds).
 - Local execute can use either credential; the flag is the kill switch for both.
+- **Amended by [0056](./0056-cli-credential-bootstrap.md):** agents on MCP that
+  cannot run interactive `kody login` use `cliCredentialBootstrap` → CLI redeem
+  instead of a second OAuth or chat-facing `tokenCreate`.
 - Revisit if a weaker-than-owner MCP session is needed beyond API tokens, or if
   OAuth should expand beyond local-execute HTTP.

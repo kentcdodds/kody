@@ -42,5 +42,9 @@ device login. Kody does not push work from the cloud to a local venue.
   `kody login` MCP OAuth may authenticate CapabilityProxy and package-graph only
   (full MCP grant + `local-execute` flag). Other Open API routes stay
   `kody_at_`-only; the CLI still must not scavenge **host** MCP OAuth.
+- **Amended by [0056](./0056-cli-credential-bootstrap.md):** agents already on
+  MCP mint a one-shot `kody_bc_…` bootstrap code (not a `kody_at_`) via
+  `cliCredentialBootstrap`; the CLI redeems it for a scoped API token. This is
+  an explicit handoff, not host-token scavenging.
 - Revisit if an MCP host needs a weaker-than-owner MCP session that an API token
   plus the Open API cannot serve.

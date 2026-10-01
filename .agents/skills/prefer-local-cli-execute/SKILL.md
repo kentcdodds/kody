@@ -2,10 +2,11 @@
 name: prefer-local-cli-execute
 description: >
   Prefer @kodycodes/cli execute --local over hosted MCP execute for one-off
-  modules and smoke tests when Node ≥22 and the CLI are available. Interactive /
-  desktop agents: use kody login (no tokenCreate). Scoped KODY_API_TOKEN is
-  optional for CI, Cloud Agents, and other headless envs. Use when choosing
-  between CLI --local and MCP execute.
+  modules and smoke tests when Node ≥22 and the CLI are available. Agents
+  already on Kody MCP: cliCredentialBootstrap then CLI auth bootstrap (no second
+  OAuth, no tokenCreate). Interactive humans: kody login. Scoped KODY_API_TOKEN
+  remains for CI/headless. Use when choosing between CLI --local and MCP
+  execute.
 ---
 
 # Prefer local CLI execute
@@ -18,33 +19,57 @@ Canonical guide: [Open API and local execute](https://kody.codes/docs/open-api)
 (`search({ entity: "guide:open_api" })` or
 [docs/guides/open-api.md](../../../docs/guides/open-api.md)).
 
-## Default: `kody login` then `--local`
+## Agents already on MCP: bootstrap (no second OAuth)
 
-Interactive and desktop agents should **not** mint a temporary `KODY_API_TOKEN`
-for local execute. Log in once, then run with no token env var:
+Do **not** run interactive `kody login` and do **not** call `tokenCreate` for
+local execute when you already have a Kody MCP session. Call
+`cliCredentialBootstrap` (MCP `api` / `kody.cliCredentialBootstrap`) — it
+returns a one-shot `kody_bc_…` code + `cli_command`, **never** a `kody_at_…`.
+Run that CLI command (or pipe the code into it). The CLI redeems over HTTPS and
+stores the API token locally.
+
+```json
+{
+	"operationId": "cliCredentialBootstrap",
+	"params": {}
+}
+```
+
+Then run the returned `cli_command` (example shape):
 
 ```bash
-npx @kodycodes/cli login   # once per machine (stores MCP OAuth)
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…'
 npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
-CapabilityProxy and package-graph accept that OAuth Bearer when the
-`local-execute` flag is on (no under-the-hood `tokenCreate`).
+Never paste a `kody_at_…` into chat. The bootstrap code is short-lived and
+one-shot; prefer running `cli_command` over retyping secrets.
 
-CLI credential priority when both exist:
+## Interactive humans: `kody login`
+
+When a human can complete browser OAuth on the machine:
+
+```bash
+npx @kodycodes/cli login   # once per machine
+npx @kodycodes/cli execute --local --code '…'
+```
+
+CapabilityProxy and package-graph accept that OAuth Bearer when `local-execute`
+is on (ADR 0055).
+
+## CLI credential priority
 
 1. `--token` / `KODY_API_TOKEN` (scoped `kody_at_…`) when set
-2. Else the stored CLI MCP OAuth access token from `kody login`
-3. Else a clear “login or provide a token” error
+2. Else stored API token from `auth bootstrap` / env
+3. Else stored CLI MCP OAuth from `kody login`
+4. Else a clear “login, bootstrap, or provide a token” error
 
-## Optional: scoped API token (CI / Cloud Agents / headless)
+## Optional: scoped API token (CI / headless without MCP)
 
-Use MCP `api` (or Open API `tokenCreate`) only when interactive `kody login` is
-not available — CI, Cursor Cloud Agents, and other headless envs — or when you
-want scopes thinner than the full MCP grant. The value is returned **once** in
-that tool result. Write it only into the environment (shell/`KODY_API_TOKEN`);
-**never paste the token into chat** again afterward. Put Cloud Agent tokens in
-environment secrets/vars, not in the prompt.
+Use MCP `api` `tokenCreate` (or a pre-provisioned `KODY_API_TOKEN` in
+environment secrets) only when there is no MCP session to bootstrap from and no
+interactive login — classic CI. Write the value only into the environment;
+**never paste the token into chat**.
 
 ```json
 {
@@ -56,15 +81,13 @@ environment secrets/vars, not in the prompt.
 }
 ```
 
-Add scopes as needed for the work (for example `packages:read`).
-
 ```bash
 export KODY_API_TOKEN='kody_at_…'   # do this yourself; never paste into chat
-npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+npx @kodycodes/cli execute --local --code '…'
 ```
 
-Prefer `KODY_API_TOKEN` in the environment over `--token` so the secret is not
-visible in process arguments. When set, it wins over `kody login`.
+Prefer the env var over `--token` so the secret is not visible in process
+arguments.
 
 ## Saved-package imports
 
@@ -79,11 +102,7 @@ export default async function main(params) { return await searchMessages(params)
 The CLI downloads stamped modules via Open API
 `POST /v1/local-execute/package-graph` (same `local-execute` flag + login OAuth
 or API token) and embeds them in local workerd. CapabilityProxy stays for
-per-call `kody:runtime` hops only — there is no silent whole-module
-`kody.execute` defer. Network + auth are still required for package-graph and
-capability hops. Stamped package modules bind `createAuthenticatedFetch`,
-`packageSecrets`, and `packageStorage` through CapabilityProxy (OAuth tokens
-stay on origin). See
+per-call `kody:runtime` hops only. See
 [Open API and local execute](../../../docs/guides/open-api.md).
 
 ## Fallback

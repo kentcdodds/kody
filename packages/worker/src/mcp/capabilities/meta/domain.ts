@@ -12,6 +12,7 @@ import { executeCapability } from './execute.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaSetMcpServerInstructionsCapability } from './meta-set-mcp-server-instructions.ts'
 import { searchCapability } from './search.ts'
+import { cliCredentialBootstrapCapability } from './cli-credential-bootstrap.ts'
 
 export const metaDomain = defineDomain({
 	name: capabilityDomainNames.meta,
@@ -27,6 +28,8 @@ export const metaDomain = defineDomain({
 		'friction',
 		'bug report',
 		'suggestion',
+		'cli',
+		'bootstrap',
 	],
 	capabilities: [
 		searchCapability,
@@ -41,5 +44,6 @@ export const metaDomain = defineDomain({
 		metaMemoryUpsertCapability,
 		metaMemoryDeleteCapability,
 		metaPlatformFeedbackSubmitCapability,
+		cliCredentialBootstrapCapability,
 	],
 })

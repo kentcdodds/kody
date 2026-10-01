@@ -30,6 +30,16 @@ export function isCapabilityProxyOperation(operation: ApiOperation): boolean {
 	)
 }
 
+/** Code-authenticated CLI redeem — no Bearer (ADR 0056). */
+export function isCliCredentialBootstrapRedeemOperation(
+	operation: ApiOperation,
+): boolean {
+	return (
+		operation.kind === 'native' &&
+		operation.operationId === 'cliCredentialBootstrapRedeem'
+	)
+}
+
 export function capabilityProxyObservationEntityId(input: {
 	baseEntityId: string
 	outcome: 'success' | 'error'
@@ -143,9 +153,16 @@ async function dispatch(input: {
 				resolveCapabilityOperationScope(operation, capability),
 			)
 			await assertCapabilityAvailable(ctx, capability)
+			const openApiPrincipal =
+				ctx.principal.kind === 'token'
+					? { kind: 'token' as const, token: ctx.principal.token }
+					: ctx.principal.kind === 'mcp'
+						? { kind: 'mcp' as const }
+						: { kind: 'mcp-oauth' as const }
 			return capability.handler(params, {
 				env: ctx.env,
 				callerContext: ctx.callerContext,
+				openApiPrincipal,
 				...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
 			})
 		}

@@ -39,7 +39,7 @@ export const apiTokenPolicy = {
 	inactiveRetentionSeconds: 7 * 24 * 60 * 60,
 } as const
 
-export const apiTokenCreatedVia = ['api', 'mcp-api'] as const
+export const apiTokenCreatedVia = ['api', 'mcp-api', 'cli-bootstrap'] as const
 export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
 
 const apiTokenRowSchema = object({
