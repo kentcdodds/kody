@@ -22,6 +22,7 @@ import {
 } from './module-graph-artifacts.ts'
 import {
 	collectDynamicPackageImportProxyModules,
+	mergePublishedArtifactDependencies,
 	prepareKodyGraphFiles,
 } from './module-graph-import-rewriting.ts'
 import { moduleSourceDeclaresDefaultExport } from './module-export-names.ts'
@@ -186,15 +187,16 @@ export async function buildKodyModuleBundle(input: {
 	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
 }) {
 	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-	const { files, packages } = await prepareKodyGraphFiles({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceFiles: input.sourceFiles,
-		entryPoint: input.entryPoint,
-		rootPackageId: input.rootPackageId,
-		allowPlatformScopes,
-	})
+	const { files, packages, publishedArtifactDependencies } =
+		await prepareKodyGraphFiles({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceFiles: input.sourceFiles,
+			entryPoint: input.entryPoint,
+			rootPackageId: input.rootPackageId,
+			allowPlatformScopes,
+		})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
 			files: input.sourceFiles,
@@ -239,14 +241,18 @@ export async function buildKodyModuleBundle(input: {
 					}
 				: {}),
 		})
-		return {
-			mainModule: bundle.mainModule,
-			modules,
+		const dependencies = mergePublishedArtifactDependencies({
 			dependencies: await resolveKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
 				allowPlatformScopes,
 			}),
+			publishedArtifactDependencies,
+		})
+		return {
+			mainModule: bundle.mainModule,
+			modules,
+			dependencies,
 			...includeDynamicDependenciesWhenPresent(modules),
 		}
 	}
@@ -278,15 +284,16 @@ export async function buildKodyImportableModuleBundle(input: {
 	rootPackageId?: string | null
 }) {
 	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-	const { files, packages } = await prepareKodyGraphFiles({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceFiles: input.sourceFiles,
-		entryPoint: input.entryPoint,
-		rootPackageId: input.rootPackageId,
-		allowPlatformScopes,
-	})
+	const { files, packages, publishedArtifactDependencies } =
+		await prepareKodyGraphFiles({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceFiles: input.sourceFiles,
+			entryPoint: input.entryPoint,
+			rootPackageId: input.rootPackageId,
+			allowPlatformScopes,
+		})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
 			files: input.sourceFiles,
@@ -319,10 +326,13 @@ export async function buildKodyImportableModuleBundle(input: {
 	return {
 		mainModule: bundle.mainModule,
 		modules,
-		dependencies: await resolveKodyDependenciesForEntryPoint({
-			...input,
-			loadedPackages: packages,
-			allowPlatformScopes,
+		dependencies: mergePublishedArtifactDependencies({
+			dependencies: await resolveKodyDependenciesForEntryPoint({
+				...input,
+				loadedPackages: packages,
+				allowPlatformScopes,
+			}),
+			publishedArtifactDependencies,
 		}),
 		...includeDynamicDependenciesWhenPresent(modules),
 	}
@@ -341,15 +351,16 @@ export async function buildKodyAppBundle(input: {
 }) {
 	const buildBundle = async () => {
 		const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-		const { files, packages } = await prepareKodyGraphFiles({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceFiles: input.sourceFiles,
-			entryPoint: input.entryPoint,
-			rootPackageId: input.rootPackageId,
-			allowPlatformScopes,
-		})
+		const { files, packages, publishedArtifactDependencies } =
+			await prepareKodyGraphFiles({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceFiles: input.sourceFiles,
+				entryPoint: input.entryPoint,
+				rootPackageId: input.rootPackageId,
+				allowPlatformScopes,
+			})
 		const entryPoint =
 			resolveWorkspaceSourceFilePath({
 				files: input.sourceFiles,
@@ -382,10 +393,13 @@ export async function buildKodyAppBundle(input: {
 		return {
 			mainModule: bundle.mainModule,
 			modules,
-			dependencies: await resolveKodyDependenciesForEntryPoint({
-				...input,
-				loadedPackages: packages,
-				allowPlatformScopes,
+			dependencies: mergePublishedArtifactDependencies({
+				dependencies: await resolveKodyDependenciesForEntryPoint({
+					...input,
+					loadedPackages: packages,
+					allowPlatformScopes,
+				}),
+				publishedArtifactDependencies,
 			}),
 			...includeDynamicDependenciesWhenPresent(modules),
 		}

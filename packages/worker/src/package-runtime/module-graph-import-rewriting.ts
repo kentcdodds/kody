@@ -28,6 +28,7 @@ import {
 	collectDynamicImportExpressionNodes,
 	collectLiteralImportNodes,
 } from './import-specifiers.ts'
+import { type BundleArtifactDependency } from './published-runtime-artifacts.ts'
 import {
 	createPackageProxyPathSegment,
 	createRelativeImportSpecifier,
@@ -125,6 +126,14 @@ type RewriteState = {
 	proxies: Map<string, string>
 	dynamicPackageImports: Map<string, string>
 	packages: LoadedKodyGraphPackages
+	/**
+	 * Dependencies recorded on published importable artifacts that were
+	 * composed without materializing package source into the bundler VFS.
+	 * Merged into consumer dependency metadata so transitive packageStorage
+	 * grants still work when nested `kody:@` imports never trigger a live
+	 * rewrite pass.
+	 */
+	publishedArtifactDependencies: Array<BundleArtifactDependency>
 }
 
 async function maybeEnsurePublishedArtifactTarget(input: {
@@ -167,6 +176,9 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		}),
 	)) {
 		input.state.files[modulePath] = module
+	}
+	for (const dependency of artifact.artifact.dependencies) {
+		input.state.publishedArtifactDependencies.push(dependency)
 	}
 	return joinPath(artifactPrefix, artifact.artifact.mainModule)
 }
@@ -640,6 +652,7 @@ export async function prepareKodyGraphFiles(input: {
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
+		publishedArtifactDependencies: [],
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
 		const normalizedSourcePath = normalizePackageWorkspacePath(filePath)
@@ -691,5 +704,40 @@ export async function prepareKodyGraphFiles(input: {
 	return {
 		files: refreshKodyRuntimeModules(files) as Record<string, string>,
 		packages: state.packages,
+		publishedArtifactDependencies: state.publishedArtifactDependencies,
 	}
+}
+
+/**
+ * Fold published-artifact dependency metadata into the consumer's dependency
+ * list. Nested packages that never received a live rewrite pass still need
+ * packageStorage grants; mark them transitive when they are not already
+ * direct imports of the consumer entry.
+ */
+export function mergePublishedArtifactDependencies(input: {
+	dependencies: Array<BundleArtifactDependency>
+	publishedArtifactDependencies: Array<BundleArtifactDependency>
+}): Array<BundleArtifactDependency> {
+	if (input.publishedArtifactDependencies.length === 0) {
+		return input.dependencies
+	}
+	const byPackageId = new Map<string, BundleArtifactDependency>()
+	for (const dependency of input.dependencies) {
+		if (!dependency.packageId) continue
+		byPackageId.set(dependency.packageId, dependency)
+	}
+	for (const dependency of input.publishedArtifactDependencies) {
+		if (!dependency.packageId || byPackageId.has(dependency.packageId)) {
+			continue
+		}
+		byPackageId.set(dependency.packageId, {
+			...dependency,
+			transitive: true,
+		})
+	}
+	return [...byPackageId.values()].sort(
+		(left, right) =>
+			left.kodyId.localeCompare(right.kodyId) ||
+			left.sourceId.localeCompare(right.sourceId),
+	)
 }
