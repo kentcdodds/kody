@@ -1303,15 +1303,59 @@ type PackageWebhookReplay = {
 	deliveryIdHeader?: string
 } | null
 
-type PackageWebhookChallenge = {
-	type:
-		| 'x-activity-crc'
-		| 'websub-hub'
-		| 'meta-hub'
-		| 'strava-hub'
-		| 'slack-url-verification'
-	secretName?: string
-} | null
+type PackageWebhookChallengeProve =
+	| { kind: 'none' }
+	| {
+			kind: 'verify-token'
+			in: 'query'
+			key: string
+			secretName: string
+			required?: boolean
+	  }
+	| {
+			kind: 'hmac'
+			secretName: string
+			algorithm: 'hmac-sha256'
+			encoding: 'hex' | 'base64'
+			prefix?: string
+	  }
+	| {
+			kind: 'request-hmac'
+			secretName: string
+			algorithm: 'hmac-sha256'
+			encoding: 'hex' | 'base64'
+			prefix?: string
+			timestampHeader: string
+			signatureHeader: string
+			signedPayload: 'v0.timestamp.body'
+			required?: boolean
+	  }
+
+type PackageWebhookChallenge =
+	| {
+			type: 'subscription-challenge'
+			method: 'GET' | 'POST'
+			challenge: { in: 'query' | 'json'; key: string }
+			when?: {
+				query?: Record<string, string | Array<string>>
+				json?: Record<string, string>
+			}
+			prove?: PackageWebhookChallengeProve
+			respond:
+				| { as: 'text' }
+				| { as: 'json'; key: string }
+				| { as: 'json-hmac'; key: string }
+	  }
+	| {
+			type:
+				| 'x-activity-crc'
+				| 'websub-hub'
+				| 'meta-hub'
+				| 'strava-hub'
+				| 'slack-url-verification'
+			secretName?: string
+	  }
+	| null
 
 /**
  * One declared package webhook joined with its minted URL state. Never

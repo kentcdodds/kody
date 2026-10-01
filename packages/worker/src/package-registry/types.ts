@@ -153,19 +153,114 @@ export type PackageWebhookVerification = z.infer<
 /**
  * Platform-handled ownership quizzes on the minted webhook URL. Challenge
  * requests never invoke package code: the worker answers from query/body +
- * optional named secret only. `secretName` is the same secret-store name
- * pattern as `verification.secretName`.
+ * optional named secret only.
+ *
+ * Canonical type is `subscription-challenge` (generic knobs). Vendor-named
+ * aliases (`meta-hub`, `strava-hub`, …) remain parseable for existing
+ * manifests and expand to the generic form at runtime — do not add new
+ * vendor type ids (see decision 0054).
  */
-export const webhookChallengeTypeValues = [
+export const webhookChallengeAliasTypeValues = [
 	'x-activity-crc',
 	'websub-hub',
 	'meta-hub',
 	'strava-hub',
 	'slack-url-verification',
 ] as const
+export type WebhookChallengeAliasType =
+	(typeof webhookChallengeAliasTypeValues)[number]
+
+export const webhookChallengeTypeValues = [
+	'subscription-challenge',
+	...webhookChallengeAliasTypeValues,
+] as const
 export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
 
-export const packageWebhookChallengeSchema = z.discriminatedUnion('type', [
+const webhookChallengeParamKeySchema = z.string().min(1).max(128)
+
+const webhookChallengeWhenValueSchema = z.union([
+	z.string().min(1),
+	z.array(z.string().min(1)).min(1),
+])
+
+export const packageWebhookSubscriptionChallengeSchema = z.object({
+	type: z.literal('subscription-challenge'),
+	method: z.enum(['GET', 'POST']),
+	/** Where the challenge token arrives. */
+	challenge: z.object({
+		in: z.enum(['query', 'json']),
+		key: webhookChallengeParamKeySchema,
+	}),
+	/**
+	 * Recognition filters. On GET, a mismatch is 400. On POST, a mismatch
+	 * means the request is not a quiz (fall through to delivery).
+	 */
+	when: z
+		.object({
+			query: z
+				.record(z.string().min(1), webhookChallengeWhenValueSchema)
+				.optional(),
+			json: z.record(z.string().min(1), z.string().min(1)).optional(),
+		})
+		.optional(),
+	/**
+	 * How the subscriber proves ownership. Omit or `{ kind: "none" }` for
+	 * an unauthenticated echo (for example WebSub without verify_token).
+	 */
+	prove: z
+		.discriminatedUnion('kind', [
+			z.object({
+				kind: z.literal('none'),
+			}),
+			z.object({
+				kind: z.literal('verify-token'),
+				in: z.literal('query'),
+				key: webhookChallengeParamKeySchema,
+				secretName: z.string().min(1),
+				/** Default true. When false, missing/empty tokens are allowed. */
+				required: z.boolean().optional(),
+			}),
+			z.object({
+				kind: z.literal('hmac'),
+				secretName: z.string().min(1),
+				algorithm: z.enum(['hmac-sha256']),
+				encoding: z.enum(['hex', 'base64']),
+				prefix: z.string().optional(),
+			}),
+			z.object({
+				kind: z.literal('request-hmac'),
+				secretName: z.string().min(1),
+				algorithm: z.enum(['hmac-sha256']),
+				encoding: z.enum(['hex', 'base64']),
+				prefix: z.string().optional(),
+				timestampHeader: z.string().regex(httpFieldNamePattern),
+				signatureHeader: z.string().regex(httpFieldNamePattern),
+				signedPayload: z.literal('v0.timestamp.body'),
+				/** Default true when this prove block is present. */
+				required: z.boolean().optional(),
+			}),
+		])
+		.optional(),
+	/** How a successful quiz is echoed back to the provider. */
+	respond: z.discriminatedUnion('as', [
+		z.object({ as: z.literal('text') }),
+		z.object({
+			as: z.literal('json'),
+			key: webhookChallengeParamKeySchema,
+		}),
+		z.object({
+			as: z.literal('json-hmac'),
+			key: webhookChallengeParamKeySchema,
+		}),
+	]),
+})
+
+export type PackageWebhookSubscriptionChallenge = z.infer<
+	typeof packageWebhookSubscriptionChallengeSchema
+>
+
+const packageWebhookChallengeUnionSchema = z.discriminatedUnion('type', [
+	packageWebhookSubscriptionChallengeSchema,
 	z.object({
 		type: z.literal('x-activity-crc'),
 		secretName: z.string().min(1),
@@ -181,22 +276,63 @@ export const packageWebhookChallengeSchema = z.discriminatedUnion('type', [
 	}),
 	z.object({
 		type: z.literal('strava-hub'),
-		/** Strava verify_token from the push subscription create request. */
 		secretName: z.string().min(1),
 	}),
 	z.object({
 		type: z.literal('slack-url-verification'),
 		/**
-		 * When set, the challenge POST must carry a valid Slack signing
-		 * signature for this signing secret (`X-Slack-Signature`).
+		 * When set, the challenge POST must carry a valid request-hmac for
+		 * this signing secret (Slack-style `v0.timestamp.body`).
 		 */
 		secretName: z.string().min(1).optional(),
 	}),
 ])
 
+export const packageWebhookChallengeSchema =
+	packageWebhookChallengeUnionSchema.superRefine((challenge, ctx) => {
+		if (challenge.type !== 'subscription-challenge') return
+		if (challenge.method === 'GET' && challenge.challenge.in !== 'query') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['challenge', 'in'],
+				message: 'GET subscription challenges must read challenge.in=query.',
+			})
+		}
+		if (challenge.method === 'POST' && challenge.challenge.in !== 'json') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['challenge', 'in'],
+				message: 'POST subscription challenges must read challenge.in=json.',
+			})
+		}
+		if (
+			challenge.respond.as === 'json-hmac' &&
+			challenge.prove?.kind !== 'hmac'
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['respond', 'as'],
+				message:
+					'respond.as=json-hmac requires prove.kind=hmac (CRC-style answer).',
+			})
+		}
+	})
+
 export type PackageWebhookChallenge = z.infer<
-	typeof packageWebhookChallengeSchema
+	typeof packageWebhookChallengeUnionSchema
 >
+
+/** Secret name used by a challenge declaration, if any (aliases or prove). */
+export function webhookChallengeSecretName(
+	challenge: PackageWebhookChallenge,
+): string | undefined {
+	if (challenge.type !== 'subscription-challenge') {
+		return challenge.secretName
+	}
+	const prove = challenge.prove
+	if (!prove || prove.kind === 'none') return undefined
+	return prove.secretName
+}
 
 const webhookTimestampFormatSchema = z.string().superRefine((value, ctx) => {
 	if (

@@ -18,6 +18,7 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 import {
 	handleWebhookSubscriptionChallenge,
 	webhookChallengeAllowsGet,
+	webhookChallengeAllowsPost,
 } from './challenge.ts'
 import {
 	buildWebhookDeliveryIdempotencyKey,
@@ -521,7 +522,7 @@ export async function handleWebhookIngressRequest(
 	) as ArrayBuffer
 	const bodyText = new TextDecoder().decode(bodyBytes)
 
-	if (declared.challenge?.type === 'slack-url-verification') {
+	if (declared.challenge && webhookChallengeAllowsPost(declared.challenge)) {
 		const challengeResult = await handleWebhookSubscriptionChallenge({
 			request,
 			challenge: declared.challenge,

@@ -106,17 +106,29 @@ function replayValue(webhook: PackageWebhookListItem) {
 	return parts.length > 0 ? parts.join(' · ') : 'Not configured'
 }
 
+function challengeSecretName(
+	challenge: NonNullable<PackageWebhookListItem['challenge']>,
+) {
+	if (challenge.type === 'subscription-challenge') {
+		const prove = challenge.prove
+		if (!prove || prove.kind === 'none') return undefined
+		return prove.secretName
+	}
+	return challenge.secretName
+}
+
 function challengeValue(webhook: PackageWebhookListItem) {
 	const challenge = webhook.challenge
 	if (!challenge) return 'Not configured'
+	const secretName = challengeSecretName(challenge)
 	return (
 		<span mix={css({ display: 'grid', gap: spacing.xs })}>
 			<span>
 				<code>{challenge.type}</code>
 			</span>
-			{challenge.secretName ? (
+			{secretName ? (
 				<span mix={css({ color: colors.textMuted })}>
-					secret <code>{challenge.secretName}</code>
+					secret <code>{secretName}</code>
 				</span>
 			) : null}
 		</span>

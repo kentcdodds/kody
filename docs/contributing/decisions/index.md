@@ -115,6 +115,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0053 — Scoped API tokens are a separate credential class, not MCP OAuth scopes](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)
   — `kody_at_` tokens authenticate only the Open API and CapabilityProxy; MCP
   OAuth stays one full grant; the CLI never scavenges MCP OAuth tokens
+- [0054 — No vendor-specific platform logic](./0054-no-vendor-specific-platform-logic.md)
+  — capabilities stay generic; third parties configure via params/presets, not
+  `foo-hub`-style type forks in platform schema or handlers
 
 ## Historical / UI / implementation
 

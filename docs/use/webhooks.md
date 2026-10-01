@@ -277,26 +277,136 @@ their work.
 ## Subscription challenges
 
 Some providers prove URL ownership with a fixed quiz before they send events:
-HMAC a `crc_token`, echo a hub challenge, or return a Slack `challenge`. Kody
-answers those on the minted webhook URL **in the platform** — the bound export
-never runs for the quiz, and challenge handling does not mutate account state,
-call MCP, or fetch outbound.
+HMAC a challenge token, echo a hub challenge, or return a JSON challenge field.
+Kody answers those on the minted webhook URL **in the platform** — the bound
+export never runs for the quiz, and challenge handling does not mutate account
+state, call MCP, or fetch outbound.
 
 Declare one `challenge` object next to (or instead of, when the provider has no
-POST HMAC) `verification`:
+POST HMAC) `verification`. Prefer the generic `subscription-challenge` type with
+knobs; deprecated aliases remain for older manifests (see
+[migration](#challenge-compat-aliases)).
 
-| `challenge.type`         | Method                                         | What the platform does                                             | `secretName`                                            |
-| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------- |
-| `x-activity-crc`         | GET `crc_token`                                | JSON `{ response_token: "sha256=" + base64(HMAC-SHA256) }`         | **Required** (X consumer secret)                        |
-| `websub-hub`             | GET `hub.mode` + `hub.challenge`               | Echo challenge as `text/plain`                                     | Optional; when set, `hub.verify_token` must match       |
-| `meta-hub`               | GET `hub.mode=subscribe` + `hub.challenge`     | Echo challenge as `text/plain` after verify-token match            | **Required** (Meta verify token)                        |
-| `strava-hub`             | GET `hub.mode=subscribe` + `hub.challenge`     | JSON `{ "hub.challenge": "<challenge>" }` after verify-token match | **Required** (Strava verify token)                      |
-| `slack-url-verification` | POST `{ type: "url_verification", challenge }` | JSON `{ challenge }`                                               | Optional; when set, Slack signing signature must verify |
+### Generic `subscription-challenge`
 
-`secretName` is the same named secret-store reference as
-`verification.secretName` — never an inline value. Later vendor POSTs still go
+| Knob        | Role                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------ |
+| `method`    | `GET` or `POST`                                                                                              |
+| `challenge` | Where the token arrives: `{ in: "query" \| "json", key }`                                                    |
+| `when`      | Optional filters (`query` / `json`). GET mismatch → **400**; POST mismatch → not a quiz (delivery continues) |
+| `prove`     | `none`, `verify-token` (query secret match), `hmac` (CRC of token), or `request-hmac` (sign the request)     |
+| `respond`   | `text` echo, `json` echo under `key`, or `json-hmac` (CRC response)                                          |
+
+`prove.*.secretName` is the same named secret-store reference as
+`verification.secretName` — never an inline value. Later provider POSTs still go
 through normal URL-secret + optional HMAC verification; only verified deliveries
 reach the export.
+
+Platform schema stays vendor-agnostic
+([0054](../contributing/decisions/0054-no-vendor-specific-platform-logic.md)):
+configure providers with knobs or documented presets, not new `foo-hub` type
+ids.
+
+### Presets (copy into `challenge`)
+
+**Hub echo as `text/plain` (Meta / Facebook / WhatsApp-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": "subscribe" } },
+	"prove": {
+		"kind": "verify-token",
+		"in": "query",
+		"key": "hub.verify_token",
+		"secretName": "metaVerifyToken"
+	},
+	"respond": { "as": "text" }
+}
+```
+
+**Hub echo as JSON `{ "hub.challenge" }` (Strava-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": "subscribe" } },
+	"prove": {
+		"kind": "verify-token",
+		"in": "query",
+		"key": "hub.verify_token",
+		"secretName": "stravaVerifyToken"
+	},
+	"respond": { "as": "json", "key": "hub.challenge" }
+}
+```
+
+Store the same `verify_token` value you pass when creating the Strava push
+subscription. Mint the webhook, register the revealed URL as `callback_url`, and
+pass that secret as `verify_token` on create.
+
+**WebSub / YouTube hub (optional verify token; allows unsubscribe):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": ["subscribe", "unsubscribe"] } },
+	"respond": { "as": "text" }
+}
+```
+
+Add a `prove.verify-token` block with `secretName` when the hub sends
+`hub.verify_token`.
+
+**CRC of query token → JSON HMAC field (X Account Activity-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "crc_token" },
+	"prove": {
+		"kind": "hmac",
+		"secretName": "xConsumerSecret",
+		"algorithm": "hmac-sha256",
+		"encoding": "base64",
+		"prefix": "sha256="
+	},
+	"respond": { "as": "json-hmac", "key": "response_token" }
+}
+```
+
+**JSON body challenge + optional request signature (Slack Events-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "POST",
+	"challenge": { "in": "json", "key": "challenge" },
+	"when": { "json": { "type": "url_verification" } },
+	"prove": {
+		"kind": "request-hmac",
+		"secretName": "slackSigningSecret",
+		"algorithm": "hmac-sha256",
+		"encoding": "hex",
+		"prefix": "v0=",
+		"timestampHeader": "x-slack-request-timestamp",
+		"signatureHeader": "x-slack-signature",
+		"signedPayload": "v0.timestamp.body"
+	},
+	"respond": { "as": "json", "key": "challenge" }
+}
+```
+
+When `prove` is omitted, the platform echoes without a signature check. Event
+POSTs still use the normal delivery path — declare a matching `verification`
+block when those deliveries must also verify request signing.
 
 ### X Activity (CRC) example for `@kentcdodds/x`
 
@@ -305,8 +415,17 @@ reach the export.
 	"name": "activity-event",
 	"export": "./activity-event",
 	"challenge": {
-		"type": "x-activity-crc",
-		"secretName": "xConsumerSecret"
+		"type": "subscription-challenge",
+		"method": "GET",
+		"challenge": { "in": "query", "key": "crc_token" },
+		"prove": {
+			"kind": "hmac",
+			"secretName": "xConsumerSecret",
+			"algorithm": "hmac-sha256",
+			"encoding": "base64",
+			"prefix": "sha256="
+		},
+		"respond": { "as": "json-hmac", "key": "response_token" }
 	},
 	"verification": {
 		"type": "hmac-sha256",
@@ -322,62 +441,22 @@ Store the X consumer secret with `secretSet` under `xConsumerSecret`, mint the
 webhook, then register the revealed URL directly with X. CRC GETs never invoke
 `./activity-event`; activity POSTs do, after HMAC verification.
 
-### Meta hub example
+### Challenge compat aliases
 
-```json
-{
-	"name": "meta-webhook",
-	"export": "./handle-meta",
-	"challenge": {
-		"type": "meta-hub",
-		"secretName": "metaVerifyToken"
-	}
-}
-```
+These short `challenge.type` values still parse and expand to the presets above.
+Prefer `subscription-challenge` for new manifests; aliases are deprecated and
+may be removed after a soak.
 
-### Strava hub example
+| Alias                    | Expands to                                              |
+| ------------------------ | ------------------------------------------------------- |
+| `x-activity-crc`         | CRC preset (`crc_token` → `response_token`)             |
+| `websub-hub`             | WebSub preset (optional `secretName` → verify-token)    |
+| `meta-hub`               | Hub text/plain preset (required `secretName`)           |
+| `strava-hub`             | Hub JSON `{ "hub.challenge" }` preset (required secret) |
+| `slack-url-verification` | JSON body + optional request-hmac preset                |
 
-Strava's
-[push subscription validation](https://developers.strava.com/docs/webhooks/)
-sends the same `hub.*` query params as Meta, but requires `application/json`
-with body `{ "hub.challenge": "<challenge>" }` (not `text/plain`). Use
-`strava-hub` and store the same `verify_token` you pass when creating the Strava
-subscription:
-
-```json
-{
-	"name": "strava-events",
-	"export": "./handle-strava",
-	"challenge": {
-		"type": "strava-hub",
-		"secretName": "stravaVerifyToken"
-	}
-}
-```
-
-Mint the webhook, register the revealed URL as Strava's `callback_url`, and pass
-the secret value as `verify_token` in the subscription create request. Challenge
-GETs never invoke `./handle-strava`; event POSTs do after URL-secret (and
-optional HMAC) verification.
-
-### Slack Events example
-
-```json
-{
-	"name": "slack-events",
-	"export": "./handle-slack-event",
-	"challenge": {
-		"type": "slack-url-verification",
-		"secretName": "slackSigningSecret"
-	}
-}
-```
-
-When `challenge.secretName` is set, the platform verifies Slack's
-`X-Slack-Signature` on the quiz POST (`` `v0:${timestamp}:${body}` ``) before
-echoing. Event POSTs still use the normal delivery path — declare a matching
-`verification` block when those deliveries must also verify Slack signing (the
-URL secret alone is enough only for trusted setups that omit HMAC).
+Migration: replace the alias object with the matching preset JSON (same
+`secretName` values). Behavior is identical after expand.
 
 ## Payload shape seen by the package export
 

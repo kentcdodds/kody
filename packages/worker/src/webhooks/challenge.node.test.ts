@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	handleWebhookSubscriptionChallenge,
+	normalizeWebhookChallenge,
+	webhookChallengeAllowsGet,
+	webhookChallengeAllowsPost,
 	webhookChallengeMaxParamChars,
 } from './challenge.ts'
 import { computeWebhookHmacSignature } from './crypto.ts'
@@ -62,6 +65,43 @@ const statusesOf = async (
 		}),
 	)
 
+const stravaHubGeneric = {
+	type: 'subscription-challenge',
+	method: 'GET',
+	challenge: { in: 'query', key: 'hub.challenge' },
+	when: { query: { 'hub.mode': 'subscribe' } },
+	prove: {
+		kind: 'verify-token',
+		in: 'query',
+		key: 'hub.verify_token',
+		secretName: 'stravaVerify',
+		required: true,
+	},
+	respond: { as: 'json', key: 'hub.challenge' },
+} as const
+
+test('normalizeWebhookChallenge expands vendor aliases to subscription-challenge', () => {
+	expect(
+		normalizeWebhookChallenge({
+			type: 'strava-hub',
+			secretName: 'stravaVerify',
+		}),
+	).toEqual(stravaHubGeneric)
+	expect(
+		normalizeWebhookChallenge({
+			type: 'meta-hub',
+			secretName: 'metaVerify',
+		}).respond,
+	).toEqual({ as: 'text' })
+	expect(webhookChallengeAllowsGet({ type: 'websub-hub' })).toBe(true)
+	expect(webhookChallengeAllowsPost({ type: 'slack-url-verification' })).toBe(
+		true,
+	)
+	expect(
+		webhookChallengeAllowsPost({ type: 'meta-hub', secretName: 'x' }),
+	).toBe(false)
+})
+
 test('x-activity-crc signs crc_token and rejects missing secret', async () => {
 	const challenge = {
 		type: 'x-activity-crc',
@@ -96,6 +136,30 @@ test('x-activity-crc signs crc_token and rejects missing secret', async () => {
 			},
 		]),
 	).toEqual([401, 400, 400, { kind: 'not_challenge' }])
+})
+
+test('subscription-challenge CRC preset matches x-activity-crc alias', async () => {
+	const challenge = {
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'crc_token' },
+		prove: {
+			kind: 'hmac',
+			secretName: 'xConsumerSecret',
+			algorithm: 'hmac-sha256',
+			encoding: 'base64',
+			prefix: 'sha256=',
+		},
+		respond: { as: 'json-hmac', key: 'response_token' },
+	} as const
+	const signed = await challengeOutcome({
+		request: `?crc_token=${encodeURIComponent('token-from-x')}`,
+		challenge,
+		secrets: { xConsumerSecret: 'consumer-secret' },
+	})
+	expect(JSON.parse((signed as { body: string }).body)).toEqual({
+		response_token: 'sha256=W5nrYAN+2ikisJKlZgv84WstpdpbgeYwmuf7ojn/Qn0=',
+	})
 })
 
 test('websub-hub echoes challenge and rejects wrong verify token', async () => {
@@ -144,27 +208,32 @@ test('meta-hub requires verify token match and rejects missing secret', async ()
 	).toEqual([401, 401])
 })
 
-test('strava-hub returns JSON hub.challenge and rejects bad verify tokens', async () => {
+test('strava-hub and generic preset return JSON hub.challenge', async () => {
+	const secrets = { stravaVerify: 'STRAVA' }
+	const subscribe =
+		'?hub.mode=subscribe&hub.verify_token=STRAVA&hub.challenge=15f7d1a91c1f40f8a748fd134752feb3'
+	for (const challenge of [
+		{ type: 'strava-hub', secretName: 'stravaVerify' } as const,
+		stravaHubGeneric,
+	]) {
+		const ok = await challengeOutcome({
+			request: subscribe,
+			challenge,
+			secrets,
+		})
+		expect(ok).toMatchObject({ status: 200 })
+		expect((ok as { contentType: string }).contentType).toMatch(
+			/application\/json/,
+		)
+		expect(JSON.parse((ok as { body: string }).body)).toEqual({
+			'hub.challenge': '15f7d1a91c1f40f8a748fd134752feb3',
+		})
+	}
+
 	const challenge = {
 		type: 'strava-hub',
 		secretName: 'stravaVerify',
 	} as const
-	const secrets = { stravaVerify: 'STRAVA' }
-	const subscribe =
-		'?hub.mode=subscribe&hub.verify_token=STRAVA&hub.challenge=15f7d1a91c1f40f8a748fd134752feb3'
-	const ok = await challengeOutcome({
-		request: subscribe,
-		challenge,
-		secrets,
-	})
-	expect(ok).toMatchObject({ status: 200 })
-	expect((ok as { contentType: string }).contentType).toMatch(
-		/application\/json/,
-	)
-	expect(JSON.parse((ok as { body: string }).body)).toEqual({
-		'hub.challenge': '15f7d1a91c1f40f8a748fd134752feb3',
-	})
-
 	expect(
 		await statusesOf([
 			{
@@ -249,4 +318,53 @@ test('slack-url-verification echoes challenge and rejects bad signatures', async
 			{ request: signed(signature), challenge, bodyText: body },
 		]),
 	).toEqual([200, 401, 401])
+})
+
+test('subscription-challenge POST request-hmac preset matches slack alias', async () => {
+	const body = JSON.stringify({
+		type: 'url_verification',
+		challenge: 'slack-challenge-token',
+	})
+	const challenge = {
+		type: 'subscription-challenge',
+		method: 'POST',
+		challenge: { in: 'json', key: 'challenge' },
+		when: { json: { type: 'url_verification' } },
+		prove: {
+			kind: 'request-hmac',
+			secretName: 'slackSigningSecret',
+			algorithm: 'hmac-sha256',
+			encoding: 'hex',
+			prefix: 'v0=',
+			timestampHeader: 'x-slack-request-timestamp',
+			signatureHeader: 'x-slack-signature',
+			signedPayload: 'v0.timestamp.body',
+		},
+		respond: { as: 'json', key: 'challenge' },
+	} as const
+	const signingSecret = 'slack-signing-secret'
+	const timestamp = String(Math.floor(Date.now() / 1000))
+	const signature = await expectedSlackSignature({
+		timestamp,
+		bodyText: body,
+		signingSecret,
+	})
+	const ok = await challengeOutcome({
+		request: new Request('https://example.test/hook', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-slack-request-timestamp': timestamp,
+				'x-slack-signature': signature,
+			},
+			body,
+		}),
+		challenge,
+		secrets: { slackSigningSecret: signingSecret },
+		bodyText: body,
+	})
+	expect(ok).toMatchObject({ status: 200 })
+	expect(JSON.parse((ok as { body: string }).body)).toEqual({
+		challenge: 'slack-challenge-token',
+	})
 })

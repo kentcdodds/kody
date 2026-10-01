@@ -1,9 +1,14 @@
 import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { jsonResponse } from '#worker/json-response.ts'
-import { type PackageWebhookChallenge } from '#worker/package-registry/types.ts'
+import {
+	type PackageWebhookChallenge,
+	type PackageWebhookSubscriptionChallenge,
+	webhookChallengeSecretName,
+} from '#worker/package-registry/types.ts'
 import { computeWebhookHmacSignature } from './crypto.ts'
 
 export type WebhookChallengeConfig = PackageWebhookChallenge
+export type NormalizedWebhookChallenge = PackageWebhookSubscriptionChallenge
 
 export type WebhookChallengeHandleResult =
 	| { kind: 'not_challenge' }
@@ -80,380 +85,109 @@ async function resolveChallengeSecret(input: {
 	return { ok: true, value }
 }
 
-/**
- * X Account Activity CRC: GET `crc_token` →
- * `{ response_token: "sha256=" + base64(hmac_sha256(token, secret)) }`.
- */
-async function handleXActivityCrc(input: {
-	request: Request
-	secretName: string
-	resolveSecret: (name: string) => Promise<string | null>
-}): Promise<WebhookChallengeHandleResult> {
-	if (input.request.method !== 'GET') return { kind: 'not_challenge' }
-	const crcToken = new URL(input.request.url).searchParams.get('crc_token')
-	if (crcToken == null || crcToken === '') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				'X Activity CRC requires a crc_token query parameter.',
-			),
-		}
-	}
-	const tooLong = assertChallengeParamLength(crcToken, 'crc_token')
-	if (tooLong) return { kind: 'respond', response: tooLong }
-	const secret = await resolveChallengeSecret({
-		secretName: input.secretName,
-		resolveSecret: input.resolveSecret,
-	})
-	if (!secret.ok) return { kind: 'respond', response: secret.response }
-
-	const tokenBytes = new TextEncoder().encode(crcToken)
-	const digest = await computeWebhookHmacSignature({
-		algorithm: 'hmac-sha256',
-		secret: secret.value,
-		body: tokenBytes.buffer.slice(
-			tokenBytes.byteOffset,
-			tokenBytes.byteOffset + tokenBytes.byteLength,
-		) as ArrayBuffer,
-		encoding: 'base64',
-		prefix: 'sha256=',
-	})
-	return {
-		kind: 'respond',
-		response: jsonResponse({ response_token: digest }),
-	}
+function whenValueAllows(
+	allowed: string | ReadonlyArray<string>,
+	actual: string | null,
+): boolean {
+	if (actual == null) return false
+	if (typeof allowed === 'string') return actual === allowed
+	return allowed.includes(actual)
 }
 
 /**
- * WebSub / YouTube hub challenge: echo `hub.challenge` as text/plain.
- * When `secretName` is set, `hub.verify_token` must match.
+ * Expand deprecated vendor-named challenge aliases into the canonical
+ * `subscription-challenge` knobs. Prefer authoring the generic form directly.
  */
-async function handleWebsubHub(input: {
-	request: Request
-	secretName?: string
-	resolveSecret: (name: string) => Promise<string | null>
-}): Promise<WebhookChallengeHandleResult> {
-	if (input.request.method !== 'GET') return { kind: 'not_challenge' }
-	const params = new URL(input.request.url).searchParams
-	const mode = params.get('hub.mode')
-	const challenge = params.get('hub.challenge')
-	if (mode == null && challenge == null) {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				'WebSub hub challenge requires hub.mode and hub.challenge.',
-			),
-		}
-	}
-	if (mode !== 'subscribe' && mode !== 'unsubscribe') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				'WebSub hub challenge requires hub.mode of subscribe or unsubscribe.',
-			),
-		}
-	}
-	if (challenge == null || challenge === '') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				'WebSub hub challenge requires hub.challenge.',
-			),
-		}
-	}
-	const challengeTooLong = assertChallengeParamLength(
-		challenge,
-		'hub.challenge',
-	)
-	if (challengeTooLong) {
-		return { kind: 'respond', response: challengeTooLong }
-	}
-	if (input.secretName) {
-		const secret = await resolveChallengeSecret({
-			secretName: input.secretName,
-			resolveSecret: input.resolveSecret,
-		})
-		if (!secret.ok) return { kind: 'respond', response: secret.response }
-		const verifyToken = params.get('hub.verify_token') ?? ''
-		const verifyTooLong = assertChallengeParamLength(
-			verifyToken,
-			'hub.verify_token',
-		)
-		if (verifyTooLong) {
-			return { kind: 'respond', response: verifyTooLong }
-		}
-		if (!(await timingSafeEqualString(verifyToken, secret.value))) {
-			return {
-				kind: 'respond',
-				response: challengeUnauthorizedResponse(
-					'WebSub hub verify token mismatch.',
-				),
-			}
-		}
-	}
-	return { kind: 'respond', response: plainTextResponse(challenge) }
-}
-
-/**
- * Shared GET hub.mode=subscribe + hub.verify_token + hub.challenge quiz used by
- * Meta (text/plain echo) and Strava (JSON `{ "hub.challenge" }`).
- */
-async function handleSubscribeHubChallenge(input: {
-	request: Request
-	secretName: string
-	resolveSecret: (name: string) => Promise<string | null>
-	providerLabel: 'Meta' | 'Strava'
-	respond: (challenge: string) => Response
-}): Promise<WebhookChallengeHandleResult> {
-	if (input.request.method !== 'GET') return { kind: 'not_challenge' }
-	const params = new URL(input.request.url).searchParams
-	const mode = params.get('hub.mode')
-	const challenge = params.get('hub.challenge')
-	const verifyToken = params.get('hub.verify_token') ?? ''
-	const label = input.providerLabel
-	if (mode == null && challenge == null && verifyToken === '') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				`${label} hub challenge requires hub.mode, hub.verify_token, and hub.challenge.`,
-			),
-		}
-	}
-	if (mode !== 'subscribe') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				`${label} hub challenge requires hub.mode=subscribe.`,
-			),
-		}
-	}
-	if (challenge == null || challenge === '') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				`${label} hub challenge requires hub.challenge.`,
-			),
-		}
-	}
-	const challengeTooLong = assertChallengeParamLength(
-		challenge,
-		'hub.challenge',
-	)
-	if (challengeTooLong) {
-		return { kind: 'respond', response: challengeTooLong }
-	}
-	const verifyTooLong = assertChallengeParamLength(
-		verifyToken,
-		'hub.verify_token',
-	)
-	if (verifyTooLong) {
-		return { kind: 'respond', response: verifyTooLong }
-	}
-	const secret = await resolveChallengeSecret({
-		secretName: input.secretName,
-		resolveSecret: input.resolveSecret,
-	})
-	if (!secret.ok) return { kind: 'respond', response: secret.response }
-	if (!(await timingSafeEqualString(verifyToken, secret.value))) {
-		return {
-			kind: 'respond',
-			response: challengeUnauthorizedResponse(
-				`${label} hub verify token mismatch.`,
-			),
-		}
-	}
-	return { kind: 'respond', response: input.respond(challenge) }
-}
-
-/**
- * Meta / Facebook / WhatsApp: GET hub.mode=subscribe + matching
- * hub.verify_token → echo hub.challenge as text/plain.
- */
-async function handleMetaHub(input: {
-	request: Request
-	secretName: string
-	resolveSecret: (name: string) => Promise<string | null>
-}): Promise<WebhookChallengeHandleResult> {
-	return handleSubscribeHubChallenge({
-		...input,
-		providerLabel: 'Meta',
-		respond: plainTextResponse,
-	})
-}
-
-/**
- * Strava push subscriptions: GET hub.mode=subscribe + matching
- * hub.verify_token → JSON `{ "hub.challenge": "<challenge>" }`.
- * @see https://developers.strava.com/docs/webhooks/
- */
-async function handleStravaHub(input: {
-	request: Request
-	secretName: string
-	resolveSecret: (name: string) => Promise<string | null>
-}): Promise<WebhookChallengeHandleResult> {
-	return handleSubscribeHubChallenge({
-		...input,
-		providerLabel: 'Strava',
-		respond: (challenge) => jsonResponse({ 'hub.challenge': challenge }),
-	})
-}
-
-async function verifySlackRequestSignature(input: {
-	request: Request
-	bodyText: string
-	signingSecret: string
-}): Promise<boolean> {
-	const timestamp = input.request.headers.get('x-slack-request-timestamp')
-	const provided = input.request.headers.get('x-slack-signature')
-	if (!timestamp || !provided) return false
-	if (!/^\d+$/.test(timestamp)) return false
-	const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp))
-	if (ageSeconds > 60 * 5) return false
-	const base = new TextEncoder().encode(`v0:${timestamp}:${input.bodyText}`)
-	const expected = await computeWebhookHmacSignature({
-		algorithm: 'hmac-sha256',
-		secret: input.signingSecret,
-		body: base.buffer.slice(
-			base.byteOffset,
-			base.byteOffset + base.byteLength,
-		) as ArrayBuffer,
-		encoding: 'hex',
-		prefix: 'v0=',
-	})
-	return timingSafeEqualString(expected, provided.trim())
-}
-
-/**
- * Slack Events URL verification: POST `{ type: "url_verification", challenge }`
- * → `{ challenge }`. Other POSTs fall through to normal delivery.
- */
-async function handleSlackUrlVerification(input: {
-	request: Request
-	secretName?: string
-	resolveSecret: (name: string) => Promise<string | null>
-	bodyText?: string
-}): Promise<WebhookChallengeHandleResult> {
-	if (input.request.method !== 'POST') return { kind: 'not_challenge' }
-	const bodyText = input.bodyText ?? (await input.request.clone().text())
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(bodyText) as unknown
-	} catch {
-		return { kind: 'not_challenge' }
-	}
-	if (
-		parsed === null ||
-		typeof parsed !== 'object' ||
-		Array.isArray(parsed) ||
-		(parsed as { type?: unknown }).type !== 'url_verification'
-	) {
-		return { kind: 'not_challenge' }
-	}
-	const challenge = (parsed as { challenge?: unknown }).challenge
-	if (typeof challenge !== 'string' || challenge === '') {
-		return {
-			kind: 'respond',
-			response: challengeBadRequestResponse(
-				'Slack URL verification requires a challenge string.',
-			),
-		}
-	}
-	const tooLong = assertChallengeParamLength(challenge, 'challenge')
-	if (tooLong) return { kind: 'respond', response: tooLong }
-	if (input.secretName) {
-		const secret = await resolveChallengeSecret({
-			secretName: input.secretName,
-			resolveSecret: input.resolveSecret,
-		})
-		if (!secret.ok) return { kind: 'respond', response: secret.response }
-		const signatureOk = await verifySlackRequestSignature({
-			request: input.request,
-			bodyText,
-			signingSecret: secret.value,
-		})
-		if (!signatureOk) {
-			return {
-				kind: 'respond',
-				response: challengeUnauthorizedResponse(
-					'Slack request signature verification failed.',
-				),
-			}
-		}
-	}
-	return {
-		kind: 'respond',
-		response: jsonResponse({ challenge }),
-	}
-}
-
-/**
- * Answer a subscription-challenge probe on a minted webhook URL without
- * invoking package code. Returns `not_challenge` when the request should
- * continue on the normal delivery path (for example a Slack event POST after
- * URL verification has already succeeded).
- */
-export async function handleWebhookSubscriptionChallenge(input: {
-	request: Request
-	challenge: WebhookChallengeConfig
-	resolveSecret: (name: string) => Promise<string | null>
-	/** Pre-read POST body when the caller already consumed the stream. */
-	bodyText?: string
-}): Promise<WebhookChallengeHandleResult> {
-	switch (input.challenge.type) {
-		case 'x-activity-crc':
-			return handleXActivityCrc({
-				request: input.request,
-				secretName: input.challenge.secretName,
-				resolveSecret: input.resolveSecret,
-			})
-		case 'websub-hub':
-			return handleWebsubHub({
-				request: input.request,
-				secretName: input.challenge.secretName,
-				resolveSecret: input.resolveSecret,
-			})
-		case 'meta-hub':
-			return handleMetaHub({
-				request: input.request,
-				secretName: input.challenge.secretName,
-				resolveSecret: input.resolveSecret,
-			})
-		case 'strava-hub':
-			return handleStravaHub({
-				request: input.request,
-				secretName: input.challenge.secretName,
-				resolveSecret: input.resolveSecret,
-			})
-		case 'slack-url-verification':
-			return handleSlackUrlVerification({
-				request: input.request,
-				secretName: input.challenge.secretName,
-				resolveSecret: input.resolveSecret,
-				bodyText: input.bodyText,
-			})
-		default: {
-			const exhaustive: never = input.challenge
-			throw new Error(
-				`Unhandled webhook challenge type: ${String(
-					(exhaustive as { type?: string }).type,
-				)}`,
-			)
-		}
-	}
-}
-
-export function webhookChallengeAllowsGet(
-	challenge: WebhookChallengeConfig | null | undefined,
-) {
-	if (!challenge) return false
+export function normalizeWebhookChallenge(
+	challenge: PackageWebhookChallenge,
+): NormalizedWebhookChallenge {
 	switch (challenge.type) {
+		case 'subscription-challenge':
+			return challenge
 		case 'x-activity-crc':
+			return {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'crc_token' },
+				prove: {
+					kind: 'hmac',
+					secretName: challenge.secretName,
+					algorithm: 'hmac-sha256',
+					encoding: 'base64',
+					prefix: 'sha256=',
+				},
+				respond: { as: 'json-hmac', key: 'response_token' },
+			}
 		case 'websub-hub':
+			return {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'hub.challenge' },
+				when: {
+					query: { 'hub.mode': ['subscribe', 'unsubscribe'] },
+				},
+				prove: challenge.secretName
+					? {
+							kind: 'verify-token',
+							in: 'query',
+							key: 'hub.verify_token',
+							secretName: challenge.secretName,
+							required: true,
+						}
+					: { kind: 'none' },
+				respond: { as: 'text' },
+			}
 		case 'meta-hub':
+			return {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'hub.challenge' },
+				when: { query: { 'hub.mode': 'subscribe' } },
+				prove: {
+					kind: 'verify-token',
+					in: 'query',
+					key: 'hub.verify_token',
+					secretName: challenge.secretName,
+					required: true,
+				},
+				respond: { as: 'text' },
+			}
 		case 'strava-hub':
-			return true
+			return {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'hub.challenge' },
+				when: { query: { 'hub.mode': 'subscribe' } },
+				prove: {
+					kind: 'verify-token',
+					in: 'query',
+					key: 'hub.verify_token',
+					secretName: challenge.secretName,
+					required: true,
+				},
+				respond: { as: 'json', key: 'hub.challenge' },
+			}
 		case 'slack-url-verification':
-			return false
+			return {
+				type: 'subscription-challenge',
+				method: 'POST',
+				challenge: { in: 'json', key: 'challenge' },
+				when: { json: { type: 'url_verification' } },
+				prove: challenge.secretName
+					? {
+							kind: 'request-hmac',
+							secretName: challenge.secretName,
+							algorithm: 'hmac-sha256',
+							encoding: 'hex',
+							prefix: 'v0=',
+							timestampHeader: 'x-slack-request-timestamp',
+							signatureHeader: 'x-slack-signature',
+							signedPayload: 'v0.timestamp.body',
+							required: true,
+						}
+					: { kind: 'none' },
+				respond: { as: 'json', key: 'challenge' },
+			}
 		default: {
 			const exhaustive: never = challenge
 			throw new Error(
@@ -464,3 +198,335 @@ export function webhookChallengeAllowsGet(
 		}
 	}
 }
+
+async function verifyRequestHmac(input: {
+	request: Request
+	bodyText: string
+	prove: Extract<
+		NonNullable<NormalizedWebhookChallenge['prove']>,
+		{ kind: 'request-hmac' }
+	>
+	signingSecret: string
+}): Promise<boolean> {
+	const timestamp = input.request.headers.get(input.prove.timestampHeader)
+	const provided = input.request.headers.get(input.prove.signatureHeader)
+	if (!timestamp || !provided) return false
+	if (!/^\d+$/.test(timestamp)) return false
+	const ageSeconds = Math.abs(Date.now() / 1000 - Number(timestamp))
+	if (ageSeconds > 60 * 5) return false
+
+	let signedString: string
+	switch (input.prove.signedPayload) {
+		case 'v0.timestamp.body':
+			signedString = `v0:${timestamp}:${input.bodyText}`
+			break
+		default: {
+			const exhaustive: never = input.prove.signedPayload
+			throw new Error(
+				`Unhandled request-hmac signedPayload: ${String(exhaustive)}`,
+			)
+		}
+	}
+
+	const base = new TextEncoder().encode(signedString)
+	const expected = await computeWebhookHmacSignature({
+		algorithm: input.prove.algorithm,
+		secret: input.signingSecret,
+		body: base.buffer.slice(
+			base.byteOffset,
+			base.byteOffset + base.byteLength,
+		) as ArrayBuffer,
+		encoding: input.prove.encoding,
+		prefix: input.prove.prefix,
+	})
+	return timingSafeEqualString(expected, provided.trim())
+}
+
+function queryWhenMismatchResponse(
+	key: string,
+	allowed: string | ReadonlyArray<string>,
+): Response {
+	const allowedText =
+		typeof allowed === 'string' ? allowed : allowed.join(' or ')
+	return challengeBadRequestResponse(
+		`Subscription challenge requires ${key}=${allowedText}.`,
+	)
+}
+
+async function handleNormalizedSubscriptionChallenge(input: {
+	request: Request
+	challenge: NormalizedWebhookChallenge
+	resolveSecret: (name: string) => Promise<string | null>
+	bodyText?: string
+}): Promise<WebhookChallengeHandleResult> {
+	const config = input.challenge
+	if (input.request.method !== config.method) {
+		return { kind: 'not_challenge' }
+	}
+
+	const url = new URL(input.request.url)
+	const params = url.searchParams
+
+	let bodyJson: Record<string, unknown> | null = null
+	let bodyText = input.bodyText
+
+	if (config.method === 'POST' || config.challenge.in === 'json') {
+		bodyText = bodyText ?? (await input.request.clone().text())
+		try {
+			const parsed: unknown = JSON.parse(bodyText)
+			if (
+				parsed !== null &&
+				typeof parsed === 'object' &&
+				!Array.isArray(parsed)
+			) {
+				bodyJson = parsed as Record<string, unknown>
+			}
+		} catch {
+			bodyJson = null
+		}
+		if (config.method === 'POST' && bodyJson == null) {
+			return { kind: 'not_challenge' }
+		}
+	}
+
+	if (config.when?.query) {
+		for (const [key, allowed] of Object.entries(config.when.query)) {
+			const actual = params.get(key)
+			if (!whenValueAllows(allowed, actual)) {
+				if (config.method === 'POST') {
+					return { kind: 'not_challenge' }
+				}
+				return {
+					kind: 'respond',
+					response: queryWhenMismatchResponse(key, allowed),
+				}
+			}
+		}
+	}
+
+	if (config.when?.json) {
+		if (bodyJson == null) {
+			return config.method === 'POST'
+				? { kind: 'not_challenge' }
+				: {
+						kind: 'respond',
+						response: challengeBadRequestResponse(
+							'Subscription challenge requires a JSON body.',
+						),
+					}
+		}
+		for (const [key, allowed] of Object.entries(config.when.json)) {
+			const actual = bodyJson[key]
+			if (typeof actual !== 'string' || actual !== allowed) {
+				if (config.method === 'POST') {
+					return { kind: 'not_challenge' }
+				}
+				return {
+					kind: 'respond',
+					response: challengeBadRequestResponse(
+						`Subscription challenge requires JSON ${key}=${allowed}.`,
+					),
+				}
+			}
+		}
+	}
+
+	let challengeValue: string | null = null
+	if (config.challenge.in === 'query') {
+		challengeValue = params.get(config.challenge.key)
+	} else {
+		const raw = bodyJson?.[config.challenge.key]
+		challengeValue = typeof raw === 'string' ? raw : null
+	}
+
+	if (
+		config.method === 'GET' &&
+		(challengeValue == null || challengeValue === '') &&
+		config.when?.query == null
+	) {
+		// CRC-style: no filters, missing token is a bad request.
+		return {
+			kind: 'respond',
+			response: challengeBadRequestResponse(
+				`Subscription challenge requires ${config.challenge.key}.`,
+			),
+		}
+	}
+
+	if (challengeValue == null || challengeValue === '') {
+		if (config.method === 'POST') {
+			// Matched when.json (or no when) but missing challenge field.
+			return {
+				kind: 'respond',
+				response: challengeBadRequestResponse(
+					`Subscription challenge requires ${config.challenge.key}.`,
+				),
+			}
+		}
+		return {
+			kind: 'respond',
+			response: challengeBadRequestResponse(
+				`Subscription challenge requires ${config.challenge.key}.`,
+			),
+		}
+	}
+
+	const tooLong = assertChallengeParamLength(
+		challengeValue,
+		config.challenge.key,
+	)
+	if (tooLong) return { kind: 'respond', response: tooLong }
+
+	const prove = config.prove ?? { kind: 'none' as const }
+	switch (prove.kind) {
+		case 'none':
+			break
+		case 'verify-token': {
+			const required = prove.required !== false
+			const provided = params.get(prove.key) ?? ''
+			const verifyTooLong = assertChallengeParamLength(provided, prove.key)
+			if (verifyTooLong) {
+				return { kind: 'respond', response: verifyTooLong }
+			}
+			if (!required && provided === '') break
+			const secret = await resolveChallengeSecret({
+				secretName: prove.secretName,
+				resolveSecret: input.resolveSecret,
+			})
+			if (!secret.ok) return { kind: 'respond', response: secret.response }
+			if (!(await timingSafeEqualString(provided, secret.value))) {
+				return {
+					kind: 'respond',
+					response: challengeUnauthorizedResponse(
+						'Subscription challenge verify token mismatch.',
+					),
+				}
+			}
+			break
+		}
+		case 'hmac': {
+			const secret = await resolveChallengeSecret({
+				secretName: prove.secretName,
+				resolveSecret: input.resolveSecret,
+			})
+			if (!secret.ok) return { kind: 'respond', response: secret.response }
+			const tokenBytes = new TextEncoder().encode(challengeValue)
+			const digest = await computeWebhookHmacSignature({
+				algorithm: prove.algorithm,
+				secret: secret.value,
+				body: tokenBytes.buffer.slice(
+					tokenBytes.byteOffset,
+					tokenBytes.byteOffset + tokenBytes.byteLength,
+				) as ArrayBuffer,
+				encoding: prove.encoding,
+				prefix: prove.prefix,
+			})
+			if (config.respond.as !== 'json-hmac') {
+				return {
+					kind: 'respond',
+					response: challengeBadRequestResponse(
+						'HMAC prove requires respond.as=json-hmac.',
+					),
+				}
+			}
+			return {
+				kind: 'respond',
+				response: jsonResponse({ [config.respond.key]: digest }),
+			}
+		}
+		case 'request-hmac': {
+			const required = prove.required !== false
+			const secret = await resolveChallengeSecret({
+				secretName: prove.secretName,
+				resolveSecret: input.resolveSecret,
+			})
+			if (!secret.ok) return { kind: 'respond', response: secret.response }
+			const signatureOk = await verifyRequestHmac({
+				request: input.request,
+				bodyText: bodyText ?? '',
+				prove,
+				signingSecret: secret.value,
+			})
+			if (!signatureOk) {
+				if (!required) break
+				return {
+					kind: 'respond',
+					response: challengeUnauthorizedResponse(
+						'Subscription challenge request signature verification failed.',
+					),
+				}
+			}
+			break
+		}
+		default: {
+			const exhaustive: never = prove
+			throw new Error(
+				`Unhandled webhook challenge prove kind: ${String(
+					(exhaustive as { kind?: string }).kind,
+				)}`,
+			)
+		}
+	}
+
+	switch (config.respond.as) {
+		case 'text':
+			return { kind: 'respond', response: plainTextResponse(challengeValue) }
+		case 'json':
+			return {
+				kind: 'respond',
+				response: jsonResponse({ [config.respond.key]: challengeValue }),
+			}
+		case 'json-hmac':
+			return {
+				kind: 'respond',
+				response: challengeBadRequestResponse(
+					'respond.as=json-hmac requires prove.kind=hmac.',
+				),
+			}
+		default: {
+			const exhaustive: never = config.respond
+			throw new Error(
+				`Unhandled webhook challenge respond: ${String(
+					(exhaustive as { as?: string }).as,
+				)}`,
+			)
+		}
+	}
+}
+
+/**
+ * Answer a subscription-challenge probe on a minted webhook URL without
+ * invoking package code. Returns `not_challenge` when the request should
+ * continue on the normal delivery path (for example a POST after a body
+ * quiz filter does not match).
+ */
+export async function handleWebhookSubscriptionChallenge(input: {
+	request: Request
+	challenge: WebhookChallengeConfig
+	resolveSecret: (name: string) => Promise<string | null>
+	/** Pre-read POST body when the caller already consumed the stream. */
+	bodyText?: string
+}): Promise<WebhookChallengeHandleResult> {
+	return handleNormalizedSubscriptionChallenge({
+		request: input.request,
+		challenge: normalizeWebhookChallenge(input.challenge),
+		resolveSecret: input.resolveSecret,
+		bodyText: input.bodyText,
+	})
+}
+
+export function webhookChallengeAllowsGet(
+	challenge: WebhookChallengeConfig | null | undefined,
+) {
+	if (!challenge) return false
+	return normalizeWebhookChallenge(challenge).method === 'GET'
+}
+
+export function webhookChallengeAllowsPost(
+	challenge: WebhookChallengeConfig | null | undefined,
+) {
+	if (!challenge) return false
+	return normalizeWebhookChallenge(challenge).method === 'POST'
+}
+
+export { webhookChallengeSecretName }

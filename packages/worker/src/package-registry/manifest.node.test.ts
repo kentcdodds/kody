@@ -541,6 +541,41 @@ test('parseAuthoredPackageJson accepts kody.webhooks with verification, replay, 
 			challenge: xChallenge,
 		},
 	])
+
+	const hubChallenge = {
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'hub.challenge' },
+		when: { query: { 'hub.mode': 'subscribe' } },
+		prove: {
+			kind: 'verify-token',
+			in: 'query',
+			key: 'hub.verify_token',
+			secretName: 'hubVerify',
+		},
+		respond: { as: 'json', key: 'hub.challenge' },
+	} as const
+	const hub = parse(
+		'@kentcdodds/activity-hub',
+		{
+			webhooks: [
+				{
+					name: 'events',
+					export: './handle-events',
+					challenge: hubChallenge,
+				},
+			],
+		},
+		{ exports: { './handle-events': './src/handle-events.ts' } },
+	)
+	expect(buildPackageSearchProjection(hub).webhooks).toEqual([
+		{
+			...webhookDefaults,
+			name: 'events',
+			exportName: './handle-events',
+			challenge: hubChallenge,
+		},
+	])
 })
 
 test('buildPackageSearchProjection extracts export metadata, referenced types, and search documents', () => {

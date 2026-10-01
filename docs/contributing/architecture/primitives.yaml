@@ -800,3 +800,13 @@ invariants:
       - docs/contributing/architecture/usage-metering.md
       - docs/contributing/architecture/run-records.md
       - docs/contributing/architecture/entitlements.md
+
+  - id: no-vendor-specific-platform-logic
+    summary:
+      Platform capabilities stay generic; third parties configure via params,
+      not vendor-named type forks.
+    docs:
+      - docs/contributing/decisions/0054-no-vendor-specific-platform-logic.md
+      - docs/contributing/project-intent.md
+      - docs/contributing/architecture/webhooks.md
+      - docs/use/webhooks.md
