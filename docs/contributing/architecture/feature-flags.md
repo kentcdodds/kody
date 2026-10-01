@@ -166,7 +166,9 @@ without a sandbox. When off, the tool is not registered, and a session that
 registered it earlier gets `feature_unavailable` on the next call. The declared
 `successMetric` is `dynamic_worker_day` event count, goal decrease: single-call
 work that moves from `execute` to `api` should stop burning unique worker-days.
-Enable with
+Production enables it for the `experiments_opt_in` audience. Signed-in users can
+also opt themselves in from `/docs/open-api` (per-user on overrides for
+`mcp-api-tool` and `local-execute` together). Enable with
 `adminFeatureFlagSet({ key: "mcp-api-tool", enabled: true, audience: "experiments_opt_in" })`
 or a per-user override. Remove the flag and gate sites when the experiment ends.
 
@@ -174,8 +176,14 @@ or a per-user override. Remove the flag and gate sites when the experiment ends.
 `defaultAudience: experiments_opt_in`) for local execute: minting tokens with
 the `local-execute` scope and every CapabilityProxy route
 (`/v1/capability-proxy/*`). When off, those routes answer 403 `feature_disabled`
-(before the scope check) and `tokenCreate` rejects the scope. No
-`successMetric`: this is not an experiment.
+(before the scope check) and `tokenCreate` rejects the scope. Production enables
+it for the `experiments_opt_in` audience. Signed-in users can opt themselves in
+from `/docs/open-api` (same button as `mcp-api-tool`). No `successMetric`: this
+is not an experiment. CapabilityProxy session start and failures record
+observe-only `api_call` events (entity id `capabilityProxySession` on success;
+`capabilityProxySession:<code>` on failure such as `feature_disabled` or
+`unauthorized`) so operators can distinguish them in usage / Analytics Engine
+without inventing billable execute meters.
 
 ## Success metrics
 

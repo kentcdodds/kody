@@ -15,7 +15,11 @@ import {
 } from './context.ts'
 import { ApiError } from './errors.ts'
 
-function unauthorized(message: string, invalidToken: boolean) {
+function unauthorized(
+	message: string,
+	invalidToken: boolean,
+	meteringUserId?: string,
+) {
 	return new ApiError({
 		status: 401,
 		code: 'unauthorized',
@@ -25,6 +29,7 @@ function unauthorized(message: string, invalidToken: boolean) {
 				? `Bearer realm="kody-api", error="invalid_token"`
 				: `Bearer realm="kody-api"`,
 		},
+		meteringUserId,
 	})
 }
 
@@ -70,18 +75,24 @@ export async function authenticateApiRequest(input: {
 		now,
 	})
 	if (!authentication.ok) {
-		throw unauthorized(describeFailure(authentication.reason), true)
+		throw unauthorized(
+			describeFailure(authentication.reason),
+			true,
+			authentication.record?.user_id,
+		)
 	}
 	const { record } = authentication
 	const authContext = await buildMcpUserContextFromGrantProps(input.env, {
 		userId: record.user_id,
 	})
-	if (!authContext) throw unauthorized('Invalid API token.', true)
+	if (!authContext)
+		throw unauthorized('Invalid API token.', true, record.user_id)
 	if (!authContext.emailVerified) {
 		throw new ApiError({
 			status: 403,
 			code: 'email_verification_required',
 			message: `Your account email address is not verified, so API access is disabled. Verify it from ${input.appOrigin}/account.`,
+			meteringUserId: authContext.user.userId,
 		})
 	}
 	if (authContext.suspended) {
@@ -90,6 +101,7 @@ export async function authenticateApiRequest(input: {
 			code: 'account_suspended',
 			message:
 				'This account is suspended, so API access is disabled. Contact the operator of this Kody deployment to appeal.',
+			meteringUserId: authContext.user.userId,
 		})
 	}
 	if (
@@ -101,6 +113,7 @@ export async function authenticateApiRequest(input: {
 		throw unauthorized(
 			'API token predates a password change. Mint a new one.',
 			true,
+			authContext.user.userId,
 		)
 	}
 	const slid = slideApiTokenExpiry(record, now)

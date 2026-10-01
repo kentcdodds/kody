@@ -20,6 +20,10 @@ async function createApi(
 		emailVerified?: boolean
 		suspended?: boolean
 		localExecuteFlag?: boolean
+		captureUsage?: Array<{
+			blobs: Array<string | null | undefined>
+			indexes?: Array<string | null | undefined>
+		}>
 	} = {},
 ) {
 	const sqlite = new DatabaseSync(':memory:')
@@ -50,6 +54,21 @@ async function createApi(
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
+		...(input.captureUsage
+			? {
+					USAGE_EVENTS: {
+						writeDataPoint(point?: {
+							blobs?: Array<string | null | undefined>
+							indexes?: Array<string | null | undefined>
+						}) {
+							input.captureUsage?.push({
+								blobs: point?.blobs ?? [],
+								indexes: point?.indexes,
+							})
+						},
+					},
+				}
+			: {}),
 	} as unknown as Env
 	const pending: Array<Promise<unknown>> = []
 	async function call(
@@ -384,6 +403,53 @@ test('capability proxy answers feature_disabled when local-execute is off', asyn
 		token: await api.mint(['account:read']),
 	})
 	expect(noScope.body.error?.code).toBe('feature_disabled')
+})
+
+test('capability proxy records distinguishable observe-only api_call telemetry', async () => {
+	const points: Array<{
+		blobs: Array<string | null | undefined>
+		indexes?: Array<string | null | undefined>
+	}> = []
+	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const token = await mintWithLocalExecute(api)
+
+	const session = await api.call('GET', '/v1/capability-proxy/session', {
+		token,
+	})
+	expect(session.status).toBe(200)
+
+	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
+	const disabled = await api.call('GET', '/v1/capability-proxy/session', {
+		token,
+	})
+	expect(disabled.status).toBe(403)
+	expect(disabled.body.error?.code).toBe('feature_disabled')
+
+	await api.call('DELETE', '/v1/tokens/current', { token })
+	const revoked = await api.call('GET', '/v1/capability-proxy/session', {
+		token,
+	})
+	expect(revoked.status).toBe(401)
+
+	const proxyCalls = points.filter(
+		(point) =>
+			point.blobs[1] === 'api_call' &&
+			String(point.blobs[2] ?? '').startsWith('capabilityProxySession'),
+	)
+	expect(proxyCalls.map((point) => [point.blobs[2], point.blobs[3]])).toEqual([
+		['capabilityProxySession', 'success'],
+		['capabilityProxySession:feature_disabled', 'error'],
+		['capabilityProxySession:unauthorized', 'error'],
+	])
+	expect(proxyCalls.every((point) => point.indexes?.[0] === api.userId)).toBe(
+		true,
+	)
+	expect(
+		points.some(
+			(point) =>
+				point.blobs[1] === 'execute' || point.blobs[1] === 'dynamic_worker_day',
+		),
+	).toBe(false)
 })
 
 test('capability proxy runs kody:runtime calls and meters each hop', async () => {

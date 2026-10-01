@@ -3,6 +3,7 @@ import {
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
+import { recordUsage } from '#worker/usage/record-usage.ts'
 import { authenticateApiRequest } from './authenticate.ts'
 import {
 	buildOpenApiDocument,
@@ -13,7 +14,9 @@ import { ApiError, apiErrorResponse, notFound, toApiError } from './errors.ts'
 import {
 	assertApiScope,
 	assertNativeOperationEnabled,
+	capabilityProxyObservationEntityId,
 	invokeApiOperation,
+	isCapabilityProxyOperation,
 } from './invoke.ts'
 import { apiOperationUsesQueryInputs, matchApiRoute } from './operations.ts'
 import {
@@ -93,13 +96,46 @@ async function handleOperation(input: {
 			throw new Error(`Unexpected route match: ${String(exhaustive)}`)
 		}
 	}
-	const ctx = await authenticateApiRequest(input)
+	const startedAt = Date.now()
+	let ctx
+	try {
+		ctx = await authenticateApiRequest(input)
+	} catch (error) {
+		const apiError = toApiError(error)
+		if (
+			isCapabilityProxyOperation(match.operation) &&
+			apiError instanceof ApiError &&
+			apiError.meteringUserId
+		) {
+			const usage = recordUsage(
+				input.env,
+				{
+					userId: apiError.meteringUserId,
+					eventType: 'api_call',
+					entityId: capabilityProxyObservationEntityId({
+						baseEntityId: match.operation.operationId,
+						outcome: 'error',
+						failureCode: apiError.code,
+					}),
+					durationMs: Date.now() - startedAt,
+					outcome: 'error',
+				},
+				{ waitUntil: input.waitUntil },
+			)
+			input.waitUntil(usage)
+		}
+		throw error
+	}
 	const resolved = resolveApiOperation(
 		match.operation,
 		await getStaticRegistry(),
 	)
-	await assertNativeOperationEnabled(ctx, match.operation)
-	assertApiScope(ctx, resolved.scope)
+	// CapabilityProxy flag/scope failures meter inside invokeApiOperation so
+	// operators can tell session start from feature_disabled / insufficient_scope.
+	if (!isCapabilityProxyOperation(match.operation)) {
+		await assertNativeOperationEnabled(ctx, match.operation)
+		assertApiScope(ctx, resolved.scope)
+	}
 	const params = await readOperationParams({
 		request: input.request,
 		url: input.url,

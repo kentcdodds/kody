@@ -106,15 +106,15 @@ test('authentication rejects malformed, wrong-secret, expired, and revoked token
 	})
 	expect(
 		await authenticateApiToken({ db, token: wrongSecret, now: at(1) }),
-	).toEqual({ ok: false, reason: 'unknown' })
+	).toMatchObject({ ok: false, reason: 'unknown', record: { id: minted.id } })
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(61) }),
-	).toEqual({ ok: false, reason: 'expired' })
+	).toMatchObject({ ok: false, reason: 'expired', record: { id: minted.id } })
 
 	expect(await revokeApiToken({ db, userId, tokenId: minted.id })).toBe(true)
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(1) }),
-	).toEqual({ ok: false, reason: 'revoked' })
+	).toMatchObject({ ok: false, reason: 'revoked', record: { id: minted.id } })
 	expect(await revokeApiToken({ db, userId, tokenId: minted.id })).toBe(false)
 })
 
@@ -148,7 +148,7 @@ test('use slides expiry forward, debounced, and never past the absolute expiry',
 	expect((await load()).expires_at).toBe(at(600).toISOString())
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(601) }),
-	).toEqual({ ok: false, reason: 'expired' })
+	).toMatchObject({ ok: false, reason: 'expired' })
 })
 
 test('a token used at its minimum idle TTL keeps at least three quarters of it', async () => {
@@ -206,7 +206,7 @@ test('rotate invalidates the old secret and keeps scopes and absolute expiry', a
 	expect(rotated?.token).not.toBe(minted.token)
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(31) }),
-	).toEqual({ ok: false, reason: 'unknown' })
+	).toMatchObject({ ok: false, reason: 'unknown' })
 	const auth = await authenticateApiToken({
 		db,
 		token: rotated!.token,

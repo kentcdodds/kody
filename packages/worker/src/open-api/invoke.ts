@@ -2,6 +2,7 @@ import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
+import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	apiTokenScopeSatisfies,
 	type ApiTokenScope,
@@ -16,6 +17,29 @@ import {
 	type CapabilityApiOperation,
 } from './operations.ts'
 import { nativeApiOperationDefinitions } from './native-operations.ts'
+
+/**
+ * CapabilityProxy native routes (`local-execute`). Their observe-only
+ * `api_call` events append the ApiError `code` to `entityId` on failure so
+ * session start vs `feature_disabled` / `unauthorized` / hop errors stay
+ * distinguishable in Analytics Engine without a new UsageEventType.
+ */
+export function isCapabilityProxyOperation(operation: ApiOperation): boolean {
+	return (
+		operation.kind === 'native' && operation.featureFlag === localExecuteFlagKey
+	)
+}
+
+export function capabilityProxyObservationEntityId(input: {
+	baseEntityId: string
+	outcome: 'success' | 'error'
+	failureCode?: string | null
+}): string {
+	if (input.outcome === 'success' || !input.failureCode) {
+		return input.baseEntityId
+	}
+	return `${input.baseEntityId}:${input.failureCode}`.slice(0, 200)
+}
 
 export function assertApiScope(
 	ctx: ApiInvocationContext,
@@ -158,23 +182,33 @@ export async function invokeApiOperation(input: {
 	}
 	const startedAt = Date.now()
 	let outcome: 'success' | 'error' = 'error'
+	let failureCode: string | null = null
 	try {
 		const result = await dispatch({ operation, params, ctx: input.ctx })
 		outcome = 'success'
 		return result
 	} catch (error) {
 		const apiError = toApiError(error)
+		failureCode = apiError.code
 		if (apiError.status >= 500 && !(error instanceof ApiError)) {
 			console.error('open-api-operation-failed', operation.operationId, error)
 		}
 		throw apiError
 	} finally {
+		const baseEntityId = resolveUsageEntityId(operation, params)
+		const entityId = isCapabilityProxyOperation(operation)
+			? capabilityProxyObservationEntityId({
+					baseEntityId,
+					outcome,
+					failureCode,
+				})
+			: baseEntityId
 		const usage = recordUsage(
 			input.ctx.env,
 			{
 				userId: input.ctx.callerContext.user.userId,
 				eventType: 'api_call',
-				entityId: resolveUsageEntityId(operation, params),
+				entityId,
 				durationMs: Date.now() - startedAt,
 				outcome,
 			},

@@ -33,8 +33,11 @@ import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrou
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
 import { renderSecretProvidersFlagCallout } from '#client/routes/secret-providers-flag-callout.tsx'
+import { renderOpenApiFlagCallout } from '#client/routes/open-api-flag-callout.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import {
+	localExecuteFlagKey,
+	mcpApiToolFlagKey,
 	packageShareGrantsFlagKey,
 	secretProvidersFlagKey,
 } from '#universal/feature-flags/registry.ts'
@@ -330,6 +333,15 @@ export function DocDetailRoute(handle: Handle) {
 						? renderSecretProvidersFlagCallout({
 								loggedIn: Boolean(session),
 								enabled: isFeatureFlagEnabled(session, secretProvidersFlagKey),
+							})
+						: null}
+
+					{doc.slug === 'open-api'
+						? renderOpenApiFlagCallout({
+								loggedIn: Boolean(session),
+								enabled:
+									isFeatureFlagEnabled(session, mcpApiToolFlagKey) &&
+									isFeatureFlagEnabled(session, localExecuteFlagKey),
 							})
 						: null}
 

@@ -48,6 +48,11 @@ export class ApiError extends Error {
 	readonly code: ApiErrorCode
 	readonly details: unknown
 	readonly headers: Record<string, string>
+	/**
+	 * Owning user for observe-only metering when auth fails before
+	 * `invokeApiOperation`. Never serialized to clients.
+	 */
+	readonly meteringUserId?: string
 
 	constructor(input: {
 		status: number
@@ -55,6 +60,7 @@ export class ApiError extends Error {
 		message: string
 		details?: unknown
 		headers?: Record<string, string>
+		meteringUserId?: string
 	}) {
 		super(input.message)
 		this.name = 'ApiError'
@@ -62,6 +68,7 @@ export class ApiError extends Error {
 		this.code = input.code
 		this.details = input.details
 		this.headers = input.headers ?? {}
+		this.meteringUserId = input.meteringUserId
 	}
 
 	toBody(): ApiErrorBody {

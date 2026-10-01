@@ -134,7 +134,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Third MCP tool `api`: run one Open API operation (operationId + params) without a sandbox, including tokenCreate. Off: tool not registered. The HTTP API is not gated.',
+			'Third MCP tool `api`: run one Open API operation (operationId + params) without a sandbox, including tokenCreate. Off: tool not registered. The HTTP API is not gated. Signed-in users can turn it on (with local-execute) from /docs/open-api.',
 		successMetric: {
 			eventType: 'dynamic_worker_day',
 			measure: 'event_count',
@@ -148,7 +148,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Local execute: mint `local-execute` API tokens and call the CapabilityProxy (/v1/capability-proxy/*). Off: 403 feature_disabled. Rollout kill switch, not an experiment.',
+			'Local execute: mint `local-execute` API tokens and call the CapabilityProxy (/v1/capability-proxy/*). Off: 403 feature_disabled. Rollout kill switch, not an experiment. Signed-in users can turn it on (with mcp-api-tool) from /docs/open-api.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 

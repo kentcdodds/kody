@@ -89,6 +89,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 			{ slug: 'openmuse', label: 'OpenMuse and Kody' },
 			{ slug: 'triggers', label: 'Jobs, workflows, and webhooks' },
 			{ slug: 'platform-efficiency', label: 'Runtime and efficiency' },
+			{ slug: 'open-api', label: 'Open API and local execute' },
 		],
 	},
 	{

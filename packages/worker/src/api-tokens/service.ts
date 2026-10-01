@@ -471,7 +471,12 @@ export type ApiTokenAuthenticationFailure =
 
 export type ApiTokenAuthentication =
 	| { ok: true; record: ApiTokenRecord }
-	| { ok: false; reason: ApiTokenAuthenticationFailure }
+	| {
+			ok: false
+			reason: ApiTokenAuthenticationFailure
+			/** Present when the token id resolved to a stored row. */
+			record?: ApiTokenRecord
+	  }
 
 export async function authenticateApiToken(input: {
 	db: D1Database
@@ -490,15 +495,15 @@ export async function authenticateApiToken(input: {
 		await hashSecret(parsed.secret),
 		record.token_hash,
 	)
-	if (!hashMatches) return { ok: false, reason: 'unknown' }
+	if (!hashMatches) return { ok: false, reason: 'unknown', record }
 	const status = getApiTokenStatus(record, input.now)
 	switch (status) {
 		case 'active':
 			return { ok: true, record }
 		case 'revoked':
-			return { ok: false, reason: 'revoked' }
+			return { ok: false, reason: 'revoked', record }
 		case 'expired':
-			return { ok: false, reason: 'expired' }
+			return { ok: false, reason: 'expired', record }
 		default: {
 			const exhaustive: never = status
 			throw new Error(`Unexpected API token status: ${String(exhaustive)}`)

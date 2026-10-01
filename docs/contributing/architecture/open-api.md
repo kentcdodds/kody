@@ -9,7 +9,11 @@ MCP `api` tool, and two of them form the CapabilityProxy that local execute
 
 The HTTP API itself is not feature-flagged. The MCP `api` tool (`mcp-api-tool`)
 and the CapabilityProxy (`local-execute`) are; see
-[feature flags](./feature-flags.md).
+[feature flags](./feature-flags.md). Production enables both for the
+`experiments_opt_in` audience. Signed-in users who are not already flagged can
+opt in from the user guide at `/docs/open-api` (per-user overrides for both
+flags). There is no account UI for API token management — mint, list, and revoke
+via the CLI / MCP `api` tool only.
 
 ## Workers
 
@@ -171,7 +175,12 @@ Every error is `{ error: { code, message, details? } }` with
 
 Each operation records one observe-only `api_call`
 ([usage metering](./usage-metering.md)); CapabilityProxy hops use
-`capability-proxy:<path>` as the entity id. The capability behind a call meters
+`capability-proxy:<path>` as the entity id. On CapabilityProxy failures the
+entity id appends the ApiError code (for example
+`capabilityProxySession:feature_disabled` or
+`capabilityProxySession:unauthorized`) so session start and auth / flag failures
+are distinguishable in Analytics Engine without a new event type or fake
+`execute` / `dynamic_worker_day` charges. The capability behind a call meters
 itself as usual (email sends, outbound fetches, package runs). Local execute CPU
 runs on the user's machine and is never recorded as `execute` or
 `dynamic_worker_day`.
