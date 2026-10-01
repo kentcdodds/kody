@@ -195,24 +195,27 @@ async function handleWebsubHub(input: {
 }
 
 /**
- * Meta / Facebook / WhatsApp: GET hub.mode=subscribe + matching
- * hub.verify_token → echo hub.challenge as text/plain.
+ * Shared GET hub.mode=subscribe + hub.verify_token + hub.challenge quiz used by
+ * Meta (text/plain echo) and Strava (JSON `{ "hub.challenge" }`).
  */
-async function handleMetaHub(input: {
+async function handleSubscribeHubChallenge(input: {
 	request: Request
 	secretName: string
 	resolveSecret: (name: string) => Promise<string | null>
+	providerLabel: 'Meta' | 'Strava'
+	respond: (challenge: string) => Response
 }): Promise<WebhookChallengeHandleResult> {
 	if (input.request.method !== 'GET') return { kind: 'not_challenge' }
 	const params = new URL(input.request.url).searchParams
 	const mode = params.get('hub.mode')
 	const challenge = params.get('hub.challenge')
 	const verifyToken = params.get('hub.verify_token') ?? ''
+	const label = input.providerLabel
 	if (mode == null && challenge == null && verifyToken === '') {
 		return {
 			kind: 'respond',
 			response: challengeBadRequestResponse(
-				'Meta hub challenge requires hub.mode, hub.verify_token, and hub.challenge.',
+				`${label} hub challenge requires hub.mode, hub.verify_token, and hub.challenge.`,
 			),
 		}
 	}
@@ -220,7 +223,7 @@ async function handleMetaHub(input: {
 		return {
 			kind: 'respond',
 			response: challengeBadRequestResponse(
-				'Meta hub challenge requires hub.mode=subscribe.',
+				`${label} hub challenge requires hub.mode=subscribe.`,
 			),
 		}
 	}
@@ -228,7 +231,7 @@ async function handleMetaHub(input: {
 		return {
 			kind: 'respond',
 			response: challengeBadRequestResponse(
-				'Meta hub challenge requires hub.challenge.',
+				`${label} hub challenge requires hub.challenge.`,
 			),
 		}
 	}
@@ -255,11 +258,44 @@ async function handleMetaHub(input: {
 		return {
 			kind: 'respond',
 			response: challengeUnauthorizedResponse(
-				'Meta hub verify token mismatch.',
+				`${label} hub verify token mismatch.`,
 			),
 		}
 	}
-	return { kind: 'respond', response: plainTextResponse(challenge) }
+	return { kind: 'respond', response: input.respond(challenge) }
+}
+
+/**
+ * Meta / Facebook / WhatsApp: GET hub.mode=subscribe + matching
+ * hub.verify_token → echo hub.challenge as text/plain.
+ */
+async function handleMetaHub(input: {
+	request: Request
+	secretName: string
+	resolveSecret: (name: string) => Promise<string | null>
+}): Promise<WebhookChallengeHandleResult> {
+	return handleSubscribeHubChallenge({
+		...input,
+		providerLabel: 'Meta',
+		respond: plainTextResponse,
+	})
+}
+
+/**
+ * Strava push subscriptions: GET hub.mode=subscribe + matching
+ * hub.verify_token → JSON `{ "hub.challenge": "<challenge>" }`.
+ * @see https://developers.strava.com/docs/webhooks/
+ */
+async function handleStravaHub(input: {
+	request: Request
+	secretName: string
+	resolveSecret: (name: string) => Promise<string | null>
+}): Promise<WebhookChallengeHandleResult> {
+	return handleSubscribeHubChallenge({
+		...input,
+		providerLabel: 'Strava',
+		respond: (challenge) => jsonResponse({ 'hub.challenge': challenge }),
+	})
 }
 
 async function verifySlackRequestSignature(input: {
@@ -382,6 +418,12 @@ export async function handleWebhookSubscriptionChallenge(input: {
 				secretName: input.challenge.secretName,
 				resolveSecret: input.resolveSecret,
 			})
+		case 'strava-hub':
+			return handleStravaHub({
+				request: input.request,
+				secretName: input.challenge.secretName,
+				resolveSecret: input.resolveSecret,
+			})
 		case 'slack-url-verification':
 			return handleSlackUrlVerification({
 				request: input.request,
@@ -408,6 +450,7 @@ export function webhookChallengeAllowsGet(
 		case 'x-activity-crc':
 		case 'websub-hub':
 		case 'meta-hub':
+		case 'strava-hub':
 			return true
 		case 'slack-url-verification':
 			return false

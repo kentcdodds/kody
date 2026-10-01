@@ -1304,7 +1304,12 @@ type PackageWebhookReplay = {
 } | null
 
 type PackageWebhookChallenge = {
-	type: 'x-activity-crc' | 'websub-hub' | 'meta-hub' | 'slack-url-verification'
+	type:
+		| 'x-activity-crc'
+		| 'websub-hub'
+		| 'meta-hub'
+		| 'strava-hub'
+		| 'slack-url-verification'
 	secretName?: string
 } | null
 

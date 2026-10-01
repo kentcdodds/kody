@@ -144,6 +144,57 @@ test('meta-hub requires verify token match and rejects missing secret', async ()
 	).toEqual([401, 401])
 })
 
+test('strava-hub returns JSON hub.challenge and rejects bad verify tokens', async () => {
+	const challenge = {
+		type: 'strava-hub',
+		secretName: 'stravaVerify',
+	} as const
+	const secrets = { stravaVerify: 'STRAVA' }
+	const subscribe =
+		'?hub.mode=subscribe&hub.verify_token=STRAVA&hub.challenge=15f7d1a91c1f40f8a748fd134752feb3'
+	const ok = await challengeOutcome({
+		request: subscribe,
+		challenge,
+		secrets,
+	})
+	expect(ok).toMatchObject({ status: 200 })
+	expect((ok as { contentType: string }).contentType).toMatch(
+		/application\/json/,
+	)
+	expect(JSON.parse((ok as { body: string }).body)).toEqual({
+		'hub.challenge': '15f7d1a91c1f40f8a748fd134752feb3',
+	})
+
+	expect(
+		await statusesOf([
+			{
+				request: '?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=abc',
+				challenge,
+				secrets,
+			},
+			{
+				request:
+					'?hub.mode=subscribe&hub.challenge=abc&hub.verify_token=STRAVA',
+				challenge,
+			},
+			{
+				request:
+					'?hub.mode=unsubscribe&hub.verify_token=STRAVA&hub.challenge=abc',
+				challenge,
+				secrets,
+			},
+			{
+				request: new Request(
+					'https://example.test/hook?hub.mode=subscribe&hub.verify_token=STRAVA&hub.challenge=abc',
+					{ method: 'POST' },
+				),
+				challenge,
+				secrets,
+			},
+		]),
+	).toEqual([401, 401, 400, { kind: 'not_challenge' }])
+})
+
 test('slack-url-verification echoes challenge and rejects bad signatures', async () => {
 	const body = JSON.stringify({
 		type: 'url_verification',

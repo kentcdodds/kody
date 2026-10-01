@@ -285,12 +285,13 @@ call MCP, or fetch outbound.
 Declare one `challenge` object next to (or instead of, when the provider has no
 POST HMAC) `verification`:
 
-| `challenge.type`         | Method                                         | What the platform does                                     | `secretName`                                            |
-| ------------------------ | ---------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------- |
-| `x-activity-crc`         | GET `crc_token`                                | JSON `{ response_token: "sha256=" + base64(HMAC-SHA256) }` | **Required** (X consumer secret)                        |
-| `websub-hub`             | GET `hub.mode` + `hub.challenge`               | Echo challenge as `text/plain`                             | Optional; when set, `hub.verify_token` must match       |
-| `meta-hub`               | GET `hub.mode=subscribe` + `hub.challenge`     | Echo challenge as `text/plain` after verify-token match    | **Required** (Meta verify token)                        |
-| `slack-url-verification` | POST `{ type: "url_verification", challenge }` | JSON `{ challenge }`                                       | Optional; when set, Slack signing signature must verify |
+| `challenge.type`         | Method                                         | What the platform does                                             | `secretName`                                            |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------- |
+| `x-activity-crc`         | GET `crc_token`                                | JSON `{ response_token: "sha256=" + base64(HMAC-SHA256) }`         | **Required** (X consumer secret)                        |
+| `websub-hub`             | GET `hub.mode` + `hub.challenge`               | Echo challenge as `text/plain`                                     | Optional; when set, `hub.verify_token` must match       |
+| `meta-hub`               | GET `hub.mode=subscribe` + `hub.challenge`     | Echo challenge as `text/plain` after verify-token match            | **Required** (Meta verify token)                        |
+| `strava-hub`             | GET `hub.mode=subscribe` + `hub.challenge`     | JSON `{ "hub.challenge": "<challenge>" }` after verify-token match | **Required** (Strava verify token)                      |
+| `slack-url-verification` | POST `{ type: "url_verification", challenge }` | JSON `{ challenge }`                                               | Optional; when set, Slack signing signature must verify |
 
 `secretName` is the same named secret-store reference as
 `verification.secretName` — never an inline value. Later vendor POSTs still go
@@ -333,6 +334,31 @@ webhook, then register the revealed URL directly with X. CRC GETs never invoke
 	}
 }
 ```
+
+### Strava hub example
+
+Strava's
+[push subscription validation](https://developers.strava.com/docs/webhooks/)
+sends the same `hub.*` query params as Meta, but requires `application/json`
+with body `{ "hub.challenge": "<challenge>" }` (not `text/plain`). Use
+`strava-hub` and store the same `verify_token` you pass when creating the Strava
+subscription:
+
+```json
+{
+	"name": "strava-events",
+	"export": "./handle-strava",
+	"challenge": {
+		"type": "strava-hub",
+		"secretName": "stravaVerifyToken"
+	}
+}
+```
+
+Mint the webhook, register the revealed URL as Strava's `callback_url`, and pass
+the secret value as `verify_token` in the subscription create request. Challenge
+GETs never invoke `./handle-strava`; event POSTs do after URL-secret (and
+optional HMAC) verification.
 
 ### Slack Events example
 

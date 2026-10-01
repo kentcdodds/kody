@@ -31,11 +31,12 @@ Parsing and export existence checks live in `parseAuthoredPackageJson` /
 
 `challenge` is answered entirely by the ingress worker
 (`packages/worker/src/webhooks/challenge.ts`). Supported types:
-`x-activity-crc`, `websub-hub`, `meta-hub`, `slack-url-verification`. Challenge
-requests never call `invokePackageExport`, never write delivery/run history, and
-never perform outbound fetch or MCP. They may resolve a named secret for HMAC or
-verify-token compare. After the quiz succeeds, later vendor POSTs still use the
-normal URL-secret + optional HMAC path.
+`x-activity-crc`, `websub-hub`, `meta-hub`, `strava-hub`,
+`slack-url-verification`. Challenge requests never call `invokePackageExport`,
+never write delivery/run history, and never perform outbound fetch or MCP. They
+may resolve a named secret for HMAC or verify-token compare. After the quiz
+succeeds, later vendor POSTs still use the normal URL-secret + optional HMAC
+path.
 
 HMAC `verification` signs the raw body by default (`signedPayload` omitted or
 `'body'`). Set `signedPayload` to `'timestamp.body'` when the provider HMAC

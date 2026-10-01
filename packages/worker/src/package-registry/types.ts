@@ -160,6 +160,7 @@ export const webhookChallengeTypeValues = [
 	'x-activity-crc',
 	'websub-hub',
 	'meta-hub',
+	'strava-hub',
 	'slack-url-verification',
 ] as const
 export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
@@ -176,6 +177,11 @@ export const packageWebhookChallengeSchema = z.discriminatedUnion('type', [
 	}),
 	z.object({
 		type: z.literal('meta-hub'),
+		secretName: z.string().min(1),
+	}),
+	z.object({
+		type: z.literal('strava-hub'),
+		/** Strava verify_token from the push subscription create request. */
 		secretName: z.string().min(1),
 	}),
 	z.object({
