@@ -1,8 +1,10 @@
+import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { packageSpecifierPrefix } from './package-import-resolution.ts'
 import { collectDynamicImportExpressionNodes } from './import-specifiers.ts'
 import { prepareKodyGraphFiles } from './module-graph-import-rewriting.ts'
 import {
 	createPackageProxyPathSegment,
+	createRelativeImportSpecifier,
 	joinPath,
 	normalizeWorkspaceModulePath,
 	packageImportProxyPrefix,
@@ -71,13 +73,17 @@ export async function buildLocalExecutePackageGraph(input: {
 
 	let prepared: Awaited<ReturnType<typeof prepareKodyGraphFiles>>
 	try {
+		const allowPlatformScopes = await isPlatformAccountStableUserId(
+			input.env.APP_DB,
+			input.userId,
+		)
 		prepared = await prepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.userId,
 			sourceFiles,
 			entryPoint: 'entry.ts',
-			allowPlatformScopes: false,
+			allowPlatformScopes,
 		})
 	} catch (error) {
 		throw mapPrepareFailure(error, staticImports)
@@ -122,8 +128,15 @@ export async function buildLocalExecutePackageGraph(input: {
 		}
 		// Alias the exact `kody:@…` specifier the CLI embeds next to user code.
 		// Use an unmetered re-export so local workerd does not need cloud
-		// static-call metering helpers from the shared runtime.
-		modulesByName.set(specifier, createPackageImportProxySource({ targetPath }))
+		// static-call metering helpers from the shared runtime. Target must be
+		// relative: workerd treats `.__kody_packages__/…` as a relative-path
+		// reference from the alias module, not an exact module-name lookup.
+		modulesByName.set(
+			specifier,
+			createPackageImportProxySource({
+				targetPath: createRelativeImportSpecifier(specifier, targetPath),
+			}),
+		)
 	}
 
 	const modules = [...modulesByName.entries()]

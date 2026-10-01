@@ -152,8 +152,9 @@ export default async function main(params) { return greet(params.name) }`
 		(module) => module.name === 'kody:@kentcdodds/example-package/hello',
 	)
 	expect(entry).toBeDefined()
-	expect(entry?.esModule).toContain('.__published_bundle__/')
+	expect(entry?.esModule).toMatch(/from ["']\.\.?\/.*\.__published_bundle__\//)
 	expect(entry?.esModule).toContain('dist/hello.js')
+	expect(entry?.esModule).not.toMatch(/from ["']\.__kody_packages__\//)
 	expect(
 		graph.modules.some(
 			(module) =>
