@@ -18,7 +18,7 @@ import {
 } from './outbound.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { maxPlanEmailLimits, planLimits } from '#universal/plans.ts'
 import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
@@ -518,13 +518,13 @@ test('sendOutboundEmail skips REST fallback when the binding succeeds or validat
 	// Usage recording degrades with a warn when the usage_rollups table is
 	// not part of this test's schema; that is incidental to the fallback.
 	silenceIncidentalRuntimeWarnings()
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () => {
 				throw new Error('REST fallback should not be called')
 			}),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	const account = await seedAccount()
 	let bindingSendCount = 0
@@ -554,7 +554,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	const month = new Date().toISOString().slice(0, 7)
 	const encoder = new TextEncoder()
 
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
 				fetchCalls.push((await request.json()) as Record<string, unknown>)
@@ -564,7 +564,7 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 				)
 			}),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	const account = await seedAccount()
 	const { accountEmail, userId } = account
@@ -724,7 +724,7 @@ test('sendOutboundEmail passes base64 attachments to the REST fallback', async (
 	const account = await seedAccount()
 	const contentBase64 = bytesToBase64(new TextEncoder().encode('name,total'))
 	const fetchCalls: Array<Record<string, unknown>> = []
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
 				fetchCalls.push((await request.json()) as Record<string, unknown>)
@@ -734,7 +734,7 @@ test('sendOutboundEmail passes base64 attachments to the REST fallback', async (
 				})
 			}),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 
 	const result = await sendAs(account, {

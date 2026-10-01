@@ -90,7 +90,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 				},
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	expect(
 		await sendCloudflareEmail(
@@ -125,11 +125,11 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	consoleWarn.mockImplementation(() => {})
 	using _networkFailureServer = createMswNodeServer(
 		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	expect(
 		await sendCloudflareEmail(testApiConfig, message('Request failure')),
-	).toEqual({ ok: false, error: 'Failed to fetch' })
+	).toEqual({ ok: false, error: 'fetch failed' })
 	// Exactly the one expected warning; anything else the mock swallowed
 	// would be a regression hidden by the opt-in above.
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
@@ -146,7 +146,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 				}),
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	await expect(
 		sendCloudflareEmail(testApiConfig, message('Invalid JSON')),
@@ -172,7 +172,7 @@ test('sendCloudflareEmail defaults Reply-To to support@ when From is kody@ unles
 				},
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	const sends = [
 		['kody@kody.codes', 'Verify your email', undefined],

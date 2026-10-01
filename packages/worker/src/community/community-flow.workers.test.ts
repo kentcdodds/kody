@@ -37,7 +37,7 @@ import {
 	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
 	type CommunityListingPublishedDispatchQueueMessage,
 } from './listing-published-dispatch-queue-producer.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 
 const mockAccountId = 'cf_account_mock_123'
@@ -102,12 +102,12 @@ function createFlowHarness() {
 	// Publish checks and artifact rebuilds run the real worker bundler, which
 	// warns that it is experimental.
 	silenceIncidentalRuntimeWarnings()
-	const artifactsMock = createMswNodeServer(
+	const artifactsMock = createMswWorkerServer(
 		createArtifactsMswHandlers({
 			accountId: mockAccountId,
 			apiBaseUrl: artifactsApiBaseUrl,
 		}),
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
 	const queuedListingPublished: Array<

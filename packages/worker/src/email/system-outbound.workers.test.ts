@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { systemEmailDayKey, systemEmailLimits } from './system-email.ts'
 import { systemEmailSentTopic } from './system-email-sent-subscription-event.ts'
@@ -21,7 +21,7 @@ const { sendSystemEmail } = await import('./system-outbound.ts')
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
 
-const mswOptions = { onUnhandledRequest: 'bypass' as const }
+const mswOptions = { onUnhandledFrame: 'bypass' as const }
 
 function createSystemEnv() {
 	return {
@@ -58,7 +58,7 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-03-04T05:06:07.000Z')
 	const payloads: Array<Record<string, unknown>> = []
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
 				payloads.push((await request.json()) as Record<string, unknown>)
@@ -139,7 +139,7 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 
 test('sendSystemEmail rejects unusable senders, recipients, and bodies', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () => {
 				throw new Error('Send should not be attempted')
@@ -184,7 +184,7 @@ test('a failed provider call refunds the daily send budget and the cap blocks fu
 	// behavior under test here.
 	consoleWarn.mockImplementation(() => {})
 	const now = new Date('2026-03-05T05:06:07.000Z')
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () =>
 				HttpResponse.json(

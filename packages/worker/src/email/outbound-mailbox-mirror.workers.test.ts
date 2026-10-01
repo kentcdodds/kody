@@ -6,7 +6,7 @@ import { ensureEmailTestSchema } from './test-schema.ts'
 import { rpcFor } from './mailbox-test-helpers.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const cloudflareEmailApi =
@@ -116,7 +116,7 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
 
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () =>
 				HttpResponse.json(
@@ -125,7 +125,7 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 				),
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 
 	const result = await sendOutboundEmail({

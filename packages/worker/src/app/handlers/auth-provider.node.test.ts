@@ -913,7 +913,7 @@ test('signed-in users link and disconnect providers from their account', async (
 
 test('MOCK_ client ids run the whole flow in-worker and refuse disconnecting the only sign-in method', async () => {
 	const { sqlite, db } = createMigratedDb()
-	// onUnhandledRequest: 'error' in the shared MSW server means any real
+	// onUnhandledFrame: 'error' in the shared MSW server means any real
 	// provider call would fail this test.
 	const env = createAppEnv(db, {
 		GITHUB_CLIENT_ID: 'MOCK_GITHUB_CLIENT_ID',

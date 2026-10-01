@@ -2,7 +2,7 @@ import { type HttpHandler } from 'msw'
 import { setupServer } from 'msw/node'
 
 export type MswNodeServerOptions = {
-	onUnhandledRequest?: 'error' | 'warn' | 'bypass'
+	onUnhandledFrame?: 'error' | 'warn' | 'bypass'
 }
 
 export function createMswNodeServer(
@@ -10,8 +10,8 @@ export function createMswNodeServer(
 	options: MswNodeServerOptions = {},
 ) {
 	const server = setupServer(...handlers)
-	const onUnhandledRequest = options.onUnhandledRequest ?? 'error'
-	server.listen({ onUnhandledRequest })
+	const onUnhandledFrame = options.onUnhandledFrame ?? 'error'
+	server.listen({ onUnhandledFrame })
 
 	return {
 		server,

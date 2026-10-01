@@ -139,6 +139,32 @@ function createFetchInterceptor(options: {
 	}
 }
 
+function createDirectFetchMock(options: {
+	fetchCalls: Array<RecordedRequest>
+	apiErrors: Array<Error>
+	apiResponses: Array<ApiResponseSpec>
+}) {
+	const apiErrors = [...options.apiErrors]
+	const apiResponses = [...options.apiResponses]
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = async (input, init) => {
+		const request = new Request(input, init)
+		options.fetchCalls.push(request.clone())
+		const apiError = apiErrors.shift()
+		if (apiError) throw apiError
+		const apiResponse = apiResponses.shift()
+		return Response.json(apiResponse?.body ?? { ok: true }, {
+			status: apiResponse?.status ?? 200,
+			headers: { 'content-type': 'application/json' },
+		})
+	}
+	return {
+		[Symbol.dispose]() {
+			globalThis.fetch = originalFetch
+		},
+	}
+}
+
 test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on missing or expired tokens', async () => {
 	const expired = [
 		{ status: 401, body: { error: 'expired' } },
@@ -188,7 +214,11 @@ test('createAuthenticatedFetch uses placeholder auth and refreshes host-side on 
 		const fetchCalls: Array<RecordedRequest> = []
 		const { kody, tokenRefreshCalls } = createKody(scenario.integration)
 		{
-			using _interceptor = createFetchInterceptor({ fetchCalls, ...scenario })
+			const createFetchMock =
+				scenario.apiErrors.length > 0
+					? createDirectFetchMock
+					: createFetchInterceptor
+			using _interceptor = createFetchMock({ fetchCalls, ...scenario })
 			const authenticatedFetch = await createAuthenticatedFetch(kody, name)
 			const response = await authenticatedFetch(scenario.path, scenario.init)
 			expect(await response.json()).toEqual({ ok: true })
