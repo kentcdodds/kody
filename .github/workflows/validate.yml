@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
 # `validate` / `test:push`. Anyone who can push already has the write
@@ -114,6 +115,10 @@ jobs:
 
       - name: 📦 Worker startup bundles
         if: ${{ !cancelled() }}
+        env:
+          # Main pushes may open/update a tracking issue when a reviewed
+          # startup byte budget is exceeded. Overage never fails this step.
+          GH_TOKEN: ${{ github.token }}
         run: npm run worker-startup-bundles:check
 
       - name: ⏱️ Worker startup time

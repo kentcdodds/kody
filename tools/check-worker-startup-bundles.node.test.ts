@@ -3,6 +3,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 import {
+	collectStartupBundleOverages,
 	readStartupBundleBudget,
 	startupBundles,
 } from './check-worker-startup-bundles.ts'
@@ -38,4 +39,17 @@ test('bundle budget file requires a positive integer ceiling for every checked w
 	} finally {
 		await rm(dir, { recursive: true, force: true })
 	}
+})
+
+test('byte overages are collected for reporting instead of treated as fatal', () => {
+	expect(
+		collectStartupBundleOverages([
+			{ name: 'runtime', size: 3_912_588, maxEntryBytes: 3_912_500 },
+		]),
+	).toHaveLength(1)
+	expect(
+		collectStartupBundleOverages([
+			{ name: 'runtime', size: 3_912_500, maxEntryBytes: 3_912_500 },
+		]),
+	).toEqual([])
 })

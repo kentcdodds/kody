@@ -4,6 +4,10 @@ Append-only ledger of reviewed `maxEntryBytes` bumps. Live ceilings live in
 `tools/worker-startup-bundle-budget.json`. Append a new measurement here; do not
 re-flow older notes when you bump a number.
 
+Byte overages no longer fail CI: `tools/check-worker-startup-bundles.ts` warns
+and upserts a tracking GitHub issue on main pushes. Keep this ledger honest when
+you intentionally raise a ceiling.
+
 ## origin
 
 Vite production entry. Reviewed ceiling 7_750_000.
@@ -362,3 +366,5 @@ runtime path if this budget is raised again.
   capability errors (per-call secret redactor) from generic platform failures
   adds about 870 more: local dry-run 5_277_132 (5_277_389 with #2764), reviewed
   ceiling 5_277_500.
+- Startup byte overages no longer fail Static / block Deploy: the checker warns
+  and upserts a deduped GitHub tracking issue on main CI pushes instead.
