@@ -236,7 +236,7 @@ test('visibility defaults to draft, survives partial saves, and only enabled + p
 
 test('migration leaves pre-existing platform apps draft', async () => {
 	const sqlite = new DatabaseSync(':memory:')
-	const visibilityMigration = '0074-platform-oauth-app-visibility.sql'
+	const visibilityMigration = '0075-platform-oauth-app-visibility.sql'
 	const migrationFiles = readdirSync(migrationsDirectory)
 		.filter((file) => file.endsWith('.sql'))
 		.sort()

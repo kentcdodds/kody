@@ -88,7 +88,7 @@ Two independent switches decide what a platform app does:
 - `enabled` is the hard kill. A disabled app accepts no new connects and does
   not resolve for existing-connection paths that require an enabled app.
 - `visibility` (`draft` | `published`, migration
-  `0074-platform-oauth-app-visibility.sql`, default `draft`) decides
+  `0075-platform-oauth-app-visibility.sql`, default `draft`) decides
   discoverability. Only **enabled + published** apps
   (`listDiscoverablePlatformOauthApps` / `getDiscoverablePlatformOauthApp` /
   `isPlatformOauthAppDiscoverable` in `platform-apps.ts`) appear on onboarding

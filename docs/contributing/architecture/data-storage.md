@@ -463,7 +463,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   feature flags, not user data). Keyed by `slug`; holds the inline non-secret
   `client_id`, provider endpoints, flow options, the allowed/default scope menu,
   `required_hosts_json`, `enabled` (hard kill), and `visibility`
-  (`0074-platform-oauth-app-visibility.sql`; `draft` | `published`, default
+  (`0075-platform-oauth-app-visibility.sql`; `draft` | `published`, default
   `draft`). Only enabled + published apps are discoverable and accept new
   connects; draft apps keep serving existing connections.
   `client_secret_encrypted` is the one credential ciphertext stored outside
