@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { mintApiToken } from '#worker/api-tokens/service.ts'
+import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -20,6 +21,11 @@ async function createApi(
 		emailVerified?: boolean
 		suspended?: boolean
 		localExecuteFlag?: boolean
+		oauthAccessToken?: string | null
+		oauthAudience?: string | Array<string>
+		oauthClientId?: string
+		oauthExpiresAtUnix?: number
+		oauthUnwrapFails?: boolean
 		captureUsage?: Array<{
 			blobs: Array<string | null | undefined>
 			indexes?: Array<string | null | undefined>
@@ -49,11 +55,43 @@ async function createApi(
 			.run()
 	}
 	const db = createD1FromSqlite(sqlite)
+	const oauthAccessToken = input.oauthAccessToken
+	const oauthExpiresAtUnix =
+		input.oauthExpiresAtUnix ?? Math.floor(Date.now() / 1000) + 3600
 	const env = {
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
+		...(oauthAccessToken !== undefined
+			? {
+					OAUTH_PROVIDER: {
+						async unwrapToken(token: string) {
+							if (input.oauthUnwrapFails) return null
+							if (token !== oauthAccessToken) return null
+							return {
+								createdAt: Math.floor(Date.now() / 1000) - 60,
+								expiresAt: oauthExpiresAtUnix,
+								audience: input.oauthAudience ?? appOrigin,
+								scope: ['openid', 'profile', 'email'],
+								grant: {
+									clientId:
+										input.oauthClientId ??
+										`${appOrigin}${cliClientIdMetadataPath}`,
+									scope: ['openid', 'profile', 'email'],
+									props: {
+										userId,
+										email,
+										username: 'api-user',
+										displayName: 'API User',
+										authTime: Math.floor(Date.now() / 1000) - 60,
+									},
+								},
+							}
+						},
+					},
+				}
+			: {}),
 		...(input.captureUsage
 			? {
 					USAGE_EVENTS: {
@@ -116,7 +154,7 @@ async function createApi(
 		})
 		return minted.token
 	}
-	return { sqlite, db, env, userId, call, mint }
+	return { sqlite, db, env, userId, call, mint, oauthAccessToken }
 }
 
 test('serves the OpenAPI document without auth', async () => {
@@ -639,4 +677,139 @@ export default async () => x`,
 				point.blobs[1] === 'execute' || point.blobs[1] === 'dynamic_worker_day',
 		),
 	).toBe(false)
+})
+
+test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph when local-execute is on', async () => {
+	const oauthToken = 'cli-oauth-access-token-not-kody-at'
+	const api = await createApi({
+		localExecuteFlag: true,
+		oauthAccessToken: oauthToken,
+		oauthAudience: `${appOrigin}/mcp`,
+	})
+
+	const session = await api.call('GET', '/v1/capability-proxy/session', {
+		token: oauthToken,
+	})
+	expect(session.status).toBe(200)
+	expect(session.body).toMatchObject({
+		scopes: ['local-execute'],
+		expiresAt: expect.any(String),
+		maxExpiresAt: expect.any(String),
+		idleTtlSeconds: expect.any(Number),
+		user: { userId: api.userId, email: 'api-user@example.com' },
+		limits: {
+			maxPathSegments: expect.any(Number),
+			maxArgs: expect.any(Number),
+			maxRequestBytes: expect.any(Number),
+		},
+	})
+
+	const call = await api.call('POST', '/v1/capability-proxy/call', {
+		token: oauthToken,
+		body: { path: ['kody', 'metaGetCurrentUser'], args: [{}] },
+	})
+	expect(call.status).toBe(200)
+	expect(JSON.stringify(call.body['result'])).toContain('api-user@example.com')
+
+	const packageGraph = await api.call(
+		'POST',
+		'/v1/local-execute/package-graph',
+		{
+			token: oauthToken,
+			body: {
+				code: 'export default async function main() { return 1 }',
+			},
+		},
+	)
+	expect(packageGraph.status).toBe(200)
+	expect(packageGraph.body).toEqual({
+		modules: [],
+		imports: [],
+		warnings: [],
+	})
+})
+
+test('MCP OAuth Bearer is rejected when local-execute flag is off', async () => {
+	const oauthToken = 'cli-oauth-access-token-flag-off'
+	const api = await createApi({
+		localExecuteFlag: false,
+		oauthAccessToken: oauthToken,
+	})
+	for (const [method, path, body] of [
+		['GET', '/v1/capability-proxy/session', undefined],
+		[
+			'POST',
+			'/v1/capability-proxy/call',
+			{ path: ['kody', 'metaGetCurrentUser'], args: [{}] },
+		],
+		[
+			'POST',
+			'/v1/local-execute/package-graph',
+			{ code: 'export default async function main() { return 1 }' },
+		],
+	] as const) {
+		const response = await api.call(method, path, { token: oauthToken, body })
+		expect(response.status).toBe(403)
+		expect(response.body['error']).toMatchObject({
+			code: 'feature_disabled',
+			details: { feature_flag: 'local-execute' },
+		})
+	}
+})
+
+test('invalid MCP OAuth Bearer is rejected on local-execute routes', async () => {
+	const api = await createApi({
+		localExecuteFlag: true,
+		oauthAccessToken: 'valid-oauth',
+		oauthUnwrapFails: true,
+	})
+	const response = await api.call('GET', '/v1/capability-proxy/session', {
+		token: 'not-a-valid-oauth-or-api-token',
+	})
+	expect(response.status).toBe(401)
+	expect(response.body.error?.code).toBe('unauthorized')
+	expect(response.body.error?.message).toBe('Invalid API token.')
+})
+
+test('MCP OAuth Bearer is not accepted on non-local-execute Open API routes', async () => {
+	const oauthToken = 'cli-oauth-for-me-route'
+	const api = await createApi({
+		localExecuteFlag: true,
+		oauthAccessToken: oauthToken,
+	})
+	const me = await api.call('GET', '/v1/me', { token: oauthToken })
+	expect(me.status).toBe(401)
+	expect(me.body.error?.message).toBe('Invalid API token.')
+
+	const tokens = await api.call('GET', '/v1/tokens', { token: oauthToken })
+	expect(tokens.status).toBe(401)
+	expect(tokens.body.error?.message).toBe('Invalid API token.')
+})
+
+test('wrong-audience MCP OAuth Bearer is rejected on CapabilityProxy', async () => {
+	const oauthToken = 'cli-oauth-wrong-audience'
+	const api = await createApi({
+		localExecuteFlag: true,
+		oauthAccessToken: oauthToken,
+		oauthAudience: 'https://other.example/mcp',
+	})
+	const response = await api.call('GET', '/v1/capability-proxy/session', {
+		token: oauthToken,
+	})
+	expect(response.status).toBe(401)
+	expect(response.body.error?.message).toBe('Invalid API token.')
+})
+
+test('non-CLI MCP OAuth client is rejected on CapabilityProxy', async () => {
+	const oauthToken = 'host-mcp-oauth-not-cli'
+	const api = await createApi({
+		localExecuteFlag: true,
+		oauthAccessToken: oauthToken,
+		oauthClientId: 'https://cursor.com/oauth/callback-client',
+	})
+	const response = await api.call('GET', '/v1/capability-proxy/session', {
+		token: oauthToken,
+	})
+	expect(response.status).toBe(401)
+	expect(response.body.error?.message).toBe('Invalid API token.')
 })

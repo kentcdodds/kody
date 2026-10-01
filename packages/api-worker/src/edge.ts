@@ -121,14 +121,33 @@ async function isRateLimited(limiter: RateLimit | undefined, key: string) {
 	}
 }
 
-function rateLimitKeys(request: Request) {
-	const ip = request.headers.get('CF-Connecting-IP')
-	const token = parseApiToken(
-		readBearerApiToken(request.headers.get('Authorization')) ?? '',
+/**
+ * Per-credential rate-limit key. `kody_at_` tokens use the public id (never
+ * the secret). Opaque bearers (CLI MCP OAuth) are hashed so the limiter can
+ * still key per credential without storing the token value.
+ */
+async function credentialRateLimitKey(authorization: string | null) {
+	const bearer = readBearerApiToken(authorization)
+	if (!bearer) return null
+	const parsed = parseApiToken(bearer)
+	if (parsed) return `token:${parsed.tokenId}`
+	const digest = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(bearer),
 	)
+	const hex = Array.from(new Uint8Array(digest), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	)
+		.join('')
+		.slice(0, 32)
+	return `bearer:${hex}`
+}
+
+async function rateLimitKeys(request: Request) {
+	const ip = request.headers.get('CF-Connecting-IP')
 	return {
 		ip: ip ? `ip:${ip}` : null,
-		token: token ? `token:${token.tokenId}` : null,
+		token: await credentialRateLimitKey(request.headers.get('Authorization')),
 	}
 }
 
@@ -164,7 +183,7 @@ export async function handleApiEdgeRequest(
 		)
 	}
 
-	const keys = rateLimitKeys(request)
+	const keys = await rateLimitKeys(request)
 	if (
 		(keys.ip && (await isRateLimited(env.API_IP_RATE_LIMITER, keys.ip))) ||
 		(keys.token &&

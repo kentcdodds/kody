@@ -6,13 +6,25 @@ import {
 import { type ApiTokenRecord } from '#worker/api-tokens/service.ts'
 
 /**
- * Who is calling the Open API. `token` is an HTTP request authenticated by a
- * scoped API token; `mcp` is the MCP `api` tool, which already holds the
- * user's full MCP grant, so scope checks do not apply to it.
+ * Who is calling the Open API.
+ *
+ * - `token` — HTTP request authenticated by a scoped `kody_at_` API token.
+ * - `mcp` — the MCP `api` tool, which already holds the user's full MCP grant,
+ *   so scope checks do not apply.
+ * - `mcp-oauth` — CLI `kody login` MCP OAuth access token on local-execute HTTP
+ *   surfaces only (CapabilityProxy + package-graph). Same full MCP grant as a
+ *   session for those routes; API-token scope checks are skipped. See ADR 0055.
  */
 export type ApiPrincipal =
 	| { kind: 'token'; token: ApiTokenRecord }
 	| { kind: 'mcp' }
+	| {
+			kind: 'mcp-oauth'
+			/** Access-token expiry as Unix seconds (OAuth provider). */
+			expiresAtUnix: number
+			/** OIDC grant scopes (`openid` / `profile` / `email`), not API scopes. */
+			grantScopes: Array<string>
+	  }
 
 export type ApiInvocationContext = {
 	env: Env
