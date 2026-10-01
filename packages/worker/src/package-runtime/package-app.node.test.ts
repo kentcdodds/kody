@@ -296,15 +296,6 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 			capabilityMap: {},
 		}),
 	),
-	createPackageRuntimeInvokeTools: vi.fn(
-		async (
-			..._args: Parameters<
-				typeof PackageInvocationsService.createPackageRuntimeInvokeTools
-			>
-		) => ({
-			invoke: vi.fn(async () => ({})),
-		}),
-	),
 	createPackageEventTools: vi.fn(
 		async (
 			..._args: Parameters<
@@ -387,11 +378,6 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	createPackageRuntimeInvokeTools: (
-		...args: Parameters<
-			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
-		>
-	) => packageAppRuntimeMock.createPackageRuntimeInvokeTools(...args),
 	createPackageEventTools: (
 		...args: Parameters<
 			typeof PackageInvocationsService.createPackageEventTools
@@ -614,10 +600,9 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	const workerOptions = loaderWorkerOptions(loader)
 	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
 	const packageAppHostSource = workerOptions?.modules['package-app-entry.js']
-	expect(packageAppHostSource).toContain(
-		'Object-only packages.invoke was removed.',
-	)
-	expect(packageAppHostSource).toContain("if (typeof specifier !== 'string')")
+	expect(packageAppHostSource).toContain('packages: null,')
+	expect(packageAppHostSource).not.toContain('createPackagesProxy')
+	expect(packageAppHostSource).not.toContain('packageInvoke')
 })
 
 test('buildPackageAppWorker claims the unique Dynamic Worker day with its surface off the stub path, only after acquiring the stub', async () => {

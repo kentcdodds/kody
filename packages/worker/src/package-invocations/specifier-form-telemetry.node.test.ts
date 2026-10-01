@@ -6,10 +6,6 @@ import {
 	recordPackageInvokeSpecifierForm,
 	resolvePackageInvokeTelemetrySurface,
 } from './specifier-form-telemetry.ts'
-import {
-	createExecutePackageInvokeToolsWithToolFactories,
-	createPackageRuntimeInvokeToolsWithToolFactories,
-} from './runtime-tool-factories.ts'
 
 test('classifies raw forms before canonicalization and attributes every runtime surface', () => {
 	expect(
@@ -104,70 +100,4 @@ test('records a privacy-safe payload and never throws when unavailable or broken
 		'package-invoke-specifier-event-failed',
 		expect.any(Error),
 	)
-})
-
-test('runtime helpers record raw prefixless forms for execute, package, job, and app before canonicalization', async () => {
-	const writeDataPoint = vi.fn()
-	const sharedInput = {
-		env: {
-			PACKAGE_INVOKE_SPECIFIER_EVENTS: {
-				writeDataPoint,
-			} as unknown as AnalyticsEngineDataset,
-		} as Env,
-		baseUrl: 'https://example.test',
-		callerContext: {
-			user: { userId: 'private-user' },
-		} as never,
-		toolFactories: {} as never,
-	}
-	const packageContext = {
-		packageId: 'private-package-id',
-		kodyId: 'private-kody-id',
-	}
-	const toolsBySurface = [
-		{
-			surface: 'execute',
-			tools: createExecutePackageInvokeToolsWithToolFactories(sharedInput),
-		},
-		{
-			surface: 'package',
-			tools: createPackageRuntimeInvokeToolsWithToolFactories({
-				...sharedInput,
-				packageContext,
-			}),
-		},
-		{
-			surface: 'job',
-			tools: createExecutePackageInvokeToolsWithToolFactories({
-				...sharedInput,
-				parentRunRecord: { surface: 'job', name: 'private-job-name' },
-			}),
-		},
-		{
-			surface: 'app',
-			tools: createPackageRuntimeInvokeToolsWithToolFactories({
-				...sharedInput,
-				packageContext,
-				runtimeSurface: 'app',
-			}),
-		},
-	] as const
-
-	for (const { surface, tools } of toolsBySurface) {
-		await expect(
-			tools.invoke({
-				specifier: '@private-owner/private-package',
-				options: {},
-			}),
-		).rejects.toThrow(
-			'packages.invoke requires exportName when the package specifier has no export subpath.',
-		)
-		expect(writeDataPoint).toHaveBeenLastCalledWith({
-			indexes: [packageInvokeSpecifierTelemetryIndex],
-			blobs: ['prefixless', surface],
-			doubles: [1],
-		})
-	}
-	expect(writeDataPoint).toHaveBeenCalledTimes(4)
-	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('private')
 })

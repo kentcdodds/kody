@@ -1,8 +1,5 @@
 import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
-import {
-	type PackageEventTools,
-	type PackageInvokeTools,
-} from '#mcp/run-kody-registry.ts'
+import { type PackageEventTools } from '#mcp/run-kody-registry.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
 import {
 	type RunRecordContext,
@@ -110,9 +107,6 @@ export function waitUntilFromExecutionContext(ctx?: ExecutionContext) {
 }
 
 export type PackageRuntimeToolFactories = {
-	createPackageRuntimeInvokeTools(
-		input: PackageRuntimeToolFactoryInput,
-	): PackageInvokeTools
 	createPackageEventTools(
 		input: PackageRuntimeToolFactoryInput,
 	): PackageEventTools

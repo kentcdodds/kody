@@ -28,9 +28,11 @@ Authors do not get `packages.invoke`.
   drain. That path is not `packages.invoke`. See
   [0048](./0048-webhooks-replace-invocation-tokens.md).
 
-The `kody:runtime` helper stays quarantined for a soak so already-published
-packages that still call it do not break, then the folder is deleted. Computed
-`import(specifier)` no longer depends on that helper.
+The `kody:runtime` helper is deleted and no longer bound. `packages` remains an
+exported name that is always `null` so leftover `if (packages)` guards still
+typecheck and bundle; unguarded `packages.invoke(...)` fails with a message that
+names the static import, `import(specifier)`, and workflows. Computed
+`import(specifier)` does not depend on the helper.
 
 ## Consequences
 
@@ -44,4 +46,4 @@ invokes stay `needsManual` for workflows). Interactive MCP
 `packages.invoke`.
 
 Revisit only if computed `import(specifier)` cannot stand in for caller-owned
-name-as-data loads after the quarantined helper is deleted.
+name-as-data loads now that the helper is deleted.

@@ -91,13 +91,20 @@ three times with `wrangler check startup` and compares the best sample to
 `tools/worker-startup-budget.json`. Budgets sit well above the steady-state
 reading and well below the level that made uploads flaky, so the check catches a
 re-eagerised domain graph or a new heavy import without failing on runner noise.
-It complements `worker-startup-bundles:check`, which bounds bytes and
+It complements `worker-startup-bundles:check`, which measures bytes and enforces
 import-graph boundaries deterministically. Byte ceilings live in
 `tools/worker-startup-bundle-budget.json`. Append measured notes to
 `tools/worker-startup-bundle-notes.md` instead of rewriting the checker.
 
-When a change buys headroom, lower the budget in the same PR. Raise a budget
-only with a written justification in the PR description.
+Byte overages against the reviewed ceiling **warn and open/update a GitHub
+issue** on main CI (`Startup budget overage: <worker>`, marker
+`<!-- kody-startup-bundle-overage:<worker> -->`, `friction` label). They do
+**not** fail 🧹 Static / ✅ Validate or block 🚀 Deploy. Deferred-source and
+additional-module regressions still fail hard. Shrink the graph when you can;
+raise the committed budget (with a notes ledger entry) when the growth is
+intentional.
+
+When a change buys headroom, lower the budget in the same PR.
 
 ## Reference readings
 

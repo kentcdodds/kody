@@ -35,3 +35,7 @@ Consent copy must not look like a GitHub or Google picker. RFC 9728
 assistant (for example a read-only host, or a token that cannot `execute`), and
 that need cannot be met by a separate primitive (package-owned webhooks, package
 apps).
+
+**Later:** [0053](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md) met the
+weaker-credential need with scoped API tokens for the Open API and local
+execute, a separate primitive. MCP OAuth scopes stay out.

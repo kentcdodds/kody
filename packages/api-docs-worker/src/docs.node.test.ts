@@ -1,0 +1,103 @@
+import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	defaultOpenApiSpecUrl,
+	handleApiDocsRequest,
+	openApiProxyPath,
+	type ApiDocsWorkerEnv,
+} from './docs.ts'
+import { scalarCdnUrl } from './page.ts'
+
+function createEnv(
+	overrides: Partial<ApiDocsWorkerEnv> = {},
+): ApiDocsWorkerEnv {
+	return {
+		OPENAPI_SPEC_URL: defaultOpenApiSpecUrl,
+		APP_COMMIT_SHA: 'docs-commit',
+		...overrides,
+	}
+}
+
+test('health returns ok and the deploy commit', async () => {
+	const response = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/health'),
+		createEnv(),
+	)
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({ ok: true, commit: 'docs-commit' })
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
+})
+
+test('root serves Scalar HTML pointing at the proxied OpenAPI path', async () => {
+	const response = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/'),
+		createEnv(),
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.get('Content-Type')).toContain('text/html')
+	const html = await response.text()
+	expect(html).toContain('Kody API Reference')
+	expect(html).toContain(`data-url="${openApiProxyPath}"`)
+	expect(html).toContain(scalarCdnUrl)
+	expect(html).not.toMatch(/kody_at_/)
+})
+
+test('openapi proxy forwards the upstream document', async () => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockResolvedValue(
+			Response.json(
+				{ openapi: '3.1.0', info: { title: 'Kody API' } },
+				{ headers: { 'Cache-Control': 'public, max-age=300' } },
+			),
+		)
+
+	const response = await handleApiDocsRequest(
+		new Request(`https://api-docs.kody.codes${openApiProxyPath}`),
+		createEnv({ OPENAPI_SPEC_URL: 'https://api.example.test/openapi.json' }),
+	)
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({
+		openapi: '3.1.0',
+		info: { title: 'Kody API' },
+	})
+	expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
+	expect(fetchMock).toHaveBeenCalledWith(
+		'https://api.example.test/openapi.json',
+		expect.objectContaining({ method: 'GET' }),
+	)
+	fetchMock.mockRestore()
+})
+
+test('openapi proxy returns 502 when upstream fails', async () => {
+	consoleError.mockImplementation(() => {})
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockResolvedValue(new Response('nope', { status: 503 }))
+
+	const response = await handleApiDocsRequest(
+		new Request(`https://api-docs.kody.codes${openApiProxyPath}`),
+		createEnv(),
+	)
+	expect(response.status).toBe(502)
+	expect(await response.json()).toMatchObject({
+		error: { code: 'upstream_error' },
+	})
+	expect(consoleError).toHaveBeenCalled()
+	fetchMock.mockRestore()
+})
+
+test('rejects non-GET methods and unknown paths', async () => {
+	const post = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/', { method: 'POST' }),
+		createEnv(),
+	)
+	expect(post.status).toBe(405)
+	expect(post.headers.get('Allow')).toBe('GET, HEAD')
+
+	const missing = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/nope'),
+		createEnv(),
+	)
+	expect(missing.status).toBe(404)
+})

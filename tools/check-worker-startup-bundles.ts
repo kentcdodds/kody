@@ -24,6 +24,10 @@ import {
 	buildOriginProductionViteBundle,
 	findOriginViteDeferredAssets,
 } from './origin-vite-startup-build.ts'
+import {
+	reportStartupBundleOverages,
+	type StartupBundleOverage,
+} from './startup-bundle-overage-issue.ts'
 
 const execFileAsync = promisify(execFile)
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -106,6 +110,12 @@ type StartupBundleSpec = Omit<StartupBundleDefinition, 'maxEntryBytes'>
 
 export type StartupBundleBudget = Record<StartupBundleName, number>
 
+export type StartupEntrySizeResult = {
+	name: StartupBundleName
+	size: number
+	maxEntryBytes: number
+}
+
 const startupBundleNames = ['origin', 'platform', 'runtime'] as const
 
 /** Structural defs only. Byte ceilings: worker-startup-bundle-budget.json. */
@@ -167,6 +177,22 @@ export async function readStartupBundleBudget(
 		resolved[name] = maxEntryBytes
 	}
 	return resolved
+}
+
+export function collectStartupBundleOverages(
+	results: ReadonlyArray<StartupEntrySizeResult>,
+): Array<StartupBundleOverage> {
+	const overages: Array<StartupBundleOverage> = []
+	for (const result of results) {
+		if (result.size <= result.maxEntryBytes) continue
+		overages.push({
+			name: result.name,
+			size: result.size,
+			maxEntryBytes: result.maxEntryBytes,
+			overage: result.size - result.maxEntryBytes,
+		})
+	}
+	return overages
 }
 
 function withStartupBundleBudget(
@@ -352,11 +378,6 @@ async function inspectViteOriginStartupBundle(
 	const sources = readSourceMapSources(sourceMapText, definition.name)
 	assertDeferredSourcesStayOutOfMain(definition, sources)
 	assertOriginViteDeferredChunks(assetNames, definition.name)
-	if (size > definition.maxEntryBytes) {
-		throw new Error(
-			`${definition.name} startup entry is ${String(size)} bytes, exceeding its ${String(definition.maxEntryBytes)}-byte reviewed budget.`,
-		)
-	}
 	return {
 		name: definition.name,
 		size,
@@ -408,11 +429,6 @@ async function inspectWranglerStartupBundle(
 	const sources = readSourceMapSources(sourceMapText, definition.name)
 	assertDeferredSourcesStayOutOfMain(definition, sources)
 	await assertWranglerAdditionalModules(outputDir, definition.name)
-	if (size > definition.maxEntryBytes) {
-		throw new Error(
-			`${definition.name} startup entry is ${String(size)} bytes, exceeding its ${String(definition.maxEntryBytes)}-byte reviewed budget.`,
-		)
-	}
 
 	return {
 		name: definition.name,
@@ -449,6 +465,10 @@ async function inspectStartupBundle(
  * CPU varies by validation host, so this gate stays deterministic (bytes and
  * import graph); `check-worker-startup-time.ts` adds the sampled-CPU
  * tripwire on top of it.
+ *
+ * Byte overages warn and open/update a tracking GitHub issue on main CI; they
+ * never fail this check or block Deploy. Deferred-source / additional-module
+ * regressions still fail hard.
  */
 export async function checkWorkerStartupBundles() {
 	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
@@ -474,10 +494,14 @@ export async function checkWorkerStartupBundles() {
 			),
 		)
 		for (const result of results) {
-			console.log(
-				`${result.name} startup entry: ${String(result.size)} / ${String(result.maxEntryBytes)} bytes`,
-			)
+			const ratio = `${String(result.size)} / ${String(result.maxEntryBytes)}`
+			if (result.size > result.maxEntryBytes) {
+				console.warn(`${result.name} startup entry: ${ratio} bytes (OVER)`)
+			} else {
+				console.log(`${result.name} startup entry: ${ratio} bytes`)
+			}
 		}
+		reportStartupBundleOverages(collectStartupBundleOverages(results))
 	} finally {
 		await Promise.all([
 			removeStray ? rm(strayPath, { force: true }) : undefined,

@@ -111,6 +111,24 @@ primitives:
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
+  - id: open-api
+    group: surfaces
+    name: Open API (api.kody.codes)
+    summary:
+      Public JSON HTTP API (`/openapi.json`, versioned `/v1`) served by the
+      kody-api edge worker and the origin KodyApi entrypoint; also backs the
+      flag-gated MCP `api` tool and the local-execute CapabilityProxy.
+      Interactive docs live on the separate `kody-api-docs` worker
+      (`api-docs.kody.codes`).
+    code:
+      - packages/api-worker/
+      - packages/api-docs-worker/
+      - packages/worker/src/open-api/
+      - packages/worker/src/mcp/tools/api.ts
+      - tools/ci/api-worker-config.ts
+    docs:
+      - docs/contributing/architecture/open-api.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
@@ -173,6 +191,19 @@ primitives:
       - packages/worker/src/oidc/
     docs:
       - docs/contributing/architecture/authentication.md
+
+  - id: api-tokens
+    group: auth
+    name: Scoped API tokens
+    summary:
+      Short-lived, scoped, sliding-TTL `kody_at_` bearer tokens for the Open API
+      and CapabilityProxy; a separate credential class from MCP OAuth.
+    code:
+      - packages/worker/src/api-tokens/
+      - packages/shared/src/api-token-format.ts
+    docs:
+      - docs/contributing/architecture/open-api.md
+      - docs/contributing/decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md
 
   - id: rbac
     group: auth

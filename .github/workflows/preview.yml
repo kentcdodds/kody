@@ -462,6 +462,30 @@ jobs:
           set -euo pipefail
           node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
+      # The API edge binds the app worker's KodyApi entrypoint, so it deploys
+      # after the app worker exists.
+      - name: ☁️ Deploy preview API worker
+        id: deploy_api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ENV: preview
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          API_WORKER_NAME="${APP_WORKER_NAME}-api"
+          API_CONFIG="packages/api-worker/wrangler-preview.generated.json"
+          node tools/ci/api-worker-config.ts --worker-name "$API_WORKER_NAME" --app-worker-name "$APP_WORKER_NAME" --out-config "$API_CONFIG"
+          echo "worker_name=$API_WORKER_NAME" >> "$GITHUB_OUTPUT"
+
+          node ./wrangler-env.ts deploy --config "$API_CONFIG" --env preview --name "$API_WORKER_NAME" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-api.log
+
+          API_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-api.log "$API_WORKER_NAME")"
+          if [ -n "$API_URL" ]; then
+            echo "url=$API_URL" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 🔐 Sync preview app Worker secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -671,6 +695,40 @@ jobs:
           fi
           exit 1
 
+      - name: 🩺 Healthcheck API worker (preview)
+        shell: bash
+        env:
+          API_URL: ${{ steps.deploy_api.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_URL:-}" ]; then
+            echo "Missing API worker preview URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          attempts=30
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --max-time 10 \
+              --header "Accept: application/json" \
+              "${API_URL%/}/health" > api-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('api-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true || json?.commit !== expected) { console.error('api-healthcheck-unexpected-response', { expected, json }); process.exit(1); } console.log('api-healthcheck-ok', json);" && \
+              curl --fail --silent --show-error --max-time 20 \
+                --header "Accept: application/json" \
+                "${API_URL%/}/openapi.json" > api-openapi.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('api-openapi.json','utf8')); if (!json?.openapi?.startsWith('3.') || !json?.paths?.['/v1/capability-proxy/session']) { console.error('api-openapi-unexpected-response', Object.keys(json ?? {})); process.exit(1); } console.log('api-openapi-ok', json.openapi, Object.keys(json.paths).length, 'paths');"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "API worker healthcheck failed after ${attempts} attempts: $API_URL" >&2
+          exit 1
+
       - name: 🧾 Write preview link summary
         if: steps.deploy_preview.outputs.url != ''
         env:
@@ -682,6 +740,8 @@ jobs:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
+          API_WORKER_NAME: ${{ steps.deploy_api.outputs.worker_name }}
+          API_URL: ${{ steps.deploy_api.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
@@ -697,6 +757,9 @@ jobs:
             fi
             if [ -n "${RUNTIME_URL:-}" ]; then
               printf 'Runtime worker: `%s` (%s)\n' "$RUNTIME_WORKER_NAME" "$RUNTIME_URL"
+            fi
+            if [ -n "${API_URL:-}" ]; then
+              printf 'API worker: `%s` (%s)\n' "$API_WORKER_NAME" "$API_URL"
             fi
             if [ -n "${PREVIEW_VERSION_URL:-}" ]; then
               printf 'Version preview: %s\n' "$PREVIEW_VERSION_URL"
@@ -728,6 +791,8 @@ jobs:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
+          API_WORKER_NAME: ${{ steps.deploy_api.outputs.worker_name }}
+          API_URL: ${{ steps.deploy_api.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_comment_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
@@ -748,6 +813,11 @@ jobs:
             if (process.env.RUNTIME_URL?.trim()) {
               bodyLines.push(
                 `Runtime worker: \`${process.env.RUNTIME_WORKER_NAME}\` (${process.env.RUNTIME_URL.trim()})`,
+              );
+            }
+            if (process.env.API_URL?.trim()) {
+              bodyLines.push(
+                `API worker: \`${process.env.API_WORKER_NAME}\` (${process.env.API_URL.trim()})`,
               );
             }
             if (process.env.PREVIEW_VERSION_URL?.trim()) {

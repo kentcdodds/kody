@@ -30,16 +30,6 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (
 		...args: Parameters<typeof PackageInvocationsService.invokePackageExport>
 	) => invocationMocks.invokePackageExport(...args),
-	createExecutePackageInvokeTools: (
-		...args: Parameters<
-			typeof PackageInvocationsService.createExecutePackageInvokeTools
-		>
-	) => invocationMocks.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (
-		...args: Parameters<
-			typeof PackageInvocationsService.createPackageRuntimeInvokeTools
-		>
-	) => invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -275,10 +265,6 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			result: { ok: true, p: { greeting: 'hello' } },
 			logs: [],
 		})
-		const packageInvokeTools = { invoke: vi.fn() }
-		invocationMocks.createExecutePackageInvokeTools.mockReturnValueOnce(
-			packageInvokeTools,
-		)
 		vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
 		await expect(run()).resolves.toEqual({
 			ok: true,
@@ -288,19 +274,6 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			executionOrigin: 'background',
 			user: expect.objectContaining({ userId: 'user-1' }),
 		})
-		expect(
-			invocationMocks.createExecutePackageInvokeTools,
-		).toHaveBeenCalledWith({
-			env: expect.objectContaining({
-				APP_BASE_URL: 'https://app.example.com',
-			}),
-			baseUrl: 'https://app.example.com',
-			callerContext: backgroundCaller,
-			waitUntil: expect.any(Function),
-		})
-		expect(
-			invocationMocks.createPackageRuntimeInvokeTools,
-		).not.toHaveBeenCalled()
 		expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({ APP_BASE_URL: 'https://app.example.com' }),
 			backgroundCaller,
@@ -308,7 +281,6 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			{ greeting: 'hello' },
 			{
 				packageContext: null,
-				packageInvokeTools,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 				runSurface: 'workflow',
 			},
@@ -393,10 +365,6 @@ test('package-created inline workflows retain package secret authorization conte
 		result: { ok: true },
 		logs: [],
 	})
-	const packageInvokeTools = { invoke: vi.fn() }
-	invocationMocks.createPackageRuntimeInvokeTools.mockReturnValueOnce(
-		packageInvokeTools,
-	)
 	const legacyPayload = { ...(queued.params as Record<string, unknown>) }
 	delete legacyPayload['packageContext']
 	await expect(run(legacyPayload, 'legacy-inline-workflow')).rejects.toThrow(
@@ -411,14 +379,6 @@ test('package-created inline workflows retain package secret authorization conte
 		packageId: 'package-1',
 		storageId: null,
 	}
-	expect(invocationMocks.createPackageRuntimeInvokeTools).toHaveBeenCalledWith({
-		env: expect.any(Object),
-		baseUrl: 'https://app.example.com',
-		callerContext: expect.objectContaining({ storageContext }),
-		packageContext,
-		waitUntil: expect.any(Function),
-	})
-	expect(invocationMocks.createExecutePackageInvokeTools).not.toHaveBeenCalled()
 	expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.any(Object),
 		expect.objectContaining({ storageContext }),
@@ -426,7 +386,6 @@ test('package-created inline workflows retain package secret authorization conte
 		undefined,
 		{
 			packageContext,
-			packageInvokeTools,
 			executorTimeoutMs: workflowExecutorTimeoutMs,
 			runSurface: 'workflow',
 		},

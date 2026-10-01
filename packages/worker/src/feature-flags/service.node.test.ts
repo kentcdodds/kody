@@ -272,6 +272,8 @@ const registryKeys = [
 	'secret-providers',
 	'jev-search-rerank',
 	'execute-invoke',
+	'mcp-api-tool',
+	'local-execute',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {
@@ -473,7 +475,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(8)
+	expect(listed).toHaveLength(10)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',
@@ -488,6 +490,11 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },
 		],
 		['execute-invoke', { defaultAudience: 'experiments_opt_in' }],
+		['mcp-api-tool', { defaultAudience: 'experiments_opt_in' }],
+		[
+			'local-execute',
+			{ defaultAudience: 'experiments_opt_in', successMetric: null },
+		],
 		['compact-mcp-server-instructions', { successMetric: executeMetric }],
 		[
 			'demo-indicator',

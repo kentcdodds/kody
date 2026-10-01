@@ -355,43 +355,6 @@ function createExecuteTypecheckPrelude(input?: {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
-type KodyPrefixedPackageSpecifier = \`kody:@\${string}/\${string}\`;
-/**
- * @deprecated Add the kody: prefix. Use
- * \`kody:@owner/package[/export]\` for all new and migrated calls.
- */
-type KodyPrefixlessPackageSpecifier = \`@\${string}/\${string}\`;
-type KodyPackagesInvokeOptions = {
-  /**
-   * Required when the specifier has no export subpath. When both are present,
-   * the export subpath in the specifier wins.
-   */
-  exportName?: string;
-  params?: Record<string, unknown>;
-  idempotencyKey?: string;
-  topic?: string | null;
-};
-type KodyPackagesRuntime = {
-  /**
-   * Dynamic invocation helper kept for published modules that still call it.
-   * Prefer a static kody:@scope/package/export import when the name is known,
-   * or import(specifier) when the name is data. Exactly-once work uses
-   * workflows.
-   * @deprecated Use a static kody:@ import, import(specifier), or workflows.
-   */
-  invoke(
-    specifier: KodyPrefixedPackageSpecifier,
-    options?: KodyPackagesInvokeOptions,
-  ): Promise<unknown>;
-  /**
-   * @deprecated Add the kody: prefix. Use
-   * \`kody:@owner/package[/export]\` for new and migrated calls.
-   */
-  invoke(
-    specifier: KodyPrefixlessPackageSpecifier,
-    options?: KodyPackagesInvokeOptions,
-  ): Promise<unknown>;
-};
 type KodyStorageRuntime = {
   id: string;
   get(key: string): Promise<unknown>;
@@ -455,7 +418,8 @@ declare module "kody:runtime" {
     assetBasePath?: string;
     clientModuleUrl?: string | null;
   } | null;
-  export const packages: KodyPackagesRuntime | null;
+  /** Always null: there is no author-facing packages.invoke. */
+  export const packages: null;
   export function packageStorage(): KodyStorageRuntime;
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;

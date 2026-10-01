@@ -1,18 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import {
-	createExecutePackageInvokeTools,
-	createPackageRuntimeInvokeTools,
-	deliverPackageEvent,
-} from './service.ts'
+import { deliverPackageEvent } from './service.ts'
 import {
 	packageInvocationsRepoMockModule as repoMockModule,
 	createDatabase,
 	createEnv,
 	seedRuntimeDispatchPackages,
-	createRuntimeDispatchTools,
 	createRuntimeEventTools,
 } from '#worker/test-support/package-invocations.ts'
 
@@ -81,36 +75,7 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 	}),
 }))
 
-const meCallerContext = createMcpCallerContext({
-	baseUrl: 'https://kody.dev',
-	user: { userId: 'user-123', email: 'me@example.com', displayName: 'Me' },
-})
-const gatewayContext = {
-	packageId: 'pkg-gateway',
-	kodyId: 'discord-gateway',
-	sourceId: 'source-gateway',
-}
 const messageCreated = '@kentcdodds/discord.message.created'
-const generalChat = 'kody:@kentcdodds/discord-general-chat'
-const handlerExport = './handle-discord-message-created'
-const missingPackageError =
-	'packages.invoke contract check failed: Kody package specifier "kody:@kentcdodds/missing-package" could not be resolved for this caller.'
-const missingExportError =
-	'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".'
-
-function runtimeTools(
-	db: ReturnType<typeof createDatabase>,
-	input: Partial<Parameters<typeof createPackageRuntimeInvokeTools>[0]> = {},
-) {
-	return createPackageRuntimeInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: meCallerContext,
-		packageContext: gatewayContext,
-		packageInvokeDepth: 0,
-		...input,
-	})
-}
 
 function deliver(
 	db: ReturnType<typeof createDatabase>,
@@ -152,30 +117,6 @@ function patchSeededManifest(
 	const files = seed.sourceFiles.get(sourceId)
 	if (files) files['package.json'] = JSON.stringify(manifest)
 }
-
-test('runtime invoke tools reject the removed object API before resolving a target', async () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://kody.dev',
-		user: {
-			userId: 'private-user-id',
-			email: 'private@example.com',
-			displayName: 'Private User',
-		},
-	})
-	await expect(
-		createExecutePackageInvokeTools({
-			env: createEnv(createDatabase()),
-			baseUrl: 'https://kody.dev',
-			callerContext,
-		}).invoke({
-			kodyId: 'private-kody-id',
-			exportName: './private-export',
-		} as never),
-	).rejects.toThrow(/Object-only packages\.invoke was removed/)
-	expect(repoMockModule.getSavedPackageById).not.toHaveBeenCalled()
-	expect(repoMockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
-	expect(repoMockModule.getSavedPackageByName).not.toHaveBeenCalled()
-})
 
 test('package runtime dispatch enqueues declared events and validates payloadSchema', async () => {
 	const db = createDatabase()
@@ -458,216 +399,5 @@ test('package events fall back to inline delivery without a queue binding', asyn
 	expect(consoleError).toHaveBeenCalledWith(
 		'package-events-inline-delivery-failed',
 		expect.objectContaining({ topic: messageCreated }),
-	)
-})
-
-test('package runtime invoke contract-checks once and executes the target', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { handled: true, eventId: 'message-1' },
-		logs: [],
-	})
-
-	const result = await createRuntimeDispatchTools(db).invoke({
-		specifier: generalChat,
-		options: {
-			exportName: 'handle-discord-message-created',
-			params: { event: { id: 'message-1' }, dryRun: true },
-			idempotencyKey: 'message-1',
-			topic: 'discord.message.created',
-		},
-	})
-
-	expect(result).toEqual({ handled: true, eventId: 'message-1' })
-	// One logical call resolves its package exactly once: the mandatory
-	// contract check preloads the manifest and the invoke phase reuses it.
-	expect(repoMockModule.loadPackageManifestForSource).toHaveBeenCalledTimes(1)
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-})
-
-test('execute runtime invoke canonicalizes a prefixless target and preserves execute provenance', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { handled: true, eventId: 'message-1' },
-		logs: [],
-	})
-	repoMockModule.recordAgentPackageConversationUse.mockResolvedValue(undefined)
-	const tools = createExecutePackageInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: meCallerContext,
-		conversationId: 'conv-execute-1',
-	})
-
-	const result = await tools.invoke({
-		specifier:
-			'@kentcdodds/discord-general-chat/handle-discord-message-created',
-		options: { params: { event: { id: 'message-1' } } },
-	})
-
-	expect(result).toEqual({ handled: true, eventId: 'message-1' })
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
-	const runCall = repoMockModule.runBundledModuleWithRegistry.mock.calls[0]
-	expect(runCall?.[1]).toMatchObject({
-		user: {
-			userId: 'user-123',
-			email: 'owner@example.com',
-			displayName: 'Owner',
-		},
-		storageContext: {
-			appId: 'pkg-subscriber',
-			storageId: 'package:pkg-subscriber',
-		},
-	})
-	expect(runCall?.[4]).toMatchObject({
-		packageContext: {
-			packageId: 'pkg-subscriber',
-			kodyId: 'discord-general-chat',
-			sourceId: 'source-subscriber',
-		},
-		runRecord: {
-			packageId: 'pkg-subscriber',
-			kodyId: 'discord-general-chat',
-			surface: 'export',
-			metadata: {
-				exportName: handlerExport,
-				source: 'execute',
-				topic: null,
-			},
-		},
-	})
-	expect(
-		(runCall?.[4] as { packageInvokeTools?: unknown } | undefined)
-			?.packageInvokeTools,
-	).toBeDefined()
-	expect(repoMockModule.recordAgentPackageConversationUse).toHaveBeenCalledWith(
-		expect.anything(),
-		{
-			userId: 'user-123',
-			packageId: 'pkg-subscriber',
-			conversationId: 'conv-execute-1',
-		},
-	)
-})
-
-test('package runtime dispatch rejects invalid targets before and during invocation', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	const tools = createRuntimeDispatchTools(db)
-
-	for (const [input, error] of [
-		[
-			{
-				specifier: 'kody:@kentcdodds/missing-package',
-				options: { exportName: handlerExport, params: {} },
-			},
-			missingPackageError,
-		],
-		[
-			{
-				specifier: generalChat,
-				options: { exportName: './missing-export', params: {} },
-			},
-			missingExportError,
-		],
-		[
-			{
-				specifier: generalChat,
-				options: { exportName: handlerExport, params: 'not-an-object' },
-			},
-			'packages.invoke params must be a JSON object when provided.',
-		],
-	] as const) {
-		await expect(tools.invoke(input as never)).rejects.toThrow(error)
-	}
-	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
-
-	const nestedTools = () =>
-		runtimeTools(db, {
-			parentRunRecord: {
-				...gatewayContext,
-				surface: 'export',
-				name: './dispatch-message-created',
-				idempotencyKey: 'message-1',
-			},
-		})
-	repoMockModule.getSavedPackageByName.mockResolvedValueOnce(null)
-	await expect(
-		nestedTools().invoke({
-			specifier: 'kody:@kentcdodds/missing-package',
-			options: { exportName: handlerExport },
-		}),
-	).rejects.toThrow(missingPackageError)
-
-	seedRuntimeDispatchPackages()
-	await expect(
-		nestedTools().invoke({
-			specifier: generalChat,
-			options: {
-				exportName: './missing-export',
-				params: { event: { id: 'message-1' } },
-			},
-		}),
-	).rejects.toThrow(missingExportError)
-})
-
-// Auto-generated idempotency keys were removed with the lean key-less path:
-// nested key-less invokes are ephemeral and always re-execute, regardless of
-// the parent run's identity. Exactly-once now requires an explicit key.
-test('key-less nested invokes re-execute for every parent run', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	repoMockModule.runBundledModuleWithRegistry.mockImplementation(
-		async (
-			_env: unknown,
-			_callerContext: unknown,
-			bundle: { mainModule: string },
-			params: { marker?: string; value?: number } | undefined,
-		) => {
-			expect(bundle.mainModule).toBe('dist/subscriber.js')
-			return {
-				result: { marker: params?.marker, value: params?.value },
-				logs: [],
-			}
-		},
-	)
-
-	for (const name of ['./first-parent', './second-parent']) {
-		const result = await runtimeTools(db, {
-			parentRunRecord: {
-				...gatewayContext,
-				surface: 'export',
-				name,
-				idempotencyKey: 'shared-domain-event',
-			},
-		}).invoke({
-			specifier: generalChat,
-			options: {
-				exportName: handlerExport,
-				params: { marker: 'same-child-call', value: 1 },
-			},
-		})
-		expect(result).toEqual({ marker: 'same-child-call', value: 1 })
-	}
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
-})
-
-test('package runtime invocation requires package context and enforces loop depth', async () => {
-	const db = createDatabase()
-	seedRuntimeDispatchPackages()
-	const invoke = {
-		specifier: generalChat,
-		options: { exportName: handlerExport },
-	} as const
-
-	await expect(
-		runtimeTools(db, { packageContext: null }).invoke(invoke),
-	).rejects.toThrow('packages.invoke requires a package runtime context.')
-	await expect(
-		runtimeTools(db, { packageInvokeDepth: 8 }).invoke(invoke),
-	).rejects.toThrow(
-		'packages.invoke exceeded the maximum nested invocation depth (8).',
 	)
 })

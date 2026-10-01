@@ -4,6 +4,10 @@ Append-only ledger of reviewed `maxEntryBytes` bumps. Live ceilings live in
 `tools/worker-startup-bundle-budget.json`. Append a new measurement here; do not
 re-flow older notes when you bump a number.
 
+Byte overages no longer fail CI: `tools/check-worker-startup-bundles.ts` warns
+and upserts a tracking GitHub issue on main pushes. Keep this ledger honest when
+you intentionally raise a ceiling.
+
 ## origin
 
 Vite production entry. Reviewed ceiling 7_750_000.
@@ -348,11 +352,19 @@ runtime path if this budget is raised again.
   ceiling 3_912_700; platform 5_238_709 against the previous 5_238_600 budget,
   reviewed ceiling 5_238_800. Production `assertRestorablePackageSourceSnapshot`
   is unchanged.
-- Platform integration visibility (#2766): the `visibility` column in the
-  `platform_oauth_apps` select/upsert/rename SQL, the discoverable
-  (`enabled = 1 AND visibility = 'published'`) list/get queries, and the
-  `integrationPlatformAppList` handler that now lists published apps, all on the
-  integrations graph both workers already evaluate (about 1,380 bytes per worker
-  over main). Local dry-run on top of #2764 and #2768: runtime 3_913_970 against
-  the previous 3_912_700 budget, reviewed ceiling 3_914_500; platform 5_240_090
-  against the previous 5_238_800 budget, reviewed ceiling 5_240_500.
+- Open API + MCP `api` tool + scoped API tokens: the platform `MCP` Durable
+  Object registers the flag-gated `api` tool, which reaches the Open API
+  operation catalog (`packages/worker/src/open-api/`, `api-tokens/`). The tool
+  loads that graph through a memoized dynamic `import()`, so esbuild wraps it
+  and nothing evaluates until the first `api` call; bytes grow, startup CPU does
+  not. Local dry-run platform 5_275_466 against the previous 5_238_500 budget,
+  reviewed ceiling 5_276_000. Runtime gains the `kody_at_` redactor on execute
+  output and the two flag registry entries: local dry-run 3_913_497 against the
+  previous 3_912_500 budget, reviewed ceiling 3_914_000. Review fixes (rotation
+  scope check, debounced sliding expiry) add about 100 platform bytes: local
+  dry-run 5_276_098, reviewed ceiling 5_276_500. Splitting CapabilityProxy
+  capability errors (per-call secret redactor) from generic platform failures
+  adds about 870 more: local dry-run 5_277_132 (5_277_389 with #2764), reviewed
+  ceiling 5_277_500.
+- Startup byte overages no longer fail Static / block Deploy: the checker warns
+  and upserts a deduped GitHub tracking issue on main CI pushes instead.

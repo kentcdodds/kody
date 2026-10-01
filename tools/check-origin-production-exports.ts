@@ -24,6 +24,7 @@ export const defaultProductionEntryPath = './src/production-worker.ts'
 export const productionExportAllowlist = [
 	'DynamicWorkerUsageTail',
 	'JobsHost',
+	'KodyApi',
 	'KodyFetchGateway',
 ]
 

@@ -70,11 +70,13 @@ const devEntrySource = entry(
 	'KodyFetchGateway',
 	'DynamicWorkerUsageTail',
 	'JobsHost',
+	'KodyApi',
 )
 const productionEntrySource = entry(
 	'KodyFetchGateway',
 	'DynamicWorkerUsageTail',
 	'JobsHost',
+	'KodyApi',
 )
 
 test('the origin export guardrail accepts the dev/test/preview split and rejects each drift', () => {
@@ -102,15 +104,20 @@ test('the origin export guardrail accepts the dev/test/preview split and rejects
 				'KodyFetchGateway',
 				'DynamicWorkerUsageTail',
 				'JobsHost',
+				'KodyApi',
 			),
 			error:
-				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyFetchGateway (unexpected Mailbox)',
+				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyApi, KodyFetchGateway (unexpected Mailbox)',
 		},
 		{
 			scenario: 'rejects the production entry missing an allowlisted export',
-			production: entry('KodyFetchGateway', 'DynamicWorkerUsageTail'),
+			production: entry(
+				'KodyFetchGateway',
+				'DynamicWorkerUsageTail',
+				'KodyApi',
+			),
 			error:
-				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyFetchGateway (missing JobsHost)',
+				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyApi, KodyFetchGateway (missing JobsHost)',
 		},
 		{
 			scenario: 'rejects a dev entry missing a class env.test owns locally',

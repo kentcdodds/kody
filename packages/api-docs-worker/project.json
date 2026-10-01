@@ -1,0 +1,32 @@
+{
+	"$schema": "../../node_modules/nx/schemas/project-schema.json",
+	"name": "api-docs-worker",
+	"projectType": "application",
+	"sourceRoot": "packages/api-docs-worker/src",
+	"targets": {
+		"build": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "npm run api-docs:build"
+			}
+		},
+		"deploy": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "npm run api-docs:deploy"
+			}
+		},
+		"typecheck": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "tsc --noEmit -p packages/api-docs-worker/tsconfig.json"
+			}
+		},
+		"test": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "vitest run --project node-unit packages/api-docs-worker"
+			}
+		}
+	}
+}

@@ -159,6 +159,24 @@ override). Operators can also enable it globally at `/admin/feature-flags` (or
 this is not an experiment. See [secret providers](../secret-providers.md).
 Remove the flag and every gate site after general availability.
 
+`mcp-api-tool` is an experiment (default **off**, registry
+`defaultAudience: experiments_opt_in`) for the third MCP tool, `api`
+(`operationId` + `params`), which runs one [Open API](./open-api.md) operation
+without a sandbox. When off, the tool is not registered, and a session that
+registered it earlier gets `feature_unavailable` on the next call. The declared
+`successMetric` is `dynamic_worker_day` event count, goal decrease: single-call
+work that moves from `execute` to `api` should stop burning unique worker-days.
+Enable with
+`adminFeatureFlagSet({ key: "mcp-api-tool", enabled: true, audience: "experiments_opt_in" })`
+or a per-user override. Remove the flag and gate sites when the experiment ends.
+
+`local-execute` is a rollout kill switch (default **off**, registry
+`defaultAudience: experiments_opt_in`) for local execute: minting tokens with
+the `local-execute` scope and every CapabilityProxy route
+(`/v1/capability-proxy/*`). When off, those routes answer 403 `feature_disabled`
+(before the scope check) and `tokenCreate` rejects the scope. No
+`successMetric`: this is not an experiment.
+
 ## Success metrics
 
 Every flag exists to move something; the `successMetric` field on a registry

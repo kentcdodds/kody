@@ -9,17 +9,19 @@ to become.
 
 ## Production worker fleet
 
-Production is four product scripts plus independent ops workers. Origin owns
-**zero** Durable Object classes
+Production is four product scripts, the `kody-api` edge, and independent ops
+workers. Origin owns **zero** Durable Object classes
 ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 
 | Script                       | Public surface                         | Owns                                                                                                                                                                         | Binds                                                                        |
 | ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`, `DynamicWorkerUsageTail`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
+| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`, `KodyApi`, `DynamicWorkerUsageTail`                                                                      | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
 | `kody-platform`              | `/__platform/health` only              | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway`, `DynamicWorkerUsageTail` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
 | `kody-runtime`               | `{user}.kody.run`; `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `DynamicWorkerUsageTail`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
 | `kody-jobs`                  | no public hostname                     | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                                           | `HOST` → origin `JobsHost`                                                   |
 | `kody-highlight`             | no public hostname                     | Shiki tokenizer (`POST /highlight`)                                                                                                                                          | —                                                                            |
+| `kody-api`                   | `api.kody.codes`                       | Open API edge: CORS, rate limits, header strip, body cap                                                                                                                     | `KODY_API` → origin `KodyApi`                                                |
+| `kody-api-docs`              | `api-docs.kody.codes`                  | Scalar OpenAPI docs UI; proxies live `/openapi.json`                                                                                                                         | HTTPS fetch → `api.kody.codes`                                               |
 | `kody-status`                | `status.kody.codes`                    | `StatusStore`                                                                                                                                                                | HTTP probes + `JOBS` service                                                 |
 | `kody-nx-cache`              | `nx-cache.kody.codes`                  | R2 `kody-nx-cache`                                                                                                                                                           | —                                                                            |
 | `kody-production-d1-backups` | operator-only                          | D1 backup / DR workflows                                                                                                                                                     | R2 `kody-production-backups`                                                 |
@@ -74,6 +76,9 @@ wrote during that fetch) so the next cron can skip the synthetic.
   finite ceiling), finite per-plan resource limits, and the shared
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
   strict `parsePlanName` for untrusted admin/API input).
+- [Open API](./open-api.md): `api.kody.codes`, interactive docs on
+  `api-docs.kody.codes`, scoped API tokens, the CapabilityProxy contract for
+  local execute, and the flag-gated MCP `api` tool.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.

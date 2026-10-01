@@ -47,7 +47,7 @@ export type PreviewResourceKind =
  * Every preview resource name derives from the worker name the preview
  * workflow resolves (`kody-pr-<number>` for pull requests, `kody-branch-<slug>`
  * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
- * `-platform`, `-jobs`, `-highlight`, `-mock-<service>`, `-db`, `-audit-db`,
+ * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
  * `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
  * `-repo-session-blobs`, `-webhook-dispatch`, `-webhook-dispatch-dlq`
  * (`truncateWithSuffix` may shorten the base but keeps this shape). The
@@ -716,6 +716,7 @@ function listMockServerNames() {
 
 export function listPreviewWorkerNames(workerName: string) {
 	return [
+		`${workerName}-api`,
 		`${workerName}-runtime`,
 		`${workerName}-platform`,
 		workerName,

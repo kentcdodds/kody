@@ -44,7 +44,6 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 		idempotencyKey: 'email:message-1:pkg-1:email.message.received',
 		source: 'synthetic',
 		toolFactories: {
-			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
 		},
 	})
@@ -91,7 +90,6 @@ test('invokePackageSubscriptionWithToolFactories preserves synthetic markers onl
 		idempotencyKey: 'synthetic:00000000-0000-4000-8000-000000000001',
 		trustedSyntheticDispatch: trustedSyntheticSubscriptionDispatch,
 		toolFactories: {
-			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
 		},
 	})

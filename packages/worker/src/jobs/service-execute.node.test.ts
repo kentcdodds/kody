@@ -9,7 +9,6 @@ import {
 } from '#worker/account/account-suspension.ts'
 import { d1NetworkConnectionLostMessage } from '#worker/d1-retry.ts'
 import { parseEntitlementLimitMessage } from '#worker/entitlements/errors.ts'
-import * as packageInvocations from '#worker/package-invocations/service.ts'
 import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
 import { persistPublishedBundleArtifact } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -338,14 +337,6 @@ test('interactive-origin leftover jobs run in the background with writable stora
 			result: { value: 2 },
 			logs: ['storage helper executed'],
 		})
-	const executeInvokeSpy = vi.spyOn(
-		packageInvocations,
-		'createExecutePackageInvokeTools',
-	)
-	const runtimeInvokeSpy = vi.spyOn(
-		packageInvocations,
-		'createPackageRuntimeInvokeTools',
-	)
 
 	expect(row.record.storageId).toBe(`job:${jobView.id}`)
 	expect(row.callerContext?.executionOrigin).toBe('interactive')
@@ -371,14 +362,10 @@ test('interactive-origin leftover jobs run in the background with writable stora
 		}),
 		expect.any(Object),
 		expect.any(Object),
-		expect.objectContaining({
-			packageInvokeTools: expect.objectContaining({
-				invoke: expect.any(Function),
-			}),
+		expect.not.objectContaining({
+			packageInvokeTools: expect.anything(),
 		}),
 	)
-	expect(executeInvokeSpy).toHaveBeenCalledTimes(1)
-	expect(runtimeInvokeSpy).not.toHaveBeenCalled()
 })
 
 test('leftover kody.json jobs execute the bundled published entry with job run-record context', async () => {
@@ -645,14 +632,6 @@ test('package-backed ESM jobs bundle the package entry and use runtime invoke to
 			result: { ok: true, repoBacked: 'module' },
 			logs: ['repo-backed kody executed'],
 		})
-	const executeInvokeSpy = vi.spyOn(
-		packageInvocations,
-		'createExecutePackageInvokeTools',
-	)
-	const runtimeInvokeSpy = vi.spyOn(
-		packageInvocations,
-		'createPackageRuntimeInvokeTools',
-	)
 	vi.spyOn(
 		repoKodyExecution,
 		'loadRepoSourceFilesFromSession',
@@ -681,12 +660,11 @@ test('package-backed ESM jobs bundle the package entry and use runtime invoke to
 	expect(executeSpy).toHaveBeenCalledTimes(1)
 	expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
 		packageContext: { packageId: 'job-repo-module', kodyId: 'repo-module-job' },
-		packageInvokeTools: expect.objectContaining({
-			invoke: expect.any(Function),
+		packageEventTools: expect.objectContaining({
+			dispatch: expect.any(Function),
 		}),
 	})
-	expect(runtimeInvokeSpy).toHaveBeenCalledTimes(1)
-	expect(executeInvokeSpy).not.toHaveBeenCalled()
+	expect(executeSpy.mock.calls[0]?.[4]).not.toHaveProperty('packageInvokeTools')
 })
 
 test('stale published job bundles rebuild after the source commit changes', async () => {

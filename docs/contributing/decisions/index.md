@@ -112,6 +112,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0052 — OAuth refresh expectation comes from the token response](./0052-oauth-refresh-policy-from-token-response.md)
   — no app/adapter refresh defaults and no blanket `missing_refresh_token`
   Waiting suppression; wait only when the connect response implied refresh
+- [0053 — Scoped API tokens are a separate credential class, not MCP OAuth scopes](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)
+  — `kody_at_` tokens authenticate only the Open API and CapabilityProxy; MCP
+  OAuth stays one full grant; the CLI never scavenges MCP OAuth tokens
 
 ## Historical / UI / implementation
 

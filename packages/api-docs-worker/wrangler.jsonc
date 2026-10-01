@@ -1,0 +1,29 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Interactive OpenAPI docs at `api-docs.kody.codes`. Serves Scalar HTML and
+	// proxies `/openapi.json` from the live API so the UI stays JSON-only on
+	// `api.kody.codes` (no Accept-HTML there). DNS + cert come from
+	// `custom_domain: true` on deploy, same as `api.kody.codes`.
+	"name": "kody-api-docs",
+	"main": "./src/index.ts",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"minify": true,
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "api-docs.kody.codes",
+			"custom_domain": true,
+		},
+	],
+	"vars": {
+		"OPENAPI_SPEC_URL": "https://api.kody.codes/openapi.json",
+	},
+}

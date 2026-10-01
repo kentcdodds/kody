@@ -1,0 +1,11 @@
+{
+  "name": "@kody/api-worker",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "@kody-internal/shared": "file:../shared"
+  }
+}

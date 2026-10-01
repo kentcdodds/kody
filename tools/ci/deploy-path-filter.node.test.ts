@@ -127,6 +127,15 @@ test('production deploy path filter selects worker scripts only when their sourc
 			deploys('main', 'highlight'),
 		],
 		[['tools/ci/deploy-path-filter.ts'], originWorkers],
+		[['packages/api-worker/src/index.ts'], deploys()],
+		[['packages/api-docs-worker/src/index.ts'], deploys()],
+		[
+			[
+				'packages/api-worker/src/index.ts',
+				'packages/worker/src/open-api/http-handler.ts',
+			],
+			originWorkers,
+		],
 	]
 	expect(
 		cases.map(([paths]) => [paths, classifyProductionDeployPaths(paths)]),

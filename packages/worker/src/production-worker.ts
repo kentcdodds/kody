@@ -1,6 +1,7 @@
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
 import { DynamicWorkerUsageTail } from '#worker/usage/dynamic-worker-cpu.ts'
 import { JobsHost } from './jobs/jobs-host.ts'
+import { KodyApi } from './open-api/kody-api.ts'
 import { originWorkerHandler } from './origin-handler.ts'
 
 /**
@@ -35,6 +36,9 @@ import { originWorkerHandler } from './origin-handler.ts'
  * - `JobsHost` — `kody-jobs`' `HOST` service binding calls back into this
  *   script for job execution (see
  *   docs/contributing/architecture/jobs-worker-migration-runbook.md).
+ * - `KodyApi` — `kody-api`'s `KODY_API` service binding forwards
+ *   `api.kody.codes` requests here (see
+ *   docs/contributing/architecture/open-api.md).
  * - `DynamicWorkerUsageTail` — tail worker attached to the Worker Loader
  *   isolates those jobs (and the execute smoke) create, recording
  *   Cloudflare-measured CPU as `dynamic_worker_cpu`.
@@ -47,6 +51,6 @@ import { originWorkerHandler } from './origin-handler.ts'
  * `RUNTIME_WORKER` service forward, never through a local export on this
  * script.
  */
-export { KodyFetchGateway, JobsHost, DynamicWorkerUsageTail }
+export { KodyFetchGateway, JobsHost, KodyApi, DynamicWorkerUsageTail }
 
 export default originWorkerHandler

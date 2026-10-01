@@ -173,8 +173,8 @@ imports. Computed `import(specifier)` for `kody:@` names loads caller-owned /
 forked modules through a host library-load bridge
 (`resolveCurrentDynamicPackageArtifact` / nested evaluate with the caller's
 `packageContext` and callee stamp grants). Authors and agents do not call
-`packages.invoke`. The quarantined helper remains only for already-published
-call sites (cleanup [#1750](https://github.com/kentcdodds/kody/issues/1750)).
+`packages.invoke`; the helper is deleted and `packages` is always `null`
+([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 
 If the specifier is a **caller-owned** package and `import()` means “library
 load in this isolate,” storage, context, and secrets match static import: A's

@@ -19,11 +19,7 @@ import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 	readRetryablePackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
-import {
-	createExecutePackageInvokeTools,
-	createPackageRuntimeInvokeTools,
-	invokePackageExport,
-} from '#worker/package-invocations/service.ts'
+import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
 import {
 	getSavedPackageById,
@@ -1281,7 +1277,10 @@ export async function cancelWorkflowRunForUser(input: {
 	// worked; report the effective cancelled status to the caller while the
 	// row self-heals to the engine's terminal status on the next
 	// listWorkflowRunsForUser refresh.
-	return { outcome: 'cancelled', run: { ...projectedRun, status: 'cancelled' } }
+	return {
+		outcome: 'cancelled',
+		run: { ...projectedRun, status: 'cancelled' },
+	}
 }
 
 export async function listWorkflowRunsForUser(input: {
@@ -1587,23 +1586,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					}
 				: null,
 		})
-		// Inline workflow sandboxes use the same execute module loader, including
-		// packages.invoke. Package-created inline code keeps package-runtime
-		// provenance; execute-created inline code uses the execute invoke path.
-		const packageInvokeTools = payload.packageContext
-			? createPackageRuntimeInvokeTools({
-					env: this.env,
-					baseUrl: callerContext.baseUrl,
-					callerContext,
-					packageContext: payload.packageContext,
-					waitUntil,
-				})
-			: createExecutePackageInvokeTools({
-					env: this.env,
-					baseUrl: callerContext.baseUrl,
-					callerContext,
-					waitUntil,
-				})
 		const runHandle = beginRunRecord({
 			env: this.env,
 			userId: payload.userId,
@@ -1628,7 +1610,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				payload.params,
 				{
 					packageContext: payload.packageContext,
-					packageInvokeTools,
 					executorTimeoutMs: workflowExecutorTimeoutMs,
 					runSurface: 'workflow',
 				},

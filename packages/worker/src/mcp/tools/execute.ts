@@ -58,7 +58,6 @@ import {
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
-import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	abandonRunRecord,
 	claimRunRecord,
@@ -418,15 +417,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					},
 					async () => {
-						const packageInvokeTools = callerContext.user?.userId
-							? await createExecutePackageInvokeTools({
-									env,
-									baseUrl: callerContext.baseUrl,
-									callerContext,
-									conversationId: resolvedConversationId,
-									waitUntil,
-								})
-							: undefined
 						try {
 							const inboundSignal = getInboundRequestSignal()
 							const execution = runModuleWithRegistry(
@@ -437,7 +427,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								{
 									executorExports: agent.getLoopbackExports(),
 									capabilityRegistry: registry,
-									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
 									runRecordHandle: claimedRunHandle,
