@@ -57,11 +57,13 @@ skill.
 ### Saved-package imports under `--local`
 
 Pure `kody.*` / `workflows.create` modules run in local workerd; each
-`kody:runtime` call is a CapabilityProxy hop. Modules with static or dynamic
-`kody:@…` imports cannot be bundled offline (ownership, shares, stamps, and
-published artifacts live on origin). `@kodycodes/cli` detects those imports and
-resolves them via CapabilityProxy → `kody.execute` (Open API / token — same path
-as token-auth cloud execute). Agents keep writing:
+`kody:runtime` call is a CapabilityProxy hop. Modules with static `kody:@…`
+imports keep `--local`: the CLI calls `POST /v1/local-execute/package-graph`
+(same `local-execute` token + flag) to download published, stamped
+importable-module artifacts, embeds them next to your module + `kody:runtime`,
+and still uses CapabilityProxy only for per-call runtime hops. There is **no**
+silent whole-module defer to CapabilityProxy → `kody.execute`. Agents keep
+writing:
 
 ```ts
 import { searchMessages } from 'kody:@kentcdodds/google/gmail'
@@ -73,11 +75,19 @@ export default async function main(params) {
 and running `npx @kodycodes/cli execute --local …`. There is no author-facing
 `packages.invoke`.
 
-That package-import path still needs network and a `local-execute` token; origin
-meters it like cloud execute. True offline workerd bundling of saved packages is
-not supported.
+Package-graph prep meters as an observe-only Open API `api_call` (not
+`dynamic_worker_day` / cloud execute of the user module). Capability hops during
+the later local run still meter normally. Literal `import("kody:@…")` is not
+bound for local embedding yet — use a static import.
 
-CLI change: [kody-bot/cli#12](https://github.com/kody-bot/cli/pull/12).
+**Local runtime gap:** local `kody:runtime` still leaves
+`createAuthenticatedFetch`, stamped `packageSecrets`, and `packageStorage`
+unbound. Packages that need those (for example `@kentcdodds/google` Gmail
+helpers) load via package-graph but cannot complete authenticated outbound fetch
+until a follow-up local auth-fetch model ships
+([#2808](https://github.com/kentcdodds/kody/issues/2808)).
+
+CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
 ## First local run
 
@@ -117,10 +127,11 @@ operations over HTTP.
 
 ## Metering
 
-Local CPU for pure-local modules (no `kody:@` imports) is not counted as
-`execute` or `dynamic_worker_day`; capabilities you call through the proxy still
-meter normally. When `--local` falls back to CapabilityProxy → `kody.execute`
-for saved-package imports, that hop meters like cloud execute.
+Local CPU for modules that run in workerd (including embedded `kody:@…` package
+modules after package-graph download) is not counted as `execute` or
+`dynamic_worker_day`; capabilities you call through the proxy still meter
+normally. The package-graph prep call meters as an observe-only Open API
+`api_call` (`localExecutePackageGraph`), not a full cloud execute.
 
 ## Where to go next
 

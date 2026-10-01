@@ -58,9 +58,17 @@ npx @kodycodes/cli execute --local --code 'import { searchMessages } from "kody:
 export default async function main(params) { return await searchMessages(params) }'
 ```
 
-The CLI resolves `kody:@…` via Open API CapabilityProxy → `kody.execute`
-(network + token required; not hosted MCP `execute`). See
+The CLI downloads stamped modules via Open API
+`POST /v1/local-execute/package-graph` (same `local-execute` token + flag) and
+embeds them in local workerd. CapabilityProxy stays for per-call `kody:runtime`
+hops only — there is no silent whole-module `kody.execute` defer. Network +
+token are still required for package-graph and capability hops. See
 [Open API and local execute](../../../docs/guides/open-api.md).
+
+Note: local `createAuthenticatedFetch` / stamped `packageSecrets` /
+`packageStorage` are still unbound; Gmail-style helpers may need cloud execute
+until that follow-up lands
+([#2808](https://github.com/kentcdodds/kody/issues/2808)).
 
 ## Fallback
 

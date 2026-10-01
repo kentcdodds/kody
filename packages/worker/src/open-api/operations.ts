@@ -53,6 +53,7 @@ export const nativeApiOperationIds = [
 	'tokenRevoke',
 	'capabilityProxySession',
 	'capabilityProxyCall',
+	'localExecutePackageGraph',
 ] as const
 
 export type NativeApiOperationId = (typeof nativeApiOperationIds)[number]
@@ -334,6 +335,13 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'POST',
 		'/v1/capability-proxy/call',
 		'capabilityProxyCall',
+		'local-execute',
+		capabilityProxyRoute,
+	),
+	nativeRoute(
+		'POST',
+		'/v1/local-execute/package-graph',
+		'localExecutePackageGraph',
 		'local-execute',
 		capabilityProxyRoute,
 	),

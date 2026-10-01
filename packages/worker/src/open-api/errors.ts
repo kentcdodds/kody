@@ -30,6 +30,9 @@ export const apiErrorCodes = [
 	'rate_limited',
 	'entitlement_limit',
 	'capability_error',
+	'package_import_unresolved',
+	'package_import_unpublished',
+	'unsupported_dynamic_package_import',
 	'internal_error',
 ] as const
 

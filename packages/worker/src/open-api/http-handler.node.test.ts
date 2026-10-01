@@ -564,3 +564,79 @@ test('unknown routes and methods use the error envelope', async () => {
 	expect(method.status).toBe(405)
 	expect(method.headers.get('Allow')).toBe('GET, POST')
 })
+
+test('local-execute package-graph requires flag + scope and meters as api_call prep', async () => {
+	const points: Array<{
+		blobs: Array<string | null | undefined>
+		indexes?: Array<string | null | undefined>
+	}> = []
+	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const token = await mintWithLocalExecute(api)
+
+	const empty = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: {
+			code: 'export default async function main() { return 1 }',
+		},
+	})
+	expect(empty.status).toBe(200)
+	expect(empty.body).toEqual({ modules: [], imports: [], warnings: [] })
+
+	const dynamic = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: {
+			code: `const m = await import('kody:@missing/pkg/export')
+export default async () => m`,
+		},
+	})
+	expect(dynamic.status).toBe(400)
+	expect(dynamic.body.error?.code).toBe('unsupported_dynamic_package_import')
+
+	const unresolved = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: {
+			code: `import x from 'kody:@missing/pkg/export'
+export default async () => x`,
+		},
+	})
+	expect(unresolved.status).toBe(400)
+	expect(unresolved.body.error?.code).toBe('package_import_unresolved')
+
+	const noScope = await api.call('POST', '/v1/local-execute/package-graph', {
+		token: await api.mint(['account:read']),
+		body: { code: 'export default async function main() { return 1 }' },
+	})
+	expect(noScope.status).toBe(403)
+	expect(noScope.body.error?.code).toBe('insufficient_scope')
+
+	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
+	const disabled = await api.call('POST', '/v1/local-execute/package-graph', {
+		token,
+		body: { code: 'export default async function main() { return 1 }' },
+	})
+	expect(disabled.status).toBe(403)
+	expect(disabled.body.error?.code).toBe('feature_disabled')
+
+	const packageGraphCalls = points.filter(
+		(point) =>
+			point.blobs[1] === 'api_call' &&
+			String(point.blobs[2] ?? '').startsWith('localExecutePackageGraph'),
+	)
+	expect(
+		packageGraphCalls.map((point) => [point.blobs[2], point.blobs[3]]),
+	).toEqual(
+		expect.arrayContaining([
+			['localExecutePackageGraph', 'success'],
+			['localExecutePackageGraph:unsupported_dynamic_package_import', 'error'],
+			['localExecutePackageGraph:package_import_unresolved', 'error'],
+			['localExecutePackageGraph:insufficient_scope', 'error'],
+			['localExecutePackageGraph:feature_disabled', 'error'],
+		]),
+	)
+	expect(
+		points.some(
+			(point) =>
+				point.blobs[1] === 'execute' || point.blobs[1] === 'dynamic_worker_day',
+		),
+	).toBe(false)
+})

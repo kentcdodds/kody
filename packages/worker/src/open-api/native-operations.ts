@@ -7,6 +7,7 @@ import {
 	capabilityProxyUsageEntityId,
 	runCapabilityProxyCall,
 } from './capability-proxy.ts'
+import { localExecutePackageGraphOperationDefinitions } from './local-execute-package-graph.ts'
 import {
 	parseNativeInput,
 	requireTokenPrincipal,
@@ -73,4 +74,5 @@ export const nativeApiOperationDefinitions: Record<
 > = {
 	...tokenOperationDefinitions,
 	...capabilityProxyOperationDefinitions,
+	...localExecutePackageGraphOperationDefinitions,
 }

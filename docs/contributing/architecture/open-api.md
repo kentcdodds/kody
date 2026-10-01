@@ -121,27 +121,32 @@ Kody stores only a SHA-256 hash; the value is returned once, on mint or rotate.
 
 ## CapabilityProxy
 
-The cloud half of local execute. The CLI runs capability-only modules in a local
-workerd and forwards each `kody:runtime` call here. Modules that import
-`kody:@…` keep `execute --local` but resolve the package graph via
-CapabilityProxy → `kody.execute` (Open API / token; not hosted MCP `execute`) —
-see [Open API and local execute](../../guides/open-api.md) and
-[kody-bot/cli#12](https://github.com/kody-bot/cli/pull/12). This contract
-matches recent `@kodycodes/cli` releases
-([kody-bot/cli#9](https://github.com/kody-bot/cli/pull/9) and later).
+The cloud half of local execute. The CLI runs modules in a local workerd and
+forwards each `kody:runtime` call here. Static `kody:@…` imports are resolved by
+`POST /v1/local-execute/package-graph` (same `local-execute` flag/scope): origin
+returns published, stamped importable-module artifacts for embedding — it does
+**not** execute the user module and does not silently hop to `kody.execute`. See
+[Open API and local execute](../../guides/open-api.md) and
+[kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
-| Route                              | Body                              | 200 response                                                                    |
-| ---------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
-| `GET /v1/capability-proxy/session` | none                              | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, limits }` (camelCase) |
-| `POST /v1/capability-proxy/call`   | `{ path, args, conversationId? }` | `{ result }`                                                                    |
+| Route                                  | Body                                  | 200 response                                                                    |
+| -------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
+| `GET /v1/capability-proxy/session`     | none                                  | `{ scopes, expiresAt, maxExpiresAt, idleTtlSeconds, user, limits }` (camelCase) |
+| `POST /v1/capability-proxy/call`       | `{ path, args, conversationId? }`     | `{ result }`                                                                    |
+| `POST /v1/local-execute/package-graph` | `{ code, imports?, conversationId? }` | `{ modules: [{ name, esModule }], imports, warnings }`                          |
 
 - `path` is the `kody:runtime` property path: `['kody', name]`,
   `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
   positional (at most 8; paths at most 8 segments). Unknown keys answer 400.
   `['packages', 'invoke']` is rejected: there is no author-facing
   `packages.invoke` (use a static `kody:@` import or `import(specifier)`).
-  Token-auth / `--local` package composition uses `['kody', 'execute']` with a
-  module that contains those imports — not `packages.invoke`.
+  Token-auth / `--local` package composition uses package-graph download + local
+  workerd embedding — not `packages.invoke` and not whole-module `kody.execute`.
+- Package-graph uses the same static-import scanner and resolution policy as
+  cloud ad hoc execute (own copy → share grant → platform scopes only when
+  allowed). Prefer published `importable-module` artifacts; unpublished or
+  missing artifacts answer `400 package_import_unpublished`. Literal dynamic
+  `import("kody:@…")` answers `400 unsupported_dynamic_package_import`.
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
   capability behavior, `kody.mcp`, and workflows match the cloud. Caller errors
   from a capability keep their status and message. Unexpected capability
@@ -158,39 +163,42 @@ matches recent `@kodycodes/cli` releases
   CLI can tell "not enabled for you" from "mint a token with the local-execute
   scope".
 - Not proxied: outbound `fetch`, secret substitution in fetch headers, and
-  `createAuthenticatedFetch`. The CLI fetches those from local workerd on the
-  pure-local path.
+  `createAuthenticatedFetch`. Local stamped `packageSecrets` / `packageStorage`
+  host factories are also unbound until a follow-up; package-graph still returns
+  stamped modules so pure helpers can run locally.
 
 ## Errors
 
 Every error is `{ error: { code, message, details? } }` with
 `Cache-Control: no-store`.
 
-| Status | `code`                                                                                       |
-| ------ | -------------------------------------------------------------------------------------------- |
-| 400    | `invalid_request`                                                                            |
-| 401    | `unauthorized` (missing, invalid, expired, or revoked token)                                 |
-| 403    | `insufficient_scope`, `feature_disabled`, `email_verification_required`, `account_suspended` |
-| 404    | `not_found`, `feature_unavailable` (MCP `api` tool off)                                      |
-| 405    | `method_not_allowed` (with `Allow`)                                                          |
-| 409    | `account_deleting`                                                                           |
-| 413    | `payload_too_large`                                                                          |
-| 415    | `unsupported_media_type`                                                                     |
-| 429    | `rate_limited` (edge, `Retry-After`), `entitlement_limit`                                    |
-| 500    | `capability_error`, `internal_error`                                                         |
+| Status | `code`                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------ |
+| 400    | `invalid_request`, `package_import_unresolved`, `package_import_unpublished`, `unsupported_dynamic_package_import` |
+| 401    | `unauthorized` (missing, invalid, expired, or revoked token)                                                       |
+| 403    | `insufficient_scope`, `feature_disabled`, `email_verification_required`, `account_suspended`                       |
+| 404    | `not_found`, `feature_unavailable` (MCP `api` tool off)                                                            |
+| 405    | `method_not_allowed` (with `Allow`)                                                                                |
+| 409    | `account_deleting`                                                                                                 |
+| 413    | `payload_too_large`                                                                                                |
+| 415    | `unsupported_media_type`                                                                                           |
+| 429    | `rate_limited` (edge, `Retry-After`), `entitlement_limit`                                                          |
+| 500    | `capability_error`, `internal_error`                                                                               |
 
 ## Metering
 
 Each operation records one observe-only `api_call`
 ([usage metering](./usage-metering.md)); CapabilityProxy hops use
-`capability-proxy:<path>` as the entity id. On CapabilityProxy failures the
-entity id appends the ApiError code (for example
-`capabilityProxySession:feature_disabled` or
-`capabilityProxySession:unauthorized`) so session start and auth / flag failures
-are distinguishable in Analytics Engine without a new event type or fake
-`execute` / `dynamic_worker_day` charges. The capability behind a call meters
-itself as usual (email sends, outbound fetches, package runs). Local execute CPU
-runs on the user's machine and is never recorded as `execute` or
+`capability-proxy:<path>` as the entity id, and package-graph prep uses
+`localExecutePackageGraph`. On local-execute native failures the entity id
+appends the ApiError code (for example
+`capabilityProxySession:feature_disabled`,
+`localExecutePackageGraph:package_import_unresolved`, or
+`capabilityProxySession:unauthorized`) so session start, package-graph prep, and
+auth / flag failures are distinguishable in Analytics Engine without a new event
+type or fake `execute` / `dynamic_worker_day` charges. The capability behind a
+call meters itself as usual (email sends, outbound fetches, package runs). Local
+execute CPU runs on the user's machine and is never recorded as `execute` or
 `dynamic_worker_day`.
 
 ## MCP `api` tool
