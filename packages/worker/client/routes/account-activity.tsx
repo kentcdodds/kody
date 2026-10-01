@@ -22,6 +22,7 @@ import {
 	readSurfaceFilter,
 	readTriageFilter,
 	readViewFilter,
+	runAttributionSubtitle,
 	runDisplayName,
 	statusColor,
 	statusLabel,
@@ -467,37 +468,55 @@ export function AccountActivityRoute(handle: Handle) {
 								{ key: 'started', label: 'Started', drop: 2 },
 								{ key: 'duration', label: 'Duration', align: 'end' },
 							]}
-							rows={runs.map((item) => ({
-								id: item.id,
-								href: activityRoute.buildDetailHref(item.id, filterSearch),
-								cells: {
-									name: renderWorkflowNameCell({
-										name: runDisplayName(item),
-										idempotencyKey: item.idempotencyKey,
-									}),
-									surface: surfaceLabel(item.surface),
-									status: (
-										<span mix={css({ color: statusColor(item.status) })}>
-											{statusLabel(item.status)}
-										</span>
-									),
-									error: item.errorMessage ? (
-										<span mix={[clampedCellCss, css({ color: colors.error })]}>
-											{item.errorMessage}
-										</span>
-									) : null,
-									started: (
-										<span mix={css(recordStampCss)}>
-											{formatTimestamp(item.startedAt)}
-										</span>
-									),
-									duration: (
-										<span mix={css(recordStampCss)}>
-											{formatDurationMs(item.durationMs)}
-										</span>
-									),
-								},
-							}))}
+							rows={runs.map((item) => {
+								const attribution = runAttributionSubtitle(item)
+								return {
+									id: item.id,
+									href: activityRoute.buildDetailHref(item.id, filterSearch),
+									cells: {
+										name: (
+											<span
+												mix={css({
+													display: 'grid',
+													gap: '0.125rem',
+													minWidth: 0,
+												})}
+											>
+												{renderWorkflowNameCell({
+													name: runDisplayName(item),
+													idempotencyKey: item.idempotencyKey,
+												})}
+												{attribution ? (
+													<span mix={css(recordStampCss)}>{attribution}</span>
+												) : null}
+											</span>
+										),
+										surface: surfaceLabel(item.surface),
+										status: (
+											<span mix={css({ color: statusColor(item.status) })}>
+												{statusLabel(item.status)}
+											</span>
+										),
+										error: item.errorMessage ? (
+											<span
+												mix={[clampedCellCss, css({ color: colors.error })]}
+											>
+												{item.errorMessage}
+											</span>
+										) : null,
+										started: (
+											<span mix={css(recordStampCss)}>
+												{formatTimestamp(item.startedAt)}
+											</span>
+										),
+										duration: (
+											<span mix={css(recordStampCss)}>
+												{formatDurationMs(item.durationMs)}
+											</span>
+										),
+									},
+								}
+							})}
 							footer={
 								nextCursor ? (
 									<button

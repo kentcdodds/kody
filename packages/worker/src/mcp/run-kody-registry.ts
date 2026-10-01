@@ -19,6 +19,7 @@ import {
 	isCallerDisconnectAbort,
 } from '#worker/caller-disconnect.ts'
 import { recordExecuteInterpretableEvent } from '#mcp/execute-interpretable.ts'
+import { executeWorkerIdMetadataKey } from '#mcp/execute-invoke.ts'
 import {
 	classifyExecuteThinGlue,
 	type ExecuteThinGlueClass,
@@ -1132,6 +1133,17 @@ export async function runBundledModuleWithRegistry(
 			}),
 			executeShape: options?.executeShape,
 			allowOutboundFetch: !closedWorldRetrieverRuntime,
+			onWorkerId: runRecordHandle
+				? (workerId) => {
+						runRecordHandle.context = {
+							...runRecordHandle.context,
+							metadata: {
+								...runRecordHandle.context.metadata,
+								[executeWorkerIdMetadataKey]: workerId,
+							},
+						}
+					}
+				: undefined,
 			waitUntil: options?.waitUntil,
 		})
 		const workflowTools = closedWorldRetrieverRuntime

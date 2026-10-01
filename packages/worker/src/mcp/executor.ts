@@ -210,6 +210,11 @@ type DynamicWorkerExecutorInput = {
 	 */
 	executeShape?: ExecuteThinGlueClass | null
 	/**
+	 * Called once the stable LOADER worker id is minted (same id unique_worker_days
+	 * meters). Use to stamp run metadata before evaluate finishes.
+	 */
+	onWorkerId?: (workerId: string) => void
+	/**
 	 * When set, unique-worker-day metering and the first-execute activation
 	 * stamp run on `waitUntil` instead of the sandbox critical path. Without
 	 * an execution context the writes stay awaited so they are not dropped.
@@ -571,6 +576,11 @@ export function createExecuteExecutor(input: {
 	 */
 	executeShape?: ExecuteThinGlueClass | null
 	/**
+	 * Called once the stable LOADER worker id is minted (same id unique_worker_days
+	 * meters). Use to stamp run metadata before evaluate finishes.
+	 */
+	onWorkerId?: (workerId: string) => void
+	/**
 	 * When false, sandbox `fetch` is rejected. Retriever runs use this to stay
 	 * closed-world. Defaults to true.
 	 */
@@ -620,6 +630,7 @@ export function createExecuteExecutor(input: {
 		recordExecuteUsage: input.recordExecuteUsage,
 		surface: input.surface ?? 'execute',
 		executeShape: input.executeShape,
+		onWorkerId: input.onWorkerId,
 		waitUntil: input.waitUntil,
 	})
 }
@@ -670,6 +681,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				storageContext: input.gatewayProps.storageContext,
 				workerOptions,
 			})
+			input.onWorkerId?.(workerId)
 			const claimedDay = recordUniqueDynamicWorkerDay({
 				env: input.usageEnv,
 				userId: input.gatewayProps.userId,

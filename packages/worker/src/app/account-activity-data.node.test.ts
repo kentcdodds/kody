@@ -213,10 +213,14 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 				status: 'error',
 				errorMessage: 'boom',
 				idempotencyKey: 'sync-account-123',
+				entry: null,
+				workerId: null,
 			}),
 		],
 		selectedRun: expect.objectContaining({
 			id: 'run-1',
+			entry: null,
+			workerId: null,
 			logs: [
 				expect.objectContaining({ sequence: 0, message: 'first' }),
 				expect.objectContaining({ sequence: 1, message: 'second' }),
@@ -241,4 +245,50 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 			}),
 		)
 	}
+})
+
+test('loadAccountActivityData surfaces execute entry and workerId from metadata', async () => {
+	const run = makeRun({
+		surface: 'execute',
+		name: null,
+		status: 'success',
+		errorName: null,
+		errorMessage: null,
+		jobId: null,
+		metadata: {
+			conversationId: 'conv-1',
+			entry: 'invoke',
+			invoke: 'kody:@acme/github/listRepos',
+			workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+			sandboxMs: 42,
+		},
+	})
+	mockModule.summarizeRunRecords.mockResolvedValue({
+		since: weekAgo,
+		total: 1,
+		errors: 0,
+		ignored: 0,
+		resolved: 0,
+		running: 0,
+		bySurface: [{ surface: 'execute', total: 1, errors: 0 }],
+	})
+	mockModule.listRunRecords.mockResolvedValue({
+		runs: [run],
+		nextCursor: null,
+	})
+	mockModule.getRunRecord.mockResolvedValue({ run, logs: [] })
+
+	const data = await loadActivity('/account/activity/run-1?view=recent')
+	expect(data.runs[0]).toMatchObject({
+		entry: 'invoke',
+		workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+	})
+	expect(data.selectedRun).toMatchObject({
+		entry: 'invoke',
+		workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+		metadata: expect.objectContaining({
+			entry: 'invoke',
+			workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+		}),
+	})
 })

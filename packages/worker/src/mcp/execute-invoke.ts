@@ -110,11 +110,45 @@ export function resolveExecuteInvokeCode(invoke: string): string {
 	)
 }
 
-export function resolveExecuteModuleSource(input: {
+/**
+ * How the execute module source was supplied. Persisted on run metadata so
+ * Activity / `runList` can attribute invoke vs handwritten `code` without
+ * re-classifying the body.
+ */
+export type ExecuteEntry = 'invoke' | 'code'
+
+export type ResolvedExecuteModule = {
+	code: string
+	entry: ExecuteEntry
+	/** Canonical `kody:@…` specifier when `entry` is `invoke`. */
+	invoke?: string
+}
+
+/**
+ * Run-metadata keys for execute attribution. Keep these stable: Activity and
+ * `runList` read them as opaque metadata (forward-only; no backfill).
+ */
+export const executeEntryMetadataKey = 'entry'
+export const executeInvokeMetadataKey = 'invoke'
+export const executeWorkerIdMetadataKey = 'workerId'
+
+export function buildExecuteAttributionMetadata(input: {
+	entry: ExecuteEntry
+	invoke?: string
+}): Record<string, string> {
+	return {
+		[executeEntryMetadataKey]: input.entry,
+		...(input.entry === 'invoke' && input.invoke
+			? { [executeInvokeMetadataKey]: input.invoke }
+			: {}),
+	}
+}
+
+export function resolveExecuteModule(input: {
 	code?: string
 	invoke?: string
 	invokeEnabled: boolean
-}): string {
+}): ResolvedExecuteModule {
 	const code = input.code?.trim() ? input.code : undefined
 	const invoke = input.invoke?.trim() ? input.invoke : undefined
 
@@ -125,13 +159,26 @@ export function resolveExecuteModuleSource(input: {
 		throw new McpCallerError(executeInvokeMutualExclusionMessage)
 	}
 	if (invoke) {
-		return resolveExecuteInvokeCode(invoke)
+		const specifier = parseExecuteInvokeSpecifier(invoke)
+		return {
+			code: buildExecuteInvokePassthroughSource(specifier),
+			entry: 'invoke',
+			invoke: specifier,
+		}
 	}
 	if (code) {
-		return code
+		return { code, entry: 'code' }
 	}
 	if (input.invokeEnabled) {
 		throw new McpCallerError(executeInvokeMissingInputMessage)
 	}
 	throw new McpCallerError(executeInvokeMissingInputMessage)
+}
+
+export function resolveExecuteModuleSource(input: {
+	code?: string
+	invoke?: string
+	invokeEnabled: boolean
+}): string {
+	return resolveExecuteModule(input).code
 }

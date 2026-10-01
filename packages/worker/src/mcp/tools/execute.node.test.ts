@@ -373,7 +373,7 @@ test('execute tool serializes successes and errors, binds no packages.invoke too
 				name: null,
 				storageId: null,
 				idempotencyKey: null,
-				metadata: { conversationId: 'conv-packages' },
+				metadata: { conversationId: 'conv-packages', entry: 'code' },
 			},
 		}),
 	)
@@ -964,7 +964,15 @@ export default async function main(params) {
 	return await action(params)
 }`,
 		{ limit: 5 },
-		expect.anything(),
+		expect.objectContaining({
+			runRecord: expect.objectContaining({
+				metadata: {
+					conversationId: 'conv-invoke-on',
+					entry: 'invoke',
+					invoke: 'kody:@acme/github/listRepos',
+				},
+			}),
+		}),
 	)
 
 	const both = await onHandler({

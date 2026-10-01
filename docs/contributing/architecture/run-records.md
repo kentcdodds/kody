@@ -141,6 +141,12 @@ Rules:
   `{ __truncated__: true, preview }`. Eager surfaces that produce a handler
   return value (at minimum webhook deliveries, package exports, and ad-hoc
   execute) should pass it so `runGet` can show what the handler returned.
+- Ad-hoc **execute** runs (MCP tool and in-runtime `meta.execute`) stamp
+  forward-only attribution in metadata: `entry` (`invoke` | `code`), optional
+  `invoke` specifier when entry is invoke, and `workerId` (the stable LOADER id
+  unique_worker_days already meters) once the module graph is minted. Package
+  columns (`package_id`, `published_commit`, …) stay first-class. No historical
+  backfill.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
   row instead of starting a second attempt. Lookups are scoped by

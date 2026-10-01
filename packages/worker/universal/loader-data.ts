@@ -2030,6 +2030,10 @@ export type AccountActivityRunListItem = {
 	jobId: string | null
 	logCount: number
 	idempotencyKey: string | null
+	/** Execute-only: `invoke` | `code` from run metadata (forward-only). */
+	entry: 'invoke' | 'code' | null
+	/** Stable LOADER worker id (UWD graph identity) from run metadata. */
+	workerId: string | null
 }
 
 type AccountActivityRunLog = {

@@ -2,8 +2,10 @@ import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { classifyExecuteThinGlue } from '#worker/usage/execute-thin-glue.ts'
 import {
+	buildExecuteAttributionMetadata,
 	parseExecuteInvokeSpecifier,
 	resolveExecuteInvokeCode,
+	resolveExecuteModule,
 	resolveExecuteModuleSource,
 } from './execute-invoke.ts'
 
@@ -85,4 +87,38 @@ test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () 
 			invokeEnabled: true,
 		}),
 	).toBe(handwrittenThinPassthrough)
+})
+
+test('resolveExecuteModule attributes invoke vs code and buildExecuteAttributionMetadata', () => {
+	expect(
+		resolveExecuteModule({
+			code: 'export default async function main() { return 1 }',
+			invokeEnabled: true,
+		}),
+	).toEqual({
+		code: 'export default async function main() { return 1 }',
+		entry: 'code',
+	})
+	expect(
+		resolveExecuteModule({
+			invoke: '@acme/github#listRepos',
+			invokeEnabled: true,
+		}),
+	).toEqual({
+		code: handwrittenThinPassthrough,
+		entry: 'invoke',
+		invoke: 'kody:@acme/github/listRepos',
+	})
+	expect(buildExecuteAttributionMetadata({ entry: 'code' })).toEqual({
+		entry: 'code',
+	})
+	expect(
+		buildExecuteAttributionMetadata({
+			entry: 'invoke',
+			invoke: 'kody:@acme/github/listRepos',
+		}),
+	).toEqual({
+		entry: 'invoke',
+		invoke: 'kody:@acme/github/listRepos',
+	})
 })

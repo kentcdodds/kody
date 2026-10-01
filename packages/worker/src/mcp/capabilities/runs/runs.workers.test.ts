@@ -395,3 +395,69 @@ test(
 	},
 	runLogSuiteTimeoutMs,
 )
+
+test(
+	'runList and runGet surface execute entry and workerId metadata',
+	async () => {
+		const owner = createTenant('execute-attribution')
+		await owner.finishRun({
+			id: 'run-execute-attr',
+			offsetMs: 0,
+			context: {
+				surface: 'execute',
+				name: null,
+				metadata: {
+					conversationId: 'conv-attr',
+					entry: 'invoke',
+					invoke: 'kody:@acme/github/listRepos',
+					workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+					sandboxMs: 12,
+				},
+			},
+			result: { ok: true },
+		})
+		await owner.finishRun({
+			id: 'run-package-job',
+			offsetMs: 1,
+			context: {
+				surface: 'job',
+				name: 'digest',
+				packageId: 'pkg-1',
+				publishedCommit: 'abc123',
+				jobId: 'job-1',
+			},
+		})
+
+		const listed = await owner.list({ surface: 'execute', error_triage: 'all' })
+		expect(listed.runs).toEqual([
+			expect.objectContaining({
+				id: 'run-execute-attr',
+				surface: 'execute',
+				package_id: null,
+				published_commit: null,
+				metadata: expect.objectContaining({
+					entry: 'invoke',
+					invoke: 'kody:@acme/github/listRepos',
+					workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+					result: { ok: true },
+				}),
+			}),
+		])
+
+		const detail = await owner.get('run-execute-attr')
+		expect(detail.run.metadata).toMatchObject({
+			entry: 'invoke',
+			workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
+		})
+
+		const packageJob = await owner.get('run-package-job')
+		expect(packageJob.run).toMatchObject({
+			package_id: 'pkg-1',
+			published_commit: 'abc123',
+			job_id: 'job-1',
+		})
+		expect(packageJob.run.metadata).not.toHaveProperty('entry')
+		expect(packageJob.run.metadata).not.toHaveProperty('workerId')
+	},
+	runLogSuiteTimeoutMs,
+)

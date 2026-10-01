@@ -10,7 +10,8 @@ import {
 	executeInvokeFieldDescription,
 	executeInvokeFlagKey,
 	executeToolDescriptionWithInvoke,
-	resolveExecuteModuleSource,
+	buildExecuteAttributionMetadata,
+	resolveExecuteModule,
 } from '#mcp/execute-invoke.ts'
 import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import {
@@ -344,11 +345,19 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// flag here so a kill-switch applies on the next call even
 				// when a legacy session still has invoke in its tool list.
 				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
-				const resolvedCode = resolveExecuteModuleSource({
+				const resolvedModule = resolveExecuteModule({
 					code,
 					invoke,
 					invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
 				})
+				const executeAttribution = buildExecuteAttributionMetadata({
+					entry: resolvedModule.entry,
+					invoke: resolvedModule.invoke,
+				})
+				const executeRunMetadata = {
+					conversationId: resolvedConversationId,
+					...executeAttribution,
+				}
 
 				// Daily execute quota, consumed before claim/bundling/sandbox
 				// so over-limit calls cost nothing and do not poison a key.
@@ -371,9 +380,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							name: null,
 							storageId: activeStorageId,
 							idempotencyKey: normalizedIdempotencyKey,
-							metadata: {
-								conversationId: resolvedConversationId,
-							},
+							metadata: executeRunMetadata,
 						},
 					})
 					if (!claim) {
@@ -422,7 +429,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							const execution = runModuleWithRegistry(
 								env,
 								callerContext,
-								resolvedCode,
+								resolvedModule.code,
 								params,
 								{
 									executorExports: agent.getLoopbackExports(),
@@ -438,9 +445,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 										name: null,
 										storageId: activeStorageId,
 										idempotencyKey: normalizedIdempotencyKey,
-										metadata: {
-											conversationId: resolvedConversationId,
-										},
+										metadata: executeRunMetadata,
 									},
 								},
 							)
@@ -498,8 +503,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					callerContext,
 					conversationId: resolvedConversationId,
 					hostCounts: rawFetchHosts.hostCounts(),
-					usedIntegrationAuthHelpers:
-						codeUsesIntegrationAuthHelpers(resolvedCode),
+					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(
+						resolvedModule.code,
+					),
 				})
 				const runId =
 					typeof result.runId === 'string'

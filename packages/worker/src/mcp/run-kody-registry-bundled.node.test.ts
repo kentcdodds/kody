@@ -87,6 +87,7 @@ function mockExecutor(
 		(input) =>
 			({
 				async execute(source: unknown, providers: Providers) {
+					input.onWorkerId?.('kody-testworkerid00000000000000000000000000')
 					calls.push({ source: String(source), providers, input })
 					return await respond(providers)
 				},
@@ -520,6 +521,7 @@ test('runBundledModuleWithRegistry records execute run success, failure, and cal
 		expect.objectContaining({
 			conversationId: 'conv-1',
 			sandboxMs: expect.any(Number),
+			workerId: 'kody-testworkerid00000000000000000000000000',
 		}),
 	)
 

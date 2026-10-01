@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { type ExecuteResult } from '@cloudflare/codemode'
+import { buildExecuteAttributionMetadata } from '#mcp/execute-invoke.ts'
 import {
 	defaultExecutionResponseLimitBytes,
 	getExecutionErrorDetails,
@@ -159,6 +160,10 @@ export const executeCapability = defineDomainCapability(
 			}
 
 			let claimedRunHandle: RunRecordHandle | null = null
+			const executeRunMetadata = {
+				conversationId,
+				...buildExecuteAttributionMetadata({ entry: 'code' }),
+			}
 			if (idempotencyKey && userId) {
 				const claim = await claimRunRecord({
 					env: ctx.env,
@@ -168,7 +173,7 @@ export const executeCapability = defineDomainCapability(
 						name: null,
 						storageId: existingStorageId,
 						idempotencyKey,
-						metadata: { conversationId },
+						metadata: executeRunMetadata,
 					},
 				})
 				if (!claim) {
@@ -237,7 +242,7 @@ export const executeCapability = defineDomainCapability(
 							name: null,
 							storageId: existingStorageId,
 							idempotencyKey,
-							metadata: { conversationId },
+							metadata: executeRunMetadata,
 						},
 					},
 				)
