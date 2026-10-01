@@ -135,7 +135,61 @@ test('upsertStartupBundleOverageIssue creates once then updates', () => {
 	expect(calls.some((args) => args[1] === 'comment')).toBe(true)
 })
 
-test('renamed open tracking issue is found by marker and updated, not duplicated', () => {
+function reportingEnv() {
+	return {
+		CI: '1',
+		GITHUB_EVENT_NAME: 'push',
+		GITHUB_REF: 'refs/heads/main',
+		GH_TOKEN: 'token',
+	}
+}
+
+function listSearchQuery(args: Array<string>) {
+	const index = args.indexOf('--search')
+	return index === -1 ? null : (args[index + 1] ?? null)
+}
+
+test('canonical title search updates the open issue without a labeled-list scan', () => {
+	const calls: Array<Array<string>> = []
+	const titled = {
+		number: 42,
+		title: startupBundleOverageIssueTitle('runtime'),
+		body: 'earlier measure',
+	}
+	const gh = (args: Array<string>) => {
+		calls.push(args)
+		if (args[0] === 'issue' && args[1] === 'list') {
+			return JSON.stringify([titled])
+		}
+		return ''
+	}
+	expect(
+		upsertStartupBundleOverageIssue(
+			{
+				name: 'runtime',
+				size: 3_912_588,
+				maxEntryBytes: 3_912_500,
+				overage: 88,
+			},
+			{
+				env: reportingEnv(),
+				gh,
+			},
+		),
+	).toEqual({
+		action: 'updated',
+		name: 'runtime',
+		number: 42,
+	})
+	expect(listSearchQuery(calls[0] ?? [])).toBe(
+		'"Startup budget overage: runtime" in:title',
+	)
+	expect(calls.filter((args) => args[1] === 'list')).toHaveLength(1)
+	expect(calls.some((args) => args.includes('--label'))).toBe(false)
+	expect(calls.some((args) => args[1] === 'create')).toBe(false)
+})
+
+test('renamed open tracking issue is found by local marker match, not GitHub comment search', () => {
 	const calls: Array<Array<string>> = []
 	const marker = startupBundleOverageIssueMarker('runtime')
 	const renamed = {
@@ -146,8 +200,9 @@ test('renamed open tracking issue is found by marker and updated, not duplicated
 	const gh = (args: Array<string>) => {
 		calls.push(args)
 		if (args[0] === 'issue' && args[1] === 'list') {
-			expect(args.at(-1)).toContain('in:body')
-			expect(args.at(-1)).toContain(marker)
+			if (listSearchQuery(args) !== null) {
+				return JSON.stringify([])
+			}
 			return JSON.stringify([renamed])
 		}
 		return ''
@@ -160,12 +215,7 @@ test('renamed open tracking issue is found by marker and updated, not duplicated
 			overage: 88,
 		},
 		{
-			env: {
-				CI: '1',
-				GITHUB_EVENT_NAME: 'push',
-				GITHUB_REF: 'refs/heads/main',
-				GH_TOKEN: 'token',
-			},
+			env: reportingEnv(),
 			gh,
 		},
 	)
@@ -174,10 +224,55 @@ test('renamed open tracking issue is found by marker and updated, not duplicated
 		name: 'runtime',
 		number: 77,
 	})
+	const titleSearch = calls.find((args) => listSearchQuery(args) !== null)
+	const labeledList = calls.find(
+		(args) => args[1] === 'list' && args.includes('--label'),
+	)
+	expect(listSearchQuery(titleSearch ?? [])).toBe(
+		'"Startup budget overage: runtime" in:title',
+	)
+	expect(labeledList).toContain('--label')
+	expect(labeledList).toContain('friction')
 	expect(calls.some((args) => args[1] === 'create')).toBe(false)
 	expect(calls.some((args) => args[1] === 'edit' && args[2] === '77')).toBe(
 		true,
 	)
+})
+
+test('rejected title search still creates when no labeled issue exists', () => {
+	const calls: Array<Array<string>> = []
+	const gh = (args: Array<string>) => {
+		calls.push(args)
+		if (args[0] === 'issue' && args[1] === 'list') {
+			if (listSearchQuery(args) !== null) {
+				throw new Error('Invalid search query')
+			}
+			return JSON.stringify([])
+		}
+		if (args[0] === 'issue' && args[1] === 'create') {
+			return 'https://github.com/kentcdodds/kody/issues/99\n'
+		}
+		return ''
+	}
+	expect(
+		upsertStartupBundleOverageIssue(
+			{
+				name: 'runtime',
+				size: 3_912_588,
+				maxEntryBytes: 3_912_500,
+				overage: 88,
+			},
+			{
+				env: reportingEnv(),
+				gh,
+			},
+		),
+	).toEqual({
+		action: 'created',
+		name: 'runtime',
+		url: 'https://github.com/kentcdodds/kody/issues/99',
+	})
+	expect(calls.some((args) => args[1] === 'create')).toBe(true)
 })
 
 test('reportStartupBundleOverages never throws when upsert fails', () => {

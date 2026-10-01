@@ -107,6 +107,55 @@ function runGh(args: Array<string>, env: NodeJS.ProcessEnv = process.env) {
 	return result.stdout
 }
 
+type ListedIssue = {
+	number: number
+	title: string
+	body: string | null
+}
+
+function parseListedIssues(raw: string) {
+	return JSON.parse(raw) as Array<ListedIssue>
+}
+
+function matchListedOverageIssue(
+	issues: Array<ListedIssue>,
+	title: string,
+	marker: string,
+) {
+	return (
+		issues.find((issue) => issue.title === title) ??
+		issues.find((issue) => issue.body?.includes(marker) ?? false) ??
+		null
+	)
+}
+
+function listOpenIssues(
+	extraArgs: Array<string>,
+	env: NodeJS.ProcessEnv,
+	gh: typeof runGh,
+) {
+	return parseListedIssues(
+		gh(
+			[
+				'issue',
+				'list',
+				'--state',
+				'open',
+				'--limit',
+				'50',
+				'--json',
+				'number,title,body',
+				...extraArgs,
+			],
+			env,
+		),
+	)
+}
+
+function startupBundleOverageIssueTitleSearch(name: StartupBundleOverageName) {
+	return `"${startupBundleOverageIssueTitle(name)}" in:title`
+}
+
 function findOpenOverageIssue(
 	name: StartupBundleOverageName,
 	env: NodeJS.ProcessEnv = process.env,
@@ -114,30 +163,26 @@ function findOpenOverageIssue(
 ) {
 	const title = startupBundleOverageIssueTitle(name)
 	const marker = startupBundleOverageIssueMarker(name)
-	const raw = gh(
-		[
-			'issue',
-			'list',
-			'--state',
-			'open',
-			'--limit',
-			'50',
-			'--json',
-			'number,title,body',
-			'--search',
-			`("${title}" in:title) OR ("${marker}" in:body)`,
-		],
-		env,
-	)
-	const issues = JSON.parse(raw) as Array<{
-		number: number
-		title: string
-		body: string | null
-	}>
-	return (
-		issues.find((issue) => issue.title === title) ??
-		issues.find((issue) => issue.body?.includes(marker) ?? false) ??
-		null
+	// GitHub issue search does not index HTML comments and treats < > as
+	// operators, so the body marker cannot go in --search. Find the canonical
+	// title first; then scan labeled issues locally for a renamed tracker.
+	let titled: Array<ListedIssue> = []
+	try {
+		titled = listOpenIssues(
+			['--search', startupBundleOverageIssueTitleSearch(name)],
+			env,
+			gh,
+		)
+	} catch {
+		titled = []
+	}
+	const fromTitleSearch = matchListedOverageIssue(titled, title, marker)
+	if (fromTitleSearch) return fromTitleSearch
+
+	return matchListedOverageIssue(
+		listOpenIssues(['--label', startupBundleOverageIssueLabel], env, gh),
+		title,
+		marker,
 	)
 }
 
