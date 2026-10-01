@@ -85,7 +85,7 @@ bound for local embedding yet — use a static import.
 unbound. Packages that need those (for example `@kentcdodds/google` Gmail
 helpers) load via package-graph but cannot complete authenticated outbound fetch
 until a follow-up local auth-fetch model ships
-([#2808](https://github.com/kentcdodds/kody/issues/2808)).
+([#2810](https://github.com/kentcdodds/kody/issues/2810)).
 
 CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 

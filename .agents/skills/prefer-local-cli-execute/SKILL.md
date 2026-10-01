@@ -68,7 +68,7 @@ token are still required for package-graph and capability hops. See
 Note: local `createAuthenticatedFetch` / stamped `packageSecrets` /
 `packageStorage` are still unbound; Gmail-style helpers may need cloud execute
 until that follow-up lands
-([#2808](https://github.com/kentcdodds/kody/issues/2808)).
+([#2810](https://github.com/kentcdodds/kody/issues/2810)).
 
 ## Fallback
 

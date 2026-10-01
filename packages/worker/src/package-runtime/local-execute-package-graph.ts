@@ -259,7 +259,7 @@ function mapPrepareFailure(
  * facades; this shim re-exports the host runtime and provides no-op / unbound
  * stamp factories so modules load without cloud ALS or secret-authority host
  * wiring. Authenticated fetch, packageSecrets, and packageStorage remain
- * unbound until a follow-up local runtime model lands (kody#2808).
+ * unbound until a follow-up local runtime model lands (kody#2810).
  */
 export function createLocalExecuteRuntimeShimSource() {
 	return `
@@ -282,7 +282,7 @@ export {
 export function __kodyCreatePackageBoundStorage(_packageId) {
 	return function packageStorage() {
 		throw new Error(
-			'packageStorage() is unbound in local execute: stamped package identity is present, but local workerd has no host packageStorage grant set yet. Use cloud execute for packageStorage, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2808).',
+			'packageStorage() is unbound in local execute: stamped package identity is present, but local workerd has no host packageStorage grant set yet. Use cloud execute for packageStorage, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
 		);
 	};
 }
@@ -291,12 +291,12 @@ export function __kodyCreatePackageBoundSecrets(_packageId) {
 	return {
 		get: async () => {
 			throw new Error(
-				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2808).',
+				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
 			);
 		},
 		has: async () => {
 			throw new Error(
-				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2808).',
+				'packageSecrets is unbound in local execute: stamped package identity is present, but local workerd has no host packageSecrets grant set yet. Use cloud execute for packageSecrets, or wait for the local runtime follow-up (https://github.com/kentcdodds/kody/issues/2810).',
 			);
 		},
 	};
