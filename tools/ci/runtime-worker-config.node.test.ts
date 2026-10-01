@@ -155,6 +155,9 @@ function buildMainGeneratedConfig(envName: string) {
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
 			PACKAGE_APP_BASE_URL: envName === 'production' ? 'https://kody.run' : '',
+			...(envName === 'preview'
+				? { ARTIFACTS_NAMESPACE: 'kody-pr-7' }
+				: { ARTIFACTS_NAMESPACE: 'production' }),
 		} as Record<string, unknown>,
 	}
 	return { name: 'kody', env: { [envName]: env } }
@@ -229,6 +232,7 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		binding: 'WEBHOOK_DISPATCH_QUEUE',
 		queue: 'kody-pr-7-webhook-dispatch',
 	})
+	expect(previewEnv?.vars?.ARTIFACTS_NAMESPACE).toBe('kody-pr-7')
 	// The workflow gets a per-worker name.
 	expect(previewEnv?.workflows?.[0]?.name).toBe(
 		'kody-pr-7-runtime-dynamic-callable-workflows',

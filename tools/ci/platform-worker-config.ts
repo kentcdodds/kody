@@ -1,5 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { parseJsonc } from './resource-utils.ts'
+import {
+	parseJsonc,
+	setArtifactsNamespaceOnWranglerEnv,
+} from './resource-utils.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
@@ -188,6 +191,14 @@ function copyResourceIdentifiers(input: {
 			? (platformEnv.vars as JsonRecord)
 			: {}
 	platformEnv.vars = { ...mainVars, ...platformVars }
+
+	// Preview origin ensure rewrites ARTIFACTS_NAMESPACE to the per-PR worker
+	// name. Platform's committed preview vars still say "preview", so prefer
+	// the main generated value when present.
+	const artifactsNamespace = mainVars.ARTIFACTS_NAMESPACE
+	if (typeof artifactsNamespace === 'string' && artifactsNamespace.length > 0) {
+		setArtifactsNamespaceOnWranglerEnv(platformEnv, artifactsNamespace)
+	}
 }
 
 /**

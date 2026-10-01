@@ -7,10 +7,11 @@
 
 Every saved package is a real git repo on Cloudflare Artifacts with full commit
 history, publish notes (readable via `repoShowPublishNote`), and a clonable
-remote (`packageGetGitRemote`). Runtime surfaces — `packages.invoke`,
-package-owned jobs, apps, services, and webhooks — always resolve the package's
-current `entity_sources.published_commit`, and published bundles for non-current
-commits are pruned after 30 days. Static cross-package imports
+remote (`packageGetGitRemote`). Runtime surfaces — package export runs (static
+`kody:@` import / `import(specifier)`), package-owned jobs, apps, services, and
+webhooks — always resolve the package's current
+`entity_sources.published_commit`, and published bundles for non-current commits
+are pruned after 30 days. Static cross-package imports
 (`kody:@scope/pkg/export`) snapshot the dependency's published commit at the
 dependent's publish time and refresh only when the dependent republishes; the
 platform never auto-republishes dependents.

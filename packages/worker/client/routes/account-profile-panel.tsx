@@ -163,7 +163,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						data-field-ring
 						required
 						autoComplete="username"
-						pattern="[A-Za-z0-9][A-Za-z0-9-]{1,30}[A-Za-z0-9]"
+						pattern={'[A-Za-z0-9][A-Za-z0-9\\-]{1,30}[A-Za-z0-9]'}
 						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 						value={draftUsername}
 						aria-invalid={usernameFieldError ? 'true' : undefined}

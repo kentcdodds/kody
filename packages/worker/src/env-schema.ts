@@ -298,6 +298,10 @@ export const EnvSchema = object({
 	// stand-in that serves whole repo trees by commit. The dev CLI sets it; the
 	// real API has no such endpoint, so production leaves it unset.
 	CLOUDFLARE_API_SOURCE_SNAPSHOTS: optionalNonEmptyStringSchema,
+	// Optional Artifacts REST token when CLOUDFLARE_API_TOKEN is a mock
+	// credential for CLOUDFLARE_API_BASE_URL (PR previews). Mint/fork against
+	// the real Artifacts API with this token while email still uses the mock.
+	CLOUDFLARE_ARTIFACTS_API_TOKEN: optionalNonEmptyStringSchema,
 	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
 	// Worker-to-Worker Artifacts binding. Present in production/preview when
 	// wrangler `artifacts` is configured; local/tests fall back to REST.

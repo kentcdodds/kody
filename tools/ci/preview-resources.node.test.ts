@@ -6,6 +6,7 @@ import {
 	assertPreviewResourceName,
 	buildPreviewResourceNames,
 	cleanupPreviewResources,
+	deletePreviewArtifactsNamespace,
 	deletePreviewD1Database,
 	deletePreviewKvNamespace,
 	deletePreviewQueue,
@@ -240,6 +241,12 @@ test('assertPreviewResourceName rejects committed production names and names out
 	expect(() => assertPreviewResourceName('kody-preview-jobs', 'd1')).toThrow(
 		'Refusing to delete d1 "kody-preview-jobs"',
 	)
+	expect(() => assertPreviewResourceName('production', 'artifacts')).toThrow(
+		'Refusing to delete artifacts "production"',
+	)
+	expect(() => assertPreviewResourceName('preview', 'artifacts')).toThrow(
+		'Refusing to delete artifacts "preview"',
+	)
 
 	expect(
 		nonPreviewNames.filter((name) => previewResourceNamePattern.test(name)),
@@ -269,8 +276,10 @@ test('assertPreviewResourceName accepts every derived preview name kind, includi
 			[derived.repoSessionBlobsBucketName, 'r2'],
 			[derived.webhookDispatchQueueName, 'queue'],
 			[derived.webhookDispatchDeadLetterQueueName, 'queue'],
+			[derived.artifactsNamespace, 'artifacts'],
 		]
 		expect(namesRejectedByGuard(accepted)).toEqual([])
+		expect(derived.artifactsNamespace).toBe(workerName)
 	}
 
 	const longWorkerName = `kody-branch-${'a1'.repeat(15)}-z`
@@ -340,6 +349,22 @@ test('cleanup and each guarded delete refuse production names before any wrangle
 				}),
 			'queue "kody-email-delivery"',
 		],
+		[
+			() =>
+				deletePreviewArtifactsNamespace({
+					namespace: 'production',
+					dryRun: false,
+				}),
+			'artifacts "production"',
+		],
+		[
+			() =>
+				deletePreviewArtifactsNamespace({
+					namespace: 'preview',
+					dryRun: false,
+				}),
+			'artifacts "preview"',
+		],
 	]
 	for (const [attempt, target] of refusals) {
 		await expect(attempt()).rejects.toThrow(`Refusing to delete ${target}`)
@@ -374,6 +399,7 @@ test('dry-run cleanup of a PR preview walks every resource without Cloudflare cr
 			'[dry-run] delete KV namespace: kody-pr-42-oauth-kv',
 			'[dry-run] delete D1 database: kody-pr-42-audit-db',
 			'[dry-run] delete D1 database: kody-pr-42-db',
+			'[dry-run] delete Artifacts namespace: kody-pr-42',
 		]),
 	)
 	expect(logged.some((line) => line.includes('kody-preview-jobs'))).toBe(false)
@@ -473,7 +499,7 @@ test('permanent queue auth failure still attempts later independent resources an
 	})
 
 	await expect(cleanup('kody-pr-1999')).rejects.toThrow(
-		/Preview cleanup failed for 5 resource\(s\)/,
+		/Preview cleanup failed for 6 resource\(s\)/,
 	)
 	expect(
 		attemptedWorkers.filter((name) => name === 'kody-pr-1999-highlight'),
@@ -512,6 +538,7 @@ test('already-missing preview resources are successful and idempotent', async ()
 			'R2 bucket already deleted: kody-pr-42-community-assets',
 			'D1 database already deleted: kody-pr-42-db',
 			'KV namespace already deleted: kody-pr-42-oauth-kv',
+			'Deleted Artifacts namespace: kody-pr-42',
 		]),
 	)
 })

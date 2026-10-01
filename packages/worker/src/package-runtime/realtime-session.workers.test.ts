@@ -79,44 +79,64 @@ test('package realtime session DO lists empty sessions and is addressable as a d
 	)
 })
 
-test('package realtime DO accepts Upgrade when set on Request construction (Sentry-safe connect shape)', async () => {
-	const binding = createBinding()
-	const stub = getStub(binding)
+test('package realtime connect upgrades through the real durable object stub and hands the request to the connect hook', async () => {
+	const binding = createBinding({ packageId: `package-${crypto.randomUUID()}` })
+	const hookPayloads: Array<{
+		event: string
+		facet: string
+		request?: { url: string; method: string; headers: Record<string, string> }
+	}> = []
 
-	await runInDurableObject(stub, async (instance: PackageRealtimeSession) => {
-		const anyInstance = instance as unknown as {
-			initializeBinding: (bindingState: unknown) => Promise<void>
-			resolveRealtimeHookResult: () => Promise<Array<unknown>>
-			fetch: (request: Request) => Promise<Response>
-		}
-		anyInstance.initializeBinding = async () => undefined
-		anyInstance.resolveRealtimeHookResult = async () => []
+	await runInDurableObject(
+		getStub(binding),
+		async (instance: PackageRealtimeSession) => {
+			const anyInstance = instance as unknown as {
+				resolveRealtimeHookResult: (input: {
+					payload: (typeof hookPayloads)[number]
+				}) => Promise<Array<unknown>>
+			}
+			anyInstance.resolveRealtimeHookResult = async ({ payload }) => {
+				hookPayloads.push(payload)
+				return []
+			}
+		},
+	)
 
-		// Equivalent to what stub.fetch(url, { headers: { Upgrade } }) delivers to
-		// the DO after packageRealtimeSessionRpc.connect's plain-object headers fix.
-		const response = await anyInstance.fetch(
-			new Request('https://package-realtime.invalid/session/connect', {
-				method: 'POST',
-				headers: {
-					Upgrade: 'websocket',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					binding: bindingState(binding),
-					facet: 'main',
-					request: {
-						url: 'https://kentcdodds.kody.run/packages/pr-desk/ws',
-						method: 'GET',
-						headers: {},
-					},
-				}),
-			}),
-		)
-		expect(response.status).toBe(101)
-		expect(response.webSocket).toBeTruthy()
-		response.webSocket?.accept()
-		response.webSocket?.close(1000, 'test-done')
+	// A cross-isolate stub.fetch with `Upgrade: websocket` is sent as a
+	// WebSocket handshake with no body, so this must go through the real stub
+	// rather than calling the instance's fetch in-process.
+	const response = await packageRealtimeSessionRpc(binding).connect(
+		new Request('https://kentcdodds.kody.run/packages/pr-desk/ws/chat', {
+			headers: {
+				Upgrade: 'websocket',
+				'Sec-WebSocket-Protocol': 'kody',
+				'User-Agent': 'Mozilla/5.0 test',
+			},
+		}),
+		'chat',
+	)
+
+	expect(response.status).toBe(101)
+	expect(response.webSocket).toBeTruthy()
+	response.webSocket?.accept()
+	expect(hookPayloads).toHaveLength(1)
+	expect(hookPayloads[0]).toMatchObject({
+		event: 'connect',
+		facet: 'chat',
+		request: {
+			url: 'https://kentcdodds.kody.run/packages/pr-desk/ws/chat',
+			method: 'GET',
+			headers: {
+				upgrade: 'websocket',
+				'sec-websocket-protocol': 'kody',
+				'user-agent': 'Mozilla/5.0 test',
+			},
+		},
 	})
+	await expect(
+		packageRealtimeSessionRpc(binding).listSessions(),
+	).resolves.toMatchObject({ sessions: [{ facet: 'chat' }] })
+	response.webSocket?.close(1000, 'test-done')
 })
 
 test('package realtime session broadcast and disconnect paths tolerate partial delivery and socket close errors', async () => {
@@ -229,25 +249,25 @@ test('package realtime session closes open sockets without running hooks once th
 		.bind(new Date().toISOString(), userId)
 		.run()
 	const binding = createBinding({ userId })
+	let hookWorkerRequested = false
+	const closes: Array<[number, string]> = []
+	type SuspendedInstance = {
+		stateSnapshot: {
+			binding: unknown
+			sessions: Record<string, unknown>
+		}
+		persistState: () => Promise<void>
+		loadSessionId: (ws: WebSocket) => string | null
+		getPackageAppWorker: () => Promise<never>
+		closeAllSockets: (code: number, reason: string) => void
+		handleWebSocketMessage: (ws: WebSocket, message: string) => Promise<void>
+		fetch: (request: Request) => Promise<Response>
+	}
 
 	await runInDurableObject(
 		getStub(binding),
 		async (instance: PackageRealtimeSession) => {
-			const anyInstance = instance as unknown as {
-				stateSnapshot: {
-					binding: unknown
-					sessions: Record<string, unknown>
-				}
-				persistState: () => Promise<void>
-				loadSessionId: (ws: WebSocket) => string | null
-				getPackageAppWorker: () => Promise<never>
-				closeAllSockets: (code: number, reason: string) => void
-				handleWebSocketMessage: (
-					ws: WebSocket,
-					message: string,
-				) => Promise<void>
-				fetch: (request: Request) => Promise<Response>
-			}
+			const anyInstance = instance as unknown as SuspendedInstance
 			anyInstance.stateSnapshot = {
 				binding: bindingState(binding),
 				sessions: {
@@ -262,12 +282,10 @@ test('package realtime session closes open sockets without running hooks once th
 			}
 			anyInstance.persistState = async () => undefined
 			anyInstance.loadSessionId = () => 'session-1'
-			let hookWorkerRequested = false
 			anyInstance.getPackageAppWorker = async () => {
 				hookWorkerRequested = true
 				throw new Error('Suspended accounts must not reach package hooks.')
 			}
-			const closes: Array<[number, string]> = []
 			anyInstance.closeAllSockets = (code, reason) => {
 				closes.push([code, reason])
 			}
@@ -278,17 +296,11 @@ test('package realtime session closes open sockets without running hooks once th
 			expect(hookWorkerRequested).toBe(false)
 			expect(closes).toEqual([[1008, 'account-suspended']])
 
-			const post = (
-				path: string,
-				body: Record<string, unknown>,
-				headers?: Record<string, string>,
-			) =>
-				postSession(
-					anyInstance,
-					path,
-					{ binding: anyInstance.stateSnapshot.binding, ...body },
-					headers,
-				)
+			const post = (path: string, body: Record<string, unknown>) =>
+				postSession(anyInstance, path, {
+					binding: anyInstance.stateSnapshot.binding,
+					...body,
+				})
 			const emitted = await post('emit', {
 				sessionId: 'session-1',
 				data: { type: 'hello' },
@@ -302,29 +314,32 @@ test('package realtime session closes open sockets without running hooks once th
 				deliveredCount: 0,
 				sessionIds: [],
 			})
-			const connect = await post(
-				'connect',
-				{
-					facet: 'main',
-					request: {
-						url: 'https://example.com/packages/example/realtime',
-						method: 'GET',
-						headers: {},
-					},
-				},
-				{ Upgrade: 'websocket' },
-			)
-			expect(connect.status).toBe(403)
-			await expect(connect.json()).resolves.toMatchObject({
-				ok: false,
-				error: { code: 'account_suspended' },
-			})
+		},
+	)
+
+	const connect = await packageRealtimeSessionRpc(binding).connect(
+		new Request('https://example.com/packages/example/ws', {
+			headers: { Upgrade: 'websocket' },
+		}),
+		'main',
+	)
+	expect(connect.status).toBe(403)
+	await expect(connect.json()).resolves.toMatchObject({
+		ok: false,
+		error: { code: 'account_suspended' },
+	})
+	expect(hookWorkerRequested).toBe(false)
+
+	await runInDurableObject(
+		getStub(binding),
+		async (instance: PackageRealtimeSession) => {
+			const anyInstance = instance as unknown as SuspendedInstance
 			expect(Object.keys(anyInstance.stateSnapshot.sessions)).toEqual([
 				'session-1',
 			])
-			expect(closes).toEqual(
-				Array.from({ length: 4 }, () => [1008, 'account-suspended']),
-			)
 		},
+	)
+	expect(closes).toEqual(
+		Array.from({ length: 4 }, () => [1008, 'account-suspended']),
 	)
 })

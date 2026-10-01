@@ -128,6 +128,262 @@ export const artifactsAccountEventTypes = [
 	'repo.pushed',
 ] as const
 
+type ArtifactsNamespaceInfo = {
+	namespace: string
+	repo_count?: number
+	created_at?: string
+	updated_at?: string
+}
+
+type ArtifactsRepoListEntry = {
+	id?: string
+	name: string
+}
+
+/**
+ * Point a Wrangler env's ARTIFACTS binding and ARTIFACTS_NAMESPACE var at the
+ * same namespace name. Preview generate/ensure call this so origin, platform,
+ * and runtime all share the per-PR Artifacts namespace.
+ */
+export function setArtifactsNamespaceOnWranglerEnv(
+	envRecord: Record<string, unknown>,
+	namespace: string,
+) {
+	const existingVars = envRecord.vars
+	if (
+		existingVars &&
+		typeof existingVars === 'object' &&
+		!Array.isArray(existingVars)
+	) {
+		;(existingVars as Record<string, unknown>).ARTIFACTS_NAMESPACE = namespace
+	} else {
+		envRecord.vars = { ARTIFACTS_NAMESPACE: namespace }
+	}
+
+	const artifacts = envRecord.artifacts
+	if (!Array.isArray(artifacts)) return
+	for (const entry of artifacts) {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+		const record = entry as Record<string, unknown>
+		if (record.binding === 'ARTIFACTS') {
+			record.namespace = namespace
+		}
+	}
+}
+
+function isArtifactsNamespaceAlreadyExistsMessage(message: string) {
+	return (
+		/already exists/i.test(message) ||
+		/namespace.*(exists|taken)/i.test(message)
+	)
+}
+
+function isArtifactsNamespaceNotFoundMessage(message: string) {
+	return (
+		/not found/i.test(message) ||
+		/does not exist/i.test(message) ||
+		/Cloudflare API request failed \(404\)/.test(message)
+	)
+}
+
+/**
+ * Ensure a Cloudflare Artifacts namespace exists (create if missing). Idempotent.
+ * Namespaces are account-scoped containers for Artifacts repos; preview uses
+ * one per PR (`kody-pr-<n>` / `kody-branch-<slug>`).
+ */
+export async function ensureArtifactsNamespace(input: {
+	accountId: string
+	apiToken: string
+	namespace: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
+}) {
+	if (input.dryRun) {
+		console.error(`[dry-run] ensure Artifacts namespace: ${input.namespace}`)
+		return { namespace: input.namespace }
+	}
+	try {
+		const existing = await cloudflareApiRequest<ArtifactsNamespaceInfo>({
+			...input,
+			pathname: `/artifacts/namespaces/${encodeURIComponent(input.namespace)}`,
+			method: 'GET',
+		})
+		if (existing.result?.namespace) {
+			console.error(`Artifacts namespace exists: ${existing.result.namespace}`)
+			return { namespace: existing.result.namespace }
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (!isArtifactsNamespaceNotFoundMessage(message)) {
+			throw new CloudflareResourceError(
+				'artifacts',
+				input.namespace,
+				`Failed to look up Artifacts namespace ${input.namespace}: ${message}`,
+				{ cause: error },
+			)
+		}
+	}
+
+	try {
+		const created = await cloudflareApiRequest<ArtifactsNamespaceInfo>({
+			...input,
+			pathname: '/artifacts/namespaces',
+			method: 'POST',
+			body: { namespace: input.namespace },
+		})
+		const name = created.result?.namespace ?? input.namespace
+		console.error(`Created Artifacts namespace: ${name}`)
+		return { namespace: name }
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (isArtifactsNamespaceAlreadyExistsMessage(message)) {
+			console.error(`Artifacts namespace exists: ${input.namespace}`)
+			return { namespace: input.namespace }
+		}
+		throw new CloudflareResourceError(
+			'artifacts',
+			input.namespace,
+			`Failed to create Artifacts namespace ${input.namespace}: ${message}`,
+			{ cause: error },
+		)
+	}
+}
+
+async function listArtifactsNamespaceRepos(input: {
+	accountId: string
+	apiToken: string
+	namespace: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
+}) {
+	const repos: Array<ArtifactsRepoListEntry> = []
+	let cursor: string | undefined
+	for (;;) {
+		const pathname = cursor
+			? `/artifacts/namespaces/${encodeURIComponent(input.namespace)}/repos?limit=200&cursor=${encodeURIComponent(cursor)}`
+			: `/artifacts/namespaces/${encodeURIComponent(input.namespace)}/repos?limit=200`
+		const payload = await cloudflareApiRequest<Array<ArtifactsRepoListEntry>>({
+			...input,
+			pathname,
+			method: 'GET',
+		})
+		for (const repo of payload.result ?? []) {
+			if (repo?.name) repos.push(repo)
+		}
+		const nextCursor = payload.result_info?.cursor
+		if (!nextCursor || (payload.result ?? []).length === 0) break
+		cursor = nextCursor
+	}
+	return repos
+}
+
+/**
+ * Empty then delete a Cloudflare Artifacts namespace. Used by preview cleanup
+ * for per-PR namespaces. Callers must assert the name is a preview resource
+ * before invoking.
+ */
+export async function deleteArtifactsNamespace(input: {
+	accountId: string
+	apiToken: string
+	namespace: string
+	dryRun: boolean
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
+}) {
+	if (input.dryRun) {
+		console.error(`[dry-run] delete Artifacts namespace: ${input.namespace}`)
+		return
+	}
+
+	let repos: Array<ArtifactsRepoListEntry>
+	try {
+		repos = await listArtifactsNamespaceRepos(input)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (isArtifactsNamespaceNotFoundMessage(message)) {
+			console.error(`Artifacts namespace already deleted: ${input.namespace}`)
+			return
+		}
+		throw new CloudflareResourceError(
+			'artifacts',
+			input.namespace,
+			`Failed to list Artifacts repos in namespace ${input.namespace}: ${message}`,
+			{ cause: error },
+		)
+	}
+
+	for (const repo of repos) {
+		try {
+			await cloudflareApiRequest<{ id: string }>({
+				...input,
+				pathname: `/artifacts/namespaces/${encodeURIComponent(input.namespace)}/repos/${encodeURIComponent(repo.name)}`,
+				method: 'DELETE',
+			})
+			console.error(`Deleted Artifacts repo: ${input.namespace}/${repo.name}`)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			if (isArtifactsNamespaceNotFoundMessage(message)) {
+				console.error(
+					`Artifacts repo already deleted: ${input.namespace}/${repo.name}`,
+				)
+				continue
+			}
+			throw new CloudflareResourceError(
+				'artifacts',
+				input.namespace,
+				`Failed to delete Artifacts repo ${input.namespace}/${repo.name}: ${message}`,
+				{ cause: error },
+			)
+		}
+	}
+
+	try {
+		await cloudflareApiRequest<{ namespace?: string } | null>({
+			...input,
+			pathname: `/artifacts/namespaces/${encodeURIComponent(input.namespace)}`,
+			method: 'DELETE',
+		})
+		console.error(`Deleted Artifacts namespace: ${input.namespace}`)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (isArtifactsNamespaceNotFoundMessage(message)) {
+			console.error(`Artifacts namespace already deleted: ${input.namespace}`)
+			return
+		}
+		// Namespace DELETE is not always documented; after emptying repos the
+		// preview isolation goal is met even if the empty namespace remains.
+		if (
+			/Cloudflare API request failed \(40[05]\)/.test(message) ||
+			/method not allowed/i.test(message) ||
+			/not supported/i.test(message)
+		) {
+			console.error(
+				`Artifacts namespace ${input.namespace} emptied (${repos.length} repo(s)); namespace delete unavailable (${message}).`,
+			)
+			return
+		}
+		throw new CloudflareResourceError(
+			'artifacts',
+			input.namespace,
+			`Failed to delete Artifacts namespace ${input.namespace}: ${message}`,
+			{ cause: error },
+		)
+	}
+}
+
 export function fail(message: string): never {
 	console.error(message)
 	process.exit(1)
@@ -1913,6 +2169,7 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName,
 	emailBlobsBucketName,
 	repoSessionBlobsBucketName,
+	artifactsNamespace,
 	workerVars,
 	queueBindings,
 	serviceBindings,
@@ -1932,6 +2189,8 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	repoSessionBlobsBucketName: string
+	/** When set, rewrites env ARTIFACTS binding + ARTIFACTS_NAMESPACE var. */
+	artifactsNamespace?: string
 	mainEntryPath?: string
 	workerVars?: Record<string, string | undefined>
 	queueBindings?: Array<{
@@ -2110,6 +2369,13 @@ export async function writeGeneratedWranglerConfig({
 		}
 	}
 	;(targetEnv as Record<string, unknown>).vars = resolvedVars
+
+	if (artifactsNamespace) {
+		setArtifactsNamespaceOnWranglerEnv(
+			targetEnv as Record<string, unknown>,
+			artifactsNamespace,
+		)
+	}
 
 	if (queueBindings && queueBindings.length > 0) {
 		const queues = (targetEnv as Record<string, unknown>).queues
