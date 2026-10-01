@@ -20,7 +20,11 @@ export const scannedRelativePrefixes: ReadonlyArray<string> = [
 	'.agents/',
 ]
 
-export const scannedRelativeFiles: ReadonlyArray<string> = ['AGENTS.md']
+export const scannedRelativeFiles: ReadonlyArray<string> = [
+	'AGENTS.md',
+	// Assembler can add instruction prose outside the fragments directory.
+	'packages/worker/src/mcp/server-instructions.ts',
+]
 
 /** Exact present-tense negation allowed by #1750 Ready when. */
 export const allowedPackagesInvokePhrasePattern =
@@ -94,7 +98,23 @@ async function collectMatchingPaths(
 export async function listPackagesInvokeScanPaths(
 	cwd: string = process.cwd(),
 ): Promise<Array<string>> {
-	const paths: Array<string> = [...scannedRelativeFiles]
+	const paths: Array<string> = []
+	for (const relativePath of scannedRelativeFiles) {
+		try {
+			await readFile(path.join(cwd, relativePath), 'utf8')
+			paths.push(relativePath)
+		} catch (error) {
+			if (
+				error &&
+				typeof error === 'object' &&
+				'code' in error &&
+				error.code === 'ENOENT'
+			) {
+				continue
+			}
+			throw error
+		}
+	}
 	for (const prefix of scannedRelativePrefixes) {
 		const absolute = path.join(cwd, ...prefix.split('/').filter(Boolean))
 		const filePattern = prefix.includes('/mcp/instructions/')

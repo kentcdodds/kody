@@ -35,6 +35,18 @@ test('allows only the present-tense negation phrase', () => {
 
 	expect(
 		findDisallowedPackagesInvokeMentions({
+			relativePath: 'packages/worker/src/mcp/server-instructions.ts',
+			content: 'Prefer packages.invoke for composition.',
+		}),
+	).toEqual([
+		expect.objectContaining({
+			file: 'packages/worker/src/mcp/server-instructions.ts',
+			line: 1,
+		}),
+	])
+
+	expect(
+		findDisallowedPackagesInvokeMentions({
 			relativePath: 'docs/use/packages.md',
 			content:
 				'Call `packages.invoke("kody:@scope/pkg/export", { params: {} })`.',
@@ -77,6 +89,11 @@ test('lists scan roots and fails a planted teaching mention', async () => {
 		await mkdir(path.join(root, '.agents/skills/demo'), { recursive: true })
 		await writeFile(path.join(root, 'AGENTS.md'), '# agents\n', 'utf8')
 		await writeFile(
+			path.join(root, 'packages/worker/src/mcp/server-instructions.ts'),
+			'export const x = "Prefer packages.invoke"\n',
+			'utf8',
+		)
+		await writeFile(
 			path.join(root, 'docs/use/ok.md'),
 			'There is no author-facing `packages.invoke`.\n',
 			'utf8',
@@ -104,17 +121,25 @@ test('lists scan roots and fails a planted teaching mention', async () => {
 				'docs/guides/bad.md',
 				'docs/use/ok.md',
 				'packages/worker/src/mcp/instructions/base.ts',
+				'packages/worker/src/mcp/server-instructions.ts',
 				'.agents/skills/demo/SKILL.md',
 			]),
 		)
 
 		const matches = await checkDocsNoPackagesInvoke(root)
-		expect(matches).toEqual([
-			expect.objectContaining({
-				file: 'docs/guides/bad.md',
-				excerpt: 'Prefer packages.invoke for composition.',
-			}),
-		])
+		expect(matches).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: 'docs/guides/bad.md',
+					excerpt: 'Prefer packages.invoke for composition.',
+				}),
+				expect.objectContaining({
+					file: 'packages/worker/src/mcp/server-instructions.ts',
+					excerpt: 'export const x = "Prefer packages.invoke"',
+				}),
+			]),
+		)
+		expect(matches).toHaveLength(2)
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}
