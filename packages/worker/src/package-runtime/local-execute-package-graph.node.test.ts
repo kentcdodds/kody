@@ -177,10 +177,21 @@ export default async function main(params) { return greet(params.name) }`
 	)?.esModule
 	expect(runtimeShim).toContain('createAuthenticatedFetch')
 	expect(runtimeShim).toContain('kody.authenticatedFetch')
+	expect(runtimeShim).toContain('bodyBase64')
+	expect(runtimeShim).toContain('__kodyNullBodyStatuses')
+	expect(runtimeShim).toContain('__kodyCreatePackageBoundAuthenticatedFetch')
 	expect(runtimeShim).toContain('__kodyCreatePackageBoundStorage')
 	expect(runtimeShim).toContain('kody.packageStorageGet')
 	expect(runtimeShim).toContain('__kodyCreatePackageBoundSecrets')
 	expect(runtimeShim).toContain('__kodySecretAuthorityPackageId')
+	const packageRuntimeModules = graph.modules.filter((module) =>
+		module.name.includes('/.__kody_virtual__/package-runtime/'),
+	)
+	for (const module of packageRuntimeModules) {
+		expect(module.esModule).toContain(
+			'__kodyCreatePackageBoundAuthenticatedFetch',
+		)
+	}
 	expect(
 		graph.modules.some((module) => module.name.startsWith('.__kody_root__/')),
 	).toBe(false)

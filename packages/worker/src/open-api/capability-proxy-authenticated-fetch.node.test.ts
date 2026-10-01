@@ -30,6 +30,45 @@ test('parseCapabilityProxyAuthenticatedFetchArgs accepts a valid request', () =>
 	})
 })
 
+test('parseCapabilityProxyAuthenticatedFetchArgs accepts bodyBase64 and packageId', () => {
+	expect(
+		parseCapabilityProxyAuthenticatedFetchArgs([
+			{
+				providerName: 'google',
+				packageId: 'pkg-1',
+				request: {
+					url: 'https://gmail.googleapis.com/upload',
+					method: 'POST',
+					bodyBase64: bytesToBase64(new TextEncoder().encode('png')),
+				},
+			},
+		]),
+	).toEqual({
+		providerName: 'google',
+		packageId: 'pkg-1',
+		request: {
+			url: 'https://gmail.googleapis.com/upload',
+			method: 'POST',
+			bodyBase64: bytesToBase64(new TextEncoder().encode('png')),
+		},
+	})
+})
+
+test('parseCapabilityProxyAuthenticatedFetchArgs rejects body and bodyBase64 together', () => {
+	expect(() =>
+		parseCapabilityProxyAuthenticatedFetchArgs([
+			{
+				providerName: 'google',
+				request: {
+					url: 'https://example.com/',
+					body: 'text',
+					bodyBase64: bytesToBase64(new Uint8Array([1])),
+				},
+			},
+		]),
+	).toThrow(ApiError)
+})
+
 test('parseCapabilityProxyAuthenticatedFetchArgs rejects oversized bodies', () => {
 	const body = 'x'.repeat(capabilityProxyAuthenticatedFetchMaxBodyBytes + 1)
 	expect(() =>

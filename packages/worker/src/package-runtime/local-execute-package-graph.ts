@@ -93,11 +93,14 @@ export async function buildLocalExecutePackageGraph(input: {
 	for (const [modulePath, source] of Object.entries(prepared.files)) {
 		const normalized = normalizeWorkspaceModulePath(modulePath)
 		if (shouldOmitPreparedModule(normalized)) continue
+		const packageRuntimeId = parsePackageRuntimeModulePathPackageId(normalized)
 		modulesByName.set(
 			normalized,
 			isKodyRuntimeModulePath(normalized)
 				? createLocalExecuteRuntimeShimSource()
-				: source,
+				: packageRuntimeId != null
+					? createLocalExecutePackageRuntimeModuleSource(packageRuntimeId)
+					: source,
 		)
 	}
 
@@ -286,54 +289,112 @@ export {
 	events,
 };
 
+const __kodyNullBodyStatuses = new Set([204, 205, 304]);
+
+function __kodyBytesToBase64(bytes) {
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += 1) {
+		binary += String.fromCharCode(bytes[i]);
+	}
+	return btoa(binary);
+}
+
+function __kodyBase64ToBytes(value) {
+	const binary = atob(value);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i += 1) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
+}
+
+async function __kodyBodyToBytes(body) {
+	if (typeof body === "string") {
+		return new TextEncoder().encode(body);
+	}
+	if (body instanceof Uint8Array) return body;
+	if (body instanceof ArrayBuffer) return new Uint8Array(body);
+	if (ArrayBuffer.isView(body)) {
+		return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+	}
+	if (typeof Blob !== "undefined" && body instanceof Blob) {
+		return new Uint8Array(await body.arrayBuffer());
+	}
+	if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+		return new TextEncoder().encode(body.toString());
+	}
+	if (body && typeof body.getReader === "function") {
+		return new Uint8Array(await new Response(body).arrayBuffer());
+	}
+	if (typeof FormData !== "undefined" && body instanceof FormData) {
+		throw new Error(
+			"Local execute createAuthenticatedFetch does not support FormData bodies yet; use Uint8Array, Blob, or string.",
+		);
+	}
+	throw new Error(
+		"Local execute createAuthenticatedFetch could not serialize the request body.",
+	);
+}
+
+export function __kodyCreatePackageBoundAuthenticatedFetch(packageId) {
+	return async function createAuthenticatedFetch(providerName) {
+		return __kodyCreateAuthenticatedFetch(providerName, packageId);
+	};
+}
+
 export async function createAuthenticatedFetch(providerName) {
+	return __kodyCreateAuthenticatedFetch(providerName, null);
+}
+
+async function __kodyCreateAuthenticatedFetch(providerName, packageId) {
 	const name = String(providerName ?? "").trim();
 	if (!name) {
 		throw new Error("Integration name is required.");
 	}
 	return async (input, init) => {
-		const url =
-			typeof input === "string"
-				? input
-				: input instanceof URL
-					? input.toString()
-					: input.url;
-		const method =
-			input instanceof Request ? input.method : (init?.method ?? "GET");
-		const headers = Object.fromEntries(
-			new Headers(
-				input instanceof Request ? input.headers : init?.headers,
-			).entries(),
-		);
-		let body;
-		if (input instanceof Request) {
-			body = await input.text();
-		} else if (typeof init?.body === "string") {
-			body = init.body;
-		} else if (init?.body != null) {
-			throw new Error(
-				"Local execute createAuthenticatedFetch only supports string request bodies.",
-			);
+		let url;
+		let method = "GET";
+		let headers = {};
+		let bodyBytes = null;
+		if (typeof input === "string" || input instanceof URL) {
+			url = String(input);
+			method = String(init?.method ?? "GET");
+			headers = Object.fromEntries(new Headers(init?.headers).entries());
+			if (init?.body != null) {
+				bodyBytes = await __kodyBodyToBytes(init.body);
+			}
+		} else {
+			// Match cloud createAuthenticatedFetch: new Request(input, init) so
+			// init overrides method/headers/body when input is already a Request.
+			const merged = new Request(input, init);
+			url = merged.url;
+			method = merged.method;
+			headers = Object.fromEntries(merged.headers.entries());
+			if (method !== "GET" && method !== "HEAD") {
+				bodyBytes = new Uint8Array(await merged.arrayBuffer());
+			}
 		}
 		const result = await kody.authenticatedFetch({
 			providerName: name,
+			...(packageId ? { packageId } : {}),
 			request: {
 				url,
 				method,
 				headers,
-				...(body !== undefined ? { body } : {}),
+				...(bodyBytes != null
+					? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
+					: {}),
 			},
 		});
-		const binary = atob(result.bodyBase64);
-		const bytes = new Uint8Array(binary.length);
-		for (let i = 0; i < binary.length; i += 1) {
-			bytes[i] = binary.charCodeAt(i);
-		}
-		return new Response(bytes, {
-			status: result.status,
-			statusText: result.statusText,
-			headers: result.headers,
-		});
+		const bytes = __kodyBase64ToBytes(result.bodyBase64 ?? "");
+		return new Response(
+			__kodyNullBodyStatuses.has(result.status) ? null : bytes,
+			{
+				status: result.status,
+				statusText: result.statusText,
+				headers: result.headers,
+			},
+		);
 	};
 }
 
@@ -430,5 +491,54 @@ export default __kodyLocalRuntimeDefault;
 export const KodyRuntime = Object.freeze({
 	defaultValue: __kodyLocalRuntimeDefault,
 });
+`.trim()
+}
+
+/**
+ * Per-package virtual runtime for local execute: same surface as cloud's
+ * createPackageRuntimeModuleSource, but createAuthenticatedFetch closes over
+ * the stamped package id so CapabilityProxy / fetch-gateway integration
+ * approvals see package identity.
+ */
+export function createLocalExecutePackageRuntimeModuleSource(
+	packageId: string,
+) {
+	const baseRuntimeSpecifier = '../runtime.js'
+	return `
+export { kody, secretHeaders, oauthClientCredentials, packageContext, email, workflows, packages, events } from ${JSON.stringify(
+		baseRuntimeSpecifier,
+	)};
+import __kodyBaseRuntimeDefault, {
+	__kodyCreatePackageBoundStorage,
+	__kodyCreatePackageBoundSecrets,
+	__kodyCreatePackageBoundAuthenticatedFetch,
+} from ${JSON.stringify(baseRuntimeSpecifier)};
+export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
+		packageId,
+	)});
+export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
+		packageId,
+	)});
+export const createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFetch(${JSON.stringify(
+		packageId,
+	)});
+const __kodyPackageRuntimeDefault = new Proxy(__kodyBaseRuntimeDefault, {
+	get(target, property, receiver) {
+		if (property === "packageStorage") return packageStorage;
+		if (property === "packageSecrets") return packageSecrets;
+		if (property === "createAuthenticatedFetch") return createAuthenticatedFetch;
+		return Reflect.get(target, property, receiver);
+	},
+	has(target, property) {
+		return (
+			property === "packageStorage" ||
+			property === "packageSecrets" ||
+			property === "createAuthenticatedFetch" ||
+			Reflect.has(target, property)
+		);
+	},
+});
+export default __kodyPackageRuntimeDefault;
+export const KodyRuntime = Object.freeze({ defaultValue: __kodyPackageRuntimeDefault });
 `.trim()
 }

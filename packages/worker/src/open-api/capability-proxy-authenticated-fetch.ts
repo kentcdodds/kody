@@ -1,7 +1,13 @@
-import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { createAuthenticatedFetch } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
 import { buildKodyFns } from '#mcp/run-kody-registry.ts'
+import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
+import {
+	collectShareStorageOwners,
+	retainAuthorizedPackageStorageGrantIds,
+} from '#worker/package-registry/share-grants.ts'
+import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { invalidRequest } from './errors.ts'
 
@@ -10,17 +16,26 @@ import { invalidRequest } from './errors.ts'
  * workerd never sees OAuth access tokens. Host expands
  * `{{integration-token:…}}` through the same fetch gateway cloud execute uses,
  * then returns a JSON-safe response envelope the local runtime reconstructs.
+ *
+ * Optional `packageId` is the stamped saved-package identity (same provenance
+ * as packageStorage / packageSecrets). It becomes the fetch-gateway storage
+ * context and secret-authority grant so package-limited integrations authorize
+ * correctly.
  */
 
 export const capabilityProxyAuthenticatedFetchMaxBodyBytes = 4 * 1024 * 1024
 
 export type CapabilityProxyAuthenticatedFetchRequest = {
 	providerName: string
+	packageId?: string
 	request: {
 		url: string
 		method?: string
 		headers?: Record<string, string>
+		/** UTF-8 text body (mutually exclusive with bodyBase64). */
 		body?: string
+		/** Binary-safe body (mutually exclusive with body). */
+		bodyBase64?: string
 	}
 }
 
@@ -48,6 +63,10 @@ export function parseCapabilityProxyAuthenticatedFetchArgs(
 			'authenticatedFetch requires a non-empty providerName.',
 		)
 	}
+	const packageId =
+		typeof record.packageId === 'string' && record.packageId.trim()
+			? record.packageId.trim()
+			: undefined
 	const requestValue = record.request
 	if (
 		requestValue == null ||
@@ -55,7 +74,7 @@ export function parseCapabilityProxyAuthenticatedFetchArgs(
 		Array.isArray(requestValue)
 	) {
 		throw invalidRequest(
-			'authenticatedFetch requires request: { url, method?, headers?, body? }.',
+			'authenticatedFetch requires request: { url, method?, headers?, body?, bodyBase64? }.',
 		)
 	}
 	const request = requestValue as Record<string, unknown>
@@ -80,30 +99,79 @@ export function parseCapabilityProxyAuthenticatedFetchArgs(
 					),
 				)
 			: undefined
-	if (request.body !== undefined && typeof request.body !== 'string') {
+	const hasBody = request.body !== undefined
+	const hasBodyBase64 = request.bodyBase64 !== undefined
+	if (hasBody && hasBodyBase64) {
+		throw invalidRequest(
+			'authenticatedFetch request may include body or bodyBase64, not both.',
+		)
+	}
+	if (hasBody && typeof request.body !== 'string') {
 		throw invalidRequest(
 			'authenticatedFetch request.body must be a string when provided.',
 		)
 	}
-	const body = typeof request.body === 'string' ? request.body : undefined
-	if (
-		body !== undefined &&
-		new TextEncoder().encode(body).byteLength >
-			capabilityProxyAuthenticatedFetchMaxBodyBytes
-	) {
+	if (hasBodyBase64 && typeof request.bodyBase64 !== 'string') {
 		throw invalidRequest(
-			`authenticatedFetch request.body exceeds ${capabilityProxyAuthenticatedFetchMaxBodyBytes} bytes.`,
+			'authenticatedFetch request.bodyBase64 must be a string when provided.',
 		)
+	}
+	const body = typeof request.body === 'string' ? request.body : undefined
+	const bodyBase64 =
+		typeof request.bodyBase64 === 'string' ? request.bodyBase64 : undefined
+	if (body !== undefined) {
+		assertBodyByteLength(new TextEncoder().encode(body).byteLength)
+	}
+	if (bodyBase64 !== undefined) {
+		let decoded: Uint8Array
+		try {
+			decoded = base64ToBytes(bodyBase64)
+		} catch {
+			throw invalidRequest(
+				'authenticatedFetch request.bodyBase64 is not valid base64.',
+			)
+		}
+		assertBodyByteLength(decoded.byteLength)
 	}
 	return {
 		providerName,
+		...(packageId ? { packageId } : {}),
 		request: {
 			url,
 			method,
 			...(headers ? { headers } : {}),
 			...(body !== undefined ? { body } : {}),
+			...(bodyBase64 !== undefined ? { bodyBase64 } : {}),
 		},
 	}
+}
+
+function assertBodyByteLength(byteLength: number) {
+	if (byteLength > capabilityProxyAuthenticatedFetchMaxBodyBytes) {
+		throw invalidRequest(
+			`authenticatedFetch request body exceeds ${capabilityProxyAuthenticatedFetchMaxBodyBytes} bytes.`,
+		)
+	}
+}
+
+async function authorizeAuthenticatedFetchPackageId(input: {
+	ctx: ApiInvocationContext
+	packageId: string
+}) {
+	const authorized = await retainAuthorizedPackageStorageGrantIds({
+		db: input.ctx.env.APP_DB,
+		callerUserId: input.ctx.callerContext.user.userId,
+		packageIds: [input.packageId],
+		storageOwnerByPackageId: await collectShareStorageOwners({
+			db: input.ctx.env.APP_DB,
+			callerUserId: input.ctx.callerContext.user.userId,
+			packageIds: [input.packageId],
+		}),
+	})
+	if (!authorized.has(input.packageId)) {
+		throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
+	}
+	return input.packageId
 }
 
 export async function runCapabilityProxyAuthenticatedFetch(input: {
@@ -111,24 +179,45 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 	args: ReadonlyArray<unknown>
 }): Promise<CapabilityProxyAuthenticatedFetchResult> {
 	const call = parseCapabilityProxyAuthenticatedFetchArgs(input.args)
+	const packageId = call.packageId
+		? await authorizeAuthenticatedFetchPackageId({
+				ctx: input.ctx,
+				packageId: call.packageId,
+			})
+		: null
 	const kody = await buildKodyFns(input.ctx.env, input.ctx.callerContext)
-	const storageContext = input.ctx.callerContext.storageContext
+	const existingStorage = input.ctx.callerContext.storageContext
+	const storageContext = {
+		sessionId: existingStorage?.sessionId ?? null,
+		appId: existingStorage?.appId ?? null,
+		packageId: packageId ?? existingStorage?.packageId ?? null,
+		storageId: existingStorage?.storageId ?? null,
+	}
 	const gatewayFetch: typeof fetch = async (requestInput, init) => {
 		const request = new Request(requestInput, init)
+		if (packageId) {
+			const headers = new Headers(request.headers)
+			headers.set(secretAuthorityHeaderName, packageId)
+			return executeGatewayFetch({
+				env: input.ctx.env,
+				props: {
+					baseUrl: input.ctx.callerContext.baseUrl,
+					userId: input.ctx.callerContext.user.userId,
+					email: input.ctx.callerContext.user.email,
+					storageContext,
+					grantedSecretAuthorityPackageIds: [packageId],
+				},
+				request: new Request(request, { headers }),
+				...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
+			})
+		}
 		return executeGatewayFetch({
 			env: input.ctx.env,
 			props: {
 				baseUrl: input.ctx.callerContext.baseUrl,
 				userId: input.ctx.callerContext.user.userId,
 				email: input.ctx.callerContext.user.email,
-				storageContext: storageContext
-					? {
-							sessionId: storageContext.sessionId ?? null,
-							appId: storageContext.appId ?? null,
-							packageId: storageContext.packageId ?? null,
-							storageId: storageContext.storageId ?? null,
-						}
-					: null,
+				storageContext,
 			},
 			request,
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
@@ -139,10 +228,14 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 		call.providerName,
 		{ fetch: gatewayFetch },
 	)
+	const requestBody =
+		call.request.bodyBase64 !== undefined
+			? base64ToBytes(call.request.bodyBase64)
+			: call.request.body
 	const response = await authenticatedFetch(call.request.url, {
 		method: call.request.method,
 		headers: call.request.headers,
-		body: call.request.body,
+		body: requestBody,
 	})
 	return serializeAuthenticatedFetchResponse(response)
 }
