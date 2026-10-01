@@ -355,6 +355,11 @@ function createExecuteTypecheckPrelude(input?: {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
+type KodyCapability = (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>;
+type KodyMcpServerTools = Record<
+  string,
+  (args?: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
+>;
 type KodyStorageRuntime = {
   id: string;
   get(key: string): Promise<unknown>;
@@ -399,10 +404,9 @@ type KodyEventsRuntime = {
 } | null;
 
 declare module "kody:runtime" {
-  export const kody: Record<
-    string,
-    (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
-  >;
+  export const kody: Record<string, KodyCapability> & {
+    readonly mcp: Record<string, KodyMcpServerTools>;
+  };
   export function createAuthenticatedFetch(
     providerName: string,
   ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;

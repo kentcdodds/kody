@@ -94,6 +94,28 @@ export const deps = { z, createRouter, other, AsyncLocalStorage, packageStorage 
 	])
 })
 
+test('publish typecheck gives kody.mcp server tools callable types', async () => {
+	const typecheck = await runTypecheck({
+		'package.json': createManifest({}),
+		'tsconfig.json': packageTsconfig,
+		'src/index.ts': `import { kody } from 'kody:runtime'
+export async function callTools() {
+  const { home } = kody.mcp
+  await kody.mcp['home'].court_set_rotosphere({ action: 'x' })
+  await kody.mcp.home.tool({})
+  await home.tool({})
+  await kody.someCapability({ action: 'x' })
+}
+`,
+	})
+	expect(typecheck).toEqual({
+		kind: 'typecheck',
+		ok: true,
+		message:
+			'No semantic diagnostics for 1 package runtime entrypoint(s) across 1 reachable source file(s).',
+	})
+})
+
 test('export modules with only named exports pass publish typecheck', async () => {
 	const typecheck = await runTypecheck({
 		'package.json': createManifest({
