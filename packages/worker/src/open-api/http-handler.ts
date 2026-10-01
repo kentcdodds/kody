@@ -99,7 +99,13 @@ async function handleOperation(input: {
 	const startedAt = Date.now()
 	let ctx
 	try {
-		ctx = await authenticateApiRequest(input)
+		ctx = await authenticateApiRequest({
+			...input,
+			// CLI `kody login` OAuth is accepted only on local-execute routes
+			// (CapabilityProxy + package-graph). Other Open API ops stay
+			// `kody_at_`-only (ADR 0053/0055).
+			allowMcpOauth: isCapabilityProxyOperation(match.operation),
+		})
 	} catch (error) {
 		const apiError = toApiError(error)
 		if (

@@ -148,7 +148,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'Local execute: mint `local-execute` API tokens and call the CapabilityProxy (/v1/capability-proxy/*). Off: 403 feature_disabled. Rollout kill switch, not an experiment. Signed-in users can turn it on (with mcp-api-tool) from /docs/open-api.',
+			'Local execute: mint `local-execute` API tokens and call CapabilityProxy / package-graph (`/v1/capability-proxy/*`, `/v1/local-execute/package-graph`) with a scoped API token or CLI `kody login` OAuth. Off: 403 feature_disabled. Rollout kill switch, not an experiment. Signed-in users can turn it on (with mcp-api-tool) from /docs/open-api.',
 	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
