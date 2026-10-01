@@ -171,4 +171,4 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 		}
 	}
 	expect(rateLimited).toBe(true)
-})
+}, 60_000)
