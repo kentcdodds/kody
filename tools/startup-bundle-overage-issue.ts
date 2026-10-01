@@ -89,11 +89,18 @@ export function shouldReportStartupBundleOverageIssue(
 	return ref === 'refs/heads/main' || refName === 'main'
 }
 
+export const startupBundleOverageGhTimeoutMs = 10_000
+
 function runGh(args: Array<string>, env: NodeJS.ProcessEnv = process.env) {
 	const result = spawnSync('gh', args, {
 		encoding: 'utf8',
 		env,
+		timeout: startupBundleOverageGhTimeoutMs,
+		killSignal: 'SIGKILL',
 	})
+	if (result.error) {
+		throw result.error
+	}
 	if (result.status !== 0) {
 		throw new Error(result.stderr || `gh ${args.join(' ')} failed`)
 	}
@@ -103,10 +110,11 @@ function runGh(args: Array<string>, env: NodeJS.ProcessEnv = process.env) {
 function findOpenOverageIssue(
 	name: StartupBundleOverageName,
 	env: NodeJS.ProcessEnv = process.env,
+	gh: typeof runGh = runGh,
 ) {
 	const title = startupBundleOverageIssueTitle(name)
 	const marker = startupBundleOverageIssueMarker(name)
-	const raw = runGh(
+	const raw = gh(
 		[
 			'issue',
 			'list',
@@ -117,7 +125,7 @@ function findOpenOverageIssue(
 			'--json',
 			'number,title,body',
 			'--search',
-			`in:title "${title}"`,
+			`("${title}" in:title) OR ("${marker}" in:body)`,
 		],
 		env,
 	)
@@ -127,10 +135,9 @@ function findOpenOverageIssue(
 		body: string | null
 	}>
 	return (
-		issues.find(
-			(issue) =>
-				issue.title === title || (issue.body?.includes(marker) ?? false),
-		) ?? null
+		issues.find((issue) => issue.title === title) ??
+		issues.find((issue) => issue.body?.includes(marker) ?? false) ??
+		null
 	)
 }
 
@@ -173,7 +180,7 @@ export function upsertStartupBundleOverageIssue(
 		runUrl: options.runUrl ?? resolveStartupBundleOverageRunUrl(env),
 		ref: options.ref ?? env.GITHUB_REF ?? env.GITHUB_REF_NAME ?? null,
 	})
-	const existing = findOpen(overage.name, env)
+	const existing = findOpen(overage.name, env, gh)
 	if (existing) {
 		gh(['issue', 'edit', String(existing.number), '--body', body], env)
 		gh(

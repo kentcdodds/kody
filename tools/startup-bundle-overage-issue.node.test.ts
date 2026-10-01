@@ -135,6 +135,51 @@ test('upsertStartupBundleOverageIssue creates once then updates', () => {
 	expect(calls.some((args) => args[1] === 'comment')).toBe(true)
 })
 
+test('renamed open tracking issue is found by marker and updated, not duplicated', () => {
+	const calls: Array<Array<string>> = []
+	const marker = startupBundleOverageIssueMarker('runtime')
+	const renamed = {
+		number: 77,
+		title: 'Startup growth to investigate (runtime)',
+		body: `${marker}\nMeasured earlier.`,
+	}
+	const gh = (args: Array<string>) => {
+		calls.push(args)
+		if (args[0] === 'issue' && args[1] === 'list') {
+			expect(args.at(-1)).toContain('in:body')
+			expect(args.at(-1)).toContain(marker)
+			return JSON.stringify([renamed])
+		}
+		return ''
+	}
+	const result = upsertStartupBundleOverageIssue(
+		{
+			name: 'runtime',
+			size: 3_912_588,
+			maxEntryBytes: 3_912_500,
+			overage: 88,
+		},
+		{
+			env: {
+				CI: '1',
+				GITHUB_EVENT_NAME: 'push',
+				GITHUB_REF: 'refs/heads/main',
+				GH_TOKEN: 'token',
+			},
+			gh,
+		},
+	)
+	expect(result).toEqual({
+		action: 'updated',
+		name: 'runtime',
+		number: 77,
+	})
+	expect(calls.some((args) => args[1] === 'create')).toBe(false)
+	expect(calls.some((args) => args[1] === 'edit' && args[2] === '77')).toBe(
+		true,
+	)
+})
+
 test('reportStartupBundleOverages never throws when upsert fails', () => {
 	const logs: Array<string> = []
 	const actions = reportStartupBundleOverages(

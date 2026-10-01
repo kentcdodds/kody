@@ -16,7 +16,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
 # `validate` / `test:push`. Anyone who can push already has the write
@@ -52,6 +51,9 @@ jobs:
     runs-on: ubuntu-latest
     name: 🧹 Static
     timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
