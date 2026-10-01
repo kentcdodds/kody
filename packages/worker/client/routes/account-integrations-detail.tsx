@@ -560,6 +560,7 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						})}
 						<AddAccountForm
 							slug={selectedApp.slug}
+							platform={selectedApp.platform === true}
 							existingNames={[
 								...integrations.map((entry) => entry.name),
 								...apps.map((app) => app.slug),

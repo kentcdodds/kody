@@ -35,6 +35,15 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 			appSlug: 'google',
 		}),
 	).toBe('/connect/oauth?provider=google&app=google')
+	expect(
+		buildConnectOauthHref({
+			name: 'github-platform-2',
+			appSlug: 'github-platform',
+			platformSlug: 'github-platform',
+		}),
+	).toBe(
+		'/connect/oauth?provider=github-platform-2&app=github-platform&platform=github-platform',
+	)
 
 	const options = buildConnectOauthChooserOptions({
 		connections: [

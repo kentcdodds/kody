@@ -164,6 +164,16 @@ test('admin save and delete require admin and return HTTP shapes without echoing
 	expect(((await kept.json()) as AppsPayload).apps[0]).toMatchObject({
 		visibility: 'published',
 	})
+	const invalid = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'Draft',
+	})
+	expect(invalid.status).toBe(400)
+	await expect(invalid.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Visibility must be "draft" or "published".',
+	})
 	const unpublish = await invoke({
 		...editGithubBody,
 		slug: 'github',

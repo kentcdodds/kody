@@ -444,17 +444,11 @@ async function resolveAccountIntegrationByName(
 		platformSlug?: string
 	},
 ): Promise<AccountIntegrationRecord | null> {
-	if (options?.platformSlug) {
-		const platformApp = await getAvailablePlatformApp({
-			env,
-			slug: options.platformSlug,
-		})
-		if (platformApp) return toPlatformAppPrefillRecord(platformApp, name)
-	}
-
 	// 1. Existing connection (reconnect) — connection name, not app slug.
 	// Platform-lane rows reconnect through the built-in only while it is
 	// discoverable; draft or disabled built-ins reconnect bring-your-own.
+	// This runs before `platform=` so a built-in link never silently converts
+	// a bring-your-own connection that already holds the name.
 	const joined = await getJoinedIntegration({
 		env,
 		userId: user.mcpUser.userId,
@@ -469,6 +463,14 @@ async function resolveAccountIntegrationByName(
 			return toBringYourOwnReconnectRecord(record)
 		}
 		return record
+	}
+
+	if (options?.platformSlug) {
+		const platformApp = await getAvailablePlatformApp({
+			env,
+			slug: options.platformSlug,
+		})
+		if (platformApp) return toPlatformAppPrefillRecord(platformApp, name)
 	}
 
 	if (options?.appSlug) {

@@ -585,8 +585,10 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 	await expect(
 		connectPlatform(env, 'user-platform-scopes', ['admin:org']),
 	).rejects.toThrow('Scopes not allowed for platform integration "github"')
-	const defaultScopes = await connectPlatform(env, 'user-platform-defaults', [])
-	expect(defaultScopes.authorization?.scopes).toEqual(['read:user'])
+	// An explicitly empty selection stays empty: the stored list mirrors the
+	// authorize request instead of reporting default scopes never requested.
+	const clearedScopes = await connectPlatform(env, 'user-platform-cleared', [])
+	expect(clearedScopes.authorization?.scopes).toEqual([])
 
 	await upsertPlatformOauthApp({
 		db: env.APP_DB,

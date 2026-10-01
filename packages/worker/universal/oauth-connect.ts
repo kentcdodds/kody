@@ -41,11 +41,16 @@ export function isConnectOauthCallbackUrl(url: URL): boolean {
 export function buildConnectOauthHref(input: {
 	name: string
 	appSlug?: string
+	platformSlug?: string
 }): string {
 	const params = new URLSearchParams({ provider: input.name })
 	const appSlug = input.appSlug?.trim()
 	if (appSlug) {
 		params.set('app', appSlug)
+	}
+	const platformSlug = input.platformSlug?.trim()
+	if (platformSlug) {
+		params.set('platform', platformSlug)
 	}
 	return `/connect/oauth?${params.toString()}`
 }

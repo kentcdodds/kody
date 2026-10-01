@@ -368,6 +368,83 @@ test('published built-ins prefill connects, reconnect in-lane, and feed the acco
 	})
 })
 
+test('platform= never converts an existing connection and wins over a same-slug personal app only while published', async () => {
+	const userId = 'user-platform-precedence'
+	const { env, platformEnv, lookup } = createEnv(userId)
+	const githubApp = {
+		slug: 'github-platform',
+		label: 'GitHub',
+		clientId: 'platform-github-client',
+		clientSecret: 'platform-github-secret',
+		tokenUrl: githubTokenUrl,
+		authorizeUrl: githubAuthorizeUrl,
+		flow: 'confidential' as const,
+		defaultScopes: ['read:user'],
+		allowedScopes: ['read:user'],
+		visibility: 'published' as const,
+	}
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: githubApp,
+	})
+	const personalGithub = {
+		tokenUrl: githubTokenUrl,
+		flow: 'confidential' as const,
+		authorization: { authorizeUrl: githubAuthorizeUrl, scopes: [] },
+	}
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			...personalGithub,
+			name: 'github-mine',
+			clientId: 'user-github-client',
+		},
+	})
+	const existingByo = await lookup('github-mine', {
+		platformSlug: 'github-platform',
+	})
+	expect(existingByo).toMatchObject({
+		name: 'github-mine',
+		clientId: 'user-github-client',
+	})
+	expect(existingByo?.platform).toBeFalsy()
+
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			...personalGithub,
+			name: 'github-platform',
+			clientId: 'personal-same-slug-client',
+		},
+	})
+	const personalOnly = await lookup('github-platform-2', {
+		appSlug: 'github-platform',
+	})
+	expect(personalOnly).toMatchObject({ clientId: 'personal-same-slug-client' })
+	expect(personalOnly?.platform).toBeFalsy()
+	expect(
+		await lookup('github-platform-2', {
+			appSlug: 'github-platform',
+			platformSlug: 'github-platform',
+		}),
+	).toMatchObject({ platform: true, clientId: 'platform-github-client' })
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'draft' },
+	})
+	const draftBuiltIn = await lookup('github-platform-2', {
+		appSlug: 'github-platform',
+		platformSlug: 'github-platform',
+	})
+	expect(draftBuiltIn).toMatchObject({ clientId: 'personal-same-slug-client' })
+	expect(draftBuiltIn?.platform).toBeFalsy()
+})
+
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
 	const userId = 'user-integrations-apps-loader'
 	const { env, user } = createEnv(userId)

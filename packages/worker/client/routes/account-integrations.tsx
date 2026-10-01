@@ -147,11 +147,14 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		)
 	}
 
-	function finishOptimisticRemoval() {
+	function finishOptimisticRemoval(options?: { reload?: boolean }) {
 		holdingOptimisticRemoval = false
 		if (currentSelectionMissing()) {
 			navigate(listHref())
 			return
+		}
+		if (options?.reload) {
+			integrationsData.reload(handle, getCurrentHref())
 		}
 		handle.update()
 	}
@@ -276,6 +279,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		accountLabel?: string | null
 	}) {
 		const snapshot = snapshotList()
+		// The server-filtered "Connect with Kody" catalog only re-offers a
+		// built-in after its last connection is gone, so refetch for those.
+		const wasPlatform = integrations.some(
+			(entry) => entry.name === connection.name && entry.platform === true,
+		)
 		removeConnectionLocally(connection.name)
 		getDisconnectCheck(connection.name).reset()
 		holdingOptimisticRemoval = true
@@ -290,7 +298,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'disconnect_connection',
 						name: connection.name,
 					})
-					finishOptimisticRemoval()
+					finishOptimisticRemoval({ reload: wasPlatform })
 				} catch (error) {
 					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)

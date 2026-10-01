@@ -40,6 +40,8 @@ const addAccountLinkCss = {
 export function AddAccountForm(
 	handle: Handle<{
 		slug: string
+		/** Built-in row: also send `platform=` so the built-in lane wins over a same-slug personal app while it is discoverable. */
+		platform?: boolean
 		existingNames: ReadonlyArray<string>
 		open: boolean
 		openHref: string
@@ -53,6 +55,7 @@ export function AddAccountForm(
 		return buildConnectOauthHref({
 			name: connectionName,
 			appSlug: handle.props.slug,
+			platformSlug: handle.props.platform ? handle.props.slug : undefined,
 		})
 	}
 

@@ -489,9 +489,7 @@ export async function upsertPlatformIntegration(input: {
 				input.description === undefined
 					? (existing?.connection.description ?? '')
 					: (input.description?.trim() ?? ''),
-			scopes_json: JSON.stringify(
-				scopes.length > 0 ? scopes : app.defaultScopes,
-			),
+			scopes_json: JSON.stringify(scopes),
 			required_hosts_json: JSON.stringify(requiredHosts),
 			connected_at: now,
 			token_refreshed_at: existing?.connection.tokenRefreshedAt ?? null,
