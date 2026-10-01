@@ -522,22 +522,34 @@ export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
 export const createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFetch(${JSON.stringify(
 		packageId,
 	)});
-const __kodyPackageRuntimeDefault = new Proxy(__kodyBaseRuntimeDefault, {
-	get(target, property, receiver) {
-		if (property === "packageStorage") return packageStorage;
-		if (property === "packageSecrets") return packageSecrets;
-		if (property === "createAuthenticatedFetch") return createAuthenticatedFetch;
-		return Reflect.get(target, property, receiver);
+// Local base runtime default is Object.freeze'd. Proxying that frozen target
+// while returning different packageStorage / packageSecrets /
+// createAuthenticatedFetch values violates Proxy invariants and throws on
+// default-export property access. Clone with the bound overrides first.
+const __kodyPackageRuntimeDefault = new Proxy(
+	Object.freeze({
+		...__kodyBaseRuntimeDefault,
+		packageStorage,
+		packageSecrets,
+		createAuthenticatedFetch,
+	}),
+	{
+		get(target, property, receiver) {
+			if (property === "packageStorage") return packageStorage;
+			if (property === "packageSecrets") return packageSecrets;
+			if (property === "createAuthenticatedFetch") return createAuthenticatedFetch;
+			return Reflect.get(target, property, receiver);
+		},
+		has(target, property) {
+			return (
+				property === "packageStorage" ||
+				property === "packageSecrets" ||
+				property === "createAuthenticatedFetch" ||
+				Reflect.has(target, property)
+			);
+		},
 	},
-	has(target, property) {
-		return (
-			property === "packageStorage" ||
-			property === "packageSecrets" ||
-			property === "createAuthenticatedFetch" ||
-			Reflect.has(target, property)
-		);
-	},
-});
+);
 export default __kodyPackageRuntimeDefault;
 export const KodyRuntime = Object.freeze({ defaultValue: __kodyPackageRuntimeDefault });
 `.trim()
