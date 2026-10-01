@@ -190,6 +190,7 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  */
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },
+	{ kind: 'user_id', table: 'cli_credential_bootstrap_codes' },
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
@@ -788,6 +789,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	Record<string, ReadonlyArray<string>>
 > = {
 	api_tokens: ['token_hash'],
+	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
 	package_invocation_tokens: ['token_hash'],
 	password_resets: ['token_hash'],
