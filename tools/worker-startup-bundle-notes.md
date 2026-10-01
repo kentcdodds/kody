@@ -335,3 +335,11 @@ runtime path if this budget is raised again.
   bytes per worker over main). Local dry-run runtime 3_912_325 against the
   previous 3_912_000 budget, reviewed ceiling 3_912_500; platform local dry-run
   5_238_445 against the previous 5_238_000 budget, reviewed ceiling 5_238_500.
+- Platform integration visibility (#2766): the `visibility` column in the
+  `platform_oauth_apps` select/upsert/rename SQL, the discoverable
+  (`enabled = 1 AND visibility = 'published'`) list/get queries, and the
+  `integrationPlatformAppList` handler that now lists published apps, all on the
+  integrations graph both workers already evaluate (about 1,380 bytes per worker
+  over main). Local dry-run runtime 3_913_707 against the previous 3_912_500
+  budget, reviewed ceiling 3_914_000; platform local dry-run 5_239_826 against
+  the previous 5_238_500 budget, reviewed ceiling 5_240_000.
