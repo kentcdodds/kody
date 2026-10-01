@@ -44,13 +44,40 @@ They may change or go away.
 
 When **Node ≥22** and `@kodycodes/cli` are available, prefer
 `npx @kodycodes/cli execute --local` for one-off modules, smoke tests, and
-composition. Fall back to hosted MCP `execute` when local is not appropriate (no
-suitable Node, CLI missing, flags/scopes missing, or the host cannot run a local
-workerd). Cursor Cloud Agents need `KODY_API_TOKEN` in the environment (not in
-the prompt); see [Cursor Cloud Agent notes](../contributing/cloud-agents.md) and
-the
+composition — including modules that `import` from `kody:@owner/name` (or
+`kody:@owner/name/path`). Keep `--local`; do not switch to hosted MCP `execute`
+for package imports. Fall back to hosted MCP `execute` only when local is not
+appropriate (no suitable Node, CLI missing, flags/scopes missing, or the host
+cannot run a local workerd). Cursor Cloud Agents need `KODY_API_TOKEN` in the
+environment (not in the prompt); see
+[Cursor Cloud Agent notes](../contributing/cloud-agents.md) and the
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
 skill.
+
+### Saved-package imports under `--local`
+
+Pure `kody.*` / `workflows.create` modules run in local workerd; each
+`kody:runtime` call is a CapabilityProxy hop. Modules with static or dynamic
+`kody:@…` imports cannot be bundled offline (ownership, shares, stamps, and
+published artifacts live on origin). `@kodycodes/cli` detects those imports and
+resolves them via CapabilityProxy → `kody.execute` (Open API / token — same path
+as token-auth cloud execute). Agents keep writing:
+
+```ts
+import { searchMessages } from 'kody:@kentcdodds/google/gmail'
+export default async function main(params) {
+	return await searchMessages(params)
+}
+```
+
+and running `npx @kodycodes/cli execute --local …`. There is no author-facing
+`packages.invoke`.
+
+That package-import path still needs network and a `local-execute` token; origin
+meters it like cloud execute. True offline workerd bundling of saved packages is
+not supported.
+
+CLI change: [kody-bot/cli#12](https://github.com/kody-bot/cli/pull/12).
 
 ## First local run
 
@@ -90,8 +117,10 @@ operations over HTTP.
 
 ## Metering
 
-Local CPU is not counted as `execute` or `dynamic_worker_day`; capabilities you
-call through the proxy still meter normally.
+Local CPU for pure-local modules (no `kody:@` imports) is not counted as
+`execute` or `dynamic_worker_day`; capabilities you call through the proxy still
+meter normally. When `--local` falls back to CapabilityProxy → `kody.execute`
+for saved-package imports, that hop meters like cloud execute.
 
 ## Where to go next
 

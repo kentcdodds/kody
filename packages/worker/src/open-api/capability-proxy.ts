@@ -14,13 +14,14 @@ import { maxApiRequestBodyBytes } from './request-params.ts'
 
 /**
  * CapabilityProxy: the cloud half of local execute (`kody execute --local`,
- * `@kodycodes/cli`). The CLI runs the module in a local workerd and forwards
- * every `kody:runtime` call here as `{ path, args }`; this dispatches it
- * through the same `kody.*` tool map ad hoc cloud execute builds, so
- * capabilities, `kody.mcp`, and `workflows.create` behave as they do in the
- * cloud. There is no author-facing `packages.invoke`. Local CPU is never
- * metered; each hop is one `api_call`, and the capability behind it meters
- * itself as usual.
+ * `@kodycodes/cli`). The CLI runs capability-only modules in a local workerd
+ * and forwards every `kody:runtime` call here as `{ path, args }`; this
+ * dispatches it through the same `kody.*` tool map ad hoc cloud execute
+ * builds, so capabilities, `kody.mcp`, and `workflows.create` behave as they
+ * do in the cloud. Modules that import `kody:@…` keep `--local` but resolve
+ * via CapabilityProxy → `kody.execute` (Open API / token). There is no
+ * author-facing `packages.invoke`. Local CPU is never metered; each hop is
+ * one `api_call`, and the capability behind it meters itself as usual.
  */
 
 export const capabilityProxyLimits = {

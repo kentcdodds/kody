@@ -121,10 +121,14 @@ Kody stores only a SHA-256 hash; the value is returned once, on mint or rotate.
 
 ## CapabilityProxy
 
-The cloud half of local execute. The CLI runs the module in a local workerd and
-forwards each `kody:runtime` call here. This contract matches
-`@kodycodes/cli@1.4.0`
-([kody-bot/cli#9](https://github.com/kody-bot/cli/pull/9)).
+The cloud half of local execute. The CLI runs capability-only modules in a local
+workerd and forwards each `kody:runtime` call here. Modules that import
+`kody:@…` keep `execute --local` but resolve the package graph via
+CapabilityProxy → `kody.execute` (Open API / token; not hosted MCP `execute`) —
+see [Open API and local execute](../../guides/open-api.md) and
+[kody-bot/cli#12](https://github.com/kody-bot/cli/pull/12). This contract
+matches recent `@kodycodes/cli` releases
+([kody-bot/cli#9](https://github.com/kody-bot/cli/pull/9) and later).
 
 | Route                              | Body                              | 200 response                                                                    |
 | ---------------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
@@ -136,6 +140,8 @@ forwards each `kody:runtime` call here. This contract matches
   positional (at most 8; paths at most 8 segments). Unknown keys answer 400.
   `['packages', 'invoke']` is rejected: there is no author-facing
   `packages.invoke` (use a static `kody:@` import or `import(specifier)`).
+  Token-auth / `--local` package composition uses `['kody', 'execute']` with a
+  module that contains those imports — not `packages.invoke`.
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
   capability behavior, `kody.mcp`, and workflows match the cloud. Caller errors
   from a capability keep their status and message. Unexpected capability
@@ -152,7 +158,8 @@ forwards each `kody:runtime` call here. This contract matches
   CLI can tell "not enabled for you" from "mint a token with the local-execute
   scope".
 - Not proxied: outbound `fetch`, secret substitution in fetch headers, and
-  `createAuthenticatedFetch`. The CLI fetches those from local workerd.
+  `createAuthenticatedFetch`. The CLI fetches those from local workerd on the
+  pure-local path.
 
 ## Errors
 

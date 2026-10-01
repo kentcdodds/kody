@@ -201,10 +201,11 @@ or Durable Object bindings.
 
 When this VM has Node ≥22 (Cloud Agents use Node 26) and `@kodycodes/cli`,
 prefer `npx @kodycodes/cli execute --local` over hosted MCP `execute` for
-one-off modules and smoke tests. Put `KODY_API_TOKEN` in the Cloud
-**environment** secrets/vars (not in the prompt). Mint once via MCP `api`
-`tokenCreate` with scopes `local-execute` and `account:read` (add scopes as
-needed); never paste the token into chat. Guide:
+one-off modules and smoke tests — including modules with `kody:@…` imports (CLI
+resolves those via CapabilityProxy → `kody.execute`; keep `--local`). Put
+`KODY_API_TOKEN` in the Cloud **environment** secrets/vars (not in the prompt).
+Mint once via MCP `api` `tokenCreate` with scopes `local-execute` and
+`account:read` (add scopes as needed); never paste the token into chat. Guide:
 [Open API and local execute](../guides/open-api.md). Skill:
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
 

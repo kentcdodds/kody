@@ -103,4 +103,13 @@ test('packages.invoke is rejected as unbound', async () => {
 		},
 	}).catch((value: unknown) => value)
 	expect(error).toMatchObject({ status: 404, code: 'not_found' })
+	expect(String((error as { message?: string }).message)).toMatch(
+		/There is no author-facing packages\.invoke/,
+	)
+	expect(String((error as { message?: string }).message)).toMatch(
+		/static kody:@scope\/package\/export import/,
+	)
+	expect(String((error as { message?: string }).message)).not.toMatch(
+		/run execute without --local/,
+	)
 })

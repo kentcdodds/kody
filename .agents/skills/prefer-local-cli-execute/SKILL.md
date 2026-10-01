@@ -50,10 +50,23 @@ npx @kodycodes/cli execute --local --code 'export default async function main() 
 Prefer `KODY_API_TOKEN` in the environment over `--token` so the secret is not
 visible in process arguments.
 
+Saved-package imports work under `--local` too — keep the flag and write the
+usual static import (there is no author-facing `packages.invoke`):
+
+```bash
+npx @kodycodes/cli execute --local --code 'import { searchMessages } from "kody:@kentcdodds/google/gmail"
+export default async function main(params) { return await searchMessages(params) }'
+```
+
+The CLI resolves `kody:@…` via Open API CapabilityProxy → `kody.execute`
+(network + token required; not hosted MCP `execute`). See
+[Open API and local execute](../../../docs/guides/open-api.md).
+
 ## Fallback
 
 Use hosted MCP `execute` when local is not appropriate: no Node ≥22, CLI
-unavailable, flags/scopes missing, or the host cannot run a local workerd.
+unavailable, flags/scopes missing, or the host cannot run a local workerd. Do
+**not** drop `--local` merely because the module imports `kody:@…`.
 
 ## Where agent guidance lives
 
