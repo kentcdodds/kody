@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
+	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
@@ -28,6 +29,14 @@ import {
 	reportStartupBundleOverages,
 	type StartupBundleOverage,
 } from './startup-bundle-overage-issue.ts'
+import {
+	attributeGeneratedBytes,
+	diffAttributedSources,
+	formatAttributedSources,
+	formatSourceByteDeltas,
+	parseStartupBundleCheckArgs,
+	type StartupBundleCheckArgs,
+} from './startup-bundle-attribution.ts'
 
 const execFileAsync = promisify(execFile)
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -114,6 +123,11 @@ export type StartupEntrySizeResult = {
 	name: StartupBundleName
 	size: number
 	maxEntryBytes: number
+}
+
+type StartupEntryInspection = StartupEntrySizeResult & {
+	entryPath: string
+	sourceMapPath: string
 }
 
 const startupBundleNames = ['origin', 'platform', 'runtime'] as const
@@ -386,6 +400,8 @@ async function inspectViteOriginStartupBundle(
 		name: definition.name,
 		size,
 		maxEntryBytes: definition.maxEntryBytes,
+		entryPath: build.entryPath,
+		sourceMapPath: build.sourceMapPath,
 	}
 }
 
@@ -438,6 +454,8 @@ async function inspectWranglerStartupBundle(
 		name: definition.name,
 		size,
 		maxEntryBytes: definition.maxEntryBytes,
+		entryPath,
+		sourceMapPath,
 	}
 }
 
@@ -474,10 +492,23 @@ async function inspectStartupBundle(
  * never fail this check or block Deploy. Deferred-source / additional-module
  * regressions still fail hard.
  */
-export async function checkWorkerStartupBundles() {
+export async function checkWorkerStartupBundles(
+	options: StartupBundleCheckArgs = {
+		attribute: false,
+		base: null,
+		keepOutdir: null,
+		compareOutdir: null,
+	},
+) {
 	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const budget = await readStartupBundleBudget()
-	const outputRoot = await mkdtemp(path.join(tmpdir(), 'kody-startup-bundles-'))
+	const outputRoot =
+		options.keepOutdir ??
+		(await mkdtemp(path.join(tmpdir(), 'kody-startup-bundles-')))
+	if (options.keepOutdir) {
+		await mkdir(outputRoot, { recursive: true })
+	}
+	const compareOutdir = await resolveCompareOutdir(options)
 	const strayPath = path.join(
 		repoRoot,
 		'packages/worker/src/node_modules/.kody-generated',
@@ -497,6 +528,12 @@ export async function checkWorkerStartupBundles() {
 				),
 			),
 		)
+		if (options.keepOutdir || options.attribute) {
+			await writeFile(
+				path.join(outputRoot, 'artifacts.json'),
+				`${JSON.stringify(startupBundleArtifacts(outputRoot, results), null, 2)}\n`,
+			)
+		}
 		for (const result of results) {
 			const ratio = `${String(result.size)} / ${String(result.maxEntryBytes)}`
 			if (result.size > result.maxEntryBytes) {
@@ -504,16 +541,113 @@ export async function checkWorkerStartupBundles() {
 			} else {
 				console.log(`${result.name} startup entry: ${ratio} bytes`)
 			}
+			if (!options.attribute) continue
+			const current = await attributeStartupEntry(
+				result.entryPath,
+				result.sourceMapPath,
+			)
+			if (compareOutdir) {
+				const base = await attributeStartupEntryFromOutdir(
+					compareOutdir,
+					result.name,
+				)
+				const deltas = formatSourceByteDeltas(
+					diffAttributedSources(current, base),
+				)
+				if (deltas.length > 0) console.log(deltas)
+			} else {
+				const sources = formatAttributedSources(current)
+				if (sources.length > 0) console.log(sources)
+			}
+		}
+		if (options.keepOutdir) {
+			console.log(`startup bundle outdir: ${outputRoot}`)
 		}
 		reportStartupBundleOverages(collectStartupBundleOverages(results))
 	} finally {
 		await Promise.all([
 			removeStray ? rm(strayPath, { force: true }) : undefined,
-			rm(outputRoot, { recursive: true, force: true }),
+			options.keepOutdir
+				? undefined
+				: rm(outputRoot, { recursive: true, force: true }),
 		])
 	}
 }
 
+function startupBundleArtifacts(
+	outputRoot: string,
+	results: ReadonlyArray<StartupEntryInspection>,
+) {
+	return Object.fromEntries(
+		results.map((result) => [
+			result.name,
+			{
+				entryPath: path.relative(outputRoot, result.entryPath),
+				sourceMapPath: path.relative(outputRoot, result.sourceMapPath),
+			},
+		]),
+	)
+}
+
+async function resolveCompareOutdir(options: StartupBundleCheckArgs) {
+	if (options.compareOutdir) return options.compareOutdir
+	if (!options.base) return null
+	try {
+		const info = await stat(options.base)
+		if (info.isDirectory()) return options.base
+	} catch {
+		// `--base origin/main` is the requested UX, but a git-ref rebuild
+		// would have to re-root Vite and generated-module writers. Keep one
+		// contract: compare two kept outdirs.
+	}
+	throw new Error(
+		`--base ${options.base} is not a kept outdir. Build that ref first, then compare:\n` +
+			`  node tools/check-worker-startup-bundles.ts --attribute --keep-outdir .tmp/startup-base\n` +
+			`  node tools/check-worker-startup-bundles.ts --attribute --compare-outdir .tmp/startup-base`,
+	)
+}
+
+async function attributeStartupEntry(entryPath: string, sourceMapPath: string) {
+	const [generated, sourceMapText] = await Promise.all([
+		readFile(entryPath, 'utf8'),
+		readFile(sourceMapPath, 'utf8'),
+	])
+	return attributeGeneratedBytes(generated, sourceMapText)
+}
+
+async function attributeStartupEntryFromOutdir(
+	outputRoot: string,
+	name: StartupBundleName,
+) {
+	const artifactsPath = path.join(outputRoot, 'artifacts.json')
+	try {
+		const artifacts = JSON.parse(
+			await readFile(artifactsPath, 'utf8'),
+		) as Record<string, { entryPath?: unknown; sourceMapPath?: unknown }>
+		const artifact = artifacts[name]
+		if (
+			artifact &&
+			typeof artifact.entryPath === 'string' &&
+			typeof artifact.sourceMapPath === 'string'
+		) {
+			return attributeStartupEntry(
+				path.join(outputRoot, artifact.entryPath),
+				path.join(outputRoot, artifact.sourceMapPath),
+			)
+		}
+	} catch {
+		// Fall through to the wrangler entry-file convention.
+	}
+	const spec = startupBundles.find((bundle) => bundle.name === name)
+	if (!spec) {
+		throw new Error(`Unknown startup bundle: ${name}`)
+	}
+	const entryPath = path.join(outputRoot, name, spec.entryFile)
+	return attributeStartupEntry(entryPath, `${entryPath}.map`)
+}
+
 if (isExecutedDirectly(import.meta.url)) {
-	await checkWorkerStartupBundles()
+	await checkWorkerStartupBundles(
+		parseStartupBundleCheckArgs(process.argv.slice(2)),
+	)
 }
