@@ -57,6 +57,9 @@ vi.mock('@cloudflare/shell', () => ({
 		readFile(path: string) {
 			return mockModule.workspaceReadFile(path)
 		}
+		readFileBytes(path: string) {
+			return mockModule.workspaceReadFileBytes(path)
+		}
 		writeFile(path: string, content: string) {
 			return mockModule.workspaceWriteFile(path, content)
 		}

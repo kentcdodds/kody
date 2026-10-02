@@ -394,9 +394,12 @@ test('/_assets/ serves files from the declared assets directory with inferred co
 	const png = await asset('img/dot.png')
 	expect(png.status).toBe(200)
 	expect(png.headers.get('Content-Type')).toBe('image/png')
-	expect([...new Uint8Array(await png.arrayBuffer())]).toEqual([
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-	])
+	expect(png.headers.get('X-Content-Type-Options')).toBe('nosniff')
+	// PNG magic must survive the serve path byte-identical. A UTF-8 decode of
+	// the snapshot would turn leading 0x89 into U+FFFD → served 0xFD.
+	const pngBytes = [...new Uint8Array(await png.arrayBuffer())]
+	expect(pngBytes.slice(0, 4)).toEqual([0x89, 0x50, 0x4e, 0x47])
+	expect(pngBytes).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 	const head = await asset('styles.css', { method: 'HEAD' })
 	expect(head.status).toBe(200)

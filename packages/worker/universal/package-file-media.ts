@@ -142,6 +142,20 @@ export function snapshotStringToBytes(content: string, path: string) {
 	return new TextEncoder().encode(content)
 }
 
+/**
+ * Inverse of `snapshotStringToBytes`: encode blob bytes for a text-backed
+ * source snapshot. Raster / unknown-binary paths (and any NUL blob) stay
+ * latin1; everything else is UTF-8. Callers must pass the raw bytes — never
+ * a UTF-8-decoded string — or invalid sequences become U+FFFD and PNG magic
+ * `0x89` collapses to `0xFD` when served.
+ */
+export function bytesToSnapshotString(bytes: Uint8Array, path: string) {
+	if (bytes.includes(0) || shouldStoreArtifactBlobAsLatin1(path)) {
+		return bytesToLatin1String(bytes)
+	}
+	return new TextDecoder().decode(bytes)
+}
+
 function measurePackageFileBytes(path: string, content: string) {
 	return snapshotStringToBytes(content, path).byteLength
 }
