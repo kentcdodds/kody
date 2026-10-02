@@ -12,7 +12,9 @@ import {
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
 import {
+	isArtifactsGitReadTimeoutMessage,
 	isArtifactsOpaqueInternalRetryMessage,
+	isArtifactsRepoLookupTimeoutMessage,
 	isSourceRecoveryOpaqueInternalErrorMessage,
 } from './repo/source-safety-policy.ts'
 import { isUserCodeError } from './user-code-error.ts'
@@ -454,12 +456,18 @@ export function filterCloudflareOpaqueInternalErrorSentryEvent(
  * after Nms`), and packfile corruption. Packfile corruption is matched by its
  * unique phrase even when bare (clone paths historically threw unwrapped
  * InternalError).
+ *
+ * Also drops source-safety remaps of Artifacts repo-lookup and git-HEAD
+ * timeouts (`TimeoutError` / ArtifactsGitTimeoutError) so a lookup stall is
+ * not labeled a git failure and neither opens Sentry issues.
  */
 export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
-			isArtifactsGitTransientErrorMessage(message),
+			(isArtifactsGitTransientErrorMessage(message) ||
+				isArtifactsGitReadTimeoutMessage(message) ||
+				isArtifactsRepoLookupTimeoutMessage(message)),
 	)
 }
 

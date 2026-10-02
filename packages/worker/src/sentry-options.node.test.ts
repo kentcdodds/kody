@@ -7,6 +7,7 @@ import {
 } from './entitlements/errors.ts'
 import {
 	buildArtifactsOpaqueInternalErrorMessage,
+	buildArtifactsRepoLookupTimeoutMessage,
 	buildSourceRecoveryProblemMessage,
 } from './repo/source-safety-policy.ts'
 import { type EntitySourceRow } from './repo/types.ts'
@@ -156,6 +157,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		`Artifacts listServerRefs failed for ${artifactsRepo}: HTTP Error: 500 Internal Server Error`,
 		`Artifacts git clone failed for ${artifactsRepo}: Packfile payload corrupted: calculated abc but expected def.`,
 		`packageGetGitRemote timed out reading the Artifacts git remote. Retry the call. Artifacts listServerRefs failed for ${artifactsRepo}: Artifacts git request timed out after 8000ms.`,
+		buildArtifactsRepoLookupTimeoutMessage({
+			operation: 'packageGetGitRemote',
+			reason: 'The operation timed out.',
+		}),
 		// MCP agent session teardown.
 		mcpAgentSessionDestroyedAbortMessage,
 		'Error: destroyed',

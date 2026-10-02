@@ -19,10 +19,13 @@ const {
 	assertRestorablePackageSourceSnapshot,
 	buildArtifactsGitReadTimeoutMessage,
 	buildArtifactsOpaqueInternalErrorMessage,
+	buildArtifactsRepoLookupTimeoutMessage,
 	buildPublishedCommitHeadMismatchCallerMessage,
 	buildSourceRecoveryProblemMessage,
 	destructiveOverwriteConfirmationField,
+	isArtifactsGitReadTimeoutMessage,
 	isArtifactsOpaqueInternalRetryMessage,
+	isArtifactsRepoLookupTimeoutMessage,
 	isDestructiveOverwriteConfirmationMessage,
 	isPrivateVisibilityChangeConfirmationMessage,
 	isPublishedCommitHeadMismatchMessage,
@@ -126,6 +129,61 @@ test('Artifacts git timeouts name packageSave only for packageGetGitRemote', () 
 		'repoOpenSession timed out reading the Artifacts git remote.',
 	)
 	expect(session).not.toContain('packageSave')
+	expect(isArtifactsGitReadTimeoutMessage(session)).toBe(true)
+	const lookup = buildArtifactsRepoLookupTimeoutMessage({
+		operation: 'packageGetGitRemote',
+		reason: 'The operation timed out.',
+	})
+	expect(lookup).toContain(
+		'packageGetGitRemote timed out looking up the Artifacts repository.',
+	)
+	expect(lookup).not.toContain('packageSave')
+	expect(lookup).not.toContain('git remote')
+	expect(isArtifactsRepoLookupTimeoutMessage(lookup)).toBe(true)
+	expect(isArtifactsGitReadTimeoutMessage(lookup)).toBe(false)
+})
+
+test('Artifacts repo-lookup timeouts are distinct from git HEAD read timeouts', async () => {
+	const timeout = new Error('The operation timed out.')
+	timeout.name = 'TimeoutError'
+	artifactsMock.resolveExistingArtifactSourceRepo.mockReset()
+	artifactsMock.resolveArtifactDefaultBranchHead.mockReset()
+	artifactsMock.resolveExistingArtifactSourceRepo.mockRejectedValue(timeout)
+
+	const lookupRejected = await assertPublishedPackageSourceRepoHead({
+		env: {} as Env,
+		source: packageSource(),
+		operation: 'packageGetGitRemote',
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(lookupRejected).toBeInstanceOf(Error)
+	const lookupError = lookupRejected as Error
+	expect(isArtifactsRepoLookupTimeoutMessage(lookupError.message)).toBe(true)
+	expect(lookupError.message).not.toContain('git remote')
+	expect(lookupError.message).not.toContain('packageSave')
+	expect(lookupError.cause).toBe(timeout)
+
+	artifactsMock.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(),
+		createToken: vi.fn(),
+	})
+	artifactsMock.resolveArtifactDefaultBranchHead.mockRejectedValue(timeout)
+	const gitRejected = await assertPublishedPackageSourceRepoHead({
+		env: {} as Env,
+		source: packageSource(),
+		operation: 'packageGetGitRemote',
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(gitRejected).toBeInstanceOf(Error)
+	const gitError = gitRejected as Error
+	expect(isArtifactsGitReadTimeoutMessage(gitError.message)).toBe(true)
+	expect(gitError.message).toContain('packageSave')
+	expect(isArtifactsRepoLookupTimeoutMessage(gitError.message)).toBe(false)
+	expect(gitError.cause).toBe(timeout)
 })
 
 test('opaque Cloudflare Artifacts internals become retry messages, not source-recovery wraps', async () => {
@@ -158,6 +216,33 @@ test('opaque Cloudflare Artifacts internals become retry messages, not source-re
 		'stopped by the production package source safety policy',
 	)
 	expect(error.cause).toBe(opaque)
+
+	const nativeArtifactsError = {
+		name: 'ArtifactsError',
+		code: 'INTERNAL_ERROR',
+		message: 'An unexpected internal error occurred.',
+	}
+	artifactsMock.resolveExistingArtifactSourceRepo.mockRejectedValue(
+		nativeArtifactsError,
+	)
+	const nativeRejected = await assertPublishedPackageSourceRepoHead({
+		env: {} as Env,
+		source: packageSource(),
+		operation: 'packageGetGitRemote',
+	}).then(
+		() => null,
+		(error: unknown) => error,
+	)
+	expect(nativeRejected).toBeInstanceOf(Error)
+	const nativeError = nativeRejected as Error
+	expect(isArtifactsOpaqueInternalRetryMessage(nativeError.message)).toBe(true)
+	expect(nativeError.message).toContain(
+		'An unexpected internal error occurred.',
+	)
+	expect(nativeError.message).not.toContain(
+		'stopped by the production package source safety policy',
+	)
+	expect(nativeError.cause).toBe(nativeArtifactsError)
 
 	const wrap = buildSourceRecoveryProblemMessage({
 		source: packageSource(),

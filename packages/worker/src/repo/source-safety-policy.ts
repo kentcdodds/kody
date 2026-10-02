@@ -72,12 +72,28 @@ export function buildPublishedCommitHeadMismatchCallerMessage(
 	].join(' ')
 }
 
+/**
+ * Stable phrase for Artifacts git HEAD / listServerRefs timeouts. Distinct
+ * from repository *lookup* timeouts (`resolveExistingArtifactSourceRepo`),
+ * which never reached the git remote.
+ */
+export const artifactsGitReadTimeoutMessagePhrase =
+	'timed out reading the Artifacts git remote.'
+
+/**
+ * Stable phrase for Artifacts repository lookup timeouts
+ * (`resolveExistingArtifactSourceRepo` / binding `get` / REST). Not a git
+ * protocol failure — do not suggest packageSave as a git-remote fallback.
+ */
+export const artifactsRepoLookupTimeoutMessagePhrase =
+	'timed out looking up the Artifacts repository.'
+
 export function buildArtifactsGitReadTimeoutMessage(input: {
 	operation: string
 	reason: string
 }) {
 	const lines = [
-		`${input.operation} timed out reading the Artifacts git remote.`,
+		`${input.operation} ${artifactsGitReadTimeoutMessagePhrase}`,
 		'Retry the call.',
 	]
 	// packageSave is the authoring fallback for a hung packageGetGitRemote.
@@ -90,6 +106,31 @@ export function buildArtifactsGitReadTimeoutMessage(input: {
 	}
 	lines.push(input.reason)
 	return lines.join(' ')
+}
+
+export function buildArtifactsRepoLookupTimeoutMessage(input: {
+	operation: string
+	reason: string
+}) {
+	return [
+		`${input.operation} ${artifactsRepoLookupTimeoutMessagePhrase}`,
+		'Retry the call.',
+		input.reason,
+	].join(' ')
+}
+
+export function isArtifactsGitReadTimeoutMessage(message: string) {
+	return (
+		message.includes(artifactsGitReadTimeoutMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
+}
+
+export function isArtifactsRepoLookupTimeoutMessage(message: string) {
+	return (
+		message.includes(artifactsRepoLookupTimeoutMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
 }
 
 /**
@@ -154,13 +195,26 @@ function rethrowPublishedPackageSourceRepoArtifactsError(input: {
 	source: EntitySourceRow
 	operation: string
 	error: unknown
+	/**
+	 * `repo-lookup` is `resolveExistingArtifactSourceRepo` (binding/REST).
+	 * `git-head` is default-branch HEAD resolution (git remote / listServerRefs).
+	 * Timeout wording must stay accurate so agents do not treat a lookup stall
+	 * as a hung git remote.
+	 */
+	failure: 'repo-lookup' | 'git-head'
 }): never {
 	if (isArtifactsGitTimeoutError(input.error)) {
+		const reason = getErrorMessage(input.error)
 		throw new Error(
-			buildArtifactsGitReadTimeoutMessage({
-				operation: input.operation,
-				reason: getErrorMessage(input.error),
-			}),
+			input.failure === 'repo-lookup'
+				? buildArtifactsRepoLookupTimeoutMessage({
+						operation: input.operation,
+						reason,
+					})
+				: buildArtifactsGitReadTimeoutMessage({
+						operation: input.operation,
+						reason,
+					}),
 			{ cause: input.error },
 		)
 	}
@@ -335,6 +389,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			source: input.source,
 			operation: input.operation,
 			error,
+			failure: 'repo-lookup',
 		})
 	}
 	if (!repo) {
@@ -368,6 +423,7 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			source: input.source,
 			operation: input.operation,
 			error,
+			failure: 'git-head',
 		})
 	}
 	if (!head) {
