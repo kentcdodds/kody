@@ -16,19 +16,21 @@ import {
  * Google-style artifacts keep an external `./.__kody_virtual__/runtime.js`
  * import and already work under --local via the CapabilityProxy shim. Dropbox-
  * style inlined artifacts need this rewrite: strip the inlined virtual runtime
- * sections and bind the same shim factories the external-import path uses.
+ * / package-runtime sections and bind the same shim factories the
+ * external-import path uses. Author modules (including `.__kody_root__/`
+ * dependencies that appear before or after those sections) are preserved.
  */
 
 const virtualRuntimeMarker = '// virtual:.__kody_virtual__/runtime.js'
 const virtualPackageRuntimeMarker =
 	'// virtual:.__kody_virtual__/package-runtime/'
-const virtualRootMarker = '// virtual:.__kody_root__/'
+const virtualBannerPattern = /^\/\/ virtual:[^\n]*/gm
 
 const optionalCreateAuthenticatedFetchPattern =
 	/__kodyOptionalRuntimeFunctionExport\(\s*["']createAuthenticatedFetch["']\s*\)/
 
 const packageBoundStoragePattern =
-	/__kodyCreatePackageBoundStorage\(\s*["']([^"']+)["']\s*\)/
+	/__kodyCreatePackageBoundStorage\(\s*["']([^"']+)["']\s*\)/g
 
 export function moduleSourceHasInlinedKodyRuntime(source: string) {
 	return (
@@ -38,10 +40,10 @@ export function moduleSourceHasInlinedKodyRuntime(source: string) {
 }
 
 /**
- * When `source` inlines the virtual runtime, replace that preamble with
+ * When `source` inlines the virtual runtime, replace those sections with
  * imports/bindings from the local-execute primary runtime shim. Returns the
- * original source when no rewrite is needed or the cut point cannot be found
- * safely (CLI ALS install remains the fallback for those shapes).
+ * original source when no rewrite is needed or the runtime sections cannot be
+ * identified safely (CLI ALS install remains the fallback for those shapes).
  */
 export function rewriteInlinedLocalExecuteBundleSource(input: {
 	modulePath: string
@@ -52,12 +54,15 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		return { source: input.source, rewritten: false, packageId: null }
 	}
 
-	const cutIndex = findAuthorCodeCutIndex(input.source)
-	if (cutIndex == null) {
+	const sections = splitVirtualSections(input.source)
+	const removable = sections.filter((section) =>
+		isRemovableRuntimeSection(section.banner),
+	)
+	if (removable.length === 0) {
 		return { source: input.source, rewritten: false, packageId: null }
 	}
 
-	const preambleSource = input.source.slice(0, cutIndex)
+	const preambleSource = removable.map((section) => section.source).join('')
 	const packageId = readInlinedPackageId(preambleSource)
 	const bindingNames = readInlinedBindingNames(preambleSource)
 	const relativeShim = createRelativeImportSpecifier(
@@ -69,41 +74,76 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		packageId,
 		bindingNames,
 	})
+
+	const retained = sections
+		.filter((section) => !isRemovableRuntimeSection(section.banner))
+		.map((section) => section.source)
+		.join('')
+	const insertAt = removable[0]?.start ?? 0
+	const before = input.source.slice(0, insertAt)
+	// Prefer inserting the shim where the first removed runtime section lived
+	// so leading non-runtime author content (rare) stays ahead of the shim.
+	const leadingAuthor = before
 	return {
-		source: `${preamble}\n\n${input.source.slice(cutIndex)}`,
+		source: `${leadingAuthor}${preamble}\n\n${retained}`,
 		rewritten: true,
 		packageId,
 	}
 }
 
-function findAuthorCodeCutIndex(source: string) {
-	const rootIndex = source.indexOf(virtualRootMarker)
-	if (rootIndex !== -1) return rootIndex
-
-	// Artifacts that inline runtime but do not use the `.__kody_root__/` banner
-	// still usually keep a package-runtime virtual section. Cut at the first
-	// non-runtime virtual banner after that section, if any.
-	const packageRuntimeIndex = source.indexOf(virtualPackageRuntimeMarker)
-	if (packageRuntimeIndex === -1) return null
-	const afterPackageRuntime = source.indexOf(
-		'\n// virtual:',
-		packageRuntimeIndex + virtualPackageRuntimeMarker.length,
-	)
-	if (afterPackageRuntime === -1) return null
-	// `afterPackageRuntime` points at the newline; +1 starts at `// virtual:…`.
-	const nextBanner = source.slice(afterPackageRuntime + 1)
-	if (
-		nextBanner.startsWith(virtualRuntimeMarker) ||
-		nextBanner.startsWith(virtualPackageRuntimeMarker)
-	) {
-		return null
-	}
-	return afterPackageRuntime + 1
+type VirtualSection = {
+	banner: string | null
+	start: number
+	end: number
+	source: string
 }
 
+function splitVirtualSections(source: string): Array<VirtualSection> {
+	const matches = [...source.matchAll(virtualBannerPattern)]
+	if (matches.length === 0) {
+		return [{ banner: null, start: 0, end: source.length, source }]
+	}
+	const sections: Array<VirtualSection> = []
+	const firstIndex = matches[0]?.index ?? 0
+	if (firstIndex > 0) {
+		sections.push({
+			banner: null,
+			start: 0,
+			end: firstIndex,
+			source: source.slice(0, firstIndex),
+		})
+	}
+	for (let i = 0; i < matches.length; i += 1) {
+		const match = matches[i]
+		if (!match) continue
+		const start = match.index ?? 0
+		const end = matches[i + 1]?.index ?? source.length
+		sections.push({
+			banner: match[0] ?? null,
+			start,
+			end,
+			source: source.slice(start, end),
+		})
+	}
+	return sections
+}
+
+function isRemovableRuntimeSection(banner: string | null) {
+	if (!banner) return false
+	return (
+		banner === virtualRuntimeMarker ||
+		banner.startsWith(virtualPackageRuntimeMarker)
+	)
+}
+
+/**
+ * Prefer the last package-bound storage id in the removed preamble. Published
+ * graphs can inline dependency package-runtime facades before the root
+ * package's facade; the root (last) id is the one author entry code should use.
+ */
 function readInlinedPackageId(preambleSource: string) {
-	const match = packageBoundStoragePattern.exec(preambleSource)
-	return match?.[1] ?? null
+	const matches = [...preambleSource.matchAll(packageBoundStoragePattern)]
+	return matches.at(-1)?.[1] ?? null
 }
 
 function readAssignmentBindingName(preambleSource: string, rhsPattern: RegExp) {
@@ -111,6 +151,21 @@ function readAssignmentBindingName(preambleSource: string, rhsPattern: RegExp) {
 		`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
 	).exec(preambleSource)
 	return match?.[1] ?? null
+}
+
+function readLastAssignmentBindingName(
+	preambleSource: string,
+	rhsPattern: RegExp,
+) {
+	const matches = [
+		...preambleSource.matchAll(
+			new RegExp(
+				`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
+				'g',
+			),
+		),
+	]
+	return matches.at(-1)?.[1] ?? null
 }
 
 /**
@@ -149,11 +204,25 @@ export function readInlinedBindingNames(preambleSource: string) {
 			/__kodyCreatePackageBoundOauthClientCredentials\s*\(/,
 		) ??
 		'oauthClientCredentials'
+	const packageRuntimeDefault =
+		readLastAssignmentBindingName(
+			preambleSource,
+			/new\s+Proxy\s*\(\s*runtime_default\s*,/,
+		) ?? null
+	// Prefer the package-runtime facade freeze (last match) over the shared
+	// runtime `KodyRuntime = Object.freeze({ defaultValue: runtime_default })`.
+	const kodyRuntime =
+		readLastAssignmentBindingName(
+			preambleSource,
+			/Object\.freeze\s*\(\s*\{\s*defaultValue:\s*(?:__kodyPackageRuntimeDefault|[A-Za-z_$][\w$]*)/,
+		) ?? null
 	return {
 		packageStorage,
 		packageSecrets,
 		createAuthenticatedFetch,
 		oauthClientCredentials,
+		packageRuntimeDefault,
+		kodyRuntime,
 	}
 }
 
@@ -172,7 +241,42 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		packageSecrets,
 		createAuthenticatedFetch,
 		oauthClientCredentials,
+		packageRuntimeDefault,
+		kodyRuntime,
 	} = input.bindingNames
+
+	const facadeDefaultObject = `{
+	createAuthenticatedFetch: ${createAuthenticatedFetch},
+	oauthClientCredentials: ${oauthClientCredentials},
+	packageStorage: ${packageStorage},
+	packageSecrets: ${packageSecrets},
+	secretHeaders,
+	kody,
+	packageContext,
+	email,
+	workflows,
+	packages,
+	events,
+}`
+	const facadeLines: Array<string> = []
+	if (packageRuntimeDefault) {
+		facadeLines.push(`var ${packageRuntimeDefault} = ${facadeDefaultObject};`)
+		if (packageRuntimeDefault !== '__kodyPackageRuntimeDefault') {
+			facadeLines.push(
+				`var __kodyPackageRuntimeDefault = ${packageRuntimeDefault};`,
+			)
+		}
+	}
+	if (kodyRuntime) {
+		const defaultValueExpr = packageRuntimeDefault ?? facadeDefaultObject
+		facadeLines.push(
+			`var ${kodyRuntime} = Object.freeze({ defaultValue: ${defaultValueExpr} });`,
+		)
+		if (kodyRuntime !== 'KodyRuntime') {
+			facadeLines.push(`var KodyRuntime = ${kodyRuntime};`)
+		}
+	}
+	const facadeBlock = facadeLines.filter(Boolean).join('\n')
 
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
@@ -204,6 +308,7 @@ var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});
 var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});
 var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});
 ${aliases}
+${facadeBlock}
 `.trim()
 	}
 
@@ -232,5 +337,6 @@ ${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch)}
 ${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials)}
 ${emitCanonicalAlias('packageStorage', packageStorage)}
 ${emitCanonicalAlias('packageSecrets', packageSecrets)}
+${facadeBlock}
 `.trim()
 }

@@ -338,25 +338,77 @@ export {
 	events,
 };
 
-// Pure placeholder builders — same shape as cloud execute helpers. Ambient
-// local fetch does not expand them; pair with createAuthenticatedFetch (or a
-// future gateway-backed hop) for secret-bearing outbound calls.
-export const secretHeaders = {
-	basic(input) {
-		const usernameSecret = String(input?.usernameSecret ?? "").trim();
-		const passwordSecret = String(input?.passwordSecret ?? "").trim();
-		if (!usernameSecret || !passwordSecret) {
+// Pure placeholder builders — same shape as cloud execute helpers (including
+// {{secret:…}} opaque refs from packageSecrets.get). Ambient local fetch does
+// not expand them; pair with createAuthenticatedFetch for secret-bearing calls.
+const __kodyParseSecretNameOrPlaceholder = (value, fieldName) => {
+	const trimmed = String(value ?? "").trim();
+	if (!trimmed) {
+		throw new Error(\`secretHeaders.basic requires \${fieldName}.\`);
+	}
+	if (trimmed.startsWith("{{") && trimmed.endsWith("}}")) {
+		const match =
+			/^\\{\\{secret:([a-zA-Z0-9._-]+)(?:\\|scope=(session|package|user))?\\}}$/.exec(
+				trimmed,
+			);
+		if (!match) {
 			throw new Error(
-				"secretHeaders.basic requires usernameSecret and passwordSecret.",
+				\`\${fieldName} must be a saved secret name or a single {{secret:…}} opaque ref.\`,
 			);
 		}
-		const scope =
-			typeof input?.scope === "string" && input.scope.trim()
-				? input.scope.trim()
-				: null;
+		const scope = match[2];
+		return {
+			name: match[1],
+			scope:
+				scope === "package" || scope === "session" || scope === "user"
+					? scope
+					: null,
+		};
+	}
+	if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+		throw new Error(
+			\`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens, or a single {{secret:…}} opaque ref.\`,
+		);
+	}
+	return { name: trimmed, scope: null };
+};
+const __kodyNormalizeOptionalSecretScope = (scope) => {
+	if (scope == null) return null;
+	if (scope === "package" || scope === "session" || scope === "user") return scope;
+	throw new Error(\`Unsupported secret scope "\${scope}".\`);
+};
+const __kodyResolveBasicAuthSecretScope = (input) => {
+	const explicit = __kodyNormalizeOptionalSecretScope(input.explicitScope);
+	if (explicit != null) return explicit;
+	const usernameScope = input.usernameScope;
+	const passwordScope = input.passwordScope;
+	if (usernameScope == null) return passwordScope;
+	if (passwordScope == null) return usernameScope;
+	if (usernameScope !== passwordScope) {
+		throw new Error(
+			"usernameSecret and passwordSecret opaque refs disagree on scope. Pass scope explicitly or use matching refs.",
+		);
+	}
+	return usernameScope;
+};
+export const secretHeaders = {
+	basic(input) {
+		const username = __kodyParseSecretNameOrPlaceholder(
+			input?.usernameSecret,
+			"usernameSecret",
+		);
+		const password = __kodyParseSecretNameOrPlaceholder(
+			input?.passwordSecret,
+			"passwordSecret",
+		);
+		const scope = __kodyResolveBasicAuthSecretScope({
+			explicitScope: input?.scope,
+			usernameScope: username.scope,
+			passwordScope: password.scope,
+		});
 		return scope
-			? \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}|scope=\${scope}}}\`
-			: \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}}}\`;
+			? \`{{secret-basic:username=\${username.name},password=\${password.name}|scope=\${scope}}}\`
+			: \`{{secret-basic:username=\${username.name},password=\${password.name}}}\`;
 	},
 };
 

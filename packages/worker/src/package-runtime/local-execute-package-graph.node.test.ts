@@ -305,6 +305,37 @@ test('createLocalExecuteRuntimeShimSource exposes a fixed local host-binding inv
 	expect(shim).toContain('kody.packageSecretGet')
 })
 
+test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', () => {
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	const start = shim.indexOf('const __kodyParseSecretNameOrPlaceholder')
+	const end = shim.indexOf('// Client-credentials grants need host-side')
+	expect(start).toBeGreaterThan(-1)
+	expect(end).toBeGreaterThan(start)
+	const helpersSource = shim
+		.slice(start, end)
+		.replace('export const secretHeaders', 'const secretHeaders')
+	const secretHeaders = new Function(
+		`${helpersSource}; return secretHeaders;`,
+	)()
+	expect(
+		secretHeaders.basic({
+			usernameSecret: '{{secret:paypalClientId|scope=user}}',
+			passwordSecret: '{{secret:paypalClientSecret|scope=user}}',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+	expect(
+		secretHeaders.basic({
+			usernameSecret: 'paypalClientId',
+			passwordSecret: 'paypalClientSecret',
+			scope: 'user',
+		}),
+	).toBe(
+		'{{secret-basic:username=paypalClientId,password=paypalClientSecret|scope=user}}',
+	)
+})
+
 test('createLocalExecuteRuntimeShimSource uses a relative host import from path-like module names', () => {
 	const canonical = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	expect(canonical).toContain('"../kody:runtime"')
