@@ -603,7 +603,11 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 		}
 	}
 	const tools = modernBody.result.tools
-	expect(tools.map((tool) => tool.name).sort()).toEqual(['execute', 'search'])
+	expect(tools.map((tool) => tool.name).sort()).toEqual([
+		'api',
+		'execute',
+		'search',
+	])
 	expect(tools.find((tool) => tool.name === 'search')?.annotations).toEqual({
 		readOnlyHint: true,
 		destructiveHint: false,
@@ -611,6 +615,12 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 		openWorldHint: false,
 	})
 	expect(tools.find((tool) => tool.name === 'execute')?.annotations).toEqual({
+		readOnlyHint: false,
+		destructiveHint: true,
+		idempotentHint: false,
+		openWorldHint: true,
+	})
+	expect(tools.find((tool) => tool.name === 'api')?.annotations).toEqual({
 		readOnlyHint: false,
 		destructiveHint: true,
 		idempotentHint: false,

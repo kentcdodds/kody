@@ -25,8 +25,8 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 
 	const tools = await modern.client.listTools()
 	const toolNames = tools.tools.map((tool) => tool.name).sort()
-	expect(toolNames).toEqual(['execute', 'search'])
-	expect(tools.tools).toHaveLength(2)
+	expect(toolNames).toEqual(['api', 'execute', 'search'])
+	expect(tools.tools).toHaveLength(3)
 	const searchListed = tools.tools.find((tool) => tool.name === 'search')
 	expect(searchListed?.outputSchema).toMatchObject({ type: 'object' })
 
