@@ -7,9 +7,14 @@ import {
 	verify,
 } from 'node:crypto'
 import { expect, test, vi } from 'vitest'
+import { isMcpCallerError, McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { createMissingSecretMessage } from '#mcp/secrets/errors.ts'
+import {
+	createMissingSecretMessage,
+	createSecretScopeUnavailableMessage,
+} from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
+import * as unresolvedSecret from '#mcp/secrets/unresolved-secret.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
@@ -178,7 +183,41 @@ test('secretJwtSign resolves keys and never leaks key material', async () => {
 			},
 			ctx,
 		),
-	).rejects.toThrow(createMissingSecretMessage('missingKey'))
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			isMcpCallerError(error) &&
+			error.message === createMissingSecretMessage('missingKey'),
+	)
+
+	const scopeUnavailableMessage = createSecretScopeUnavailableMessage([
+		{
+			secretName: 'cortexReadKey',
+			scope: 'package',
+			packageId: 'pkg-cortex-read',
+			packageName: 'cortex-read',
+			sessionId: null,
+			editorUrl: null,
+		},
+	])
+	vi.spyOn(unresolvedSecret, 'createUnresolvedSecretMessage').mockResolvedValue(
+		scopeUnavailableMessage,
+	)
+	await expect(
+		jwtSignCapability.handler(
+			{
+				private_key_secret_name: 'cortexReadKey',
+				algorithm: 'RS256',
+				claims: { iss: 'service@example.com' },
+			},
+			ctx,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			isMcpCallerError(error) &&
+			error.message === scopeUnavailableMessage,
+	)
 
 	expect(() =>
 		extractSecretMaterial({

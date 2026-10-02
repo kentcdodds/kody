@@ -24,6 +24,7 @@ import {
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
@@ -468,7 +469,9 @@ export async function expandSecretPlaceholders(input: {
 				storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw new Error(
+				// Missing or scope-unavailable secrets are caller-clearable
+				// (wrong name/runtime). Keep them off Sentry via McpCallerError.
+				throw new McpCallerError(
 					await createUnresolvedSecretMessage({
 						env: input.env,
 						userId: secretUserId,

@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	executeGatewayFetch,
 	expandSecretPlaceholders,
@@ -743,8 +744,10 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 	expect(schemePrefixed.headers.get('Authorization')).toBe(expectedBasic)
 
 	mockPaypalSecrets({ paypalClientId: paypalHost })
-	await expect(expand(tokenRequest(placeholder))).rejects.toThrow(
-		'Secret "paypalClientSecret" was not found.',
+	await expect(expand(tokenRequest(placeholder))).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Secret "paypalClientSecret" was not found.',
 	)
 
 	const blockedCases: Array<[string, Record<string, Array<string>>]> = [

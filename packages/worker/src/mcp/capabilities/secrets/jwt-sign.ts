@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
@@ -118,7 +119,9 @@ export const jwtSignCapability = defineDomainCapability(
 				storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw new Error(
+				// Missing or scope-unavailable secrets are caller-clearable
+				// (wrong name/runtime). Keep them off Sentry via McpCallerError.
+				throw new McpCallerError(
 					await createUnresolvedSecretMessage({
 						env: ctx.env,
 						userId: secretUserId,
