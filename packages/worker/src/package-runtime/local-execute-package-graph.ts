@@ -11,14 +11,19 @@ import {
 	packageSourcePrefix,
 	resolveRelativeModulePath,
 	rootSourcePrefix,
+	runtimeModulePath,
 } from './module-graph-paths.ts'
 import {
 	createPackageImportProxySource,
+	createRuntimeModuleReexportSource,
 	isKodyPublicRuntimeModulePath,
 	isKodyRuntimeModulePath,
 	parsePackageRuntimeModulePathPackageId,
 } from './runtime-source-modules.ts'
 import { collectStaticKodyPackageImportsFromFiles } from './static-kody-imports.ts'
+
+/** Host module name the CLI registers in local workerd (`localWorkerModuleNames.runtime`). */
+export const localExecuteHostRuntimeModuleName = 'kody:runtime'
 
 export type LocalExecutePackageModule = {
 	name: string
@@ -90,17 +95,36 @@ export async function buildLocalExecutePackageGraph(input: {
 	}
 
 	const modulesByName = new Map<string, string>()
+	const runtimeModulePaths: Array<string> = []
 	for (const [modulePath, source] of Object.entries(prepared.files)) {
 		const normalized = normalizeWorkspaceModulePath(modulePath)
 		if (shouldOmitPreparedModule(normalized)) continue
+		if (isKodyRuntimeModulePath(normalized)) {
+			runtimeModulePaths.push(normalized)
+			continue
+		}
 		const packageRuntimeId = parsePackageRuntimeModulePathPackageId(normalized)
 		modulesByName.set(
 			normalized,
-			isKodyRuntimeModulePath(normalized)
-				? createLocalExecuteRuntimeShimSource()
-				: packageRuntimeId != null
-					? createLocalExecutePackageRuntimeModuleSource(packageRuntimeId)
-					: source,
+			packageRuntimeId != null
+				? createLocalExecutePackageRuntimeModuleSource(packageRuntimeId)
+				: source,
+		)
+	}
+
+	// workerd path-joins bare `kody:runtime` from path-like module names
+	// (`.__kody_virtual__/…`, `.__published_bundle__/…`). Put the CapabilityProxy
+	// shim once at the primary runtime path with a relative import to the host
+	// `kody:runtime` module; nested published-bundle copies re-export that root
+	// (same shape as cloud stamp hydration).
+	const primaryRuntimePath =
+		pickLocalExecutePrimaryRuntimePath(runtimeModulePaths)
+	for (const modulePath of runtimeModulePaths) {
+		modulesByName.set(
+			modulePath,
+			modulePath === primaryRuntimePath
+				? createLocalExecuteRuntimeShimSource(modulePath)
+				: createRuntimeModuleReexportSource(modulePath, primaryRuntimePath),
 		)
 	}
 
@@ -263,8 +287,20 @@ function mapPrepareFailure(
  * packageStorage / packageSecrets / createAuthenticatedFetch through
  * CapabilityProxy hops so long-lived OAuth tokens never enter local workerd
  * (kody#2810).
+ *
+ * `modulePath` must be the workerd module name this source is registered under.
+ * The host import uses a relative specifier so workerd resolves it to the
+ * exact `kody:runtime` module name — bare `"kody:runtime"` from a path-like
+ * module (`.__kody_virtual__/runtime.js` or a nested published-bundle copy)
+ * path-joins to `…/.__kody_virtual__/kody:runtime` and fails.
  */
-export function createLocalExecuteRuntimeShimSource() {
+export function createLocalExecuteRuntimeShimSource(
+	modulePath: string = runtimeModulePath,
+) {
+	const hostRuntimeSpecifier = createRelativeImportSpecifier(
+		normalizeWorkspaceModulePath(modulePath),
+		localExecuteHostRuntimeModuleName,
+	)
 	return `
 import {
 	kody,
@@ -276,7 +312,7 @@ import {
 	packages,
 	events,
 	default as __kodyHostRuntimeDefault,
-} from "kody:runtime";
+} from ${JSON.stringify(hostRuntimeSpecifier)};
 
 export {
 	kody,
@@ -553,4 +589,23 @@ const __kodyPackageRuntimeDefault = new Proxy(
 export default __kodyPackageRuntimeDefault;
 export const KodyRuntime = Object.freeze({ defaultValue: __kodyPackageRuntimeDefault });
 `.trim()
+}
+
+/**
+ * Prefer the graph-canonical `.__kody_virtual__/runtime.js` when present so
+ * nested published-bundle copies re-export one shim (and one relative hop to
+ * host `kody:runtime`). Artifact-only graphs fall back to the shortest path.
+ */
+export function pickLocalExecutePrimaryRuntimePath(
+	paths: ReadonlyArray<string>,
+) {
+	const normalized = [
+		...new Set(paths.map((path) => normalizeWorkspaceModulePath(path))),
+	]
+	if (normalized.length === 0) return runtimeModulePath
+	if (normalized.includes(runtimeModulePath)) return runtimeModulePath
+	normalized.sort(
+		(left, right) => left.length - right.length || left.localeCompare(right),
+	)
+	return normalized[0] ?? runtimeModulePath
 }

@@ -7,8 +7,17 @@ import {
 import {
 	buildLocalExecutePackageGraph,
 	createLocalExecutePackageRuntimeModuleSource,
+	createLocalExecuteRuntimeShimSource,
+	localExecuteHostRuntimeModuleName,
+	pickLocalExecutePrimaryRuntimePath,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
+import {
+	createRelativeImportSpecifier,
+	normalizeWorkspaceModulePath,
+	resolveRelativeModulePath,
+	runtimeModulePath,
+} from './module-graph-paths.ts'
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
@@ -168,14 +177,13 @@ export default async function main(params) { return greet(params.name) }`
 			(module) => module.name === '.__kody_virtual__/runtime.js',
 		),
 	).toBe(true)
-	expect(
-		graph.modules.find(
-			(module) => module.name === '.__kody_virtual__/runtime.js',
-		)?.esModule,
-	).toContain('kody:runtime')
 	const runtimeShim = graph.modules.find(
 		(module) => module.name === '.__kody_virtual__/runtime.js',
 	)?.esModule
+	expect(runtimeShim).toContain(localExecuteHostRuntimeModuleName)
+	// Bare "kody:runtime" path-joins under .__kody_virtual__/ in local workerd.
+	expect(runtimeShim).toContain('"../kody:runtime"')
+	expect(runtimeShim).not.toMatch(/from ["']kody:runtime["']/)
 	expect(runtimeShim).toContain('createAuthenticatedFetch')
 	expect(runtimeShim).toContain('kody.authenticatedFetch')
 	expect(runtimeShim).toContain('bodyBase64')
@@ -196,6 +204,98 @@ export default async function main(params) { return greet(params.name) }`
 	expect(
 		graph.modules.some((module) => module.name.startsWith('.__kody_root__/')),
 	).toBe(false)
+})
+
+test('createLocalExecuteRuntimeShimSource uses a relative host import from path-like module names', () => {
+	const canonical = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	expect(canonical).toContain('"../kody:runtime"')
+	expect(canonical).not.toMatch(/from ["']kody:runtime["']/)
+
+	const nestedPath =
+		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e2f676d61696c/.__kody_virtual__/runtime.js'
+	const nested = createLocalExecuteRuntimeShimSource(nestedPath)
+	const relativeHost = createRelativeImportSpecifier(
+		nestedPath,
+		localExecuteHostRuntimeModuleName,
+	)
+	expect(relativeHost.startsWith('../')).toBe(true)
+	expect(nested).toContain(JSON.stringify(relativeHost))
+	expect(nested).not.toMatch(/from ["']kody:runtime["']/)
+	expect(resolveRelativeModulePath(nestedPath, relativeHost)).toBe(
+		localExecuteHostRuntimeModuleName,
+	)
+})
+
+test('pickLocalExecutePrimaryRuntimePath prefers the canonical runtime root', () => {
+	const nested =
+		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+	expect(pickLocalExecutePrimaryRuntimePath([nested, runtimeModulePath])).toBe(
+		runtimeModulePath,
+	)
+	expect(pickLocalExecutePrimaryRuntimePath([nested])).toBe(
+		normalizeWorkspaceModulePath(nested),
+	)
+	expect(pickLocalExecutePrimaryRuntimePath([])).toBe(runtimeModulePath)
+})
+
+test('buildLocalExecutePackageGraph re-exports nested published-bundle runtime.js to the primary shim', async () => {
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		makeLoadedSource({
+			exports: { './gmail': './src/gmail.ts' },
+			files: {
+				'src/gmail.ts': `import { createAuthenticatedFetch } from 'kody:runtime'\nexport async function searchMessages() { return typeof createAuthenticatedFetch }`,
+			},
+		}),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		makeArtifactHit({
+			artifactName: './gmail',
+			entryPoint: 'src/gmail.ts',
+			mainModule: 'dist/gmail.js',
+			modules: {
+				'dist/gmail.js': `import { createAuthenticatedFetch } from './.__kody_virtual__/runtime.js'\nexport async function searchMessages() { return typeof createAuthenticatedFetch }`,
+				'.__kody_virtual__/runtime.js':
+					'export function createAuthenticatedFetch() { throw new Error("stale") }',
+			},
+		}),
+	)
+
+	const code = `import { searchMessages } from 'kody:@kentcdodds/example-package/gmail'
+export default async function main() {
+	return { ok: true, kind: typeof searchMessages }
+}`
+	const graph = await buildLocalExecutePackageGraph({ ...graphInput, code })
+
+	const primary = graph.modules.find(
+		(module) => module.name === runtimeModulePath,
+	)
+	expect(primary?.esModule).toContain('"../kody:runtime"')
+	expect(primary?.esModule).not.toMatch(/from ["']kody:runtime["']/)
+
+	const nested = graph.modules.find(
+		(module) =>
+			module.name.includes('/.__published_bundle__/') &&
+			module.name.endsWith('/.__kody_virtual__/runtime.js'),
+	)
+	expect(nested).toBeDefined()
+	expect(nested?.name).toContain('/2e2f676d61696c/')
+	expect(nested?.esModule).toMatch(/export \* from ["']\.\.\/\.\.\//)
+	expect(nested?.esModule).not.toMatch(/from ["']kody:runtime["']/)
+	expect(nested?.esModule).not.toContain('__kodyCreateAuthenticatedFetch')
+	const reexportMatch =
+		/export \* from ("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(
+			nested?.esModule ?? '',
+		)
+	expect(reexportMatch?.[1]).toBeDefined()
+	const reexportSpecifier = JSON.parse(
+		reexportMatch![1]!.startsWith("'")
+			? `"${reexportMatch![1]!.slice(1, -1).replaceAll('"', '\\"')}"`
+			: reexportMatch![1]!,
+	) as string
+	expect(resolveRelativeModulePath(nested!.name, reexportSpecifier)).toBe(
+		runtimeModulePath,
+	)
 })
 
 test('buildLocalExecutePackageGraph rejects literal dynamic kody:@ imports', async () => {

@@ -186,7 +186,11 @@ returns published, stamped importable-module artifacts for embedding — it does
   `integrationTokenRefresh` on auth failure), then returns
   `{ status, statusText, headers, bodyBase64 }`. Bodies over 4 MiB are rejected.
   The package-graph runtime shim implements local `createAuthenticatedFetch` by
-  hopping here so OAuth access tokens never enter workerd.
+  hopping here so OAuth access tokens never enter workerd. Nested
+  `…/.__published_bundle__/…/.__kody_virtual__/runtime.js` modules re-export the
+  primary shim; the primary imports host `kody:runtime` with a relative
+  specifier (`../kody:runtime`) because workerd path-joins bare `kody:runtime`
+  under path-like module names.
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
   `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
   `__kodySecretAuthorityPackageId`). Each hop authorizes the stamped package id
