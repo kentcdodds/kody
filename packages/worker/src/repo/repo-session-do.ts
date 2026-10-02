@@ -3202,6 +3202,14 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const runId = crypto.randomUUID()
 		const publishDir = publishClone.dir || externalPublishWorkspaceDir
+		// Binary-safe snapshot for a new publish. Checks still walk the workspace
+		// via UTF-8 readFile for validation; that map must not feed KV or
+		// /_assets would serve U+FFFD for PNG magic. already_published refresh
+		// stays best-effort below and collects only when needed.
+		const alreadyAtCommit = source.published_commit === input.newCommit
+		const snapshotFiles = alreadyAtCommit
+			? undefined
+			: await publishClone.collectFiles()
 		const publishResult = await publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
@@ -3216,6 +3224,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			allowForce: input.allowForce,
 			destructiveOverwriteConfirmed: input.destructiveOverwriteConfirmed,
 			workspace: publishClone.workspace,
+			...(snapshotFiles !== undefined ? { files: snapshotFiles } : {}),
 			baseUrl: input.baseUrl ?? source.source_root,
 			manifestPath: resolveRepoWorkspacePath(source.manifest_path, publishDir),
 			sourceRoot: resolveRepoWorkspacePath(
@@ -3241,7 +3250,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					publishResult.published_commit &&
 					hasPublishedRuntimeArtifacts(this.env)
 				) {
-					const files = await publishClone.collectFiles()
+					const files = snapshotFiles ?? (await publishClone.collectFiles())
 					if (typeof files[source.manifest_path] === 'string') {
 						const existingSnapshot = await loadPublishedSourceSnapshot({
 							env: this.env,

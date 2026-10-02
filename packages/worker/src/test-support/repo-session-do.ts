@@ -42,7 +42,10 @@ export function createExternalClone(headCommit: string) {
 			symlink: vi.fn(async () => undefined),
 		},
 		isAncestorCommit: vi.fn(async () => true),
-		collectFiles: vi.fn(async () => ({})),
+		collectFiles: vi.fn(async () => ({
+			'package.json': '{"name":"@kody/demo"}',
+			'index.ts': 'export const ready = true\n',
+		})),
 	}
 }
 
