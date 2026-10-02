@@ -62,7 +62,7 @@ export const apiTokenScopeDescriptions: Record<ApiTokenScope, string> = {
 	) as Record<ApiTokenResourceScope, string>),
 	'search:read': 'Run unified Kody search.',
 	[localExecuteScope]:
-		'Use the CapabilityProxy from a local execute venue (requires a token or CLI OAuth bearer with this scope).',
+		'Use the CapabilityProxy from a local execute venue (API tokens need this scope; CLI `kody login` OAuth is a separate credential).',
 }
 
 export const apiTokenScopes = Object.keys(

@@ -61,8 +61,8 @@ npx @kodycodes/cli login   # once per machine
 npx @kodycodes/cli execute --local --code '…'
 ```
 
-CapabilityProxy and package-graph accept that OAuth Bearer when the caller has
-the `local-execute` scope (ADR 0055).
+CapabilityProxy and package-graph accept that OAuth Bearer (ADR 0055). API
+tokens still need the `local-execute` scope; CLI login OAuth does not.
 
 ## CLI credential priority
 

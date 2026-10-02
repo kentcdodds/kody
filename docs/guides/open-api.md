@@ -124,7 +124,7 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 **Preferred for interactive humans:** `kody login`, then run with no
 `KODY_API_TOKEN`. The CLI sends the stored MCP OAuth access token as Bearer to
-CapabilityProxy and package-graph (same `local-execute` scope).
+CapabilityProxy and package-graph (ADR 0055; not an API-token scope).
 
 ```bash
 npx @kodycodes/cli login   # once
