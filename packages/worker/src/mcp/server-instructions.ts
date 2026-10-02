@@ -5,15 +5,24 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
  * truncate the head (often ~2048 characters) still see how to use search /
  * execute. No prefer-over-host wording — package lifecycle and host-vs-Kody
  * guidance belong in skills / guides, not this stub.
+ *
+ * Copy is Kent-locked; change only with an explicit server-instructions update.
  */
-export const baseMcpServerInstructions = `Kody is each signed-in user's isolated personal assistant (packages, jobs, secrets, memories, connectors, email, storage), exposed as MCP \`search\` and \`execute\`.
+export const baseMcpServerInstructions = `Kody is the user's personal software platform of primitives including:
 
-Start with \`search({ query })\`; open entity detail, then call. For one-off work when Node ≥22 and the CLI are available, see \`search({ entity: "guide:open_api" })\` for \`@kodycodes/cli execute --local\`; otherwise use Open API or MCP \`api\`. Docs: https://kody.codes/docs.
+- memory
+- secrets
+- packages (repositories of published code which you as the agent can use and compose together)
+- integrations
+- triggers
+- apps
 
-Keep secrets server-side. Verify memory writes with \`metaMemoryVerify\` before upsert/delete.`
+With these primitives you can do a wide variety of things. When the user asks you to do something, start by calling the \`search\` tool, then use \`execute\` to write code and have it evaluated in an isolated environment in the cloud in Kody.
+
+If you have access to a computer with Node v22+, you can use Kody more efficiently and cheaply using the CLI. This is the preferred interaction layer. Learn more with \`search({ entity: "guide:local_execute" })\`.`
 
 /** Soft budget for the always-on stub (excluding user overlay). */
-export const maxBaseMcpServerInstructionsChars = 600
+export const maxBaseMcpServerInstructionsChars = 800
 
 const userMcpServerInstructionOverlayHeader = `---
 User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`

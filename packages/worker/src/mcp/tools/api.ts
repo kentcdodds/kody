@@ -36,7 +36,7 @@ export const apiToolDescription = [
 	'',
 	'Use `execute` instead when you need to compose several calls, transform results, or fetch external URLs.',
 	'',
-	"Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available. Agents already on this MCP session: call `cliCredentialBootstrap` (returns a one-shot `kody_bc_…` code + `cli_command`, never a `kody_at_…`), run that CLI command, then `npx @kodycodes/cli execute --local --code '…'` — no second interactive OAuth and no `tokenCreate`. Interactive humans: `kody login` then `--local`. Mint `tokenCreate` only for CI/headless without an MCP session (set `KODY_API_TOKEN` in the environment, never paste into chat). If `--local` cannot run, use Open API / MCP `api` or fix the environment. See https://kody.codes/docs/open-api.",
+	"Prefer local CLI execute when Node ≥22 and `@kodycodes/cli` are available. Agents already on this MCP session: call `cliCredentialBootstrap` (returns a one-shot `kody_bc_…` code + `cli_command`, never a `kody_at_…`), run that CLI command, then `npx @kodycodes/cli execute --local --code '…'` — no second interactive OAuth and no `tokenCreate`. Interactive humans: `kody login` then `--local`. Mint `tokenCreate` only for CI/headless without an MCP session (set `KODY_API_TOKEN` in the environment, never paste into chat). If `--local` cannot run, use Open API / MCP `api` or fix the environment. See https://kody.codes/docs/local-execute and https://kody.codes/docs/open-api.",
 ].join('\n')
 
 export const apiToolAnnotations = {

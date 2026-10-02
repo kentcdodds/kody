@@ -16,9 +16,11 @@ For one-off modules, authenticated smoke tests, and composition, prefer the
 local CLI when **Node ≥22** and `@kodycodes/cli` are available. Do **not** use
 hosted MCP `execute`.
 
-Canonical guide: [Open API and local execute](https://kody.codes/docs/open-api)
-(`search({ entity: "guide:open_api" })` or
-[docs/guides/open-api.md](../../../docs/guides/open-api.md)).
+Canonical guide: [Local CLI execute](https://kody.codes/docs/local-execute)
+(`search({ entity: "guide:local_execute" })` or
+[docs/guides/local-execute.md](../../../docs/guides/local-execute.md)). Open API
+fallback: [Open API and local execute](https://kody.codes/docs/open-api)
+(`guide:open_api`).
 
 ## Agents already on MCP: bootstrap (no second OAuth)
 
