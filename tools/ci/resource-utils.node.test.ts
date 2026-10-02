@@ -141,6 +141,12 @@ test('Wrangler / Cloudflare output and error classifiers', () => {
 		],
 		[isR2BucketNotEmptyOutput, 'Authentication error [code: 10000]', false],
 		[isRetryableCloudflareFailure, 'Gateway Timeout [code: 504]', true],
+		[isRetryableCloudflareFailure, '✘ [ERROR] fetch failed', true],
+		[
+			isRetryableCloudflareFailure,
+			'▲ [WARNING] A fetch request failed, likely due to a connectivity issue.\n✘ [ERROR] fetch failed',
+			true,
+		],
 		[
 			isRetryableCloudflareFailure,
 			'This Worker does not exist on your account [code: 10007]',

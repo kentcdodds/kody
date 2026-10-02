@@ -24,7 +24,12 @@ import {
 	writeRuntimeDryRunConfig,
 } from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
-import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
+import {
+	isWranglerD1MigrationsApply,
+	runWranglerDeployWithRetry,
+	wranglerD1MigrationsRetryBaseDelayMs,
+	wranglerD1MigrationsRetryMaxAttempts,
+} from './tools/wrangler-deploy-retry.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -288,6 +293,19 @@ if (args[0] === 'deploy') {
 		env: processEnv,
 	})
 	process.exitCode = deployResult.status
+} else if (isWranglerD1MigrationsApply(args)) {
+	// Production `d1 migrations apply` talks to the Cloudflare API before
+	// any worker upload. A one-shot Wrangler "fetch failed" connectivity
+	// flake failed AUDIT_DB after APP_DB succeeded (main 2026-10-02).
+	// Apply is idempotent, so reuse the deploy retry helper.
+	const migrateResult = await runWranglerDeployWithRetry({
+		command: wranglerCommand,
+		args: commandArgs,
+		env: processEnv,
+		maxAttempts: wranglerD1MigrationsRetryMaxAttempts,
+		baseDelayMs: wranglerD1MigrationsRetryBaseDelayMs,
+	})
+	process.exitCode = migrateResult.status
 } else {
 	await runAttachedWranglerProcess()
 }
