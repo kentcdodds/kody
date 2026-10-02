@@ -2,7 +2,14 @@
  * Hourly credit debit lane. Runs right after `usage_aggregation` recomputes
  * `usage_rollups`, so debits only ever read a freshly recomputed month.
  *
- * For every wallet, per UTC month (the prior month while its rollup still
+ * Candidates are every `credit_wallets` row plus every active gift/referral
+ * overlay period that still lacks a wallet row. A missing wallet reads as
+ * zero balance and is backfilled (INSERT OR IGNORE) before settle, so the
+ * debit walk never skips an overlay period and later funded debits still
+ * see the row. Non-charging settle advances progress against at least the
+ * purchasable Pro baseline (#2642).
+ *
+ * For every candidate, per UTC month (the prior month while its rollup still
  * settles, and the current month) and per debit meter:
  *
  * - billable units = usage above the include for the account's current
@@ -87,7 +94,11 @@ export async function runCreditDebits(input: {
 	let failed = 0
 	let done = false
 	for (let batch = 0; batch < creditDebitMaxBatchesPerRun; batch += 1) {
-		const rows = await listCreditDebitCandidates({ db, startAfter })
+		const rows = await listCreditDebitCandidates({
+			db,
+			startAfter,
+			now: input.now,
+		})
 		for (const row of rows) {
 			try {
 				const outcome = await debitOneWallet({
@@ -149,24 +160,61 @@ async function writeCreditDebitCursor(input: {
 		.run()
 }
 
-async function listCreditDebitCandidates(input: {
+/**
+ * Wallet holders plus active gift/referral overlay periods. Overlay users
+ * without a `credit_wallets` row still appear (balance coalesced to 0) so
+ * non-charging settle can leave a high-water mark before a later funded
+ * return. Exported for tests.
+ */
+export async function listCreditDebitCandidates(input: {
 	db: D1Database
 	startAfter: string
+	now: Date
 }): Promise<Array<CreditDebitCandidateRow>> {
+	const nowIso = input.now.toISOString()
 	const rows = await input.db
 		.prepare(
-			`SELECT w.user_id, w.balance_micro_usd, w.auto_refill_enabled,
-				w.notify_low_balance, u.email, u.stripe_customer_id,
+			`SELECT u.stable_user_id AS user_id,
+				COALESCE(w.balance_micro_usd, 0) AS balance_micro_usd,
+				COALESCE(w.auto_refill_enabled, 0) AS auto_refill_enabled,
+				COALESCE(w.notify_low_balance, 1) AS notify_low_balance,
+				u.email, u.stripe_customer_id,
 				${userEntitlementColumnsSql('u')}
-			 FROM credit_wallets w
-			 INNER JOIN users u ON u.stable_user_id = w.user_id
-			 WHERE u.deleting_at IS NULL AND w.user_id > ?
-			 ORDER BY w.user_id
+			 FROM users u
+			 LEFT JOIN credit_wallets w ON w.user_id = u.stable_user_id
+			 WHERE u.deleting_at IS NULL
+			   AND u.stable_user_id > ?
+			   AND (
+				w.user_id IS NOT NULL
+				OR u.second_agent_standard_gift_expires_at > ?
+				OR u.referral_standard_credit_expires_at > ?
+			   )
+			 ORDER BY u.stable_user_id
 			 LIMIT ?`,
 		)
-		.bind(input.startAfter, creditDebitBatchSize)
+		.bind(input.startAfter, nowIso, nowIso, creditDebitBatchSize)
 		.all<CreditDebitCandidateRow>()
 	return rows.results ?? []
+}
+
+/**
+ * Ensure a zero-balance wallet row exists for this user. Overlay periods
+ * that never bought credits still need the row so later debit scans and
+ * funded settles see them. Does not forgive usage — settle owns progress.
+ */
+export async function backfillCreditWalletRow(input: {
+	db: D1Database
+	userId: string
+	now: Date
+}): Promise<void> {
+	const nowIso = input.now.toISOString()
+	await input.db
+		.prepare(
+			`INSERT OR IGNORE INTO credit_wallets (user_id, created_at, updated_at)
+			 VALUES (?, ?, ?)`,
+		)
+		.bind(input.userId, nowIso, nowIso)
+		.run()
 }
 
 async function debitOneWallet(input: {
@@ -177,6 +225,7 @@ async function debitOneWallet(input: {
 }): Promise<{ debitedMicroUsd: number; autoRefilled: boolean }> {
 	const db = input.env.APP_DB
 	const userId = input.row.user_id
+	await backfillCreditWalletRow({ db, userId, now: input.now })
 	const entitlement = await resolveUserEntitlementFromRow({
 		db,
 		stableUserId: userId,

@@ -522,6 +522,55 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 	expect(await balance(userId)).toBe(afterPaid)
 })
 
+test('gift overlay with no prior wallet row is not skipped by debit and is not back-charged', async () => {
+	const user = await seedUser({ label: 'credits-gift-nowallet' })
+	const userId = user.stableUserId
+	await setReferralOverlay(userId)
+	expect(await entitlementFor(user)).toEqual({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT 1 AS present FROM credit_wallets WHERE user_id = ?`,
+		)
+			.bind(userId)
+			.first(),
+	).toBeNull()
+
+	// Accrue past the purchasable Pro include while walletless.
+	await setRollup(userId, 600)
+	await debit()
+
+	// Debit backfills a zero-balance row and advances non-charging progress
+	// (600 − 350 = 250 UWD) so a later funded return cannot back-charge.
+	expect(await balance(userId)).toBe(0)
+	const progress = await env.APP_DB.prepare(
+		`SELECT accounted_units FROM credit_debit_progress
+		 WHERE user_id = ? AND month = ? AND meter = 'unique_worker_days'`,
+	)
+		.bind(userId, month)
+		.first<{ accounted_units: number }>()
+	expect(Number(progress?.accounted_units)).toBe(250)
+
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET stripe_plan = 'pro', stripe_credits_eligible = 1,
+		     referral_standard_credit_expires_at = NULL
+		 WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.run()
+	await topUp(userId, 1_000)
+	expect(await entitlementFor(user)).toMatchObject({
+		plan: 'pro',
+		creditWallet: 'funded',
+	})
+	await debit()
+	expect(await balance(userId)).toBe(10_000_000)
+})
+
 test('a replayed top-up credits once', async () => {
 	const user = await seedPro('credits-replay')
 	expect(await topUp(user.stableUserId, 2_500, 'cs_replay')).toEqual({

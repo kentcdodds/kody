@@ -272,23 +272,28 @@ rates.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
-`usage_rollups`, for the prior and current UTC month. Per wallet and debit meter
-(`creditDebitMeters`, open TEXT in D1 so CPU can join), billable units are usage
-above the include; `credit_debit_progress` records units already handled. A
-funded wallet is charged
-`creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
+`usage_rollups`, for the prior and current UTC month. Candidates are every
+`credit_wallets` row plus every active gift/referral overlay period that still
+lacks a wallet row: a missing wallet reads as zero balance and is backfilled
+(`INSERT OR IGNORE`) before settle so the walk never skips an overlay period
+(#2642). Per candidate and debit meter (`creditDebitMeters`, open TEXT in D1 so
+CPU can join), billable units are usage above the include;
+`credit_debit_progress` records units already handled. A funded wallet is
+charged `creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
 ($0.004 per unique worker day, $0.002 per million rows read, about 2× Cloudflare
-list). Every other wallet advances progress without a charge, so a later top-up
-never back-charges. The balance can dip below $0 by about an hour of usage past
-the include; past-include usage stays stopped until a top-up covers it. Debit
-ledger ids are deterministic per starting position, so an overlapping run rolls
-back instead of charging twice. A new wallet, and a top-up or admin grant that
-funds an empty wallet, advance progress to the billable units already in the
-rollups for both months the lane settles (prior and current), so credits never
-pay for usage from while the wallet was empty. The sweep is bounded per run;
-`credit_debit_cursor` keeps its keyset position so later runs reach every
-wallet. CPU, Durable Object duration, RunLog rows, and email are not debited.
-Nobody is invoiced for overage. There is no overage-invoice ledger.
+list). Every other wallet advances progress without a charge (against at least
+the purchasable Pro baseline when `creditWallet` is `none`), so a later top-up
+or resubscribe never back-charges. The balance can dip below $0 by about an hour
+of usage past the include; past-include usage stays stopped until a top-up
+covers it. Debit ledger ids are deterministic per starting position, so an
+overlapping run rolls back instead of charging twice. A new wallet, and a top-up
+or admin grant that funds an empty wallet, advance progress to the billable
+units already in the rollups for both months the lane settles (prior and
+current), so credits never pay for usage from while the wallet was empty. The
+sweep is bounded per run; `credit_debit_cursor` keeps its keyset position so
+later runs reach every candidate. CPU, Durable Object duration, RunLog rows, and
+email are not debited. Nobody is invoiced for overage. There is no
+overage-invoice ledger.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
