@@ -269,6 +269,14 @@ async function buildStampContent(
 		),
 		'utf8',
 	)
+	// Bundled into local-execute-runtime-support.mjs via rewrite →
+	// `#worker/module-source.ts` (`parseModuleSource`). Hash it so parser-only
+	// edits regenerate the deferred module (node tests alias the TS source and
+	// would otherwise stay green against a stale .mjs).
+	const localExecuteModuleSource = await readFile(
+		path.join(repoRoot, 'packages/worker/src/module-source.ts'),
+		'utf8',
+	)
 	const esbuildVersion = (
 		JSON.parse(
 			await readFile(
@@ -289,6 +297,7 @@ async function buildStampContent(
 		.update(generatorSource)
 		.update(localExecuteRuntimeSupportSource)
 		.update(localExecuteRewriteSource)
+		.update(localExecuteModuleSource)
 		.update(
 			await readFile(
 				path.join(
