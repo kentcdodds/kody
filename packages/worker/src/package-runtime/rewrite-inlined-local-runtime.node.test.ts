@@ -188,6 +188,34 @@ export default async function main() { return 1 }
 	).toHaveLength(1)
 })
 
+test('rewrite skips canonical aliases that collide with author bindings', () => {
+	const source = `// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/entry.ts
+function packageStorage() { return "author"; }
+export async function main() {
+  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
+	expect(result.source).toContain('function packageStorage()')
+	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+})
+
 test('rewriteInlinedLocalExecuteBundleSource leaves external-import bundles alone', () => {
 	const source = `import { createAuthenticatedFetch } from "./.__kody_virtual__/runtime.js"
 export async function searchMessages() { return typeof createAuthenticatedFetch }`

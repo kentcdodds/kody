@@ -63,6 +63,10 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 	}
 
 	const preambleSource = removable.map((section) => section.source).join('')
+	const retained = sections
+		.filter((section) => !isRemovableRuntimeSection(section.banner))
+		.map((section) => section.source)
+		.join('')
 	const packageId = readInlinedPackageId(preambleSource)
 	const bindingNames = readInlinedBindingNames(preambleSource)
 	const relativeShim = createRelativeImportSpecifier(
@@ -73,12 +77,9 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		relativeShimSpecifier: relativeShim,
 		packageId,
 		bindingNames,
+		retainedAuthorSource: retained,
 	})
 
-	const retained = sections
-		.filter((section) => !isRemovableRuntimeSection(section.banner))
-		.map((section) => section.source)
-		.join('')
 	const insertAt = removable[0]?.start ?? 0
 	const before = input.source.slice(0, insertAt)
 	// Prefer inserting the shim where the first removed runtime section lived
@@ -226,14 +227,32 @@ export function readInlinedBindingNames(preambleSource: string) {
 	}
 }
 
-function emitCanonicalAlias(canonical: string, actual: string) {
-	return actual === canonical ? '' : `var ${canonical} = ${actual};`
+function authorSourceDeclaresBinding(source: string, name: string) {
+	return new RegExp(
+		`(?:(?:var|let|const|function|class)\\s+|export\\s+(?:async\\s+)?function\\s+)${name}\\b`,
+	).test(source)
+}
+
+function emitCanonicalAlias(
+	canonical: string,
+	actual: string,
+	retainedAuthorSource: string,
+) {
+	if (actual === canonical) return ''
+	// Author code may already bind the canonical name (e.g. a local helper
+	// named `packageStorage`). Emitting `var packageStorage = packageStorage2`
+	// would then SyntaxError or shadow incorrectly — skip the alias.
+	if (authorSourceDeclaresBinding(retainedAuthorSource, canonical)) {
+		return ''
+	}
+	return `var ${canonical} = ${actual};`
 }
 
 function createInlinedRuntimeReplacementPreamble(input: {
 	relativeShimSpecifier: string
 	packageId: string | null
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
+	retainedAuthorSource: string
 }) {
 	const shim = JSON.stringify(input.relativeShimSpecifier)
 	const {
@@ -272,7 +291,10 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		facadeLines.push(
 			`var ${kodyRuntime} = Object.freeze({ defaultValue: ${defaultValueExpr} });`,
 		)
-		if (kodyRuntime !== 'KodyRuntime') {
+		if (
+			kodyRuntime !== 'KodyRuntime' &&
+			!authorSourceDeclaresBinding(input.retainedAuthorSource, 'KodyRuntime')
+		) {
 			facadeLines.push(`var KodyRuntime = ${kodyRuntime};`)
 		}
 	}
@@ -281,10 +303,26 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
 		const aliases = [
-			emitCanonicalAlias('packageStorage', packageStorage),
-			emitCanonicalAlias('packageSecrets', packageSecrets),
-			emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch),
-			emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials),
+			emitCanonicalAlias(
+				'packageStorage',
+				packageStorage,
+				input.retainedAuthorSource,
+			),
+			emitCanonicalAlias(
+				'packageSecrets',
+				packageSecrets,
+				input.retainedAuthorSource,
+			),
+			emitCanonicalAlias(
+				'createAuthenticatedFetch',
+				createAuthenticatedFetch,
+				input.retainedAuthorSource,
+			),
+			emitCanonicalAlias(
+				'oauthClientCredentials',
+				oauthClientCredentials,
+				input.retainedAuthorSource,
+			),
 		]
 			.filter(Boolean)
 			.join('\n')
@@ -333,10 +371,10 @@ var ${createAuthenticatedFetch} = __kodyShimCreateAuthenticatedFetch;
 var ${oauthClientCredentials} = __kodyShimOauthClientCredentials;
 var ${packageStorage} = __kodyShimPackageStorage;
 var ${packageSecrets} = __kodyShimPackageSecrets;
-${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch)}
-${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials)}
-${emitCanonicalAlias('packageStorage', packageStorage)}
-${emitCanonicalAlias('packageSecrets', packageSecrets)}
+${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch, input.retainedAuthorSource)}
+${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials, input.retainedAuthorSource)}
+${emitCanonicalAlias('packageStorage', packageStorage, input.retainedAuthorSource)}
+${emitCanonicalAlias('packageSecrets', packageSecrets, input.retainedAuthorSource)}
 ${facadeBlock}
 `.trim()
 }
