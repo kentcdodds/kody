@@ -30,9 +30,6 @@ const virtualBannerPattern = /^\/\/ virtual:[^\n]*/gm
 const optionalCreateAuthenticatedFetchPattern =
 	/__kodyOptionalRuntimeFunctionExport\(\s*["']createAuthenticatedFetch["']\s*\)/
 
-const packageBoundStoragePattern =
-	/__kodyCreatePackageBoundStorage\(\s*["']([^"']+)["']\s*\)/g
-
 export function moduleSourceHasInlinedKodyRuntime(source: string) {
 	return (
 		source.includes(virtualRuntimeMarker) ||
@@ -74,7 +71,13 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		// than emit aliases that might collide with undetectable bindings.
 		return { source: input.source, rewritten: false, packageId: null }
 	}
-	const packageId = readInlinedPackageId(preambleSource)
+	const packageBoundBindings = readPackageBoundBindings(preambleSource)
+	const packageId =
+		packageBoundBindings.findLast(
+			(binding) => binding.kind === 'packageStorage',
+		)?.packageId ??
+		packageBoundBindings.at(-1)?.packageId ??
+		null
 	const bindingNames = readInlinedBindingNames(preambleSource)
 	const relativeShim = createRelativeImportSpecifier(
 		normalizeWorkspaceModulePath(input.modulePath),
@@ -83,6 +86,7 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 	const preamble = createInlinedRuntimeReplacementPreamble({
 		relativeShimSpecifier: relativeShim,
 		packageId,
+		packageBoundBindings,
 		bindingNames,
 		authorBindings,
 	})
@@ -154,14 +158,61 @@ function isRemovableRuntimeSection(banner: string | null) {
 	)
 }
 
+type PackageBoundBindingKind =
+	| 'packageStorage'
+	| 'packageSecrets'
+	| 'createAuthenticatedFetch'
+	| 'oauthClientCredentials'
+
+type PackageBoundBinding = {
+	kind: PackageBoundBindingKind
+	name: string
+	packageId: string
+}
+
+const packageBoundFactoryPatterns: ReadonlyArray<{
+	kind: PackageBoundBindingKind
+	rhs: RegExp
+}> = [
+	{ kind: 'packageStorage', rhs: /__kodyCreatePackageBoundStorage\s*\(/ },
+	{ kind: 'packageSecrets', rhs: /__kodyCreatePackageBoundSecrets\s*\(/ },
+	{
+		kind: 'createAuthenticatedFetch',
+		rhs: /__kodyCreatePackageBoundAuthenticatedFetch\s*\(/,
+	},
+	{
+		kind: 'oauthClientCredentials',
+		rhs: /__kodyCreatePackageBoundOauthClientCredentials\s*\(/,
+	},
+]
+
 /**
- * Prefer the last package-bound storage id in the removed preamble. Published
- * graphs can inline dependency package-runtime facades before the root
- * package's facade; the root (last) id is the one author entry code should use.
+ * Every package-stamped factory assignment in the removed preamble, in source
+ * order. Multi-facade graphs bind dependency storage/secrets before the root;
+ * each binding keeps the package ID from its own facade.
  */
-function readInlinedPackageId(preambleSource: string) {
-	const matches = [...preambleSource.matchAll(packageBoundStoragePattern)]
-	return matches.at(-1)?.[1] ?? null
+export function readPackageBoundBindings(
+	preambleSource: string,
+): Array<PackageBoundBinding> {
+	const bindings: Array<PackageBoundBinding & { index: number }> = []
+	for (const { kind, rhs } of packageBoundFactoryPatterns) {
+		const pattern = new RegExp(
+			`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhs.source}\\s*["']([^"']+)["']`,
+			'g',
+		)
+		for (const match of preambleSource.matchAll(pattern)) {
+			const name = match[1]
+			const packageId = match[2]
+			if (!name || !packageId) continue
+			bindings.push({ kind, name, packageId, index: match.index ?? 0 })
+		}
+	}
+	bindings.sort((left, right) => left.index - right.index)
+	return bindings.map(({ kind, name, packageId }) => ({
+		kind,
+		name,
+		packageId,
+	}))
 }
 
 function readAssignmentBindingName(preambleSource: string, rhsPattern: RegExp) {
@@ -186,40 +237,42 @@ function readLastAssignmentBindingName(
 	return matches.at(-1)?.[1] ?? null
 }
 
+function lastBindingNameForKind(
+	bindings: ReadonlyArray<PackageBoundBinding>,
+	kind: PackageBoundBindingKind,
+) {
+	return bindings.findLast((binding) => binding.kind === kind)?.name ?? null
+}
+
 /**
  * Esbuild renames colliding inlined bindings (`packageStorage` →
  * `packageStorage2`). Author code after the cut references those renamed
  * identifiers, so the replacement preamble must reuse the same names.
+ *
+ * For multi-facade graphs, package-bound names come from
+ * {@link readPackageBoundBindings} (last-of-kind for facades/aliases). This
+ * helper still resolves optional-export CAF/oauth names and facade identifiers.
  */
 export function readInlinedBindingNames(preambleSource: string) {
+	const packageBoundBindings = readPackageBoundBindings(preambleSource)
 	const packageStorage =
-		readAssignmentBindingName(
-			preambleSource,
-			/__kodyCreatePackageBoundStorage\s*\(/,
-		) ?? 'packageStorage'
+		lastBindingNameForKind(packageBoundBindings, 'packageStorage') ??
+		'packageStorage'
 	const packageSecrets =
-		readAssignmentBindingName(
-			preambleSource,
-			/__kodyCreatePackageBoundSecrets\s*\(/,
-		) ?? 'packageSecrets'
+		lastBindingNameForKind(packageBoundBindings, 'packageSecrets') ??
+		'packageSecrets'
 	const createAuthenticatedFetch =
+		lastBindingNameForKind(packageBoundBindings, 'createAuthenticatedFetch') ??
 		readAssignmentBindingName(
 			preambleSource,
 			/__kodyOptionalRuntimeFunctionExport\s*\(\s*["']createAuthenticatedFetch["']/,
 		) ??
-		readAssignmentBindingName(
-			preambleSource,
-			/__kodyCreatePackageBoundAuthenticatedFetch\s*\(/,
-		) ??
 		'createAuthenticatedFetch'
 	const oauthClientCredentials =
+		lastBindingNameForKind(packageBoundBindings, 'oauthClientCredentials') ??
 		readAssignmentBindingName(
 			preambleSource,
 			/__kodyOptionalRuntimeFunctionExport\s*\(\s*["']oauthClientCredentials["']/,
-		) ??
-		readAssignmentBindingName(
-			preambleSource,
-			/__kodyCreatePackageBoundOauthClientCredentials\s*\(/,
 		) ??
 		'oauthClientCredentials'
 	const packageRuntimeDefault =
@@ -370,6 +423,19 @@ function collectTopLevelBindingNames(source: string): Set<string> | null {
 						collectPatternBoundNames(declarator.id, names)
 					}
 				}
+				continue
+			}
+			if (node.type === 'ExportDefaultDeclaration' && node.declaration) {
+				const declaration = node.declaration
+				if (
+					declaration.type === 'FunctionDeclaration' ||
+					declaration.type === 'ClassDeclaration'
+				) {
+					const name = getBindingIdentifierName(
+						(declaration as { id?: unknown }).id,
+					)
+					if (name) names.add(name)
+				}
 			}
 		}
 		return names
@@ -394,6 +460,7 @@ function emitCanonicalAlias(
 function createInlinedRuntimeReplacementPreamble(input: {
 	relativeShimSpecifier: string
 	packageId: string | null
+	packageBoundBindings: ReadonlyArray<PackageBoundBinding>
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
 	authorBindings: ReadonlySet<string>
 }) {
@@ -445,6 +512,66 @@ function createInlinedRuntimeReplacementPreamble(input: {
 
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
+		const packageBoundLines: Array<string> = []
+		const emittedBindingNames = new Set<string>()
+		for (const binding of input.packageBoundBindings) {
+			if (emittedBindingNames.has(binding.name)) continue
+			emittedBindingNames.add(binding.name)
+			const idLiteral = JSON.stringify(binding.packageId)
+			switch (binding.kind) {
+				case 'packageStorage':
+					packageBoundLines.push(
+						`var ${binding.name} = __kodyCreatePackageBoundStorage(${idLiteral});`,
+					)
+					break
+				case 'packageSecrets':
+					packageBoundLines.push(
+						`var ${binding.name} = __kodyCreatePackageBoundSecrets(${idLiteral});`,
+					)
+					break
+				case 'createAuthenticatedFetch':
+					packageBoundLines.push(
+						`var ${binding.name} = __kodyCreatePackageBoundAuthenticatedFetch(${idLiteral});`,
+					)
+					break
+				case 'oauthClientCredentials':
+					packageBoundLines.push(
+						`var ${binding.name} = __kodyCreatePackageBoundOauthClientCredentials(${idLiteral});`,
+					)
+					break
+				default: {
+					const _exhaustive: never = binding.kind
+					throw new Error(`Unexpected package-bound kind: ${_exhaustive}`)
+				}
+			}
+		}
+		// Optional-export CAF/oauth (shared runtime) and any missing host
+		// bindings stamp to the root package id so author entry code still
+		// resolves them under --local.
+		if (!emittedBindingNames.has(createAuthenticatedFetch)) {
+			packageBoundLines.push(
+				`var ${createAuthenticatedFetch} = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});`,
+			)
+			emittedBindingNames.add(createAuthenticatedFetch)
+		}
+		if (!emittedBindingNames.has(packageStorage)) {
+			packageBoundLines.push(
+				`var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});`,
+			)
+			emittedBindingNames.add(packageStorage)
+		}
+		if (!emittedBindingNames.has(packageSecrets)) {
+			packageBoundLines.push(
+				`var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});`,
+			)
+			emittedBindingNames.add(packageSecrets)
+		}
+		if (!emittedBindingNames.has(oauthClientCredentials)) {
+			packageBoundLines.push(
+				`var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});`,
+			)
+			emittedBindingNames.add(oauthClientCredentials)
+		}
 		const aliases = [
 			emitCanonicalAlias(
 				'packageStorage',
@@ -484,10 +611,7 @@ import {
 	__kodyCreatePackageBoundOauthClientCredentials,
 } from ${shim};
 
-var ${createAuthenticatedFetch} = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});
-var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});
-var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});
-var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});
+${packageBoundLines.join('\n')}
 ${aliases}
 ${facadeBlock}
 `.trim()

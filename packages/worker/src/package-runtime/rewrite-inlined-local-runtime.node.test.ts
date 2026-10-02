@@ -164,18 +164,77 @@ export async function main() {
 	expect(result.source).toContain('const { packageStorage }')
 })
 
-test('rewrite prefers the last package-runtime package id', () => {
+test('rewrite skips canonical aliases that collide with export default function bindings', () => {
+	const source = `// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/entry.ts
+export default function packageStorage() { return "author"; }
+export async function main() {
+  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
+	expect(result.source).toContain('export default function packageStorage()')
+	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+})
+
+test('rewrite skips canonical aliases that collide with export default class bindings', () => {
+	const source = `// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/entry.ts
+export default class packageStorage { static value = "author"; }
+export async function main() {
+  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage.value];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
+	expect(result.source).toContain('export default class packageStorage')
+	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+})
+
+test('rewrite remaps each multi-facade package binding to its own package id', () => {
+	// Tip 52b782167 / pre-fix main paired first binding names with the last
+	// package id, so dependency packageStorage2 was rebound to the root id.
 	const source = `// virtual:.__kody_virtual__/runtime.js
 var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
 
 // virtual:.__kody_virtual__/package-runtime/dependency.js
 var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(dependencyPackageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(dependencyPackageId)});
 
 // virtual:.__kody_virtual__/package-runtime/root.js
 var packageStorage3 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets3 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
 
 // virtual:.__kody_root__/src/entry.ts
-export default async function main() { return typeof createAuthenticatedFetch }
+export async function main() {
+  return [typeof packageStorage2, typeof packageStorage3, typeof packageSecrets2, typeof packageSecrets3];
+}
 `
 	const result = rewriteInlinedLocalExecuteBundleSource({
 		modulePath: 'bundle.js',
@@ -185,9 +244,30 @@ export default async function main() { return typeof createAuthenticatedFetch }
 	expect(result.rewritten).toBe(true)
 	expect(result.packageId).toBe(packageId)
 	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(dependencyPackageId)});`,
+	)
+	expect(result.source).toContain(
+		`var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(dependencyPackageId)});`,
+	)
+	expect(result.source).toContain(
+		`var packageStorage3 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).toContain(
+		`var packageSecrets3 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
+	)
+	// Must not rebind the dependency facade names onto the root package id.
+	expect(result.source).not.toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).not.toContain(
+		`var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
+	)
+	// Canonical aliases point at the root (last) facade bindings.
+	expect(result.source).toContain('var packageStorage = packageStorage3;')
+	expect(result.source).toContain('var packageSecrets = packageSecrets3;')
+	expect(result.source).toContain(
 		`__kodyCreatePackageBoundAuthenticatedFetch(${JSON.stringify(packageId)})`,
 	)
-	expect(result.source).not.toContain(dependencyPackageId)
 })
 
 test('rewrite strips duplicate runtime banners without discarding author code', () => {
