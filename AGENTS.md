@@ -52,7 +52,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   `cliCredentialBootstrap`; interactive: `kody login`; CI/headless: scoped
   `KODY_API_TOKEN`; if `--local` cannot run, use Open API / MCP `api` or fix the
   environment):
-  - [docs/guides/open-api.md](./docs/guides/open-api.md) and
+  - [docs/guides/local-execute.md](./docs/guides/local-execute.md),
+    [docs/guides/open-api.md](./docs/guides/open-api.md), and
     [.agents/skills/prefer-local-cli-execute/SKILL.md](./.agents/skills/prefer-local-cli-execute/SKILL.md)
 - Project setup references:
   - [docs/contributing/getting-started.md](./docs/contributing/getting-started.md)

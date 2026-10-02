@@ -77,8 +77,8 @@ wrote during that fetch) so the next cron can skip the synthetic.
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
   strict `parsePlanName` for untrusted admin/API input).
 - [Open API](./open-api.md): `api.kody.codes`, interactive docs on
-  `api-docs.kody.codes`, scoped API tokens, the CapabilityProxy contract for
-  local execute, and the flag-gated MCP `api` tool.
+  `api-docs.kody.codes`, scoped API tokens, the MCP `api` tool, and the
+  CapabilityProxy contract used by local CLI execute.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.

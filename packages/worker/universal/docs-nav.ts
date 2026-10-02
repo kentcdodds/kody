@@ -90,7 +90,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 			{ slug: 'triggers', label: 'Jobs, workflows, and webhooks' },
 			{ slug: 'platform-efficiency', label: 'Runtime and efficiency' },
 			{ slug: 'local-execute', label: 'Local CLI execute' },
-			{ slug: 'open-api', label: 'Open API and local execute' },
+			{ slug: 'open-api', label: 'Open API' },
 		],
 	},
 	{

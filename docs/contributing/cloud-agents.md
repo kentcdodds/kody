@@ -212,9 +212,9 @@ Agents without interactive login may put a scoped `kody_at_…` `KODY_API_TOKEN`
 in the Cloud **environment** secrets/vars (not in the prompt), or call
 `cliCredentialBootstrap` from MCP and run the returned CLI command. Mint via MCP
 `api` `tokenCreate` only when bootstrap/login are unavailable; never paste the
-token into chat. Guide: [Open API and local execute](../guides/open-api.md).
-Skill:
+token into chat. Guide: [Local CLI execute](../guides/local-execute.md). Skill:
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+Open API fallback: [Open API](../guides/open-api.md).
 
 ## Seeding a test account
 

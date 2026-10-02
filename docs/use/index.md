@@ -37,9 +37,10 @@ reference detail those docs link into.
   [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
-- [Open API and local execute](../guides/open-api.md) — HTTPS api.kody.codes,
-  `kody login` + `@kodycodes/cli execute --local`, and optional MCP `api` tokens
-  for CI / headless
+- [Local CLI execute](../guides/local-execute.md) — `kody login` +
+  `@kodycodes/cli execute --local` when Node ≥22
+- [Open API](../guides/open-api.md) — HTTPS api.kody.codes and MCP `api`
+  (including scoped tokens for CI / headless)
 - [Flake Hunter](../guides/flake-hunter.md),
   [Sentry Issues](../guides/sentry-issues.md),
   [Agent inbox](../guides/agent-inbox.md), and

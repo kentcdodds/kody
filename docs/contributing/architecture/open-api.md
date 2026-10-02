@@ -134,7 +134,8 @@ forwards each `kody:runtime` call here. Static `kody:@…` imports are resolved 
 `POST /v1/local-execute/package-graph` (same `local-execute` scope): origin
 returns published, stamped importable-module artifacts for embedding — it does
 **not** execute the user module and does not silently hop to `kody.execute`. See
-[Open API and local execute](../../guides/open-api.md) and
+[Local CLI execute](../../guides/local-execute.md),
+[Open API](../../guides/open-api.md), and
 [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
 | Route                                  | Body                                  | 200 response                                                                    |

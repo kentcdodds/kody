@@ -19,8 +19,8 @@ adopts a warm payload instead of waiting on a cold fetch.
 `/docs/package-sharing/opt-in` to turn `package-share-grants` on for themselves;
 signed-out visitors log in with `redirectTo` back to that page.
 `/docs/secret-providers` opens with the same pattern for `secret-providers`
-(POST `/docs/secret-providers/opt-in`). Open API and local execute are
-documented at `/docs/open-api` and `/docs/local-execute` (no per-user opt-in
+(POST `/docs/secret-providers/opt-in`). Open API is documented at
+`/docs/open-api`; local CLI execute at `/docs/local-execute` (no per-user opt-in
 route).
 
 ## Drive it

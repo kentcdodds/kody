@@ -18,8 +18,8 @@ Agent notes — for AI agents explaining or using search and execute:
   asks what those tools are, how to call them, or why Kody is not a long
   tool list.
 - Prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI are available
-  (guide:open_api). If `--local` cannot run, use Open API / MCP api or fix the
-  environment.
+  (guide:local_execute). If `--local` cannot run, use Open API / MCP api or fix
+  the environment (guide:open_api).
 - Official guides load with search({ entity: "guide:{id}" }). Capability
   detail includes a ready-to-run execute snippet; adapt that snippet, then
   execute.
@@ -34,8 +34,8 @@ Your agent connects to Kody over MCP and starts with **search** and **execute**.
 **search** finds the right thing, then **execute** runs it. Capabilities, saved
 packages, integrations, secrets, and official guides stay behind those two doors
 instead of appearing as a tool list. MCP also registers **api** for HTTPS
-operations and token minting — see [Open API and local execute](./open-api.md).
-That tool does not replace search and execute.
+operations and token minting — see [Open API](./open-api.md). That tool does not
+replace search and execute.
 
 This page is the playbook for search and execute. The same tools drive the loop
 in [How Kody works](./how-kody-works.md). Watch:
@@ -132,9 +132,9 @@ helpers, workflows, and timeouts.
    execute module and input type.
 3. **Execute** with that adapted snippet. Prefer
    `npx @kodycodes/cli execute --local` when Node ≥22 and the CLI are available
-   ([Open API and local execute](./open-api.md)). If `--local` cannot run, use
-   Open API / MCP `api` or fix the environment. Put varying capability args in
-   `params` so the same `code` graph is reused.
+   ([Local CLI execute](./local-execute.md)). If `--local` cannot run, use Open
+   API / MCP `api` ([Open API](./open-api.md)) or fix the environment. Put
+   varying capability args in `params` so the same `code` graph is reused.
 4. **Reuse `conversationId`** from the tool response on the next search or
    execute in the same conversation.
 5. **Save** the working module as a package when the behavior should live past
@@ -279,8 +279,10 @@ When the target name is data (caller-owned or forked modules), use
 
 - **See the loop** — [How Kody works](./how-kody-works.md) plays one
   conversation that uses search and execute from question to owned export.
-- **Local execute and Open API** — [Open API and local execute](./open-api.md)
-  for CLI `--local`, the flag-gated `api` tool, and when `--local` cannot run.
+- **Local CLI execute** — [Local CLI execute](./local-execute.md) for `--local`
+  setup and usage.
+- **Open API** — [Open API](./open-api.md) for HTTPS / MCP `api`, and when
+  `--local` cannot run.
 - **Map the factory** — [The factory map](./kody-factory.md) places search and
   execute among secrets, packages, jobs, and memories.
 - **Reference** — [Search](../use/search.md) and

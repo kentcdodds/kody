@@ -19,8 +19,7 @@ hosted MCP `execute`.
 Canonical guide: [Local CLI execute](https://kody.codes/docs/local-execute)
 (`search({ entity: "guide:local_execute" })` or
 [docs/guides/local-execute.md](../../../docs/guides/local-execute.md)). Open API
-fallback: [Open API and local execute](https://kody.codes/docs/open-api)
-(`guide:open_api`).
+fallback: [Open API](https://kody.codes/docs/open-api) (`guide:open_api`).
 
 ## Agents already on MCP: bootstrap (no second OAuth)
 
@@ -112,7 +111,7 @@ CLI login OAuth does not) and embeds them in local workerd. CapabilityProxy
 stays for per-call `kody:runtime` hops only. Package-graph rewrites inlined
 virtual runtime preambles onto the CapabilityProxy shim so Dropbox-style
 published bundles get a callable `createAuthenticatedFetch` under `--local`. See
-[Open API and local execute](../../../docs/guides/open-api.md).
+[Local CLI execute](../../../docs/guides/local-execute.md).
 
 ## Fallback
 
