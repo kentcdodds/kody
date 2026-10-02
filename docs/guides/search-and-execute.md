@@ -18,7 +18,8 @@ Agent notes — for AI agents explaining or using search and execute:
   asks what those tools are, how to call them, or why Kody is not a long
   tool list.
 - Prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI are available
-  (guide:open_api); fall back to hosted MCP execute otherwise.
+  (guide:open_api). If `--local` cannot run, use Open API / MCP api or fix the
+  environment.
 - Official guides load with search({ entity: "guide:{id}" }). Capability
   detail includes a ready-to-run execute snippet; adapt that snippet, then
   execute.
@@ -132,9 +133,9 @@ helpers, workflows, and timeouts.
    execute module and input type.
 3. **Execute** with that adapted snippet. Prefer
    `npx @kodycodes/cli execute --local` when Node ≥22 and the CLI are available
-   ([Open API and local execute](./open-api.md)); fall back to hosted MCP
-   `execute` otherwise. Put varying capability args in `params` so the same
-   `code` graph is reused.
+   ([Open API and local execute](./open-api.md)). If `--local` cannot run, use
+   Open API / MCP `api` or fix the environment. Put varying capability args in
+   `params` so the same `code` graph is reused.
 4. **Reuse `conversationId`** from the tool response on the next search or
    execute in the same conversation.
 5. **Save** the working module as a package when the behavior should live past
@@ -279,12 +280,10 @@ When the target name is data (caller-owned or forked modules), use
 
 - **See the loop** — [How Kody works](./how-kody-works.md) plays one
   conversation that uses search and execute from question to owned export.
-- **Local execute** — [Open API and local execute](./open-api.md) when Node ≥22
-  and the CLI are available; hosted MCP `execute` remains the fallback.
+- **Local execute and Open API** — [Open API and local execute](./open-api.md)
+  for CLI `--local`, the flag-gated `api` tool, and when `--local` cannot run.
 - **Map the factory** — [The factory map](./kody-factory.md) places search and
   execute among secrets, packages, jobs, and memories.
-- **Open API** — [Open API and local execute](./open-api.md) for the flag-gated
-  `api` tool and local execute.
 - **Reference** — [Search](../use/search.md) and
   [Execute and workflows](../use/execute.md) are the MCP-level field contracts.
 - **Connect** — [Connect your agent](./connect-your-agent.md) if the host is not

@@ -34,7 +34,7 @@ Parsing and export existence checks live in `parseAuthoredPackageJson` /
 `subscription-challenge` with knobs for method, where the token arrives, how the
 subscriber proves itself, and how success is echoed. Deprecated compat aliases
 (`websub-hub`, `meta-hub`, `strava-hub`, `x-activity-crc`,
-`slack-url-verification`) still parse and expand to that form — do not add new
+`slack-url-verification`) parse and expand to that form — do not add new
 vendor-named type ids
 ([0054](../decisions/0054-no-vendor-specific-platform-logic.md)). Challenge
 requests never call `invokePackageExport`, never write delivery/run history, and

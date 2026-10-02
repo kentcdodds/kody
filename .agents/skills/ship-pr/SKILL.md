@@ -120,11 +120,11 @@ is open.
 
 File leftovers that meet the bar with `kody:@kentcdodds/friction-log/file` via
 prefer-local CLI execute when available
-([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)); else hosted
-MCP `execute`. Always pass required
-`target: { host: 'github' | 'kody', repo: string }` plus `items` (one papercut
-each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and `cost`
-when known. Platform leftovers use
+([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). If `--local`
+cannot run, use Open API / MCP `api` or fix the environment. Always pass
+required `target: { host: 'github' | 'kody', repo: string }` plus `items` (one
+papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and
+`cost` when known. Platform leftovers use
 `{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
 `host: 'kody'` (wakes Patch). Omit secrets. If nothing meets the bar, skip the
 call or pass empty `items`. Do not invent papercuts. Do not use

@@ -443,9 +443,8 @@ webhook, then register the revealed URL directly with X. CRC GETs never invoke
 
 ### Challenge compat aliases
 
-These short `challenge.type` values still parse and expand to the presets above.
-Prefer `subscription-challenge` for new manifests; aliases are deprecated and
-may be removed after a soak.
+These short `challenge.type` values parse and expand to the presets above.
+Prefer `subscription-challenge` for new manifests; aliases are deprecated.
 
 | Alias                    | Expands to                                              |
 | ------------------------ | ------------------------------------------------------- |

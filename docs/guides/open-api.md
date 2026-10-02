@@ -80,13 +80,14 @@ export default async function main(params) {
 }
 ```
 
-and running `npx @kodycodes/cli execute --local …`. There is no author-facing
-`packages.invoke`.
+and running `npx @kodycodes/cli execute --local …`.
+
+There is no author-facing `packages.invoke`.
 
 Package-graph prep meters as an observe-only Open API `api_call` (not
 `dynamic_worker_day` / cloud execute of the user module). Capability hops during
 the later local run still meter normally. Literal `import("kody:@…")` is not
-bound for local embedding yet — use a static import.
+bound for local embedding — use a static import.
 
 **Authenticated fetch and stamped host grants:** package-graph modules embed a
 local runtime shim that binds `createAuthenticatedFetch`, `secretHeaders`,
