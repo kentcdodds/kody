@@ -93,11 +93,11 @@ the `friction` label.
 Agents file through `kody:@kentcdodds/friction-log/create` or `./file` via
 prefer-local CLI execute when available
 ([prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)).
-If `--local` cannot run, use Open API / MCP `api` or fix the environment. Always
-pass `target`. For `host: 'github'`, the export applies the `friction` label,
-prefixes the title with `Friction:`, and reuses or labels an existing open issue
-with the same title. Qualify runs first and soft-skips when the papercut fails
-the bar.
+If `--local` cannot run, use hosted MCP `execute` for this package export (Open
+API / MCP `api` cannot invoke it). Always pass `target`. For `host: 'github'`,
+the export applies the `friction` label, prefixes the title with `Friction:`,
+and reuses or labels an existing open issue with the same title. Qualify runs
+first and soft-skips when the papercut fails the bar.
 
 Agents file a batch through `kody:@kentcdodds/friction-log/file` (several
 papercuts from one session, including the
