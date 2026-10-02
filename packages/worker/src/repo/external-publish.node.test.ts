@@ -212,7 +212,8 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 	)
 
 	// Explicit files win over the UTF-8 check walk (PNG magic must stay 0x89).
-	const { bytesToLatin1String } = await import('#universal/package-file-media.ts')
+	const { bytesToLatin1String } =
+		await import('#universal/package-file-media.ts')
 	const pngLatin1 = bytesToLatin1String(
 		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
 	)
