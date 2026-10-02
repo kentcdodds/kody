@@ -437,6 +437,13 @@ export async function setFeatureFlagGlobalState(
 		.run()
 }
 
+const featureFlagUserOverrideUpsertSql = `INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled, updated_by, updated_at)
+			 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+			 ON CONFLICT(flag_key, user_id) DO UPDATE SET
+				enabled = excluded.enabled,
+				updated_by = excluded.updated_by,
+				updated_at = CURRENT_TIMESTAMP`
+
 export async function setFeatureFlagUserOverride(
 	db: D1Database,
 	input: {
@@ -447,16 +454,43 @@ export async function setFeatureFlagUserOverride(
 	},
 ): Promise<void> {
 	await db
-		.prepare(
-			`INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled, updated_by, updated_at)
-			 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-			 ON CONFLICT(flag_key, user_id) DO UPDATE SET
-				enabled = excluded.enabled,
-				updated_by = excluded.updated_by,
-				updated_at = CURRENT_TIMESTAMP`,
-		)
+		.prepare(featureFlagUserOverrideUpsertSql)
 		.bind(input.key, input.userId, input.enabled ? 1 : 0, input.updatedBy)
 		.run()
+}
+
+/**
+ * Apply several per-user overrides in one D1 batch so paired opt-ins (for
+ * example mcp-api-tool + local-execute) commit together or not at all.
+ */
+export async function setFeatureFlagUserOverrides(
+	db: D1Database,
+	overrides: ReadonlyArray<{
+		key: FeatureFlagKey
+		userId: number
+		enabled: boolean
+		updatedBy: number
+	}>,
+): Promise<void> {
+	if (overrides.length === 0) return
+	if (overrides.length === 1) {
+		const [only] = overrides
+		if (!only) return
+		await setFeatureFlagUserOverride(db, only)
+		return
+	}
+	await db.batch(
+		overrides.map((override) =>
+			db
+				.prepare(featureFlagUserOverrideUpsertSql)
+				.bind(
+					override.key,
+					override.userId,
+					override.enabled ? 1 : 0,
+					override.updatedBy,
+				),
+		),
+	)
 }
 
 export async function clearFeatureFlagUserOverride(

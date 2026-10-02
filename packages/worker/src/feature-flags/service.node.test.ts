@@ -10,6 +10,7 @@ import {
 	listFeatureFlagsForAdmin,
 	setFeatureFlagGlobalState,
 	setFeatureFlagUserOverride,
+	setFeatureFlagUserOverrides,
 } from './service.ts'
 
 type GlobalRow = {
@@ -247,18 +248,32 @@ function createFeatureFlagsTestDb(
 				run?: () => Promise<{ meta: { changes: number } }>
 			}>,
 		) {
+			const globalsSnapshot = new Map(
+				[...globals.entries()].map(([key, row]) => [key, { ...row }]),
+			)
+			const overridesSnapshot = new Map(
+				[...overrides.entries()].map(([key, row]) => [key, { ...row }]),
+			)
 			const results = []
-			for (const statement of statements) {
-				const isSelect = /^\s*select\b/i.test(statement.query ?? '')
-				if (isSelect && typeof statement.all === 'function') {
-					results.push(await statement.all())
-				} else if (typeof statement.run === 'function') {
-					results.push(await statement.run())
-				} else {
-					results.push({ meta: { changes: 0 } })
+			try {
+				for (const statement of statements) {
+					const isSelect = /^\s*select\b/i.test(statement.query ?? '')
+					if (isSelect && typeof statement.all === 'function') {
+						results.push(await statement.all())
+					} else if (typeof statement.run === 'function') {
+						results.push(await statement.run())
+					} else {
+						results.push({ meta: { changes: 0 } })
+					}
 				}
+				return results
+			} catch (error) {
+				globals.clear()
+				for (const [key, row] of globalsSnapshot) globals.set(key, row)
+				overrides.clear()
+				for (const [key, row] of overridesSnapshot) overrides.set(key, row)
+				throw error
 			}
-			return results
 		},
 		globals,
 		overrides,
@@ -403,6 +418,69 @@ test('user override wins over global off and global on; clear restores evaluatio
 	await expect(clear()).resolves.toBe(true)
 	expect(await enabledFor(db, [7])).toEqual([true])
 	await expect(clear()).resolves.toBe(false)
+})
+
+test('setFeatureFlagUserOverrides writes paired keys atomically', async () => {
+	const db = createFeatureFlagsTestDb()
+	await setFeatureFlagUserOverrides(db, [
+		{
+			key: 'mcp-api-tool',
+			userId: 7,
+			enabled: true,
+			updatedBy: 7,
+		},
+		{
+			key: 'local-execute',
+			userId: 7,
+			enabled: true,
+			updatedBy: 7,
+		},
+	])
+	expect(await enabledFor(db, [7], 'mcp-api-tool')).toEqual([true])
+	expect(await enabledFor(db, [7], 'local-execute')).toEqual([true])
+
+	const originalPrepare = db.prepare.bind(db)
+	let overrideRuns = 0
+	db.prepare = ((query: string) => {
+		const statement = originalPrepare(query)
+		return {
+			...statement,
+			bind(...params: Array<unknown>) {
+				const bound = statement.bind(...params)
+				return {
+					...bound,
+					async run() {
+						overrideRuns += 1
+						if (overrideRuns === 2) {
+							throw new Error('second override write failed')
+						}
+						return bound.run()
+					},
+				}
+			},
+		}
+	}) as typeof db.prepare
+
+	await expect(
+		setFeatureFlagUserOverrides(db, [
+			{
+				key: 'demo-indicator',
+				userId: 7,
+				enabled: true,
+				updatedBy: 7,
+			},
+			{
+				key: 'execute-invoke',
+				userId: 7,
+				enabled: true,
+				updatedBy: 7,
+			},
+		]),
+	).rejects.toThrow('second override write failed')
+	expect(db.overrides.has('demo-indicator:7')).toBe(false)
+	expect(db.overrides.has('execute-invoke:7')).toBe(false)
+	expect(await enabledFor(db, [7], 'mcp-api-tool')).toEqual([true])
+	expect(await enabledFor(db, [7], 'local-execute')).toEqual([true])
 })
 
 test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => {

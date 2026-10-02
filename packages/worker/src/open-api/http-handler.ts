@@ -164,6 +164,30 @@ async function handleOperation(input: {
 		return json(redeemed.token)
 	}
 
+	function recordCapabilityProxyObservation(observation: {
+		userId: string
+		failureCode: string
+	}) {
+		if (!isCapabilityProxyOperation(match.operation)) return
+		input.waitUntil(
+			recordUsage(
+				input.env,
+				{
+					userId: observation.userId,
+					eventType: 'api_call',
+					entityId: capabilityProxyObservationEntityId({
+						baseEntityId: match.operation.operationId,
+						outcome: 'error',
+						failureCode: observation.failureCode,
+					}),
+					durationMs: Date.now() - startedAt,
+					outcome: 'error',
+				},
+				{ waitUntil: input.waitUntil },
+			),
+		)
+	}
+
 	let ctx
 	try {
 		ctx = await authenticateApiRequest({
@@ -175,27 +199,11 @@ async function handleOperation(input: {
 		})
 	} catch (error) {
 		const apiError = toApiError(error)
-		if (
-			isCapabilityProxyOperation(match.operation) &&
-			apiError instanceof ApiError &&
-			apiError.meteringUserId
-		) {
-			const usage = recordUsage(
-				input.env,
-				{
-					userId: apiError.meteringUserId,
-					eventType: 'api_call',
-					entityId: capabilityProxyObservationEntityId({
-						baseEntityId: match.operation.operationId,
-						outcome: 'error',
-						failureCode: apiError.code,
-					}),
-					durationMs: Date.now() - startedAt,
-					outcome: 'error',
-				},
-				{ waitUntil: input.waitUntil },
-			)
-			input.waitUntil(usage)
+		if (apiError instanceof ApiError && apiError.meteringUserId) {
+			recordCapabilityProxyObservation({
+				userId: apiError.meteringUserId,
+				failureCode: apiError.code,
+			})
 		}
 		throw error
 	}
@@ -203,11 +211,22 @@ async function handleOperation(input: {
 		match.operation,
 		await getStaticRegistry(),
 	)
-	// CapabilityProxy flag/scope failures meter inside invokeApiOperation so
-	// operators can tell session start from feature_disabled / insufficient_scope.
-	if (!isCapabilityProxyOperation(match.operation)) {
+	// Flag/scope before param parse so disabled/unscoped tokens get 403
+	// feature_disabled / insufficient_scope instead of 400 parse errors.
+	// CapabilityProxy preflight failures meter here (one event); invoke still
+	// meters the hop after params are accepted.
+	try {
 		await assertNativeOperationEnabled(ctx, match.operation)
 		assertApiScope(ctx, resolved.scope)
+	} catch (error) {
+		const apiError = toApiError(error)
+		if (apiError instanceof ApiError) {
+			recordCapabilityProxyObservation({
+				userId: ctx.callerContext.user.userId,
+				failureCode: apiError.code,
+			})
+		}
+		throw error
 	}
 	const params = await readOperationParams({
 		request: input.request,

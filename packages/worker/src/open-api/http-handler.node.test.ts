@@ -442,6 +442,52 @@ test('capability proxy answers feature_disabled when local-execute is off', asyn
 	expect(noScope.body.error?.code).toBe('feature_disabled')
 })
 
+test('capability proxy prefers feature_disabled over malformed body parse errors', async () => {
+	const points: Array<{
+		blobs: Array<string | null | undefined>
+		indexes?: Array<string | null | undefined>
+	}> = []
+	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const token = await mintWithLocalExecute(api)
+	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
+
+	const response = await api.call('POST', '/v1/capability-proxy/call', {
+		token,
+		body: '{not-json',
+	})
+	expect(response.status).toBe(403)
+	expect(response.body.error?.code).toBe('feature_disabled')
+	expect(
+		points.filter(
+			(point) =>
+				point.blobs[1] === 'api_call' &&
+				point.blobs[2] === 'capabilityProxyCall:feature_disabled' &&
+				point.indexes?.[0] === api.userId,
+		),
+	).toHaveLength(1)
+})
+
+test('incorrect CapabilityProxy secrets do not attribute api_call usage to the owner', async () => {
+	const points: Array<{
+		blobs: Array<string | null | undefined>
+		indexes?: Array<string | null | undefined>
+	}> = []
+	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const token = await mintWithLocalExecute(api)
+	const wrongSecret = `${token.slice(0, -4)}AAAA`
+
+	const response = await api.call('GET', '/v1/capability-proxy/session', {
+		token: wrongSecret,
+	})
+	expect(response.status).toBe(401)
+	expect(
+		points.filter(
+			(point) =>
+				point.blobs[1] === 'api_call' && point.indexes?.[0] === api.userId,
+		),
+	).toEqual([])
+})
+
 test('capability proxy records distinguishable observe-only api_call telemetry', async () => {
 	const points: Array<{
 		blobs: Array<string | null | undefined>

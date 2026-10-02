@@ -495,7 +495,10 @@ export async function authenticateApiToken(input: {
 		await hashSecret(parsed.secret),
 		record.token_hash,
 	)
-	if (!hashMatches) return { ok: false, reason: 'unknown', record }
+	// Wrong secret must not expose the owner record: CapabilityProxy observe-only
+	// metering uses `record.user_id` as meteringUserId, and attributing a guess
+	// to the owner corrupts their api_call error metrics.
+	if (!hashMatches) return { ok: false, reason: 'unknown' }
 	const status = getApiTokenStatus(record, input.now)
 	switch (status) {
 		case 'active':

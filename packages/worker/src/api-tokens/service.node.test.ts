@@ -106,7 +106,7 @@ test('authentication rejects malformed, wrong-secret, expired, and revoked token
 	})
 	expect(
 		await authenticateApiToken({ db, token: wrongSecret, now: at(1) }),
-	).toMatchObject({ ok: false, reason: 'unknown', record: { id: minted.id } })
+	).toEqual({ ok: false, reason: 'unknown' })
 	expect(
 		await authenticateApiToken({ db, token: minted.token, now: at(61) }),
 	).toMatchObject({ ok: false, reason: 'expired', record: { id: minted.id } })

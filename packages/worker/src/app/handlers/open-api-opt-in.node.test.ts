@@ -5,8 +5,8 @@ import { createOpenApiOptInHandler } from './open-api-opt-in.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
-	setFeatureFlagUserOverride: vi.fn<
-		typeof FeatureFlagService.setFeatureFlagUserOverride
+	setFeatureFlagUserOverrides: vi.fn<
+		typeof FeatureFlagService.setFeatureFlagUserOverrides
 	>(async () => undefined),
 }))
 
@@ -19,9 +19,9 @@ vi.mock('#worker/feature-flags/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof FeatureFlagService>()
 	return {
 		...actual,
-		setFeatureFlagUserOverride: (
-			...args: Parameters<typeof actual.setFeatureFlagUserOverride>
-		) => mockModule.setFeatureFlagUserOverride(...args),
+		setFeatureFlagUserOverrides: (
+			...args: Parameters<typeof actual.setFeatureFlagUserOverrides>
+		) => mockModule.setFeatureFlagUserOverrides(...args),
 	}
 })
 
@@ -72,7 +72,7 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 	expect(loginResponse.headers.get('Location')).toBe(
 		'https://kody.example/login?redirectTo=%2Fdocs%2Fopen-api',
 	)
-	expect(mockModule.setFeatureFlagUserOverride).not.toHaveBeenCalled()
+	expect(mockModule.setFeatureFlagUserOverrides).not.toHaveBeenCalled()
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createUser())
@@ -81,23 +81,22 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 	expect(optedIn.headers.get('Location')).toBe(
 		'https://kody.example/docs/open-api',
 	)
-	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledWith(
+	expect(mockModule.setFeatureFlagUserOverrides).toHaveBeenCalledWith(
 		env.APP_DB,
-		{
-			key: 'mcp-api-tool',
-			userId: 7,
-			enabled: true,
-			updatedBy: 7,
-		},
-	)
-	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledWith(
-		env.APP_DB,
-		{
-			key: 'local-execute',
-			userId: 7,
-			enabled: true,
-			updatedBy: 7,
-		},
+		[
+			{
+				key: 'mcp-api-tool',
+				userId: 7,
+				enabled: true,
+				updatedBy: 7,
+			},
+			{
+				key: 'local-execute',
+				userId: 7,
+				enabled: true,
+				updatedBy: 7,
+			},
+		],
 	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -111,5 +110,5 @@ test('open api opt-in sends signed-out users to login and turns both flags on fo
 
 	const again = await handler.handler(createPostRequest())
 	expect(again.status).toBe(302)
-	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledTimes(4)
+	expect(mockModule.setFeatureFlagUserOverrides).toHaveBeenCalledTimes(2)
 })

@@ -11,7 +11,7 @@ import {
 	mcpApiToolFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import { routes } from '#universal/routes.ts'
-import { setFeatureFlagUserOverride } from '#worker/feature-flags/service.ts'
+import { setFeatureFlagUserOverrides } from '#worker/feature-flags/service.ts'
 
 const openApiOptInFlagKeys = [mcpApiToolFlagKey, localExecuteFlagKey] as const
 
@@ -30,14 +30,15 @@ export function createOpenApiOptInHandler(env: Env) {
 				})
 			}
 
-			for (const key of openApiOptInFlagKeys) {
-				await setFeatureFlagUserOverride(env.APP_DB, {
+			await setFeatureFlagUserOverrides(
+				env.APP_DB,
+				openApiOptInFlagKeys.map((key) => ({
 					key,
 					userId: user.userId,
 					enabled: true,
 					updatedBy: user.userId,
-				})
-			}
+				})),
+			)
 
 			const requestIp = getRequestIp(request) ?? undefined
 			void logAuditEvent({

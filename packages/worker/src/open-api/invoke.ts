@@ -40,15 +40,23 @@ export function isCliCredentialBootstrapRedeemOperation(
 	)
 }
 
+/** Analytics Engine blob length bound for observation entity ids. */
+export const capabilityProxyObservationEntityIdMaxLength = 200
+
 export function capabilityProxyObservationEntityId(input: {
 	baseEntityId: string
 	outcome: 'success' | 'error'
 	failureCode?: string | null
 }): string {
+	const maxLength = capabilityProxyObservationEntityIdMaxLength
 	if (input.outcome === 'success' || !input.failureCode) {
-		return input.baseEntityId
+		return input.baseEntityId.slice(0, maxLength)
 	}
-	return `${input.baseEntityId}:${input.failureCode}`.slice(0, 200)
+	// Reserve `:${failureCode}` before truncating the base so a maximal-length
+	// path id cannot erase the failure code operators use to distinguish hops.
+	const suffix = `:${input.failureCode}`
+	const maxBaseLength = Math.max(0, maxLength - suffix.length)
+	return `${input.baseEntityId.slice(0, maxBaseLength)}${suffix}`
 }
 
 export function assertApiScope(
