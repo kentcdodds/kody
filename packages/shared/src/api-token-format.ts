@@ -63,6 +63,26 @@ export function redactKodyCredentials(value: string) {
 	)
 }
 
+export function redactKodyCredentialsDeep(value: unknown): unknown {
+	if (typeof value === 'string') return redactKodyCredentials(value)
+	if (Array.isArray(value)) return value.map(redactKodyCredentialsDeep)
+	if (value === null || typeof value !== 'object') return value
+
+	const prototype = Object.getPrototypeOf(value)
+	if (prototype !== Object.prototype && prototype !== null) return value
+
+	const redacted: Record<string, unknown> = Object.create(prototype)
+	for (const [key, nestedValue] of Object.entries(value)) {
+		Object.defineProperty(redacted, key, {
+			configurable: true,
+			enumerable: true,
+			value: redactKodyCredentialsDeep(nestedValue),
+			writable: true,
+		})
+	}
+	return redacted
+}
+
 export function readBearerApiToken(authorization: string | null) {
 	if (!authorization) return null
 	const match = /^Bearer\s+(\S+)\s*$/i.exec(authorization)

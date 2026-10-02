@@ -1,5 +1,6 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
+import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
@@ -30,6 +31,27 @@ function sentryEventMessages(event: ErrorEvent) {
 		event.message,
 		...(event.exception?.values?.map((value) => value.value) ?? []),
 	]
+}
+
+export function redactKodyCredentialsInSentryEvent(
+	event: ErrorEvent,
+): ErrorEvent {
+	if (typeof event.message === 'string') {
+		event.message = redactKodyCredentials(event.message)
+	}
+
+	const logentry = event.logentry
+	if (typeof logentry?.message === 'string') {
+		logentry.message = redactKodyCredentials(logentry.message)
+	}
+
+	for (const exception of event.exception?.values ?? []) {
+		if (typeof exception.value === 'string') {
+			exception.value = redactKodyCredentials(exception.value)
+		}
+	}
+
+	return event
 }
 
 /**
@@ -598,7 +620,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterCimdUnknownClientSentryEvent(event) === null) return null
 	if (filterCloudflareKvTransientHttpErrorSentryEvent(event) === null)
 		return null
-	return event
+	return redactKodyCredentialsInSentryEvent(event)
 }
 
 export function buildSentryOptions(env: Env): CloudflareOptions {

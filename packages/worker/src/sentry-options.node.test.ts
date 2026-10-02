@@ -31,6 +31,7 @@ import {
 	isDurableObjectIsolateResourceLimitResetMessage,
 	isMcpAgentSessionDestroyedAbortMessage,
 	mcpAgentSessionDestroyedAbortMessage,
+	redactKodyCredentialsInSentryEvent,
 } from './sentry-options.ts'
 
 function exceptionEvent(
@@ -401,4 +402,43 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			{ originalException: new Error(entitlementLimitError.message) },
 		),
 	).not.toBeNull()
+})
+
+test('filterSentryEvent redacts Kody credentials from event messages', () => {
+	const apiToken = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
+	const bootstrapCode = `kody_bc_${'c'.repeat(16)}_${'D'.repeat(32)}`
+	const event: ErrorEvent = {
+		type: undefined,
+		message: `request failed with ${apiToken}`,
+		logentry: { message: `bootstrap ${bootstrapCode}` },
+		exception: {
+			values: [
+				{
+					type: 'Error',
+					value: `credentials ${apiToken} and ${bootstrapCode}`,
+				},
+			],
+		},
+	}
+
+	expect(filterSentryEvent(event)).toBe(event)
+	expect(event.message).toBe('request failed with kody_at_[redacted]')
+	expect(event.logentry?.message).toBe('bootstrap kody_bc_[redacted]')
+	expect(event.exception?.values?.[0]?.value).toBe(
+		'credentials kody_at_[redacted] and kody_bc_[redacted]',
+	)
+})
+
+test('redactKodyCredentialsInSentryEvent leaves non-credential events unchanged', () => {
+	const event = exceptionEvent('Ordinary error')
+	event.message = 'A harmless event'
+	event.logentry = { message: 'No credentials here' }
+
+	expect(redactKodyCredentialsInSentryEvent(event)).toBe(event)
+	expect(event).toEqual({
+		type: undefined,
+		message: 'A harmless event',
+		logentry: { message: 'No credentials here' },
+		exception: { values: [{ value: 'Ordinary error' }] },
+	})
 })
