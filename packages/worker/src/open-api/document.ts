@@ -175,7 +175,7 @@ export function resolveApiOperation(
 				outputSchema: z.toJSONSchema(definition.outputSchema) as JsonSchema,
 				scope: operation.scope,
 				readOnly: definition.readOnly,
-				featureFlag: operation.featureFlag ?? null,
+				featureFlag: null,
 			}
 		}
 		case 'capability': {
