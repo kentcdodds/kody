@@ -22,9 +22,9 @@ import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
  * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry),
- * `@cloudflare/workers-oauth-provider`, and the platform-supplied `remix`
- * package for package apps into standalone ES modules under
- * `packages/worker/.generated/`.
+ * `@cloudflare/workers-oauth-provider`, `isomorphic-git` (+ web HTTP), and the
+ * platform-supplied `remix` package for package apps into standalone ES
+ * modules under `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
  * module, so the ~3.6 MB runtime bundler/TypeScript compiler was parsed and
@@ -37,7 +37,10 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * imports it statically, but
  * `#worker/oauth-helpers.ts` needs it only when `OAUTH_PROVIDER` is absent
  * (scheduled purge lane, the `MCP` Durable Object on kody-platform), and the
- * platform/runtime startup entries must not carry it.
+ * platform/runtime startup entries must not carry it. isomorphic-git is the
+ * same story for bytes: a memoized `import('isomorphic-git')` still lands in
+ * the main entry (~160 KB minified); the generated module keeps those bytes
+ * off the startup graph until a git call runs.
  *
  * Wrangler discovers additional ES modules by walking the entry directory
  * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
@@ -92,10 +95,17 @@ export const leftoverSrcGeneratedBundlerNames = [
 	'worker-bundler.stamp.json',
 ] as const
 export const packageAppRemixModuleName = 'package-app-remix.mjs'
+export const isomorphicGitModuleName = 'isomorphic-git.mjs'
+const isomorphicGitAdditionalEntryPath = path.join(
+	repoRoot,
+	'tools',
+	'isomorphic-git-additional-entry.ts',
+)
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
+	isomorphicGitModuleName,
 	packageAppRemixModuleName,
 	'esbuild.wasm',
 ] as const
@@ -193,11 +203,16 @@ function resolveRemixUiPackageDir() {
 	return path.join(repoRoot, 'node_modules', ...remixUiPackageName.split('/'))
 }
 
+function resolveIsomorphicGitPackageDir() {
+	return path.join(repoRoot, 'node_modules', 'isomorphic-git')
+}
+
 async function buildStampContent(
 	bundlerPackageDir: string,
 	oauthProviderPackageDir: string,
 	remixPackageDir: string,
 	remixUiPackageDir: string,
+	isomorphicGitPackageDir: string,
 ) {
 	const bundlerPackageJson = await readFile(
 		path.join(bundlerPackageDir, 'package.json'),
@@ -218,6 +233,14 @@ async function buildStampContent(
 		path.join(remixUiPackageDir, 'package.json'),
 		'utf8',
 	)
+	const isomorphicGitPackageJson = await readFile(
+		path.join(isomorphicGitPackageDir, 'package.json'),
+		'utf8',
+	)
+	const isomorphicGitEntrySource = await readFile(
+		isomorphicGitAdditionalEntryPath,
+		'utf8',
+	)
 	const lockfile = await readFile(
 		path.join(repoRoot, 'package-lock.json'),
 		'utf8',
@@ -236,6 +259,8 @@ async function buildStampContent(
 		.update(oauthProviderPackageJson)
 		.update(remixPackageJson)
 		.update(remixUiPackageJson)
+		.update(isomorphicGitPackageJson)
+		.update(isomorphicGitEntrySource)
 		.update(packageAppRemixSubpaths.join('\n'))
 		.update(packageAppRemixUiSubpaths.join('\n'))
 		.update(lockfile)
@@ -422,11 +447,13 @@ export async function ensureWorkerBundlerModules() {
 	const oauthProviderPackageDir = resolveOAuthProviderPackageDir()
 	const remixPackageDir = resolveRemixPackageDir()
 	const remixUiPackageDir = resolveRemixUiPackageDir()
+	const isomorphicGitPackageDir = resolveIsomorphicGitPackageDir()
 	const stampContent = await buildStampContent(
 		bundlerPackageDir,
 		oauthProviderPackageDir,
 		remixPackageDir,
 		remixUiPackageDir,
+		isomorphicGitPackageDir,
 	)
 	await removeLeftoverSrcGeneratedBundlerArtifacts()
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
@@ -460,6 +487,25 @@ export async function ensureWorkerBundlerModules() {
 		outdir: workerBundlerGeneratedDir,
 		outExtension: { '.js': '.mjs' },
 		plugins: [externalsPlugin],
+		logLevel: 'silent',
+	})
+	// isomorphic-git pulls Node-oriented deps (`buffer`, `sha.js`, …). Leave
+	// those bundled for the browser/Workers target — the shared externals
+	// plugin would mark `node:buffer` external and break both Node smoke
+	// loads and the Workers additional-module evaluation.
+	await build({
+		entryPoints: {
+			'isomorphic-git': isomorphicGitAdditionalEntryPath,
+		},
+		bundle: true,
+		format: 'esm',
+		platform: 'browser',
+		target: 'es2022',
+		minify: true,
+		outdir: workerBundlerGeneratedDir,
+		outExtension: { '.js': '.mjs' },
+		mainFields: ['browser', 'module', 'main'],
+		conditions: ['worker', 'browser', 'import', 'default'],
 		logLevel: 'silent',
 	})
 	await copyFile(

@@ -12,6 +12,7 @@ export default mergeConfig(
 			noExternal: [
 				'@cloudflare/codemode',
 				'@cloudflare/workers-oauth-provider',
+				'isomorphic-git',
 			],
 		},
 		resolve: {
@@ -87,6 +88,13 @@ export default mergeConfig(
 				{
 					find: './node_modules/.kody-generated/oauth-provider.mjs',
 					replacement: '@cloudflare/workers-oauth-provider',
+				},
+				{
+					find: './node_modules/.kody-generated/isomorphic-git.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/test-support/isomorphic-git-modules-stub.ts',
+					),
 				},
 			],
 		},

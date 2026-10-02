@@ -35,6 +35,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
+		'isomorphic-git.mjs',
 		'package-app-remix.mjs',
 		'esbuild.wasm',
 		'worker-bundler.stamp.json',
@@ -47,6 +48,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
+		'isomorphic-git.mjs',
 		'package-app-remix.mjs',
 		'esbuild.wasm',
 	] as const) {

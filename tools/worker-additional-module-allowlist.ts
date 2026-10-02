@@ -19,6 +19,7 @@ export const kodyGeneratedEsModuleNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
+	'isomorphic-git.mjs',
 	'package-app-remix.mjs',
 ] as const
 

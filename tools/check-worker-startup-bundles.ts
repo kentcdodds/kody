@@ -99,6 +99,15 @@ const oauthProviderGeneratedModuleSourcePath =
 const oauthProviderPackageSourcePath =
 	'/node_modules/@cloudflare/workers-oauth-provider/'
 /**
+ * `#worker/isomorphic-git-modules.ts` loads isomorphic-git from this generated
+ * module. A memoized `import('isomorphic-git')` still lands in the main entry
+ * (and `@cloudflare/shell` also depends on the package, so the npm path cannot
+ * be a hard forbidden source). The generated module must stay a separate
+ * additional module so our load path does not add a second inlined copy.
+ */
+const isomorphicGitGeneratedModuleSourcePath =
+	'/packages/worker/.generated/isomorphic-git.mjs'
+/**
  * The pre-bundled `remix` file set package bundles receive as
  * `node_modules/remix/*` (~0.5 MB of string constants). Only the runtime
  * bundler path loads it, so it must stay a separate additional module.
@@ -261,6 +270,15 @@ function assertDeferredSourcesStayOutOfMain(
 	}
 	if (
 		sources.some((source) =>
+			source.includes(isomorphicGitGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated isomorphic-git module (${isomorphicGitGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	if (
+		sources.some((source) =>
 			source.includes(packageAppRemixGeneratedModuleSourcePath),
 		)
 	) {
@@ -349,6 +367,11 @@ function assertOriginViteDeferredChunks(
 	if (assets.workerBundler.length === 0) {
 		throw new Error(
 			`${name} Vite startup bundle did not emit a separate worker-bundler chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.isomorphicGit.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate isomorphic-git chunk (dynamic import() regression?).`,
 		)
 	}
 	if (assets.packageAppRemix.length === 0) {
