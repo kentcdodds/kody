@@ -208,7 +208,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 			{ role_name: 'user', action: 'read', entity: 'user', access: 'own' },
 		],
 		flags: [{ key: 'demo-indicator', enabled: 1, rollout_percent: null }],
-		overrides: [{ flag_key: 'compact-mcp-server-instructions', enabled: 1 }],
+		overrides: [{ flag_key: 'execute-invoke', enabled: 1 }],
 	})
 
 	vi.mocked(renderAppPage).mockImplementation(async (input) => {
@@ -239,11 +239,10 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 	expect(body.session.permissions).toEqual(['read:user:own'])
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
-		'compact-mcp-server-instructions': true,
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,
-		'execute-invoke': false,
+		'execute-invoke': true,
 		'mcp-api-tool': false,
 		'local-execute': false,
 	})

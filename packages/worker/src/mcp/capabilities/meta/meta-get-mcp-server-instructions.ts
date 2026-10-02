@@ -45,9 +45,7 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user.userId,
 			)
-			const assembly = await describeUserMcpServerInstructionOverlay({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
+			const assembly = describeUserMcpServerInstructionOverlay({
 				overlay: instructions,
 			})
 			return {

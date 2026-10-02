@@ -282,7 +282,6 @@ function createFeatureFlagsTestDb(
 
 const registryKeys = [
 	'demo-indicator',
-	'compact-mcp-server-instructions',
 	'package-share-grants',
 	'secret-providers',
 	'jev-search-rerank',
@@ -553,7 +552,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(10)
+	expect(listed).toHaveLength(9)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',
@@ -573,7 +572,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 			'local-execute',
 			{ defaultAudience: 'experiments_opt_in', successMetric: null },
 		],
-		['compact-mcp-server-instructions', { successMetric: executeMetric }],
 		[
 			'demo-indicator',
 			{

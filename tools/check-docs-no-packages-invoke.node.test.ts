@@ -27,7 +27,7 @@ test('allows only the present-tense negation phrase', () => {
 	expect(
 		findDisallowedPackagesInvokeMentions({
 			relativePath:
-				'packages/worker/src/mcp/instructions/base-server-fragments.ts',
+				'packages/worker/src/mcp/instructions/execute-tool-description.ts',
 			content:
 				'Known package exports use a static import. There is no author-facing \\`packages.invoke\\`.',
 		}),

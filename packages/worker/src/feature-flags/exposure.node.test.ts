@@ -1,7 +1,10 @@
 import { expect, test, vi, type Mock } from 'vitest'
 import { recordFeatureFlagExposures } from './exposure.ts'
 import { recordPaidRankedSearchFlagExposure } from './paid-ranked-search-exposure.ts'
-import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
+import {
+	executeInvokeFlagKey,
+	jevSearchRerankFlagKey,
+} from '#universal/feature-flags/registry.ts'
 
 function exposureEnv(writeDataPoint: Mock) {
 	return {
@@ -44,14 +47,14 @@ test('evaluation chokepoint skips paid-ranked-search flags; dedicated site recor
 		stableUserId: 'a'.repeat(64),
 		evaluations: {
 			[jevSearchRerankFlagKey]: { enabled: true, source: 'global' },
-			'compact-mcp-server-instructions': { enabled: true, source: 'global' },
+			[executeInvokeFlagKey]: { enabled: true, source: 'global' },
 		},
 		recordingSite: 'evaluation',
 		timestamp: '2026-09-20T00:00:00.000Z',
 	})
 	expect(writeDataPoint).toHaveBeenCalledTimes(1)
 	expect(writeDataPoint.mock.calls[0]?.[0]).toMatchObject({
-		blobs: expect.arrayContaining(['compact-mcp-server-instructions', 'on']),
+		blobs: expect.arrayContaining([executeInvokeFlagKey, 'on']),
 	})
 
 	writeDataPoint.mockClear()

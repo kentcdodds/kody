@@ -179,8 +179,8 @@ test('exempts principles and migration pages and scans discovered docs', async (
 			'.agents/skills/example/SKILL.md': 'Current behavior.\n',
 			'packages/worker/src/mcp/server-instructions.ts':
 				'export const instructions = "Current behavior."\n',
-			'packages/worker/src/mcp/instructions/base-server-fragments.ts':
-				'export const fragment = "Current behavior."\n',
+			'packages/worker/src/mcp/instructions/execute-tool-description.ts':
+				'export const description = "Current behavior."\n',
 		}
 		for (const [file, content] of Object.entries(files)) {
 			await mkdir(path.dirname(path.join(cwd, file)), { recursive: true })
@@ -192,7 +192,7 @@ test('exempts principles and migration pages and scans discovered docs', async (
 			'AGENTS.md',
 			'README.md',
 			'docs/use/example.md',
-			'packages/worker/src/mcp/instructions/base-server-fragments.ts',
+			'packages/worker/src/mcp/instructions/execute-tool-description.ts',
 			'packages/worker/src/mcp/server-instructions.ts',
 		])
 		expect(await checkDocumentationTemporalLanguage(cwd)).toEqual(

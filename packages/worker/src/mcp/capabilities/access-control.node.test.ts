@@ -13,7 +13,6 @@ import { type Capability } from './types.ts'
 function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
-		'compact-mcp-server-instructions': false,
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,

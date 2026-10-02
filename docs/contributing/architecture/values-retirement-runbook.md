@@ -37,9 +37,9 @@ the unused buckets with the tables.
 
 ## Agent channel
 
-Do not dump this runbook into always-on MCP instructions. The destination map
-lives in `docs/guides/values.md` and stays unadvertised. An empty
-`retiringPrimitiveNotices` registry omits the section.
+Do not dump this runbook into always-on MCP server instructions. The destination
+map lives in `docs/guides/values.md` and stays unadvertised. Surface migration
+detail through `search` / guides when an agent needs it.
 
 ## Remaining work
 

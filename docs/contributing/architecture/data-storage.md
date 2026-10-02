@@ -575,11 +575,11 @@ Two D1 reporting projections deliberately remain:
   stay drip-silent except that one-shot advocate mail. LimitAware shares the
   existing entitlement-warning mail. Kit stays exist-only tags. See
   [Usage metering](./usage-metering.md#usage-campaign).
-- `agent_package_conversation_uses` is read while building MCP server
-  instructions to provide popular-package hints. That request path is
-  latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
-  per-user meter Durable Object is a possible future home if D1 write contention
-  requires another move.
+- `agent_package_conversation_uses` records per-user package conversation
+  cardinality from MCP `execute` package paths. That path stays on D1 because it
+  is latency-sensitive relative to Analytics Engine SQL. A per-user meter
+  Durable Object is a possible future home if D1 write contention requires
+  another move. MCP server instructions do not read this table.
 
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
@@ -1779,10 +1779,10 @@ Current retention policies:
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.
-- `agent_package_conversation_uses`: per-user package popularity rows keep 180
-  days by `last_used_at`, matching the query-time window used to hint popular
-  packages in MCP server instructions. The prune orders by the existing
-  `(user_id, last_used_at)` time index via `last_used_at` then `rowid`.
+- `agent_package_conversation_uses`: per-user package conversation-use rows keep
+  180 days by `last_used_at` (`agentPackagePopularityMaxAgeDays`). The prune
+  orders by the existing `(user_id, last_used_at)` time index via `last_used_at`
+  then `rowid`.
 - Unverified person accounts: password signups that stay unverified
   (`users.email_verified_at` is null) for seven days and have no
   `oauth_connections` row are deleted by the hourly `unverified_account_purge`

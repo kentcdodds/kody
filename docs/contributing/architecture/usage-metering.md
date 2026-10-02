@@ -434,7 +434,7 @@ export does not list them.
    The rollup is the cheap read path for month-to-date admin and cohort views:
    one point lookup per user, metric, and month.
 
-## Agent package popularity (MCP instructions hint)
+## Agent package conversation uses
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
 defined in `0001-squashed-init.sql`) tracks **distinct conversations** in which
@@ -446,13 +446,7 @@ attributed to that execute call’s `conversationId`).
   the same package in the same conversation counts once. Stored
   `conversation_id` values are SHA-256 hex digests of the MCP conversation id
   (cardinality only; not reversible to the raw id).
-- Read path: take the user’s last **N** distinct agent conversations
-  (default 40) with `last_used_at` within a hard max age (default 180 days),
-  count how many of those conversations used each package (package rows must
-  also be within max age), join `saved_packages` for `kody_id` + description,
-  top 8 name bullets for `buildMcpServerInstructions`. Cold start (no rows)
-  omits the section. List failures (missing table, transient D1 errors) return
-  `[]` so MCP init stays up.
+- MCP server instructions do **not** inject popularity rankings from this table.
 - Writes are best-effort and never throw into the invoke path (same spirit as
   `recordUsage`). Do **not** widen `usage_rollups` for conversation cardinality.
 

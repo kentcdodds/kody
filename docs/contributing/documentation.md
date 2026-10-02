@@ -17,16 +17,17 @@ of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 `npm run docs:check-temporal` checks durable documentation and docs-like MCP
 instructions for common rollout phrases. `npm run docs:check-decisions` rejects
 duplicate decision-record numbers. `npm run docs:check-no-packages-invoke`
-rejects teaching `packages.invoke` in usage docs, guides, MCP instruction
-fragments and the assembler (`server-instructions.ts`), skills, and `AGENTS.md`
-(only the present-tense negation phrase is allowed; decision 0037 / #1750).
-`npm run mermaid:check` parses fenced mermaid in docs and agent skills (and
-`--stdin` recap blocks) so GitHub's "Unable to render rich display" failures
-fail locally. `npm run slop-ratchet:check` holds the client-route and node-test
-file-size allowlists and rejects decorative `========` / `----------` comment
-banners. `kody-custom/no-tautological-absence` rejects vanished-copy
-`not.toContain` leftovers in tests during `npm run lint`. `npm run knip` fails
-on unused files, exports, and types against the configured entrypoints.
+rejects teaching `packages.invoke` in usage docs, guides, MCP instruction files
+under `packages/worker/src/mcp/instructions/` and the assembler
+(`server-instructions.ts`), skills, and `AGENTS.md` (only the present-tense
+negation phrase is allowed; decision 0037 / #1750). `npm run mermaid:check`
+parses fenced mermaid in docs and agent skills (and `--stdin` recap blocks) so
+GitHub's "Unable to render rich display" failures fail locally.
+`npm run slop-ratchet:check` holds the client-route and node-test file-size
+allowlists and rejects decorative `========` / `----------` comment banners.
+`kody-custom/no-tautological-absence` rejects vanished-copy `not.toContain`
+leftovers in tests during `npm run lint`. `npm run knip` fails on unused files,
+exports, and types against the configured entrypoints.
 `kody-custom/no-oversized-guide-section` rejects official guide headings that
 exceed the search response budget. These run as part of `npm run validate`.
 

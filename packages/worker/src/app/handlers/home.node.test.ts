@@ -60,7 +60,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 			q.includes('from feature_flag_user_overrides') &&
 			q.includes('where user_id = ?')
 		) {
-			return [{ flag_key: 'compact-mcp-server-instructions', enabled: 1 }]
+			return [{ flag_key: 'execute-invoke', enabled: 1 }]
 		}
 		return []
 	}
@@ -106,11 +106,10 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(body.session.username).toBe('home-user')
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
-		'compact-mcp-server-instructions': true,
 		'package-share-grants': false,
 		'secret-providers': false,
 		'jev-search-rerank': false,
-		'execute-invoke': false,
+		'execute-invoke': true,
 		'mcp-api-tool': false,
 		'local-execute': false,
 	})
