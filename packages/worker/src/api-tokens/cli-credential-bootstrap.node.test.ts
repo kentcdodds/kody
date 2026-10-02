@@ -31,7 +31,6 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 	const minted = await mintCliCredentialBootstrap({
 		db,
 		userId,
-		allowLocalExecute: true,
 		now: start,
 	})
 
@@ -46,7 +45,6 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 	const redeemed = await redeemCliCredentialBootstrap({
 		db,
 		code: minted.bootstrap_code,
-		allowLocalExecuteForUser: async () => true,
 		now: at(30),
 	})
 	expect(redeemed.userId).toBe(userId)
@@ -63,7 +61,6 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 		redeemCliCredentialBootstrap({
 			db,
 			code: minted.bootstrap_code,
-			allowLocalExecuteForUser: async () => true,
 			now: at(90),
 		}),
 	).rejects.toBeInstanceOf(McpCallerError)
@@ -75,14 +72,12 @@ test('bootstrap redeem rejects expired codes', async () => {
 		db,
 		userId,
 		redeemTtlSeconds: 60,
-		allowLocalExecute: true,
 		now: start,
 	})
 	await expect(
 		redeemCliCredentialBootstrap({
 			db,
 			code: minted.bootstrap_code,
-			allowLocalExecuteForUser: async () => true,
 			now: at(120),
 		}),
 	).rejects.toThrow(/expired/i)
@@ -95,7 +90,6 @@ test('bootstrap respects parent token scopes', async () => {
 			db,
 			userId,
 			scopes: ['local-execute', 'packages:write'],
-			allowLocalExecute: true,
 			parent: {
 				scopes: ['tokens:write', 'local-execute', 'account:read'],
 				maxExpiresAt: at(24 * 60 * 60).toISOString(),

@@ -286,8 +286,6 @@ const registryKeys = [
 	'secret-providers',
 	'jev-search-rerank',
 	'execute-invoke',
-	'mcp-api-tool',
-	'local-execute',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {
@@ -423,20 +421,20 @@ test('setFeatureFlagUserOverrides writes paired keys atomically', async () => {
 	const db = createFeatureFlagsTestDb()
 	await setFeatureFlagUserOverrides(db, [
 		{
-			key: 'mcp-api-tool',
+			key: 'execute-invoke',
 			userId: 7,
 			enabled: true,
 			updatedBy: 7,
 		},
 		{
-			key: 'local-execute',
+			key: 'jev-search-rerank',
 			userId: 7,
 			enabled: true,
 			updatedBy: 7,
 		},
 	])
-	expect(await enabledFor(db, [7], 'mcp-api-tool')).toEqual([true])
-	expect(await enabledFor(db, [7], 'local-execute')).toEqual([true])
+	expect(await enabledFor(db, [7], 'execute-invoke')).toEqual([true])
+	expect(await enabledFor(db, [7], 'jev-search-rerank')).toEqual([true])
 
 	const originalPrepare = db.prepare.bind(db)
 	let overrideRuns = 0
@@ -477,9 +475,9 @@ test('setFeatureFlagUserOverrides writes paired keys atomically', async () => {
 		]),
 	).rejects.toThrow('second override write failed')
 	expect(db.overrides.has('demo-indicator:7')).toBe(false)
-	expect(db.overrides.has('execute-invoke:7')).toBe(false)
-	expect(await enabledFor(db, [7], 'mcp-api-tool')).toEqual([true])
-	expect(await enabledFor(db, [7], 'local-execute')).toEqual([true])
+	expect(db.overrides.has('execute-invoke:7')).toBe(true)
+	expect(await enabledFor(db, [7], 'execute-invoke')).toEqual([true])
+	expect(await enabledFor(db, [7], 'jev-search-rerank')).toEqual([true])
 })
 
 test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => {
@@ -552,7 +550,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(9)
+	expect(listed).toHaveLength(7)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',
@@ -567,11 +565,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },
 		],
 		['execute-invoke', { defaultAudience: 'experiments_opt_in' }],
-		['mcp-api-tool', { defaultAudience: 'experiments_opt_in' }],
-		[
-			'local-execute',
-			{ defaultAudience: 'experiments_opt_in', successMetric: null },
-		],
 		[
 			'demo-indicator',
 			{

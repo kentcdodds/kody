@@ -4,8 +4,8 @@ title: Search and execute
 summary:
   Search finds capabilities, guides, packages, integrations, and secrets.
   execute runs an ephemeral module that calls what you found. Covers how they
-  work together and the inputs an agent actually passes. The flag-gated api tool
-  is documented separately.
+  work together and the inputs an agent actually passes. The MCP api tool is
+  documented separately.
 category: platform
 ---
 
@@ -25,7 +25,7 @@ Agent notes — for AI agents explaining or using search and execute:
   execute.
 - Search returns markdown (`# Search results`), not a matches JSON object.
   Pass conversationId back unchanged on follow-up search and execute calls.
-- When mcp-api-tool is on, MCP also registers api. That tool is
+- MCP also registers **api** for HTTPS operations and token minting — see
   guide:open_api, not this page.
 - For the factory loop that uses search and execute, load how_kody_works next.
 -->
@@ -33,10 +33,9 @@ Agent notes — for AI agents explaining or using search and execute:
 Your agent connects to Kody over MCP and starts with **search** and **execute**.
 **search** finds the right thing, then **execute** runs it. Capabilities, saved
 packages, integrations, secrets, and official guides stay behind those two doors
-instead of appearing as a tool list. When the `mcp-api-tool` experiment is on,
-MCP also registers **api** for HTTPS operations and token minting — see
-[Open API and local execute](./open-api.md). That tool does not replace search
-and execute.
+instead of appearing as a tool list. MCP also registers **api** for HTTPS
+operations and token minting — see [Open API and local execute](./open-api.md).
+That tool does not replace search and execute.
 
 This page is the playbook for search and execute. The same tools drive the loop
 in [How Kody works](./how-kody-works.md). Watch:

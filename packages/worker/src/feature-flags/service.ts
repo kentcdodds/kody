@@ -460,8 +460,8 @@ export async function setFeatureFlagUserOverride(
 }
 
 /**
- * Apply several per-user overrides in one D1 batch so paired opt-ins (for
- * example mcp-api-tool + local-execute) commit together or not at all.
+ * Apply several per-user overrides in one D1 batch so related opt-ins commit
+ * together or not at all.
  */
 export async function setFeatureFlagUserOverrides(
 	db: D1Database,

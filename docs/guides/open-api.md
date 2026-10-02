@@ -5,17 +5,15 @@ summary:
   Prefer @kodycodes/cli execute --local when Node ≥22 is available. Agents on
   MCP use cliCredentialBootstrap (one-shot code, no tokenCreate); interactive
   humans use kody login; scoped kody_at_… tokens remain for CI/headless. Call
-  Kody over HTTPS at api.kody.codes with CapabilityProxy. Behind experiments
-  flags; signed-in users can turn them on from this page.
+  Kody over HTTPS at api.kody.codes with CapabilityProxy.
 category: platform
 ---
 
 # Open API and local execute
 
-Open API and local execute are behind the `mcp-api-tool` and `local-execute`
-feature flags (experiments cohort in production, plus per-user overrides).
-Signed-in users who are not already enabled can turn them on from this page.
-They may change or go away.
+The Open API, MCP `api` tool, and local-execute HTTP surfaces are available to
+every signed-in account. Local execute still requires the `local-execute` API
+token scope (or CLI `kody login` OAuth on CapabilityProxy routes).
 
 ## What they are
 
@@ -23,24 +21,15 @@ They may change or go away.
   (`/openapi.json` and `/v1/*`). Interactive docs:
   [api-docs.kody.codes](https://api-docs.kody.codes).
 - **MCP `api` tool** — run one Open API operation (`operationId` + `params`)
-  from a connected agent when `mcp-api-tool` is on. Use it to mint, list, and
-  revoke scoped API tokens (`tokenCreate` / `tokenList` / `tokenRevoke`). There
-  is no account UI for tokens.
+  from a connected agent. Use it to mint, list, and revoke scoped API tokens
+  (`tokenCreate` / `tokenList` / `tokenRevoke`). There is no account UI for
+  tokens.
 - **Local execute** — `@kodycodes/cli execute --local` runs your module in a
   local workerd and forwards each `kody:runtime` call through the
   CapabilityProxy (`/v1/capability-proxy/session` and
-  `/v1/capability-proxy/call`). Needs the `local-execute` flag. Auth: `--token`
-  / `KODY_API_TOKEN` (`kody_at_…` with `local-execute` scope), or — when no API
-  token is set — the access token from `kody login` (MCP OAuth) as Bearer.
-
-## How to get access
-
-1. **Experiments** — turn on experiments at
-   [`/account/experiments`](/account/experiments). Production already enables
-   `mcp-api-tool` and `local-execute` for the `experiments_opt_in` audience.
-2. **This page** — signed-in users can opt in with the button above. That writes
-   per-user on overrides for both flags without joining the broader experiments
-   cohort.
+  `/v1/capability-proxy/call`). Auth: `--token` / `KODY_API_TOKEN` (`kody_at_…`
+  with `local-execute` scope), or — when no API token is set — the access token
+  from `kody login` (MCP OAuth) as Bearer on CapabilityProxy routes.
 
 ## Prefer local CLI execute
 
@@ -53,7 +42,7 @@ for package imports. Agents already on MCP: `cliCredentialBootstrap` then CLI
 `kody login` once, then `--local` with no `KODY_API_TOKEN`. Scoped `kody_at_…`
 tokens remain valid for CI and other headless envs without MCP — put
 `KODY_API_TOKEN` in the environment (not in the prompt). If local cannot run (no
-suitable Node, CLI missing, flags/scopes missing, or the host cannot run a local
+suitable Node, CLI missing, scope/auth missing, or the host cannot run a local
 workerd), use Open API / MCP `api` for the needed operations, or fix the
 environment so local works — hosted MCP `execute` is banned for agents that can
 use local CLI or Open API. See
@@ -67,7 +56,7 @@ Modules that `import { kody }` / `workflows` from `kody:runtime` (same contract
 as cloud execute — no ambient global `kody`) run in local workerd; each
 `kody:runtime` call is a CapabilityProxy hop. Modules with static `kody:@…`
 imports keep `--local`: the CLI calls `POST /v1/local-execute/package-graph`
-(same `local-execute` flag + login OAuth or API token) to download published,
+(same `local-execute` scope + login OAuth or API token) to download published,
 stamped importable-module artifacts, embeds them next to your module +
 `kody:runtime`, and still uses CapabilityProxy only for per-call runtime hops.
 There is **no** silent whole-module defer to CapabilityProxy → `kody.execute`.
@@ -135,7 +124,7 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 **Preferred for interactive humans:** `kody login`, then run with no
 `KODY_API_TOKEN`. The CLI sends the stored MCP OAuth access token as Bearer to
-CapabilityProxy and package-graph (same `local-execute` flag).
+CapabilityProxy and package-graph (same `local-execute` scope).
 
 ```bash
 npx @kodycodes/cli login   # once

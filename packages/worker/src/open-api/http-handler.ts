@@ -3,10 +3,7 @@ import {
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
-import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { authenticateApiRequest } from './authenticate.ts'
 import {
@@ -23,7 +20,6 @@ import {
 } from './errors.ts'
 import {
 	assertApiScope,
-	assertNativeOperationEnabled,
 	capabilityProxyObservationEntityId,
 	invokeApiOperation,
 	isCapabilityProxyOperation,
@@ -137,17 +133,6 @@ async function handleOperation(input: {
 		const redeemed = await redeemCliCredentialBootstrap({
 			db: input.env.APP_DB,
 			code,
-			allowLocalExecuteForUser: async (stableUserId) => {
-				const stable = normalizeStableUserId(stableUserId)
-				if (!stable) return false
-				const row = await input.env.APP_DB.prepare(
-					`SELECT id FROM users WHERE stable_user_id = ?`,
-				)
-					.bind(stable)
-					.first<{ id: number }>()
-				if (!row) return false
-				return isFeatureEnabled(input.env.APP_DB, localExecuteFlagKey, row.id)
-			},
 		})
 		input.waitUntil(
 			recordUsage(
@@ -212,12 +197,10 @@ async function handleOperation(input: {
 		matchedOperation,
 		await getStaticRegistry(),
 	)
-	// Flag/scope before param parse so disabled/unscoped tokens get 403
-	// feature_disabled / insufficient_scope instead of 400 parse errors.
-	// CapabilityProxy preflight failures meter here (one event); invoke still
-	// meters the hop after params are accepted.
+	// Scope before param parse so unscoped tokens get 403 insufficient_scope
+	// instead of 400 parse errors. CapabilityProxy preflight failures meter here
+	// (one event); invoke still meters the hop after params are accepted.
 	try {
-		await assertNativeOperationEnabled(ctx, matchedOperation)
 		assertApiScope(ctx, resolved.scope)
 	} catch (error) {
 		const apiError = toApiError(error)

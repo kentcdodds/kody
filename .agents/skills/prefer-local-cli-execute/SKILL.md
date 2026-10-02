@@ -59,8 +59,8 @@ npx @kodycodes/cli login   # once per machine
 npx @kodycodes/cli execute --local --code '…'
 ```
 
-CapabilityProxy and package-graph accept that OAuth Bearer when `local-execute`
-is on (ADR 0055).
+CapabilityProxy and package-graph accept that OAuth Bearer when the caller has
+the `local-execute` scope (ADR 0055).
 
 ## CLI credential priority
 
@@ -105,7 +105,7 @@ export default async function main(params) { return await searchMessages(params)
 ```
 
 The CLI downloads stamped modules via Open API
-`POST /v1/local-execute/package-graph` (same `local-execute` flag + login OAuth
+`POST /v1/local-execute/package-graph` (same `local-execute` scope + login OAuth
 or API token) and embeds them in local workerd. CapabilityProxy stays for
 per-call `kody:runtime` hops only. Package-graph rewrites inlined virtual
 runtime preambles onto the CapabilityProxy shim so Dropbox-style published

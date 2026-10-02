@@ -116,10 +116,9 @@ primitives:
     name: Open API (api.kody.codes)
     summary:
       Public JSON HTTP API (`/openapi.json`, versioned `/v1`) served by the
-      kody-api edge worker and the origin KodyApi entrypoint; also backs the
-      flag-gated MCP `api` tool and the local-execute CapabilityProxy.
-      Interactive docs live on the separate `kody-api-docs` worker
-      (`api-docs.kody.codes`).
+      kody-api edge worker and the origin KodyApi entrypoint; also backs the MCP
+      `api` tool and the local-execute CapabilityProxy. Interactive docs live on
+      the separate `kody-api-docs` worker (`api-docs.kody.codes`).
     code:
       - packages/api-worker/
       - packages/api-docs-worker/

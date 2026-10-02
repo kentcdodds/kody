@@ -49,7 +49,6 @@ test('mint returns the plaintext once, stores only a hash, and authenticates', a
 		name: '  cli  ',
 		scopes: ['packages:read', 'secrets:write', 'packages:read'],
 		createdVia: 'api',
-		allowLocalExecute: false,
 		now: start,
 	})
 
@@ -94,7 +93,6 @@ test('authentication rejects malformed, wrong-secret, expired, and revoked token
 		scopes: ['account:read'],
 		idleTtlSeconds: 60,
 		createdVia: 'api',
-		allowLocalExecute: false,
 		now: start,
 	})
 	const parsed = parseApiToken(minted.token)!
@@ -128,7 +126,6 @@ test('use slides expiry forward, debounced, and never past the absolute expiry',
 		idleTtlSeconds: 300,
 		maxLifetimeSeconds: 600,
 		createdVia: 'api',
-		allowLocalExecute: false,
 		now: start,
 	})
 	const load = async () =>
@@ -160,7 +157,6 @@ test('a token used at its minimum idle TTL keeps at least three quarters of it',
 		scopes: ['runs:read'],
 		idleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
 		createdVia: 'api',
-		allowLocalExecute: false,
 		now: start,
 	})
 	let record = (await getApiTokenRecord({ db, userId, tokenId: minted.id }))!
@@ -187,7 +183,6 @@ test('rotate invalidates the old secret and keeps scopes and absolute expiry', a
 		name: 'rotating',
 		scopes: ['jobs:write'],
 		createdVia: 'mcp-api',
-		allowLocalExecute: false,
 		now: start,
 	})
 	const rotated = await rotateApiToken({
@@ -225,7 +220,6 @@ test('mint validates scopes, ttl bounds, local-execute access, and parent limits
 		userId,
 		name: 'bad',
 		createdVia: 'api' as const,
-		allowLocalExecute: false,
 		now: start,
 	}
 
@@ -240,14 +234,9 @@ test('mint validates scopes, ttl bounds, local-execute access, and parent limits
 			mintApiToken({ ...base, scopes: ['runs:read'], idleTtlSeconds: 5 }),
 		),
 	).toBeInstanceOf(McpCallerError)
-	expect(
-		await rejection(mintApiToken({ ...base, scopes: ['local-execute'] })),
-	).toBeInstanceOf(McpCallerError)
-
 	const localExecute = await mintApiToken({
 		...base,
 		scopes: ['local-execute'],
-		allowLocalExecute: true,
 	})
 	expect(localExecute.scopes).toEqual(['local-execute'])
 
@@ -276,7 +265,6 @@ test('mint caps active tokens per account and prunes long-dead rows', async () =
 		name: 'bulk',
 		scopes: ['account:read'],
 		createdVia: 'api' as const,
-		allowLocalExecute: false,
 	}
 	for (let index = 0; index < apiTokenPolicy.maxActiveTokensPerUser; index++) {
 		await mintApiToken({ ...base, now: start })

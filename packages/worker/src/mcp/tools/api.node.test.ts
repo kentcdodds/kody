@@ -22,7 +22,7 @@ type ToolHandler = (input: {
 	}
 }>
 
-async function createAgent(input: { flag: boolean }) {
+async function createAgent() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	const email = 'api-tool@example.com'
@@ -33,14 +33,6 @@ async function createAgent(input: { flag: boolean }) {
 			 VALUES (1, 'api-tool', ?, 'hash', ?, '2026-01-01T00:00:00.000Z')`,
 		)
 		.run(email, userId)
-	const setFlag = (enabled: boolean) =>
-		sqlite
-			.prepare(
-				`INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled) VALUES ('mcp-api-tool', 1, ?)
-				 ON CONFLICT (flag_key, user_id) DO UPDATE SET enabled = excluded.enabled`,
-			)
-			.run(enabled ? 1 : 0)
-	if (input.flag) setFlag(true)
 	const env = {
 		APP_DB: createD1FromSqlite(sqlite),
 		COOKIE_SECRET: 'test-cookie-secret',
@@ -60,16 +52,12 @@ async function createAgent(input: { flag: boolean }) {
 	await registerApiTool(agent as never)
 	return {
 		registerTool,
-		setFlag,
 		handler: () => registerTool.mock.calls[0]?.[2] as ToolHandler,
 	}
 }
 
-test('the api tool is absent until the flag is on, then runs operations and re-checks per call', async () => {
-	const off = await createAgent({ flag: false })
-	expect(off.registerTool).not.toHaveBeenCalled()
-
-	const agent = await createAgent({ flag: true })
+test('the api tool registers for signed-in callers and runs operations', async () => {
+	const agent = await createAgent()
 	expect(agent.registerTool).toHaveBeenCalledTimes(1)
 	expect(agent.registerTool.mock.calls[0]?.[0]).toBe('api')
 	const outputSchema = z.object(apiToolOutputSchema)
@@ -89,16 +77,8 @@ test('the api tool is absent until the flag is on, then runs operations and re-c
 
 	const proxy = await agent.handler()({
 		operationId: 'capabilityProxyCall',
-		params: { path: ['kody', 'metaGetCurrentUser'], args: [] },
+		params: { path: ['kody', 'metaGetCurrentUser'], args: [{}] },
 	})
 	expect(proxy.isError).toBe(true)
-	expect(proxy.structuredContent.error?.code).toBe('feature_disabled')
-
-	agent.setFlag(false)
-	const disabled = await agent.handler()({ operationId: 'metaGetCurrentUser' })
-	expect(disabled.isError).toBe(true)
-	expect(disabled.structuredContent['error']).toMatchObject({
-		code: 'feature_unavailable',
-		details: { feature_flag: 'mcp-api-tool' },
-	})
+	expect(proxy.structuredContent.error?.code).toBe('invalid_request')
 })

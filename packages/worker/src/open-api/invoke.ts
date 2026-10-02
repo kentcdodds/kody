@@ -2,7 +2,6 @@ import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { callerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { type Capability } from '#mcp/capabilities/types.ts'
-import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	apiTokenScopeSatisfies,
 	type ApiTokenScope,
@@ -19,15 +18,13 @@ import {
 import { nativeApiOperationDefinitions } from './native-operations.ts'
 
 /**
- * CapabilityProxy native routes (`local-execute`). Their observe-only
+ * CapabilityProxy native routes (`local-execute` scope). Their observe-only
  * `api_call` events append the ApiError `code` to `entityId` on failure so
- * session start vs `feature_disabled` / `unauthorized` / hop errors stay
- * distinguishable in Analytics Engine without a new UsageEventType.
+ * session start vs `unauthorized` / hop errors stay distinguishable in
+ * Analytics Engine without a new UsageEventType.
  */
 export function isCapabilityProxyOperation(operation: ApiOperation): boolean {
-	return (
-		operation.kind === 'native' && operation.featureFlag === localExecuteFlagKey
-	)
+	return operation.kind === 'native' && operation.tag === 'capability-proxy'
 }
 
 /** Code-authenticated CLI redeem — no Bearer (ADR 0056). */
@@ -109,26 +106,6 @@ async function assertCapabilityAvailable(
 	})
 }
 
-/**
- * Flag-gated native operations (the CapabilityProxy) answer 403
- * `feature_disabled` before the scope check so clients can tell "flag off"
- * apart from "token lacks the scope".
- */
-export async function assertNativeOperationEnabled(
-	ctx: ApiInvocationContext,
-	operation: ApiOperation,
-) {
-	if (operation.kind !== 'native' || !operation.featureFlag) return
-	const featureFlags = await ctx.getFeatureFlags()
-	if (featureFlags[operation.featureFlag] === true) return
-	throw new ApiError({
-		status: 403,
-		code: 'feature_disabled',
-		message: `Operation "${operation.operationId}" requires the "${operation.featureFlag}" feature flag, which is not enabled for this account.`,
-		details: { feature_flag: operation.featureFlag },
-	})
-}
-
 export function getApiOperation(operationId: string): ApiOperation {
 	const operation = apiOperationsById.get(operationId)
 	if (!operation) {
@@ -147,7 +124,6 @@ async function dispatch(input: {
 	const { operation, params, ctx } = input
 	switch (operation.kind) {
 		case 'native': {
-			await assertNativeOperationEnabled(ctx, operation)
 			assertApiScope(ctx, operation.scope)
 			return nativeApiOperationDefinitions[operation.operationId].handler(
 				params,

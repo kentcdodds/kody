@@ -40,8 +40,8 @@ device login. Kody does not push work from the cloud to a local venue.
   [0048](./0048-webhooks-replace-invocation-tokens.md)).
 - **Amended by [0055](./0055-cli-mcp-oauth-local-execute-http.md):** CLI-owned
   `kody login` MCP OAuth may authenticate CapabilityProxy and package-graph only
-  (full MCP grant + `local-execute` flag). Other Open API routes stay
-  `kody_at_`-only; the CLI still must not scavenge **host** MCP OAuth.
+  (full MCP grant). Other Open API routes stay `kody_at_`-only; the CLI still
+  must not scavenge **host** MCP OAuth.
 - **Amended by [0056](./0056-cli-credential-bootstrap.md):** agents already on
   MCP mint a one-shot `kody_bc_…` bootstrap code (not a `kody_at_`) via
   `cliCredentialBootstrap`; the CLI redeems it for a scoped API token. This is

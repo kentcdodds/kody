@@ -1,9 +1,7 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	cliCredentialBootstrapPolicy,
 	mintCliCredentialBootstrap,
@@ -118,10 +116,6 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const input = inputSchema.parse(args ?? {})
-			const featureFlags = await resolveCallerFeatureFlags(
-				ctx.env,
-				ctx.callerContext,
-			)
 			const parent =
 				ctx.openApiPrincipal?.kind === 'token'
 					? {
@@ -143,7 +137,6 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 				...(input.redeem_ttl_seconds === undefined
 					? {}
 					: { redeemTtlSeconds: input.redeem_ttl_seconds }),
-				allowLocalExecute: featureFlags[localExecuteFlagKey] === true,
 				...(parent ? { parent } : {}),
 			})
 		},

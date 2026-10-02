@@ -85,8 +85,8 @@ sees them without depending on one account's memories.
 ## Built-in MCP instructions and the user overlay
 
 Every MCP session gets a short neutral built-in stub (what Kody is, how to use
-`search` / `execute`, docs and local CLI pointers, thin safety notes). It does
-not list packages, domains, or lifecycle runbooks — discover those with
+`search` / `execute`, and a pointer to local CLI via `guide:local_execute`). It
+does not list packages, domains, or lifecycle runbooks — discover those with
 `search`.
 
 The optional overlay from `metaSetMcpServerInstructions` appends to that stub

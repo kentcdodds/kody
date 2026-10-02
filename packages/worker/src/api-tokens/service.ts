@@ -17,7 +17,6 @@ import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	apiTokenScopeSatisfies,
-	localExecuteScope,
 	normalizeApiTokenScopes,
 	type ApiTokenScope,
 } from './scopes.ts'
@@ -234,7 +233,6 @@ export async function mintApiToken(input: {
 	idleTtlSeconds?: number
 	maxLifetimeSeconds?: number
 	createdVia: ApiTokenCreatedVia
-	allowLocalExecute: boolean
 	parent?: ApiTokenMintParent
 	now?: Date
 }): Promise<ApiTokenSecretView> {
@@ -250,11 +248,6 @@ export async function mintApiToken(input: {
 	}
 	if (scopes.length === 0) {
 		throw new McpCallerError('At least one scope is required.')
-	}
-	if (scopes.includes(localExecuteScope) && !input.allowLocalExecute) {
-		throw new McpCallerError(
-			'The local-execute scope is not available for this account yet.',
-		)
 	}
 	const parent = input.parent
 	if (parent) {

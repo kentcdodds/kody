@@ -120,9 +120,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — capabilities stay generic; third parties configure via params/presets, not
   `foo-hub`-style type forks in platform schema or handlers
 - [0055 — CLI MCP OAuth may authenticate local-execute HTTP only](./0055-cli-mcp-oauth-local-execute-http.md)
-  — `kody login` Bearer on CapabilityProxy + package-graph when `local-execute`
-  is on; other Open API routes stay `kody_at_`-only; amended by 0056 for
-  headless/agent bootstrap without a second interactive OAuth
+  — `kody login` Bearer on CapabilityProxy + package-graph (full MCP grant);
+  other Open API routes stay `kody_at_`-only; amended by 0056 for headless/agent
+  bootstrap without a second interactive OAuth
 - [0056 — Explicit MCP/API session → CLI credential bootstrap](./0056-cli-credential-bootstrap.md)
   — one-shot `kody_bc_…` code from `cliCredentialBootstrap` (capability + Open
   API); CLI redeems for `kody_at_…` without chat-facing secrets or host-token

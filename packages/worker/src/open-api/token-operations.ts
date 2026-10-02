@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { localExecuteFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	apiTokenScopeDescriptions,
 	apiTokenScopeSatisfies,
@@ -17,8 +16,6 @@ import {
 	toApiTokenView,
 } from '#worker/api-tokens/service.ts'
 import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { ApiError, invalidRequest, notFound } from './errors.ts'
 import {
@@ -206,15 +203,12 @@ export const tokenOperationDefinitions: Record<
 	},
 	tokenCreate: {
 		summary: 'Mint a scoped API token',
-		description: `Mint a short-lived, scoped API token for this account. The token value is returned once. ${ttlDescription} The \`local-execute\` scope requires the local-execute feature flag. A token-authenticated caller can only grant scopes it holds and cannot outlive its own max_expires_at.`,
+		description: `Mint a short-lived, scoped API token for this account. The token value is returned once. ${ttlDescription} A token-authenticated caller can only grant scopes it holds and cannot outlive its own max_expires_at.`,
 		inputSchema: tokenCreateInputSchema,
 		outputSchema: tokenSecretViewSchema,
 		readOnly: false,
 		async handler(params, ctx) {
 			const input = parseNativeInput(tokenCreateInputSchema, params)
-			const featureFlags = input.scopes.includes('local-execute')
-				? await ctx.getFeatureFlags()
-				: null
 			const parent =
 				ctx.principal.kind === 'token'
 					? {
@@ -234,7 +228,6 @@ export const tokenOperationDefinitions: Record<
 					? {}
 					: { maxLifetimeSeconds: input.max_lifetime_seconds }),
 				createdVia: ctx.principal.kind === 'token' ? 'api' : 'mcp-api',
-				allowLocalExecute: featureFlags?.[localExecuteFlagKey] === true,
 				...(parent ? { parent } : {}),
 			})
 		},
@@ -328,20 +321,6 @@ const bootstrapRedeemInputSchema = z
 	})
 	.strict()
 
-async function allowLocalExecuteForStableUserId(
-	db: D1Database,
-	stableUserId: string,
-) {
-	const stable = normalizeStableUserId(stableUserId)
-	if (!stable) return false
-	const row = await db
-		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
-		.bind(stable)
-		.first<{ id: number }>()
-	if (!row) return false
-	return isFeatureEnabled(db, localExecuteFlagKey, row.id)
-}
-
 /**
  * CLI-only redeem. Rejected for MCP `api` (returns the secret into chat).
  * HTTP calls skip Bearer auth and authenticate solely by the one-shot code.
@@ -364,8 +343,6 @@ export const cliCredentialBootstrapRedeemDefinition: NativeApiOperationDefinitio
 			const redeemed = await redeemCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
 				code: input.code,
-				allowLocalExecuteForUser: (userId) =>
-					allowLocalExecuteForStableUserId(ctx.env.APP_DB, userId),
 			})
 			return redeemed.token
 		},

@@ -3,17 +3,12 @@
 The Kody Open API is the public HTTP surface at `https://api.kody.codes`. It
 serves JSON only: `GET /openapi.json` (OpenAPI 3.1) and the versioned `/v1`
 operations. Interactive HTML docs live on a separate Worker at
-`https://api-docs.kody.codes` (Scalar). The same operations back the flag-gated
-MCP `api` tool, and two of them form the CapabilityProxy that local execute
+`https://api-docs.kody.codes` (Scalar). The same operations back the MCP `api`
+tool, and two of them form the CapabilityProxy that local execute
 (`@kodycodes/cli`) calls.
 
-The HTTP API itself is not feature-flagged. The MCP `api` tool (`mcp-api-tool`)
-and the CapabilityProxy (`local-execute`) are; see
-[feature flags](./feature-flags.md). Production enables both for the
-`experiments_opt_in` audience. Signed-in users who are not already flagged can
-opt in from the user guide at `/docs/open-api` (per-user overrides for both
-flags). There is no account UI for API token management — mint, list, and revoke
-via the CLI / MCP `api` tool only.
+There is no account UI for API token management — mint, list, and revoke via the
+CLI / MCP `api` tool only.
 
 ## Workers
 
@@ -34,7 +29,7 @@ sequenceDiagram
   C->>E: HTTPS api.kody.codes
   E->>E: CORS, path + method allowlist, rate limits, 5 MiB cap
   E->>O: service binding KODY_API (allowlisted headers only)
-  O->>DB: authenticate token, flag gate, scope check, operation
+  O->>DB: authenticate token, scope check, operation
   O-->>E: JSON
   E-->>C: JSON (no Set-Cookie)
 ```
@@ -95,8 +90,7 @@ Kody stores only a SHA-256 hash; the value is returned once, on mint or rotate.
 On **local-execute HTTP only** (CapabilityProxy +
 `POST /v1/local-execute/package-graph`), a valid CLI MCP OAuth access token from
 `kody login` (official CLI CIMD client id) is also accepted as Bearer with the
-full MCP grant, still gated by the `local-execute` feature flag and without
-API-token scope checks
+full MCP grant, without API-token scope checks
 ([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)). Other `/v1`
 operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
@@ -113,8 +107,8 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   7 days).
 - Minting: the first token comes from the MCP `api` tool (`tokenCreate`, full
   MCP grant). A token holding `tokens:write` can mint more, but only with scopes
-  it holds and never outliving its own `max_expires_at`. The `local-execute`
-  scope requires the `local-execute` flag. At most 50 active tokens per account.
+  it holds and never outliving its own `max_expires_at`. At most 50 active
+  tokens per account.
 - **CLI bootstrap (ADR 0056):** `cliCredentialBootstrap` (capability +
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
   `kody_at_`). `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no
@@ -137,7 +131,7 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
 The cloud half of local execute. The CLI runs modules in a local workerd and
 forwards each `kody:runtime` call here. Static `kody:@…` imports are resolved by
-`POST /v1/local-execute/package-graph` (same `local-execute` flag/scope): origin
+`POST /v1/local-execute/package-graph` (same `local-execute` scope): origin
 returns published, stamped importable-module artifacts for embedding — it does
 **not** execute the user module and does not silently hop to `kody.execute`. See
 [Open API and local execute](../../guides/open-api.md) and
@@ -171,12 +165,9 @@ returns published, stamped importable-module artifacts for embedding — it does
 - Confused-deputy limits: the request is JSON arguments only. No caller header
   or cookie is forwarded into a capability, and the edge strips `Cookie` and
   `X-Kody-*` before origin sees the request.
-- Order of checks: bearer credential (401), then the `local-execute` flag (403
-  `feature_disabled`, `details.feature_flag: "local-execute"`), then — for
-  `kody_at_` tokens only — the `local-execute` scope (403 `insufficient_scope`).
-  CLI MCP OAuth skips the scope check (full MCP grant on these routes). The flag
-  runs first so the CLI can tell "not enabled for you" from "mint a token with
-  the local-execute scope".
+- Order of checks: bearer credential (401), then — for `kody_at_` tokens only —
+  the `local-execute` scope (403 `insufficient_scope`). CLI MCP OAuth skips the
+  scope check (full MCP grant on these routes).
 - Auth: `kody_at_…` with `local-execute`, or a valid `kody login` MCP OAuth
   access token for this origin
   ([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)).
@@ -212,8 +203,8 @@ Every error is `{ error: { code, message, details? } }` with
 | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | 400    | `invalid_request`, `package_import_unresolved`, `package_import_unpublished`, `unsupported_dynamic_package_import` |
 | 401    | `unauthorized` (missing, invalid, expired, or revoked token)                                                       |
-| 403    | `insufficient_scope`, `feature_disabled`, `email_verification_required`, `account_suspended`                       |
-| 404    | `not_found`, `feature_unavailable` (MCP `api` tool off)                                                            |
+| 403    | `insufficient_scope`, `email_verification_required`, `account_suspended`                                           |
+| 404    | `not_found`, `feature_unavailable` (capability or MCP gate)                                                        |
 | 405    | `method_not_allowed` (with `Allow`)                                                                                |
 | 409    | `account_deleting`                                                                                                 |
 | 413    | `payload_too_large`                                                                                                |
@@ -228,21 +219,18 @@ Each operation records one observe-only `api_call`
 `capability-proxy:<path>` as the entity id, and package-graph prep uses
 `localExecutePackageGraph`. On local-execute native failures the entity id
 appends the ApiError code (for example
-`capabilityProxySession:feature_disabled`,
 `localExecutePackageGraph:package_import_unresolved`, or
 `capabilityProxySession:unauthorized`) so session start, package-graph prep, and
-auth / flag failures are distinguishable in Analytics Engine without a new event
-type or fake `execute` / `dynamic_worker_day` charges. The capability behind a
+auth failures are distinguishable in Analytics Engine without a new event type
+or fake `execute` / `dynamic_worker_day` charges. The capability behind a call
 call meters itself as usual (email sends, outbound fetches, package runs). Local
 execute CPU runs on the user's machine and is never recorded as `execute` or
 `dynamic_worker_day`.
 
 ## MCP `api` tool
 
-The third MCP tool beside `search` and `execute`, registered only when
-`mcp-api-tool` is on (`packages/worker/src/mcp/tools/api.ts`). Input is
-`{ operationId, params }` with `params` as one flat object (path, query, and
-body fields together). It runs with the session's MCP grant, so token scopes do
-not apply, but native feature-flag gates still do. The flag is re-checked on
-every call, and a session that registered the tool before the flag turned off
-gets `feature_unavailable`.
+The third MCP tool beside `search` and `execute`
+(`packages/worker/src/mcp/tools/api.ts`). Input is `{ operationId, params }`
+with `params` as one flat object (path, query, and body fields together). It
+runs with the session's MCP grant, so token scopes do not apply on mint paths.
+Capability-level feature flags still gate individual operations when registered.

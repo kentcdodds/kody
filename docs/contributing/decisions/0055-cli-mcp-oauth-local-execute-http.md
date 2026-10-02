@@ -32,9 +32,9 @@ Semantics:
 1. `kody_at_…` keep today's API-token path (scopes + idle TTL).
 2. Else a valid CLI MCP OAuth access token for this app origin (grant `clientId`
    must be the official CLI CIMD URL) authenticates as that user with the **full
-   MCP grant** for those routes; still require the `local-execute` feature flag.
-   Skip API-token scope checks (OIDC `openid`/`profile`/`email` are not
-   capability scopes — [0049](./0049-no-mcp-capability-oauth-scopes.md)).
+   MCP grant** for those routes; API-token scope checks are skipped for CLI
+   OAuth (OIDC `openid`/`profile`/`email` are not capability scopes —
+   [0049](./0049-no-mcp-capability-oauth-scopes.md)).
 3. Else 401 as today.
 
 Do **not** accept MCP OAuth from other clients (Cursor, ChatGPT, …) on these
@@ -46,7 +46,7 @@ the CLI's own `kody login` store is used on the client.
 ## Consequences
 
 - Open API general operations stay `kody_at_`-only (0053's core split holds).
-- Local execute can use either credential; the flag is the kill switch for both.
+- Local execute can use either credential.
 - **Amended by [0056](./0056-cli-credential-bootstrap.md):** agents on MCP that
   cannot run interactive `kody login` use `cliCredentialBootstrap` → CLI redeem
   instead of a second OAuth or chat-facing `tokenCreate`.

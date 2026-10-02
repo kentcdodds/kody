@@ -170,7 +170,6 @@ export async function mintCliCredentialBootstrap(input: {
 	idleTtlSeconds?: number
 	maxLifetimeSeconds?: number
 	redeemTtlSeconds?: number
-	allowLocalExecute: boolean
 	parent?: ApiTokenMintParent
 	now?: Date
 }): Promise<CliCredentialBootstrapView> {
@@ -190,11 +189,6 @@ export async function mintCliCredentialBootstrap(input: {
 	}
 	if (scopes.length === 0) {
 		throw new McpCallerError('At least one scope is required.')
-	}
-	if (scopes.includes('local-execute') && !input.allowLocalExecute) {
-		throw new McpCallerError(
-			'The local-execute scope is not available for this account yet.',
-		)
 	}
 	const parent = input.parent
 	if (parent) {
@@ -311,7 +305,6 @@ export async function mintCliCredentialBootstrap(input: {
 export async function redeemCliCredentialBootstrap(input: {
 	db: D1Database
 	code: string
-	allowLocalExecuteForUser: (userId: string) => Promise<boolean>
 	now?: Date
 }): Promise<{ token: ApiTokenSecretView; userId: string }> {
 	const now = input.now ?? new Date()
@@ -372,7 +365,6 @@ export async function redeemCliCredentialBootstrap(input: {
 		throw new McpCallerError('Stored bootstrap scopes are invalid.')
 	}
 
-	const allowLocalExecute = await input.allowLocalExecuteForUser(row.user_id)
 	const token = await mintApiToken({
 		db: input.db,
 		userId: row.user_id,
@@ -381,7 +373,6 @@ export async function redeemCliCredentialBootstrap(input: {
 		idleTtlSeconds: row.idle_ttl_seconds,
 		maxLifetimeSeconds: row.max_lifetime_seconds,
 		createdVia: 'cli-bootstrap',
-		allowLocalExecute,
 		now,
 	})
 	return { token, userId: row.user_id }

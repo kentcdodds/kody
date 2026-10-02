@@ -39,6 +39,7 @@ import packageSharing from '../../../../docs/guides/package-sharing.md'
 import packageApps from '../../../../docs/guides/package-apps.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
 import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
+import localExecute from '../../../../docs/guides/local-execute.md'
 import openApi from '../../../../docs/guides/open-api.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
@@ -92,6 +93,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'openmuse', raw: openmuse },
 	{ slug: 'triggers', raw: triggers },
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
+	{ slug: 'local-execute', raw: localExecute },
 	{ slug: 'open-api', raw: openApi },
 	{ slug: 'flake-hunter', raw: flakeHunter },
 	{ slug: 'sentry-issues', raw: sentryIssues },

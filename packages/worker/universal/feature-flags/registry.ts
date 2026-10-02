@@ -116,27 +116,6 @@ export const featureFlagDefinitions = [
 				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
-	{
-		key: 'mcp-api-tool',
-		defaultEnabled: false,
-		defaultAudience: 'experiments_opt_in',
-		description:
-			'Third MCP tool `api`: run one Open API operation (operationId + params) without a sandbox, including tokenCreate. Off: tool not registered. The HTTP API is not gated. Signed-in users can turn it on (with local-execute) from /docs/open-api.',
-		successMetric: {
-			eventType: 'dynamic_worker_day',
-			measure: 'event_count',
-			goal: 'decrease',
-			hypothesis:
-				'Plain CRUD through api skips execute sandboxes, so fewer unique worker-days.',
-		},
-	},
-	{
-		key: 'local-execute',
-		defaultEnabled: false,
-		defaultAudience: 'experiments_opt_in',
-		description:
-			'Local execute: mint `local-execute` API tokens and call CapabilityProxy / package-graph (`/v1/capability-proxy/*`, `/v1/local-execute/package-graph`) with a scoped API token or CLI `kody login` OAuth. Off: 403 feature_disabled. Rollout kill switch, not an experiment. Signed-in users can turn it on (with mcp-api-tool) from /docs/open-api.',
-	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -151,10 +130,6 @@ export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
-
-export const mcpApiToolFlagKey = 'mcp-api-tool' satisfies FeatureFlagKey
-
-export const localExecuteFlagKey = 'local-execute' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

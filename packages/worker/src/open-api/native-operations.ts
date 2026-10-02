@@ -80,7 +80,7 @@ const capabilityProxyOperationDefinitions: Record<
 	capabilityProxySession: {
 		summary: 'Open a CapabilityProxy session',
 		description:
-			'Preflight for local execute: confirms the bearer is valid (scoped `kody_at_` with `local-execute`, or CLI `kody login` MCP OAuth), and the account has the `local-execute` feature flag. Returns scopes, expiry, and proxy limits. Call before starting user code.',
+			'Preflight for local execute: confirms the bearer is valid (scoped `kody_at_` with `local-execute`, or CLI `kody login` MCP OAuth). Returns scopes, expiry, and proxy limits. Call before starting user code.',
 		inputSchema: emptyInputSchema,
 		outputSchema: capabilityProxySessionOutputSchema,
 		readOnly: true,

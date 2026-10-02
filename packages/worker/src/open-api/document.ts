@@ -96,7 +96,7 @@ const tagDescriptions: Record<ApiOperation['tag'], string> = {
 	community: 'Community package listings and profile.',
 	tokens: 'Scoped, short-lived API tokens.',
 	'capability-proxy':
-		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires the `local-execute` feature flag and a scoped API token or CLI `kody login` MCP OAuth bearer.',
+		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires the `local-execute` scope and a scoped API token or CLI `kody login` MCP OAuth bearer.',
 }
 
 function stripSchemaMeta(schema: JsonSchema): JsonSchema {

@@ -20,7 +20,6 @@ async function createApi(
 	input: {
 		emailVerified?: boolean
 		suspended?: boolean
-		localExecuteFlag?: boolean
 		oauthAccessToken?: string | null
 		oauthAudience?: string | Array<string>
 		oauthClientId?: string
@@ -47,13 +46,6 @@ async function createApi(
 			input.emailVerified === false ? null : '2026-01-01T00:00:00.000Z',
 			input.suspended ? '2026-01-01T00:00:00.000Z' : null,
 		)
-	if (input.localExecuteFlag) {
-		sqlite
-			.prepare(
-				`INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled) VALUES ('local-execute', 1, 1)`,
-			)
-			.run()
-	}
 	const db = createD1FromSqlite(sqlite)
 	const oauthAccessToken = input.oauthAccessToken
 	const oauthExpiresAtUnix =
@@ -150,7 +142,6 @@ async function createApi(
 			name: 'test',
 			scopes,
 			createdVia: 'api',
-			allowLocalExecute: false,
 		})
 		return minted.token
 	}
@@ -252,7 +243,7 @@ test('writes secrets through path params and never returns the value', async () 
 	expect(wrongType.status).toBe(415)
 })
 
-test('token minting enforces parent scopes and the local-execute flag', async () => {
+test('token minting enforces parent scopes for local-execute', async () => {
 	const api = await createApi()
 	const parent = await api.mint(['tokens:write', 'packages:read'])
 	const child = await api.call('POST', '/v1/tokens', {
@@ -274,11 +265,11 @@ test('token minting enforces parent scopes and the local-execute flag', async ()
 	})
 	expect(escalate.status).toBe(400)
 
-	const localExecute = await api.call('POST', '/v1/tokens', {
+	const missingParentScope = await api.call('POST', '/v1/tokens', {
 		token: parent,
 		body: { name: 'local', scopes: ['local-execute'] },
 	})
-	expect(localExecute.status).toBe(400)
+	expect(missingParentScope.status).toBe(400)
 
 	const listed = await api.call('GET', '/v1/tokens', { token: parent })
 	expect(listed.status).toBe(200)
@@ -295,7 +286,6 @@ test('a token can only rotate tokens it could have minted', async () => {
 		name: 'stronger',
 		scopes: ['secrets:write'],
 		createdVia: 'mcp-api',
-		allowLocalExecute: false,
 	})
 	const denied = await api.call('POST', `/v1/tokens/${stronger.id}/rotate`, {
 		token: rotator,
@@ -318,7 +308,6 @@ test('a token can only rotate tokens it could have minted', async () => {
 		scopes: ['tokens:write'],
 		maxLifetimeSeconds: 7 * 24 * 60 * 60,
 		createdVia: 'mcp-api',
-		allowLocalExecute: false,
 	})
 	const outlives = await api.call(
 		'POST',
@@ -335,7 +324,6 @@ test('a token can only rotate tokens it could have minted', async () => {
 		scopes: ['tokens:read'],
 		maxLifetimeSeconds: 60 * 60,
 		createdVia: 'api',
-		allowLocalExecute: false,
 	})
 	const allowed = await api.call('POST', `/v1/tokens/${peer.id}/rotate`, {
 		token: rotator,
@@ -352,7 +340,6 @@ test('reported expiry includes the slide from the current request', async () => 
 		name: 'aged',
 		scopes: ['account:read'],
 		createdVia: 'api',
-		allowLocalExecute: false,
 		now: new Date(Date.now() - 5 * 60 * 1000),
 	})
 	const before = Date.now()
@@ -369,8 +356,8 @@ test('reported expiry includes the slide from the current request', async () => 
 	expect(stored.expires_at).toBe(current.body['expires_at'])
 })
 
-test('local-execute tokens are mintable only with the flag and a holding parent', async () => {
-	const api = await createApi({ localExecuteFlag: true })
+test('local-execute tokens are mintable when the parent holds the scope', async () => {
+	const api = await createApi()
 	const parent = await mintWithLocalExecute(api)
 	const minted = await api.call('POST', '/v1/tokens', {
 		token: parent,
@@ -389,13 +376,12 @@ async function mintWithLocalExecute(
 		name: 'parent',
 		scopes: ['tokens:write', 'local-execute'],
 		createdVia: 'mcp-api',
-		allowLocalExecute: true,
 	})
 	return minted.token
 }
 
 test('capability proxy session matches the CLI preflight contract', async () => {
-	const api = await createApi({ localExecuteFlag: true })
+	const api = await createApi()
 	const token = await mintWithLocalExecute(api)
 	const session = await api.call('GET', '/v1/capability-proxy/session', {
 		token,
@@ -420,51 +406,16 @@ test('capability proxy session matches the CLI preflight contract', async () => 
 	expect(bad.status).toBe(401)
 })
 
-test('capability proxy answers feature_disabled when local-execute is off', async () => {
-	const api = await createApi({ localExecuteFlag: true })
+test('capability proxy returns 400 for malformed bodies when authorized', async () => {
+	const api = await createApi()
 	const token = await mintWithLocalExecute(api)
-	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
-	for (const [method, path, body] of [
-		['GET', '/v1/capability-proxy/session', undefined],
-		['POST', '/v1/capability-proxy/call', { path: ['kody', 'x'], args: [] }],
-	] as const) {
-		const response = await api.call(method, path, { token, body })
-		expect(response.status).toBe(403)
-		expect(response.body['error']).toMatchObject({
-			code: 'feature_disabled',
-			details: { feature_flag: 'local-execute' },
-		})
-		expect(response.body.error?.message).toContain('local-execute')
-	}
-	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
-		token: await api.mint(['account:read']),
-	})
-	expect(noScope.body.error?.code).toBe('feature_disabled')
-})
-
-test('capability proxy prefers feature_disabled over malformed body parse errors', async () => {
-	const points: Array<{
-		blobs: Array<string | null | undefined>
-		indexes?: Array<string | null | undefined>
-	}> = []
-	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
-	const token = await mintWithLocalExecute(api)
-	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
 
 	const response = await api.call('POST', '/v1/capability-proxy/call', {
 		token,
 		body: '{not-json',
 	})
-	expect(response.status).toBe(403)
-	expect(response.body.error?.code).toBe('feature_disabled')
-	expect(
-		points.filter(
-			(point) =>
-				point.blobs[1] === 'api_call' &&
-				point.blobs[2] === 'capabilityProxyCall:feature_disabled' &&
-				point.indexes?.[0] === api.userId,
-		),
-	).toHaveLength(1)
+	expect(response.status).toBe(400)
+	expect(response.body.error?.code).toBe('invalid_request')
 })
 
 test('incorrect CapabilityProxy secrets do not attribute api_call usage to the owner', async () => {
@@ -472,7 +423,7 @@ test('incorrect CapabilityProxy secrets do not attribute api_call usage to the o
 		blobs: Array<string | null | undefined>
 		indexes?: Array<string | null | undefined>
 	}> = []
-	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const api = await createApi({ captureUsage: points })
 	const token = await mintWithLocalExecute(api)
 	const wrongSecret = `${token.slice(0, -4)}AAAA`
 
@@ -493,7 +444,7 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 		blobs: Array<string | null | undefined>
 		indexes?: Array<string | null | undefined>
 	}> = []
-	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const api = await createApi({ captureUsage: points })
 	const token = await mintWithLocalExecute(api)
 
 	const session = await api.call('GET', '/v1/capability-proxy/session', {
@@ -501,12 +452,11 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 	})
 	expect(session.status).toBe(200)
 
-	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
-	const disabled = await api.call('GET', '/v1/capability-proxy/session', {
-		token,
+	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
+		token: await api.mint(['account:read']),
 	})
-	expect(disabled.status).toBe(403)
-	expect(disabled.body.error?.code).toBe('feature_disabled')
+	expect(noScope.status).toBe(403)
+	expect(noScope.body.error?.code).toBe('insufficient_scope')
 
 	await api.call('DELETE', '/v1/tokens/current', { token })
 	const revoked = await api.call('GET', '/v1/capability-proxy/session', {
@@ -521,7 +471,7 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 	)
 	expect(proxyCalls.map((point) => [point.blobs[2], point.blobs[3]])).toEqual([
 		['capabilityProxySession', 'success'],
-		['capabilityProxySession:feature_disabled', 'error'],
+		['capabilityProxySession:insufficient_scope', 'error'],
 		['capabilityProxySession:unauthorized', 'error'],
 	])
 	expect(proxyCalls.every((point) => point.indexes?.[0] === api.userId)).toBe(
@@ -536,7 +486,7 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 })
 
 test('capability proxy runs kody:runtime calls and meters each hop', async () => {
-	const api = await createApi({ localExecuteFlag: true })
+	const api = await createApi()
 	const token = await mintWithLocalExecute(api)
 	const me = await api.call('POST', '/v1/capability-proxy/call', {
 		token,
@@ -649,12 +599,12 @@ test('unknown routes and methods use the error envelope', async () => {
 	expect(method.headers.get('Allow')).toBe('GET, POST')
 })
 
-test('local-execute package-graph requires flag + scope and meters as api_call prep', async () => {
+test('local-execute package-graph requires scope and meters as api_call prep', async () => {
 	const points: Array<{
 		blobs: Array<string | null | undefined>
 		indexes?: Array<string | null | undefined>
 	}> = []
-	const api = await createApi({ localExecuteFlag: true, captureUsage: points })
+	const api = await createApi({ captureUsage: points })
 	const token = await mintWithLocalExecute(api)
 
 	const empty = await api.call('POST', '/v1/local-execute/package-graph', {
@@ -693,14 +643,6 @@ export default async () => x`,
 	expect(noScope.status).toBe(403)
 	expect(noScope.body.error?.code).toBe('insufficient_scope')
 
-	api.sqlite.prepare(`DELETE FROM feature_flag_user_overrides`).run()
-	const disabled = await api.call('POST', '/v1/local-execute/package-graph', {
-		token,
-		body: { code: 'export default async function main() { return 1 }' },
-	})
-	expect(disabled.status).toBe(403)
-	expect(disabled.body.error?.code).toBe('feature_disabled')
-
 	const packageGraphCalls = points.filter(
 		(point) =>
 			point.blobs[1] === 'api_call' &&
@@ -714,7 +656,6 @@ export default async () => x`,
 			['localExecutePackageGraph:unsupported_dynamic_package_import', 'error'],
 			['localExecutePackageGraph:package_import_unresolved', 'error'],
 			['localExecutePackageGraph:insufficient_scope', 'error'],
-			['localExecutePackageGraph:feature_disabled', 'error'],
 		]),
 	)
 	expect(
@@ -725,10 +666,9 @@ export default async () => x`,
 	).toBe(false)
 })
 
-test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph when local-execute is on', async () => {
+test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async () => {
 	const oauthToken = 'cli-oauth-access-token-not-kody-at'
 	const api = await createApi({
-		localExecuteFlag: true,
 		oauthAccessToken: oauthToken,
 		oauthAudience: `${appOrigin}/mcp`,
 	})
@@ -775,37 +715,8 @@ test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph when loca
 	})
 })
 
-test('MCP OAuth Bearer is rejected when local-execute flag is off', async () => {
-	const oauthToken = 'cli-oauth-access-token-flag-off'
-	const api = await createApi({
-		localExecuteFlag: false,
-		oauthAccessToken: oauthToken,
-	})
-	for (const [method, path, body] of [
-		['GET', '/v1/capability-proxy/session', undefined],
-		[
-			'POST',
-			'/v1/capability-proxy/call',
-			{ path: ['kody', 'metaGetCurrentUser'], args: [{}] },
-		],
-		[
-			'POST',
-			'/v1/local-execute/package-graph',
-			{ code: 'export default async function main() { return 1 }' },
-		],
-	] as const) {
-		const response = await api.call(method, path, { token: oauthToken, body })
-		expect(response.status).toBe(403)
-		expect(response.body['error']).toMatchObject({
-			code: 'feature_disabled',
-			details: { feature_flag: 'local-execute' },
-		})
-	}
-})
-
 test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-execute route', async () => {
 	const invalid = await createApi({
-		localExecuteFlag: true,
 		oauthAccessToken: 'valid-oauth',
 		oauthUnwrapFails: true,
 	})
@@ -819,7 +730,6 @@ test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-exe
 
 	const oauthToken = 'cli-oauth-for-me-route'
 	const localOnly = await createApi({
-		localExecuteFlag: true,
 		oauthAccessToken: oauthToken,
 	})
 	for (const path of ['/v1/me', '/v1/tokens'] as const) {
@@ -829,7 +739,6 @@ test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-exe
 	}
 
 	const wrongAudience = await createApi({
-		localExecuteFlag: true,
 		oauthAccessToken: 'cli-oauth-wrong-audience',
 		oauthAudience: 'https://other.example/mcp',
 	})
@@ -842,7 +751,6 @@ test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-exe
 	).toBe(401)
 
 	const nonCli = await createApi({
-		localExecuteFlag: true,
 		oauthAccessToken: 'host-mcp-oauth-not-cli',
 		oauthClientId: 'https://cursor.com/oauth/callback-client',
 	})

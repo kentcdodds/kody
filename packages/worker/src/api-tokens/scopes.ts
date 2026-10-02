@@ -1,8 +1,7 @@
 /**
  * Scopes for Kody account API tokens (`kody_at_…`). Each resource has a
  * `:read` and `:write` scope; `:write` also satisfies `:read` for the same
- * resource. `local-execute` unlocks the CapabilityProxy and is only mintable
- * for accounts with the `local-execute` feature flag.
+ * resource. `local-execute` unlocks the CapabilityProxy for local execute venues.
  */
 export const apiTokenResources = [
 	'account',
@@ -63,7 +62,7 @@ export const apiTokenScopeDescriptions: Record<ApiTokenScope, string> = {
 	) as Record<ApiTokenResourceScope, string>),
 	'search:read': 'Run unified Kody search.',
 	[localExecuteScope]:
-		'Use the CapabilityProxy from a local execute venue (requires the local-execute feature flag).',
+		'Use the CapabilityProxy from a local execute venue (requires a token or CLI OAuth bearer with this scope).',
 }
 
 export const apiTokenScopes = Object.keys(

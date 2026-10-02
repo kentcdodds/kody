@@ -1,8 +1,4 @@
 import {
-	localExecuteFlagKey,
-	type FeatureFlagKey,
-} from '#universal/feature-flags/registry.ts'
-import {
 	type ApiTokenResource,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
@@ -65,8 +61,6 @@ export type NativeApiOperation = ApiOperationBase & {
 	operationId: NativeApiOperationId
 	/** `null` means any valid token may call it (it acts on itself). */
 	scope: ApiTokenScope | null
-	/** Checked before the scope; off answers 403 `feature_disabled`. */
-	featureFlag?: FeatureFlagKey
 }
 
 export type ApiOperation = CapabilityApiOperation | NativeApiOperation
@@ -108,14 +102,13 @@ function nativeRoute(
 	path: string,
 	operationId: NativeApiOperationId,
 	scope: ApiTokenScope | null,
-	options: Pick<NativeApiOperation, 'tag' | 'featureFlag'> = { tag: 'tokens' },
+	options: Pick<NativeApiOperation, 'tag'> = { tag: 'tokens' },
 ): NativeApiOperation {
 	return { kind: 'native', operationId, method, path, scope, ...options }
 }
 
 const capabilityProxyRoute = {
 	tag: 'capability-proxy',
-	featureFlag: localExecuteFlagKey,
 } as const
 
 /**
