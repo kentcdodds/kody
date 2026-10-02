@@ -1831,14 +1831,15 @@ test('already_published external publish refreshes the snapshot from the in-memo
 			throw new Error('clone files unreadable')
 		}),
 	})
+	// collectFiles runs before publish so a D1 race cannot finalize without a
+	// binary-safe map; failure never reaches the already_published refresh warn.
 	await expect(publishExternal()).rejects.toThrow('clone files unreadable')
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
-	expect(consoleWarn).toHaveBeenCalledWith(
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(consoleWarn).not.toHaveBeenCalledWith(
 		'already_published snapshot refresh failed',
-		expect.objectContaining({
-			scope: 'repo.publishFromExternalRef.refresh-already-published-snapshot',
-		}),
+		expect.anything(),
 	)
 })
 
