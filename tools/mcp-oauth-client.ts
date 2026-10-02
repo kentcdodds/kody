@@ -255,7 +255,7 @@ export async function resolveAppMcpAuth(
 	}
 
 	const fetchImpl = options.fetchImpl ?? fetch
-	const cookieHeader =
+	let cookieHeader =
 		options.cookieHeader ?? (await loginToApp(origin, user, fetchImpl))
 	const clientRegistration = options.oauth
 		? {
@@ -267,25 +267,50 @@ export async function resolveAppMcpAuth(
 				clientName: options.clientName,
 				fetchImpl,
 			})
+	try {
+		return {
+			cookieHeader,
+			oauth: {
+				...clientRegistration,
+				accessToken: await mintAccessToken(
+					origin,
+					clientRegistration,
+					cookieHeader,
+					fetchImpl,
+				),
+			},
+		}
+	} catch (error) {
+		if (!options.cookieHeader) throw error
+		cookieHeader = await loginToApp(origin, user, fetchImpl)
+		return {
+			cookieHeader,
+			oauth: {
+				...clientRegistration,
+				accessToken: await mintAccessToken(
+					origin,
+					clientRegistration,
+					cookieHeader,
+					fetchImpl,
+				),
+			},
+		}
+	}
+}
+
+async function mintAccessToken(
+	origin: string,
+	client: OAuthClientRegistration,
+	cookieHeader: string,
+	fetchImpl: FetchLike,
+) {
 	const code = await authorizeOAuthClient(
 		origin,
-		clientRegistration,
+		client,
 		cookieHeader,
 		fetchImpl,
 	)
-	const accessToken = await exchangeAuthorizationCode(
-		origin,
-		clientRegistration,
-		code,
-		fetchImpl,
-	)
-	return {
-		cookieHeader,
-		oauth: {
-			...clientRegistration,
-			accessToken,
-		},
-	}
+	return exchangeAuthorizationCode(origin, client, code, fetchImpl)
 }
 
 export async function connectAppMcpClient(

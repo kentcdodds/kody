@@ -282,6 +282,77 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 		'POST /oauth/token',
 	])
 
+	const staleCookieRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			staleCookieRequests.push(
+				`${request.method ?? 'GET'} ${url.pathname} ${request.headers.cookie ?? ''}`,
+			)
+			void readRequestBody(request).then((rawBody) => {
+				if (request.method === 'POST' && url.pathname === '/oauth/authorize') {
+					if (request.headers.cookie === 'kody_session=stale') {
+						response.statusCode = 401
+						response.end('stale session')
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							redirectTo:
+								'http://127.0.0.1/oauth/callback?code=auth-code-3&state=kody-mcp-e2e-state',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/register') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							client_id: 'client-3',
+							client_secret: 'secret-3',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/token') {
+					void rawBody
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ access_token: 'token-3' }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			})
+		},
+		async (origin) => {
+			const session = await resolveAppMcpAuth(
+				origin,
+				{
+					email: 'me@kentcdodds.com',
+					username: 'me',
+					password: 'ilikecode',
+				},
+				{ cookieHeader: 'kody_session=stale' },
+			)
+			expect(session.cookieHeader).toBe('kody_session=fresh')
+			expect(session.oauth.accessToken).toBe('token-3')
+		},
+	)
+	expect(staleCookieRequests).toEqual([
+		'POST /oauth/register ',
+		'POST /oauth/authorize kody_session=stale',
+		'POST /auth ',
+		'POST /oauth/authorize kody_session=fresh',
+		'POST /oauth/token ',
+	])
+
 	const signupFirstRequests: Array<string> = []
 	await withMockOrigin(
 		(request, response) => {

@@ -502,13 +502,13 @@ export async function checkWorkerStartupBundles(
 ) {
 	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const budget = await readStartupBundleBudget()
-	const outputRoot =
-		options.keepOutdir ??
-		(await mkdtemp(path.join(tmpdir(), 'kody-startup-bundles-')))
+	const compareOutdir = await resolveCompareOutdir(options)
+	const outputRoot = options.keepOutdir
+		? path.resolve(options.keepOutdir)
+		: await mkdtemp(path.join(tmpdir(), 'kody-startup-bundles-'))
 	if (options.keepOutdir) {
 		await mkdir(outputRoot, { recursive: true })
 	}
-	const compareOutdir = await resolveCompareOutdir(options)
 	const strayPath = path.join(
 		repoRoot,
 		'packages/worker/src/node_modules/.kody-generated',

@@ -95,15 +95,14 @@ export function attributeGeneratedBytes(
 	const generatedLines = generated.split('\n')
 	const mappingLines = sourceMap.mappings.split(';')
 	let sourceIndex = 0
+	let currentSourceIndex: number | null = null
 	for (let lineIndex = 0; lineIndex < generatedLines.length; lineIndex += 1) {
 		const line = generatedLines[lineIndex] ?? ''
 		const mappingLine = mappingLines[lineIndex] ?? ''
-		const newlineBytes =
-			lineIndex < generatedLines.length - 1 || generated.endsWith('\n') ? 1 : 0
+		const newlineBytes = lineIndex < generatedLines.length - 1 ? 1 : 0
 		const segments = decodeMappingLine(mappingLine)
 		let generatedColumn = 0
 		let cursor = 0
-		let lineSourceIndex = sourceIndex
 		for (const segment of segments) {
 			generatedColumn += segment[0] ?? 0
 			const start = Math.min(generatedColumn, line.length)
@@ -111,7 +110,7 @@ export function attributeGeneratedBytes(
 				addBytes(
 					totals,
 					sourceMap.sources,
-					lineSourceIndex,
+					currentSourceIndex,
 					line,
 					cursor,
 					start,
@@ -120,14 +119,16 @@ export function attributeGeneratedBytes(
 			}
 			if (segment.length >= 4) {
 				sourceIndex += segment[1] ?? 0
-				lineSourceIndex = sourceIndex
+				currentSourceIndex = sourceIndex
+			} else {
+				currentSourceIndex = null
 			}
 		}
 		if (cursor < line.length || newlineBytes > 0) {
 			addBytes(
 				totals,
 				sourceMap.sources,
-				lineSourceIndex,
+				currentSourceIndex,
 				line,
 				cursor,
 				line.length,
@@ -146,12 +147,13 @@ export function attributeGeneratedBytes(
 function addBytes(
 	totals: Map<string, number>,
 	sources: ReadonlyArray<string>,
-	sourceIndex: number,
+	sourceIndex: number | null,
 	line: string,
 	start: number,
 	end: number,
 	extraBytes = 0,
 ) {
+	if (sourceIndex == null) return
 	const source = sources[sourceIndex]
 	if (!source) return
 	const key = normalizeAttributionSource(source)

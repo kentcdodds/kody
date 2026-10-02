@@ -1103,7 +1103,11 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			if (options.json) {
-				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
 				printJson({ ...publicReport, cookieFile: options.cookieFile })
 			} else {
 				console.log(formatPackageCreateReport(report))
@@ -1148,7 +1152,11 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			if (options.json) {
-				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
 				printJson({ ...publicReport, cookieFile: options.cookieFile })
 			} else {
 				console.log(formatMcpCallReport(report))
@@ -1191,7 +1199,11 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			if (options.json) {
-				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
 				printJson({ ...publicReport, cookieFile: options.cookieFile })
 			} else {
 				console.log(formatMcpCallReport(report))
