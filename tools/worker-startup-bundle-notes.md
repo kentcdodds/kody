@@ -368,3 +368,11 @@ runtime path if this budget is raised again.
   ceiling 5_277_500.
 - Startup byte overages no longer fail Static / block Deploy: the checker warns
   and upserts a deduped GitHub tracking issue on main CI pushes instead.
+- Drop unused Zod v4 locale barrels from Worker bundles
+  (`patches/zod+4.4.3.patch`): `zod/v4/classic/external.js` re-exports
+  `../locales/index.js`, which previously pulled ~50 locale modules into every
+  Worker that imports `zod`. Kody only applies English via that classic entry.
+  Local dry-run runtime 3_720_975 against the previous 3_914_000 budget (closes
+  #2819 overage), reviewed ceiling 3_722_000; platform 5_107_102 against the
+  previous 5_277_500 budget (also clears #2811), reviewed ceiling 5_108_000.
+  Origin Vite entry unchanged at 3_480_403.

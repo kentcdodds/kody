@@ -82,6 +82,11 @@ non-library caller to find which of our modules imported it.
    WebAssembly imports inside modules that are only reached lazily.
 4. **New capability schemas belong in capability files**, which are lazy, not in
    modules the app handlers import.
+5. **Keep Zod English-only on the Worker graph.** `import { z } from 'zod'`
+   re-exports every file under `zod/v4/locales` unless the locales barrel is
+   trimmed. `patches/zod+4.4.3.patch` keeps only `en` (already applied by Zod's
+   classic entry). Do not import other locale modules on the startup path; when
+   bumping Zod, refresh that patch.
 
 ## CI tripwire
 
