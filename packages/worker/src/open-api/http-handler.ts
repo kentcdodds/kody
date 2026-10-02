@@ -108,16 +108,17 @@ async function handleOperation(input: {
 		}
 	}
 	const startedAt = Date.now()
+	const matchedOperation = match.operation
 
 	// ADR 0056: CLI bootstrap redeem is code-authenticated only (no Bearer).
-	if (isCliCredentialBootstrapRedeemOperation(match.operation)) {
+	if (isCliCredentialBootstrapRedeemOperation(matchedOperation)) {
 		if (input.request.headers.get('Authorization')) {
 			throw invalidRequest(
 				'Do not send Authorization on bootstrap redeem; the one-shot code is the credential.',
 			)
 		}
 		const resolved = resolveApiOperation(
-			match.operation,
+			matchedOperation,
 			await getStaticRegistry(),
 		)
 		const params = await readOperationParams({
@@ -154,7 +155,7 @@ async function handleOperation(input: {
 				{
 					userId: redeemed.userId,
 					eventType: 'api_call',
-					entityId: match.operation.operationId,
+					entityId: matchedOperation.operationId,
 					durationMs: Date.now() - startedAt,
 					outcome: 'success',
 				},
@@ -168,7 +169,7 @@ async function handleOperation(input: {
 		userId: string
 		failureCode: string
 	}) {
-		if (!isCapabilityProxyOperation(match.operation)) return
+		if (!isCapabilityProxyOperation(matchedOperation)) return
 		input.waitUntil(
 			recordUsage(
 				input.env,
@@ -176,7 +177,7 @@ async function handleOperation(input: {
 					userId: observation.userId,
 					eventType: 'api_call',
 					entityId: capabilityProxyObservationEntityId({
-						baseEntityId: match.operation.operationId,
+						baseEntityId: matchedOperation.operationId,
 						outcome: 'error',
 						failureCode: observation.failureCode,
 					}),
@@ -195,7 +196,7 @@ async function handleOperation(input: {
 			// CLI `kody login` OAuth is accepted only on local-execute routes
 			// (CapabilityProxy + package-graph). Other Open API ops stay
 			// `kody_at_`-only (ADR 0053/0055).
-			allowMcpOauth: isCapabilityProxyOperation(match.operation),
+			allowMcpOauth: isCapabilityProxyOperation(matchedOperation),
 		})
 	} catch (error) {
 		const apiError = toApiError(error)
@@ -208,7 +209,7 @@ async function handleOperation(input: {
 		throw error
 	}
 	const resolved = resolveApiOperation(
-		match.operation,
+		matchedOperation,
 		await getStaticRegistry(),
 	)
 	// Flag/scope before param parse so disabled/unscoped tokens get 403
@@ -216,7 +217,7 @@ async function handleOperation(input: {
 	// CapabilityProxy preflight failures meter here (one event); invoke still
 	// meters the hop after params are accepted.
 	try {
-		await assertNativeOperationEnabled(ctx, match.operation)
+		await assertNativeOperationEnabled(ctx, matchedOperation)
 		assertApiScope(ctx, resolved.scope)
 	} catch (error) {
 		const apiError = toApiError(error)
@@ -237,7 +238,7 @@ async function handleOperation(input: {
 	const userId = ctx.callerContext.user.userId
 	const run = () =>
 		invokeApiOperation({
-			operationId: match.operation.operationId,
+			operationId: matchedOperation.operationId,
 			params,
 			ctx,
 		})
@@ -251,7 +252,7 @@ async function handleOperation(input: {
 		await withAccountWriteLease({
 			db: input.env.APP_DB,
 			stableUserId: userId,
-			holder: `api:${match.operation.operationId}`,
+			holder: `api:${matchedOperation.operationId}`,
 			env: input.env,
 			write: run,
 		}),
