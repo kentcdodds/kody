@@ -13,7 +13,7 @@ test('case study ids are stable section anchors linked from the carousel', () =>
 		(entry) => entry.name === 'Maciek Sitkowski',
 	)
 	expect(maciek?.storyAnchor).toBe('maciek-sitkowski')
-	expect(maciek?.storyPath).toBeUndefined()
+	expect(maciek && 'storyPath' in maciek).toBe(false)
 })
 
 test('caseStudyAttribution joins verified role and employer', () => {
