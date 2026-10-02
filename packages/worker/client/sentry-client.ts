@@ -7,6 +7,7 @@ import {
 	isLocalViteDevError,
 	isResolveFrameFetchNetworkError,
 	isRemixReconcileInsertBeforeNotFoundError,
+	isRemixReconcileRemovedComponentCommittedError,
 	isSyntaxHighlightCoreDynamicImportFailureError,
 } from '#client/sentry-browser-filters.ts'
 import {
@@ -61,7 +62,8 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isResolveFrameFetchNetworkError(error) ||
 		isLocalViteDevError(error) ||
 		isCloudflareTurnstileClientError(error) ||
-		isRemixReconcileInsertBeforeNotFoundError(error)
+		isRemixReconcileInsertBeforeNotFoundError(error) ||
+		isRemixReconcileRemovedComponentCommittedError(error)
 	)
 }
 

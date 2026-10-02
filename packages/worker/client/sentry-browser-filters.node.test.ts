@@ -69,10 +69,13 @@ const frameResolveFrame = fr(
 const turnstileCode = '[Cloudflare Turnstile] Error: 300010.'
 const insertBeforeMessage =
 	"Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node."
+const frameworkInvariantMessage =
+	'Framework invariant: Expected removed component to be committed'
 const reconcileFrame = fr(
 	'moveDomRange',
 	'@remix-run/component/dist/runtime/reconcile',
 )
+const minifiedEntryFrame = fr('go', 'https://kody.codes/assets/entry-abc123.js')
 const crabAppleMessage =
 	'Error: [CrabApple] Failed to hard-spoof navigator.userAgent: TypeError: Cannot redefine property: userAgent'
 const spoofFrames = [
@@ -345,16 +348,26 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 				'Error: Frame resolve failed (500) for http://127.0.0.1:3742/\n    at Object.resolveFrame (http://127.0.0.1:3742/packages/worker/client/entry.tsx:80:11)',
 			),
 		],
-		// Remix reconcile insertBefore NotFoundError (KODY-7N).
+		// Remix reconcile insertBefore NotFoundError (KODY-7N / KODY-8A).
+		// Drop without remix/reconcile frames — production beforeSend only
+		// sees minified /assets/entry-….js stacks (sourcemaps rewrite later).
 		['NotFoundError', insertBeforeMessage, [reconcileFrame]],
+		['NotFoundError', insertBeforeMessage, [minifiedEntryFrame]],
+		['NotFoundError', insertBeforeMessage, [fr('boot', '../client/entry.tsx')]],
 		[
 			'NotFoundError',
 			`NotFoundError: ${insertBeforeMessage}`,
 			undefined,
-			withStack(
-				new DOMException(insertBeforeMessage, 'NotFoundError'),
-				`NotFoundError: ${insertBeforeMessage}\n    at ka (@remix-run/component/dist/runtime/reconcile:1:1)`,
-			),
+			new DOMException(insertBeforeMessage, 'NotFoundError'),
+		],
+		// Remix Framework invariant after DOM desync (KODY-8D).
+		['Error', frameworkInvariantMessage, [minifiedEntryFrame]],
+		['Error', `Error: ${frameworkInvariantMessage}`],
+		[
+			'Error',
+			'something else',
+			undefined,
+			new Error(frameworkInvariantMessage),
 		],
 		// CrabApple navigator.userAgent hard-spoof noise (KODY-80).
 		['Error', crabAppleMessage, spoofFrames],
@@ -448,9 +461,16 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 				},
 			],
 		],
-		['NotFoundError', insertBeforeMessage, [fr('boot', '../client/entry.tsx')]],
-		// KODY-5E-style HierarchyRequestError stays visible.
+		// Non-NotFoundError insertBefore stays visible (KODY-5E family).
 		['HierarchyRequestError', insertBeforeMessage, [reconcileFrame]],
+		['TypeError', insertBeforeMessage, [minifiedEntryFrame]],
+		// Near-miss Framework invariant wording stays visible.
+		[
+			'Error',
+			'Framework invariant: Expected removed component to stay mounted',
+			[minifiedEntryFrame],
+		],
+		['TypeError', frameworkInvariantMessage, [minifiedEntryFrame]],
 		[
 			'TypeError',
 			'TypeError: Cannot redefine property: userAgent',
@@ -458,4 +478,16 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		],
 	]
 	expect(kept.filter((c) => !keptBy(filterBrowserSentryEvent, c))).toEqual([])
+
+	// Cross-value pairing must not drop: NotFoundError with a non-matching
+	// message plus a TypeError that carries the insertBefore wording.
+	const crossValueEvent = {
+		exception: {
+			values: [
+				{ type: 'NotFoundError', value: 'Node was not found' },
+				{ type: 'TypeError', value: insertBeforeMessage },
+			],
+		},
+	}
+	expect(filterBrowserSentryEvent(crossValueEvent)).toBe(crossValueEvent)
 })

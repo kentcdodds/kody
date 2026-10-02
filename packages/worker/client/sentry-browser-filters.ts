@@ -1257,50 +1257,29 @@ function filterCloudflareTurnstileClientSentryEvent<
 }
 
 /**
- * Chrome Translate (and similar) rewrites Remix-owned DOM, then reconcile's
- * `moveDomRange` calls `insertBefore` with a stale sibling. Signature from
- * production issue 7732198685 / KODY-7N on `/docs/how-kody-works` (Polish
- * Chrome Translate, click on a translated host select).
+ * Remix reconcile races after DOM desync (Chrome Translate, docs SPA
+ * sidebar nav, etc.): `moveDomRange` calls `insertBefore` with a stale
+ * sibling. Signatures from production issues 7732198685 / KODY-7N
+ * (`/docs/how-kody-works`, Polish Chrome Translate) and 7758139188 /
+ * KODY-8A (docs sidebar SPA nav between `/docs/*`, same session as
+ * KODY-8D Framework invariant).
  *
  * Match is intentionally narrow: `NotFoundError` plus this exact
- * insertBefore wording AND a stack frame attributable to `@remix-run/component`
- * reconcile (`moveDomRange` / `reconcile`). Never blanket-drop
- * insertBefore NotFoundErrors from app code — KODY-5E was a different
- * HierarchyRequestError on RSS SPA nav.
+ * insertBefore wording on the **same** `exception.values` entry. Do
+ * **not** require `@remix-run/component` / `reconcile` / `moveDomRange`
+ * stack frames at filter time — browser `beforeSend` sees minified
+ * production bundles (`/assets/entry-….js`, functions `go`/`fo`/`io`);
+ * sourcemaps only rewrite those frames on Sentry's server *after*
+ * capture, so a stack gate silently fails to drop real reconcile noise
+ * (KODY-8A). Keep HierarchyRequestError / non-matching insertBefore
+ * messages visible — KODY-5E was a different HierarchyRequestError on RSS
+ * SPA nav.
  */
 const remixReconcileInsertBeforeNotFoundMessage =
 	/^(?:NotFoundError:\s*)?Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node\.?$/
 
 function isRemixReconcileInsertBeforeNotFoundMessage(message: string) {
 	return remixReconcileInsertBeforeNotFoundMessage.test(message.trim())
-}
-
-function isRemixComponentReconcileStackUrl(url: string) {
-	const normalized = url.replace(/\\/g, '/')
-	return (
-		normalized.includes('@remix-run/component') ||
-		normalized.includes('/remix/component') ||
-		normalized.includes('remix_component')
-	)
-}
-
-function stackTextLooksLikeRemixComponentReconcile(text: string) {
-	const normalized = text.replace(/\\/g, '/')
-	if (!isRemixComponentReconcileStackUrl(normalized)) return false
-	return normalized.includes('reconcile') || normalized.includes('moveDomRange')
-}
-
-function isRemixComponentReconcileStack(event: SentryErrorEventLike) {
-	if (
-		sentryEventStackFrameFunctions(event).some((name) =>
-			name.includes('moveDomRange'),
-		)
-	) {
-		return true
-	}
-	return sentryEventStackFrameUrls(event).some(
-		stackTextLooksLikeRemixComponentReconcile,
-	)
 }
 
 function isNotFoundErrorName(name: string | undefined) {
@@ -1314,10 +1293,7 @@ export function isRemixReconcileInsertBeforeNotFoundError(error: unknown) {
 	if (!isNotFoundErrorName(name)) return false
 	const message =
 		'message' in error && typeof error.message === 'string' ? error.message : ''
-	if (!isRemixReconcileInsertBeforeNotFoundMessage(message)) return false
-	const stack =
-		'stack' in error && typeof error.stack === 'string' ? error.stack : ''
-	return stackTextLooksLikeRemixComponentReconcile(stack)
+	return isRemixReconcileInsertBeforeNotFoundMessage(message)
 }
 
 function isRemixReconcileInsertBeforeNotFoundSentryEvent(
@@ -1325,17 +1301,17 @@ function isRemixReconcileInsertBeforeNotFoundSentryEvent(
 	originalException?: unknown,
 ) {
 	if (isRemixReconcileInsertBeforeNotFoundError(originalException)) return true
-	const hasNotFoundType =
-		event.exception?.values?.some((value) => isNotFoundErrorName(value.type)) ??
-		false
-	if (!hasNotFoundType) return false
-	const hasInsertBeforeMessage = sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' &&
-			isRemixReconcileInsertBeforeNotFoundMessage(message),
+	// Type and message must agree on the same exception.values entry — never
+	// pair a NotFoundError type with an insertBefore message from another
+	// value or from untyped event.message.
+	return (
+		event.exception?.values?.some(
+			(value) =>
+				isNotFoundErrorName(value.type) &&
+				typeof value.value === 'string' &&
+				isRemixReconcileInsertBeforeNotFoundMessage(value.value),
+		) ?? false
 	)
-	if (!hasInsertBeforeMessage) return false
-	return isRemixComponentReconcileStack(event)
 }
 
 function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
@@ -1343,6 +1319,74 @@ function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
 >(event: T, originalException?: unknown): T | null {
 	if (
 		isRemixReconcileInsertBeforeNotFoundSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
+ * Remix internal after DOM desync: reconcile expects a removed component
+ * to still be in the committed tree. Signature from production issue
+ * 7760649391 / KODY-8D on `/docs/package-apps` — same Chrome session as
+ * KODY-8A insertBefore NotFoundError after docs sidebar SPA nav. Not an
+ * actionable app defect; further nav after the insertBefore failure trips
+ * this invariant inside `@remix-run/component`.
+ *
+ * Match is intentionally narrow: this exact Framework invariant wording
+ * (optional `Error:` preface). Prefer `Error` type when present; do not
+ * require sourcemapped remix stack frames — `beforeSend` only sees minified
+ * bundles (same pitfall as KODY-8A / the insertBefore filter above).
+ */
+const remixReconcileRemovedComponentCommittedMessage =
+	/^(?:Error:\s*)?Framework invariant: Expected removed component to be committed\.?$/
+
+function isRemixReconcileRemovedComponentCommittedMessage(message: string) {
+	return remixReconcileRemovedComponentCommittedMessage.test(message.trim())
+}
+
+export function isRemixReconcileRemovedComponentCommittedError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : ''
+	if (name.length > 0 && name !== 'Error') return false
+	const message =
+		'message' in error && typeof error.message === 'string' ? error.message : ''
+	return isRemixReconcileRemovedComponentCommittedMessage(message)
+}
+
+function isRemixReconcileRemovedComponentCommittedSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isRemixReconcileRemovedComponentCommittedError(originalException)) {
+		return true
+	}
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.some((value) => {
+			if (value.type && value.type !== 'Error') return false
+			return (
+				typeof value.value === 'string' &&
+				isRemixReconcileRemovedComponentCommittedMessage(value.value)
+			)
+		})
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isRemixReconcileRemovedComponentCommittedMessage(message),
+	)
+}
+
+function filterRemixReconcileRemovedComponentCommittedSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isRemixReconcileRemovedComponentCommittedSentryEvent(
+			event,
+			originalException,
+		)
 	) {
 		return null
 	}
@@ -1529,6 +1573,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterRemixReconcileInsertBeforeNotFoundSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
+		filterRemixReconcileRemovedComponentCommittedSentryEvent(
 			event,
 			originalException,
 		) === null
