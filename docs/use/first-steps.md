@@ -23,8 +23,8 @@ guides load with `search({ entity: "guide:{id}" })` — not execute.
   summary one-liners. `search` also retrieves from the query string.
 - **Put varying capability args in execute `params`**, not string literals
   inside `code` (e.g. after `import { kody } from 'kody:runtime'`,
-  `main(params) { return await kody.emailSend(params) }`). Same user and module
-  graph reuse one isolate for the UTC day.
+  `export default async function main(params) { return await kody.emailSend(params) }`).
+  Same user and module graph reuse one isolate for the UTC day.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface.
   Recurring schedules belong on a package under `kody.jobs`. Deferred one-shot
