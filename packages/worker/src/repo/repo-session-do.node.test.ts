@@ -770,6 +770,149 @@ test('applyPatch is all-or-nothing on size-limit failures and applies modify, de
 	)
 })
 
+test('applyPatch resolves paths from diff --git headers when ---/+++ names are missing', async () => {
+	setCommonSessionFixtures()
+	seedWorkspace(
+		{
+			'src/keep.ts': 'export const keep = false\n',
+			'src/other.ts': 'export const other = 1\n',
+		},
+		{ glob: false },
+	)
+	const repo = repoSession()
+
+	// Agent-style patch: git header only (no ---/+++). Must still apply.
+	const gitHeaderOnly = await repo.applyPatch({
+		...session,
+		patch: [
+			'diff --git a/src/keep.ts b/src/keep.ts',
+			'index 111..222 100644',
+			'@@ -1 +1 @@',
+			'-export const keep = false',
+			'+export const keep = true',
+		].join('\n'),
+	})
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/keep.ts',
+		'export const keep = true\n',
+	)
+	expect(gitHeaderOnly.edits[0]).toEqual(
+		expect.objectContaining({
+			path: 'src/keep.ts',
+			content: 'export const keep = true\n',
+		}),
+	)
+
+	mockModule.workspaceWriteFile.mockClear()
+	mockModule.workspaceRm.mockClear()
+
+	// Empty ---/+++ after a git header blanks jsdiff names; fall back to git.
+	seedWorkspace(
+		{
+			'src/keep.ts': 'export const keep = true\n',
+			'src/other.ts': 'export const other = 1\n',
+		},
+		{ glob: false },
+	)
+	const blankDashes = await repo.applyPatch({
+		...session,
+		patch: [
+			'diff --git a/src/keep.ts b/src/keep.ts',
+			'--- ',
+			'+++ ',
+			'@@ -1 +1 @@',
+			'-export const keep = true',
+			'+export const keep = false',
+		].join('\n'),
+	})
+	expect(blankDashes.edits[0]?.path).toBe('src/keep.ts')
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/keep.ts',
+		'export const keep = false\n',
+	)
+
+	mockModule.workspaceWriteFile.mockClear()
+	mockModule.workspaceRm.mockClear()
+
+	// Add + delete via standard ---/+++ (/dev/null) still work.
+	const addAndDelete = await repo.applyPatch({
+		...session,
+		patch: [
+			'--- /dev/null',
+			'+++ b/src/new.ts',
+			'@@ -0,0 +1 @@',
+			'+export const neu = true',
+			'--- a/src/other.ts',
+			'+++ /dev/null',
+			'@@ -1 +0,0 @@',
+			'-export const other = 1',
+		].join('\n'),
+	})
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/new.ts',
+		'export const neu = true\n',
+	)
+	expect(mockModule.workspaceRm).toHaveBeenCalledWith('/session/src/other.ts', {
+		force: true,
+	})
+	expect(addAndDelete.edits.map((edit) => edit.path)).toEqual([
+		'src/new.ts',
+		'src/other.ts',
+	])
+
+	mockModule.workspaceWriteFile.mockClear()
+
+	// Multi-file patch with git headers only, applied in document order.
+	seedWorkspace(
+		{
+			'src/a.ts': 'a\n',
+			'src/b.ts': 'b\n',
+		},
+		{ glob: false },
+	)
+	const multi = await repo.applyPatch({
+		...session,
+		patch: [
+			'diff --git a/src/a.ts b/src/a.ts',
+			'index 1..2 100644',
+			'@@ -1 +1 @@',
+			'-a',
+			'+A',
+			'diff --git a/src/b.ts b/src/b.ts',
+			'index 1..2 100644',
+			'@@ -1 +1 @@',
+			'-b',
+			'+B',
+		].join('\n'),
+	})
+	expect(multi.edits.map((edit) => edit.path)).toEqual(['src/a.ts', 'src/b.ts'])
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/a.ts',
+		'A\n',
+	)
+	expect(mockModule.workspaceWriteFile).toHaveBeenCalledWith(
+		'/session/src/b.ts',
+		'B\n',
+	)
+
+	// No resolvable path → clear client error (same message as before).
+	await expect(
+		repo.applyPatch({
+			...session,
+			patch: ['@@ -1 +1 @@', '-a', '+b'].join('\n'),
+		}),
+	).rejects.toThrow('git apply patch is missing a target file path.')
+
+	await expect(
+		repo.applyPatch({
+			...session,
+			patch: ['--- /dev/null', '+++ /dev/null', '@@ -0,0 +1 @@', '+x'].join(
+				'\n',
+			),
+		}),
+	).rejects.toThrow('git apply patch is missing a target file path.')
+})
+
 test('applyEdits rejects oversized writes and batches mixing structural and content edits on one path', async () => {
 	setCommonSessionFixtures()
 	mockModule.workspaceExists.mockResolvedValue(true)

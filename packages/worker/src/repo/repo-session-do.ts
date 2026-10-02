@@ -7,6 +7,11 @@ import {
 	createWorkspaceStateBackend,
 } from '@cloudflare/shell'
 import { applyPatch, formatPatch, parsePatch } from 'diff'
+import {
+	parseGitDiffHeaders,
+	resolveUnifiedDiffFileNames,
+	stripUnifiedDiffPath,
+} from './unified-diff-paths.ts'
 import { createGit } from '@cloudflare/shell/git'
 import {
 	deleteRepoSession,
@@ -2009,6 +2014,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (patches.length === 0) {
 			throw new Error('git apply patch did not contain any file changes.')
 		}
+		// jsdiff may omit or blank ---/+++ names on diff --git-only patches;
+		// pair each parsePatch entry with the matching git header in order.
+		const gitHeaders = parseGitDiffHeaders(input.patch)
 		const edits: Array<{
 			path: string
 			changed: boolean
@@ -2028,15 +2036,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			isRename: boolean
 			nextContent: string
 		}> = []
-		for (const patch of patches) {
-			const oldPath =
-				patch.oldFileName && patch.oldFileName !== '/dev/null'
-					? patch.oldFileName.replace(/^[ab]\//, '')
-					: null
-			const newPath =
-				patch.newFileName && patch.newFileName !== '/dev/null'
-					? patch.newFileName.replace(/^[ab]\//, '')
-					: null
+		for (const [index, patch] of patches.entries()) {
+			const resolvedNames = resolveUnifiedDiffFileNames(
+				patch,
+				gitHeaders[index],
+			)
+			// Keep formatPatch / isDelete aligned with the names we actually used.
+			patch.oldFileName = resolvedNames.oldFileName
+			patch.newFileName = resolvedNames.newFileName
+			const oldPath = stripUnifiedDiffPath(resolvedNames.oldFileName)
+			const newPath = stripUnifiedDiffPath(resolvedNames.newFileName)
 			const targetPath = newPath ?? oldPath
 			const sourcePath = oldPath ?? newPath
 			if (!targetPath || !sourcePath) {
@@ -2070,7 +2079,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					}),
 				)
 			}
-			const isDelete = patch.newFileName === '/dev/null'
+			const isDelete = resolvedNames.newFileName === '/dev/null'
 			const isRename = Boolean(oldPath && newPath && oldPath !== newPath)
 			if (isDelete) {
 				stagedContents.set(workspacePath, null)
