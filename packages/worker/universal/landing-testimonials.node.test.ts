@@ -88,8 +88,11 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	const gabriel = landingTestimonials.find(
 		(entry) => entry.name === 'Gabriel Alegría',
 	)
-	if (!josh || !jett || !gabriel) {
-		throw new Error('expected Josh, Jett, and Gabriel testimonials')
+	const maciek = landingTestimonials.find(
+		(entry) => entry.name === 'Maciek Sitkowski',
+	)
+	if (!josh || !jett || !gabriel || !maciek) {
+		throw new Error('expected Josh, Jett, Gabriel, and Maciek testimonials')
 	}
 
 	expect(testimonialStoryHref(josh)).toBe('/blog/early-kody-users#josh-tomaino')
@@ -97,6 +100,7 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	expect(testimonialStoryHref(gabriel)).toBe(
 		'/blog/early-kody-users#gabriel-alegria',
 	)
+	expect(testimonialStoryHref(maciek)).toBe('/case-studies#maciek-sitkowski')
 	const erik: LandingTestimonial | undefined = landingTestimonials.find(
 		(entry) => entry.name === 'Erik Rasmussen',
 	)
@@ -111,7 +115,12 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 				(entry: LandingTestimonial) => testimonialStoryHref(entry) != null,
 			)
 			.map((entry) => entry.name),
-	).toEqual(['Josh Tomaino', 'Jett Hays', 'Gabriel Alegría'])
+	).toEqual([
+		'Josh Tomaino',
+		'Jett Hays',
+		'Gabriel Alegría',
+		'Maciek Sitkowski',
+	])
 })
 
 test('every hosted testimonial photo exists under public/images/testimonials', () => {

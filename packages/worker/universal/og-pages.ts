@@ -87,6 +87,15 @@ export const publicOgPages = {
 			'Common questions about what Kody is, what it is not, and how your assistant stays yours.',
 		path: '/faq',
 	},
+	'case-studies': {
+		imageTitle: 'Case studies',
+		imageSubtitle:
+			'Longer notes from people using Kody — how it shows up in their work.',
+		ogTitle: 'Case studies — Kody',
+		ogDescription:
+			'Longer notes from people using Kody — how it shows up in their work.',
+		path: '/case-studies',
+	},
 	support: {
 		imageTitle: 'Support',
 		imageSubtitle: 'Contact the hosted kody.codes service.',

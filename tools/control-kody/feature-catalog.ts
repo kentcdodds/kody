@@ -306,6 +306,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/',
 			'/pricing',
 			'/faq',
+			'/case-studies',
 			'/support',
 			'/privacy',
 			'/terms',

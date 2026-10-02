@@ -177,6 +177,7 @@ function staticPublicPages(): ReadonlyArray<SitemapEntry> {
 		{ path: '/community' },
 		{ path: '/pricing' },
 		{ path: '/faq' },
+		{ path: '/case-studies' },
 		{ path: '/support' },
 		{ path: '/privacy' },
 		{ path: '/terms' },

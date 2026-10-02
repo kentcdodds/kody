@@ -442,6 +442,10 @@ const routeDocumentHeads = {
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),
+	[routePattern(routes.caseStudies)]: publicPageHead(
+		'case-studies',
+		'Case studies',
+	),
 	[routePattern(routes.support)]: publicPageHead('support', 'Support'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),

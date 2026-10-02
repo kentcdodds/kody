@@ -649,6 +649,9 @@ export const clientRoutes = {
 	[routePattern(routes.faq)]: (
 		<LazyMarketingRoute render={(m) => <m.FaqRoute />} />
 	),
+	[routePattern(routes.caseStudies)]: (
+		<LazyMarketingRoute render={(m) => <m.CaseStudiesRoute />} />
+	),
 	[routePattern(routes.support)]: (
 		<LazyMarketingRoute render={(m) => <m.SupportRoute />} />
 	),

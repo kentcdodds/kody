@@ -67,10 +67,11 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	})
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(3)
+	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(4)
 	expect(html).toContain('href="/blog/early-kody-users#josh-tomaino"')
 	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
 	expect(html).toContain('href="/blog/early-kody-users#gabriel-alegria"')
+	expect(html).toContain('href="/case-studies#maciek-sitkowski"')
 	expect(html).toContain('Gabriel Alegría')
 	expect(html).toContain('src="/images/testimonials/gabriel-alegria.webp"')
 	expect(html).toContain(
@@ -103,5 +104,23 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 	expect(html).toContain('id="jett-hays"')
 	expect(html).toContain('id="gabriel-alegria"')
 	expect(html).toContain('Gabriel Alegría')
+	expect(html).not.toContain('id="maciek-sitkowski"')
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
+})
+
+test('case studies page SSR renders Maciek section and stable anchor', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const response = await renderAppPage({
+		request: new Request('https://example.com/case-studies'),
+		env: createTestEnv(),
+		loaderData: {},
+	})
+	expect(response.status).toBe(200)
+	const html = await response.text()
+	expect(html).toContain('id="maciek-sitkowski"')
+	expect(html).toContain('Maciek Sitkowski')
+	expect(html).toContain('Frontend Developer, Keto-Mojo')
+	expect(html).toContain('Hey Kody…')
+	expect(html).toContain('shared layer behind how I work with agents')
 })

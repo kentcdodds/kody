@@ -294,6 +294,7 @@ import {
 } from '#app/handlers/discord.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
+import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -383,6 +384,7 @@ export function createAppRouter(env: Env) {
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
+			caseStudies: createCaseStudiesHandler(env),
 			support: createSupportHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),

@@ -32,6 +32,7 @@ const cacheableAnonymousExactPaths = new Set([
 	'/',
 	'/pricing',
 	'/faq',
+	'/case-studies',
 	'/blog',
 	'/community',
 	'/onboarding',

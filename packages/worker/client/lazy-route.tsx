@@ -394,6 +394,7 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.pricing),
 		routePattern(routes.faq),
+		routePattern(routes.caseStudies),
 		routePattern(routes.support),
 		routePattern(routes.privacy),
 		routePattern(routes.terms),

@@ -1,3 +1,4 @@
+export { CaseStudiesRoute } from './case-studies.tsx'
 export { DiscordRoute, discordRouteLoader } from './discord.tsx'
 export { FaqRoute, faqRouteLoader } from './faq.tsx'
 export { PricingRoute, pricingRouteLoader } from './pricing.tsx'
