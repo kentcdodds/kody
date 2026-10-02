@@ -296,55 +296,61 @@ async function loadPackageCreditAttributionRow(input: {
 	packageId: string
 }): Promise<CreditAttributionRow | null> {
 	if (!input.username.trim()) return null
-	const userRow = await input.env.APP_DB.prepare(
-		`SELECT ${userEntitlementColumnsSql()}
-		 FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(input.stableUserId)
-		.first<UserEntitlementRow>()
-	if (!userRow) return null
-	const now = new Date()
-	const entitlement = await resolveUserEntitlementFromRow({
-		db: input.env.APP_DB,
-		stableUserId: input.stableUserId,
-		row: userRow,
-		now,
-	})
-	const computeOverage = await readAccountComputeOverage({
-		db: input.env.APP_DB,
-		stableUserId: input.stableUserId,
-		plan: entitlement.plan,
-		ladder: entitlement.ladder,
-		creditWallet: entitlement.creditWallet,
-		now,
-	})
-	const breakdown = await loadCreditAttributionBreakdown({
-		db: input.env.APP_DB,
-		stableUserId: input.stableUserId,
-		username: input.username,
-		computeOverage,
-		now,
-	})
-	const attribution = creditAttributionForPackage(breakdown, input.packageId)
-	if (!attribution) return null
-	if (
-		attribution.name === input.packageId ||
-		attribution.name === attribution.packageId
-	) {
-		const saved = await input.env.APP_DB.prepare(
-			`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+	if (typeof input.env.APP_DB?.prepare !== 'function') return null
+	try {
+		const userRow = await input.env.APP_DB.prepare(
+			`SELECT ${userEntitlementColumnsSql()}
+			 FROM users WHERE stable_user_id = ?`,
 		)
-			.bind(input.packageId, input.stableUserId)
-			.first<{ kody_id: string; name: string }>()
-		if (saved) {
-			attribution.name = saved.name?.trim() || saved.kody_id
-			attribution.href = routes.communityPackage.href({
-				username: input.username,
-				kodyId: saved.kody_id,
-			})
+			.bind(input.stableUserId)
+			.first<UserEntitlementRow>()
+		if (!userRow) return null
+		const now = new Date()
+		const entitlement = await resolveUserEntitlementFromRow({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			row: userRow,
+			now,
+		})
+		const computeOverage = await readAccountComputeOverage({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
+			now,
+		})
+		const breakdown = await loadCreditAttributionBreakdown({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			username: input.username,
+			computeOverage,
+			now,
+		})
+		const attribution = creditAttributionForPackage(breakdown, input.packageId)
+		if (!attribution) return null
+		if (
+			attribution.name === input.packageId ||
+			attribution.name === attribution.packageId
+		) {
+			const saved = await input.env.APP_DB.prepare(
+				`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+			)
+				.bind(input.packageId, input.stableUserId)
+				.first<{ kody_id: string; name: string }>()
+			if (saved) {
+				attribution.name = saved.name?.trim() || saved.kody_id
+				attribution.href = routes.communityPackage.href({
+					username: input.username,
+					kodyId: saved.kody_id,
+				})
+			}
 		}
+		return attribution
+	} catch (error) {
+		console.warn('package-credit-attribution-load-failed', error)
+		return null
 	}
-	return attribution
 }
 
 async function hasActiveCommunityListing(input: {
