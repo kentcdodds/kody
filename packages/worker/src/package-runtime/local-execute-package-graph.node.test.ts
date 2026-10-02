@@ -266,6 +266,66 @@ export default async function main() { return await smokeTest() }`,
 	)
 })
 
+test('buildLocalExecutePackageGraph rewrites user-secret placeholders onto gateway fetch', async () => {
+	const packageId = 'pkg-1'
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		makeLoadedSource({
+			exports: { '.': './src/index.ts' },
+			files: {
+				'src/index.ts': `const SECRET_API_TOKEN = '{{secret:demoAnalyticsToken|scope=user}}'
+export async function listSites() {
+  return fetch('https://api.usefathom.com/v1/sites', {
+    headers: { authorization: 'Bearer ' + SECRET_API_TOKEN },
+  })
+}
+export default listSites`,
+			},
+		}),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		makeArtifactHit({
+			artifactName: '.',
+			entryPoint: 'src/index.ts',
+			mainModule: 'dist/index.js',
+			modules: {
+				'dist/index.js': `const SECRET_API_TOKEN = '{{secret:demoAnalyticsToken|scope=user}}';
+export async function listSites() {
+  return fetch("https://api.usefathom.com/v1/sites", {
+    headers: { authorization: "Bearer " + SECRET_API_TOKEN }
+  });
+}
+export default listSites;
+`,
+			},
+		}),
+	)
+
+	const graph = await buildLocalExecutePackageGraph({
+		...graphInput,
+		code: `import { listSites } from 'kody:@kentcdodds/example-package'
+export default async function main() { return await listSites() }`,
+	})
+
+	const bundle = graph.modules.find((module) =>
+		module.name.endsWith('/dist/index.js'),
+	)
+	expect(bundle).toBeDefined()
+	expect(bundle?.esModule).not.toContain(
+		'{{secret:demoAnalyticsToken|scope=user}}',
+	)
+	expect(bundle?.esModule).toContain(
+		'__kodySecretRef("demoAnalyticsToken", "user")',
+	)
+	expect(bundle?.esModule).toContain('__kodyCreatePackageBoundGatewayFetch')
+	expect(bundle?.esModule).toContain(JSON.stringify(packageId))
+	const runtimeShim = graph.modules.find(
+		(module) => module.name === '.__kody_virtual__/runtime.js',
+	)?.esModule
+	expect(runtimeShim).toContain('__kodyGatewayFetch')
+	expect(runtimeShim).toContain('kody.gatewayFetch')
+})
+
 test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	const start = shim.indexOf('const __kodyParseSecretNameOrPlaceholder')

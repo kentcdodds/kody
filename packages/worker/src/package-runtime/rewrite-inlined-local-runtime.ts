@@ -605,13 +605,16 @@ import {
 	workflows,
 	packages,
 	events,
+	__kodySecretRef,
 	__kodyCreatePackageBoundAuthenticatedFetch,
+	__kodyCreatePackageBoundGatewayFetch,
 	__kodyCreatePackageBoundStorage,
 	__kodyCreatePackageBoundSecrets,
 	__kodyCreatePackageBoundOauthClientCredentials,
 } from ${shim};
 
 ${packageBoundLines.join('\n')}
+var fetch = __kodyCreatePackageBoundGatewayFetch(${packageIdLiteral});
 ${aliases}
 ${facadeBlock}
 `.trim()

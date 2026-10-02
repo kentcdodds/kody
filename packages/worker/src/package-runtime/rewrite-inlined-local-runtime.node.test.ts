@@ -75,6 +75,10 @@ test('rewriteInlinedLocalExecuteBundleSource replaces inlined ALS runtime with s
 	expect(result.source).toContain(
 		'__kodyCreatePackageBoundOauthClientCredentials',
 	)
+	expect(result.source).toContain('__kodyCreatePackageBoundGatewayFetch')
+	expect(result.source).toContain(
+		`var fetch = __kodyCreatePackageBoundGatewayFetch(${JSON.stringify(packageId)});`,
+	)
 	expect(result.source).toContain(JSON.stringify(packageId))
 	expect(result.source).toContain('// virtual:.__kody_root__/src/request.ts')
 	expect(result.source).not.toContain(

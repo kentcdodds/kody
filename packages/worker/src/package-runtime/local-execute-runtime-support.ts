@@ -64,8 +64,28 @@ export {
 };
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// {{secret:…}} opaque refs from packageSecrets.get). Ambient local fetch does
-// not expand them; pair with createAuthenticatedFetch for secret-bearing calls.
+// opaque refs from packageSecrets.get). Local ambient fetch does not expand
+// them; package-graph rebinds fetch to __kodyGatewayFetch so secret-bearing
+// calls hop through CapabilityProxy to the fetch gateway (same as cloud).
+export function __kodySecretRef(name, scope) {
+	const trimmed = String(name ?? "").trim();
+	if (!trimmed) {
+		throw new Error("__kodySecretRef requires a non-empty secret name.");
+	}
+	if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+		throw new Error(
+			"__kodySecretRef name must use letters, numbers, dots, underscores, or hyphens.",
+		);
+	}
+	if (scope == null) {
+		return "{{" + "secret:" + trimmed + "}}";
+	}
+	if (scope === "package" || scope === "session" || scope === "user") {
+		return "{{" + "secret:" + trimmed + "|scope=" + scope + "}}";
+	}
+	throw new Error(\`Unsupported secret scope "\${scope}".\`);
+}
+
 const __kodyParseSecretNameOrPlaceholder = (value, fieldName) => {
 	const trimmed = String(value ?? "").trim();
 	if (!trimmed) {
@@ -259,6 +279,64 @@ async function __kodyCreateAuthenticatedFetch(providerName, packageId) {
 			},
 		);
 	};
+}
+
+/**
+ * Secret-aware ambient fetch for local execute: hops through CapabilityProxy
+ * \`kody.gatewayFetch\` so \`{{secret:…}}\` placeholders expand on origin via
+ * the same fetch gateway as cloud execute.
+ */
+export function __kodyCreatePackageBoundGatewayFetch(packageId) {
+	return async function gatewayFetch(input, init) {
+		return __kodyGatewayFetchCall(input, init, packageId);
+	};
+}
+
+export async function __kodyGatewayFetch(input, init) {
+	return __kodyGatewayFetchCall(input, init, null);
+}
+
+async function __kodyGatewayFetchCall(input, init, packageId) {
+	let url;
+	let method = "GET";
+	let headers = {};
+	let bodyBytes = null;
+	if (typeof input === "string" || input instanceof URL) {
+		url = String(input);
+		method = String(init?.method ?? "GET");
+		headers = Object.fromEntries(new Headers(init?.headers).entries());
+		if (init?.body != null) {
+			bodyBytes = await __kodyBodyToBytes(init.body);
+		}
+	} else {
+		const merged = new Request(input, init);
+		url = merged.url;
+		method = merged.method;
+		headers = Object.fromEntries(merged.headers.entries());
+		if (method !== "GET" && method !== "HEAD") {
+			bodyBytes = new Uint8Array(await merged.arrayBuffer());
+		}
+	}
+	const result = await kody.gatewayFetch({
+		...(packageId ? { packageId } : {}),
+		request: {
+			url,
+			method,
+			headers,
+			...(bodyBytes != null
+				? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
+				: {}),
+		},
+	});
+	const bytes = __kodyBase64ToBytes(result.bodyBase64 ?? "");
+	return new Response(
+		__kodyNullBodyStatuses.has(result.status) ? null : bytes,
+		{
+			status: result.status,
+			statusText: result.statusText,
+			headers: result.headers,
+		},
+	);
 }
 
 export function __kodyCreatePackageBoundStorage(packageId) {
