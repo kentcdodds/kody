@@ -7,7 +7,10 @@ import {
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
-import { type ApiInvocationContext } from './context.ts'
+import {
+	toCapabilityOpenApiPrincipal,
+	type ApiInvocationContext,
+} from './context.ts'
 import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
 import {
 	apiOperationsById,
@@ -137,16 +140,10 @@ async function dispatch(input: {
 				resolveCapabilityOperationScope(operation, capability),
 			)
 			await assertCapabilityAvailable(ctx, capability)
-			const openApiPrincipal =
-				ctx.principal.kind === 'token'
-					? { kind: 'token' as const, token: ctx.principal.token }
-					: ctx.principal.kind === 'mcp'
-						? { kind: 'mcp' as const }
-						: { kind: 'mcp-oauth' as const }
 			return capability.handler(params, {
 				env: ctx.env,
 				callerContext: ctx.callerContext,
-				openApiPrincipal,
+				openApiPrincipal: toCapabilityOpenApiPrincipal(ctx.principal),
 				...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
 			})
 		}

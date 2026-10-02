@@ -1,6 +1,6 @@
 import { type ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
-import { redactApiTokens } from '@kody-internal/shared/api-token-format.ts'
+import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import {
 	defaultExecutionResponseLimitBytes,
 	formatLimitedExecutionOutput,
@@ -165,7 +165,7 @@ export async function registerApiTool(agent: McpRegistrationAgent) {
 					durationMs: finishToolTiming(timingStart).durationMs,
 					failurePhase: 'handler',
 					errorName: apiError.code,
-					errorMessage: redactApiTokens(apiError.message),
+					errorMessage: redactKodyCredentials(apiError.message),
 					callerError: apiError.status < 500,
 					cause: error,
 				})

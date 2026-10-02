@@ -17,6 +17,8 @@ const apiTokenPattern = /^kody_at_([a-z0-9]{20})_([A-Za-z0-9_-]{43})$/
 
 /** Matches any embedded token (for redaction), not only a whole string. */
 export const apiTokenSearchPattern = /kody_at_[a-z0-9]{20}_[A-Za-z0-9_-]{43}/g
+export const cliBootstrapCodeSearchPattern =
+	/kody_bc_[a-z0-9]{16}_[A-Za-z0-9_-]{32}/g
 
 export type ParsedApiToken = {
 	tokenId: string
@@ -52,6 +54,13 @@ export function formatApiToken(input: ParsedApiToken) {
 
 export function redactApiTokens(value: string) {
 	return value.replace(apiTokenSearchPattern, `${apiTokenPrefix}[redacted]`)
+}
+
+export function redactKodyCredentials(value: string) {
+	return redactApiTokens(value).replace(
+		cliBootstrapCodeSearchPattern,
+		'kody_bc_[redacted]',
+	)
 }
 
 export function readBearerApiToken(authorization: string | null) {

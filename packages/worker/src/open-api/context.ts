@@ -4,6 +4,7 @@ import {
 	type CallerFeatureFlags,
 } from '#mcp/capabilities/access-control.ts'
 import { type ApiTokenRecord } from '#worker/api-tokens/service.ts'
+import { type CapabilityOpenApiPrincipal } from '#mcp/capabilities/types.ts'
 
 /**
  * Who is calling the Open API.
@@ -25,6 +26,19 @@ export type ApiPrincipal =
 			/** OIDC grant scopes (`openid` / `profile` / `email`), not API scopes. */
 			grantScopes: Array<string>
 	  }
+
+export function toCapabilityOpenApiPrincipal(
+	principal: ApiPrincipal,
+): CapabilityOpenApiPrincipal {
+	switch (principal.kind) {
+		case 'token':
+			return { kind: 'token', token: principal.token }
+		case 'mcp':
+			return { kind: 'mcp' }
+		case 'mcp-oauth':
+			return { kind: 'mcp-oauth' }
+	}
+}
 
 export type ApiInvocationContext = {
 	env: Env

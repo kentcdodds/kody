@@ -10,6 +10,10 @@ import {
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
+	type Capability,
+	type CapabilityOpenApiPrincipal,
+} from '#mcp/capabilities/types.ts'
+import {
 	createExecuteExecutor,
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
@@ -42,7 +46,6 @@ import {
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { type Capability } from '#mcp/capabilities/types.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
 import {
 	type KodyMcpServerMetadata,
@@ -376,6 +379,7 @@ export async function buildKodyToolContext(
 		capabilityRegistry?: BuiltCapabilityRegistry
 		reportProgress?: McpReportProgress
 		waitUntil?: (promise: Promise<unknown>) => void
+		openApiPrincipal?: CapabilityOpenApiPrincipal
 	},
 ): Promise<{
 	tools: AdditionalKodyTools
@@ -431,6 +435,9 @@ export async function buildKodyToolContext(
 							? { reportProgress: options.reportProgress }
 							: {}),
 						...(options?.waitUntil ? { waitUntil: options.waitUntil } : {}),
+						...(options?.openApiPrincipal
+							? { openApiPrincipal: options.openApiPrincipal }
+							: {}),
 					})
 				} finally {
 					if (shouldSampleFirstDispatch) {

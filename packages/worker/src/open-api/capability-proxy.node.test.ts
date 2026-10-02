@@ -1,7 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { cliCredentialBootstrapCapability } from '#mcp/capabilities/meta/cli-credential-bootstrap.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ApiError, invalidRequest } from './errors.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { runCapabilityProxyCall } from './capability-proxy.ts'
+
+const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 const mockFns = vi.hoisted(() => ({
 	buildKodyToolContext: vi.fn(),
@@ -14,6 +21,7 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 
 const secretValue = 'sk-live-very-secret-value'
 const apiToken = `kody_at_${'a'.repeat(20)}_${'b'.repeat(43)}`
+const bootstrapCode = `kody_bc_${'a'.repeat(16)}_${'B'.repeat(32)}`
 
 const ctx = {
 	env: {},
@@ -40,6 +48,42 @@ function mockToolContext(secretSet: (args: unknown) => unknown) {
 	)
 }
 
+function mockBootstrapToolContext(db: D1Database) {
+	mockFns.buildKodyToolContext.mockImplementation(
+		async (
+			_env: unknown,
+			callerContext: { user: { userId: string } },
+			options: {
+				openApiPrincipal?: Parameters<
+					typeof cliCredentialBootstrapCapability.handler
+				>[1]['openApiPrincipal']
+			},
+		) => ({
+			mcpServers: [],
+			tools: {
+				cliCredentialBootstrap: (args: unknown) =>
+					cliCredentialBootstrapCapability.handler(
+						args as Record<string, unknown>,
+						{
+							env: { APP_DB: db } as Env,
+							callerContext: createMcpCallerContext({
+								baseUrl: 'https://kody.codes',
+								user: {
+									userId: callerContext.user.userId,
+									email: 'caller@example.com',
+									displayName: 'Caller',
+								},
+							}),
+							...(options.openApiPrincipal
+								? { openApiPrincipal: options.openApiPrincipal }
+								: {}),
+						},
+					),
+			},
+		}),
+	)
+}
+
 async function callSecretSet() {
 	return runCapabilityProxyCall({
 		ctx,
@@ -54,7 +98,9 @@ afterEach(() => {
 
 test('unexpected capability failures hide written secrets and API tokens', async () => {
 	mockToolContext(() => {
-		throw new Error(`write failed for ${secretValue} via ${apiToken}`)
+		throw new Error(
+			`write failed for ${secretValue} via ${apiToken} and ${bootstrapCode}`,
+		)
 	})
 	const error = await callSecretSet()
 	expect(error).toBeInstanceOf(ApiError)
@@ -63,6 +109,8 @@ test('unexpected capability failures hide written secrets and API tokens', async
 	expect(message).toContain('write failed for [REDACTED SECRET]')
 	expect(message).not.toContain(secretValue)
 	expect(message).not.toContain(apiToken)
+	expect(message).toContain('kody_bc_[redacted]')
+	expect(message).not.toContain(bootstrapCode)
 })
 
 test('caller errors from a capability keep their status with secrets redacted', async () => {
@@ -92,6 +140,108 @@ test('platform failures outside the capability return a generic error and log de
 			error: 'D1_ERROR: no such column: secret_ciphertext',
 		}),
 	)
+})
+
+test('CapabilityProxy preserves token scopes when minting CLI bootstrap credentials', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	mockBootstrapToolContext(db)
+	const now = new Date()
+	const tokenCtx = {
+		...ctx,
+		principal: {
+			kind: 'token',
+			token: {
+				id: 'parent-token',
+				user_id: 'user-1',
+				name: 'parent',
+				token_hash: 'hash',
+				scopes: ['local-execute'],
+				idle_ttl_seconds: 3600,
+				expires_at: new Date(now.getTime() + 3600_000).toISOString(),
+				max_expires_at: new Date(now.getTime() + 3600_000).toISOString(),
+				created_via: 'api',
+				created_at: now.toISOString(),
+				updated_at: now.toISOString(),
+				last_used_at: null,
+				rotated_at: null,
+				revoked_at: null,
+			},
+		},
+	} as unknown as ApiInvocationContext
+
+	const error = await runCapabilityProxyCall({
+		ctx: tokenCtx,
+		call: {
+			path: ['kody', 'cliCredentialBootstrap'],
+			args: [{ scopes: ['tokens:write'], idle_ttl_seconds: 60 }],
+		},
+	}).catch((value: unknown) => value)
+	expect(error).toMatchObject({
+		status: 400,
+		message: expect.stringMatching(/scopes it does not hold/),
+	})
+	expect(mockFns.buildKodyToolContext).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.anything(),
+		expect.objectContaining({
+			openApiPrincipal: expect.objectContaining({
+				kind: 'token',
+				token: expect.objectContaining({ scopes: ['local-execute'] }),
+			}),
+		}),
+	)
+})
+
+test('CapabilityProxy caps bootstrap token lifetime to the parent token lifetime', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	mockBootstrapToolContext(db)
+	const now = new Date()
+	const tokenCtx = {
+		...ctx,
+		principal: {
+			kind: 'token',
+			token: {
+				id: 'parent-token',
+				user_id: 'user-1',
+				name: 'parent',
+				token_hash: 'hash',
+				scopes: ['local-execute'],
+				idle_ttl_seconds: 3600,
+				expires_at: new Date(now.getTime() + 3600_000).toISOString(),
+				max_expires_at: new Date(now.getTime() + 3600_000).toISOString(),
+				created_via: 'api',
+				created_at: now.toISOString(),
+				updated_at: now.toISOString(),
+				last_used_at: null,
+				rotated_at: null,
+				revoked_at: null,
+			},
+		},
+	} as unknown as ApiInvocationContext
+
+	const result = await runCapabilityProxyCall({
+		ctx: tokenCtx,
+		call: {
+			path: ['kody', 'cliCredentialBootstrap'],
+			args: [
+				{
+					scopes: ['local-execute'],
+					idle_ttl_seconds: 60,
+					max_lifetime_seconds: 7200,
+				},
+			],
+		},
+	})
+	expect(
+		(result.result as { max_lifetime_seconds: number }).max_lifetime_seconds,
+	).toBeLessThanOrEqual(3600)
+	expect(
+		(result.result as { max_lifetime_seconds: number }).max_lifetime_seconds,
+	).toBeGreaterThan(3000)
 })
 
 test('packages.invoke is rejected as unbound', async () => {

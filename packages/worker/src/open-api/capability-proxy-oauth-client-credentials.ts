@@ -4,11 +4,7 @@ import {
 	type OAuthClientCredentialsInput,
 } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
-import {
-	collectShareStorageOwners,
-	retainAuthorizedPackageStorageGrantIds,
-} from '#worker/package-registry/share-grants.ts'
-import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
+import { authorizeLocalExecuteOwnedPackageId } from './capability-proxy-package-grants.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { invalidRequest } from './errors.ts'
 
@@ -111,20 +107,11 @@ async function authorizeOauthClientCredentialsPackageId(input: {
 	ctx: ApiInvocationContext
 	packageId: string
 }) {
-	const authorized = await retainAuthorizedPackageStorageGrantIds({
+	return await authorizeLocalExecuteOwnedPackageId({
 		db: input.ctx.env.APP_DB,
 		callerUserId: input.ctx.callerContext.user.userId,
-		packageIds: [input.packageId],
-		storageOwnerByPackageId: await collectShareStorageOwners({
-			db: input.ctx.env.APP_DB,
-			callerUserId: input.ctx.callerContext.user.userId,
-			packageIds: [input.packageId],
-		}),
+		packageId: input.packageId,
 	})
-	if (!authorized.has(input.packageId)) {
-		throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
-	}
-	return input.packageId
 }
 
 export async function runCapabilityProxyOauthClientCredentials(input: {

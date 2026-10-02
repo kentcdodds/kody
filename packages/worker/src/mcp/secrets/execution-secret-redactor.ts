@@ -1,6 +1,7 @@
 import {
 	apiTokenPrefix,
 	redactApiTokens,
+	redactKodyCredentials,
 } from '@kody-internal/shared/api-token-format.ts'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 
@@ -21,7 +22,9 @@ export function createExecutionSecretRedactor(): ExecutionSecretRedactor {
 			}
 		},
 		redactErrorMessage(value: string) {
-			return redactSecretValuesInString(value, secretValues)
+			return redactKodyCredentials(
+				redactSecretValuesInString(value, secretValues),
+			)
 		},
 		redactUnknown(value: unknown) {
 			if (secretValues.size === 0 && !mayContainApiToken(value)) return value

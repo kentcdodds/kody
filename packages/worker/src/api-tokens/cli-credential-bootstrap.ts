@@ -2,6 +2,7 @@ import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import {
 	apiTokenScopeSatisfies,
 	normalizeApiTokenScopes,
@@ -316,7 +317,7 @@ export async function redeemCliCredentialBootstrap(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT id, user_id, code_hash, name, scopes_json,
-			        idle_ttl_seconds, max_lifetime_seconds, expires_at, consumed_at
+			        idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at, consumed_at
 			 FROM cli_credential_bootstrap_codes
 			 WHERE id = ?`,
 		)
@@ -330,6 +331,7 @@ export async function redeemCliCredentialBootstrap(input: {
 			idle_ttl_seconds: number
 			max_lifetime_seconds: number
 			expires_at: string
+			created_at: string
 			consumed_at: string | null
 		}>()
 
@@ -343,6 +345,27 @@ export async function redeemCliCredentialBootstrap(input: {
 		throw new McpCallerError('CLI bootstrap code expired.')
 	}
 
+	const user = await input.db
+		.prepare(
+			`SELECT deleting_at, suspended_at, password_changed_at
+			 FROM users
+			 WHERE stable_user_id = ?`,
+		)
+		.bind(row.user_id)
+		.first<{
+			deleting_at: string | null
+			suspended_at: string | null
+			password_changed_at: string | null
+		}>()
+	const invalidated =
+		!user ||
+		Boolean(user.deleting_at) ||
+		Boolean(user.suspended_at) ||
+		isCredentialInvalidatedByStoredPasswordChange({
+			issuedAtMs: Date.parse(row.created_at),
+			storedPasswordChangedAt: user.password_changed_at,
+		})
+
 	const consumedAt = now.toISOString()
 	const burned = await input.db
 		.prepare(
@@ -354,6 +377,9 @@ export async function redeemCliCredentialBootstrap(input: {
 		.run()
 	if ((burned.meta.changes ?? 0) !== 1) {
 		throw new McpCallerError('CLI bootstrap code was already redeemed.')
+	}
+	if (invalidated) {
+		throw new McpCallerError('Invalid CLI bootstrap code.')
 	}
 
 	let scopes: Array<ApiTokenScope>

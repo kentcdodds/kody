@@ -8,7 +8,10 @@ import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
-import { type ApiInvocationContext } from './context.ts'
+import {
+	toCapabilityOpenApiPrincipal,
+	type ApiInvocationContext,
+} from './context.ts'
 import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
 import { maxApiRequestBodyBytes } from './request-params.ts'
 import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
@@ -156,6 +159,7 @@ async function callKodyPath(input: {
 				callerContext: ctx.callerContext,
 				packageContext: null,
 			}),
+			openApiPrincipal: toCapabilityOpenApiPrincipal(ctx.principal),
 			...(ctx.waitUntil ? { waitUntil: ctx.waitUntil } : {}),
 		},
 	)

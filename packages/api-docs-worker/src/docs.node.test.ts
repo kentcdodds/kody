@@ -37,9 +37,32 @@ test('root serves Scalar HTML pointing at the proxied OpenAPI path', async () =>
 	const html = await response.text()
 	expect(html).toContain('data-url="/openapi.json"')
 	expect(html).toContain(
-		'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3',
+		'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3/dist/browser/standalone.js',
+	)
+	expect(html).toContain(
+		'integrity="sha384-HWi/QCSPi64AQ0xBXFGDk+7gmvZ4hJ/7sZMIXqWVz6Ikb6+Cxej/hWKaomOStyFb"',
+	)
+	expect(html).toContain('crossorigin="anonymous"')
+	expect(response.headers.get('Content-Security-Policy')).toBe(
+		"default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https:; font-src https: data:; img-src 'self' https: data:; connect-src 'self' https://api.kody.codes; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'",
 	)
 	expect(html).not.toMatch(/kody_at_/)
+})
+
+test('docs CSP connects to the configured spec origin and is only set on HTML', async () => {
+	const root = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/'),
+		createEnv({ OPENAPI_SPEC_URL: 'https://api.example.test/v2/openapi.json' }),
+	)
+	expect(root.headers.get('Content-Security-Policy')).toContain(
+		"connect-src 'self' https://api.example.test;",
+	)
+
+	const health = await handleApiDocsRequest(
+		new Request('https://api-docs.kody.codes/health'),
+		createEnv(),
+	)
+	expect(health.headers.get('Content-Security-Policy')).toBeNull()
 })
 
 test('openapi proxy forwards the upstream document', async () => {
@@ -62,6 +85,7 @@ test('openapi proxy forwards the upstream document', async () => {
 		info: { title: 'Kody API' },
 	})
 	expect(response.headers.get('Cache-Control')).toBe('public, max-age=300')
+	expect(response.headers.get('Content-Security-Policy')).toBeNull()
 	expect(fetchMock).toHaveBeenCalledWith(
 		'https://api.example.test/openapi.json',
 		expect.objectContaining({ method: 'GET' }),

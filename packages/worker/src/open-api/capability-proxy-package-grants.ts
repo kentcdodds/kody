@@ -19,8 +19,7 @@ import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
  *
  * Cloud execute builds a bundler provenance grant set once per run. Local
  * execute has no sandbox graph on origin per hop, so each call validates the
- * stamped package id against ownership / accepted share grants (same retain
- * helper cloud uses after collecting share owners), then runs the ordinary
+ * stamped package id against caller ownership before running the ordinary
  * storage / mounted-secret tools for that single id.
  */
 
@@ -47,25 +46,16 @@ async function authorizeLocalExecutePackageId(input: {
 	if (!packageId) {
 		throw new Error('packageStorage requires a non-empty package id.')
 	}
-	const storageOwnerByPackageId = await collectShareStorageOwners({
+	const authorizedPackageId = await authorizeLocalExecuteOwnedPackageId({
 		db: input.env.APP_DB,
 		callerUserId: userId,
-		packageIds: [packageId],
+		packageId,
 	})
-	const authorized = await retainAuthorizedPackageStorageGrantIds({
-		db: input.env.APP_DB,
-		callerUserId: userId,
-		packageIds: [packageId],
-		storageOwnerByPackageId,
-	})
-	if (!authorized.has(packageId)) {
-		throw new Error(createPackageStorageAccessDeniedMessage(packageId))
-	}
 	return {
 		userId,
-		packageId,
-		storageOwnerByPackageId,
-		grantedPackageIds: authorized,
+		packageId: authorizedPackageId,
+		storageOwnerByPackageId: new Map(),
+		grantedPackageIds: new Set([authorizedPackageId]),
 	}
 }
 
@@ -87,6 +77,31 @@ function readPackageSecretCall(args: unknown) {
 			? String((first as { alias: unknown }).alias ?? '').trim()
 			: ''
 	return { alias, requestedPackageId }
+}
+
+export async function authorizeLocalExecuteOwnedPackageId(input: {
+	db: D1Database
+	callerUserId: string
+	packageId: string
+}) {
+	const storageOwnerByPackageId = await collectShareStorageOwners({
+		db: input.db,
+		callerUserId: input.callerUserId,
+		packageIds: [input.packageId],
+	})
+	const authorized = await retainAuthorizedPackageStorageGrantIds({
+		db: input.db,
+		callerUserId: input.callerUserId,
+		packageIds: [input.packageId],
+		storageOwnerByPackageId: new Map(),
+	})
+	if (authorized.has(input.packageId)) return input.packageId
+	if (storageOwnerByPackageId.has(input.packageId)) {
+		throw new Error(
+			'Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, or oauthClientCredentials on execute --local. Use cloud execute.',
+		)
+	}
+	throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
 }
 
 export async function createCapabilityProxyPackageHostTools(input: {

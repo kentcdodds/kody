@@ -101,17 +101,19 @@ async function proxyOpenApiSpec(
 	)
 }
 
-function docsHtmlResponse(method: string) {
+function docsHtmlResponse(method: string, specUrl: string) {
 	const html = renderApiDocsPage({
 		title: 'Kody API Reference',
 		specPath: openApiProxyPath,
 	})
+	const specOrigin = new URL(specUrl).origin
 	return withSecurityHeaders(
 		new Response(method === 'HEAD' ? null : html, {
 			status: 200,
 			headers: {
 				'Content-Type': 'text/html; charset=utf-8',
 				'Cache-Control': 'public, max-age=60',
+				'Content-Security-Policy': `default-src 'none'; script-src https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https:; font-src https: data:; img-src 'self' https: data:; connect-src 'self' ${specOrigin}; worker-src blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`,
 			},
 		}),
 	)
@@ -150,7 +152,10 @@ export async function handleApiDocsRequest(
 	}
 
 	if (url.pathname === '/' || url.pathname === '') {
-		return docsHtmlResponse(request.method)
+		return docsHtmlResponse(
+			request.method,
+			env.OPENAPI_SPEC_URL?.trim() || defaultOpenApiSpecUrl,
+		)
 	}
 
 	return notFound()

@@ -190,10 +190,11 @@ returns published, stamped importable-module artifacts for embedding — it does
   secret placeholders through the fetch gateway.
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
   `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
-  `__kodySecretAuthorityPackageId`). Each hop authorizes the stamped package id
-  against ownership or an accepted share grant, then uses the ordinary storage /
-  mounted-secret tools. Ad hoc (unstamped) `packageStorage()` / `packageSecrets`
-  on the host `kody:runtime` remain unbound, matching cloud ad hoc execute.
+  `__kodySecretAuthorityPackageId`). Each local hop accepts only caller-owned
+  package ids; share-granted packages cannot use these capabilities on
+  `execute --local` and must use cloud execute instead. Ad hoc (unstamped)
+  `packageStorage()` / `packageSecrets` on the host `kody:runtime` remain
+  unbound, matching cloud ad hoc execute.
 
 ## Errors
 

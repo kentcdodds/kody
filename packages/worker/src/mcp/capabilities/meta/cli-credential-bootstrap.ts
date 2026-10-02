@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	cliCredentialBootstrapPolicy,
 	mintCliCredentialBootstrap,
@@ -116,6 +117,12 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const input = inputSchema.parse(args ?? {})
+			const storageContext = ctx.callerContext.storageContext
+			if (storageContext?.packageId || storageContext?.appId) {
+				throw new McpCallerError(
+					'cliCredentialBootstrap cannot run inside saved-package, job, webhook, or app runtimes. Call it from the MCP api tool or the Open API.',
+				)
+			}
 			const parent =
 				ctx.openApiPrincipal?.kind === 'token'
 					? {

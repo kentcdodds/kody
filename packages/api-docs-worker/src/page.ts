@@ -5,7 +5,9 @@
  * Pin the CDN package so a floating `latest` cannot break production docs.
  */
 export const scalarCdnUrl =
-	'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3'
+	'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3/dist/browser/standalone.js'
+export const scalarCdnIntegrity =
+	'sha384-HWi/QCSPi64AQ0xBXFGDk+7gmvZ4hJ/7sZMIXqWVz6Ikb6+Cxej/hWKaomOStyFb'
 
 export function renderApiDocsPage(input: { title: string; specPath: string }) {
 	const title = escapeHtml(input.title)
@@ -28,7 +30,7 @@ export function renderApiDocsPage(input: { title: string; specPath: string }) {
 		data-url="${specPath}"
 		data-configuration='{"hideClientButton":true,"hideDarkModeToggle":false,"telemetry":false}'
 	></script>
-	<script src="${scalarCdnUrl}"></script>
+	<script src="${scalarCdnUrl}" integrity="${scalarCdnIntegrity}" crossorigin="anonymous"></script>
 </body>
 </html>
 `
