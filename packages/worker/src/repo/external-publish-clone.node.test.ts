@@ -137,6 +137,7 @@ test('collectFiles keeps PNG magic byte-identical (no UTF-8 replacement)', async
 		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 		token: 'art_token',
 		branch: 'main',
+		checkoutCommit: 'commit-head',
 	})
 
 	await cloned.filesystem.writeFile('/repo/package.json', '{"name":"@kody/x"}')
