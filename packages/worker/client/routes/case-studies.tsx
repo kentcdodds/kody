@@ -1,5 +1,9 @@
 import { type Handle, css } from 'remix/component'
-import { caseStudies, caseStudyAttribution } from '#universal/case-studies.ts'
+import {
+	caseStudies,
+	caseStudyAttribution,
+	type CaseStudy,
+} from '#universal/case-studies.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	articleMeasure,
@@ -9,8 +13,10 @@ import {
 import { colors } from '#universal/styles/tokens.ts'
 
 /**
- * Case studies index. One editorial page that holds full stories (Maciek now;
- * more later). Section `id`s match homepage carousel `storyAnchor` values.
+ * Case studies index. Mirrors the case-studies blog post (`early-kody-users`)
+ * so `/case-studies` and deep links like `#maciek-sitkowski` stay live.
+ * Section `id`s match homepage carousel `storyAnchor` values; the carousel
+ * links to the blog as the long-form home.
  */
 
 export function CaseStudiesRoute(_handle: Handle) {
@@ -20,12 +26,16 @@ export function CaseStudiesRoute(_handle: Handle) {
 				<h1>Case studies</h1>
 				<p>
 					Longer notes from people using Kody — how it shows up in their work,
-					in their words.
+					in their words. The same stories also live on the{' '}
+					<a href={routes.blogPost.href({ slug: 'early-kody-users' })}>
+						case studies blog post
+					</a>
+					.
 				</p>
 			</header>
 
 			<div mix={css(listCss)}>
-				{caseStudies.map((study) => {
+				{caseStudies.map((study: CaseStudy) => {
 					const attribution = caseStudyAttribution(study)
 					return (
 						<section key={study.id} mix={css(studyCss)}>
@@ -42,7 +52,9 @@ export function CaseStudiesRoute(_handle: Handle) {
 								<p mix={css(attributionCss)}>{attribution}</p>
 							) : null}
 							<blockquote mix={css(quoteCss)}>
-								<p>{study.body}</p>
+								{study.body.split(/\n\n+/).map((paragraph) => (
+									<p key={paragraph.slice(0, 48)}>{paragraph}</p>
+								))}
 							</blockquote>
 						</section>
 					)
@@ -80,6 +92,14 @@ const headCss = {
 		fontSize: '1.05rem',
 		lineHeight: 1.55,
 		color: colors.textMuted,
+		'& a': {
+			color: colors.primaryText,
+			textDecoration: 'none',
+			fontWeight: 550,
+			'&:hover': {
+				color: colors.text,
+			},
+		},
 	},
 }
 
@@ -126,6 +146,9 @@ const quoteCss = {
 		fontSize: '1.05rem',
 		lineHeight: 1.65,
 		color: colors.text,
+	},
+	'& > p + p': {
+		marginTop: '1rem',
 	},
 }
 

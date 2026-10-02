@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { caseStudies } from '#universal/case-studies.ts'
 import {
 	getBlogPost,
 	getReadNextBlogPost,
@@ -122,15 +123,27 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 
 	expectPost(
 		'early-kody-users',
-		{ title: 'Early Kody users', date: '2026-09-08', placeholder: true },
+		{ title: 'Case studies', date: '2026-09-08', placeholder: false },
 		[
 			'funnels all my tools into one secure MCP I can manage myself',
 			"life or death for some of the world's most endangered species",
 			'## Josh Tomaino',
 			'## Jett Hays',
 			'## Gabriel Alegría',
+			'## Maciek Sitkowski',
+			'shared layer behind how I work with agents',
 		],
 	)
+	const caseStudiesPost = getBlogPost('early-kody-users')
+	const caseStudiesBlogSource = normalizeMarkdownPhraseSource(
+		caseStudiesPost?.body ?? '',
+	)
+	for (const study of caseStudies) {
+		expect(caseStudiesBlogSource).toContain(
+			study.body.replace(/\s+/g, ' ').trim(),
+		)
+		expect(caseStudiesPost?.body).toContain(`## ${study.name}`)
+	}
 	expectPost(
 		'kody-vs-executor',
 		{
@@ -180,7 +193,8 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(getBlogPost('does-not-exist')).toBeNull()
 
 	const placeholderPosts = posts.filter(
-		(post) => post.slug !== 'kody-vs-executor',
+		(post) =>
+			post.slug !== 'kody-vs-executor' && post.slug !== 'early-kody-users',
 	)
 	expect(placeholderPosts.length).toBeGreaterThan(0)
 	expect(placeholderPosts.every((post) => post.placeholder)).toBe(true)

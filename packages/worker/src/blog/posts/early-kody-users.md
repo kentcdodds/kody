@@ -1,15 +1,16 @@
 ---
-title: Early Kody users
+title: Case studies
 date: 2026-09-08
 description:
-  Longer notes from people already using Kody — not case studies, just how it
-  shows up in their work and at home.
+  Longer notes from people using Kody — how it shows up in their work, in their
+  words.
 order: 1
+placeholder: false
 ---
 
 The homepage carousel keeps quotes short. A few people have more to say than
-fits on a card. These are those notes, in their words. Not case studies. More
-will land here as folks are willing to share.
+fits on a card. These are those notes, in their words. More will land here as
+folks are willing to share.
 
 ## Josh Tomaino
 
@@ -48,3 +49,19 @@ Software Engineer, IB.
 > I have only scratched the surface, and Kody already changed how I work.
 > Everything I need is condensed in one place. I can store wacky ideas and not
 > lose them the way I always did with Notion.
+
+## Maciek Sitkowski
+
+Frontend Developer, Keto-Mojo.
+
+> Before Kody, I kept rebuilding the same setup every time I moved between
+> ChatGPT, Claude, Claude Code, Cursor, GrokBot, or another new agent. My system
+> instructions, memories, integrations, MCP servers, plugins, and skills were
+> scattered across different tools, and some context always stayed behind. With
+> Kody, I connect one MCP server and bring my tools, context, memories, and
+> custom capabilities with me. I’ve built my own reusable packages around it and
+> literally got into the habit of saying “Hey Kody…” so whichever agent I’m
+> using knows where to reach. Today I reported three issues that came from real
+> workflows, and all three fixes were merged within an hour. That portability,
+> together with the fastest feedback loop I’ve experienced with any tool, is why
+> Kody has become the shared layer behind how I work with agents.

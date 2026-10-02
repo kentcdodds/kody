@@ -3,11 +3,13 @@
  * about eight entries without a layout rewrite. Do not invent quotes or fill
  * empty slots; add real cleared quotes only. Opt a card into a longer story
  * with `storyAnchor` matching that heading id (accents strip to ASCII). Omit
- * `storyPath` to use the early-users blog post; set it for `/case-studies`.
+ * `storyPath` to use the case-studies blog post; set it only when the longer
+ * note lives elsewhere (for example a temporary surface).
  */
 
 import { routes } from '#universal/routes.ts'
 
+/** Blog slug for longer case-study notes linked from the carousel. */
 export const landingTestimonialsStorySlug = 'early-kody-users'
 
 export type LandingTestimonial = {
@@ -24,7 +26,7 @@ export type LandingTestimonial = {
 	/** Heading id on the story page. Omit when there is no longer note. */
 	storyAnchor?: string
 	/**
-	 * Path for the longer story (no hash). Defaults to the early-users blog
+	 * Path for the longer story (no hash). Defaults to the case-studies blog
 	 * post when omitted.
 	 */
 	storyPath?: string
@@ -85,7 +87,6 @@ export const landingTestimonials = [
 		href: 'https://macieksitkowski.com',
 		title: 'Frontend Developer',
 		company: 'Keto-Mojo',
-		storyPath: routes.caseStudies.href(),
 		storyAnchor: 'maciek-sitkowski',
 	},
 	{

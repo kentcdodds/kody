@@ -100,7 +100,9 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	expect(testimonialStoryHref(gabriel)).toBe(
 		'/blog/early-kody-users#gabriel-alegria',
 	)
-	expect(testimonialStoryHref(maciek)).toBe('/case-studies#maciek-sitkowski')
+	expect(testimonialStoryHref(maciek)).toBe(
+		'/blog/early-kody-users#maciek-sitkowski',
+	)
 	const erik: LandingTestimonial | undefined = landingTestimonials.find(
 		(entry) => entry.name === 'Erik Rasmussen',
 	)
