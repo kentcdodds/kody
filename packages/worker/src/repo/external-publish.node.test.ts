@@ -210,6 +210,31 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({ files: sourceFiles }),
 	)
+
+	// Explicit files win over the UTF-8 check walk (PNG magic must stay 0x89).
+	const { bytesToLatin1String } = await import('#universal/package-file-media.ts')
+	const pngLatin1 = bytesToLatin1String(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+	)
+	const utf8Corrupted = new TextDecoder().decode(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+	)
+	setupPublish()
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	mockModule.runRepoChecks.mockResolvedValue({
+		...passingChecks,
+		sourceFiles: { ...sourceFiles, 'public/mark.png': utf8Corrupted },
+	})
+	const binarySafe = await publish({
+		env: kvEnv,
+		files: { ...sourceFiles, 'public/mark.png': pngLatin1 },
+	})
+	expect(binarySafe.status).toBe('published')
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			files: expect.objectContaining({ 'public/mark.png': pngLatin1 }),
+		}),
+	)
 })
 
 test('returns no-op when commit is already current', async () => {

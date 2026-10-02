@@ -1457,69 +1457,6 @@ test('publishFromExternalRef rejects stale expected HEAD values and checks fast-
 	)
 })
 
-test('publishFromExternalRef snapshots PNG bytes from collectFiles, not UTF-8 check walk', async () => {
-	const { bytesToLatin1String } =
-		await import('#universal/package-file-media.ts')
-	const pngMagic = Uint8Array.from([
-		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-	])
-	const pngLatin1 = bytesToLatin1String(pngMagic)
-	const utf8Corrupted = new TextDecoder().decode(pngMagic)
-	expect(utf8Corrupted.charCodeAt(0)).toBe(0xfffd)
-
-	setCommonSessionFixtures()
-	consoleWarn.mockImplementation(() => {})
-	mockModule.getEntitySourceById.mockResolvedValue(
-		sourceRow({
-			repo_id: 'source-repo',
-			published_commit: 'commit-old',
-		}),
-	)
-	// Simulate the check walk still UTF-8-decoding binary (legacy path).
-	mockModule.runRepoChecks.mockResolvedValueOnce({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
-		manifest: {
-			name: '@kody/demo',
-			exports: { '.': './index.ts' },
-			kody: { id: 'demo', description: 'Demo package' },
-		},
-		sourceFiles: {
-			'package.json': demoPackageJson,
-			'public/mark.png': utf8Corrupted,
-		},
-	})
-	const collectFiles = vi.fn(async () => ({
-		'package.json': demoPackageJson,
-		'public/mark.png': pngLatin1,
-	}))
-	mockExternalClone({ collectFiles })
-
-	await expect(
-		publishExternal({ deferBundleCheckToRebuild: true }),
-	).resolves.toEqual(
-		expect.objectContaining({
-			status: 'published',
-			published_commit: 'commit-new',
-		}),
-	)
-	expect(collectFiles).toHaveBeenCalledTimes(1)
-	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			files: {
-				'package.json': demoPackageJson,
-				'public/mark.png': pngLatin1,
-			},
-		}),
-	)
-	const written =
-		mockModule.writePublishedSourceSnapshot.mock.calls[0]![0].files[
-			'public/mark.png'
-		]
-	expect(written).toBe(pngLatin1)
-	expect(written!.charCodeAt(0)).toBe(0x89)
-})
-
 test('isolated check phases and artifact rebuilds load staged files from KV, skip built targets, and reject expired or cross-user staging keys', async () => {
 	restoreRepoSessionMockBaseline()
 	const staged = { sourceFiles: { 'package.json': '{"name":"@kody/demo"}' } }
