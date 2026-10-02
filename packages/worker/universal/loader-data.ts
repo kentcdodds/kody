@@ -1330,31 +1330,20 @@ type PackageWebhookChallengeProve =
 			signedPayload: 'v0.timestamp.body'
 	  }
 
-type PackageWebhookChallenge =
-	| {
-			type: 'subscription-challenge'
-			method: 'GET' | 'POST'
-			challenge: { in: 'query' | 'json'; key: string }
-			when?: {
-				query?: Record<string, string | Array<string>>
-				json?: Record<string, string>
-			}
-			prove?: PackageWebhookChallengeProve
-			respond:
-				| { as: 'text' }
-				| { as: 'json'; key: string }
-				| { as: 'json-hmac'; key: string }
-	  }
-	| {
-			type:
-				| 'x-activity-crc'
-				| 'websub-hub'
-				| 'meta-hub'
-				| 'strava-hub'
-				| 'slack-url-verification'
-			secretName?: string
-	  }
-	| null
+type PackageWebhookChallenge = {
+	type: 'subscription-challenge'
+	method: 'GET' | 'POST'
+	challenge: { in: 'query' | 'json'; key: string }
+	when?: {
+		query?: Record<string, string | Array<string>>
+		json?: Record<string, string>
+	}
+	prove?: PackageWebhookChallengeProve
+	respond:
+		| { as: 'text' }
+		| { as: 'json'; key: string }
+		| { as: 'json-hmac'; key: string }
+} | null
 
 /**
  * One declared package webhook joined with its minted URL state. Never

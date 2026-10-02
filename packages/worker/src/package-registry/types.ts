@@ -155,25 +155,11 @@ export type PackageWebhookVerification = z.infer<
  * requests never invoke package code: the worker answers from query/body +
  * optional named secret only.
  *
- * Canonical type is `subscription-challenge` (generic knobs). Vendor-named
- * aliases (`meta-hub`, `strava-hub`, …) remain parseable for existing
- * manifests and expand to the generic form at runtime — do not add new
- * vendor type ids (see decision 0054).
+ * Only `subscription-challenge` (generic knobs) is supported. Do not add
+ * vendor-named type ids (see decision 0054); configure providers with
+ * documented presets under this type.
  */
-export const webhookChallengeAliasTypeValues = [
-	'x-activity-crc',
-	'websub-hub',
-	'meta-hub',
-	'strava-hub',
-	'slack-url-verification',
-] as const
-export type WebhookChallengeAliasType =
-	(typeof webhookChallengeAliasTypeValues)[number]
-
-export const webhookChallengeTypeValues = [
-	'subscription-challenge',
-	...webhookChallengeAliasTypeValues,
-] as const
+export const webhookChallengeTypeValues = ['subscription-challenge'] as const
 export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
 
 const webhookChallengeParamKeySchema = z
@@ -264,38 +250,8 @@ export type PackageWebhookSubscriptionChallenge = z.infer<
 	typeof packageWebhookSubscriptionChallengeSchema
 >
 
-const packageWebhookChallengeUnionSchema = z.discriminatedUnion('type', [
-	packageWebhookSubscriptionChallengeSchema,
-	z.object({
-		type: z.literal('x-activity-crc'),
-		secretName: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal('websub-hub'),
-		/** When set, `hub.verify_token` must match this secret. */
-		secretName: z.string().min(1).optional(),
-	}),
-	z.object({
-		type: z.literal('meta-hub'),
-		secretName: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal('strava-hub'),
-		secretName: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal('slack-url-verification'),
-		/**
-		 * When set, the challenge POST must carry a valid request-hmac for
-		 * this signing secret (Slack-style `v0.timestamp.body`).
-		 */
-		secretName: z.string().min(1).optional(),
-	}),
-])
-
 export const packageWebhookChallengeSchema =
-	packageWebhookChallengeUnionSchema.superRefine((challenge, ctx) => {
-		if (challenge.type !== 'subscription-challenge') return
+	packageWebhookSubscriptionChallengeSchema.superRefine((challenge, ctx) => {
 		if (challenge.method === 'GET' && challenge.challenge.in !== 'query') {
 			ctx.addIssue({
 				code: 'custom',
@@ -347,16 +303,13 @@ export const packageWebhookChallengeSchema =
 	})
 
 export type PackageWebhookChallenge = z.infer<
-	typeof packageWebhookChallengeUnionSchema
+	typeof packageWebhookChallengeSchema
 >
 
-/** Secret name used by a challenge declaration, if any (aliases or prove). */
+/** Secret name used by a challenge declaration's prove block, if any. */
 export function webhookChallengeSecretName(
 	challenge: PackageWebhookChallenge,
 ): string | undefined {
-	if (challenge.type !== 'subscription-challenge') {
-		return challenge.secretName
-	}
 	const prove = challenge.prove
 	if (!prove || prove.kind === 'none') return undefined
 	return prove.secretName

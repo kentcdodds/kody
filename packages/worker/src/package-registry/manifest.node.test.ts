@@ -316,7 +316,19 @@ test('parseAuthoredPackageJson rejects invalid manifests with a specific error p
 		],
 		[
 			'@kentcdodds/sentry-bridge',
-			sentryHook({ challenge: { type: 'x-activity-crc' } }),
+			sentryHook({
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'GET',
+					challenge: { in: 'query', key: 'crc_token' },
+					prove: {
+						kind: 'hmac',
+						algorithm: 'hmac-sha256',
+						encoding: 'base64',
+					},
+					respond: { as: 'json-hmac', key: 'response_token' },
+				},
+			}),
 			/secretName/,
 			sentryExports,
 		],
@@ -559,7 +571,19 @@ test('parseAuthoredPackageJson accepts kody.webhooks with verification, replay, 
 		encoding: 'base64',
 		prefix: 'sha256=',
 	}
-	const xChallenge = { type: 'x-activity-crc', secretName: 'xConsumerSecret' }
+	const xChallenge = {
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'crc_token' },
+		prove: {
+			kind: 'hmac',
+			secretName: 'xConsumerSecret',
+			algorithm: 'hmac-sha256',
+			encoding: 'base64',
+			prefix: 'sha256=',
+		},
+		respond: { as: 'json-hmac', key: 'response_token' },
+	}
 	const x = parse(
 		'@kentcdodds/x',
 		{

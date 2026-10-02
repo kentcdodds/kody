@@ -95,107 +95,13 @@ function whenValueAllows(
 }
 
 /**
- * Expand deprecated vendor-named challenge aliases into the canonical
- * `subscription-challenge` knobs. Prefer authoring the generic form directly.
+ * Identity for `subscription-challenge` configs. Kept so callers can share
+ * one normalized type without branching on challenge.shape.
  */
 export function normalizeWebhookChallenge(
 	challenge: PackageWebhookChallenge,
 ): NormalizedWebhookChallenge {
-	switch (challenge.type) {
-		case 'subscription-challenge':
-			return challenge
-		case 'x-activity-crc':
-			return {
-				type: 'subscription-challenge',
-				method: 'GET',
-				challenge: { in: 'query', key: 'crc_token' },
-				prove: {
-					kind: 'hmac',
-					secretName: challenge.secretName,
-					algorithm: 'hmac-sha256',
-					encoding: 'base64',
-					prefix: 'sha256=',
-				},
-				respond: { as: 'json-hmac', key: 'response_token' },
-			}
-		case 'websub-hub':
-			return {
-				type: 'subscription-challenge',
-				method: 'GET',
-				challenge: { in: 'query', key: 'hub.challenge' },
-				when: {
-					query: { 'hub.mode': ['subscribe', 'unsubscribe'] },
-				},
-				prove: challenge.secretName
-					? {
-							kind: 'verify-token',
-							in: 'query',
-							key: 'hub.verify_token',
-							secretName: challenge.secretName,
-							required: true,
-						}
-					: { kind: 'none' },
-				respond: { as: 'text' },
-			}
-		case 'meta-hub':
-			return {
-				type: 'subscription-challenge',
-				method: 'GET',
-				challenge: { in: 'query', key: 'hub.challenge' },
-				when: { query: { 'hub.mode': 'subscribe' } },
-				prove: {
-					kind: 'verify-token',
-					in: 'query',
-					key: 'hub.verify_token',
-					secretName: challenge.secretName,
-					required: true,
-				},
-				respond: { as: 'text' },
-			}
-		case 'strava-hub':
-			return {
-				type: 'subscription-challenge',
-				method: 'GET',
-				challenge: { in: 'query', key: 'hub.challenge' },
-				when: { query: { 'hub.mode': 'subscribe' } },
-				prove: {
-					kind: 'verify-token',
-					in: 'query',
-					key: 'hub.verify_token',
-					secretName: challenge.secretName,
-					required: true,
-				},
-				respond: { as: 'json', key: 'hub.challenge' },
-			}
-		case 'slack-url-verification':
-			return {
-				type: 'subscription-challenge',
-				method: 'POST',
-				challenge: { in: 'json', key: 'challenge' },
-				when: { json: { type: 'url_verification' } },
-				prove: challenge.secretName
-					? {
-							kind: 'request-hmac',
-							secretName: challenge.secretName,
-							algorithm: 'hmac-sha256',
-							encoding: 'hex',
-							prefix: 'v0=',
-							timestampHeader: 'x-slack-request-timestamp',
-							signatureHeader: 'x-slack-signature',
-							signedPayload: 'v0.timestamp.body',
-						}
-					: { kind: 'none' },
-				respond: { as: 'json', key: 'challenge' },
-			}
-		default: {
-			const exhaustive: never = challenge
-			throw new Error(
-				`Unhandled webhook challenge type: ${String(
-					(exhaustive as { type?: string }).type,
-				)}`,
-			)
-		}
-	}
+	return challenge
 }
 
 async function verifyRequestHmac(input: {

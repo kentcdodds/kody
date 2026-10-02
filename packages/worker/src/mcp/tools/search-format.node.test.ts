@@ -581,7 +581,19 @@ test('package entity detail is a slim index with explicit follow-up, webhook cha
 				{
 					name: 'activity',
 					export: './activity',
-					challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
+					challenge: {
+						type: 'subscription-challenge',
+						method: 'GET',
+						challenge: { in: 'query', key: 'crc_token' },
+						prove: {
+							kind: 'hmac',
+							secretName: 'xConsumerSecret',
+							algorithm: 'hmac-sha256',
+							encoding: 'base64',
+							prefix: 'sha256=',
+						},
+						respond: { as: 'json-hmac', key: 'response_token' },
+					},
 				},
 				{ name: 'plain', export: './plain' },
 			],
@@ -591,12 +603,24 @@ test('package entity detail is a slim index with explicit follow-up, webhook cha
 		webhooks: [
 			{
 				name: 'activity',
-				challenge: { type: 'x-activity-crc', secretName: 'xConsumerSecret' },
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'GET',
+					challenge: { in: 'query', key: 'crc_token' },
+					prove: {
+						kind: 'hmac',
+						secretName: 'xConsumerSecret',
+						algorithm: 'hmac-sha256',
+						encoding: 'base64',
+						prefix: 'sha256=',
+					},
+					respond: { as: 'json-hmac', key: 'response_token' },
+				},
 			},
 			{ name: 'plain', challenge: null },
 		],
 	})
-	expect(webhookDetail.markdown).toContain('challenge x-activity-crc')
+	expect(webhookDetail.markdown).toContain('challenge subscription-challenge')
 	expect(webhookDetail.markdown).not.toContain('xConsumerSecret')
 
 	const notesDetail = packageDetail({

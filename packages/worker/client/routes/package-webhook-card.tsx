@@ -109,12 +109,9 @@ function replayValue(webhook: PackageWebhookListItem) {
 function challengeSecretName(
 	challenge: NonNullable<PackageWebhookListItem['challenge']>,
 ) {
-	if (challenge.type === 'subscription-challenge') {
-		const prove = challenge.prove
-		if (!prove || prove.kind === 'none') return undefined
-		return prove.secretName
-	}
-	return challenge.secretName
+	const prove = challenge.prove
+	if (!prove || prove.kind === 'none') return undefined
+	return prove.secretName
 }
 
 function challengeValue(webhook: PackageWebhookListItem) {

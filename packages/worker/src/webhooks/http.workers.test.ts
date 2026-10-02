@@ -899,8 +899,17 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 		sendWebhook(hook, { method: 'GET', query })
 	const crcQuery = 'crc_token=x-crc-token'
 	const crcChallenge = {
-		type: 'x-activity-crc',
-		secretName: 'xConsumerSecret',
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'crc_token' },
+		prove: {
+			kind: 'hmac',
+			secretName: 'xConsumerSecret',
+			algorithm: 'hmac-sha256',
+			encoding: 'base64',
+			prefix: 'sha256=',
+		},
+		respond: { as: 'json-hmac', key: 'response_token' },
 	} as const
 
 	declareWebhook({ name: hook, challenge: crcChallenge })
@@ -916,8 +925,21 @@ test('subscription challenges answer on minted URLs without invoking exports', a
 	declareWebhook({
 		name: hook,
 		challenge: {
-			type: 'slack-url-verification',
-			secretName: 'slackSigningSecret',
+			type: 'subscription-challenge',
+			method: 'POST',
+			challenge: { in: 'json', key: 'challenge' },
+			when: { json: { type: 'url_verification' } },
+			prove: {
+				kind: 'request-hmac',
+				secretName: 'slackSigningSecret',
+				algorithm: 'hmac-sha256',
+				encoding: 'hex',
+				prefix: 'v0=',
+				timestampHeader: 'x-slack-request-timestamp',
+				signatureHeader: 'x-slack-signature',
+				signedPayload: 'v0.timestamp.body',
+			},
+			respond: { as: 'json', key: 'challenge' },
 		},
 	})
 	const slackBody = JSON.stringify({

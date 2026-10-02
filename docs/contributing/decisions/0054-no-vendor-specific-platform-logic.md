@@ -22,17 +22,19 @@ Third-party services configure them via params/options and documented presets �
 never via named forks like `strava-hub` or `meta-hub`.
 
 Refuse new `*-hub`, `*-crc`, or provider-branded challenge/verification type
-ids. Prefer one knobby primitive (arrival, proof, response) plus compat aliases
-while old manifests migrate. The same bar applies outside webhooks: no
-`stripeFoo` platform capability when a generic form with options covers it.
+ids. Prefer one knobby primitive (arrival, proof, response). The same bar
+applies outside webhooks: no `stripeFoo` platform capability when a generic form
+with options covers it.
 
 ## Consequences
 
-Webhook subscription challenges use `subscription-challenge` with knobs; legacy
-type ids remain aliases only. Docs show provider presets as config examples, not
-as schema enums to extend. Existing vendor-shaped leftovers (for example a
-timestamp format enum value) are migrated when touched — do not use them as
-precedent for new forks.
+Webhook subscription challenges use only `subscription-challenge` with knobs.
+Former vendor-named type ids (`meta-hub`, `strava-hub`, `x-activity-crc`,
+`websub-hub`, `slack-url-verification`) are rejected at parse time — packages
+must declare the matching documented preset. Docs show provider presets as
+config examples, not as schema enums to extend. Existing vendor-shaped leftovers
+(for example a timestamp format enum value) are migrated when touched — do not
+use them as precedent for new forks.
 
 **Revisit-if** a provider handshake cannot be expressed as knobs on an existing
 generic primitive without inventing an unsafe open-ended interpreter, and the

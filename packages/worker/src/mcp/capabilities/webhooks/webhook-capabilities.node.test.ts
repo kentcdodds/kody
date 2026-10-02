@@ -179,7 +179,20 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 				secretName: 'sentryWebhookSecret',
 				encoding: 'hex',
 			},
-			challenge: { type: 'meta-hub', secretName: 'metaVerify' },
+			challenge: {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'hub.challenge' },
+				when: { query: { 'hub.mode': 'subscribe' } },
+				prove: {
+					kind: 'verify-token',
+					in: 'query',
+					key: 'hub.verify_token',
+					secretName: 'metaVerify',
+					required: true,
+				},
+				respond: { as: 'text' },
+			},
 			minted: true,
 		},
 		{
@@ -233,7 +246,20 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		minted: true,
 		handle: 'whh_ep-1',
 		previous_url_active_until: null,
-		challenge: { type: 'meta-hub', secretName: 'metaVerify' },
+		challenge: {
+			type: 'subscription-challenge',
+			method: 'GET',
+			challenge: { in: 'query', key: 'hub.challenge' },
+			when: { query: { 'hub.mode': 'subscribe' } },
+			prove: {
+				kind: 'verify-token',
+				in: 'query',
+				key: 'hub.verify_token',
+				secretName: 'metaVerify',
+				required: true,
+			},
+			respond: { as: 'text' },
+		},
 	})
 	expect(listed.webhooks[1]?.challenge).toBeNull()
 	for (const row of listed.webhooks) {

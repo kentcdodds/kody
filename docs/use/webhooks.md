@@ -283,9 +283,8 @@ export never runs for the quiz, and challenge handling does not mutate account
 state, call MCP, or fetch outbound.
 
 Declare one `challenge` object next to (or instead of, when the provider has no
-POST HMAC) `verification`. Prefer the generic `subscription-challenge` type with
-knobs; deprecated aliases remain for older manifests (see
-[migration](#challenge-compat-aliases)).
+POST HMAC) `verification`. Use the generic `subscription-challenge` type with
+knobs, or copy a documented preset below.
 
 ### Generic `subscription-challenge`
 
@@ -440,22 +439,6 @@ block when those deliveries must also verify request signing.
 Store the X consumer secret with `secretSet` under `xConsumerSecret`, mint the
 webhook, then register the revealed URL directly with X. CRC GETs never invoke
 `./activity-event`; activity POSTs do, after HMAC verification.
-
-### Challenge compat aliases
-
-These short `challenge.type` values parse and expand to the presets above.
-Prefer `subscription-challenge` for new manifests; aliases are deprecated.
-
-| Alias                    | Expands to                                              |
-| ------------------------ | ------------------------------------------------------- |
-| `x-activity-crc`         | CRC preset (`crc_token` → `response_token`)             |
-| `websub-hub`             | WebSub preset (optional `secretName` → verify-token)    |
-| `meta-hub`               | Hub text/plain preset (required `secretName`)           |
-| `strava-hub`             | Hub JSON `{ "hub.challenge" }` preset (required secret) |
-| `slack-url-verification` | JSON body + optional request-hmac preset                |
-
-Migration: replace the alias object with the matching preset JSON (same
-`secretName` values). Behavior is identical after expand.
 
 ## Payload shape seen by the package export
 
