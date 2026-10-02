@@ -1,72 +1,55 @@
-/**
- * Path resolution for unified diffs applied by repo sessions.
- *
- * jsdiff's `parsePatch` fills `oldFileName` / `newFileName` from `---` / `+++`
- * headers. Agent-generated git patches often only have `diff --git a/<path>
- * b/<path>` (no dashes), or have empty `---` / `+++` lines that overwrite the
- * git-header names with blanks. Resolve missing names from `diff --git`
- * headers in document order so `repoApplyPatch` can apply those patches.
- */
+/** Resolve file names in unified diffs, including Git-only sections. */
 
 export type GitDiffHeaderPaths = {
 	oldFileName: string
 	newFileName: string
+	isDelete?: boolean
+	isNew?: boolean
 }
 
-/**
- * Parse every `diff --git <old> <new>` header from a unified-diff document.
- * Supports unquoted paths and git C-style quoted paths (spaces, escapes).
- */
-export function parseGitDiffHeaders(
-	patchText: string,
-): Array<GitDiffHeaderPaths> {
-	const headers: Array<GitDiffHeaderPaths> = []
-	for (const line of patchText.split(/\r?\n/)) {
-		if (!line.startsWith('diff --git ')) continue
-		const rest = line.slice('diff --git '.length)
-		const first = readGitPathToken(rest, 0)
-		if (!first) continue
-		if (rest[first.next] !== ' ') continue
-		const second = readGitPathToken(rest, first.next + 1)
-		if (!second) continue
-		if (rest.slice(second.next).trim() !== '') continue
-		headers.push({
-			oldFileName: first.path,
-			newFileName: second.path,
-		})
+export type UnifiedDiffSection = { text: string; header?: GitDiffHeaderPaths }
+
+/** Split a diff into source sections so Git headers stay paired with their own patch. */
+export function splitUnifiedDiffSections(patchText: string): UnifiedDiffSection[] {
+	const lines = patchText.split(/\r?\n/)
+	const starts: number[] = []
+	let gitSection = false
+	let hasHunk = false
+	let hasDashes = false
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index]!
+		if (line.startsWith('diff --git ')) {
+			starts.push(index); gitSection = true; hasHunk = false; hasDashes = false; continue
+		}
+		if (line.startsWith('@@ ')) hasHunk = true
+		if (line.startsWith('---') && (!gitSection || (hasHunk && !hasDashes))) {
+			starts.push(index); gitSection = false; hasHunk = false; hasDashes = true
+		} else if (gitSection && line.startsWith('---')) hasDashes = true
 	}
-	return headers
+	return starts.map((start, position) => {
+		const end = starts[position + 1] ?? lines.length
+		const text = lines.slice(start, end).join('\n')
+		return { text, header: parseGitHeader(text) }
+	})
 }
 
-/**
- * Prefer parsePatch file names when present and usable; fill gaps from the
- * matching `diff --git` header (same index in document order).
- */
+export function parseGitDiffHeaders(patchText: string): GitDiffHeaderPaths[] {
+	return splitUnifiedDiffSections(patchText).map((s) => s.header).filter((h): h is GitDiffHeaderPaths => h != null)
+}
+
 export function resolveUnifiedDiffFileNames(
 	patch: { oldFileName?: string; newFileName?: string },
 	gitHeader?: GitDiffHeaderPaths,
 ): { oldFileName: string | undefined; newFileName: string | undefined } {
-	const fromPatchOld = presentDiffFileName(patch.oldFileName)
-	const fromPatchNew = presentDiffFileName(patch.newFileName)
-	if (fromPatchOld && fromPatchNew) {
-		return { oldFileName: fromPatchOld, newFileName: fromPatchNew }
-	}
-	if (!gitHeader) {
-		return { oldFileName: fromPatchOld, newFileName: fromPatchNew }
-	}
+	const oldFileName = presentDiffFileName(patch.oldFileName)
+	const newFileName = presentDiffFileName(patch.newFileName)
 	return {
-		oldFileName: fromPatchOld ?? gitHeader.oldFileName,
-		newFileName: fromPatchNew ?? gitHeader.newFileName,
+		oldFileName: oldFileName ?? gitHeader?.oldFileName ?? (gitHeader?.isNew ? '/dev/null' : undefined),
+		newFileName: newFileName ?? (gitHeader?.isDelete ? '/dev/null' : gitHeader?.newFileName),
 	}
 }
 
-/**
- * Strip a leading `a/` or `b/` prefix. `/dev/null` and empty names become
- * null so callers can treat them as "no path on this side."
- */
-export function stripUnifiedDiffPath(
-	fileName: string | undefined,
-): string | null {
+export function stripUnifiedDiffPath(fileName: string | undefined): string | null {
 	if (!fileName || fileName === '/dev/null') return null
 	const stripped = fileName.replace(/^[ab]\//, '')
 	return stripped || null
@@ -74,58 +57,51 @@ export function stripUnifiedDiffPath(
 
 function presentDiffFileName(name: string | undefined): string | undefined {
 	if (name == null || name === '') return undefined
-	if (name === '/dev/null') return name
-	const stripped = name.replace(/^[ab]\//, '')
-	return stripped ? name : undefined
+	return name.replace(/^[ab]\//, '') ? name : undefined
 }
 
-function readGitPathToken(
-	input: string,
-	start: number,
-): { path: string; next: number } | null {
+function parseGitHeader(text: string): GitDiffHeaderPaths | undefined {
+	const line = text.split(/\r?\n/)[0]
+	if (!line?.startsWith('diff --git ')) return undefined
+	const rest = line.slice('diff --git '.length)
+	const first = readGitPathToken(rest, 0)
+	if (!first || rest[first.next] !== ' ') return undefined
+	const second = readGitPathToken(rest, first.next + 1)
+	if (!second || rest.slice(second.next).trim() !== '') return undefined
+	const isDelete = /(?:^|\n)deleted file mode\s/.test(text)
+	const isNew = /(?:^|\n)new file mode\s/.test(text)
+	return { oldFileName: first.path, newFileName: second.path, ...(isDelete ? { isDelete: true } : {}), ...(isNew ? { isNew: true } : {}) }
+}
+
+function readGitPathToken(input: string, start: number): { path: string; next: number } | null {
 	if (start >= input.length) return null
-	if (input[start] === '"') {
-		let index = start + 1
-		let path = ''
-		while (index < input.length) {
-			const char = input[index]
-			if (char === '"') {
-				return { path, next: index + 1 }
-			}
-			if (char === '\\' && index + 1 < input.length) {
-				const escaped = input[index + 1]!
-				switch (escaped) {
-					case 'n':
-						path += '\n'
-						break
-					case 't':
-						path += '\t'
-						break
-					case 'r':
-						path += '\r'
-						break
-					case '\\':
-						path += '\\'
-						break
-					case '"':
-						path += '"'
-						break
-					default:
-						path += escaped
-						break
+	if (input[start] !== '"') {
+		let index = start
+		while (index < input.length && input[index] !== ' ') index++
+		return index === start ? null : { path: input.slice(start, index), next: index }
+	}
+	let index = start + 1
+	let path = ''
+	const decoder = new TextDecoder()
+	while (index < input.length) {
+		const char = input[index]
+		if (char === '"') return { path, next: index + 1 }
+		if (char === '\\' && index + 1 < input.length) {
+			const escaped = input[index + 1]!
+			if (escaped >= '0' && escaped <= '7') {
+				const bytes: number[] = []
+				while (input[index] === '\\' && /[0-7]/.test(input[index + 1] ?? '')) {
+					const end = Math.min(index + 4, input.length)
+					let cursor = index + 1
+					while (cursor < end && /[0-7]/.test(input[cursor]!)) cursor++
+					bytes.push(Number.parseInt(input.slice(index + 1, cursor), 8)); index = cursor
 				}
-				index += 2
-				continue
+				path += decoder.decode(new Uint8Array(bytes)); continue
 			}
-			path += char
-			index += 1
+			path += ({ n: '\n', t: '\t', r: '\r', '\\': '\\', '"': '"' } as Record<string, string>)[escaped] ?? escaped
+			index += 2; continue
 		}
-		return null
+		path += char; index++
 	}
-	let index = start
-	while (index < input.length && input[index] !== ' ') {
-		index += 1
-	}
-	if (index === start) return null
-	return { path: input.slice(start, index), next: index }
+	return null
 }

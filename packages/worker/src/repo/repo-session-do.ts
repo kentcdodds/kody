@@ -8,7 +8,7 @@ import {
 } from '@cloudflare/shell'
 import { applyPatch, formatPatch, parsePatch } from 'diff'
 import {
-	parseGitDiffHeaders,
+	splitUnifiedDiffSections,
 	resolveUnifiedDiffFileNames,
 	stripUnifiedDiffPath,
 } from './unified-diff-paths.ts'
@@ -1250,7 +1250,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				async (path) => (await this.workspace.readFile(path)) ?? null,
 			)
 			// Track prior contents the same way `@cloudflare/shell`
-			// `applyTextEdits` does: each changed edit diffs previous → next,
+			// `applyTextEdits` does: each changed edit diffs previous â next,
 			// and a write earlier in the batch updates previous for later
 			// same-path edits. Gate both sides against the shell line ceiling
 			// before applyEditPlan so agents never see raw EFBIG.
@@ -1848,7 +1848,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			// Workspace wipe is best-effort; prefix purge below is the R2 safety net.
 		})
 		// Purge before dropping the catalog row so a failed R2 delete keeps the
-		// row for cron retry. A missing row is not ownership proof — do not wipe.
+		// row for cron retry. A missing row is not ownership proof â do not wipe.
 		await this.purgeWorkspaceBlobs()
 		await deleteRepoSession(this.env, {
 			userId: input.userId,
@@ -2010,13 +2010,12 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async applyUnifiedDiff(input: { patch: string; dryRun?: boolean }) {
-		const patches = parsePatch(input.patch)
-		if (patches.length === 0) {
+		const parsedSections = splitUnifiedDiffSections(input.patch).flatMap((section) =>
+			parsePatch(section.text).map((patch) => ({ patch, header: section.header })),
+		)
+		if (parsedSections.length === 0) {
 			throw new Error('git apply patch did not contain any file changes.')
 		}
-		// jsdiff may omit or blank ---/+++ names on diff --git-only patches;
-		// pair each parsePatch entry with the matching git header in order.
-		const gitHeaders = parseGitDiffHeaders(input.patch)
 		const edits: Array<{
 			path: string
 			changed: boolean
@@ -2036,11 +2035,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			isRename: boolean
 			nextContent: string
 		}> = []
-		for (const [index, patch] of patches.entries()) {
-			const resolvedNames = resolveUnifiedDiffFileNames(
-				patch,
-				gitHeaders[index],
-			)
+		for (const { patch, header } of parsedSections) {
+			const resolvedNames = resolveUnifiedDiffFileNames(patch, header)
 			// Keep formatPatch / isDelete aligned with the names we actually used.
 			patch.oldFileName = resolvedNames.oldFileName
 			patch.newFileName = resolvedNames.newFileName
