@@ -5,15 +5,16 @@ description: >
   modules and smoke tests when Node ≥22 and the CLI are available. Agents
   already on Kody MCP: cliCredentialBootstrap then CLI auth bootstrap (no second
   OAuth, no tokenCreate). Interactive humans: kody login. Scoped KODY_API_TOKEN
-  remains for CI/headless. Use when choosing between CLI --local and MCP
-  execute.
+  remains for CI/headless. Use when running Kody execute from Cursor (including
+  Cloud Agents), bootstrapping CLI credentials, or choosing local CLI vs Open
+  API / MCP `api`.
 ---
 
 # Prefer local CLI execute
 
 For one-off modules, authenticated smoke tests, and composition, prefer the
-local CLI over hosted MCP `execute` when **Node ≥22** and `@kodycodes/cli` are
-available.
+local CLI when **Node ≥22** and `@kodycodes/cli` are available. Do **not** use
+hosted MCP `execute`.
 
 Canonical guide: [Open API and local execute](https://kody.codes/docs/open-api)
 (`search({ entity: "guide:open_api" })` or
@@ -44,6 +45,9 @@ npx @kodycodes/cli execute --local --code 'export default async function main() 
 
 Never paste a `kody_at_…` into chat. The bootstrap code is short-lived and
 one-shot; prefer running `cli_command` over retyping secrets.
+
+After bootstrap, CLI `whoami` / `search` (and similar) reuse the stored
+bootstrap token the same way `--local` does (cli ≥1.8.1).
 
 ## Interactive humans: `kody login`
 
@@ -107,9 +111,11 @@ per-call `kody:runtime` hops only. See
 
 ## Fallback
 
-Use hosted MCP `execute` when local is not appropriate: no Node ≥22, CLI
-unavailable, flags/scopes missing, or the host cannot run a local workerd. Do
-**not** drop `--local` merely because the module imports `kody:@…`.
+Do **not** use hosted MCP `execute`. If `--local` cannot run (no Node ≥22, CLI
+missing, flags/scopes missing, or the host cannot run a local workerd), use Open
+API / MCP `api` for the needed operations, or fix the environment so local
+works. Hosted MCP `execute` is banned for agents that can use local CLI or Open
+API. Do **not** drop `--local` merely because the module imports `kody:@…`.
 
 ## Where agent guidance lives
 

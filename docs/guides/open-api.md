@@ -52,9 +52,11 @@ for package imports. Agents already on MCP: `cliCredentialBootstrap` then CLI
 `auth bootstrap` (no second OAuth, no `tokenCreate`). Interactive humans:
 `kody login` once, then `--local` with no `KODY_API_TOKEN`. Scoped `kody_at_…`
 tokens remain valid for CI and other headless envs without MCP — put
-`KODY_API_TOKEN` in the environment (not in the prompt). Fall back to hosted MCP
-`execute` only when local is not appropriate (no suitable Node, CLI missing,
-flags/scopes missing, or the host cannot run a local workerd). See
+`KODY_API_TOKEN` in the environment (not in the prompt). If local cannot run (no
+suitable Node, CLI missing, flags/scopes missing, or the host cannot run a local
+workerd), use Open API / MCP `api` for the needed operations, or fix the
+environment so local works — hosted MCP `execute` is banned for agents that can
+use local CLI or Open API. See
 [Cursor Cloud Agent notes](../contributing/cloud-agents.md) and the
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
 skill.
