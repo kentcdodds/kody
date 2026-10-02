@@ -3,6 +3,7 @@ import {
 	connectAppMcpClient,
 	usernameFromEmail,
 	type AppAuthUser,
+	type AppMcpOAuthSession,
 } from '../mcp-oauth-client.ts'
 import { isProductionKodyOrigin } from './package-create.ts'
 import {
@@ -17,6 +18,7 @@ export type AppMcpCallReport = {
 	tool: 'execute' | 'search'
 	result: unknown
 	cookieHeader: string
+	oauth?: AppMcpOAuthSession
 }
 
 export async function readJsonObjectFile(filePath: string) {
@@ -43,6 +45,8 @@ export async function executeAppMcp(input: {
 	password: string
 	code: string
 	params?: Record<string, unknown>
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
 	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
 }): Promise<AppMcpCallReport> {
 	if (isProductionKodyOrigin(input.origin)) {
@@ -58,6 +62,8 @@ export async function executeAppMcp(input: {
 			...(input.params ? { params: input.params } : {}),
 		},
 		readResult: readExecuteResult,
+		cookieHeader: input.cookieHeader,
+		oauth: input.oauth,
 		connect: input.connect,
 	})
 }
@@ -70,6 +76,8 @@ export async function searchAppMcp(input: {
 	domain?: string
 	entity?: string
 	limit?: number
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
 	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
 }): Promise<AppMcpCallReport> {
 	if (isProductionKodyOrigin(input.origin)) {
@@ -87,6 +95,8 @@ export async function searchAppMcp(input: {
 		tool: 'search',
 		arguments: arguments_,
 		readResult: readSearchResult,
+		cookieHeader: input.cookieHeader,
+		oauth: input.oauth,
 		connect: input.connect,
 	})
 }
@@ -98,6 +108,8 @@ async function callAppMcpTool(input: {
 	tool: 'execute' | 'search'
 	arguments: Record<string, unknown>
 	readResult: (toolResult: unknown) => unknown
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
 	connect?: (origin: string, user: AppAuthUser) => Promise<McpCallConnection>
 }): Promise<AppMcpCallReport> {
 	const user: AppAuthUser = {
@@ -105,8 +117,12 @@ async function callAppMcpTool(input: {
 		password: input.password,
 		username: usernameFromEmail(input.email),
 	}
-	const connect = input.connect ?? connectAppMcpClient
-	const connection = await connect(input.origin, user)
+	const connection = input.connect
+		? await input.connect(input.origin, user)
+		: await connectAppMcpClient(input.origin, user, {
+				cookieHeader: input.cookieHeader,
+				oauth: input.oauth,
+			})
 	try {
 		const toolResult = await connection.client.callTool(
 			{
@@ -120,6 +136,7 @@ async function callAppMcpTool(input: {
 			tool: input.tool,
 			result: input.readResult(toolResult),
 			cookieHeader: connection.cookieHeader,
+			oauth: connection.oauth,
 		}
 	} finally {
 		await connection[Symbol.asyncDispose]?.()

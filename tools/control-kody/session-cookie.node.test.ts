@@ -3,6 +3,7 @@ import {
 	cookieHeaderForOrigin,
 	formatCookieFile,
 	looksLikeLoginHtml,
+	sessionForOrigin,
 	shouldRefreshSession,
 } from './session-cookie.ts'
 
@@ -41,6 +42,37 @@ test('cookie files are bound to origin plus email when --email is used', () => {
 			'http://localhost:3742',
 			'jane@example.com',
 		),
+	).toBe(null)
+})
+
+test('cookie files persist OAuth client and bearer token for MCP reuse', () => {
+	const oauth = {
+		clientId: 'client-1',
+		clientSecret: 'secret-1',
+		redirectUri: 'http://127.0.0.1/oauth/callback',
+		accessToken: 'token-1',
+	}
+	const file = formatCookieFile(
+		'https://kody-pr-9.example',
+		'kody_session=preview',
+		'me@kentcdodds.com',
+		oauth,
+	)
+	expect(
+		cookieHeaderForOrigin(
+			file,
+			'https://kody-pr-9.example',
+			'me@kentcdodds.com',
+		),
+	).toBe('kody_session=preview')
+	expect(
+		sessionForOrigin(file, 'https://kody-pr-9.example', 'me@kentcdodds.com'),
+	).toMatchObject({
+		cookieHeader: 'kody_session=preview',
+		oauth,
+	})
+	expect(
+		sessionForOrigin(file, 'https://kody-pr-9.example', 'other@x.com'),
 	).toBe(null)
 })
 

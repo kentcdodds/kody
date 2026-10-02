@@ -50,9 +50,10 @@ import {
 	missingContainsNeedles,
 } from './control-kody/request-proof.ts'
 import {
-	cookieHeaderForOrigin,
 	formatCookieFile,
+	sessionForOrigin,
 	shouldRefreshSession,
+	type AppSessionOAuth,
 } from './control-kody/session-cookie.ts'
 import {
 	cookieHeaderFromSetCookie,
@@ -90,7 +91,7 @@ const usageLines = [
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
-	'  --cookie-file <p>    Session Cookie header file (keyed by origin + --email)',
+	'  --cookie-file <p>    Session file: cookie + MCP OAuth client/token (origin + --email)',
 	"  --email <addr>       Session identity; does not reuse another user's cookie",
 	'  --dump               Write the raw response body to .tmp/control-kody-body',
 	'  --contains <text>    Fail unless the response body includes this text',
@@ -770,8 +771,16 @@ export function readCookieFile(
 	origin: string,
 	email?: string | null,
 ) {
+	return readSessionFile(cookieFile, origin, email)?.cookieHeader ?? null
+}
+
+export function readSessionFile(
+	cookieFile: string,
+	origin: string,
+	email?: string | null,
+) {
 	if (!existsSync(cookieFile)) return null
-	return cookieHeaderForOrigin(readFileSync(cookieFile, 'utf8'), origin, email)
+	return sessionForOrigin(readFileSync(cookieFile, 'utf8'), origin, email)
 }
 
 export async function writeCookieFile(
@@ -779,11 +788,16 @@ export async function writeCookieFile(
 	cookieHeader: string,
 	origin: string,
 	email?: string | null,
+	oauth?: AppSessionOAuth | null,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
-	await writeFile(cookieFile, formatCookieFile(origin, cookieHeader, email), {
-		mode: 0o600,
-	})
+	await writeFile(
+		cookieFile,
+		formatCookieFile(origin, cookieHeader, email, oauth),
+		{
+			mode: 0o600,
+		},
+	)
 	await chmod(cookieFile, 0o600)
 }
 
@@ -1067,20 +1081,25 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
 			const report = await createPreviewPackage({
 				origin,
-				email: options.email ?? defaults.email,
+				email,
 				password: options.password ?? defaults.password,
 				kodyId: options.kodyId,
 				description: options.description,
 				headAhead: options.headAhead,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
 					options.cookieFile,
 					report.cookieHeader,
 					origin,
-					options.email ?? defaults.email,
+					email,
+					report.oauth,
 				)
 			}
 			if (options.json) {
@@ -1105,22 +1124,27 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
 			const params = options.paramsFile
 				? await readJsonObjectFile(options.paramsFile)
 				: undefined
 			const report = await executeAppMcp({
 				origin,
-				email: options.email ?? defaults.email,
+				email,
 				password: options.password ?? defaults.password,
 				code: readFileSync(options.codeFile, 'utf8'),
 				params,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
 					options.cookieFile,
 					report.cookieHeader,
 					origin,
-					options.email ?? defaults.email,
+					email,
+					report.oauth,
 				)
 			}
 			if (options.json) {
@@ -1144,21 +1168,26 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
 			const report = await searchAppMcp({
 				origin,
-				email: options.email ?? defaults.email,
+				email,
 				password: options.password ?? defaults.password,
 				query: options.query ?? undefined,
 				domain: options.domain ?? undefined,
 				entity: options.entity ?? undefined,
 				limit: options.limit ?? undefined,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
 					options.cookieFile,
 					report.cookieHeader,
 					origin,
-					options.email ?? defaults.email,
+					email,
+					report.oauth,
 				)
 			}
 			if (options.json) {

@@ -1,4 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { type AppMcpOAuthSession } from '../mcp-oauth-client.ts'
 
 const mcpCallTimeoutMs = 180_000
 
@@ -18,6 +19,7 @@ export type McpCallTool = (
 
 export type McpCallConnection = {
 	cookieHeader: string
+	oauth?: AppMcpOAuthSession
 	client: { callTool: McpCallTool }
 	[Symbol.asyncDispose]?: () => Promise<void> | void
 }
