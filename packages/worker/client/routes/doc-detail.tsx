@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'

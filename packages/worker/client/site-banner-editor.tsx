@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'
 import { type BannerDraft } from '#client/routes/admin-banners-shared.ts'

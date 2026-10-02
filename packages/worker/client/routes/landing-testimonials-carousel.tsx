@@ -1,4 +1,4 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle, ref } from 'remix/component'
 import { isElementNearViewport } from '#client/deferred-turnstile.ts'
 import { reveal } from '#client/reveal.ts'
 import {

@@ -1,5 +1,5 @@
-import { type Handle } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { type Handle } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { type DocDetailLoaderData } from '#universal/loader-data.ts'
 import { AppLoaderDataProvider } from './loader-data-context.tsx'
@@ -228,7 +228,7 @@ test('an aborted fallback fetch releases the latch and schedules the render that
 
 	expect(docData.read(handle, '/docs/memory').kind).toBe('pending')
 	expect(queuedTasks).toHaveLength(1)
-	// remix/ui aborts the task signal when the component re-renders for an
+	// remix/component aborts the task signal when the component re-renders for an
 	// unrelated reason (e.g. the shell refreshing its session).
 	const controller = new AbortController()
 	const flushing = flushTasks(controller.signal)

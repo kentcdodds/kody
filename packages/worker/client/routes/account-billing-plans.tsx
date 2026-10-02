@@ -1,4 +1,4 @@
-import { css, on } from 'remix/ui'
+import { css, on } from 'remix/component'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,

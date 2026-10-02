@@ -1,7 +1,7 @@
 // remix-skill: shared /files explorer route (community + account) with a
 // Handle-based explorer component and a dedicated lazy area so listing chunks
 // do not pull Shiki.
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { createMatcher } from 'remix/route-pattern/match'
 import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'

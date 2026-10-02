@@ -3,7 +3,7 @@ import {
 	type ConnectOauthExistingConnection,
 	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import {
 	resolveOauthScopeMenu,
 	uniqueOauthScopes,

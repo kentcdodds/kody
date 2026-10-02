@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { prefetchRouteHrefs } from '#client/client-router.tsx'
 import {
 	type McpClientKind,

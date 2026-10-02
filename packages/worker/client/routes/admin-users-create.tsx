@@ -1,5 +1,5 @@
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { colors, mq, spacing } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,

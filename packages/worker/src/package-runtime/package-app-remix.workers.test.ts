@@ -4,6 +4,7 @@ import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createRemixPackageAppFiles } from '#worker/test-support/remix-package-app-fixture.ts'
 import { buildKodyAppBundle, buildKodyAppClientBundle } from './module-graph.ts'
+import { loadPlatformRemixFiles } from './package-app-remix.ts'
 import { refreshKodyRuntimeModules } from './runtime-source-modules.ts'
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
 
@@ -109,7 +110,7 @@ test(
 		expect(code).not.toMatch(/from\s+["']remix\//)
 		expect(code).toContain('kody:app#Counter')
 		expect(code).not.toContain('import.meta.url')
-		// JSX compiled against remix/ui from the recipe's tsconfig.
+		// JSX compiled against remix/component from the recipe's tsconfig.
 		expect(code).not.toContain('React.createElement')
 
 		const request = loadWrappedApp(bundle)
@@ -214,13 +215,13 @@ test(
 		})
 		expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
 		const code = bundle.modules[bundle.mainModule] as string
-		// remix/ui is inlined from the platform copy; nothing bare or
+		// remix/component is inlined from the platform copy; nothing bare or
 		// server-only survives for the browser to resolve.
 		expect(code).not.toMatch(/from\s+["']remix\//)
 		expect(code).not.toMatch(/from\s+["']node:/)
 		expect(code).not.toContain('kody:runtime')
 		// The island and the boot are both present; JSX compiled against
-		// remix/ui from the recipe's tsconfig.
+		// remix/component from the recipe's tsconfig.
 		expect(code).toContain('Unknown client entry')
 		expect(code).toContain('id: "counter"')
 		expect(code).not.toContain('React.createElement')
@@ -233,7 +234,7 @@ test(
 			buildKodyAppClientBundle({
 				sourceFiles: {
 					...sourceFiles,
-					'app/ui/counter.tsx': `import { clientEntry, type Handle } from 'remix/ui'
+					'app/ui/counter.tsx': `import { clientEntry, type Handle } from 'remix/component'
 import { Layout } from './layout.tsx'
 export const Counter = clientEntry(import.meta.url, function Counter(handle: Handle<{ label: string }>) {
 	return () => <Layout>{handle.props.label}</Layout>
@@ -244,6 +245,86 @@ export const Counter = clientEntry(import.meta.url, function Counter(handle: Han
 		).rejects.toThrow(
 			/imports server-only modules that cannot run in the browser \(app\/routes\.ts: "kody:runtime"\)[\s\S]*pass that href as a prop/,
 		)
+	},
+)
+
+test(
+	'a package app importing remix/component and @remix-run/ui primitives bundles server and client from the vendored set',
+	{ timeout: 60_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		const sourceFiles = remixSourceFiles()
+		// Server route and browser island both pull the primitive: the route
+		// renders tabs markup, the client entry hydrates the same tabs module.
+		sourceFiles['app/ui/tabs-demo.tsx'] =
+			`/** @jsxImportSource remix/component */
+import * as tabs from '@remix-run/ui/tabs'
+import type { Handle, RemixNode } from 'remix/component'
+
+export function TabsDemo(handle: Handle): () => RemixNode {
+	return () => (
+		<tabs.Context defaultActiveTab="html">
+			<div mix={tabs.root()}>
+				<div mix={tabs.list()}>
+					<button type="button" mix={tabs.tab({ name: 'html' })}>HTML</button>
+				</div>
+				<div mix={tabs.panel({ name: 'html' })}>markup</div>
+			</div>
+		</tabs.Context>
+	)
+}
+`
+		const home = sourceFiles['app/controllers/home.tsx']!
+		sourceFiles['app/controllers/home.tsx'] = home
+			.replace(
+				"import { Counter } from '../ui/counter.tsx'",
+				"import { Counter } from '../ui/counter.tsx'\nimport { TabsDemo } from '../ui/tabs-demo.tsx'",
+			)
+			.replace(
+				'<Counter initialCount={notes.length} label="Notes" />',
+				'<Counter initialCount={notes.length} label="Notes" />\n\t\t\t\t<TabsDemo />',
+			)
+		const entry = sourceFiles['app/assets/entry.ts']!
+		sourceFiles['app/assets/entry.ts'] = entry
+			.replace(
+				"import { Counter } from '../ui/counter.tsx'",
+				"import { Counter } from '../ui/counter.tsx'\nimport { TabsDemo } from '../ui/tabs-demo.tsx'",
+			)
+			.replace(
+				'const clientEntries: Record<string, unknown> = { Counter }',
+				'const clientEntries: Record<string, unknown> = { Counter, TabsDemo }',
+			)
+
+		// Server bundle: both packages resolve from the platform's vendored
+		// file set with no npm install, leaving no bare specifier behind.
+		const serverBundle = await buildApp(sourceFiles, 'app/router.ts')
+		const serverCode = serverBundle.modules[serverBundle.mainModule] as string
+		expect(serverCode).not.toMatch(/from\s+["']remix\//)
+		expect(serverCode).not.toMatch(/from\s+["']@remix-run\/ui/)
+
+		// Browser bundle: same vendored resolution, still one runtime.
+		const clientBundle = await buildKodyAppClientBundle({
+			sourceFiles,
+			entryPoint: 'app/assets/entry.ts',
+		})
+		const clientCode = clientBundle.modules[clientBundle.mainModule] as string
+		expect(clientCode).not.toMatch(/from\s+["']remix\//)
+		expect(clientCode).not.toMatch(/from\s+["']@remix-run\/ui/)
+
+		// The vendored file set handed to the bundler covers both packages,
+		// and the `@remix-run/ui` entries share `remix`'s component runtime
+		// chunk instead of carrying a second copy.
+		const platformFiles = await loadPlatformRemixFiles()
+		expect(platformFiles.files['node_modules/remix/package.json']).toBeTypeOf(
+			'string',
+		)
+		expect(
+			platformFiles.files['node_modules/@remix-run/ui/package.json'],
+		).toBeTypeOf('string')
+		expect(
+			platformFiles.files['node_modules/@remix-run/ui/dist/tabs.js'],
+		).toMatch(/from"\.\.\/\.\.\/\.\.\/remix\/dist\/chunks\//)
+		expect(platformFiles.remixUiVersion).toBeTypeOf('string')
 	},
 )
 

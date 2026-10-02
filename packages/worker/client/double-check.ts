@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 
 type BlurHandler = (event: FocusEvent) => void

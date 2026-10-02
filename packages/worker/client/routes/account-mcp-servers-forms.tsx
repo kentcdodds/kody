@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'

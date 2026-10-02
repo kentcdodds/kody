@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/component'
 import { tryConsumePreloadedLoaderData } from '#client/navigation-data.ts'
 import { readSsrRouterUrl } from '#client/router-location.tsx'
 import { type AppLoaderData } from '#universal/loader-data.ts'

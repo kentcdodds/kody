@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'

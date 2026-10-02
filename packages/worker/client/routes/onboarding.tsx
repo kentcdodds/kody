@@ -1,4 +1,4 @@
-import { type Handle, css, ref } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/component'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'

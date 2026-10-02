@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderDocsPager, renderDocsShell } from '#client/routes/docs-shell.tsx'
 import { docsIntroSlug } from '#universal/docs-nav.ts'

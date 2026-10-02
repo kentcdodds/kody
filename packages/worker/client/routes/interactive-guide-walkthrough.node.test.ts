@@ -1,4 +1,4 @@
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { googleOauthTranscriptActs } from './google-oauth-transcript.ts'
 import { renderGoogleOauthWalkthrough } from './google-oauth-walkthrough.tsx'

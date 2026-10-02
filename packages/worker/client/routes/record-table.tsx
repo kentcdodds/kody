@@ -1,4 +1,4 @@
-import { css, type Handle, type RemixNode } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/component'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {

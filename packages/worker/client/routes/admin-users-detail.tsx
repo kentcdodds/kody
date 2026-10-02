@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { type createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'

@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { dismissOpenPopoverPanel, SiteHeader } from './site-header.tsx'
 
 test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or closed', () => {

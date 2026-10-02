@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import {

@@ -1,6 +1,6 @@
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'

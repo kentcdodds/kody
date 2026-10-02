@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/component'
 import { routerEvents } from '#client/client-router.tsx'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'

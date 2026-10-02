@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
 import {

@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
 import { hoverMq, mergeCss } from '#universal/styles/style-primitives.ts'
 import {

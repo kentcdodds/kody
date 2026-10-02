@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { onboardingStep3EcosystemGroups } from '#universal/onboarding-agent-ecosystems.ts'
 import { canonicalOnboardingAgentChooser } from '#universal/onboarding-mcp-clients.ts'

@@ -1,4 +1,4 @@
-import { type ResolveFrameOptions } from 'remix/ui'
+import { type ResolveFrameOptions } from 'remix/component'
 import { isBrowserFetchNetworkError } from '#client/browser-fetch-network-error.ts'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {

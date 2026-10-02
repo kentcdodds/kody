@@ -1,4 +1,4 @@
-import { type css } from 'remix/ui'
+import { type css } from 'remix/component'
 import {
 	colors,
 	mq,

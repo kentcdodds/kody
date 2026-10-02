@@ -105,6 +105,7 @@
     "test:mcp": "node tools/run-nx.ts run worker:test-mcp",
     "hooks:ensure": "node tools/ensure-cloud-agent-hooks.ts",
     "prepare": "husky && node tools/ensure-cloud-agent-hooks.ts",
+    "postinstall": "patch-package",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate"
@@ -136,6 +137,7 @@
     "nx": "^23.2.0",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
+    "patch-package": "8.0.1",
     "semver": "^7.8.5",
     "set-cookie-parser": "^3.1.2",
     "typescript": "^6.0.3",

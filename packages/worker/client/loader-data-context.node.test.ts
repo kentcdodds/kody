@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import {
 	AppLoaderDataProvider,
 	hrefMatchesSsrUrl,

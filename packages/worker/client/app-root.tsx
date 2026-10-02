@@ -1,4 +1,4 @@
-import { clientEntry, type EntryComponent, type Handle } from 'remix/ui'
+import { clientEntry, type EntryComponent, type Handle } from 'remix/component'
 import { App } from './app.tsx'
 import { RouterLocationProvider } from './router-location.tsx'
 import { type SessionInfo } from './session.ts'

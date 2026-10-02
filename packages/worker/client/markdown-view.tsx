@@ -35,7 +35,7 @@
  * without relying on it.
  */
 import { lexer, type Token, type Tokens } from 'marked'
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import { DocYoutubeEmbed } from '#client/doc-youtube-embed.tsx'
 import { renderMarkdownHeadingAnchor } from '#client/markdown-heading-anchor.tsx'

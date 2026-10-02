@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { expect, test, vi } from 'vitest'
 import { createAccountEmailClaims } from './account-email-claims-client.ts'
 

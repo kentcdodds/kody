@@ -1,4 +1,4 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import {
 	type HighlightedCode,

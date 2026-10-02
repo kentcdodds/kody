@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/component'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'

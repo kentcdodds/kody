@@ -20,11 +20,14 @@ declare module '*/node_modules/.kody-generated/oauth-provider.mjs' {
 }
 
 /**
- * The platform-supplied `remix` package for package apps: a code-split
- * pre-bundle of the Workers-safe `remix/<subpath>` entries, keyed relative
- * to `node_modules/remix/` (see `packageAppRemixSubpaths`).
+ * The platform-supplied `remix` and `@remix-run/ui` packages for package
+ * apps: one code-split pre-bundle of the Workers-safe `remix/<subpath>`
+ * entries plus the `@remix-run/ui/<primitive>` entries, keyed relative to
+ * `node_modules/` (see `packageAppRemixSubpaths` /
+ * `packageAppRemixUiSubpaths`).
  */
 declare module '*/node_modules/.kody-generated/package-app-remix.mjs' {
 	export const remixVersion: string
+	export const remixUiVersion: string
 	export const files: Record<string, string>
 }

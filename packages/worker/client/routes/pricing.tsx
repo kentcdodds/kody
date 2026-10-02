@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { reveal } from '#client/reveal.ts'

@@ -1,6 +1,6 @@
 import { type ConnectOauthExistingConnection } from '#universal/loader-data.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { css, ref } from 'remix/ui'
+import { css, ref } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'

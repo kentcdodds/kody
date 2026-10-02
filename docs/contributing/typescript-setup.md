@@ -14,7 +14,7 @@ of truth.
 
 - **Config**: `packages/worker/tsconfig-client.json`
 - **Files**: `packages/worker/client/**` and `packages/worker/universal/**`
-- **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/ui`)
+- **Environment**: browser (`DOM`, `DOM.Iterable`) + JSX (`remix/component`)
 
 Put any module the browser bundle imports under `packages/worker/universal/`
 (`#universal/*`). Do not append individual worker files to the client `include`

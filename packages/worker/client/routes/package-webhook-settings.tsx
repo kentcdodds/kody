@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { AccountManagementMessage } from '#client/routes/account-management-components.tsx'
 import { renderPackageWebhookCard } from '#client/routes/package-webhook-card.tsx'

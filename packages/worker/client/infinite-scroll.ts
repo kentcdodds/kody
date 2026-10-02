@@ -1,4 +1,4 @@
-import { ref } from 'remix/ui'
+import { ref } from 'remix/component'
 
 /**
  * Mixin for an infinite-scroll sentinel element rendered at the end of a

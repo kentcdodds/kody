@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import {
 	internalErrorPageCopy,

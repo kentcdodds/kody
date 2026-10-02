@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
 import { renderIcon } from '#universal/icon.tsx'

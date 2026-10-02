@@ -18,7 +18,7 @@ import {
 	type AdminPlatformFeedbackListItem,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,

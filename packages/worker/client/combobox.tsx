@@ -1,5 +1,5 @@
-import { type Handle, css } from 'remix/ui'
-import * as combobox from 'remix/ui/combobox/primitives'
+import { type Handle, css } from 'remix/component'
+import * as combobox from '@remix-run/ui/combobox'
 import { renderIcon } from '#universal/icon.tsx'
 import {
 	colors,
@@ -46,9 +46,9 @@ type ComboboxProps = {
  * filtering, draft and committed values, keyboard interaction, focus timing,
  * popover positioning, and ARIA state; Kody owns the markup and every style,
  * so the field is the same box as `getSelectCss` (chevron included) and the
- * list uses the app's tokens. The styled `remix/ui/combobox` components were
- * not used because each `css()` call is its own cascade layer ordered by first
- * use, so their input styles beat any override applied from a parent.
+ * list uses the app's tokens. The styled combobox Remix shipped before 3.0.0
+ * was not used because each `css()` call is its own cascade layer ordered by
+ * first use, so its input styles beat any override applied from a parent.
  *
  * Remix shows its committed value as the input text, so the option value
  * handed to Remix is the label and the id is mapped back on change — the

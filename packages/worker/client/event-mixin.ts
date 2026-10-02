@@ -2,7 +2,7 @@ import {
 	type ElementProps,
 	type MixinDescriptor,
 	on as remixOn,
-} from 'remix/ui'
+} from 'remix/component'
 
 // Remix `on()` call sites annotate SubmitEvent / MouseEvent / InputEvent and
 // also read `currentTarget.value` on untyped handlers. This wrapper is the

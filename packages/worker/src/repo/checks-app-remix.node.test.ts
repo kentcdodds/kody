@@ -187,7 +187,7 @@ test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<s
 	)
 	expect(dependencies?.ok).toBe(false)
 	expect(dependencies?.message).toBe(
-		'package.json#dependencies must not list "@remix-run/fetch-router": import Remix as "remix/<subpath>" (for example "remix/router", "remix/ui"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.',
+		'package.json#dependencies must not list "@remix-run/fetch-router": import Remix as "remix/<subpath>" (for example "remix/router", "remix/component"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.',
 	)
 	expect(result.results.some((entry) => entry.kind === 'bundle')).toBe(false)
 	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
@@ -200,7 +200,7 @@ test('runRepoChecks treats a types-only remix devDependency as no npm dependency
 				'package.json',
 				createManifest({
 					app: { entry: './app/router.ts' },
-					devDependencies: { remix: '3.0.0-rc.4', typescript: '^6.0.0' },
+					devDependencies: { remix: '3.0.0', typescript: '^6.0.0' },
 				}),
 			],
 			...remixAppFiles,
@@ -228,7 +228,7 @@ test('runRepoChecks notes that a declared remix dependency is not installed', as
 				'package.json',
 				createManifest({
 					app: { entry: './app/router.ts' },
-					dependencies: { remix: '3.0.0-rc.4' },
+					dependencies: { remix: '3.0.0' },
 				}),
 			],
 			...remixAppFiles,

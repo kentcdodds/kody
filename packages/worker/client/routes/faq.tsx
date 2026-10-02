@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal } from '#client/reveal.ts'
 import { formatMinJobInterval, planLimits } from '#universal/plans.ts'

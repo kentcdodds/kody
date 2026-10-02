@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import { accountDisclosureCss } from '#client/routes/account-management-components.tsx'
 import { formatEstimatedCreditMicroUsd } from '#universal/credits.ts'

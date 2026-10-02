@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { App, appMainOwnsItsGutters } from './app.tsx'
 import * as clientRouter from './client-router.tsx'
 import { RouterLocationProvider } from './router-location.tsx'

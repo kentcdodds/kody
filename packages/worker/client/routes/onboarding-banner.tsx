@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
 import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
 import { noticeCardCss } from '#client/routes/account-management-components.tsx'

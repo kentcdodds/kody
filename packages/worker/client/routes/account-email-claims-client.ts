@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { type AccountFormerEmail } from '#universal/loader-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 

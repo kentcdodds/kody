@@ -162,7 +162,7 @@ export default defineConfig(async ({ command }) => {
 		oxc: {
 			jsx: {
 				runtime: 'automatic',
-				importSource: 'remix/ui',
+				importSource: 'remix/component',
 			},
 		},
 	}

@@ -1,5 +1,5 @@
-import { css } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { css } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { defaultKodyMcpUrl } from './onboarding-mcp-clients.ts'
 import {

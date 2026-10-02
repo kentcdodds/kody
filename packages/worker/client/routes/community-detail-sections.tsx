@@ -1,4 +1,4 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { routes } from '#universal/routes.ts'

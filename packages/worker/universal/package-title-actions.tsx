@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { type ViewerListingInstall } from '#universal/community-public-types.ts'
 import {
 	getCommunityPackageHrefFromName,

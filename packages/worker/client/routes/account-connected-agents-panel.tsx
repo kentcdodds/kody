@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'

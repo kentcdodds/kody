@@ -1,5 +1,5 @@
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'

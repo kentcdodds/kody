@@ -1,6 +1,6 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
-import { css } from 'remix/ui'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
+import { css } from 'remix/component'
 import { expect, test } from 'vitest'
 import { proseCss } from './style-primitives.ts'
 

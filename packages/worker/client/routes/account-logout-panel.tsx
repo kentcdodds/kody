@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import { AccountManagementPanel } from '#client/routes/account-management-components.tsx'

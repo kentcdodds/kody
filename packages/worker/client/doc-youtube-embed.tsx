@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { YouTubeLightPlayer } from '#client/youtube-light-player.tsx'
 import { docYoutubeWatchUrl } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'

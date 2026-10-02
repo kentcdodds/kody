@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { visuallyHiddenCss } from '#universal/styles/style-primitives.ts'
 import {
@@ -162,7 +162,7 @@ export function createRouteData<
 		const attempt = latch.getPendingAttempt()
 		pendingKey = key
 
-		// remix/ui aborts a queued task's signal whenever the component
+		// remix/component aborts a queued task's signal whenever the component
 		// re-renders for any reason (a shell session refresh, for example).
 		// Release the latch so the next render may re-queue, and when the
 		// route is still on this location, schedule that render ourselves —

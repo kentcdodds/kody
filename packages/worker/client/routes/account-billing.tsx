@@ -1,4 +1,4 @@
-import { type Handle, css, on } from 'remix/ui'
+import { type Handle, css, on } from 'remix/component'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import {

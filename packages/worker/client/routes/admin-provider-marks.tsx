@@ -1,5 +1,5 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
-import { type Handle, css, ref } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'

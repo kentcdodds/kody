@@ -8,7 +8,7 @@ const doctypeBytes = new TextEncoder().encode('<!DOCTYPE html>')
  * chunk. Reading that chunk here turns such a failure into a rejection the
  * caller can answer with a real error response, instead of a committed `200`
  * whose body stops after the doctype (which the browser shows as a blank page
- * and shared caches can store). The remix/ui renderer also emits markup
+ * and shared caches can store). The remix/component renderer also emits markup
  * starting at `<html>`; without a doctype the browser parses the document in
  * quirks mode, so the doctype is prepended once the document is known to exist.
  */

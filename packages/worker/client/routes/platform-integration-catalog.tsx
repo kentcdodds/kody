@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import { type PlatformIntegrationCatalogItem } from '#universal/oauth-connect.ts'
 import {

@@ -2,7 +2,7 @@ import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'

@@ -4,7 +4,7 @@ import {
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createUndoableAction } from '#client/undoable-action.ts'

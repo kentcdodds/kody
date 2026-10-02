@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import {
 	listPackageStatusSignifiers,
 	renderPackageStatusSignifiers,

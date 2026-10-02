@@ -3,7 +3,7 @@ import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { type createDoubleCheck } from '#client/double-check.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'

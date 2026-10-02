@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate } from '#client/client-router.tsx'
 import {

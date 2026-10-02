@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { type createDoubleCheck } from '#client/double-check.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'

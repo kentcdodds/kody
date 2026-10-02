@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/component'
 import { navigate } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { replaceLocation } from '#client/replace-location.ts'

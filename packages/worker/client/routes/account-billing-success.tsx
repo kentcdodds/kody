@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { type AccountBillingSuccessLoaderData } from '#universal/loader-data.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'

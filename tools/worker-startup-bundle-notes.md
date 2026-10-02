@@ -104,7 +104,7 @@ MCP Durable Object. UserMeter schema v12 inbound MCP last-used RPCs add a few KB
 - `webhookSyntheticDispatch` (interactive-MCP synthetic webhook smoke test)
   extends the webhooks MCP domain platform already evaluates: local dry-run
   5_172_095 against the previous 5_162_000 budget. Reviewed ceiling 5_182_000.
-- Remix 3.0.0-rc.4 updates the `remix/data-schema` helper reached through the
+- Remix 3.0.0 updates the `remix/data-schema` helper reached through the
   platform entry's `MCP` import: local dry-run 5,237,192 versus main/rc.2 at
   5,236,571, against the previous 5,237,000 budget. Reviewed ceiling 5,238,000.
 
@@ -328,8 +328,8 @@ runtime path if this budget is raised again.
   against the previous 3_907_500 budget, reviewed ceiling 3_910_000; platform
   local dry-run 5_236_503 against the previous 5_235_000 budget, reviewed
   ceiling 5_237_000.
-- Remix 3.0.0-rc.4 migration, including the D1 order-direction helper imported
-  by the runtime, adds 1,694 bytes to the runtime startup graph: local dry-run
+- Remix 3.0.0 migration, including the D1 order-direction helper imported by the
+  runtime, adds 1,694 bytes to the runtime startup graph: local dry-run
   3,911,073 versus main/rc.2 at 3,909,379, against the previous 3,910,000
   budget. Reviewed ceiling 3,912,000.
 - Connect-time OAuth refresh policy (#2739): `refresh-policy.ts` inference, the

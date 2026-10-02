@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -123,7 +123,7 @@ type LazyRouteRenderProps<TModule> = {
 }
 
 /**
- * Builds a remix/ui component bound to one lazy area. Closing over `area`
+ * Builds a remix/component component bound to one lazy area. Closing over `area`
  * keeps `TModule` in the `render` callback (JSX generics on `Handle` props
  * do not infer through `<LazyRoute area={...} />`).
  *

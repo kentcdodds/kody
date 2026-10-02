@@ -1,7 +1,7 @@
 import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { css, unsafeHTML } from 'remix/ui'
-import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
+import { css, unsafeHTML } from 'remix/component'
+import { Tab, TabList, TabPanel, Tabs } from '#client/tabs.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
 	MetadataGrid,

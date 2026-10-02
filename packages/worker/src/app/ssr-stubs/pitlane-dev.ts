@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 
 /**
  * Vitest alias target for `pitlane:dev` if a test graph still imports that

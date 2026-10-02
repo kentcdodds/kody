@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 import { getPackageSettingsHref } from '#universal/package-files.ts'
 import { renderPackageStatusSignifiers } from '#universal/package-status-signifiers.tsx'

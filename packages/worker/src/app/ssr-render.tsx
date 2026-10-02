@@ -1,7 +1,7 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { renderToStream } from 'remix/ui/server'
-import { type RemixNode } from 'remix/ui'
+import { renderToStream } from 'remix/component/server'
+import { type RemixNode } from 'remix/component'
 import { buildStylesheetHref, getClientBuildId } from '#app/client-build-id.ts'
 import { getClientEntryAssets } from '#app/client-entry-assets.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'

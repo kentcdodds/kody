@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { expect, test } from 'vitest'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import {

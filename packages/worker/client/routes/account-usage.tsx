@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { renderIcon } from '#universal/icon.tsx'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import {

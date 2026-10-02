@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 
 /**
  * Default HMR island for Wrangler-bundled tests and any non-Vite graph.

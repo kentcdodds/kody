@@ -90,14 +90,14 @@ from the same route contract: `routes.hello.href({ name: 'Remix' })` produces
 
 ### Components
 
-Remix UI uses JSX, but it is not React. A component's setup function runs once
-per instance and returns a render function. Local variables in setup preserve
-state between renders; event handlers change that state and call
+Remix components use JSX, but they are not React. A component's setup function
+runs once per instance and returns a render function. Local variables in setup
+preserve state between renders; event handlers change that state and call
 `handle.update()` to request another render:
 
 ```tsx
-import { on } from 'remix/ui'
-import type { Handle } from 'remix/ui'
+import { on } from 'remix/component'
+import type { Handle } from 'remix/component'
 
 function Counter(handle: Handle) {
 	let count = 0
@@ -151,13 +151,3 @@ diagnostics. Run `remix doctor` after structural or configuration changes;
 review findings before applying fixes. Do not run destructive database commands
 or rewrite configuration merely to make a diagnostic pass. Report what was
 checked and what remains unverified.
-
-## Kody
-
-Kody runs Remix on Cloudflare Workers with its own SSR, Vite assets, custom
-client router, custom frame resolvers, and a D1 `data-table` driver. Read
-[docs/contributing/remix.md](../../../docs/contributing/remix.md) for how Kody
-differs from the starter, and
-[docs/contributing/frames.md](../../../docs/contributing/frames.md) before
-touching `<Frame>`, `resolveFrame`, or `data-rmx-target`. Package-app authoring
-lives in [docs/guides/package-apps.md](../../../docs/guides/package-apps.md).

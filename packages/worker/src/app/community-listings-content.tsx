@@ -1,7 +1,7 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle, css } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { type Handle, css } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import {
 	communityPackageCategoryCopy,

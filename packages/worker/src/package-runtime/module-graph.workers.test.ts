@@ -472,14 +472,14 @@ export const mounted = render(greeting.name)`,
 		const withExternals = await buildClient({
 			'package.json': clientPackageJson({
 				entry: './src/client.ts',
-				externals: ['@remix-run/ui'],
+				externals: ['lit'],
 			}),
-			'src/client.ts': `import { Button } from '@remix-run/ui'
+			'src/client.ts': `import { html } from 'lit'
 import { render } from './render.ts'
-export const mounted = render(String(Button))`,
+export const mounted = render(String(html))`,
 		})
 		const externalCode = withExternals.modules[withExternals.mainModule]
-		expect(externalCode).toMatch(/from\s+"@remix-run\/ui"/)
+		expect(externalCode).toMatch(/from\s+"lit"/)
 		expect(externalCode).toContain('hello ${name}')
 		expect(externalCode).not.toMatch(/from\s+["']\.\/render/)
 

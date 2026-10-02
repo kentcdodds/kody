@@ -1,4 +1,4 @@
-import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
+import { Frame, type Handle, type RemixNode, css } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import { getPackageTreeHref } from '#universal/package-files.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'

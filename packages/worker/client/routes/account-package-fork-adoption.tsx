@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import {

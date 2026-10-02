@@ -2,7 +2,7 @@ import {
 	fromDatetimeLocalValue,
 	toDatetimeLocalValue,
 } from '@kody-internal/shared/secret-expires-at.ts'
-import { type Handle, css, ref } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'

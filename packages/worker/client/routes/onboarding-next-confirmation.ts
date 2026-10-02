@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
 

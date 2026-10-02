@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { AccountManagementPanel } from '#client/routes/account-management-components.tsx'

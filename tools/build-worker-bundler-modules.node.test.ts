@@ -2,7 +2,10 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { packageAppRemixSubpaths } from '#worker/package-runtime/package-app-remix-subpaths.ts'
+import {
+	packageAppRemixSubpaths,
+	packageAppRemixUiSubpaths,
+} from '#worker/package-runtime/package-app-remix-subpaths.ts'
 import {
 	ensureWorkerBundlerModules,
 	leftoverSrcGeneratedBundlerNames,
@@ -65,17 +68,28 @@ test('ensureWorkerBundlerModules vendors every allowlisted remix subpath as one 
 	await ensureWorkerBundlerModules()
 	const remixModule = (await import(
 		path.join(workerBundlerGeneratedDir, 'package-app-remix.mjs')
-	)) as { remixVersion: string; files: Record<string, string> }
+	)) as {
+		remixVersion: string
+		remixUiVersion: string
+		files: Record<string, string>
+	}
 	const installedRemix = JSON.parse(
 		await readFile(
 			path.join(repoRoot, 'node_modules/remix/package.json'),
 			'utf8',
 		),
 	) as { version: string }
+	const installedRemixUi = JSON.parse(
+		await readFile(
+			path.join(repoRoot, 'node_modules/@remix-run/ui/package.json'),
+			'utf8',
+		),
+	) as { version: string }
 	expect(remixModule.remixVersion).toBe(installedRemix.version)
+	expect(remixModule.remixUiVersion).toBe(installedRemixUi.version)
 
 	const vendoredPackage = JSON.parse(
-		remixModule.files['package.json'] ?? '',
+		remixModule.files['remix/package.json'] ?? '',
 	) as {
 		name: string
 		exports: Record<string, string>
@@ -87,12 +101,38 @@ test('ensureWorkerBundlerModules vendors every allowlisted remix subpath as one 
 			subpath,
 			target: `./dist/${subpath}.js`,
 		})
-		expect(typeof remixModule.files[`dist/${subpath}.js`]).toBe('string')
+		expect(typeof remixModule.files[`remix/dist/${subpath}.js`]).toBe('string')
 	}
-	// Code splitting: `remix/ui` and `remix/ui/server` must share one runtime
-	// instance, so both entries import a shared chunk instead of inlining it.
-	expect(remixModule.files['dist/ui.js']).toMatch(/from"\.\/chunks\//)
-	expect(remixModule.files['dist/ui/server.js']).toMatch(/from"\.\.\/chunks\//)
+	const vendoredUiPackage = JSON.parse(
+		remixModule.files['@remix-run/ui/package.json'] ?? '',
+	) as {
+		name: string
+		exports: Record<string, string>
+	}
+	expect(vendoredUiPackage.name).toBe('@remix-run/ui')
+	for (const subpath of packageAppRemixUiSubpaths) {
+		const target = vendoredUiPackage.exports[`./${subpath}`]
+		expect({ subpath, target }).toEqual({
+			subpath,
+			target: `./dist/${subpath}.js`,
+		})
+		expect(typeof remixModule.files[`@remix-run/ui/dist/${subpath}.js`]).toBe(
+			'string',
+		)
+	}
+	// Code splitting: `remix/component` and `remix/component/server` must
+	// share one runtime instance, so both entries import a shared chunk
+	// instead of inlining it — and the `@remix-run/ui` primitives reach the
+	// same `remix/dist/chunks/` shared runtime across the package boundary.
+	expect(remixModule.files['remix/dist/component.js']).toMatch(
+		/from"\.\/chunks\//,
+	)
+	expect(remixModule.files['remix/dist/component/server.js']).toMatch(
+		/from"\.\.\/chunks\//,
+	)
+	expect(remixModule.files['@remix-run/ui/dist/tabs.js']).toMatch(
+		/from"\.\.\/\.\.\/\.\.\/remix\/dist\/chunks\//,
+	)
 	// Only nodejs_compat builtins may stay external: everything else the
 	// package-app isolate cannot resolve would fail at load time.
 	const externalSpecifiers = new Set<string>()

@@ -3,7 +3,8 @@
  * `remix` package (see `tools/build-worker-bundler-modules.ts`, which
  * pre-bundles them into `package-app-remix.mjs`, and
  * `#worker/package-runtime/package-app-remix.ts`, which injects them into
- * every package bundle as `node_modules/remix/*`).
+ * every package bundle as `node_modules/remix/*`). `@remix-run/ui`
+ * primitives ride the same lane below as `node_modules/@remix-run/ui/*`.
  *
  * The list is the Workers-safe part of the `remix` meta-package: everything
  * that runs on Web APIs (`Request`, `Response`, streams, Web Crypto) plus
@@ -21,6 +22,10 @@
 export const packageAppRemixSubpaths = [
 	'assert',
 	'auth',
+	'component',
+	'component/jsx-dev-runtime',
+	'component/jsx-runtime',
+	'component/server',
 	'cookie',
 	'data-schema',
 	'data-schema/checks',
@@ -82,34 +87,39 @@ export const packageAppRemixSubpaths = [
 	'session-storage/memory',
 	'spa',
 	'tar-parser',
-	'ui',
-	'ui/accordion',
-	'ui/accordion/primitives',
-	'ui/anchor',
-	'ui/animation',
-	'ui/breadcrumbs',
-	'ui/button',
-	'ui/checkbox',
-	'ui/combobox',
-	'ui/combobox/primitives',
-	'ui/input',
-	'ui/jsx-dev-runtime',
-	'ui/jsx-runtime',
-	'ui/listbox',
-	'ui/menu',
-	'ui/menu/primitives',
-	'ui/popover',
-	'ui/radio',
-	'ui/select',
-	'ui/select/primitives',
-	'ui/server',
-	'ui/tabs',
-	'ui/tabs/primitives',
-	'ui/toggle',
-	'ui/toggle/primitives',
 ] as const
 
 export type PackageAppRemixSubpath = (typeof packageAppRemixSubpaths)[number]
 
 /** The bare package name package code imports Remix from (`remix/<subpath>`). */
 export const remixPackageName = 'remix'
+
+/**
+ * `@remix-run/ui` primitive subpaths the platform vendors alongside `remix`
+ * (same lane as `packageAppRemixSubpaths`). Remix 3.0.0 dropped its styled
+ * components; the headless primitives moved to this separate package, which
+ * publish rejects as an npm dependency — an installed copy would drag in a
+ * second `@remix-run/component` runtime. Vendoring it in the same code-split
+ * build as `remix/component` keeps one shared component runtime.
+ *
+ * Keep this list sorted; the generator asserts every entry exists in the
+ * installed `@remix-run/ui` package's `exports` map.
+ */
+export const packageAppRemixUiSubpaths = [
+	'accordion',
+	'anchor',
+	'animation',
+	'combobox',
+	'listbox',
+	'menu',
+	'popover',
+	'select',
+	'tabs',
+	'toggle',
+] as const
+
+export type PackageAppRemixUiSubpath =
+	(typeof packageAppRemixUiSubpaths)[number]
+
+/** The bare package name package code imports UI primitives from. */
+export const remixUiPackageName = '@remix-run/ui'

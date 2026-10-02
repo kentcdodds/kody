@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import {
 	BLOG_AUTHOR_NAME,

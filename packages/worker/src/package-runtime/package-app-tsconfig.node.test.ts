@@ -17,13 +17,13 @@ test('createPackageAppJsxBundleOptions maps tsconfig jsx and ignores missing or 
 			'tsconfig.json': JSON.stringify({
 				compilerOptions: {
 					jsx: 'react-jsx',
-					jsxImportSource: 'remix/ui',
+					jsxImportSource: 'remix/component',
 				},
 			}),
 		}),
 	).toEqual({
 		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
+		jsxImportSource: 'remix/component',
 	})
 	expect(
 		createPackageAppJsxBundleOptions({
@@ -51,12 +51,12 @@ test('createPackageAppJsxBundleOptions maps tsconfig jsx and ignores missing or 
   // Remix recipe
   "compilerOptions": {
     "jsx": "react-jsx",
-    "jsxImportSource": "remix/ui", /* trailing comma next */
+    "jsxImportSource": "remix/component", /* trailing comma next */
   },
 }`,
 		}),
 	).toEqual({
 		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
+		jsxImportSource: 'remix/component',
 	})
 })

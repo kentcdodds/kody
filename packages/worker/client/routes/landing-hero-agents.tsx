@@ -1,4 +1,4 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle, ref } from 'remix/component'
 import { stageParallax } from '#client/hero-stage.tsx'
 import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import {

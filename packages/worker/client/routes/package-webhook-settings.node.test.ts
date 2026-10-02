@@ -1,5 +1,5 @@
-import { type Handle } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { type Handle } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { expect, test, vi } from 'vitest'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { renderPackageWebhookCard } from '#client/routes/package-webhook-card.tsx'

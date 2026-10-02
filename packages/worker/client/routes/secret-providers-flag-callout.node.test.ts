@@ -1,4 +1,4 @@
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderSecretProvidersFlagCallout } from '#client/routes/secret-providers-flag-callout.tsx'
 import { secretProvidersFlagKey } from '#universal/feature-flags/registry.ts'

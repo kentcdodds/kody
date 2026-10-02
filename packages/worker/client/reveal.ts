@@ -1,4 +1,4 @@
-import { ref } from 'remix/ui'
+import { ref } from 'remix/component'
 
 /**
  * Scroll-reveal mixins for the marketing surfaces. The CSS lives in

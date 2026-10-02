@@ -1,5 +1,5 @@
-import { type Handle } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { type Handle } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { expect, test, vi } from 'vitest'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'
 import { listToasts, toast, type ToastTone } from '#client/toast.ts'

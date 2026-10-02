@@ -1,4 +1,4 @@
-import { css, ref, type Handle, type RemixNode } from 'remix/ui'
+import { css, ref, type Handle, type RemixNode } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import {
 	colors,

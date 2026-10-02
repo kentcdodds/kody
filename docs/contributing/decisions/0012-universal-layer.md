@@ -5,8 +5,8 @@
 
 ## Context
 
-The browser TypeScript project must stay a DOM / `remix/ui` environment. The SPA
-still needs shared route tables, loader payload types, display helpers,
+The browser TypeScript project must stay a DOM / `remix/component` environment.
+The SPA still needs shared route tables, loader payload types, display helpers,
 permission/plan/flag registries, and style tokens. Those modules accumulated as
 one-off entries in `packages/worker/tsconfig-client.json`, which grew every time
 a new universal import appeared.

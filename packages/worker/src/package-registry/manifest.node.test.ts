@@ -99,15 +99,12 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 			entry: './src/app.ts',
 			client: {
 				entry: './src/client.tsx',
-				externals: ['preact', ' @remix-run/ui ', 'preact'],
+				externals: ['preact', ' lit ', 'preact'],
 			},
 		},
 	})
 	expect(getPackageAppClientEntryPath(withExternals)).toBe('src/client.tsx')
-	expect(getPackageAppClientExternals(withExternals)).toEqual([
-		'@remix-run/ui',
-		'preact',
-	])
+	expect(getPackageAppClientExternals(withExternals)).toEqual(['lit', 'preact'])
 
 	// `published` snapshot loads treat leftover kody.app.runtime as inert.
 	const published = parse(

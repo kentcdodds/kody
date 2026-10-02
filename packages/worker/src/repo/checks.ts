@@ -652,7 +652,7 @@ function findRemixInternalNpmDependencies(dependencies: Array<string>) {
 function formatRemixInternalNpmDependencyMessage(dependencies: Array<string>) {
 	return `package.json#dependencies must not list ${formatQuotedList(
 		dependencies,
-	)}: import Remix as "${remixPackageName}/<subpath>" (for example "${remixPackageName}/router", "${remixPackageName}/ui"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.`
+	)}: import Remix as "${remixPackageName}/<subpath>" (for example "${remixPackageName}/router", "${remixPackageName}/component"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.`
 }
 
 function getDeclaredStaticKodyPackageDependencies(

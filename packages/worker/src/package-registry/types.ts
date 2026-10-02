@@ -32,7 +32,7 @@ export type PackageJobDefinition = z.infer<typeof packageJobDefinitionSchema>
 
 /**
  * A bare package specifier the browser bundle leaves as an `import` for the
- * page's import map to resolve (for example `@remix-run/ui`). Relative
+ * page's import map to resolve (for example `lit`). Relative
  * paths, URLs, and Worker-only schemes are not externals: the first two need
  * no declaration and the last never belong in a browser graph.
  */
@@ -47,7 +47,7 @@ export const packageAppClientExternalSchema = z
 			!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier),
 		{
 			message:
-				'kody.app.client.externals entries must be bare package specifiers such as "@remix-run/ui" or "preact/hooks" (no relative paths, URLs, or kody:/cloudflare:/node: schemes).',
+				'kody.app.client.externals entries must be bare package specifiers such as "lit" or "preact/hooks" (no relative paths, URLs, or kody:/cloudflare:/node: schemes).',
 		},
 	)
 

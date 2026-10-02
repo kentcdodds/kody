@@ -1,4 +1,4 @@
-import { type Handle, css, ref } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/component'
 import { heroBaseImage } from '#universal/landing-images.ts'
 
 /**

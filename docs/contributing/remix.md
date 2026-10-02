@@ -57,6 +57,10 @@ template:
   SSR runs in workerd with HMR. Production client and origin worker assets come
   from `vite build`. Platform, runtime, jobs, and highlight stay auxiliary
   workers in `vite dev` and separate Wrangler deploys in production.
+  `@pitlane/dev` still imports `remix/ui*` paths that Remix 3.0.0 renamed to
+  `remix/component*`; `patches/@pitlane+dev+*.patch` (applied by `patch-package`
+  on `postinstall`) rewrites those specifiers. Delete the patch once
+  `@pitlane/dev` ships stable Remix 3.0.0 support.
 - Static files are served through the Workers Assets binding rather than
   `remix/assets` or `remix/middleware/static`. Hydration uses
   `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports. SSR
@@ -78,7 +82,7 @@ template:
 - Server-rendered `<script>` elements take a single string child (Kody's inline
   scroll-restoration script) or stay empty with `src`.
 - Raw HTML props (`innerHTML`, iframe `srcdoc`) take `unsafeHTML(...)` from
-  `remix/ui`, which marks the trust boundary. The admin and account email
+  `remix/component`, which marks the trust boundary. The admin and account email
   previews pass generated email HTML this way into a `sandbox=""` iframe.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
   `packages/worker/src/app/ssr-render.tsx`. The browser resolver is

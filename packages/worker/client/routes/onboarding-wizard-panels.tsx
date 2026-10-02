@@ -1,4 +1,4 @@
-import { css, type MixValue } from 'remix/ui'
+import { css, type MixValue } from 'remix/component'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'

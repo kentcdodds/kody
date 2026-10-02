@@ -1133,7 +1133,7 @@ export function isResolveFrameFetchNetworkError(error: unknown) {
 const loopbackHttpUrlPattern =
 	/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i
 const viteDevStackTokenPattern =
-	/\/\.vite\/|remix_ui-hmr|callComponentRenderForHmr/i
+	/\/\.vite\/|remix_component-hmr|callComponentRenderForHmr/i
 const frameResolveLoopbackMessagePattern =
 	/^Frame resolve failed \(\d+\) for https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i
 
@@ -1182,7 +1182,7 @@ function isLocalViteDevSentryEvent(
 	return sentryEventStackFrameFunctions(event).some(
 		(name) =>
 			name.includes('callComponentRenderForHmr') ||
-			name.includes('remix_ui-hmr'),
+			name.includes('remix_component-hmr'),
 	)
 }
 
@@ -1263,7 +1263,7 @@ function filterCloudflareTurnstileClientSentryEvent<
  * Chrome Translate, click on a translated host select).
  *
  * Match is intentionally narrow: `NotFoundError` plus this exact
- * insertBefore wording AND a stack frame attributable to `@remix-run/ui`
+ * insertBefore wording AND a stack frame attributable to `@remix-run/component`
  * reconcile (`moveDomRange` / `reconcile`). Never blanket-drop
  * insertBefore NotFoundErrors from app code — KODY-5E was a different
  * HierarchyRequestError on RSS SPA nav.
@@ -1275,22 +1275,22 @@ function isRemixReconcileInsertBeforeNotFoundMessage(message: string) {
 	return remixReconcileInsertBeforeNotFoundMessage.test(message.trim())
 }
 
-function isRemixUiReconcileStackUrl(url: string) {
+function isRemixComponentReconcileStackUrl(url: string) {
 	const normalized = url.replace(/\\/g, '/')
 	return (
-		normalized.includes('@remix-run/ui') ||
-		normalized.includes('/remix/ui') ||
-		normalized.includes('remix_ui')
+		normalized.includes('@remix-run/component') ||
+		normalized.includes('/remix/component') ||
+		normalized.includes('remix_component')
 	)
 }
 
-function stackTextLooksLikeRemixUiReconcile(text: string) {
+function stackTextLooksLikeRemixComponentReconcile(text: string) {
 	const normalized = text.replace(/\\/g, '/')
-	if (!isRemixUiReconcileStackUrl(normalized)) return false
+	if (!isRemixComponentReconcileStackUrl(normalized)) return false
 	return normalized.includes('reconcile') || normalized.includes('moveDomRange')
 }
 
-function isRemixUiReconcileStack(event: SentryErrorEventLike) {
+function isRemixComponentReconcileStack(event: SentryErrorEventLike) {
 	if (
 		sentryEventStackFrameFunctions(event).some((name) =>
 			name.includes('moveDomRange'),
@@ -1299,7 +1299,7 @@ function isRemixUiReconcileStack(event: SentryErrorEventLike) {
 		return true
 	}
 	return sentryEventStackFrameUrls(event).some(
-		stackTextLooksLikeRemixUiReconcile,
+		stackTextLooksLikeRemixComponentReconcile,
 	)
 }
 
@@ -1317,7 +1317,7 @@ export function isRemixReconcileInsertBeforeNotFoundError(error: unknown) {
 	if (!isRemixReconcileInsertBeforeNotFoundMessage(message)) return false
 	const stack =
 		'stack' in error && typeof error.stack === 'string' ? error.stack : ''
-	return stackTextLooksLikeRemixUiReconcile(stack)
+	return stackTextLooksLikeRemixComponentReconcile(stack)
 }
 
 function isRemixReconcileInsertBeforeNotFoundSentryEvent(
@@ -1335,7 +1335,7 @@ function isRemixReconcileInsertBeforeNotFoundSentryEvent(
 			isRemixReconcileInsertBeforeNotFoundMessage(message),
 	)
 	if (!hasInsertBeforeMessage) return false
-	return isRemixUiReconcileStack(event)
+	return isRemixComponentReconcileStack(event)
 }
 
 function filterRemixReconcileInsertBeforeNotFoundSentryEvent<

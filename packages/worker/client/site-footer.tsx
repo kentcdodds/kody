@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	layoutMaxWidths,

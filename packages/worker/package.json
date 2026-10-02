@@ -17,6 +17,7 @@
     "@kody-internal/shared": "file:../shared",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@modelcontextprotocol/server": "2.0.0",
+    "@remix-run/ui": "0.12.1",
     "@resvg/resvg-wasm": "^2.6.2",
     "@sentry/browser": "^10.73.0",
     "@sentry/cloudflare": "^10.73.0",
@@ -29,7 +30,7 @@
     "marked": "^18.0.11",
     "postal-mime": "^3.0.0",
     "qrcode": "^1.5.4",
-    "remix": "3.0.0-rc.4",
+    "remix": "3.0.0",
     "satori": "^0.32.0",
     "tldts": "^7.4.11",
     "zod": "^4.4.3"

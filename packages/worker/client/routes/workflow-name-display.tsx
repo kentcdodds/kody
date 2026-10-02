@@ -1,4 +1,4 @@
-import { css, type RemixNode } from 'remix/ui'
+import { css, type RemixNode } from 'remix/component'
 import {
 	recordCellClamp,
 	recordStampCss,

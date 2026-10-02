@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import { DonutChart } from '#client/charts/donut-chart.tsx'
 import { StatCard } from '#client/charts/stat-card.tsx'

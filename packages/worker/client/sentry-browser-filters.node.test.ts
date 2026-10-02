@@ -71,7 +71,7 @@ const insertBeforeMessage =
 	"Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node."
 const reconcileFrame = fr(
 	'moveDomRange',
-	'@remix-run/ui/dist/runtime/reconcile',
+	'@remix-run/component/dist/runtime/reconcile',
 )
 const crabAppleMessage =
 	'Error: [CrabApple] Failed to hard-spoof navigator.userAgent: TypeError: Cannot redefine property: userAgent'
@@ -329,9 +329,10 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			[
 				{
 					function: 'Object.callComponentRenderForHmr',
-					filename: '/node_modules/.vite/deps/remix_ui-hmr_runtime_browser.js',
+					filename:
+						'/node_modules/.vite/deps/remix_component-hmr_runtime_browser.js',
 					absPath:
-						'http://localhost:3742/node_modules/.vite/deps/remix_ui-hmr_runtime_browser.js',
+						'http://localhost:3742/node_modules/.vite/deps/remix_component-hmr_runtime_browser.js',
 				},
 			],
 		],
@@ -352,7 +353,7 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			undefined,
 			withStack(
 				new DOMException(insertBeforeMessage, 'NotFoundError'),
-				`NotFoundError: ${insertBeforeMessage}\n    at ka (@remix-run/ui/dist/runtime/reconcile:1:1)`,
+				`NotFoundError: ${insertBeforeMessage}\n    at ka (@remix-run/component/dist/runtime/reconcile:1:1)`,
 			),
 		],
 		// CrabApple navigator.userAgent hard-spoof noise (KODY-80).

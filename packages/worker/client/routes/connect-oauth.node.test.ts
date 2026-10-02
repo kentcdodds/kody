@@ -1,5 +1,5 @@
 import { utf8ToBase64Url } from '@kody-internal/shared/base64.ts'
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import {
 	type ConnectOauthQueryConfig,

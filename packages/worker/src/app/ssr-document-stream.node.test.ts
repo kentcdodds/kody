@@ -5,7 +5,7 @@ const encoder = new TextEncoder()
 
 /**
  * Emits one chunk per pull so a trailing error lands after the consumer has
- * read the earlier chunks, the way remix/ui's renderer fails asynchronously
+ * read the earlier chunks, the way remix/component's renderer fails asynchronously
  * after enqueueing the document.
  */
 function streamOf(
@@ -40,7 +40,7 @@ test('prepends the doctype to a rendered document', async () => {
 })
 
 test('rejects instead of committing a body when the render fails before its first chunk', async () => {
-	// remix/ui's renderToStream resolves the whole document before enqueueing
+	// remix/component's renderToStream resolves the whole document before enqueueing
 	// anything, so a component throwing during SSR (a missing router context
 	// after an HMR re-evaluation, a failing loader) errors the stream here.
 	const failure = new Error('Cannot read properties of undefined')

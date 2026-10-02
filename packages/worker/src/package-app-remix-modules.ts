@@ -13,6 +13,7 @@
  */
 export function importPackageAppRemix(): Promise<{
 	remixVersion: string
+	remixUiVersion: string
 	files: Record<string, string>
 }> {
 	return import('./node_modules/.kody-generated/package-app-remix.mjs')

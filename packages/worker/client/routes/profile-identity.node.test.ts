@@ -1,4 +1,4 @@
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderProfileIdentity } from './profile-identity.tsx'
 import { type ProfileShellLoaderData } from '#universal/loader-data.ts'

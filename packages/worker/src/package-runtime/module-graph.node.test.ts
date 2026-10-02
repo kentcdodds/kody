@@ -330,9 +330,9 @@ export default async function main() {
 	})
 })
 
-test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remix/ui', async () => {
+test('buildKodyAppBundle keeps esbuild defaults even when the graph imports remix/component', async () => {
 	const remixRouter = `import { createRouter } from 'remix/router'
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 export default createRouter()`
 	const bundleApp = async (
 		label: string,
@@ -353,9 +353,9 @@ export default createRouter()`
 	expect(remixCall.files['node_modules/remix/package.json']).toContain(
 		'"./router": "./dist/router.js"',
 	)
-	expect(remixCall.files['node_modules/remix/dist/ui/server.js']).toBeTypeOf(
-		'string',
-	)
+	expect(
+		remixCall.files['node_modules/remix/dist/component/server.js'],
+	).toBeTypeOf('string')
 	// Vendored remix is a convenience; the host does not sniff the graph for
 	// JSX, import.meta.url, or keepNames. Without a tsconfig, esbuild defaults.
 	expect(remixCall).not.toHaveProperty('jsx')
@@ -364,12 +364,12 @@ export default createRouter()`
 	const tsconfigCall = await bundleApp('tsconfig', 'app/router.ts', {
 		'app/router.ts': remixRouter,
 		'tsconfig.json': JSON.stringify({
-			compilerOptions: { jsx: 'react-jsx', jsxImportSource: 'remix/ui' },
+			compilerOptions: { jsx: 'react-jsx', jsxImportSource: 'remix/component' },
 		}),
 	})
 	expect(tsconfigCall).toMatchObject({
 		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
+		jsxImportSource: 'remix/component',
 	})
 
 	for (const [label, entryPoint, files] of [

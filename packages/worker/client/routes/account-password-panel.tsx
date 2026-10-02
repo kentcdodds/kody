@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'

@@ -7,7 +7,7 @@
 		"incremental": true,
 		"lib": ["ES2023", "ESNext.Disposable", "DOM", "DOM.Iterable"],
 		"jsx": "react-jsx",
-		"jsxImportSource": "remix/ui",
+		"jsxImportSource": "remix/component",
 		"paths": {
 			"#client/app-root.tsx": [
 				"./packages/worker/src/app/ssr-stubs/app-root.ts"

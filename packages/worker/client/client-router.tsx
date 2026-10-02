@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
@@ -212,7 +212,7 @@ function swapDom(onSwapped?: () => void) {
 	// entrance for SPA navigations.
 	document.documentElement.setAttribute('data-spa-nav', '')
 	routerEvents.dispatchEvent(new Event('navigate'))
-	// Subscribers only enqueue handle.update(); the remix/ui scheduler
+	// Subscribers only enqueue handle.update(); the remix/component scheduler
 	// flushes in a microtask. Resolve one microtask later so the DOM has
 	// actually swapped before the transition captures the new state.
 	return new Promise<void>((resolve) =>

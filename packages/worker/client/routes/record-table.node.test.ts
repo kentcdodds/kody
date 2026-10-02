@@ -1,6 +1,6 @@
-import { type Handle } from 'remix/ui'
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { type Handle } from 'remix/component'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import {
 	RecordTable,

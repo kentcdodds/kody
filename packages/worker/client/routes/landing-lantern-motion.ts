@@ -1,4 +1,4 @@
-import { ref } from 'remix/ui'
+import { ref } from 'remix/component'
 import {
 	clampToCavity,
 	createLanternOrbBodies,

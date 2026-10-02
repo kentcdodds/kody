@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
 import { AccountAvatarEditor } from '#client/routes/account-avatar-editor.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'

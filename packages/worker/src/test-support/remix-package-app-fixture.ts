@@ -15,7 +15,7 @@ export function createRemixPackageAppFiles(input: {
 		exports: { '.': './src/index.ts' },
 		// Types only: publish installs `dependencies`, never `devDependencies`,
 		// so the platform copy of remix is what the bundle uses.
-		devDependencies: { remix: '3.0.0-rc.4' },
+		devDependencies: { remix: '3.0.0' },
 		kody: {
 			id: input.kodyId,
 			description:
@@ -33,7 +33,7 @@ export function createRemixPackageAppFiles(input: {
 			{
 				compilerOptions: {
 					jsx: 'react-jsx',
-					jsxImportSource: 'remix/ui',
+					jsxImportSource: 'remix/component',
 					allowImportingTsExtensions: true,
 					strict: true,
 					noEmit: true,
@@ -55,7 +55,7 @@ export function createRemixPackageAppFiles(input: {
 			'',
 			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
 			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',
-			'- Set `"jsxImportSource": "remix/ui"` in tsconfig and/or a per-file pragma.',
+			'- Set `"jsxImportSource": "remix/component"` in tsconfig and/or a per-file pragma.',
 			'- Routes live in `app/routes.ts`, prefixed with `packageContext.appBasePath`;',
 			'  remount in `app/router.ts` so those prefixes match. Build every URL with',
 			'  `routes.x.href()`, never a root-relative literal.',
@@ -145,7 +145,7 @@ export async function addNote(context: RequestContext, text: string) {
 	return note
 }
 `,
-		'app/controllers/home.tsx': `/** @jsxImportSource remix/ui */
+		'app/controllers/home.tsx': `/** @jsxImportSource remix/component */
 import type { BuildAction } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
@@ -171,7 +171,7 @@ export default {
 	},
 } satisfies BuildAction<'ANY', typeof routes.home>
 `,
-		'app/controllers/notes.tsx': `/** @jsxImportSource remix/ui */
+		'app/controllers/notes.tsx': `/** @jsxImportSource remix/component */
 import type { Controller } from 'remix/router'
 import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
@@ -222,11 +222,11 @@ export default {
 	},
 } satisfies Controller<typeof routes.notes>
 `,
-		'app/ui/render.tsx': `/** @jsxImportSource remix/ui */
+		'app/ui/render.tsx': `/** @jsxImportSource remix/component */
 import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
-import type { RemixNode } from 'remix/ui'
-import { renderToStream } from 'remix/ui/server'
+import type { RemixNode } from 'remix/component'
+import { renderToStream } from 'remix/component/server'
 import { createHtmlResponse } from 'remix/response/html'
 import { Document } from './document.tsx'
 
@@ -254,8 +254,8 @@ export function render(
 	return createHtmlResponse(stream, init)
 }
 `,
-		'app/ui/layout.tsx': `/** @jsxImportSource remix/ui */
-import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/layout.tsx': `/** @jsxImportSource remix/component */
+import type { Handle, RemixNode } from 'remix/component'
 import { routes } from '../routes.ts'
 
 // Server-only: imports the route contract (and so kody:runtime). Islands must
@@ -272,8 +272,8 @@ export function Layout(handle: Handle<{ children?: RemixNode }>) {
 	)
 }
 `,
-		'app/ui/document.tsx': `/** @jsxImportSource remix/ui */
-import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/document.tsx': `/** @jsxImportSource remix/component */
+import type { Handle, RemixNode } from 'remix/component'
 import { Layout } from './layout.tsx'
 
 export function Document(
@@ -305,8 +305,8 @@ export function Document(
 	)
 }
 `,
-		'app/ui/counter.tsx': `/** @jsxImportSource remix/ui */
-import { clientEntry, on, type Handle } from 'remix/ui'
+		'app/ui/counter.tsx': `/** @jsxImportSource remix/component */
+import { clientEntry, on, type Handle } from 'remix/component'
 
 export const Counter = clientEntry(
 	'kody:app#Counter',
@@ -327,7 +327,7 @@ export const Counter = clientEntry(
 	},
 )
 `,
-		'app/assets/entry.ts': `import { run } from 'remix/ui'
+		'app/assets/entry.ts': `import { run } from 'remix/component'
 import { Counter } from '../ui/counter.tsx'
 
 // One browser module, so hydration resolves exports here instead of by URL.

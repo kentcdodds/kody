@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 
 /**

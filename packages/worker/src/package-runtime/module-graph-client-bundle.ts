@@ -269,7 +269,7 @@ export async function buildKodyAppClientBundle(input: {
 		bundleLabel,
 	})
 	// Optional convenience: the platform's vendored `remix` joins the browser
-	// graph too, so a recipe that imports `remix/ui` resolves the same copy
+	// graph too, so a recipe that imports `remix/component` resolves the same copy
 	// the server bundle used. Bundler options stay on esbuild defaults.
 	const files = await withPlatformRemixFiles(
 		collectBrowserBundleFiles({

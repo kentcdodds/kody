@@ -1,4 +1,4 @@
-import { run } from 'remix/ui'
+import { run } from 'remix/component'
 import { resolveClientFrame } from '#client/frame-resolve.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
