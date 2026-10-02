@@ -25,6 +25,7 @@ import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
+import { aggregateCreditAttributionDaily } from '#worker/usage/credit-attribution.ts'
 import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
 import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 
@@ -114,6 +115,11 @@ export async function runScheduledLane(input: {
 			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
 		case 'usage_aggregation': {
 			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
+			try {
+				await aggregateCreditAttributionDaily(input.env, input.scheduledAt)
+			} catch (error) {
+				console.warn('credit-attribution-aggregation-failed', error)
+			}
 			let fleetPackageErrorRate: Awaited<
 				ReturnType<typeof refreshFleetPackageErrorRateAndMaybeAlert>
 			>

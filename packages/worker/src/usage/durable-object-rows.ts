@@ -17,6 +17,8 @@ export function recordDurableObjectRowsRead(input: {
 	doClass: string
 	rowsRead: number
 	outcome?: 'success' | 'error'
+	/** Saved package id when the StorageRunner bucket is package-owned. */
+	packageId?: string | null
 }): void {
 	queueDurableObjectRowsRead({
 		...input,

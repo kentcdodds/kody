@@ -307,6 +307,10 @@
 		{
 			"filename": "0076-cli-credential-bootstrap-codes.sql",
 			"sha256": "9134c8ab8ee1a14043a79494753d22f7a400a69be11c0c287332f99fb20d53fc"
+		},
+		{
+			"filename": "0077-usage-attribution-daily.sql",
+			"sha256": "2fe2d5406363f6a97d298128afb4ef4995ca794c57c51035bec4d691d9bb04fe"
 		}
 	]
 }

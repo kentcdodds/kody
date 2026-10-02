@@ -48,6 +48,7 @@ function createUsageTestDb(input: UsageDbInput, stableUserId: string) {
 							second_agent_standard_gift_expires_at:
 								input.giftExpiresAt ?? null,
 							stable_user_id: stableUserId,
+							username: 'usage-user',
 							stripe_customer_id: input.stripeCustomerId ?? null,
 						} as T
 					}
@@ -66,6 +67,9 @@ function createUsageTestDb(input: UsageDbInput, stableUserId: string) {
 					return null
 				},
 				async all() {
+					if (normalized.includes('from usage_attribution_daily')) {
+						return { results: [] }
+					}
 					if (!normalized.includes('from usage_rollups')) return { results: [] }
 					return {
 						results: [...rollups, ...Object.entries(input.activity ?? {})].map(

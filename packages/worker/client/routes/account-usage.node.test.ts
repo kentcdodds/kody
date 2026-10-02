@@ -273,6 +273,11 @@ function usagePage(input: {
 			canBuyCredits,
 			autoRefill: null,
 		}),
+		whereItWent: {
+			month: '2026-09',
+			totalCreditsMicroUsd: 0,
+			rows: [],
+		},
 		credits: null,
 	}
 }

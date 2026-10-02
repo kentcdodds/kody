@@ -32,6 +32,8 @@ type PendingDurableObjectUsage = {
 	outcome: UsageOutcome
 	durationMs: number
 	eventCount: number
+	/** Package id when known; empty string coalesces with unset (Ad hoc). */
+	packageId: string
 	/** First queued event in this bucket; the flush writes this timestamp. */
 	timestamp: string
 }
@@ -147,12 +149,14 @@ export function queueDurableObjectRowsRead(input: {
 	doClass: string
 	rowsRead: number
 	outcome?: UsageOutcome
+	packageId?: string | null
 }): void {
 	try {
 		if (!input.userId) return
 		if (!Number.isFinite(input.rowsRead) || input.rowsRead < 1) return
 		const rowsRead = Math.trunc(input.rowsRead)
 		const outcome = input.outcome ?? 'success'
+		const packageId = input.packageId?.trim() || ''
 		if (!input.env.USAGE_EVENTS) {
 			recordUsage(input.env, {
 				userId: input.userId,
@@ -160,6 +164,7 @@ export function queueDurableObjectRowsRead(input: {
 				entityId: input.doClass,
 				eventCount: rowsRead,
 				outcome,
+				...(packageId ? { packageId } : {}),
 			}).catch((error: unknown) => {
 				console.debug('durable-object-rows-read-failed', error)
 			})
@@ -173,6 +178,7 @@ export function queueDurableObjectRowsRead(input: {
 			outcome,
 			durationMs: 0,
 			units: rowsRead,
+			packageId,
 		})
 	} catch (error) {
 		console.debug('durable-object-rows-read-failed', error)
@@ -187,12 +193,14 @@ function queueDurableObjectUsage(input: {
 	outcome: UsageOutcome
 	durationMs: number
 	units: number
+	packageId?: string
 }) {
 	const timestamp = new Date().toISOString()
 	// Buckets never span a UTC month, so a burst that crosses midnight on the
 	// last day cannot move earlier units into the next month's rollup.
 	const month = timestamp.slice(0, 'YYYY-MM'.length)
-	const key = `${input.eventType}\0${input.userId}\0${input.doClass}\0${input.outcome}\0${month}`
+	const packageId = input.packageId?.trim() || ''
+	const key = `${input.eventType}\0${input.userId}\0${input.doClass}\0${input.outcome}\0${month}\0${packageId}`
 	const existing = pendingByKey.get(key)
 	if (existing) {
 		existing.durationMs += input.durationMs
@@ -206,6 +214,7 @@ function queueDurableObjectUsage(input: {
 			outcome: input.outcome,
 			durationMs: input.durationMs,
 			eventCount: input.units,
+			packageId,
 			timestamp,
 		})
 	}
@@ -266,6 +275,7 @@ async function flushQueuedDurableObjectUsage() {
 				eventCount: bucket.eventCount,
 				outcome: bucket.outcome,
 				timestamp: bucket.timestamp,
+				...(bucket.packageId ? { packageId: bucket.packageId } : {}),
 			}),
 		),
 	).then(() => undefined)

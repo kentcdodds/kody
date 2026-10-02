@@ -168,6 +168,11 @@ function usage(
 			meters: pastIncludeFunded,
 		}),
 		creditsAlarm: null,
+		whereItWent: {
+			month: '2026-09',
+			totalCreditsMicroUsd: 0,
+			rows: [],
+		},
 		credits: wallet(),
 		...overrides,
 	}
