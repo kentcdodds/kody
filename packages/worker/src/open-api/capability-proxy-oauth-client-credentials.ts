@@ -3,6 +3,12 @@ import {
 	oauthClientCredentials,
 	type OAuthClientCredentialsInput,
 } from '#mcp/execute-modules/kody-runtime-utils.ts'
+import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
+import {
+	collectShareStorageOwners,
+	retainAuthorizedPackageStorageGrantIds,
+} from '#worker/package-registry/share-grants.ts'
+import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { invalidRequest } from './errors.ts'
 
@@ -10,11 +16,20 @@ import { invalidRequest } from './errors.ts'
  * CapabilityProxy bridge for local `oauthClientCredentials`: origin expands
  * secret placeholders through the fetch gateway (same as cloud execute), so
  * client id/secret values never enter local workerd.
+ *
+ * Optional `packageId` is stamped saved-package identity (same provenance as
+ * createAuthenticatedFetch / packageSecrets). It becomes the fetch-gateway
+ * storage context and secret-authority grant.
  */
+
+export type CapabilityProxyOauthClientCredentialsRequest =
+	OAuthClientCredentialsInput & {
+		packageId?: string
+	}
 
 export function parseCapabilityProxyOauthClientCredentialsArgs(
 	args: ReadonlyArray<unknown>,
-): OAuthClientCredentialsInput {
+): CapabilityProxyOauthClientCredentialsRequest {
 	const first = args[0]
 	if (first == null || typeof first !== 'object' || Array.isArray(first)) {
 		throw invalidRequest(
@@ -76,6 +91,10 @@ export function parseCapabilityProxyOauthClientCredentialsArgs(
 					),
 				)
 			: undefined
+	const packageId =
+		typeof record.packageId === 'string' && record.packageId.trim()
+			? record.packageId.trim()
+			: undefined
 	return {
 		tokenUrl: tokenUrl as string | URL,
 		clientIdSecret,
@@ -84,7 +103,28 @@ export function parseCapabilityProxyOauthClientCredentialsArgs(
 		...(scope !== undefined ? { scope } : {}),
 		...(body ? { body } : {}),
 		...(headers ? { headers } : {}),
+		...(packageId ? { packageId } : {}),
 	}
+}
+
+async function authorizeOauthClientCredentialsPackageId(input: {
+	ctx: ApiInvocationContext
+	packageId: string
+}) {
+	const authorized = await retainAuthorizedPackageStorageGrantIds({
+		db: input.ctx.env.APP_DB,
+		callerUserId: input.ctx.callerContext.user.userId,
+		packageIds: [input.packageId],
+		storageOwnerByPackageId: await collectShareStorageOwners({
+			db: input.ctx.env.APP_DB,
+			callerUserId: input.ctx.callerContext.user.userId,
+			packageIds: [input.packageId],
+		}),
+	})
+	if (!authorized.has(input.packageId)) {
+		throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
+	}
+	return input.packageId
 }
 
 export async function runCapabilityProxyOauthClientCredentials(input: {
@@ -98,15 +138,39 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 			'oauthClientCredentials requires an authenticated user.',
 		)
 	}
+	const packageId = call.packageId
+		? await authorizeOauthClientCredentialsPackageId({
+				ctx: input.ctx,
+				packageId: call.packageId,
+			})
+		: null
 	const existingStorage = input.ctx.callerContext.storageContext
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: existingStorage?.packageId ?? null,
+		packageId: packageId ?? existingStorage?.packageId ?? null,
 		storageId: existingStorage?.storageId ?? null,
 	}
-	const gatewayFetch: typeof fetch = async (requestInput, init) =>
-		executeGatewayFetch({
+	const { packageId: _ignoredPackageId, ...oauthInput } = call
+	const gatewayFetch: typeof fetch = async (requestInput, init) => {
+		const request = new Request(requestInput, init)
+		if (packageId) {
+			const headers = new Headers(request.headers)
+			headers.set(secretAuthorityHeaderName, packageId)
+			return executeGatewayFetch({
+				env: input.ctx.env,
+				props: {
+					baseUrl: input.ctx.callerContext.baseUrl,
+					userId: user.userId,
+					email: user.email,
+					storageContext,
+					grantedSecretAuthorityPackageIds: [packageId],
+				},
+				request: new Request(request, { headers }),
+				...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
+			})
+		}
+		return executeGatewayFetch({
 			env: input.ctx.env,
 			props: {
 				baseUrl: input.ctx.callerContext.baseUrl,
@@ -114,9 +178,10 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 				email: user.email,
 				storageContext,
 			},
-			request: new Request(requestInput, init),
+			request,
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
 		})
+	}
 
-	return await oauthClientCredentials(call, { fetch: gatewayFetch })
+	return await oauthClientCredentials(oauthInput, { fetch: gatewayFetch })
 }

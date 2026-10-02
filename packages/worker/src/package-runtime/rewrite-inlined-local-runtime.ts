@@ -59,6 +59,7 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 
 	const preambleSource = input.source.slice(0, cutIndex)
 	const packageId = readInlinedPackageId(preambleSource)
+	const bindingNames = readInlinedBindingNames(preambleSource)
 	const relativeShim = createRelativeImportSpecifier(
 		normalizeWorkspaceModulePath(input.modulePath),
 		normalizeWorkspaceModulePath(input.primaryRuntimePath),
@@ -66,6 +67,7 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 	const preamble = createInlinedRuntimeReplacementPreamble({
 		relativeShimSpecifier: relativeShim,
 		packageId,
+		bindingNames,
 	})
 	return {
 		source: `${preamble}\n\n${input.source.slice(cutIndex)}`,
@@ -88,10 +90,11 @@ function findAuthorCodeCutIndex(source: string) {
 		packageRuntimeIndex + virtualPackageRuntimeMarker.length,
 	)
 	if (afterPackageRuntime === -1) return null
+	// `afterPackageRuntime` points at the newline; +1 starts at `// virtual:…`.
 	const nextBanner = source.slice(afterPackageRuntime + 1)
 	if (
-		nextBanner.startsWith(virtualRuntimeMarker.slice(3)) ||
-		nextBanner.startsWith(virtualPackageRuntimeMarker.slice(3))
+		nextBanner.startsWith(virtualRuntimeMarker) ||
+		nextBanner.startsWith(virtualPackageRuntimeMarker)
 	) {
 		return null
 	}
@@ -103,18 +106,88 @@ function readInlinedPackageId(preambleSource: string) {
 	return match?.[1] ?? null
 }
 
+function readAssignmentBindingName(preambleSource: string, rhsPattern: RegExp) {
+	const match = new RegExp(
+		`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
+	).exec(preambleSource)
+	return match?.[1] ?? null
+}
+
+/**
+ * Esbuild renames colliding inlined bindings (`packageStorage` →
+ * `packageStorage2`). Author code after the cut references those renamed
+ * identifiers, so the replacement preamble must reuse the same names.
+ */
+export function readInlinedBindingNames(preambleSource: string) {
+	const packageStorage =
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyCreatePackageBoundStorage\s*\(/,
+		) ?? 'packageStorage'
+	const packageSecrets =
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyCreatePackageBoundSecrets\s*\(/,
+		) ?? 'packageSecrets'
+	const createAuthenticatedFetch =
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyOptionalRuntimeFunctionExport\s*\(\s*["']createAuthenticatedFetch["']/,
+		) ??
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyCreatePackageBoundAuthenticatedFetch\s*\(/,
+		) ??
+		'createAuthenticatedFetch'
+	const oauthClientCredentials =
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyOptionalRuntimeFunctionExport\s*\(\s*["']oauthClientCredentials["']/,
+		) ??
+		readAssignmentBindingName(
+			preambleSource,
+			/__kodyCreatePackageBoundOauthClientCredentials\s*\(/,
+		) ??
+		'oauthClientCredentials'
+	return {
+		packageStorage,
+		packageSecrets,
+		createAuthenticatedFetch,
+		oauthClientCredentials,
+	}
+}
+
+function emitCanonicalAlias(canonical: string, actual: string) {
+	return actual === canonical ? '' : `var ${canonical} = ${actual};`
+}
+
 function createInlinedRuntimeReplacementPreamble(input: {
 	relativeShimSpecifier: string
 	packageId: string | null
+	bindingNames: ReturnType<typeof readInlinedBindingNames>
 }) {
 	const shim = JSON.stringify(input.relativeShimSpecifier)
+	const {
+		packageStorage,
+		packageSecrets,
+		createAuthenticatedFetch,
+		oauthClientCredentials,
+	} = input.bindingNames
+
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
+		const aliases = [
+			emitCanonicalAlias('packageStorage', packageStorage),
+			emitCanonicalAlias('packageSecrets', packageSecrets),
+			emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch),
+			emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials),
+		]
+			.filter(Boolean)
+			.join('\n')
 		return `
 import {
 	kody,
 	secretHeaders,
-	oauthClientCredentials,
 	packageContext,
 	email,
 	workflows,
@@ -123,27 +196,41 @@ import {
 	__kodyCreatePackageBoundAuthenticatedFetch,
 	__kodyCreatePackageBoundStorage,
 	__kodyCreatePackageBoundSecrets,
+	__kodyCreatePackageBoundOauthClientCredentials,
 } from ${shim};
 
-var createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});
-var packageStorage = __kodyCreatePackageBoundStorage(${packageIdLiteral});
-var packageSecrets = __kodyCreatePackageBoundSecrets(${packageIdLiteral});
+var ${createAuthenticatedFetch} = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});
+var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});
+var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});
+var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});
+${aliases}
 `.trim()
 	}
 
+	// Unstamped inlined runtime (rare): import shim helpers under stable local
+	// aliases, then expose whatever esbuild names the author body still uses.
 	return `
 import {
 	kody,
-	createAuthenticatedFetch,
+	createAuthenticatedFetch as __kodyShimCreateAuthenticatedFetch,
 	secretHeaders,
-	oauthClientCredentials,
+	oauthClientCredentials as __kodyShimOauthClientCredentials,
 	packageContext,
-	packageStorage,
-	packageSecrets,
+	packageStorage as __kodyShimPackageStorage,
+	packageSecrets as __kodyShimPackageSecrets,
 	email,
 	workflows,
 	packages,
 	events,
 } from ${shim};
+
+var ${createAuthenticatedFetch} = __kodyShimCreateAuthenticatedFetch;
+var ${oauthClientCredentials} = __kodyShimOauthClientCredentials;
+var ${packageStorage} = __kodyShimPackageStorage;
+var ${packageSecrets} = __kodyShimPackageSecrets;
+${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch)}
+${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials)}
+${emitCanonicalAlias('packageStorage', packageStorage)}
+${emitCanonicalAlias('packageSecrets', packageSecrets)}
 `.trim()
 }

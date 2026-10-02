@@ -289,6 +289,7 @@ test('createLocalExecuteRuntimeShimSource exposes a fixed local host-binding inv
 		'__kodyCreatePackageBoundAuthenticatedFetch',
 		'__kodyCreatePackageBoundStorage',
 		'__kodyCreatePackageBoundSecrets',
+		'__kodyCreatePackageBoundOauthClientCredentials',
 		'packageStorage',
 	] as const
 	for (const name of requiredCallableExports) {

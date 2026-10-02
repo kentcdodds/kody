@@ -11,6 +11,7 @@ test('parseCapabilityProxyOauthClientCredentialsArgs accepts a valid grant reque
 				clientSecretSecret: 'client-secret',
 				authStyle: 'basic',
 				body: { audience: 'api' },
+				packageId: 'pkg-1',
 			},
 		]),
 	).toEqual({
@@ -19,6 +20,7 @@ test('parseCapabilityProxyOauthClientCredentialsArgs accepts a valid grant reque
 		clientSecretSecret: 'client-secret',
 		authStyle: 'basic',
 		body: { audience: 'api' },
+		packageId: 'pkg-1',
 	})
 })
 

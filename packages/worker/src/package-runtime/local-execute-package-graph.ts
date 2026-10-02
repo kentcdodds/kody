@@ -366,6 +366,15 @@ export async function oauthClientCredentials(input) {
 	return await kody.oauthClientCredentials(input ?? {});
 }
 
+export function __kodyCreatePackageBoundOauthClientCredentials(packageId) {
+	return async function oauthClientCredentials(input) {
+		return await kody.oauthClientCredentials({
+			...(input ?? {}),
+			packageId,
+		});
+	};
+}
+
 const __kodyNullBodyStatuses = new Set([204, 205, 304]);
 
 function __kodyBytesToBase64(bytes) {
@@ -582,13 +591,14 @@ export function createLocalExecutePackageRuntimeModuleSource(
 ) {
 	const baseRuntimeSpecifier = '../runtime.js'
 	return `
-export { kody, secretHeaders, oauthClientCredentials, packageContext, email, workflows, packages, events } from ${JSON.stringify(
+export { kody, secretHeaders, packageContext, email, workflows, packages, events } from ${JSON.stringify(
 		baseRuntimeSpecifier,
 	)};
 import __kodyBaseRuntimeDefault, {
 	__kodyCreatePackageBoundStorage,
 	__kodyCreatePackageBoundSecrets,
 	__kodyCreatePackageBoundAuthenticatedFetch,
+	__kodyCreatePackageBoundOauthClientCredentials,
 } from ${JSON.stringify(baseRuntimeSpecifier)};
 export const packageStorage = __kodyCreatePackageBoundStorage(${JSON.stringify(
 		packageId,
@@ -599,22 +609,28 @@ export const packageSecrets = __kodyCreatePackageBoundSecrets(${JSON.stringify(
 export const createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFetch(${JSON.stringify(
 		packageId,
 	)});
+export const oauthClientCredentials = __kodyCreatePackageBoundOauthClientCredentials(${JSON.stringify(
+		packageId,
+	)});
 // Local base runtime default is Object.freeze'd. Proxying that frozen target
 // while returning different packageStorage / packageSecrets /
-// createAuthenticatedFetch values violates Proxy invariants and throws on
-// default-export property access. Clone with the bound overrides first.
+// createAuthenticatedFetch / oauthClientCredentials values violates Proxy
+// invariants and throws on default-export property access. Clone with the
+// bound overrides first.
 const __kodyPackageRuntimeDefault = new Proxy(
 	Object.freeze({
 		...__kodyBaseRuntimeDefault,
 		packageStorage,
 		packageSecrets,
 		createAuthenticatedFetch,
+		oauthClientCredentials,
 	}),
 	{
 		get(target, property, receiver) {
 			if (property === "packageStorage") return packageStorage;
 			if (property === "packageSecrets") return packageSecrets;
 			if (property === "createAuthenticatedFetch") return createAuthenticatedFetch;
+			if (property === "oauthClientCredentials") return oauthClientCredentials;
 			return Reflect.get(target, property, receiver);
 		},
 		has(target, property) {
@@ -622,6 +638,7 @@ const __kodyPackageRuntimeDefault = new Proxy(
 				property === "packageStorage" ||
 				property === "packageSecrets" ||
 				property === "createAuthenticatedFetch" ||
+				property === "oauthClientCredentials" ||
 				Reflect.has(target, property)
 			);
 		},

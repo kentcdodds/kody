@@ -70,17 +70,45 @@ test('rewriteInlinedLocalExecuteBundleSource replaces inlined ALS runtime with s
 	expect(result.rewritten).toBe(true)
 	expect(result.packageId).toBe(packageId)
 	expect(result.source).toContain('__kodyCreatePackageBoundAuthenticatedFetch')
+	expect(result.source).toContain(
+		'__kodyCreatePackageBoundOauthClientCredentials',
+	)
 	expect(result.source).toContain(JSON.stringify(packageId))
 	expect(result.source).toContain('// virtual:.__kody_root__/src/request.ts')
 	expect(result.source).not.toContain(
 		'__kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch")',
 	)
 	expect(result.source).not.toContain('AsyncLocalStorage')
+	// Preserve esbuild-renamed package host bindings for author body refs.
+	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).toContain(
+		`var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).toContain('var packageStorage = packageStorage2;')
+	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
 	// Relative hop from nested published bundle up to graph-canonical runtime.
 	expect(result.source).toMatch(
 		/from ["'](?:\.\.\/)+.__kody_virtual__\/runtime\.js["']/,
 	)
 	expect(result.source).toContain('var DROPBOX_INTEGRATION = "dropbox"')
+})
+
+test('findAuthorCodeCutIndex refuses a second runtime banner without .__kody_root__', () => {
+	const source = `// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+// virtual:.__kody_virtual__/runtime.js
+export default async function main() { return 1 }
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(false)
 })
 
 test('rewriteInlinedLocalExecuteBundleSource leaves external-import bundles alone', () => {
