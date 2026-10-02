@@ -132,9 +132,36 @@ export async function main() {
 	expect(result.source).toContain('function parse(value)')
 	expect(result.source).toContain('// virtual:.__kody_root__/src/entry.ts')
 	expect(result.source).not.toContain('__kodyOptionalRuntimeFunctionExport')
+	// Helper must appear once (no duplicate leadingAuthor prepend) and before shim.
+	expect(result.source.match(/function parse\(value\)/g)).toHaveLength(1)
 	expect(result.source.indexOf('function parse(value)')).toBeLessThan(
 		result.source.indexOf('__kodyCreatePackageBoundAuthenticatedFetch'),
 	)
+})
+
+test('rewrite skips canonical aliases for destructured author bindings', () => {
+	const source = `// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/entry.ts
+const { packageStorage } = { packageStorage: () => "author" };
+export async function main() {
+  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
+	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+	expect(result.source).toContain('const { packageStorage }')
 })
 
 test('rewrite prefers the last package-runtime package id', () => {

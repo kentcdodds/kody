@@ -1,3 +1,4 @@
+import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,
@@ -67,6 +68,12 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		.filter((section) => !isRemovableRuntimeSection(section.banner))
 		.map((section) => section.source)
 		.join('')
+	const authorBindings = collectTopLevelBindingNames(retained)
+	if (authorBindings == null) {
+		// Retained author source is not parseable as a module; refuse rather
+		// than emit aliases that might collide with undetectable bindings.
+		return { source: input.source, rewritten: false, packageId: null }
+	}
 	const packageId = readInlinedPackageId(preambleSource)
 	const bindingNames = readInlinedBindingNames(preambleSource)
 	const relativeShim = createRelativeImportSpecifier(
@@ -77,16 +84,26 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		relativeShimSpecifier: relativeShim,
 		packageId,
 		bindingNames,
-		retainedAuthorSource: retained,
+		authorBindings,
 	})
 
-	const insertAt = removable[0]?.start ?? 0
-	const before = input.source.slice(0, insertAt)
-	// Prefer inserting the shim where the first removed runtime section lived
-	// so leading non-runtime author content (rare) stays ahead of the shim.
-	const leadingAuthor = before
+	// Walk sections in order: keep author modules where they were, emit the
+	// shim once at the first removed runtime/package-runtime section.
+	const parts: Array<string> = []
+	let emittedPreamble = false
+	for (const section of sections) {
+		if (isRemovableRuntimeSection(section.banner)) {
+			if (!emittedPreamble) {
+				parts.push(preamble)
+				emittedPreamble = true
+			}
+			continue
+		}
+		parts.push(section.source)
+	}
+	if (!emittedPreamble) parts.unshift(preamble)
 	return {
-		source: `${leadingAuthor}${preamble}\n\n${retained}`,
+		source: parts.join('\n\n'),
 		rewritten: true,
 		packageId,
 	}
@@ -227,24 +244,150 @@ export function readInlinedBindingNames(preambleSource: string) {
 	}
 }
 
-function authorSourceDeclaresBinding(source: string, name: string) {
-	return new RegExp(
-		`(?:(?:var|let|const|function|class)\\s+|export\\s+(?:async\\s+)?function\\s+)${name}\\b`,
-	).test(source)
+function getBindingIdentifierName(node: unknown): string | null {
+	if (!node || typeof node !== 'object') return null
+	const candidate = node as { name?: unknown; value?: unknown }
+	if (typeof candidate.name === 'string') return candidate.name
+	if (typeof candidate.value === 'string') return candidate.value
+	return null
+}
+
+function collectPatternBoundNames(node: unknown, names: Set<string>) {
+	if (!node || typeof node !== 'object') return
+	const typedNode = node as ModuleAstNode
+	switch (typedNode.type) {
+		case 'Identifier': {
+			const name = getBindingIdentifierName(typedNode)
+			if (name) names.add(name)
+			return
+		}
+		case 'ObjectPattern': {
+			const properties = (typedNode as { properties?: unknown }).properties
+			if (!Array.isArray(properties)) return
+			for (const property of properties) {
+				if (!property || typeof property !== 'object') continue
+				const typedProperty = property as ModuleAstNode
+				if (typedProperty.type === 'RestElement') {
+					collectPatternBoundNames(
+						(typedProperty as { argument?: unknown }).argument,
+						names,
+					)
+					continue
+				}
+				collectPatternBoundNames(
+					(typedProperty as { value?: unknown }).value,
+					names,
+				)
+			}
+			return
+		}
+		case 'ArrayPattern': {
+			const elements = (typedNode as { elements?: unknown }).elements
+			if (!Array.isArray(elements)) return
+			for (const element of elements) {
+				collectPatternBoundNames(element, names)
+			}
+			return
+		}
+		case 'AssignmentPattern': {
+			collectPatternBoundNames((typedNode as { left?: unknown }).left, names)
+			return
+		}
+		case 'RestElement': {
+			collectPatternBoundNames(
+				(typedNode as { argument?: unknown }).argument,
+				names,
+			)
+			return
+		}
+		default:
+			return
+	}
+}
+
+/**
+ * Top-level value bindings in retained author source. Returns `null` when the
+ * source cannot be parsed (caller should refuse the rewrite).
+ */
+function collectTopLevelBindingNames(source: string): Set<string> | null {
+	if (!source.trim()) return new Set()
+	try {
+		const parsed = parseModuleSource(source) as unknown as ModuleAstNode
+		const program = parsed.program as
+			| { body?: Array<ModuleAstNode> }
+			| undefined
+		const body =
+			program?.body ?? (parsed.body as Array<ModuleAstNode> | undefined)
+		if (!Array.isArray(body)) return new Set()
+		const names = new Set<string>()
+		for (const statement of body) {
+			if (!statement || typeof statement !== 'object') continue
+			const node = statement as ModuleAstNode & {
+				declaration?: ModuleAstNode | null
+				specifiers?: Array<ModuleAstNode>
+				id?: unknown
+				declarations?: Array<{ id?: unknown }>
+			}
+			if (node.type === 'ImportDeclaration') {
+				for (const specifier of node.specifiers ?? []) {
+					const local = getBindingIdentifierName(
+						(specifier as { local?: unknown }).local,
+					)
+					if (local) names.add(local)
+				}
+				continue
+			}
+			if (
+				node.type === 'FunctionDeclaration' ||
+				node.type === 'ClassDeclaration'
+			) {
+				const name = getBindingIdentifierName(node.id)
+				if (name) names.add(name)
+				continue
+			}
+			if (node.type === 'VariableDeclaration') {
+				for (const declarator of node.declarations ?? []) {
+					collectPatternBoundNames(declarator.id, names)
+				}
+				continue
+			}
+			if (node.type === 'ExportNamedDeclaration' && node.declaration) {
+				const declaration = node.declaration
+				if (
+					declaration.type === 'FunctionDeclaration' ||
+					declaration.type === 'ClassDeclaration'
+				) {
+					const name = getBindingIdentifierName(
+						(declaration as { id?: unknown }).id,
+					)
+					if (name) names.add(name)
+					continue
+				}
+				if (declaration.type === 'VariableDeclaration') {
+					for (const declarator of (
+						declaration as { declarations?: Array<{ id?: unknown }> }
+					).declarations ?? []) {
+						collectPatternBoundNames(declarator.id, names)
+					}
+				}
+			}
+		}
+		return names
+	} catch {
+		return null
+	}
 }
 
 function emitCanonicalAlias(
 	canonical: string,
 	actual: string,
-	retainedAuthorSource: string,
+	authorBindings: ReadonlySet<string>,
 ) {
 	if (actual === canonical) return ''
 	// Author code may already bind the canonical name (e.g. a local helper
 	// named `packageStorage`). Emitting `var packageStorage = packageStorage2`
 	// would then SyntaxError or shadow incorrectly — skip the alias.
-	if (authorSourceDeclaresBinding(retainedAuthorSource, canonical)) {
-		return ''
-	}
+	if (authorBindings.has(canonical)) return ''
 	return `var ${canonical} = ${actual};`
 }
 
@@ -252,7 +395,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	relativeShimSpecifier: string
 	packageId: string | null
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
-	retainedAuthorSource: string
+	authorBindings: ReadonlySet<string>
 }) {
 	const shim = JSON.stringify(input.relativeShimSpecifier)
 	const {
@@ -293,7 +436,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		)
 		if (
 			kodyRuntime !== 'KodyRuntime' &&
-			!authorSourceDeclaresBinding(input.retainedAuthorSource, 'KodyRuntime')
+			!input.authorBindings.has('KodyRuntime')
 		) {
 			facadeLines.push(`var KodyRuntime = ${kodyRuntime};`)
 		}
@@ -306,22 +449,22 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			emitCanonicalAlias(
 				'packageStorage',
 				packageStorage,
-				input.retainedAuthorSource,
+				input.authorBindings,
 			),
 			emitCanonicalAlias(
 				'packageSecrets',
 				packageSecrets,
-				input.retainedAuthorSource,
+				input.authorBindings,
 			),
 			emitCanonicalAlias(
 				'createAuthenticatedFetch',
 				createAuthenticatedFetch,
-				input.retainedAuthorSource,
+				input.authorBindings,
 			),
 			emitCanonicalAlias(
 				'oauthClientCredentials',
 				oauthClientCredentials,
-				input.retainedAuthorSource,
+				input.authorBindings,
 			),
 		]
 			.filter(Boolean)
@@ -371,10 +514,10 @@ var ${createAuthenticatedFetch} = __kodyShimCreateAuthenticatedFetch;
 var ${oauthClientCredentials} = __kodyShimOauthClientCredentials;
 var ${packageStorage} = __kodyShimPackageStorage;
 var ${packageSecrets} = __kodyShimPackageSecrets;
-${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch, input.retainedAuthorSource)}
-${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials, input.retainedAuthorSource)}
-${emitCanonicalAlias('packageStorage', packageStorage, input.retainedAuthorSource)}
-${emitCanonicalAlias('packageSecrets', packageSecrets, input.retainedAuthorSource)}
+${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch, input.authorBindings)}
+${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials, input.authorBindings)}
+${emitCanonicalAlias('packageStorage', packageStorage, input.authorBindings)}
+${emitCanonicalAlias('packageSecrets', packageSecrets, input.authorBindings)}
 ${facadeBlock}
 `.trim()
 }
