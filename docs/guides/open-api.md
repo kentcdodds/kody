@@ -56,11 +56,11 @@ Modules that `import { kody }` / `workflows` from `kody:runtime` (same contract
 as cloud execute — no ambient global `kody`) run in local workerd; each
 `kody:runtime` call is a CapabilityProxy hop. Modules with static `kody:@…`
 imports keep `--local`: the CLI calls `POST /v1/local-execute/package-graph`
-(same `local-execute` scope + login OAuth or API token) to download published,
-stamped importable-module artifacts, embeds them next to your module +
-`kody:runtime`, and still uses CapabilityProxy only for per-call runtime hops.
-There is **no** silent whole-module defer to CapabilityProxy → `kody.execute`.
-Agents keep writing:
+(API tokens need `local-execute` scope; CLI login OAuth does not) to download
+published, stamped importable-module artifacts, embeds them next to your
+module + `kody:runtime`, and still uses CapabilityProxy only for per-call
+runtime hops. There is **no** silent whole-module defer to CapabilityProxy →
+`kody.execute`. Agents keep writing:
 
 ```ts
 import { searchMessages } from 'kody:@kentcdodds/google/gmail'
