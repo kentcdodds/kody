@@ -36,11 +36,12 @@ stores the API token locally.
 }
 ```
 
-Then run the returned `cli_command` (example shape):
+Then run the returned `cli_command` (example shape). Import `kody` from
+`kody:runtime` — same as cloud execute; there is no ambient global `kody`:
 
 ```bash
 npx @kodycodes/cli auth bootstrap --code 'kody_bc_…'
-npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
 Never paste a `kody_at_…` into chat. The bootstrap code is short-lived and

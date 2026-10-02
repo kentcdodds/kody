@@ -63,7 +63,8 @@ skill.
 
 ### Saved-package imports under `--local`
 
-Pure `kody.*` / `workflows.create` modules run in local workerd; each
+Modules that `import { kody }` / `workflows` from `kody:runtime` (same contract
+as cloud execute — no ambient global `kody`) run in local workerd; each
 `kody:runtime` call is a CapabilityProxy hop. Modules with static `kody:@…`
 imports keep `--local`: the CLI calls `POST /v1/local-execute/package-graph`
 (same `local-execute` flag + login OAuth or API token) to download published,
@@ -122,7 +123,7 @@ interactive OAuth and no `tokenCreate`.
 
 ```bash
 npx @kodycodes/cli auth bootstrap --code 'kody_bc_…'   # from cli_command
-npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
 **Preferred for interactive humans:** `kody login`, then run with no
@@ -131,7 +132,7 @@ CapabilityProxy and package-graph (same `local-execute` flag).
 
 ```bash
 npx @kodycodes/cli login   # once
-npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
 **Optional — scoped API token** (CI / headless without MCP, or thinner scopes):
@@ -157,7 +158,7 @@ npx @kodycodes/cli execute --local --code 'export default async function main() 
 3. Run a local module:
 
    ```bash
-   npx @kodycodes/cli execute --local --code 'export default async function main() { return await kody.metaGetCurrentUser({}) }'
+   npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
    ```
 
    Prefer the env var over `--token`. When set, `KODY_API_TOKEN` wins over
