@@ -190,7 +190,12 @@ returns published, stamped importable-module artifacts for embedding — it does
   `…/.__published_bundle__/…/.__kody_virtual__/runtime.js` modules re-export the
   primary shim; the primary imports host `kody:runtime` with a relative
   specifier (`../kody:runtime`) because workerd path-joins bare `kody:runtime`
-  under path-like module names.
+  under path-like module names. Published bundles that **inline** the virtual
+  runtime (Dropbox-style esbuild) are rewritten onto that same shim during
+  package-graph prep so `--local` does not depend on cloud's ALS preload.
+- OAuth client-credentials: `path: ['kody','oauthClientCredentials']` with the
+  same argument shape as cloud `oauthClientCredentials(...)`. Origin expands
+  secret placeholders through the fetch gateway.
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
   `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
   `__kodySecretAuthorityPackageId`). Each hop authorizes the stamped package id

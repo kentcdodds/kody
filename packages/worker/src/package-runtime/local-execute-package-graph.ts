@@ -20,6 +20,7 @@ import {
 	isKodyRuntimeModulePath,
 	parsePackageRuntimeModulePathPackageId,
 } from './runtime-source-modules.ts'
+import { rewriteInlinedLocalExecuteBundleSource } from './rewrite-inlined-local-runtime.ts'
 import { collectStaticKodyPackageImportsFromFiles } from './static-kody-imports.ts'
 
 /** Host module name the CLI registers in local workerd (`localWorkerModuleNames.runtime`). */
@@ -166,6 +167,22 @@ export async function buildLocalExecutePackageGraph(input: {
 		)
 	}
 
+	// Dropbox-style published bundles inline `.__kody_virtual__/runtime.js`.
+	// Rewrite those preambles onto the CapabilityProxy shim so --local does
+	// not depend on cloud's ALS preload (kody#2810 residual / inlined CAF).
+	for (const [modulePath, source] of [...modulesByName.entries()]) {
+		if (isKodyRuntimeModulePath(modulePath)) continue
+		if (parsePackageRuntimeModulePathPackageId(modulePath) != null) continue
+		const rewritten = rewriteInlinedLocalExecuteBundleSource({
+			modulePath,
+			source,
+			primaryRuntimePath,
+		})
+		if (rewritten.rewritten) {
+			modulesByName.set(modulePath, rewritten.source)
+		}
+	}
+
 	const modules = [...modulesByName.entries()]
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([name, esModule]) => ({ name, esModule }))
@@ -304,8 +321,6 @@ export function createLocalExecuteRuntimeShimSource(
 	return `
 import {
 	kody,
-	secretHeaders,
-	oauthClientCredentials,
 	packageContext,
 	email,
 	workflows,
@@ -316,14 +331,40 @@ import {
 
 export {
 	kody,
-	secretHeaders,
-	oauthClientCredentials,
 	packageContext,
 	email,
 	workflows,
 	packages,
 	events,
 };
+
+// Pure placeholder builders — same shape as cloud execute helpers. Ambient
+// local fetch does not expand them; pair with createAuthenticatedFetch (or a
+// future gateway-backed hop) for secret-bearing outbound calls.
+export const secretHeaders = {
+	basic(input) {
+		const usernameSecret = String(input?.usernameSecret ?? "").trim();
+		const passwordSecret = String(input?.passwordSecret ?? "").trim();
+		if (!usernameSecret || !passwordSecret) {
+			throw new Error(
+				"secretHeaders.basic requires usernameSecret and passwordSecret.",
+			);
+		}
+		const scope =
+			typeof input?.scope === "string" && input.scope.trim()
+				? input.scope.trim()
+				: null;
+		return scope
+			? \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}|scope=\${scope}}}\`
+			: \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}}}\`;
+	},
+};
+
+// Client-credentials grants need host-side secret expansion — hop through
+// CapabilityProxy so long-lived secret values never enter local workerd.
+export async function oauthClientCredentials(input) {
+	return await kody.oauthClientCredentials(input ?? {});
+}
 
 const __kodyNullBodyStatuses = new Set([204, 205, 304]);
 

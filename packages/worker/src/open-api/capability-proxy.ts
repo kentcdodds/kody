@@ -12,6 +12,7 @@ import { type ApiInvocationContext } from './context.ts'
 import { ApiError, invalidRequest, notFound, toApiError } from './errors.ts'
 import { maxApiRequestBodyBytes } from './request-params.ts'
 import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
+import { runCapabilityProxyOauthClientCredentials } from './capability-proxy-oauth-client-credentials.ts'
 import { createCapabilityProxyPackageHostTools } from './capability-proxy-package-grants.ts'
 
 /**
@@ -27,10 +28,11 @@ import { createCapabilityProxyPackageHostTools } from './capability-proxy-packag
  * meters itself as usual.
  *
  * Authenticated outbound fetch uses `kody.authenticatedFetch` (placeholder +
- * fetch-gateway on origin). Stamped `packageStorage` / `packageSecrets` hop as
- * `kody.packageStorage*` / `kody.packageSecret*` with per-call ownership /
- * share grant checks — long-lived OAuth tokens and secret plaintext never enter
- * local workerd.
+ * fetch-gateway on origin). OAuth client-credentials grants use
+ * `kody.oauthClientCredentials` the same way. Stamped `packageStorage` /
+ * `packageSecrets` hop as `kody.packageStorage*` / `kody.packageSecret*` with
+ * per-call ownership / share grant checks — long-lived OAuth tokens and secret
+ * plaintext never enter local workerd.
  */
 
 export const capabilityProxyLimits = {
@@ -129,6 +131,11 @@ async function callKodyPath(input: {
 			runCapabilityProxyAuthenticatedFetch({ ctx, args }),
 		)
 	}
+	if (path.length === 2 && name === 'oauthClientCredentials') {
+		return invokeCapability(() =>
+			runCapabilityProxyOauthClientCredentials({ ctx, args }),
+		)
+	}
 	const needsPackageHostTools =
 		typeof name === 'string' &&
 		(name.startsWith('packageStorage') || name.startsWith('packageSecret'))
@@ -214,7 +221,7 @@ async function dispatchCapabilityProxyCall(input: {
 		)
 	}
 	throw notFound(
-		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.authenticatedFetch, kody.mcp.<server>.<tool>, kody.packageStorage* / kody.packageSecret*, and workflows.create.`,
+		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.authenticatedFetch, kody.oauthClientCredentials, kody.mcp.<server>.<tool>, kody.packageStorage* / kody.packageSecret*, and workflows.create.`,
 	)
 }
 

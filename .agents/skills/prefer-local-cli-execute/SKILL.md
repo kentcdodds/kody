@@ -107,7 +107,9 @@ export default async function main(params) { return await searchMessages(params)
 The CLI downloads stamped modules via Open API
 `POST /v1/local-execute/package-graph` (same `local-execute` flag + login OAuth
 or API token) and embeds them in local workerd. CapabilityProxy stays for
-per-call `kody:runtime` hops only. See
+per-call `kody:runtime` hops only. Package-graph rewrites inlined virtual
+runtime preambles onto the CapabilityProxy shim so Dropbox-style published
+bundles get a callable `createAuthenticatedFetch` under `--local`. See
 [Open API and local execute](../../../docs/guides/open-api.md).
 
 ## Fallback

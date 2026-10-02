@@ -239,6 +239,15 @@ function isSlackFilesHtmlLoginResponse(
 
 export async function oauthClientCredentials(
 	input: OAuthClientCredentialsInput,
+	options?: {
+		/**
+		 * Outbound fetch implementation. Cloud / package-app sandboxes omit this
+		 * so ambient `fetch` hits the fetch gateway. CapabilityProxy local
+		 * execute passes `executeGatewayFetch` so secret placeholders expand on
+		 * origin and secret values never enter local workerd.
+		 */
+		fetch?: typeof globalThis.fetch
+	},
 ): Promise<Record<string, unknown>> {
 	const authStyle = (input.authStyle ?? 'basic') as string
 	if (authStyle !== 'basic') {
@@ -261,7 +270,8 @@ export async function oauthClientCredentials(
 			scope: input.scope,
 		}),
 	)
-	const response = await fetch(input.tokenUrl, {
+	const doFetch = options?.fetch ?? fetch
+	const response = await doFetch(input.tokenUrl, {
 		method: 'POST',
 		headers,
 		body: body.toString(),
