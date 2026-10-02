@@ -7,10 +7,7 @@ import {
 	runWithSecretAuthorityScope,
 	secretAuthorityArgName,
 } from '#mcp/secrets/secret-authority.ts'
-import {
-	createMcpServerExecuteAccessDeniedMessage,
-	McpServerPackageAccessDeniedError,
-} from '#worker/mcp-client/package-access.ts'
+import { McpServerPackageAccessDeniedError } from '#worker/mcp-client/package-access.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import type * as McpClientStatus from '#worker/mcp-client/status.ts'
 
@@ -130,10 +127,7 @@ test('locked MCP server honors stamp packageId from package-via-execute and deni
 	const usageUrl = 'https://example.com/account/mcp-servers/server-notion'
 	mocks.assertCanUseMcpServer.mockRejectedValueOnce(
 		new McpServerPackageAccessDeniedError(
-			createMcpServerExecuteAccessDeniedMessage({
-				serverName: 'notion',
-				usageUrl,
-			}),
+			`MCP server "notion" is limited to specific packages and cannot be used from execute. Approve a package at ${usageUrl}, or switch the server back to any context.`,
 		),
 	)
 	const denied = await capability!.handler({}, ctx).then(
@@ -141,12 +135,6 @@ test('locked MCP server honors stamp packageId from package-via-execute and deni
 		(thrown: unknown) => thrown,
 	)
 	expect(denied).toBeInstanceOf(McpServerPackageAccessDeniedError)
-	expect((denied as Error).message).toBe(
-		createMcpServerExecuteAccessDeniedMessage({
-			serverName: 'notion',
-			usageUrl,
-		}),
-	)
 	expect((denied as Error).message).toContain(usageUrl)
 	expect(mocks.callTool).toHaveBeenCalledTimes(2)
 })

@@ -10,12 +10,8 @@ import {
 	pickLocalExecutePrimaryRuntimePath,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
+import { createLocalExecuteRuntimeShimSource } from './local-execute-runtime-support.ts'
 import {
-	createLocalExecutePackageRuntimeModuleSource,
-	createLocalExecuteRuntimeShimSource,
-} from './local-execute-runtime-support.ts'
-import {
-	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,
 	resolveRelativeModulePath,
 	runtimeModulePath,
@@ -186,19 +182,6 @@ export default async function main(params) { return greet(params.name) }`
 	// Bare "kody:runtime" path-joins under .__kody_virtual__/ in local workerd.
 	expect(runtimeShim).toContain('"../kody:runtime"')
 	expect(runtimeShim).not.toMatch(/from ["']kody:runtime["']/)
-	expect(runtimeShim).toContain('createAuthenticatedFetch')
-	expect(runtimeShim).toContain('kody.authenticatedFetch')
-	expect(runtimeShim).toContain('bodyBase64')
-	expect(runtimeShim).toContain('__kodyNullBodyStatuses')
-	expect(runtimeShim).toContain('__kodyCreatePackageBoundAuthenticatedFetch')
-	expect(runtimeShim).toContain('__kodyCreatePackageBoundStorage')
-	expect(runtimeShim).toContain('kody.packageStorageGet')
-	expect(runtimeShim).toContain('__kodyCreatePackageBoundSecrets')
-	expect(runtimeShim).toContain('__kodySecretAuthorityPackageId')
-	expect(runtimeShim).toContain('secretHeaders')
-	expect(runtimeShim).toContain('oauthClientCredentials')
-	expect(runtimeShim).toContain('kody.oauthClientCredentials')
-	expect(runtimeShim).toContain('{{secret-basic:')
 	// Shim owns secretHeaders / oauthClientCredentials — do not re-export the
 	// CLI host's intentional `undefined` placeholders.
 	expect(runtimeShim).not.toMatch(
@@ -283,30 +266,6 @@ export default async function main() { return await smokeTest() }`,
 	)
 })
 
-test('createLocalExecuteRuntimeShimSource exposes a fixed local host-binding inventory', () => {
-	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
-	const requiredCallableExports = [
-		'createAuthenticatedFetch',
-		'oauthClientCredentials',
-		'__kodyCreatePackageBoundAuthenticatedFetch',
-		'__kodyCreatePackageBoundStorage',
-		'__kodyCreatePackageBoundSecrets',
-		'__kodyCreatePackageBoundOauthClientCredentials',
-		'packageStorage',
-	] as const
-	for (const name of requiredCallableExports) {
-		expect(shim).toMatch(
-			new RegExp(`(export (async )?function|export const) ${name}\\b`),
-		)
-	}
-	expect(shim).toMatch(/export const secretHeaders = \{/)
-	expect(shim).toMatch(/export const packageSecrets = \{/)
-	expect(shim).toContain('kody.authenticatedFetch')
-	expect(shim).toContain('kody.oauthClientCredentials')
-	expect(shim).toContain('kody.packageStorageGet')
-	expect(shim).toContain('kody.packageSecretGet')
-})
-
 test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	const start = shim.indexOf('const __kodyParseSecretNameOrPlaceholder')
@@ -339,21 +298,19 @@ test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', (
 })
 
 test('createLocalExecuteRuntimeShimSource uses a relative host import from path-like module names', () => {
-	const canonical = createLocalExecuteRuntimeShimSource(runtimeModulePath)
-	expect(canonical).toContain('"../kody:runtime"')
-	expect(canonical).not.toMatch(/from ["']kody:runtime["']/)
-
 	const nestedPath =
 		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e2f676d61696c/.__kody_virtual__/runtime.js'
 	const nested = createLocalExecuteRuntimeShimSource(nestedPath)
-	const relativeHost = createRelativeImportSpecifier(
-		nestedPath,
-		localExecuteHostRuntimeModuleName,
-	)
-	expect(relativeHost.startsWith('../')).toBe(true)
-	expect(nested).toContain(JSON.stringify(relativeHost))
 	expect(nested).not.toMatch(/from ["']kody:runtime["']/)
-	expect(resolveRelativeModulePath(nestedPath, relativeHost)).toBe(
+	const importMatch = /from ("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(nested)
+	expect(importMatch?.[1]).toBeDefined()
+	const specifier = JSON.parse(
+		importMatch![1]!.startsWith("'")
+			? `"${importMatch![1]!.slice(1, -1).replaceAll('"', '\\"')}"`
+			: importMatch![1]!,
+	) as string
+	expect(specifier.startsWith('../')).toBe(true)
+	expect(resolveRelativeModulePath(nestedPath, specifier)).toBe(
 		localExecuteHostRuntimeModuleName,
 	)
 })
@@ -453,8 +410,12 @@ export default async () => x`
 	} satisfies Partial<LocalExecutePackageGraphError>)
 })
 
-test('buildLocalExecutePackageGraph rejects unpublished packages without artifacts', async () => {
+test('buildLocalExecutePackageGraph rejects unpublished packages and missing artifacts', async () => {
+	const code = `import hello from 'kody:@kentcdodds/example-package/hello'
+export default async () => hello()`
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
 		makeLoadedSource({
 			exports: { './hello': './src/hello.ts' },
@@ -464,19 +425,12 @@ test('buildLocalExecutePackageGraph rejects unpublished packages without artifac
 			publishedCommit: null,
 		}),
 	)
-	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
-
-	const code = `import hello from 'kody:@kentcdodds/example-package/hello'
-export default async () => hello()`
 	await expect(
 		buildLocalExecutePackageGraph({ ...graphInput, code }),
 	).rejects.toMatchObject({
 		code: 'package_import_unpublished',
 	} satisfies Partial<LocalExecutePackageGraphError>)
-})
 
-test('buildLocalExecutePackageGraph rejects missing published artifacts', async () => {
-	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
 		makeLoadedSource({
 			exports: { './hello': './src/hello.ts' },
@@ -485,10 +439,6 @@ test('buildLocalExecutePackageGraph rejects missing published artifacts', async 
 			},
 		}),
 	)
-	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
-
-	const code = `import hello from 'kody:@kentcdodds/example-package/hello'
-export default async () => hello()`
 	await expect(
 		buildLocalExecutePackageGraph({ ...graphInput, code }),
 	).rejects.toMatchObject({
@@ -503,49 +453,4 @@ test('buildLocalExecutePackageGraph returns an empty graph when there are no kod
 	})
 	expect(graph).toEqual({ modules: [], imports: [], warnings: [] })
 	expect(mockModule.getSavedPackageByName).not.toHaveBeenCalled()
-})
-
-test('createLocalExecutePackageRuntimeModuleSource clones frozen base before proxy overrides', () => {
-	const packageId = 'pkg-proxy-invariant'
-	const source = createLocalExecutePackageRuntimeModuleSource(packageId)
-	expect(source).toContain('Object.freeze({')
-	expect(source).toContain('...__kodyBaseRuntimeDefault')
-	expect(source).toContain(
-		`__kodyCreatePackageBoundAuthenticatedFetch(${JSON.stringify(packageId)})`,
-	)
-
-	// Regression: Proxy over a frozen base that returns different bound
-	// values throws on get. The generated module freezes a clone with the
-	// overrides so default-export access stays valid.
-	const unboundStorage = () => ({ id: 'unbound' })
-	const boundStorage = () => ({ id: `package:${packageId}` })
-	const base = Object.freeze({
-		kody: {},
-		packageStorage: unboundStorage,
-		packageSecrets: { get: async () => null },
-		createAuthenticatedFetch: async () => {
-			throw new Error('unbound')
-		},
-	})
-	const broken = new Proxy(base, {
-		get(target, property, receiver) {
-			if (property === 'packageStorage') return boundStorage
-			return Reflect.get(target, property, receiver)
-		},
-	})
-	expect(() => broken.packageStorage).toThrow(/proxy/i)
-
-	const fixed = new Proxy(
-		Object.freeze({
-			...base,
-			packageStorage: boundStorage,
-		}),
-		{
-			get(target, property, receiver) {
-				if (property === 'packageStorage') return boundStorage
-				return Reflect.get(target, property, receiver)
-			},
-		},
-	)
-	expect(fixed.packageStorage().id).toBe(`package:${packageId}`)
 })

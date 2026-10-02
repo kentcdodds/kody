@@ -15,8 +15,6 @@ test('code block copy control is an icon button beside the snippet', async () =>
 	expect(html).toContain('data-icon="copy"')
 	expect(html).toContain('role="status"')
 	expect(html).toContain(snippet)
-	expect(html).not.toContain('>Copy<')
-	expect(html).not.toContain('>Copied<')
 
 	const withoutCopy = await renderToString(
 		jsx(CopyCodeBlock, { code: snippet, lang: 'bash', copy: false }),

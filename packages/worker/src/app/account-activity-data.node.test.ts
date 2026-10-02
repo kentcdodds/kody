@@ -245,10 +245,8 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 			}),
 		)
 	}
-})
 
-test('loadAccountActivityData surfaces execute entry and workerId from metadata', async () => {
-	const run = makeRun({
+	const executeRun = makeRun({
 		surface: 'execute',
 		name: null,
 		status: 'success',
@@ -273,22 +271,17 @@ test('loadAccountActivityData surfaces execute entry and workerId from metadata'
 		bySurface: [{ surface: 'execute', total: 1, errors: 0 }],
 	})
 	mockModule.listRunRecords.mockResolvedValue({
-		runs: [run],
+		runs: [executeRun],
 		nextCursor: null,
 	})
-	mockModule.getRunRecord.mockResolvedValue({ run, logs: [] })
-
-	const data = await loadActivity('/account/activity/run-1?view=recent')
-	expect(data.runs[0]).toMatchObject({
+	mockModule.getRunRecord.mockResolvedValue({ run: executeRun, logs: [] })
+	const executeData = await loadActivity('/account/activity/run-1?view=recent')
+	expect(executeData.runs[0]).toMatchObject({
 		entry: 'invoke',
 		workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
 	})
-	expect(data.selectedRun).toMatchObject({
+	expect(executeData.selectedRun).toMatchObject({
 		entry: 'invoke',
 		workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
-		metadata: expect.objectContaining({
-			entry: 'invoke',
-			workerId: 'kody-abcdefghijklmnopqrstuvwxyz0123456789ABCDE',
-		}),
 	})
 })

@@ -6,7 +6,6 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	cliBootstrapCodePrefix,
-	cliCredentialBootstrapPolicy,
 	mintCliCredentialBootstrap,
 	parseCliBootstrapCode,
 	redeemCliCredentialBootstrap,
@@ -38,7 +37,7 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 
 	expect(minted.bootstrap_code.startsWith(cliBootstrapCodePrefix)).toBe(true)
 	expect(minted.cli_command).toBe(
-		cliCredentialBootstrapPolicy.cliCommand(minted.bootstrap_code),
+		`npx @kodycodes/cli auth bootstrap --code ${minted.bootstrap_code}`,
 	)
 	expect(minted.scopes).toEqual(['account:read', 'local-execute'])
 	expect(parseApiToken(minted.bootstrap_code)).toBeNull()

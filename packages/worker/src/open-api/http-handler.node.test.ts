@@ -803,59 +803,54 @@ test('MCP OAuth Bearer is rejected when local-execute flag is off', async () => 
 	}
 })
 
-test('invalid MCP OAuth Bearer is rejected on local-execute routes', async () => {
-	const api = await createApi({
+test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-execute route', async () => {
+	const invalid = await createApi({
 		localExecuteFlag: true,
 		oauthAccessToken: 'valid-oauth',
 		oauthUnwrapFails: true,
 	})
-	const response = await api.call('GET', '/v1/capability-proxy/session', {
-		token: 'not-a-valid-oauth-or-api-token',
-	})
-	expect(response.status).toBe(401)
-	expect(response.body.error?.code).toBe('unauthorized')
-	expect(response.body.error?.message).toBe('Invalid API token.')
-})
+	const invalidResponse = await invalid.call(
+		'GET',
+		'/v1/capability-proxy/session',
+		{ token: 'not-a-valid-oauth-or-api-token' },
+	)
+	expect(invalidResponse.status).toBe(401)
+	expect(invalidResponse.body.error?.code).toBe('unauthorized')
 
-test('MCP OAuth Bearer is not accepted on non-local-execute Open API routes', async () => {
 	const oauthToken = 'cli-oauth-for-me-route'
-	const api = await createApi({
+	const localOnly = await createApi({
 		localExecuteFlag: true,
 		oauthAccessToken: oauthToken,
 	})
-	const me = await api.call('GET', '/v1/me', { token: oauthToken })
-	expect(me.status).toBe(401)
-	expect(me.body.error?.message).toBe('Invalid API token.')
+	for (const path of ['/v1/me', '/v1/tokens'] as const) {
+		const response = await localOnly.call('GET', path, { token: oauthToken })
+		expect(response.status).toBe(401)
+		expect(response.body.error?.message).toBe('Invalid API token.')
+	}
 
-	const tokens = await api.call('GET', '/v1/tokens', { token: oauthToken })
-	expect(tokens.status).toBe(401)
-	expect(tokens.body.error?.message).toBe('Invalid API token.')
-})
-
-test('wrong-audience MCP OAuth Bearer is rejected on CapabilityProxy', async () => {
-	const oauthToken = 'cli-oauth-wrong-audience'
-	const api = await createApi({
+	const wrongAudience = await createApi({
 		localExecuteFlag: true,
-		oauthAccessToken: oauthToken,
+		oauthAccessToken: 'cli-oauth-wrong-audience',
 		oauthAudience: 'https://other.example/mcp',
 	})
-	const response = await api.call('GET', '/v1/capability-proxy/session', {
-		token: oauthToken,
-	})
-	expect(response.status).toBe(401)
-	expect(response.body.error?.message).toBe('Invalid API token.')
-})
+	expect(
+		(
+			await wrongAudience.call('GET', '/v1/capability-proxy/session', {
+				token: 'cli-oauth-wrong-audience',
+			})
+		).status,
+	).toBe(401)
 
-test('non-CLI MCP OAuth client is rejected on CapabilityProxy', async () => {
-	const oauthToken = 'host-mcp-oauth-not-cli'
-	const api = await createApi({
+	const nonCli = await createApi({
 		localExecuteFlag: true,
-		oauthAccessToken: oauthToken,
+		oauthAccessToken: 'host-mcp-oauth-not-cli',
 		oauthClientId: 'https://cursor.com/oauth/callback-client',
 	})
-	const response = await api.call('GET', '/v1/capability-proxy/session', {
-		token: oauthToken,
-	})
-	expect(response.status).toBe(401)
-	expect(response.body.error?.message).toBe('Invalid API token.')
+	expect(
+		(
+			await nonCli.call('GET', '/v1/capability-proxy/session', {
+				token: 'host-mcp-oauth-not-cli',
+			})
+		).status,
+	).toBe(401)
 })

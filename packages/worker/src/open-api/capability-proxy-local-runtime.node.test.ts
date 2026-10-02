@@ -101,6 +101,13 @@ test('capability proxy authenticatedFetch expands via createAuthenticatedFetch +
 	})
 	expect(mockFns.createAuthenticatedFetch).toHaveBeenCalledTimes(1)
 	expect(mockFns.buildKodyToolContext).not.toHaveBeenCalled()
+
+	const rejected = await runCapabilityProxyCall({
+		ctx,
+		call: { path: ['kody', 'authenticatedFetch'], args: ['google'] },
+	}).catch((value: unknown) => value)
+	expect(rejected).toBeInstanceOf(ApiError)
+	expect(rejected).toMatchObject({ status: 400, code: 'invalid_request' })
 })
 
 test('capability proxy packageStorageGet uses local-execute package host tools', async () => {
@@ -132,13 +139,4 @@ test('capability proxy packageStorageGet uses local-execute package host tools',
 	})
 	expect(result).toEqual({ result: { value: 42 } })
 	expect(mockFns.createCapabilityProxyPackageHostTools).toHaveBeenCalledTimes(1)
-})
-
-test('capability proxy authenticatedFetch rejects non-object args', async () => {
-	const error = await runCapabilityProxyCall({
-		ctx,
-		call: { path: ['kody', 'authenticatedFetch'], args: ['google'] },
-	}).catch((value: unknown) => value)
-	expect(error).toBeInstanceOf(ApiError)
-	expect(error).toMatchObject({ status: 400, code: 'invalid_request' })
 })

@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import {
 	assertCanUseMcpServer,
 	canCallerUseMcpServer,
-	createMcpServerExecuteAccessDeniedMessage,
 	filterEnabledMcpServerRefsForCaller,
 	McpServerPackageAccessDeniedError,
 	type EnabledMcpServerRef,
@@ -103,12 +102,10 @@ test('assertCanUseMcpServer denies execute with the account usage URL message', 
 		(thrown: unknown) => thrown,
 	)
 	expect(denied).toBeInstanceOf(McpServerPackageAccessDeniedError)
-	expect((denied as Error).message).toBe(
-		createMcpServerExecuteAccessDeniedMessage({
-			serverName: 'notion',
-			usageUrl: 'https://example.com/account/mcp-servers/server-notion',
-		}),
+	expect((denied as Error).message).toContain(
+		'https://example.com/account/mcp-servers/server-notion',
 	)
+	expect((denied as Error).message).toMatch(/cannot be used from execute/)
 
 	await expect(
 		assertCanUseMcpServer({

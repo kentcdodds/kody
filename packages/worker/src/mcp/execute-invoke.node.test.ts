@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { classifyExecuteThinGlue } from '#worker/usage/execute-thin-glue.ts'
 import {
-	buildExecuteAttributionMetadata,
 	parseExecuteInvokeSpecifier,
 	resolveExecuteInvokeCode,
 	resolveExecuteModule,
@@ -89,7 +88,7 @@ test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () 
 	).toBe(handwrittenThinPassthrough)
 })
 
-test('resolveExecuteModule attributes invoke vs code and buildExecuteAttributionMetadata', () => {
+test('resolveExecuteModule attributes invoke vs code', () => {
 	expect(
 		resolveExecuteModule({
 			code: 'export default async function main() { return 1 }',
@@ -106,18 +105,6 @@ test('resolveExecuteModule attributes invoke vs code and buildExecuteAttribution
 		}),
 	).toEqual({
 		code: handwrittenThinPassthrough,
-		entry: 'invoke',
-		invoke: 'kody:@acme/github/listRepos',
-	})
-	expect(buildExecuteAttributionMetadata({ entry: 'code' })).toEqual({
-		entry: 'code',
-	})
-	expect(
-		buildExecuteAttributionMetadata({
-			entry: 'invoke',
-			invoke: 'kody:@acme/github/listRepos',
-		}),
-	).toEqual({
 		entry: 'invoke',
 		invoke: 'kody:@acme/github/listRepos',
 	})

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { parseCapabilityProxyOauthClientCredentialsArgs } from './capability-proxy-oauth-client-credentials.ts'
 import { ApiError } from './errors.ts'
 
-test('parseCapabilityProxyOauthClientCredentialsArgs accepts a valid grant request', () => {
+test('parseCapabilityProxyOauthClientCredentialsArgs accepts a valid grant and rejects missing secrets or non-basic auth', () => {
 	expect(
 		parseCapabilityProxyOauthClientCredentialsArgs([
 			{
@@ -22,17 +22,11 @@ test('parseCapabilityProxyOauthClientCredentialsArgs accepts a valid grant reque
 		body: { audience: 'api' },
 		packageId: 'pkg-1',
 	})
-})
-
-test('parseCapabilityProxyOauthClientCredentialsArgs rejects missing secrets', () => {
 	expect(() =>
 		parseCapabilityProxyOauthClientCredentialsArgs([
 			{ tokenUrl: 'https://oauth.example.com/token', clientIdSecret: 'id' },
 		]),
 	).toThrow(ApiError)
-})
-
-test('parseCapabilityProxyOauthClientCredentialsArgs rejects non-basic authStyle', () => {
 	expect(() =>
 		parseCapabilityProxyOauthClientCredentialsArgs([
 			{

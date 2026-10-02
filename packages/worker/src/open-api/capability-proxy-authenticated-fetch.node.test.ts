@@ -7,7 +7,7 @@ import {
 import { ApiError } from './errors.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 
-test('parseCapabilityProxyAuthenticatedFetchArgs accepts a valid request', () => {
+test('parseCapabilityProxyAuthenticatedFetchArgs accepts valid requests and rejects mixed or oversized bodies', () => {
 	expect(
 		parseCapabilityProxyAuthenticatedFetchArgs([
 			{
@@ -28,9 +28,6 @@ test('parseCapabilityProxyAuthenticatedFetchArgs accepts a valid request', () =>
 			headers: { accept: 'application/json' },
 		},
 	})
-})
-
-test('parseCapabilityProxyAuthenticatedFetchArgs accepts bodyBase64 and packageId', () => {
 	expect(
 		parseCapabilityProxyAuthenticatedFetchArgs([
 			{
@@ -52,9 +49,6 @@ test('parseCapabilityProxyAuthenticatedFetchArgs accepts bodyBase64 and packageI
 			bodyBase64: bytesToBase64(new TextEncoder().encode('png')),
 		},
 	})
-})
-
-test('parseCapabilityProxyAuthenticatedFetchArgs rejects body and bodyBase64 together', () => {
 	expect(() =>
 		parseCapabilityProxyAuthenticatedFetchArgs([
 			{
@@ -67,46 +61,44 @@ test('parseCapabilityProxyAuthenticatedFetchArgs rejects body and bodyBase64 tog
 			},
 		]),
 	).toThrow(ApiError)
-})
-
-test('parseCapabilityProxyAuthenticatedFetchArgs rejects oversized bodies', () => {
-	const body = 'x'.repeat(capabilityProxyAuthenticatedFetchMaxBodyBytes + 1)
 	expect(() =>
 		parseCapabilityProxyAuthenticatedFetchArgs([
 			{
 				providerName: 'google',
-				request: { url: 'https://example.com/', body },
+				request: {
+					url: 'https://example.com/',
+					body: 'x'.repeat(capabilityProxyAuthenticatedFetchMaxBodyBytes + 1),
+				},
 			},
 		]),
 	).toThrow(ApiError)
 })
 
-test('serializeAuthenticatedFetchResponse base64-encodes the body', async () => {
+test('serializeAuthenticatedFetchResponse base64-encodes bodies and rejects oversized responses', async () => {
 	const body = new TextEncoder().encode('hello')
-	const serialized = await serializeAuthenticatedFetchResponse(
-		new Response(body, {
-			status: 201,
-			statusText: 'Created',
-			headers: { 'x-test': '1' },
-		}),
-	)
-	expect(serialized).toEqual({
+	expect(
+		await serializeAuthenticatedFetchResponse(
+			new Response(body, {
+				status: 201,
+				statusText: 'Created',
+				headers: { 'x-test': '1' },
+			}),
+		),
+	).toEqual({
 		status: 201,
 		statusText: 'Created',
 		headers: { 'x-test': '1' },
 		bodyBase64: bytesToBase64(body),
 	})
-})
-
-test('serializeAuthenticatedFetchResponse rejects oversized responses', async () => {
-	const body = new Uint8Array(capabilityProxyAuthenticatedFetchMaxBodyBytes + 1)
 	await expect(
-		serializeAuthenticatedFetchResponse(new Response(body)),
+		serializeAuthenticatedFetchResponse(
+			new Response(
+				new Uint8Array(capabilityProxyAuthenticatedFetchMaxBodyBytes + 1),
+			),
+		),
 	).rejects.toBeInstanceOf(ApiError)
-})
 
-test('serializeAuthenticatedFetchResponse rejects oversized Content-Length before reading', async () => {
-	const body = new ReadableStream({
+	const stream = new ReadableStream({
 		start(controller) {
 			controller.enqueue(new Uint8Array([1]))
 			controller.close()
@@ -114,7 +106,7 @@ test('serializeAuthenticatedFetchResponse rejects oversized Content-Length befor
 	})
 	await expect(
 		serializeAuthenticatedFetchResponse(
-			new Response(body, {
+			new Response(stream, {
 				headers: {
 					'Content-Length': String(
 						capabilityProxyAuthenticatedFetchMaxBodyBytes + 1,

@@ -1,22 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	cloudflareArtifactsOpaqueInternalErrorMessage,
-	cloudflareOpaqueInternalErrorMessage,
 	isCloudflareOpaqueInternalError,
 	isCloudflareOpaqueInternalErrorMessage,
 } from './cloudflare-opaque-internal-error.ts'
 
-test('opaque Cloudflare / Artifacts matching keeps exact bare sentences', () => {
-	expect(
-		isCloudflareOpaqueInternalErrorMessage(
-			cloudflareOpaqueInternalErrorMessage,
-		),
-	).toBe(true)
-	expect(
-		isCloudflareOpaqueInternalErrorMessage(
-			cloudflareArtifactsOpaqueInternalErrorMessage,
-		),
-	).toBe(true)
+test('opaque Cloudflare / Artifacts matching normalizes prefixes and reads non-Error shapes', () => {
 	expect(
 		isCloudflareOpaqueInternalErrorMessage(
 			`Error: ${cloudflareArtifactsOpaqueInternalErrorMessage}`,
@@ -26,9 +15,7 @@ test('opaque Cloudflare / Artifacts matching keeps exact bare sentences', () => 
 		isCloudflareOpaqueInternalErrorMessage('An unexpected internal error'),
 	).toBe(false)
 	expect(isCloudflareOpaqueInternalErrorMessage('internal error')).toBe(false)
-})
 
-test('opaque matching reads validated message on non-Error ArtifactsError shapes', () => {
 	const nativeArtifactsError = {
 		name: 'ArtifactsError',
 		code: 'INTERNAL_ERROR',

@@ -139,8 +139,30 @@ export async function main() {
 	)
 })
 
-test('rewrite skips canonical aliases for destructured author bindings', () => {
-	const source = `// virtual:.__kody_virtual__/runtime.js
+test('rewrite skips canonical aliases that collide with author bindings', () => {
+	const collisions = [
+		{
+			author: 'const { packageStorage } = { packageStorage: () => "author" };',
+			kept: 'const { packageStorage }',
+		},
+		{
+			author: 'export default function packageStorage() { return "author"; }',
+			kept: 'export default function packageStorage()',
+		},
+		{
+			author:
+				'export default class packageStorage { static value = "author"; }',
+			kept: 'export default class packageStorage',
+		},
+		{
+			author: 'function packageStorage() { return "author"; }',
+			kept: 'function packageStorage()',
+		},
+	]
+	for (const { author, kept } of collisions) {
+		const result = rewriteInlinedLocalExecuteBundleSource({
+			modulePath: 'bundle.js',
+			source: `// virtual:.__kody_virtual__/runtime.js
 var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
 
 // virtual:.__kody_virtual__/package-runtime/abc.js
@@ -148,73 +170,18 @@ var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId
 var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
 
 // virtual:.__kody_root__/src/entry.ts
-const { packageStorage } = { packageStorage: () => "author" };
+${author}
 export async function main() {
-  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
+  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage];
 }
-`
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath: 'bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
-	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
-	expect(result.source).toContain('const { packageStorage }')
-})
-
-test('rewrite skips canonical aliases that collide with export default function bindings', () => {
-	const source = `// virtual:.__kody_virtual__/runtime.js
-var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-
-// virtual:.__kody_virtual__/package-runtime/abc.js
-var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
-var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
-
-// virtual:.__kody_root__/src/entry.ts
-export default function packageStorage() { return "author"; }
-export async function main() {
-  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
-}
-`
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath: 'bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).toContain(
-		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
-	)
-	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
-	expect(result.source).toContain('export default function packageStorage()')
-	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
-})
-
-test('rewrite skips canonical aliases that collide with export default class bindings', () => {
-	const source = `// virtual:.__kody_virtual__/runtime.js
-var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-
-// virtual:.__kody_virtual__/package-runtime/abc.js
-var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
-var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
-
-// virtual:.__kody_root__/src/entry.ts
-export default class packageStorage { static value = "author"; }
-export async function main() {
-  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage.value];
-}
-`
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath: 'bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
-	expect(result.source).toContain('export default class packageStorage')
-	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+`,
+			primaryRuntimePath: runtimeModulePath,
+		})
+		expect(result.rewritten).toBe(true)
+		expect(result.source).not.toContain('var packageStorage = packageStorage2;')
+		expect(result.source).toContain(kept)
+		expect(result.source).toContain('var packageSecrets = packageSecrets2;')
+	}
 })
 
 test('rewrite remaps each multi-facade package binding to its own package id', () => {
@@ -293,34 +260,6 @@ export default async function main() { return 1 }
 			/var createAuthenticatedFetch = __kodyCreatePackageBoundAuthenticatedFetch/g,
 		),
 	).toHaveLength(1)
-})
-
-test('rewrite skips canonical aliases that collide with author bindings', () => {
-	const source = `// virtual:.__kody_virtual__/runtime.js
-var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-
-// virtual:.__kody_virtual__/package-runtime/abc.js
-var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
-var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
-
-// virtual:.__kody_root__/src/entry.ts
-function packageStorage() { return "author"; }
-export async function main() {
-  return [typeof createAuthenticatedFetch, typeof packageStorage2, packageStorage()];
-}
-`
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath: 'bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).toContain(
-		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
-	)
-	expect(result.source).not.toContain('var packageStorage = packageStorage2;')
-	expect(result.source).toContain('function packageStorage()')
-	expect(result.source).toContain('var packageSecrets = packageSecrets2;')
 })
 
 test('rewriteInlinedLocalExecuteBundleSource leaves external-import bundles alone', () => {
