@@ -152,7 +152,7 @@ export function resolveEffectivePlan(
  *   interval change, or while a remaining manual Pro grant is already
  *   flagged. Never inferred from join date.
  */
-export const entitlementLadders = ['public', 'legacy'] as const
+const entitlementLadders = ['public', 'legacy'] as const
 
 export type EntitlementLadder = (typeof entitlementLadders)[number]
 
@@ -232,7 +232,7 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
  *   ceilings), and monthly Worker compute / Rows read past the include
  *   debit the wallet.
  */
-export const creditWalletStates = ['none', 'empty', 'funded'] as const
+const creditWalletStates = ['none', 'empty', 'funded'] as const
 
 export type CreditWalletState = (typeof creditWalletStates)[number]
 
@@ -649,7 +649,7 @@ export const proCreditsPlanLimits: PlanLimits = {
  */
 export const creditsUnlockMultiplier = 50
 
-export const creditsUnlockedLimitFields = [
+const creditsUnlockedLimitFields = [
 	'maxExecuteCallsPerDay',
 	'maxExecuteCallsPerWeek',
 	'maxOutboundFetchesPerDay',
@@ -680,7 +680,7 @@ export function isCreditsUnlockedResource(
  * Outbound fetches are left out: they happen inside a run that was already
  * admitted, and failing them mid-run would strand half-done work.
  */
-export const pastIncludeStopResources = [
+const pastIncludeStopResources = [
 	'execute_calls_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
@@ -731,27 +731,6 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 }
 
 const proCreditsUnlockedPlanLimits = unlockCreditsLimits(proCreditsPlanLimits)
-
-/**
- * Monthly compute meters: included usage is free on every plan. Purchasable
- * Pro goes include → credits → stop: a funded wallet is debited past the
- * include, and an empty one stops {@link pastIncludeStopResources}. Plans
- * without a wallet are neither charged nor stopped past the monthly include;
- * their hard daily + weekly execute and outbound caps bound them. Nobody is
- * invoiced.
- */
-export const computeMeteringPolicy = {
-	uniqueWorkerDays: 'included_then_credits',
-	durableObjectRowsRead: 'included_then_credits',
-	executeCallsPerDay: 'hard_daily_and_weekly_cap',
-	outboundFetchesPerDay: 'hard_daily_and_weekly_cap',
-	durableObjectDuration: 'unmetered',
-	pastIncludeWithEmptyCredits: 'stopped',
-	pastIncludeWithoutWallet: 'not_charged',
-} as const
-
-/** 15-minute floor on free (and public Standard) recurring jobs. */
-export const freeMinJobIntervalMs = planLimits.free.minJobIntervalMs
 
 /**
  * Resolve the full limit table for a plan. The purchasable Pro wallet
@@ -857,7 +836,7 @@ export function resolvePlanLimit(
 }
 
 /** Daily resources that also have a public-ladder weekly hard cap. */
-export const weeklyComputeWindowResources = [
+const weeklyComputeWindowResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>

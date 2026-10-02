@@ -242,15 +242,15 @@ on credits until they are gone, then stops.
 - **Stock is not part of the path.** Purchasable Pro always has Max stock and
   concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
   storage bytes, concurrent workflows), empty or funded.
-- **Rates.** With a positive balance, the rate/compute fields in
-  `creditsUnlockedLimitFields` (execute, outbound fetches, job runs, automation
+- **Rates.** With a positive balance, the rate/compute fields
+  `unlockCreditsLimits` scales (execute, outbound fetches, job runs, automation
   invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
   include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
   job runs 40,000, automation 200,000; `max` has no weekly window). At $0 they
   stop at the include (within the 60s enforcement cache).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
   funded wallet (see Debits). At $0, `consumeDailyEntitlement` throws
-  `ComputeOverageLimitError` for `pastIncludeStopResources` (execute, job runs,
+  `ComputeOverageLimitError` for `isPastIncludeStopResource` (execute, job runs,
   automation invocations) once either meter is past this UTC month's include
   (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
   stopped attempt spends no daily quota. Hosted package apps have no daily
@@ -422,15 +422,13 @@ executions and runs) first, included compute as a bar capped at 100% with
 past-include usage shown as dollars on credits, and one credits alarm only when
 the wallet or access is at risk. Free sees Worker compute and Rows read as
 informational counts only. Usage above an include debits a funded
-purchasable-Pro wallet, stops new compute on an empty one
-(`computeMeteringPolicy.pastIncludeWithEmptyCredits`), and is neither charged
-nor stopped on plans without a wallet
-(`computeMeteringPolicy.pastIncludeWithoutWallet`); see
+purchasable-Pro wallet, stops new compute on an empty one, and is neither
+charged nor stopped on plans without a wallet; see
 [Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
-weekly caps (`computeMeteringPolicy.executeCallsPerDay`); on purchasable Pro
-they are the include that credits extend. Durable Object duration is observed
-(Cloudflare-measured GB-s plus the StorageRunner RPC wall-clock proxy) and is
-not charged. See [Usage metering](./usage-metering.md).
+weekly caps; on purchasable Pro they are the include that credits extend.
+Durable Object duration is observed (Cloudflare-measured GB-s plus the
+StorageRunner RPC wall-clock proxy) and is not charged. See
+[Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
