@@ -57,10 +57,6 @@ template:
   SSR runs in workerd with HMR. Production client and origin worker assets come
   from `vite build`. Platform, runtime, jobs, and highlight stay auxiliary
   workers in `vite dev` and separate Wrangler deploys in production.
-  `@pitlane/dev` still imports `remix/ui*` paths that Remix 3.0.0 renamed to
-  `remix/component*`; `patches/@pitlane+dev+*.patch` (applied by `patch-package`
-  on `postinstall`) rewrites those specifiers. Delete the patch once
-  `@pitlane/dev` ships stable Remix 3.0.0 support.
 - Static files are served through the Workers Assets binding rather than
   `remix/assets` or `remix/middleware/static`. Hydration uses
   `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports. SSR

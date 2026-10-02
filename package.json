@@ -120,7 +120,7 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@mswjs/interceptors": "^0.45.6",
-    "@pitlane/dev": "^0.6.0",
+    "@pitlane/dev": "^0.7.0",
     "@playwright/test": "^1.62.1",
     "@sentry/cli": "^3.7.0",
     "@types/node": "^26.4.1",
