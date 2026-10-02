@@ -31,10 +31,7 @@ export function splitUnifiedDiffSections(
 			continue
 		}
 		if (line.startsWith('@@ ')) hasHunk = true
-		if (
-			line.startsWith('---') &&
-			(!gitSection || (hasHunk && !hasDashes))
-		) {
+		if (line.startsWith('---') && (!gitSection || (hasHunk && !hasDashes))) {
 			starts.push(index)
 			gitSection = false
 			hasHunk = false
@@ -66,9 +63,7 @@ export function resolveUnifiedDiffFileNames(
 	const newFileName = presentDiffFileName(patch.newFileName)
 	return {
 		oldFileName:
-			oldFileName ??
-			gitHeader?.oldFileName ??
-			(gitHeader?.isNew ? '/dev/null' : undefined),
+			oldFileName ?? (gitHeader?.isNew ? '/dev/null' : gitHeader?.oldFileName),
 		newFileName:
 			newFileName ??
 			(gitHeader?.isDelete ? '/dev/null' : gitHeader?.newFileName),
@@ -129,10 +124,7 @@ function readGitPathToken(
 			const escaped = input[index + 1]!
 			if (escaped >= '0' && escaped <= '7') {
 				const bytes: number[] = []
-				while (
-					input[index] === '\\' &&
-					/[0-7]/.test(input[index + 1] ?? '')
-				) {
+				while (input[index] === '\\' && /[0-7]/.test(input[index + 1] ?? '')) {
 					const end = Math.min(index + 4, input.length)
 					let cursor = index + 1
 					while (cursor < end && /[0-7]/.test(input[cursor]!)) cursor++

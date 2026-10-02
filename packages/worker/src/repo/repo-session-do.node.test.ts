@@ -1788,7 +1788,7 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		),
 	)
 	const state = createDurableObjectState()
-	// Empty workspace â SHA-256 of '' so checks are not stale without force.
+	// Empty workspace → SHA-256 of '' so checks are not stale without force.
 	await state.storage.put('repo-session:last-check-status', {
 		runId: 'run-1',
 		treeHash:
