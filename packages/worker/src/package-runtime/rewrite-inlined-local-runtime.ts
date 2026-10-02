@@ -2,7 +2,7 @@ import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,
-} from './module-graph-paths.ts'
+} from './module-graph-path-basics.ts'
 
 /**
  * Published importable-module artifacts sometimes esbuild-inline

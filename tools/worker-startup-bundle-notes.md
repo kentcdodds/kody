@@ -376,3 +376,9 @@ runtime path if this budget is raised again.
   #2819 overage), reviewed ceiling 3_722_000; platform 5_107_102 against the
   previous 5_277_500 budget (also clears #2811), reviewed ceiling 5_108_000.
   Origin Vite entry unchanged at 3_480_403.
+- Local-execute inlined-CAF rewrite + CapabilityProxy shim source builders
+  (#2830) deferred to `local-execute-runtime-support.mjs` additional module
+  (same lane as oauth-provider / worker-bundler) so platform main no longer
+  carries those templates or the rewrite AST walk. Clears #2831 overage
+  (measured 5_123_062). Local dry-run platform 5_104_954 against the previous
+  5_108_000 budget, reviewed ceiling 5_106_000.

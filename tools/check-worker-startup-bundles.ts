@@ -138,6 +138,8 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			oauthProviderPackageSourcePath,
+			'/packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
+			'/packages/worker/src/package-runtime/local-execute-runtime-support.ts',
 		],
 	},
 	{
@@ -150,6 +152,8 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
 			oauthProviderPackageSourcePath,
+			'/packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
+			'/packages/worker/src/package-runtime/local-execute-runtime-support.ts',
 		],
 	},
 ]

@@ -36,6 +36,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
 		'package-app-remix.mjs',
+		'local-execute-runtime-support.mjs',
 		'esbuild.wasm',
 		'worker-bundler.stamp.json',
 	] as const) {
@@ -48,6 +49,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
 		'package-app-remix.mjs',
+		'local-execute-runtime-support.mjs',
 		'esbuild.wasm',
 	] as const) {
 		expect(await pathExists(path.join(workerBundlerWranglerDir, name))).toBe(

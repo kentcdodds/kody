@@ -6,12 +6,14 @@ import {
 } from '#worker/test-support/module-graph.ts'
 import {
 	buildLocalExecutePackageGraph,
-	createLocalExecutePackageRuntimeModuleSource,
-	createLocalExecuteRuntimeShimSource,
 	localExecuteHostRuntimeModuleName,
 	pickLocalExecutePrimaryRuntimePath,
 	type LocalExecutePackageGraphError,
 } from './local-execute-package-graph.ts'
+import {
+	createLocalExecutePackageRuntimeModuleSource,
+	createLocalExecuteRuntimeShimSource,
+} from './local-execute-runtime-support.ts'
 import {
 	createRelativeImportSpecifier,
 	normalizeWorkspaceModulePath,

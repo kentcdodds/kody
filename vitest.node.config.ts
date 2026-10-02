@@ -88,6 +88,13 @@ export default mergeConfig(
 					find: './node_modules/.kody-generated/oauth-provider.mjs',
 					replacement: '@cloudflare/workers-oauth-provider',
 				},
+				{
+					find: './node_modules/.kody-generated/local-execute-runtime-support.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+					),
+				},
 			],
 		},
 		test: {

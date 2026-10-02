@@ -19,6 +19,20 @@ declare module '*/node_modules/.kody-generated/oauth-provider.mjs' {
 	export * from '@cloudflare/workers-oauth-provider'
 }
 
+declare module '*/node_modules/.kody-generated/local-execute-runtime-support.mjs' {
+	export {
+		moduleSourceHasInlinedKodyRuntime,
+		rewriteInlinedLocalExecuteBundleSource,
+	} from './package-runtime/rewrite-inlined-local-runtime.ts'
+	export const localExecuteHostRuntimeModuleName: 'kody:runtime'
+	export function createLocalExecuteRuntimeShimSource(
+		modulePath?: string,
+	): string
+	export function createLocalExecutePackageRuntimeModuleSource(
+		packageId: string,
+	): string
+}
+
 /**
  * The platform-supplied `remix` and `@remix-run/ui` packages for package
  * apps: one code-split pre-bundle of the Workers-safe `remix/<subpath>`

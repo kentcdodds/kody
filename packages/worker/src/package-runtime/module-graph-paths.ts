@@ -1,7 +1,20 @@
 import { normalizePackageExportKey } from '#worker/package-registry/manifest.ts'
 import { parseKodyPackageSpecifier } from './package-import-resolution.ts'
+import {
+	dirname,
+	joinPath,
+	normalizeWorkspaceModulePath,
+} from './module-graph-path-basics.ts'
 
-export const runtimeModulePath = '.__kody_virtual__/runtime.js'
+export {
+	createRelativeImportSpecifier,
+	dirname,
+	joinPath,
+	normalizeWorkspaceModulePath,
+	relativePath,
+	runtimeModulePath,
+} from './module-graph-path-basics.ts'
+
 export const publicRuntimeModulePath = '.__kody_virtual__/public-runtime.js'
 export const packageRuntimeModulePrefix = '.__kody_virtual__/package-runtime'
 export const packageManifestPath = 'package.json'
@@ -19,48 +32,6 @@ export const dynamicPackageImportArtifactSegment = '.__kody_current__'
 export const dynamicPackageImportSpecifierExportName =
 	'__kodyDynamicPackageSpecifier'
 export const dynamicPackageImportResolvedMarker = '__kodyDynamicPackageResolved'
-
-export function joinPath(...parts: Array<string>) {
-	return parts
-		.join('/')
-		.replace(/\/+/g, '/')
-		.replace(/\/\.\//g, '/')
-}
-
-export function dirname(filePath: string) {
-	const normalized = filePath.replace(/\/+/g, '/')
-	const separator = normalized.lastIndexOf('/')
-	return separator === -1 ? '.' : normalized.slice(0, separator) || '.'
-}
-
-export function relativePath(fromDir: string, toPath: string) {
-	const fromParts = fromDir.split('/').filter(Boolean)
-	const toParts = toPath.split('/').filter(Boolean)
-	let sharedIndex = 0
-	while (
-		sharedIndex < fromParts.length &&
-		sharedIndex < toParts.length &&
-		fromParts[sharedIndex] === toParts[sharedIndex]
-	) {
-		sharedIndex += 1
-	}
-	const upward = fromParts.slice(sharedIndex).map(() => '..')
-	const downward = toParts.slice(sharedIndex)
-	return [...upward, ...downward].join('/')
-}
-
-export function createRelativeImportSpecifier(
-	fromPath: string,
-	targetPath: string,
-) {
-	const fromDir = dirname(fromPath)
-	const relative = relativePath(fromDir, targetPath)
-	const normalized =
-		relative === '.' || relative.startsWith('./') || relative.startsWith('../')
-			? relative
-			: `./${relative}`
-	return normalized.replaceAll('\\', '/')
-}
 
 export function resolveRelativeModulePath(fromPath: string, specifier: string) {
 	if (!specifier.startsWith('./') && !specifier.startsWith('../')) {
@@ -177,19 +148,6 @@ export function textMentionsKodyVirtualModule(text: string) {
 		unescaped.includes('%') &&
 		kodyVirtualModulePattern.test(percentDecodeText(unescaped))
 	)
-}
-
-export function normalizeWorkspaceModulePath(path: string) {
-	const parts: Array<string> = []
-	for (const segment of path.replace(/\\/g, '/').split('/')) {
-		if (!segment || segment === '.') continue
-		if (segment === '..') {
-			parts.pop()
-			continue
-		}
-		parts.push(segment)
-	}
-	return parts.join('/')
 }
 
 export function resolveWorkspaceSourceFilePath(input: {

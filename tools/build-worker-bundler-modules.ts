@@ -22,9 +22,10 @@ import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
  * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry),
- * `@cloudflare/workers-oauth-provider`, and the platform-supplied `remix`
- * package for package apps into standalone ES modules under
- * `packages/worker/.generated/`.
+ * `@cloudflare/workers-oauth-provider`, the platform-supplied `remix`
+ * package for package apps, and local-execute runtime support (inlined CAF
+ * rewrite + CapabilityProxy shim source builders) into standalone ES modules
+ * under `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
  * module, so the ~3.6 MB runtime bundler/TypeScript compiler was parsed and
@@ -37,7 +38,9 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * imports it statically, but
  * `#worker/oauth-helpers.ts` needs it only when `OAUTH_PROVIDER` is absent
  * (scheduled purge lane, the `MCP` Durable Object on kody-platform), and the
- * platform/runtime startup entries must not carry it.
+ * platform/runtime startup entries must not carry it. Local-execute package
+ * graph (#2830 rewrite / shim templates) uses the same deferral so platform
+ * startup bytes stay under budget (kody#2831).
  *
  * Wrangler discovers additional ES modules by walking the entry directory
  * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
@@ -92,11 +95,18 @@ export const leftoverSrcGeneratedBundlerNames = [
 	'worker-bundler.stamp.json',
 ] as const
 export const packageAppRemixModuleName = 'package-app-remix.mjs'
+export const localExecuteRuntimeSupportModuleName =
+	'local-execute-runtime-support.mjs'
+const localExecuteRuntimeSupportEntry = path.join(
+	repoRoot,
+	'packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+)
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
 	packageAppRemixModuleName,
+	localExecuteRuntimeSupportModuleName,
 	'esbuild.wasm',
 ] as const
 const leftoverWranglerVisibleNames = [
@@ -158,6 +168,31 @@ const externalsPlugin: Plugin = {
 			if (!nodeBuiltins.has(args.path)) return null
 			return { path: `node:${args.path}`, external: true }
 		})
+	},
+}
+
+const workerSrcRoot = path.join(repoRoot, 'packages/worker/src')
+
+/** Resolve `#worker/…` and `#mcp/…` / `#universal/…` / `#app/…` package imports. */
+const kodyPackageImportsPlugin: Plugin = {
+	name: 'kody-package-imports',
+	setup(pluginBuild) {
+		pluginBuild.onResolve({ filter: /^#worker\// }, (args) => ({
+			path: path.join(workerSrcRoot, args.path.slice('#worker/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#mcp\// }, (args) => ({
+			path: path.join(workerSrcRoot, 'mcp', args.path.slice('#mcp/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#app\// }, (args) => ({
+			path: path.join(workerSrcRoot, 'app', args.path.slice('#app/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#universal\// }, (args) => ({
+			path: path.join(
+				repoRoot,
+				'packages/worker/universal',
+				args.path.slice('#universal/'.length),
+			),
+		}))
 	},
 }
 
@@ -223,6 +258,17 @@ async function buildStampContent(
 		'utf8',
 	)
 	const generatorSource = await readFile(fileURLToPath(import.meta.url), 'utf8')
+	const localExecuteRuntimeSupportSource = await readFile(
+		localExecuteRuntimeSupportEntry,
+		'utf8',
+	)
+	const localExecuteRewriteSource = await readFile(
+		path.join(
+			repoRoot,
+			'packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
+		),
+		'utf8',
+	)
 	const esbuildVersion = (
 		JSON.parse(
 			await readFile(
@@ -241,6 +287,17 @@ async function buildStampContent(
 		.update(lockfile)
 		.update(esbuildVersion)
 		.update(generatorSource)
+		.update(localExecuteRuntimeSupportSource)
+		.update(localExecuteRewriteSource)
+		.update(
+			await readFile(
+				path.join(
+					repoRoot,
+					'packages/worker/src/package-runtime/module-graph-path-basics.ts',
+				),
+				'utf8',
+			),
+		)
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')
 }
@@ -462,6 +519,7 @@ export async function ensureWorkerBundlerModules() {
 		plugins: [externalsPlugin],
 		logLevel: 'silent',
 	})
+	await buildLocalExecuteRuntimeSupportModule()
 	await copyFile(
 		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
@@ -473,6 +531,23 @@ export async function ensureWorkerBundlerModules() {
 	})
 	await materializeWranglerVisibleModules()
 	await fsyncGeneratedDir()
+}
+
+async function buildLocalExecuteRuntimeSupportModule() {
+	await build({
+		entryPoints: [localExecuteRuntimeSupportEntry],
+		bundle: true,
+		format: 'esm',
+		platform: 'neutral',
+		target: 'es2022',
+		minify: true,
+		outfile: path.join(
+			workerBundlerGeneratedDir,
+			localExecuteRuntimeSupportModuleName,
+		),
+		plugins: [externalsPlugin, kodyPackageImportsPlugin],
+		logLevel: 'silent',
+	})
 }
 
 async function fsyncGeneratedDir() {

@@ -20,6 +20,7 @@ export const kodyGeneratedEsModuleNames = [
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
 	'package-app-remix.mjs',
+	'local-execute-runtime-support.mjs',
 ] as const
 
 export const kodyGeneratedWasmNames = ['esbuild.wasm'] as const
