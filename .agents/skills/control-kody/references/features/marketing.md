@@ -5,7 +5,6 @@ legal, docs, blog, Discord invite.
 
 ## How to get there
 
-<<<<<<< HEAD
 `/`, `/pricing`, `/faq`, `/case-studies`, `/support`, `/privacy`, `/terms`,
 `/docs`, `/docs/:slug`, `/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`,
 `/discord`. Legacy `/guides*` URLs 308 to `/docs*`. Intra-docs navigation (doc
@@ -20,26 +19,9 @@ adopts a warm payload instead of waiting on a cold fetch.
 `/docs/package-sharing/opt-in` to turn `package-share-grants` on for themselves;
 signed-out visitors log in with `redirectTo` back to that page.
 `/docs/secret-providers` opens with the same pattern for `secret-providers`
-(POST `/docs/secret-providers/opt-in`). `/docs/open-api` opens with the same
-pattern for `mcp-api-tool` and `local-execute` together (POST
-`/docs/open-api/opt-in`).
-=======
-`/`, `/pricing`, `/faq`, `/support`, `/privacy`, `/terms`, `/docs`,
-`/docs/:slug`, `/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`, `/discord`.
-Legacy `/guides*` URLs 308 to `/docs*`. Intra-docs navigation (doc to doc, or a
-doc to `/docs` / `/docs/connect`) is an instant shell swap — no page
-view-transition — so the sidebar does not re-animate. How Kody works (and other
-interactive walkthroughs) stay in the article column; they do not break out over
-the nav. The docs shell opts out of overflow anchoring so replacing the article
-does not bump the rail. After hydrate it independently prefetches every sidebar
-href (one loader request per slug, including `/docs/connect`) so a click adopts
-a warm payload instead of waiting on a cold fetch. `/docs/package-sharing` opens
-with a flag callout: signed-in visitors POST `/docs/package-sharing/opt-in` to
-turn `package-share-grants` on for themselves; signed-out visitors log in with
-`redirectTo` back to that page. `/docs/secret-providers` opens with the same
-pattern for `secret-providers` (POST `/docs/secret-providers/opt-in`). Open API
-and local execute are documented at `/docs/open-api` (no per-user opt-in route).
->>>>>>> c147e126 (Remove mcp-api-tool and local-execute feature flag gates)
+(POST `/docs/secret-providers/opt-in`). Open API and local execute are
+documented at `/docs/open-api` and `/docs/local-execute` (no per-user opt-in
+route).
 
 ## Drive it
 
