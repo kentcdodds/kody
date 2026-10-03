@@ -2,7 +2,10 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { listAdminStableUserIds } from '#worker/identity/permissions-db.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import {
+	listSavedPackagesByIds,
+	listSavedPackagesByUserId,
+} from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -10,6 +13,11 @@ import {
 	readRetryablePackageInvocationInfrastructureCode,
 } from './infrastructure-codes.ts'
 import { invokePackageSubscription } from './service.ts'
+import {
+	packageSubscriptionTopicMapVersion,
+	tryReadPackageSubscriptionTopicMap,
+	writePackageSubscriptionTopicMap,
+} from './subscription-topic-cache.ts'
 
 export {
 	readPreExecutionPackageInvocationInfrastructureCode,
@@ -45,8 +53,10 @@ function isMissingSavedPackagesTableError(error: unknown) {
 }
 
 /**
- * One user's saved packages that declare `topic`. Missing `saved_packages`
- * resolves empty; per-package manifest load failures are collected, not thrown.
+ * One user's saved packages that declare `topic`. Prefer the per-user KV
+ * topic→package map (one get on hit); on miss, scan manifests once, fill KV,
+ * then load only candidate packages. Missing `saved_packages` resolves empty;
+ * per-package manifest load failures are collected, not thrown.
  */
 export async function loadMatchingPackageSubscriptions(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
@@ -54,6 +64,36 @@ export async function loadMatchingPackageSubscriptions(input: {
 	userId: string
 	topic: string
 }) {
+	const cached = await tryReadPackageSubscriptionTopicMap({
+		env: input.env,
+		userId: input.userId,
+	}).catch(() => null)
+
+	if (cached) {
+		const packageIds = cached.byTopic[input.topic] ?? []
+		if (packageIds.length === 0) {
+			return { subscriptions: [], discoveryErrors: [] }
+		}
+		let savedPackages: Array<SavedPackageRecord>
+		try {
+			savedPackages = await listSavedPackagesByIds(input.env.APP_DB, {
+				userId: input.userId,
+				packageIds,
+			})
+		} catch (error) {
+			if (isMissingSavedPackagesTableError(error)) {
+				return { subscriptions: [], discoveryErrors: [] }
+			}
+			throw error
+		}
+		return await loadSubscriptionsForSavedPackages({
+			...input,
+			savedPackages,
+		})
+	}
+
+	// Miss or no usable KV: scan every package once. When KV is available,
+	// fill the map from that same scan so a second wake does not rescan.
 	let savedPackages: Array<SavedPackageRecord>
 	try {
 		savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
@@ -65,8 +105,109 @@ export async function loadMatchingPackageSubscriptions(input: {
 		}
 		throw error
 	}
+	if (savedPackages.length === 0) {
+		try {
+			await writePackageSubscriptionTopicMap({
+				env: input.env,
+				map: {
+					version: packageSubscriptionTopicMapVersion,
+					userId: input.userId,
+					byTopic: {},
+					cachedAt: new Date().toISOString(),
+				},
+			})
+		} catch (error) {
+			console.warn('package-subscription-topic-map-fill-failed', {
+				userId: input.userId,
+				error,
+			})
+		}
+		return { subscriptions: [], discoveryErrors: [] }
+	}
+
+	const subscriptions: Array<LoadedPackageSubscription> = []
+	const discoveryErrors: Array<unknown> = []
+	const byTopic = new Map<string, Set<string>>()
 	const settled = await mapSettledInChunks(
 		savedPackages,
+		async (savedPackage) => {
+			const loaded = await loadPackageManifestBySourceId({
+				env: input.env as Env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: savedPackage.sourceId,
+			})
+			const declared = listPackageSubscriptions(loaded.manifest)
+			for (const subscription of declared) {
+				const packageIds = byTopic.get(subscription.topic) ?? new Set<string>()
+				packageIds.add(savedPackage.id)
+				byTopic.set(subscription.topic, packageIds)
+			}
+			const subscription = declared.find(
+				(candidate) => candidate.topic === input.topic,
+			)
+			if (!subscription) return null
+			return {
+				savedPackage,
+				subscription,
+			} satisfies LoadedPackageSubscription
+		},
+	)
+	for (const [index, result] of settled.entries()) {
+		if (result.status === 'fulfilled') {
+			if (result.value) subscriptions.push(result.value)
+			continue
+		}
+		const savedPackage = savedPackages[index]
+		console.warn('admin-package-subscription-manifest-load-failed', {
+			topic: input.topic,
+			packageId: savedPackage?.id,
+			sourceId: savedPackage?.sourceId,
+			error: result.reason,
+		})
+		discoveryErrors.push(result.reason)
+	}
+
+	try {
+		const serialized: Record<string, Array<string>> = {}
+		for (const topic of [...byTopic.keys()].sort((left, right) =>
+			left.localeCompare(right),
+		)) {
+			serialized[topic] = [...(byTopic.get(topic) ?? [])].sort((left, right) =>
+				left.localeCompare(right),
+			)
+		}
+		await writePackageSubscriptionTopicMap({
+			env: input.env,
+			map: {
+				version: packageSubscriptionTopicMapVersion,
+				userId: input.userId,
+				byTopic: serialized,
+				cachedAt: new Date().toISOString(),
+			},
+		})
+	} catch (error) {
+		console.warn('package-subscription-topic-map-fill-failed', {
+			userId: input.userId,
+			error,
+		})
+	}
+
+	return { subscriptions, discoveryErrors }
+}
+
+async function loadSubscriptionsForSavedPackages(input: {
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+	baseUrl: string
+	userId: string
+	topic: string
+	savedPackages: Array<SavedPackageRecord>
+}) {
+	if (input.savedPackages.length === 0) {
+		return { subscriptions: [], discoveryErrors: [] }
+	}
+	const settled = await mapSettledInChunks(
+		input.savedPackages,
 		async (savedPackage) => {
 			const loaded = await loadPackageManifestBySourceId({
 				env: input.env as Env,
@@ -91,7 +232,7 @@ export async function loadMatchingPackageSubscriptions(input: {
 			if (result.value) subscriptions.push(result.value)
 			continue
 		}
-		const savedPackage = savedPackages[index]
+		const savedPackage = input.savedPackages[index]
 		console.warn('admin-package-subscription-manifest-load-failed', {
 			topic: input.topic,
 			packageId: savedPackage?.id,

@@ -1,12 +1,11 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { routes } from '#universal/routes.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
-import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
+import {
+	loadMatchingPackageSubscriptions,
+	readPreExecutionPackageInvocationInfrastructureCode,
+} from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
-import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type RunLogRowInput } from './run-log-do.ts'
 
 export const runErrorRecordedTopic = 'run.error.recorded'
@@ -34,11 +33,6 @@ type RunErrorRecordedSubscriptionEnvelope = {
 		error_message: string | null
 	}
 	activity_url: string
-}
-
-type LoadedRunErrorSubscription = {
-	savedPackage: SavedPackageRecord
-	subscription: ReturnType<typeof listPackageSubscriptions>[number]
 }
 
 function buildRunErrorEventPayload(input: {
@@ -89,59 +83,15 @@ async function loadMatchingRunErrorSubscriptions(input: {
 	baseUrl: string
 	userId: string
 }) {
-	let savedPackages: Array<SavedPackageRecord>
 	try {
-		savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.userId,
+		return await loadMatchingPackageSubscriptions({
+			...input,
+			topic: runErrorRecordedTopic,
 		})
 	} catch (error) {
-		// Best-effort: discovery must not reject the dispatcher. Missing-table
-		// (local/test DBs) is silent; other DB failures are recorded for warn.
-		const missingTable =
-			error instanceof Error &&
-			error.message.includes('no such table: saved_packages')
-		return {
-			subscriptions: [] as Array<LoadedRunErrorSubscription>,
-			discoveryErrors: missingTable ? [] : [error],
-		}
+		// Best-effort: discovery must not reject the dispatcher.
+		return { subscriptions: [], discoveryErrors: [error] }
 	}
-	const settled = await Promise.allSettled(
-		savedPackages.map(async (savedPackage) => {
-			const loaded = await loadPackageManifestBySourceId({
-				env: input.env as Env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			})
-			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) => candidate.topic === runErrorRecordedTopic,
-			)
-			if (!subscription) return null
-			return {
-				savedPackage,
-				subscription,
-			} satisfies LoadedRunErrorSubscription
-		}),
-	)
-	const subscriptions: Array<LoadedRunErrorSubscription> = []
-	const discoveryErrors: Array<unknown> = []
-	for (const [index, result] of settled.entries()) {
-		if (result.status === 'fulfilled') {
-			if (result.value) subscriptions.push(result.value)
-			continue
-		}
-		const savedPackage = savedPackages[index]
-		console.warn(
-			'Failed to load package manifest for run.error.recorded subscription',
-			{
-				sourceId: savedPackage?.sourceId,
-				packageId: savedPackage?.id,
-				error: result.reason,
-			},
-		)
-		discoveryErrors.push(result.reason)
-	}
-	return { subscriptions, discoveryErrors }
 }
 
 /**

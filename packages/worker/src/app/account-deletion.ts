@@ -82,6 +82,7 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
+import { invalidatePackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import {
 	communityIconKvListingPrefixes,
@@ -1367,16 +1368,28 @@ async function deleteRetrieverCache(input: {
 	userId: string
 	warnings: Array<string>
 }) {
+	let deleted = 0
 	try {
-		return await deleteAllPackageRetrieverCacheEntriesForUser({
+		deleted = await deleteAllPackageRetrieverCacheEntriesForUser({
 			env: input.env,
 			userId: input.userId,
 		})
 	} catch (error) {
 		const message = getErrorMessage(error)
 		input.warnings.push(`Package retriever KV cleanup failed: ${message}`)
-		return 0
 	}
+	try {
+		await invalidatePackageSubscriptionTopicMap({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(
+			`Package subscription topic map KV cleanup failed: ${message}`,
+		)
+	}
+	return deleted
 }
 
 async function deleteUserScopedRowsAndUser(input: {

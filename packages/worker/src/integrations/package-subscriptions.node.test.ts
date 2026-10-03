@@ -237,7 +237,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 		expect.objectContaining({ eventId: 'event-3', error: expect.any(Error) }),
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
-		'Failed to load package manifest for integration.auth.failed subscription',
+		'admin-package-subscription-manifest-load-failed',
 		expect.objectContaining({ packageId: 'package-2' }),
 	)
 })

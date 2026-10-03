@@ -3,6 +3,7 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	deletePackageKodyIdRedirects,
 	releasePackageKodyIdRedirect,
@@ -43,6 +44,7 @@ import {
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
 import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
+import { refreshPackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
@@ -479,6 +481,23 @@ export async function refreshSavedPackageProjection(input: {
 				],
 				sourceId: input.sourceId,
 			})
+			// Prefer a normalized source of truth (manifests) plus this KV cache of
+			// computed topic→package ids. Delete-then-recompute so a failed rewrite
+			// cannot leave wakes matching a pre-publish map (no TTL).
+			try {
+				await refreshPackageSubscriptionTopicMap({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+				})
+			} catch (error) {
+				console.warn('package-subscription-topic-map-refresh-failed', {
+					userId: input.userId,
+					packageId: input.packageId,
+					action: 'publish',
+					error,
+				})
+			}
 			return {
 				record: savedPackage,
 				manifest: loaded.manifest,
@@ -677,6 +696,20 @@ export async function deleteSavedPackageProjection(input: {
 				],
 				sourceId: savedPackage?.sourceId ?? null,
 			})
+			try {
+				await refreshPackageSubscriptionTopicMap({
+					env: input.env,
+					baseUrl: getAppBaseUrl({ env: input.env }),
+					userId: input.userId,
+				})
+			} catch (error) {
+				console.warn('package-subscription-topic-map-refresh-failed', {
+					userId: input.userId,
+					packageId: input.packageId,
+					action: 'unpublish',
+					error,
+				})
+			}
 			if (packageJobsRemoved) {
 				await syncJobManagerAlarm({
 					env: input.env,

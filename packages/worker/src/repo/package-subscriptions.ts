@@ -1,14 +1,11 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
-import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
-import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
-import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import {
-	getSavedPackageById,
-	listSavedPackagesByUserId,
-} from '#worker/package-registry/repo.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+	loadMatchingPackageSubscriptions,
+	readPreExecutionPackageInvocationInfrastructureCode,
+} from '#worker/package-invocations/admin-package-subscriptions.ts'
+import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	applyArtifactSourcePushToHeadCache,
 	isDeletedArtifactRefCommit,
@@ -33,11 +30,6 @@ import {
 import { getEntitySourceByRepoId } from './entity-sources.ts'
 import { type EntitySourceRow } from './types.ts'
 import { getUserRepoById } from './user-repos.ts'
-
-type LoadedRepoSubscription = {
-	savedPackage: SavedPackageRecord
-	subscription: ReturnType<typeof listPackageSubscriptions>[number]
-}
 
 export type RepoSubscriptionEntity = {
 	source_id: string
@@ -215,51 +207,11 @@ async function loadMatchingRepoSubscriptions(input: {
 	userId: string
 	topic: RepoSubscriptionTopic
 }) {
-	let savedPackages: Array<SavedPackageRecord>
 	try {
-		savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.userId,
-		})
+		return await loadMatchingPackageSubscriptions(input)
 	} catch (error) {
-		const missingTable =
-			error instanceof Error &&
-			error.message.includes('no such table: saved_packages')
-		return {
-			subscriptions: [] as Array<LoadedRepoSubscription>,
-			discoveryErrors: missingTable ? [] : [error],
-		}
+		return { subscriptions: [], discoveryErrors: [error] }
 	}
-	const settled = await Promise.allSettled(
-		savedPackages.map(async (savedPackage) => {
-			const loaded = await loadPackageManifestBySourceId({
-				env: input.env as Env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			})
-			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) => candidate.topic === input.topic,
-			)
-			if (!subscription) return null
-			return { savedPackage, subscription } satisfies LoadedRepoSubscription
-		}),
-	)
-	const subscriptions: Array<LoadedRepoSubscription> = []
-	const discoveryErrors: Array<unknown> = []
-	for (const [index, result] of settled.entries()) {
-		if (result.status === 'fulfilled') {
-			if (result.value) subscriptions.push(result.value)
-			continue
-		}
-		const savedPackage = savedPackages[index]
-		console.warn('Failed to load package manifest for repo subscription', {
-			sourceId: savedPackage?.sourceId,
-			packageId: savedPackage?.id,
-			error: result.reason,
-		})
-		discoveryErrors.push(result.reason)
-	}
-	return { subscriptions, discoveryErrors }
 }
 
 function buildEventParams(input: {

@@ -72,6 +72,14 @@ The result lists scoped package `name`, `package_id`, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
 
+Host wake paths (email, Discord-driven package events, webhooks that fan out via
+subscriptions, integrations, and the other subscription discovery helpers) read
+a per-user KV cache of the computed topic→package map rather than loading every
+saved package manifest. The manifest remains the only source of truth; publish
+and unpublish refresh the cache. Prefer that pattern (normalized source +
+computed cache, invalidate on the write that changes the source, no TTL) over a
+denormalized topic-index table.
+
 ## Synthetic dispatch
 
 `packageSubscriptionDispatch` is the **interactive MCP** post-publish smoke test

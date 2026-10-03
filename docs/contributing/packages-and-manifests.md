@@ -352,6 +352,16 @@ publish. At runtime, event dispatch invokes the handler through the package
 execution path with package context, package-owned storage, package secrets, and
 the host-owned `kody:runtime` module.
 
+Wake discovery prefers a normalized source of truth (each package's
+`package.json#kody.subscriptions`) plus a per-user KV cache of the computed
+topic→package-id map
+(`packages/worker/src/package-invocations/subscription-topic-cache.ts`). A wake
+reads that one key; on a miss it scans manifests once, fills KV, and uses the
+result. Publish and unpublish delete-then-recompute the map in the same write
+path so wakes never match a stale projection. There is no TTL — a TTL could hide
+a newly published subscription. Do not add a denormalized topic-index table; the
+manifest stays authoritative.
+
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
 manifests and returns scoped package `name`, `package_id`, topic, handler,

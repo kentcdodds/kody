@@ -8,13 +8,9 @@ import {
 	type PackageEventTools,
 } from '#mcp/run-kody-registry.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import {
-	listPackageEmittedEvents,
-	listPackageSubscriptions,
-} from '#worker/package-registry/manifest.ts'
+import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import {
 	buildPackageSubscriptionArtifactName,
@@ -39,6 +35,7 @@ import {
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+import { loadMatchingPackageSubscriptions } from './admin-package-subscriptions.ts'
 
 /**
  * Package event payloads ride inside a Queue message (128 KiB limit), so
@@ -139,39 +136,25 @@ async function loadMatchingPackageEventSubscriptions(input: {
 	topic: string
 	payload: Record<string, unknown>
 }) {
-	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
-	})
-	const settled = await Promise.all(
-		savedPackages.map(async (savedPackage) => {
-			const loaded = await loadPackageManifestBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			}).catch((error) => {
-				throw new Error(
-					`Failed to load package manifest for package event dispatch: ${savedPackage.kodyId} (${savedPackage.id}).`,
-					{ cause: error },
-				)
-			})
-			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) =>
-					candidate.topic === input.topic &&
-					packageEventFiltersMatchPayload({
-						filters: candidate.filters,
-						payload: input.payload,
-					}),
-			)
-			if (!subscription) return null
-			return {
-				savedPackage,
-				subscription,
-			}
-		}),
-	)
-	return settled.filter(
-		(entry): entry is LoadedPackageEventSubscription => entry !== null,
+	const { subscriptions, discoveryErrors } =
+		await loadMatchingPackageSubscriptions({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			topic: input.topic,
+		})
+	if (discoveryErrors.length > 0) {
+		throw new Error(
+			`Failed to load package manifest for package event dispatch: ${String(discoveryErrors[0])}`,
+			{ cause: discoveryErrors[0] },
+		)
+	}
+	return subscriptions.filter(
+		(entry): entry is LoadedPackageEventSubscription =>
+			packageEventFiltersMatchPayload({
+				filters: entry.subscription.filters,
+				payload: input.payload,
+			}),
 	)
 }
 

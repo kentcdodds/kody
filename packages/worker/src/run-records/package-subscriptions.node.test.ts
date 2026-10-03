@@ -224,7 +224,7 @@ test('run.error.recorded skips recursion/non-errors and never throws on handler 
 		expect.objectContaining({ runId: 'run-1', error: expect.any(Error) }),
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
-		'Failed to load package manifest for run.error.recorded subscription',
+		'admin-package-subscription-manifest-load-failed',
 		expect.objectContaining({ packageId: 'package-2' }),
 	)
 })

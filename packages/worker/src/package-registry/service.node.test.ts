@@ -19,6 +19,7 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		buildPublishedPackageArtifacts: vi.fn(),
 		refreshPackageRetrieverManifestCache: vi.fn(),
 		removePackageRetrieverManifestCacheEntries: vi.fn(),
+		refreshPackageSubscriptionTopicMap: vi.fn(),
 		deleteJobRow: vi.fn(),
 		deleteEntitySource: vi.fn(),
 		deleteSavedPackage: vi.fn(),
@@ -78,6 +79,9 @@ vi.mock('#worker/package-retrievers/manifest-cache.ts', () =>
 		'refreshPackageRetrieverManifestCache',
 		'removePackageRetrieverManifestCacheEntries',
 	),
+)
+vi.mock('#worker/package-invocations/subscription-topic-cache.ts', () =>
+	pickMocks('refreshPackageSubscriptionTopicMap'),
 )
 vi.mock('./repo.ts', () =>
 	pickMocks(
@@ -214,6 +218,7 @@ function setupDefaultMocks() {
 	mockModule.syncPackageJobsForPackage.mockResolvedValue(false)
 	mockModule.syncJobManagerAlarm.mockResolvedValue(undefined)
 	mockModule.refreshPackageRetrieverManifestCache.mockResolvedValue(undefined)
+	mockModule.refreshPackageSubscriptionTopicMap.mockResolvedValue(undefined)
 	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
 		undefined,
 	)
