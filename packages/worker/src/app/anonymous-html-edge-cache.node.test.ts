@@ -51,6 +51,16 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 		[home, { method: 'HEAD' }, true],
 		[home, { method: 'POST' }, false],
 		[home, { headers: { Cookie: 'kody_session=stale' } }, false],
+		[
+			home,
+			{
+				headers: {
+					Cookie:
+						'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
+				},
+			},
+			false,
+		],
 		[home, { headers: { Authorization: 'Bearer x' } }, false],
 		[home, { headers: { 'Cache-Control': 'no-cache' } }, false],
 		['https://kody.codes/login', {}, false],

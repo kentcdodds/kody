@@ -2,7 +2,9 @@ import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	anonymousHtmlCacheControl,
 	anonymousVisibilityGatedCacheControl,
+	clearRetiredSiteBannerDismissCookie,
 	isCacheableAnonymousPath,
+	requestHasRetiredSiteBannerDismissCookie,
 	requestHasSessionCookie,
 } from '#app/anonymous-html-cache.ts'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
@@ -39,6 +41,9 @@ export function isAnonymousHtmlCacheRequest(
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false
+	// Skip shared cache while the retired dismiss cookie is present so origin
+	// can expire it (Set-Cookie responses are never stored).
+	if (requestHasRetiredSiteBannerDismissCookie(request)) return false
 	if (requestBypassesAnonymousDocumentCache(request)) return false
 	if (requestBypassesAnonymousHtmlCache(request)) return false
 	if (prefersMarkdown(request)) return false
@@ -181,7 +186,9 @@ export async function serveAnonymousHtmlFromCache(
 	next: () => Promise<Response>,
 ): Promise<Response> {
 	const eligible = isAnonymousHtmlCacheRequest(request, env)
-	if (!eligible) return next()
+	if (!eligible) {
+		return expireRetiredSiteBannerDismissCookie(request, await next())
+	}
 
 	const cacheKey = buildAnonymousHtmlCacheKey(request, env)
 	const cache = workerDefaultCache()
@@ -212,4 +219,27 @@ export async function serveAnonymousHtmlFromCache(
 		)
 	}
 	return withMiss
+}
+
+function expireRetiredSiteBannerDismissCookie(
+	request: Request,
+	response: Response,
+): Response {
+	if (!requestHasRetiredSiteBannerDismissCookie(request)) return response
+	const headers = new Headers(response.headers)
+	headers.append(
+		'Set-Cookie',
+		clearRetiredSiteBannerDismissCookie({
+			secure: new URL(request.url).protocol === 'https:',
+		}),
+	)
+	// Do not let intermediaries store the clear response; the next request
+	// without the cookie can use the shared anonymous HTML cache again.
+	headers.set('Cache-Control', 'no-store')
+	headers.delete('Vary')
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
 }

@@ -16,6 +16,13 @@ import { routes } from '#universal/routes.ts'
 
 export const sessionCookieName = 'kody_session'
 
+/**
+ * Retired site-banner dismiss cookie. The feature is gone; browsers may still
+ * send this HttpOnly cookie for years. Clear it when present so clients stop
+ * shipping up to ~1.6 KB of dead UUIDs on every request.
+ */
+export const retiredSiteBannerDismissCookieName = 'kody_site_banner_dismiss'
+
 export const anonymousHtmlCacheControl =
 	'public, max-age=60, stale-while-revalidate=300'
 
@@ -73,6 +80,22 @@ export function isCacheableAnonymousPath(pathname: string) {
 export function requestHasSessionCookie(request: Request): boolean {
 	const cookie = request.headers.get('Cookie') ?? ''
 	return /(?:^|;\s*)kody_session=/.test(cookie)
+}
+
+export function requestHasRetiredSiteBannerDismissCookie(
+	request: Request,
+): boolean {
+	const cookie = request.headers.get('Cookie') ?? ''
+	return new RegExp(`(?:^|;\\s*)${retiredSiteBannerDismissCookieName}=`).test(
+		cookie,
+	)
+}
+
+export function clearRetiredSiteBannerDismissCookie(input: {
+	secure: boolean
+}): string {
+	const secure = input.secure ? '; Secure' : ''
+	return `${retiredSiteBannerDismissCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly${secure}`
 }
 
 export function resolveAppPageCacheControl(input: {

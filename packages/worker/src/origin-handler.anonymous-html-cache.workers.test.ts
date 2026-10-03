@@ -74,6 +74,13 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 		[string, HeadersInit, { status?: number; cacheControl?: string }]
 	> = [
 		[pricingUrl, { Cookie: 'kody_session=stale' }, noStore],
+		[
+			pricingUrl,
+			{
+				Cookie: 'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
+			},
+			noStore,
+		],
 		[pricingUrl, { Authorization: 'Bearer not-a-token' }, {}],
 		[pricingUrl, { 'Cache-Control': 'no-cache' }, {}],
 		[missingGuideUrl, {}, { status: 404 }],
@@ -87,6 +94,16 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 			status: response.status,
 			cacheControl: response.headers.get('Cache-Control'),
 		})
+		if (
+			typeof headers === 'object' &&
+			'Cookie' in headers &&
+			String(headers.Cookie).includes('kody_site_banner_dismiss=')
+		) {
+			expect(response.headers.get('Set-Cookie') ?? '').toContain(
+				'kody_site_banner_dismiss=',
+			)
+			expect(response.headers.get('Set-Cookie') ?? '').toContain('Max-Age=0')
+		}
 		await response.body?.cancel()
 	}
 	expect(outcomes).toMatchObject(
