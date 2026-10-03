@@ -16,6 +16,7 @@ import {
 import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	filterLiveUsageRows,
 	queryAnalyticsEngineSql,
 	resolveUsageEventsDataset,
 	type UsageAggregationEnv,
@@ -92,6 +93,11 @@ function meterFromEventType(eventType: string): CreditAttributionMeter | null {
 	}
 }
 
+const attributionUpsertBatchSize = 50
+const attributionDeleteBatchSize = 50
+/** D1 bind budget: one for user_id plus package ids per IN chunk. */
+const attributionPackageLabelChunkSize = 80
+
 /**
  * Recompute the current UTC month's attribution daily rows from Analytics
  * Engine. Called from the same hourly lane as `usage_rollups`. No-op when
@@ -111,17 +117,20 @@ export async function aggregateCreditAttributionDaily(
 	const baseUrl =
 		env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com'
 	const dataset = resolveUsageEventsDataset(env)
-	const rows = await queryAnalyticsEngineSql<AttributionAnalyticsRow>({
+	const analyticsRows = await queryAnalyticsEngineSql<AttributionAnalyticsRow>({
 		accountId,
 		apiToken,
 		baseUrl,
 		query: buildCreditAttributionDailyQuery(dataset, utcMonthBounds(now)),
 	})
+	// Same live-user guard as usage_rollups: AE retains points after account
+	// deletion; never reinsert those into D1 attribution rows.
+	const liveRows = await filterLiveUsageRows(env.APP_DB, analyticsRows)
 	const month = utcMonthKey(now)
 	const updatedAt = now.toISOString()
-	let upserted = 0
 	const presentKeys = new Set<string>()
-	for (const row of rows) {
+	const upsertStatements: Array<D1PreparedStatement> = []
+	for (const row of liveRows) {
 		const meter = meterFromEventType(row.event_type)
 		if (!meter) continue
 		const day =
@@ -133,12 +142,34 @@ export async function aggregateCreditAttributionDaily(
 		const units = Number(row.units)
 		if (!Number.isFinite(units) || units <= 0) continue
 		presentKeys.add(`${row.user_id}\0${day}\0${packageId}\0${meter}`)
-		await runD1WithRetry(() =>
-			env.APP_DB.prepare(attributionUpsertStatement)
-				.bind(row.user_id, day, packageId, meter, units, updatedAt)
-				.run(),
+		upsertStatements.push(
+			env.APP_DB.prepare(attributionUpsertStatement).bind(
+				row.user_id,
+				day,
+				packageId,
+				meter,
+				units,
+				updatedAt,
+			),
 		)
-		upserted += 1
+	}
+	for (
+		let index = 0;
+		index < upsertStatements.length;
+		index += attributionUpsertBatchSize
+	) {
+		await runD1WithRetry(() =>
+			env.APP_DB.batch(
+				upsertStatements.slice(index, index + attributionUpsertBatchSize),
+			),
+		)
+	}
+	// Empty AE result is more likely ingestion lag than a truly empty month;
+	// skip stale cleanup rather than wiping real attribution (same as rollups).
+	// A non-empty AE result that yields no live rows still runs cleanup so
+	// deleted-account rows do not linger.
+	if (analyticsRows.length === 0) {
+		return { skipped: false, upserted: 0 }
 	}
 	const existing = await env.APP_DB.prepare(
 		`SELECT user_id, day, package_id, meter
@@ -155,19 +186,29 @@ export async function aggregateCreditAttributionDaily(
 			package_id: string
 			meter: string
 		}>()
+	const deleteStatements: Array<D1PreparedStatement> = []
 	for (const row of existing.results ?? []) {
 		const key = `${row.user_id}\0${row.day}\0${row.package_id}\0${row.meter}`
 		if (presentKeys.has(key)) continue
-		await runD1WithRetry(() =>
+		deleteStatements.push(
 			env.APP_DB.prepare(
 				`DELETE FROM usage_attribution_daily
 				 WHERE user_id = ? AND day = ? AND package_id = ? AND meter = ?`,
-			)
-				.bind(row.user_id, row.day, row.package_id, row.meter)
-				.run(),
+			).bind(row.user_id, row.day, row.package_id, row.meter),
 		)
 	}
-	return { skipped: false, upserted }
+	for (
+		let index = 0;
+		index < deleteStatements.length;
+		index += attributionDeleteBatchSize
+	) {
+		await runD1WithRetry(() =>
+			env.APP_DB.batch(
+				deleteStatements.slice(index, index + attributionDeleteBatchSize),
+			),
+		)
+	}
+	return { skipped: false, upserted: upsertStatements.length }
 }
 
 export async function readCreditAttributionDailyUnits(input: {
@@ -275,25 +316,35 @@ async function loadPackageAttributionLabels(input: {
 	const names = new Map<string, string>()
 	const hrefs = new Map<string, string>()
 	if (input.packageIds.length === 0) return { names, hrefs }
-	const placeholders = input.packageIds.map(() => '?').join(', ')
-	const rows = await input.db
-		.prepare(
-			`SELECT id, kody_id, name
-			 FROM saved_packages
-			 WHERE user_id = ?
-			 AND id IN (${placeholders})`,
+	for (
+		let index = 0;
+		index < input.packageIds.length;
+		index += attributionPackageLabelChunkSize
+	) {
+		const chunk = input.packageIds.slice(
+			index,
+			index + attributionPackageLabelChunkSize,
 		)
-		.bind(input.stableUserId, ...input.packageIds)
-		.all<{ id: string; kody_id: string; name: string }>()
-	for (const row of rows.results ?? []) {
-		names.set(row.id, row.name?.trim() || row.kody_id)
-		hrefs.set(
-			row.id,
-			routes.communityPackage.href({
-				username: input.username,
-				kodyId: row.kody_id,
-			}),
-		)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const rows = await input.db
+			.prepare(
+				`SELECT id, kody_id, name
+				 FROM saved_packages
+				 WHERE user_id = ?
+				 AND id IN (${placeholders})`,
+			)
+			.bind(input.stableUserId, ...chunk)
+			.all<{ id: string; kody_id: string; name: string }>()
+		for (const row of rows.results ?? []) {
+			names.set(row.id, row.name?.trim() || row.kody_id)
+			hrefs.set(
+				row.id,
+				routes.communityPackage.href({
+					username: input.username,
+					kodyId: row.kody_id,
+				}),
+			)
+		}
 	}
 	return { names, hrefs }
 }

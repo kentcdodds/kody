@@ -1754,7 +1754,7 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	communityFork: AccountPackageCommunityFork | null
 	/**
 	 * This UTC month's past-include credits for this package only (owner
-	 * view). Null when attribution is empty for the package.
+	 * view). Always a row for owners (zero credits when nothing past include).
 	 */
 	creditAttribution?: CreditAttributionRow | null
 }
