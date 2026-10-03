@@ -1,5 +1,6 @@
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 
@@ -22,8 +23,6 @@ export const openaiAppsChallengeToken =
 
 /** Matches the MCP server `version` advertised on both protocol lanes. */
 export const kodyMcpServerCardVersion = '1.0.0'
-
-const mcpOauthScopes = ['profile', 'email'] as const
 
 const aiCrawlerUserAgents = [
 	'GPTBot',
