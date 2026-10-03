@@ -357,7 +357,7 @@ test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', (
 	)
 })
 
-test('local gateway fetch hops scoped secrets and reconstructs consumed bodies', async () => {
+test('local gateway fetch hops scoped secrets and preserves ambient body metadata', async () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	const start = shim.indexOf('const __kodyNullBodyStatuses')
 	const end = shim.indexOf('export function __kodyCreatePackageBoundStorage')
@@ -411,6 +411,18 @@ test('local gateway fetch hops scoped secrets and reconstructs consumed bodies',
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: 'plain-text-body',
+		})
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		// Reuse original init so ambient fetch keeps implicit Content-Type.
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe('plain-text-body')
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
 		const stream = new ReadableStream({
 			start(controller) {
 				controller.enqueue(new TextEncoder().encode('hello'))
@@ -431,6 +443,22 @@ test('local gateway fetch hops scoped secrets and reconstructs consumed bodies',
 		).toBe('hello')
 
 		ambientCalls.length = 0
+		const typedBlob = new Blob(['blob-body'], { type: 'application/json' })
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: typedBlob,
+		})
+		expect(ambientCalls).toHaveLength(1)
+		expect(
+			new TextDecoder().decode(
+				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
+			),
+		).toBe('blob-body')
+		expect(
+			(ambientCalls[0]?.init as RequestInit).headers as Record<string, string>,
+		).toMatchObject({ 'content-type': 'application/json' })
+
+		ambientCalls.length = 0
 		const request = new Request('https://api.example.com/post', {
 			method: 'POST',
 			body: 'payload',
@@ -443,6 +471,11 @@ test('local gateway fetch hops scoped secrets and reconstructs consumed bodies',
 				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
 			),
 		).toBe('payload')
+		expect(
+			(ambientCalls[0]?.init as RequestInit).headers as Record<string, string>,
+		).toMatchObject({
+			'content-type': 'text/plain;charset=UTF-8',
+		})
 	} finally {
 		globalThis.fetch = originalFetch
 	}

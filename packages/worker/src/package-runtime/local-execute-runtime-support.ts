@@ -326,12 +326,35 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	let method = "GET";
 	let headers = {};
 	let bodyBytes = null;
+	// Prefer ambient fetch(input, init) when the probe did not consume the
+	// original body — that keeps implicit Content-Type from string /
+	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
+	let reuseOriginal = true;
 	if (typeof input === "string" || input instanceof URL) {
 		url = String(input);
 		method = String(init?.method ?? "GET");
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
-			bodyBytes = await __kodyBodyToBytes(init.body);
+			const body = init.body;
+			bodyBytes = await __kodyBodyToBytes(body);
+			if (
+				(typeof Blob !== "undefined" && body instanceof Blob) ||
+				(body && typeof body.getReader === "function")
+			) {
+				reuseOriginal = false;
+				if (
+					typeof Blob !== "undefined" &&
+					body instanceof Blob &&
+					body.type
+				) {
+					const hasContentType = Object.keys(headers).some(
+						(key) => key.toLowerCase() === "content-type",
+					);
+					if (!hasContentType) {
+						headers["content-type"] = body.type;
+					}
+				}
+			}
 		}
 	} else {
 		const merged = new Request(input, init);
@@ -340,20 +363,19 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(merged.headers.entries());
 		if (method !== "GET" && method !== "HEAD") {
 			bodyBytes = new Uint8Array(await merged.arrayBuffer());
+			reuseOriginal = false;
 		}
 	}
 	const bodyText =
 		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
-		// Probe may have already consumed Request/stream bodies — never reuse
-		// the original input/init when we hold body bytes.
-		if (bodyBytes == null) {
+		if (reuseOriginal) {
 			return globalThis.fetch(input, init);
 		}
 		const fallbackInit = {
 			method,
 			headers,
-			body: bodyBytes,
+			...(bodyBytes != null ? { body: bodyBytes } : {}),
 		};
 		const signal =
 			init?.signal ?? (input instanceof Request ? input.signal : null);
