@@ -151,17 +151,32 @@ export async function readPackageSubscriptionTopicGeneration(input: {
 }
 
 /**
- * Bump the per-user generation before rewriting the map. Reads treat a map
- * whose generation does not match as a miss, so a failed delete or a late
- * wake write cannot leave wakes matching a pre-publish projection.
+ * Bump the per-user generation before rewriting the map. Each bump mints a
+ * unique token (not `n+1`) so concurrent refreshes never share a generation.
+ * Reads treat a map whose generation does not match as a miss, so a failed
+ * delete or a late wake write cannot leave wakes matching a pre-publish
+ * projection.
  */
+/**
+ * Mint a unique generation token. Do not read-then-increment: concurrent
+ * refreshes that share `n+1` can both pass the write check and leave the
+ * earlier (stale) map cached with no TTL.
+ */
+export function mintPackageSubscriptionTopicGeneration(): number {
+	// Millisecond clock plus a random micro-offset so two bumps in the same
+	// millisecond almost never collide. Workers crypto is available.
+	const entropy = new Uint32Array(1)
+	crypto.getRandomValues(entropy)
+	return Date.now() * 1000 + (entropy[0]! % 1000)
+}
+
 export async function bumpPackageSubscriptionTopicGeneration(input: {
 	env: SubscriptionTopicCacheEnv
 	userId: string
 }): Promise<number> {
 	const kv = getSubscriptionTopicKv(input.env)
 	if (!kv) return 0
-	const next = (await readPackageSubscriptionTopicGeneration(input)) + 1
+	const next = mintPackageSubscriptionTopicGeneration()
 	// No expirationTtl: a TTL could hide a newly published subscription.
 	await kv.put(
 		buildPackageSubscriptionTopicGenerationKey(input.userId),

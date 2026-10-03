@@ -392,13 +392,72 @@ test('generation bump alone forces a miss when map delete fails', async () => {
 			byTopic: { 'repo.pushed': ['pkg-a'] },
 		}),
 	)
-	expect(store.get(buildPackageSubscriptionTopicGenerationKey('user-1'))).toBe(
-		'1',
+	const generationAfterRefresh = Number(
+		store.get(buildPackageSubscriptionTopicGenerationKey('user-1')),
 	)
+	expect(generationAfterRefresh).toBeGreaterThan(0)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'package-subscription-topic-map-invalidate-failed',
 		expect.objectContaining({ userId: 'user-1' }),
 	)
+})
+
+test('concurrent refreshes mint distinct generations so the earlier scan cannot overwrite', async () => {
+	const { kv, store } = createKv()
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as Env
+	seedPackages([
+		savedPackage({
+			id: 'pkg-a',
+			kodyId: 'a',
+			topics: ['repo.pushed'],
+		}),
+	])
+
+	const genA = await bumpPackageSubscriptionTopicGeneration({
+		env,
+		userId: 'user-1',
+	})
+	const genB = await bumpPackageSubscriptionTopicGeneration({
+		env,
+		userId: 'user-1',
+	})
+	expect(genA).not.toBe(genB)
+	expect(store.get(buildPackageSubscriptionTopicGenerationKey('user-1'))).toBe(
+		String(genB),
+	)
+
+	// Late write from refresh A (shared-increment race class) must be rejected.
+	await writePackageSubscriptionTopicMap({
+		env,
+		map: {
+			version: 1,
+			userId: 'user-1',
+			generation: genA,
+			byTopic: { 'repo.pushed': ['pkg-stale'] },
+			cachedAt: '2026-10-02T00:00:00.000Z',
+		},
+	})
+	expect(store.has(buildPackageSubscriptionTopicMapKey('user-1'))).toBe(false)
+
+	await writePackageSubscriptionTopicMap({
+		env,
+		map: {
+			version: 1,
+			userId: 'user-1',
+			generation: genB,
+			byTopic: { 'repo.pushed': ['pkg-a'] },
+			cachedAt: '2026-10-03T00:00:00.000Z',
+		},
+	})
+	const cached = await readPackageSubscriptionTopicMap({
+		env,
+		userId: 'user-1',
+	})
+	expect(cached?.generation).toBe(genB)
+	expect(cached?.byTopic['repo.pushed']).toEqual(['pkg-a'])
 })
 
 test('invalidate drops the map so the next wake cannot use a stale projection', async () => {
