@@ -107,6 +107,9 @@ export const userEntitlementWarningKinds = ['approaching', 'reached'] as const
 export type UserEntitlementWarningKind =
 	(typeof userEntitlementWarningKinds)[number]
 
+/** Daily execute quota resource id; drives the local-execute tip in this mail. */
+const executeCallsPerDayResource = 'execute_calls_per_day'
+
 export function buildUserEntitlementWarningEmail(input: {
 	appBaseUrl: string
 	creditsUrl: string
@@ -117,6 +120,8 @@ export function buildUserEntitlementWarningEmail(input: {
 		current: number
 		limit: number
 		percentOfLimit: number
+		/** Entitlement resource id; required to gate the local-execute tip. */
+		resource?: string
 		whatCounts?: string
 		howToReduce?: string
 		include?: { unitLabel: string }
@@ -131,12 +136,25 @@ export function buildUserEntitlementWarningEmail(input: {
 		return counts.join(' ')
 	})
 	const copy = entitlementWarningCopy(input.kind)
+	const includesExecuteQuota = input.warnings.some(
+		(warning) => warning.resource === executeCallsPerDayResource,
+	)
+	const body = [copy.intro, ...lines]
+	if (includesExecuteQuota) {
+		const localExecuteUrl = new URL(
+			'/docs/local-execute',
+			input.appBaseUrl,
+		).toString()
+		body.push(
+			`You can often avoid this execute quota by running locally with the CLI when the work does not need to stay on Kody: ${localExecuteUrl}`,
+		)
+	}
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: copy.subject,
 		preheader: copy.preheader,
 		heading: copy.heading,
-		body: [copy.intro, ...lines],
+		body,
 		action: { label: 'Add credits', url: input.creditsUrl },
 		afterAction: [
 			`You can also see every limit on your usage page: ${input.usageUrl}`,

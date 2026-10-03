@@ -75,6 +75,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		warnings: [
 			{
 				label: 'execute calls per day',
+				resource: 'execute_calls_per_day',
 				current: 200,
 				limit: 250,
 				percentOfLimit: 0.8,
@@ -85,6 +86,10 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(warning.html).toContain('https://kody.codes/account/usage#credits')
 	expect(warning.text).toContain('https://kody.codes/account/usage')
 	expect(warning.html).toContain('200 of 250 (80%)')
+	expect(warning.text).toContain(
+		'You can often avoid this execute quota by running locally with the CLI when the work does not need to stay on Kody: https://kody.codes/docs/local-execute',
+	)
+	expect(warning.html).toContain('https://kody.codes/docs/local-execute')
 
 	const reached = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -94,6 +99,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		warnings: [
 			{
 				label: 'execute calls per day',
+				resource: 'execute_calls_per_day',
 				current: 250,
 				limit: 250,
 				percentOfLimit: 1,
@@ -102,6 +108,25 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(reached.subject).toContain('reached')
 	expect(reached.html).toContain('250 of 250 (100%)')
+	expect(reached.text).toContain('https://kody.codes/docs/local-execute')
+
+	const storageOnly = buildUserEntitlementWarningEmail({
+		appBaseUrl: 'https://kody.codes',
+		creditsUrl: 'https://kody.codes/account/usage#credits',
+		usageUrl: 'https://kody.codes/account/usage',
+		kind: 'reached',
+		warnings: [
+			{
+				label: 'storage bytes',
+				resource: 'storage_bytes',
+				current: 1_000_000,
+				limit: 1_000_000,
+				percentOfLimit: 1,
+			},
+		],
+	})
+	expect(storageOnly.text).not.toContain('/docs/local-execute')
+	expect(storageOnly.text).not.toContain('running locally with the CLI')
 
 	const connect = buildConnectAgentEmail({
 		appBaseUrl: 'https://kody.codes',
