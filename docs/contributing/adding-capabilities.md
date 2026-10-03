@@ -184,10 +184,11 @@ export const exampleFlaggedCapability = defineDomainCapability(
 ```
 
 `getCapabilityRegistryForContext` resolves the caller's evaluated flag map once
-per request (via `getFeatureFlagsForUser`) and passes it into the same access
-filter used for `requiredRole` / `requiredPermission`. Execute-time assertions
-reload that map when needed. Do **not** cache flag decisions into Vectorize
-metadata or session-scoped data.
+per request (via `resolveCallerFeatureFlags`, which also records measured-flag
+exposures once for that request) and passes it into the same access filter used
+for `requiredRole` / `requiredPermission`. Execute-time assertions reuse that
+request-scoped map when needed. Do **not** cache flag decisions into Vectorize
+metadata, session-scoped data, or a cross-request TTL.
 
 ### Admin domain
 
