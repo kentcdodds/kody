@@ -302,12 +302,15 @@ function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
 	const probe = (value) => {
 		if (typeof value !== "string" || !value.includes("{{")) return false;
 		return (
-			/{{secret:[a-zA-Z0-9._-]+(?:|scope=(?:session|package|user))?}}/.test(
+			// Escape the scope pipe (| in generated source): bare | is regex
+			// alternation and would miss {{secret:name|scope=user}} from
+			// __kodySecretRef.
+			/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
 				value,
 			) ||
 			/{{secret-basic:[^}]+}}/.test(value) ||
 			/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
-			/{{secret/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
+			/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
 		);
 	};
 	if (probe(url)) return true;
@@ -342,7 +345,23 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	const bodyText =
 		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
-		return globalThis.fetch(input, init);
+		// Probe may have already consumed Request/stream bodies — never reuse
+		// the original input/init when we hold body bytes.
+		if (bodyBytes == null) {
+			return globalThis.fetch(input, init);
+		}
+		const fallbackInit = {
+			method,
+			headers,
+			body: bodyBytes,
+		};
+		const signal =
+			init?.signal ?? (input instanceof Request ? input.signal : null);
+		if (signal != null) fallbackInit.signal = signal;
+		const redirect =
+			init?.redirect ?? (input instanceof Request ? input.redirect : null);
+		if (redirect != null) fallbackInit.redirect = redirect;
+		return globalThis.fetch(url, fallbackInit);
 	}
 	const result = await kody.gatewayFetch({
 		...(packageId ? { packageId } : {}),

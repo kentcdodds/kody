@@ -357,6 +357,97 @@ test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', (
 	)
 })
 
+test('local gateway fetch hops scoped secrets and reconstructs consumed bodies', async () => {
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	const start = shim.indexOf('const __kodyNullBodyStatuses')
+	const end = shim.indexOf('export function __kodyCreatePackageBoundStorage')
+	expect(start).toBeGreaterThan(-1)
+	expect(end).toBeGreaterThan(start)
+	const helpersSource = shim.slice(start, end).replaceAll(/^export /gm, '')
+	const ambientCalls: Array<{ input: unknown; init: unknown }> = []
+	const gatewayCalls: Array<unknown> = []
+	const kody = {
+		gatewayFetch: async (args: unknown) => {
+			gatewayCalls.push(args)
+			return {
+				status: 200,
+				statusText: 'OK',
+				headers: {},
+				bodyBase64: btoa('gw'),
+			}
+		},
+	}
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async (input: unknown, init?: unknown) => {
+		ambientCalls.push({ input, init })
+		return new Response('ambient')
+	}) as typeof fetch
+	try {
+		const { __kodyGatewayFetch } = new Function(
+			'kody',
+			`${helpersSource}; return { __kodyGatewayFetch };`,
+		)(kody) as {
+			__kodyGatewayFetch: (
+				input: RequestInfo | URL,
+				init?: RequestInit,
+			) => Promise<Response>
+		}
+
+		await __kodyGatewayFetch('https://api.example.com/v1', {
+			headers: {
+				authorization: 'Bearer {{secret:demoToken|scope=user}}',
+			},
+		})
+		expect(gatewayCalls).toHaveLength(1)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/v1',
+				headers: {
+					authorization: 'Bearer {{secret:demoToken|scope=user}}',
+				},
+			},
+		})
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('hello'))
+				controller.close()
+			},
+		})
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: stream,
+		})
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
+		expect(
+			new TextDecoder().decode(
+				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
+			),
+		).toBe('hello')
+
+		ambientCalls.length = 0
+		const request = new Request('https://api.example.com/post', {
+			method: 'POST',
+			body: 'payload',
+		})
+		await __kodyGatewayFetch(request)
+		expect(ambientCalls).toHaveLength(1)
+		expect(typeof ambientCalls[0]?.input).toBe('string')
+		expect(
+			new TextDecoder().decode(
+				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
+			),
+		).toBe('payload')
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
 test('createLocalExecuteRuntimeShimSource uses a relative host import from path-like module names', () => {
 	const nestedPath =
 		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e2f676d61696c/.__kody_virtual__/runtime.js'
