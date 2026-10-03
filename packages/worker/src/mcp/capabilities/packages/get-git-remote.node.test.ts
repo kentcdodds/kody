@@ -193,14 +193,26 @@ function stubCreatedPackage(
 test('get_git_remote rejects invalid input before creating stubs', async () => {
 	for (const [args, message] of [
 		[{}, 'Provide exactly one of `package_id` or the package name leaf.'],
-		[{ package_id: 'package-1', create: true }, createRequiresLeaf],
-		[{ create: true }, createRequiresLeaf],
 		[{ package_id: 'package-1', ttl_seconds: 59 }, invalidInput],
 		[{ package_id: 'package-1', ttl_seconds: 86_401 }, invalidInput],
 	] as const) {
 		resetMocks()
 		mockPackageSource()
 		await expect(getRemote(args)).rejects.toThrow(message)
+		expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
+	}
+
+	for (const args of [
+		{ package_id: 'package-1', create: true },
+		{ create: true },
+	] as const) {
+		resetMocks()
+		mockPackageSource()
+		const createRequiresError = await getRemote(args).catch(
+			(error: unknown) => error,
+		)
+		expect(createRequiresError).toBeInstanceOf(McpCallerError)
+		expect(createRequiresError).toMatchObject({ message: createRequiresLeaf })
 		expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
 	}
 
