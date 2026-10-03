@@ -41,8 +41,8 @@ package-app surfaces:
    from `@kody-internal/shared/password-policy.ts` wherever a password is set.
 6. **OAuth PKCE stays S256-only.** Keep the `getPkceValidationError` check in
    `oauth-handlers.ts` (reject `code_challenge_method` other than S256 when a
-   challenge is present). `@cloudflare/workers-oauth-provider` v1.2 removed
-   `allowPlainPKCE`; see the OAuth section below.
+   challenge is present). `@cloudflare/workers-oauth-provider` is S256-only (no
+   `allowPlainPKCE`); see the OAuth section below.
 7. **Every data path is `userId`-scoped.** New D1 queries, Durable Object names,
    and Vectorize filters must include `userId`. Prefer parameterized SQL
    (`.prepare(...).bind(...)`); never interpolate user input into SQL.
@@ -451,8 +451,8 @@ re-check length, so existing accounts are never locked out.
   (`packages/worker/src/oauth-handlers.ts`) rejects an authorize request whose
   `code_challenge_method` is anything other than `S256` when a `code_challenge`
   is present. Plain PKCE offers no protection against code interception.
-  `@cloudflare/workers-oauth-provider` v1.2 removed `allowPlainPKCE`
-  (S256-only). Keep the app-layer check; plain PKCE cannot be re-enabled.
+  `@cloudflare/workers-oauth-provider` is S256-only (no `allowPlainPKCE`). Keep
+  the app-layer check; plain PKCE cannot be re-enabled.
 - Dynamic client registration (`/oauth/register`) is intentionally **open**: the
   MCP OAuth spec requires it, and clients (including native/public clients using
   PKCE) rely on it. This is a deliberate acceptance, not a gap. Do not add

@@ -232,7 +232,7 @@ appends the ApiError code (for example
 `capabilityProxySession:unauthorized`) so session start, package-graph prep, and
 auth failures are distinguishable in Analytics Engine without a new event type
 or fake `execute` / `dynamic_worker_day` charges. The capability behind a call
-call meters itself as usual (email sends, outbound fetches, package runs). Local
+meters itself as usual (email sends, outbound fetches, package runs). Local
 execute CPU runs on the user's machine and is never recorded as `execute` or
 `dynamic_worker_day`.
 

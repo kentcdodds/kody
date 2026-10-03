@@ -20,9 +20,9 @@ The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
 infrastructure are available alongside normal app routes.
 
-v1 of the provider requires `resourceMetadata.resource` (canonical
-`<origin>/mcp`). That pins grant and access-token audiences and is the sole RFC
-9728 protected-resource metadata document, served at
+The provider requires `resourceMetadata.resource` (canonical `<origin>/mcp`).
+That pins grant and access-token audiences and is the sole RFC 9728
+protected-resource metadata document, served at
 `/.well-known/oauth-protected-resource/mcp`. The root
 `/.well-known/oauth-protected-resource` path is not an alias. Preview, local,
 and production each construct a per-origin provider so the resource matches the

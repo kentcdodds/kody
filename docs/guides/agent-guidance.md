@@ -114,7 +114,7 @@ not rewrite a host that already cached server instructions; reconnect if needed.
 - [Search and execute](./search-and-execute.md) — how agents discover guides and
   package detail.
 - [Local CLI execute](./local-execute.md) — prefer CLI `--local` when Node ≥22
-  - CLI are available (`guide:local_execute`).
+  and the CLI are available (`guide:local_execute`).
 - [Open API](./open-api.md) — HTTPS Open API and MCP `api` (`guide:open_api`).
 - [Packages, integrations, and MCP servers](./packages-integrations-mcp.md) —
   keep those three surfaces from collapsing into each other.

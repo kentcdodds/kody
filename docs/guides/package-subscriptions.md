@@ -628,12 +628,12 @@ already gone) are acknowledged without retry.
 
 ## `community.fork.upstream_updated`
 
-When a community listing you forked is republished with a new pinned commit,
-Kody dispatches `community.fork.upstream_updated` to packages saved by **your**
+When a public package you forked is republished with a new pinned commit, Kody
+dispatches `community.fork.upstream_updated` to packages saved by **your**
 account that declare the topic. There is one event per fork of that listing
 (forking the same listing twice produces two events). Republishes that keep the
 same pinned commit do not emit, and forks already at the new pinned commit are
-skipped. Watching a listing without forking it is not supported.
+skipped. Watching a public package without forking it is not supported.
 
 Delivery is durable: `communityPublish` enqueues the republish on the
 `kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
