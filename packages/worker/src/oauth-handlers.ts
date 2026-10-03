@@ -35,7 +35,7 @@ import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampAuthorizationResponseIssuer } from '#worker/oauth-authorization-response.ts'
-import { mcpResourcePath } from './mcp-auth.ts'
+import { mcpOAuthResourceUri } from '#worker/oauth-provider-options.ts'
 import {
 	listUserOAuthGrantsForClient,
 	revokeOAuthGrant,
@@ -69,21 +69,8 @@ const invalidOAuthClientRegistrationMessage =
 export const oauthEmailVerificationRequiredMessage =
 	'Verify your account email before authorizing MCP access. Keep this page open, resend or open the verification link from Account in another tab, then continue.'
 
-type OAuthProps = {
-	userId: string
-	email: string
-	username: string
-	displayName: string
-	authTime: number
-	nonce?: string
-}
-
 type OAuthEnv = Env & {
 	OAUTH_PROVIDER: OAuthHelpers
-}
-
-type OAuthContext = ExecutionContext & {
-	props?: OAuthProps
 }
 
 function getValidOAuthUsername(value: unknown) {
@@ -284,7 +271,7 @@ function defaultMcpResourceForAuthRequest(
 		env,
 		requestUrl: request.url,
 	})
-	authRequest.resource = `${origin}${mcpResourcePath}`
+	authRequest.resource = mcpOAuthResourceUri(origin)
 }
 
 function isCimdMetadataResolutionError(error: unknown) {
@@ -1600,20 +1587,36 @@ export function handleOAuthCallback(
 	return renderSpaShell(request, env, { status: hasError ? 400 : 200 })
 }
 
-export const apiHandler = {
-	async fetch(request: Request, _env: unknown, ctx: ExecutionContext) {
-		const url = new URL(request.url)
-		if (url.pathname === '/api/me') {
-			const props = (ctx as OAuthContext).props
-			if (!props) {
-				return jsonResponse(
-					{ ok: false, error: 'Unauthorized' },
-					{ status: 401 },
-				)
-			}
-			return jsonResponse({ ok: true, user: props })
-		}
-
+/**
+ * Legacy OAuth-protected JSON helper for grant props. Remains outside the MCP
+ * resource (`/mcp`); callers present a Bearer token minted for this origin's
+ * MCP audience. Not the OIDC UserInfo endpoint.
+ */
+export async function handleOAuthProtectedApiMe(request: Request, env: Env) {
+	const url = new URL(request.url)
+	if (url.pathname !== '/api/me') {
 		return jsonResponse({ error: 'Not found' }, { status: 404 })
-	},
-} satisfies ExportedHandler
+	}
+	const authorization = request.headers.get('Authorization')
+	const match = authorization?.match(/^Bearer(?:\s+(.*))?$/i)
+	const token = match?.[1]?.trim() ?? ''
+	if (!token) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	const helpers = (env as Partial<OAuthEnv>).OAUTH_PROVIDER
+	if (!helpers) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	const summary = await helpers.unwrapToken(token)
+	const origin = getAppBaseUrl({ env, requestUrl: request.url })
+	const expectedAudience = mcpOAuthResourceUri(origin)
+	const audience = summary?.audience
+	const audienceOk =
+		typeof audience === 'string'
+			? audience === expectedAudience
+			: Array.isArray(audience) && audience.includes(expectedAudience)
+	if (!summary || !audienceOk) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	return jsonResponse({ ok: true, user: summary.grant.props })
+}

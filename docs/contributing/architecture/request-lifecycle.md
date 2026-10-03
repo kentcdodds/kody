@@ -20,20 +20,16 @@ The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
 infrastructure are available alongside normal app routes.
 
-Before that, `GET`/`HEAD`/`OPTIONS` on `/.well-known/oauth-protected-resource`
-are handled in `packages/worker/src/index.ts` itself. The OAuth provider
-library’s built-in handler for that path advertises `resource` as the request
-**origin** only; this app’s MCP server is identified by `<origin>/mcp`. Serving
-our own metadata on that URL keeps the RFC 8707 `resource` value consistent for
-clients (e.g. some MCP stacks) that discover metadata from the 401
-`resource_metadata` URL and would otherwise get `invalid_target` at the token
-endpoint. Protected-resource metadata and MCP auth challenges resolve the origin
-from the inbound request URL (via `getAppBaseUrl`) so clients connecting through
-`kody.codes` or a preview/local `workers.dev` host get matching resource values.
-Production refuses non-canonical hosts (see
-[Non-canonical hosts](../security.md#non-canonical-hosts)), so MCP is not served
-on the production `workers.dev` trigger. `APP_BASE_URL` is only the fallback for
-background work with no request URL.
+v1 of the provider requires `resourceMetadata.resource` (canonical
+`<origin>/mcp`). That pins grant and access-token audiences and is the sole RFC
+9728 protected-resource metadata document, served at
+`/.well-known/oauth-protected-resource/mcp`. The root
+`/.well-known/oauth-protected-resource` path is not an alias. Preview, local,
+and production each construct a per-origin provider so the resource matches the
+host the client connected to (`getAppBaseUrl`). Production refuses non-canonical
+hosts (see [Non-canonical hosts](../security.md#non-canonical-hosts)), so MCP is
+not served on the production `workers.dev` trigger. `APP_BASE_URL` is only the
+fallback for background work with no request URL.
 
 ## Routing order
 
@@ -72,8 +68,6 @@ Requests are handled in this order:
      (same URL RFC 8414 authorization-server metadata advertises) plus matching
      `revocation_endpoint_auth_methods_supported`.
    - JWKS: `/.well-known/jwks.json` (`GET` / `HEAD` / `OPTIONS`)
-   - Protected resource metadata (base path only):
-     `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
    - Client ID Metadata Document: `/oauth/client-metadata.json` (`GET` / `HEAD`
      / `OPTIONS`) — Kody-as-client CIMD. Served from the request origin so
      `client_id` matches the fetch URL.
@@ -86,19 +80,22 @@ Requests are handled in this order:
    - `/oauth/callback`
 4. Browser noise endpoint:
    - `/.well-known/appspecific/com.chrome.devtools.json` (returns 204)
-5. OAuth protected resource metadata endpoint (inside the default handler, for
-   the `/mcp` suffix path only):
+5. OAuth protected resource metadata (inside `OAuthProvider`, path-aware only):
    - `/.well-known/oauth-protected-resource/mcp`
 6. MCP endpoint:
-   - `/mcp` (requires OAuth bearer token). After authentication,
+   - `/mcp` (requires OAuth bearer token; `OAuthProvider` `apiRoute`). Missing
+     Bearer credentials are short-circuited with a JSON `401` (Gemini-friendly)
+     before the library's empty-bodied challenge. After authentication,
      `packages/worker/src/mcp-auth.ts` routes by protocol era: 2025-era requests
      go to the sessionful `MCP` Durable Object (`McpAgent`, MCP SDK v1) hosted
      on `kody-platform` and reached through the `MCP_OBJECT` binding, and
      `2026-07-28` envelope requests are served statelessly per request by
      `packages/worker/src/mcp/stateless-lane.ts` (MCP SDK v2, no Durable
-     Object). Both lanes share one tool registration; every authenticated
-     request records a lane data point to the `MCP_PROTOCOL_EVENTS` Analytics
-     Engine dataset for dual-lane traffic measurement (see
+     Object). Tokens that lack the resource's `requiredScopes` (OIDC baseline)
+     get the library `insufficientScope()` step-up `403`. Both lanes share one
+     tool registration; every authenticated request records a lane data point to
+     the `MCP_PROTOCOL_EVENTS` Analytics Engine dataset for dual-lane traffic
+     measurement (see
      [decision 0005](../decisions/0005-mcp-dual-lane-stateless-migration.md)).
      The origin script owns no Durable Object classes
      ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)). MCP

@@ -5,10 +5,11 @@ import {
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import {
+	buildProtectedResourceMetadata,
 	handleMcpRequest,
-	handleProtectedResourceMetadata,
 	mcpInvalidTokenDescription,
 	mcpParsedBodyNeedsAccountWriteLease,
+	mcpProtectedResourceMetadataUrl,
 	mcpResourcePath,
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
@@ -45,7 +46,7 @@ function expectAuthenticateHeader(
 		}
 	}
 	expect(header).toContain(
-		`resource_metadata="${challengeOrigin}${protectedResourceMetadataPath}"`,
+		`resource_metadata="${mcpProtectedResourceMetadataUrl(challengeOrigin)}"`,
 	)
 	if (oauthScopes.length > 0) {
 		expect(header).toContain(`scope="${oauthScopes.join(' ')}"`)
@@ -59,6 +60,38 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		},
 		lookupClient: async () => null,
 		completeAuthorization: async () => ({ redirectTo: 'https://example.com' }),
+		describeConsent: async () => ({
+			clientId: 'client',
+			clientName: 'client',
+			redirectUri: 'https://example.com/callback',
+			redirectHost: 'example.com',
+			redirectIsLoopback: false,
+			scope: [],
+		}),
+		isConsentRemembered: async () => false,
+		beginConsent: async () => ({
+			handle: 'handle',
+			headers: new Headers(),
+		}),
+		approveConsent: async () => ({
+			request: {} as never,
+			headers: new Headers(),
+		}),
+		denyConsent: async () => ({
+			request: {} as never,
+			redirectTo: 'https://example.com/denied',
+			headers: new Headers({ Location: 'https://example.com/denied' }),
+		}),
+		beginUpstream: async () => ({
+			state: 'state',
+			headers: new Headers(),
+		}),
+		finishUpstream: async <Data = unknown>() =>
+			({
+				request: {} as never,
+				data: undefined as Data,
+				headers: new Headers(),
+			}) as never,
 		async createClient() {
 			throw new Error('Not implemented')
 		},
@@ -441,17 +474,15 @@ test('protected resource metadata and auth challenge use the request origin over
 	// MCP clients require resource metadata to match the URL they connected to.
 	const requestOrigin = 'https://kody-production.kentcdodds.workers.dev'
 	const envOverrides = { APP_BASE_URL: 'https://heykody.dev' }
-	const metadataResponse = handleProtectedResourceMetadata(
-		new Request(`${requestOrigin}${protectedResourceMetadataPath}`),
-		envOverrides as Env,
-	)
-	expect(metadataResponse.status).toBe(200)
-	expect(await metadataResponse.json()).toEqual({
+	expect(buildProtectedResourceMetadata(requestOrigin)).toEqual({
 		resource: `${requestOrigin}/mcp`,
 		authorization_servers: [requestOrigin],
 		scopes_supported: oauthScopes,
 		bearer_methods_supported: ['header'],
 	})
+	expect(mcpProtectedResourceMetadataUrl(requestOrigin)).toBe(
+		`${requestOrigin}${protectedResourceMetadataPath}/mcp`,
+	)
 
 	const unauthorized = await callMcp(
 		new Request(`${requestOrigin}${mcpResourcePath}`),
@@ -535,6 +566,21 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		expect.any(Error),
 	)
 }, 15_000)
+
+test('mcp request returns library insufficient_scope step-up when required scopes are missing', async () => {
+	const narrow = mcpToken()
+	narrow.scope = ['openid']
+	narrow.grant = { ...narrow.grant, scope: ['openid'] }
+	const stepUp = await callMcp(bearerRequest(), tokenEnv(narrow, verified))
+	expect(stepUp.status).toBe(403)
+	expect(await stepUp.json()).toEqual({ error: 'insufficient_scope' })
+	const challenge = stepUp.headers.get('WWW-Authenticate') ?? ''
+	expect(challenge).toContain('error="insufficient_scope"')
+	expect(challenge).toContain(`scope="${oauthScopes.join(' ')}"`)
+	expect(challenge).toContain(
+		`resource_metadata="${mcpProtectedResourceMetadataUrl(origin)}"`,
+	)
+})
 
 test('mcp requests route by protocol era and record lane metrics', async () => {
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []

@@ -337,7 +337,7 @@ export function buildAuthMarkdown(origin: string): string {
 		'## OAuth',
 		'',
 		`- Authorization server: \`${origin}${oauthPaths.discovery}\``,
-		`- Protected resource: \`${origin}/.well-known/oauth-protected-resource\``,
+		`- Protected resource: \`${origin}/.well-known/oauth-protected-resource/mcp\``,
 		`- Resource: \`${mcp}\``,
 		`- Scopes: \`${mcpOauthScopes.join('`, `')}\``,
 		`- Dynamic client registration: \`${registerUri}\``,
@@ -457,7 +457,7 @@ export function listAgentDiscoveryLinks(
 			type: 'application/xml',
 		},
 		{
-			href: `${origin}/.well-known/oauth-protected-resource`,
+			href: `${origin}/.well-known/oauth-protected-resource/mcp`,
 			rel: 'oauth-protected-resource',
 			type: 'application/json',
 		},

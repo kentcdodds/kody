@@ -109,6 +109,38 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 		completeAuthorization: async () => ({
 			redirectTo: 'https://example.com/callback?code=demo',
 		}),
+		describeConsent: async () => ({
+			clientId: baseClient.clientId,
+			clientName: baseClient.clientName ?? baseClient.clientId,
+			redirectUri: baseAuthRequest.redirectUri,
+			redirectHost: 'example.com',
+			redirectIsLoopback: false,
+			scope: baseAuthRequest.scope,
+		}),
+		isConsentRemembered: async () => false,
+		beginConsent: async () => ({
+			handle: 'handle',
+			headers: new Headers(),
+		}),
+		approveConsent: async () => ({
+			request: baseAuthRequest,
+			headers: new Headers(),
+		}),
+		denyConsent: async () => ({
+			request: baseAuthRequest,
+			redirectTo: 'https://example.com/denied',
+			headers: new Headers({ Location: 'https://example.com/denied' }),
+		}),
+		beginUpstream: async () => ({
+			state: 'state',
+			headers: new Headers(),
+		}),
+		finishUpstream: async <Data = unknown>() =>
+			({
+				request: baseAuthRequest,
+				data: undefined as Data,
+				headers: new Headers(),
+			}) as never,
 		async createClient() {
 			throw new Error('Not implemented')
 		},
@@ -773,21 +805,22 @@ test('worker entrypoint completes Claude-shaped dynamic registration and token e
 })
 
 test('worker entrypoint advertises OAuth, OIDC, and RFC 9728 resource metadata plus jwks', async () => {
-	for (const path of [
-		'/.well-known/oauth-protected-resource',
-		'/.well-known/oauth-protected-resource/mcp',
-	]) {
-		const response = await workerFetch(
-			new Request(`https://heykody.dev${path}`),
-		)
-		expect(response.status).toBe(200)
-		await expect(response.json()).resolves.toEqual({
-			resource: mcpResource,
-			authorization_servers: ['https://heykody.dev'],
-			scopes_supported: oauthScopes,
-			bearer_methods_supported: ['header'],
-		})
-	}
+	const rootPrm = await workerFetch(
+		new Request('https://heykody.dev/.well-known/oauth-protected-resource'),
+	)
+	// v1 serves only the path-aware document for resource `<origin>/mcp`.
+	expect(rootPrm.status).toBe(404)
+
+	const prm = await workerFetch(
+		new Request('https://heykody.dev/.well-known/oauth-protected-resource/mcp'),
+	)
+	expect(prm.status).toBe(200)
+	await expect(prm.json()).resolves.toEqual({
+		resource: mcpResource,
+		authorization_servers: ['https://heykody.dev'],
+		scopes_supported: oauthScopes,
+		bearer_methods_supported: ['header'],
+	})
 
 	const discovery = await workerFetch(
 		new Request('https://heykody.dev/.well-known/oauth-authorization-server'),
