@@ -327,7 +327,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	let headers = {};
 	let bodyBytes = null;
 	// Prefer ambient fetch(input, init) when the probe did not consume the
-	// original body — that keeps implicit Content-Type from string /
+	// original body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
 	let reuseOriginal = true;
 	if (typeof input === "string" || input instanceof URL) {
@@ -336,6 +336,23 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
 			const body = init.body;
+			// FormData cannot be byte-probed / gateway-serialized. Detect
+			// placeholders in field strings; otherwise reuse ambient fetch so
+			// non-secret multipart POSTs keep working under --local.
+			if (typeof FormData !== "undefined" && body instanceof FormData) {
+				let formText = "";
+				for (const value of body.values()) {
+					if (typeof value === "string") formText += value + "\\n";
+				}
+				if (
+					__kodyRequestHasSecretPlaceholders(url, headers, formText)
+				) {
+					throw new Error(
+						"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
+					);
+				}
+				return globalThis.fetch(input, init);
+			}
 			bodyBytes = await __kodyBodyToBytes(body);
 			if (
 				(typeof Blob !== "undefined" && body instanceof Blob) ||

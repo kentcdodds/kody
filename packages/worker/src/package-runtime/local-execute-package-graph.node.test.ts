@@ -476,6 +476,29 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		).toMatchObject({
 			'content-type': 'text/plain;charset=UTF-8',
 		})
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const form = new FormData()
+		form.set('note', 'hello')
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'POST',
+			body: form,
+		})
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/upload')
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(form)
+
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/upload', {
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer {{secret:demoToken|scope=user}}',
+				},
+				body: form,
+			}),
+		).rejects.toThrow(/FormData bodies with secret placeholders/)
 	} finally {
 		globalThis.fetch = originalFetch
 	}
