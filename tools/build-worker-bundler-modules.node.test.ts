@@ -153,6 +153,17 @@ test('ensureWorkerBundlerModules vendors every allowlisted remix subpath as one 
 	])
 })
 
+test('isomorphic-git additional module polyfills Buffer instead of requiring node:buffer', async () => {
+	await ensureWorkerBundlerModules()
+	const source = await readFile(
+		path.join(workerBundlerGeneratedDir, 'isomorphic-git.mjs'),
+		'utf8',
+	)
+	expect(source).not.toContain('node:buffer')
+	expect(source).toContain('node:crypto')
+	expect(source).not.toMatch(/require\(["']node:buffer["']\)/)
+})
+
 test('ensureWorkerBundlerModules removes leftover src/generated bundler artifacts', async () => {
 	await ensureWorkerBundlerModules()
 	const leftoverWasm = path.join(leftoverSrcGeneratedDir, 'esbuild.wasm')

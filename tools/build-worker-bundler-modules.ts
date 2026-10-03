@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import {
 	copyFile,
 	link,
@@ -585,6 +586,33 @@ async function buildLocalExecuteRuntimeSupportModule() {
 }
 
 async function buildIsomorphicGitModule() {
+	// Do not reuse `externalsPlugin` here: marking `buffer` external leaves a
+	// `require("node:buffer")` in the additional module, and workerd rejects
+	// dynamic Node builtin requires in ESM additional modules (package-create /
+	// RepoSession git paths fail with "Dynamic require of node:buffer is not
+	// supported"). Polyfill Buffer into the bundle; keep only `node:crypto` for
+	// `@cloudflare/shell` workspace hashing under `nodejs_compat`.
+	const require = createRequire(import.meta.url)
+	const isomorphicGitExternalsPlugin: Plugin = {
+		name: 'isomorphic-git-externals',
+		setup(pluginBuild) {
+			pluginBuild.onResolve({ filter: /^cloudflare:/ }, (args) => ({
+				path: args.path,
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^node:crypto$/ }, (args) => ({
+				path: args.path,
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^crypto$/ }, () => ({
+				path: 'node:crypto',
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^(node:)?buffer$/ }, () => ({
+				path: require.resolve('buffer/'),
+			}))
+		},
+	}
 	await build({
 		entryPoints: [isomorphicGitModuleEntry],
 		bundle: true,
@@ -593,7 +621,7 @@ async function buildIsomorphicGitModule() {
 		target: 'es2022',
 		minify: true,
 		outfile: path.join(workerBundlerGeneratedDir, isomorphicGitModuleName),
-		plugins: [externalsPlugin],
+		plugins: [isomorphicGitExternalsPlugin],
 		logLevel: 'silent',
 	})
 }
