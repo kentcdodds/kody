@@ -137,6 +137,15 @@ the `@cloudflare/shell` workspace filesystem does not set, so repo sessions fail
 to initialize. Remove the cap once a newer release (or `@cloudflare/shell`)
 handles those errors and repo-session tests pass against it.
 
+### `zod` → `4.6.5`
+
+Pins a single Zod copy across the workspace. Without this override,
+`@cloudflare/vitest-pool-workers@0.22.0` (exact `zod@4.4.3`) and `@kody/worker`
+(`zod@^4.6.5`) resolve two trees, and the Worker-local copy misses
+`patches/zod+4.6.5.patch`, which trims `zod/v4/locales` to English-only for the
+startup budget. Keep this pin aligned with the Worker Zod range and refresh the
+locales patch when bumping.
+
 ## Development overrides
 
 These packages are only reached through dev tooling, so `audit:prod` does not
