@@ -1358,24 +1358,25 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
-	// Best-effort publish git-note attachment logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
-	// The manifest entry must be present in files per the real
-	// writePublishedSourceSnapshot contract; git internals are excluded.
 	const files = {
 		'kody.json': jobManifest,
 		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
 		'src/index.ts': 'export default {}',
 	}
 	preparePublish('commit-published-new', { ...files, '.git/config': '' })
-
+	mockModule.workspaceGlob.mockClear()
+	mockModule.workspaceReadFileBytes.mockClear()
 	await publish()
-
-	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
-	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0]![0]
-	expect(snapshotCall.source.id).toBe('source-1')
-	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
-	expect(snapshotCall.files).toEqual(files)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: expect.objectContaining({
+				id: 'source-1',
+				published_commit: 'commit-published-new',
+			}),
+			files,
+		}),
+	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -1383,32 +1384,13 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 			publishedCommit: 'commit-published-new',
 		}),
 	)
+	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
+	expect(mockModule.workspaceReadFileBytes).toHaveBeenCalledTimes(
+		Object.keys(files).length,
+	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('publish_git_note'),
 		expect.anything(),
-	)
-})
-
-test('publishSession walks the workspace once for tree hash, privacy, and snapshot', async () => {
-	consoleWarn.mockImplementation(() => {})
-	const files = {
-		'package.json':
-			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}',
-		'index.ts': 'export default async function run() { return "ok" }\n',
-	}
-	preparePublish('commit-one-walk', files)
-	mockModule.workspaceGlob.mockClear()
-	mockModule.workspaceReadFileBytes.mockClear()
-
-	await publish()
-
-	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({ files }),
-	)
-	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
-	// One read per workspace file (not 3× from hash + privacy + snapshot).
-	expect(mockModule.workspaceReadFileBytes).toHaveBeenCalledTimes(
-		Object.keys(files).length,
 	)
 })
 
