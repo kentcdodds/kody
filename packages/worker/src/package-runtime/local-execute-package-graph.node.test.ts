@@ -498,7 +498,21 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				},
 				body: form,
 			}),
-		).rejects.toThrow(/FormData bodies with secret placeholders/)
+		).resolves.toBeInstanceOf(Response)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(ambientCalls).toHaveLength(1) // only the earlier non-secret form
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/upload',
+				headers: {
+					authorization: 'Bearer {{secret:demoToken|scope=user}}',
+				},
+			},
+		})
+		expect(
+			(gatewayCalls[0] as { request: { bodyBase64?: string } }).request
+				.bodyBase64,
+		).toEqual(expect.any(String))
 
 		const namedForm = new FormData()
 		namedForm.set('{{secret:demoToken|scope=user}}', 'field-value')

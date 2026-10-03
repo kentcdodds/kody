@@ -349,15 +349,32 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 						formText += value.name + "\\n";
 					}
 				}
+				// Secrets inside multipart field names/values cannot be expanded
+				// by the fetch gateway (body is opaque). Header/URL secrets with
+				// a clean FormData body still hop like cloud.
 				if (
-					__kodyRequestHasSecretPlaceholders(url, headers, formText)
+					__kodyRequestHasSecretPlaceholders("", {}, formText)
 				) {
 					throw new Error(
 						"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
 					);
 				}
-				return globalThis.fetch(input, init);
-			}
+				if (
+					!__kodyRequestHasSecretPlaceholders(url, headers, null)
+				) {
+					return globalThis.fetch(input, init);
+				}
+				const encoded = new Request(url, {
+					method,
+					headers,
+					body,
+				});
+				url = encoded.url;
+				method = encoded.method;
+				headers = Object.fromEntries(encoded.headers.entries());
+				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
+				reuseOriginal = false;
+			} else {
 			bodyBytes = await __kodyBodyToBytes(body);
 			if (
 				(typeof Blob !== "undefined" && body instanceof Blob) ||
@@ -376,6 +393,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 						headers["content-type"] = body.type;
 					}
 				}
+			}
 			}
 		}
 	} else {
@@ -410,11 +428,14 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	const contentType = Object.entries(headers).find(
 		([key]) => key.toLowerCase() === "content-type",
 	)?.[1];
-	// Multipart bodies are opaque to the fetch gateway — fail closed instead of
-	// hopping with unresolved {{secret:…}} still embedded in the bytes.
+	// Multipart bodies are opaque to the fetch gateway. Fail closed only when
+	// placeholders are in the body itself; header/URL secrets still hop so
+	// authenticated uploads match cloud executeGatewayFetch.
 	if (
 		typeof contentType === "string" &&
-		contentType.toLowerCase().includes("multipart/")
+		contentType.toLowerCase().includes("multipart/") &&
+		bodyText != null &&
+		__kodyRequestHasSecretPlaceholders("", {}, bodyText)
 	) {
 		throw new Error(
 			"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
