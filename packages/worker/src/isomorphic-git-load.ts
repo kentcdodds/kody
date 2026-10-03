@@ -8,14 +8,10 @@
  * main entry.
  */
 
-import  { type createGit } from '@cloudflare/shell/git'
-import type git from 'isomorphic-git'
-import type http from 'isomorphic-git/http/web'
-
 export type IsomorphicGit = {
-	git: typeof git
-	http: typeof http
-	createGit: typeof createGit
+	git: typeof import('isomorphic-git').default
+	http: typeof import('isomorphic-git/http/web').default
+	createGit: typeof import('@cloudflare/shell/git').createGit
 }
 
 let memo: Promise<IsomorphicGit> | null = null

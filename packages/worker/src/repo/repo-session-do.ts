@@ -12,7 +12,6 @@ import {
 	resolveUnifiedDiffFileNames,
 	stripUnifiedDiffPath,
 } from './unified-diff-paths.ts'
-import  { type createGit } from '@cloudflare/shell/git'
 import {
 	deleteRepoSession,
 	getRepoSessionById,
@@ -182,6 +181,7 @@ type CachedRepoSessionState = {
 }
 
 type RawGitPushInput = Parameters<IsomorphicGit['git']['push']>[0]
+type CreateGit = typeof import('@cloudflare/shell/git').createGit
 
 function nowIso() {
 	return new Date().toISOString()
@@ -316,7 +316,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	readonly state = createWorkspaceStateBackend(this.workspace)
 
-	private gitApi: ReturnType<typeof createGit> | null = null
+	private gitApi: ReturnType<CreateGit> | null = null
 
 	private async ensureGit() {
 		if (!this.gitApi) {
