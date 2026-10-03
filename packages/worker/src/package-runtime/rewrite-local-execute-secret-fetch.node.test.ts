@@ -21,6 +21,14 @@ export async function request() {
 	expect(moduleSourceHasSecretPlaceholderLiterals(rewritten.source)).toBe(false)
 })
 
+test('rewriteLocalExecuteSecretPlaceholderLiterals leaves template-literal prose alone', () => {
+	const source =
+		"const tip = `Use '{{secret:demoToken|scope=user}}' in fetch headers`;\n"
+	const rewritten = rewriteLocalExecuteSecretPlaceholderLiterals(source)
+	expect(rewritten.rewritten).toBe(false)
+	expect(rewritten.source).toBe(source)
+})
+
 test('rewriteLocalExecuteModuleForSecretAwareFetch binds gateway fetch and strips templates', () => {
 	const source = `const SECRET = '{{secret:demoToken|scope=user}}'
 export async function listSites() {
@@ -45,7 +53,25 @@ export async function listSites() {
 	)
 })
 
-test('injectLocalExecuteGatewayFetchBinding is idempotent when fetch is already bound', () => {
+test('injectLocalExecuteGatewayFetchBinding skips when fetch is already bound', () => {
+	const source = `const fetch = globalThis.fetch;
+const SECRET = '{{secret:demoToken|scope=user}}';
+`
+	const placeholders = rewriteLocalExecuteSecretPlaceholderLiterals(source)
+	const injected = injectLocalExecuteGatewayFetchBinding({
+		modulePath:
+			'.__kody_packages__/demo/.__published_bundle__/artifact/dist/index.js',
+		source: placeholders.source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+		packageId: 'pkg-demo',
+	})
+	expect(injected.source).toContain('__kodySecretRef("demoToken", "user")')
+	expect(injected.source).toContain('import { __kodySecretRef }')
+	expect(injected.source).not.toContain('__kodyCreatePackageBoundGatewayFetch')
+	expect(injected.source).toMatch(/const fetch = globalThis\.fetch/)
+})
+
+test('injectLocalExecuteGatewayFetchBinding is idempotent when gateway fetch is already bound', () => {
 	const source = `import { __kodyCreatePackageBoundGatewayFetch, __kodySecretRef } from "../../.__kody_virtual__/runtime.js";
 const fetch = __kodyCreatePackageBoundGatewayFetch("pkg-demo");
 const SECRET = __kodySecretRef("demoToken", "user");

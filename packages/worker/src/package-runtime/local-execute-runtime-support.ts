@@ -283,8 +283,10 @@ async function __kodyCreateAuthenticatedFetch(providerName, packageId) {
 
 /**
  * Secret-aware ambient fetch for local execute: hops through CapabilityProxy
- * \`kody.gatewayFetch\` so \`{{secret:…}}\` placeholders expand on origin via
- * the same fetch gateway as cloud execute.
+ * \`kody.gatewayFetch\` when the request carries secret / integration-token
+ * placeholders so expansion happens on origin via the same fetch gateway as
+ * cloud execute. Non-secret requests use ambient global fetch (no 4 MiB hop
+ * cap, no CapabilityProxy round-trip).
  */
 export function __kodyCreatePackageBoundGatewayFetch(packageId) {
 	return async function gatewayFetch(input, init) {
@@ -294,6 +296,26 @@ export function __kodyCreatePackageBoundGatewayFetch(packageId) {
 
 export async function __kodyGatewayFetch(input, init) {
 	return __kodyGatewayFetchCall(input, init, null);
+}
+
+function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
+	const probe = (value) => {
+		if (typeof value !== "string" || !value.includes("{{")) return false;
+		return (
+			/{{secret:[a-zA-Z0-9._-]+(?:|scope=(?:session|package|user))?}}/.test(
+				value,
+			) ||
+			/{{secret-basic:[^}]+}}/.test(value) ||
+			/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
+			/{{secret/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
+		);
+	};
+	if (probe(url)) return true;
+	if (probe(bodyText)) return true;
+	for (const value of Object.values(headers ?? {})) {
+		if (probe(value)) return true;
+	}
+	return false;
 }
 
 async function __kodyGatewayFetchCall(input, init, packageId) {
@@ -316,6 +338,11 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		if (method !== "GET" && method !== "HEAD") {
 			bodyBytes = new Uint8Array(await merged.arrayBuffer());
 		}
+	}
+	const bodyText =
+		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
+	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
+		return globalThis.fetch(input, init);
 	}
 	const result = await kody.gatewayFetch({
 		...(packageId ? { packageId } : {}),
