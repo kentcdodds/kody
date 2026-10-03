@@ -46,6 +46,7 @@ import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkAuthRateLimit } from '#app/rate-limit.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
 import { discardUnreadRequestBody } from '#worker/request-body.ts'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import {
@@ -532,10 +533,15 @@ function isMalformedOAuthClientException(error: unknown, pathname: string) {
  * Request IDs are peeked from a clone before `oauthProvider.fetch` so the error
  * can correlate with the pending call. Peeking is capped so large execute
  * bodies are not doubled in memory (memory-limit faults are out of scope).
+ * On the catch path the original body is discarded so an unread clone tee
+ * cannot terminate the isolate.
  */
 const mcpJsonRpcIdPeekLimitBytes = 64_000
 
-type McpJsonRpcRequestIds = Array<string | number> | 'unknown'
+type McpJsonRpcPeek =
+	| { kind: 'unknown' }
+	| { kind: 'notifications' }
+	| { kind: 'requests'; ids: Array<string | number>; batch: boolean }
 
 /**
  * Read at most `maxBytes` from a request body. Returns `null` when the body
@@ -543,7 +549,10 @@ type McpJsonRpcRequestIds = Array<string | number> | 'unknown'
  * large execute payload.
  */
 async function readRequestTextUpTo(
-	request: Request,
+	request: {
+		body: ReadableStream<Uint8Array> | null
+		text(): Promise<string>
+	},
 	maxBytes: number,
 ): Promise<string | null> {
 	const body = request.body
@@ -561,7 +570,10 @@ async function readRequestTextUpTo(
 			if (!value) continue
 			total += value.byteLength
 			if (total > maxBytes) {
-				await reader.cancel()
+				// Do not await cancel: tee-branch cancellation can stay pending
+				// until the sibling branch is consumed, which would stall
+				// oauthProvider.fetch on the original request.
+				void reader.cancel()
 				return null
 			}
 			chunks.push(value)
@@ -578,9 +590,29 @@ async function readRequestTextUpTo(
 	return new TextDecoder().decode(merged)
 }
 
+function classifyParsedMcpJsonRpcBody(parsed: unknown): McpJsonRpcPeek {
+	if (Array.isArray(parsed)) {
+		if (parsed.length === 0) return { kind: 'unknown' }
+		const messages = parsed.filter(isRecord)
+		if (messages.length !== parsed.length) return { kind: 'unknown' }
+		if (messages.some((message) => typeof message['method'] !== 'string')) {
+			return { kind: 'unknown' }
+		}
+		const ids = extractJsonRpcRequestIds(parsed)
+		if (ids.length === 0) return { kind: 'notifications' }
+		return { kind: 'requests', ids, batch: true }
+	}
+	if (!isRecord(parsed) || typeof parsed['method'] !== 'string') {
+		return { kind: 'unknown' }
+	}
+	const ids = extractJsonRpcRequestIds(parsed)
+	if (ids.length === 0) return { kind: 'notifications' }
+	return { kind: 'requests', ids, batch: false }
+}
+
 async function peekMcpJsonRpcRequestIds(
 	request: Request,
-): Promise<McpJsonRpcRequestIds> {
+): Promise<McpJsonRpcPeek> {
 	const contentLengthHeader = request.headers.get('Content-Length')
 	if (contentLengthHeader !== null) {
 		const contentLength = Number(contentLengthHeader)
@@ -589,7 +621,7 @@ async function peekMcpJsonRpcRequestIds(
 			contentLength <= 0 ||
 			contentLength > mcpJsonRpcIdPeekLimitBytes
 		) {
-			return 'unknown'
+			return { kind: 'unknown' }
 		}
 	}
 	try {
@@ -597,10 +629,10 @@ async function peekMcpJsonRpcRequestIds(
 			request.clone(),
 			mcpJsonRpcIdPeekLimitBytes,
 		)
-		if (text === null || text === '') return 'unknown'
-		return extractJsonRpcRequestIds(JSON.parse(text))
+		if (text === null || text === '') return { kind: 'unknown' }
+		return classifyParsedMcpJsonRpcBody(JSON.parse(text))
 	} catch {
-		return 'unknown'
+		return { kind: 'unknown' }
 	}
 }
 
@@ -617,42 +649,49 @@ function createMcpJsonRpcInternalError(id: string | number | null) {
 
 function createMcpProviderExceptionResponse(
 	request: Request,
-	requestIds: McpJsonRpcRequestIds,
+	peek: McpJsonRpcPeek,
 ) {
 	const headers = {
 		'Cache-Control': 'no-store',
 		'Content-Type': 'application/json',
 	}
-	if (requestIds === 'unknown') {
-		return withMcpCors(
-			request,
-			new Response(JSON.stringify(createMcpJsonRpcInternalError(null)), {
-				status: 500,
-				headers,
-			}),
-		)
+	switch (peek.kind) {
+		case 'unknown':
+			return withMcpCors(
+				request,
+				new Response(JSON.stringify(createMcpJsonRpcInternalError(null)), {
+					status: 500,
+					headers,
+				}),
+			)
+		case 'notifications':
+			// Notifications have a method but no id — JSON-RPC forbids a response body.
+			return withMcpCors(
+				request,
+				new Response(null, {
+					status: 500,
+					headers: { 'Cache-Control': 'no-store' },
+				}),
+			)
+		case 'requests': {
+			const body = peek.batch
+				? peek.ids.map((id) => createMcpJsonRpcInternalError(id))
+				: createMcpJsonRpcInternalError(peek.ids[0]!)
+			return withMcpCors(
+				request,
+				new Response(JSON.stringify(body), {
+					status: 500,
+					headers,
+				}),
+			)
+		}
+		default: {
+			const exhaustive: never = peek
+			throw new Error(
+				`unexpected MCP JSON-RPC peek kind: ${JSON.stringify(exhaustive)}`,
+			)
+		}
 	}
-	// Notifications have a method but no id — JSON-RPC forbids a response body.
-	if (requestIds.length === 0) {
-		return withMcpCors(
-			request,
-			new Response(null, {
-				status: 500,
-				headers: { 'Cache-Control': 'no-store' },
-			}),
-		)
-	}
-	const body =
-		requestIds.length === 1
-			? createMcpJsonRpcInternalError(requestIds[0]!)
-			: requestIds.map((id) => createMcpJsonRpcInternalError(id))
-	return withMcpCors(
-		request,
-		new Response(JSON.stringify(body), {
-			status: 500,
-			headers,
-		}),
-	)
 }
 
 function createOAuthProviderExceptionResponse(
@@ -691,10 +730,10 @@ function createProviderOwnedPathExceptionResponse(
 	error: unknown,
 	pathname: string,
 	request: Request,
-	mcpRequestIds: McpJsonRpcRequestIds,
+	mcpPeek: McpJsonRpcPeek,
 ) {
 	if (isMcpResourceOwnedPath(pathname)) {
-		return createMcpProviderExceptionResponse(request, mcpRequestIds)
+		return createMcpProviderExceptionResponse(request, mcpPeek)
 	}
 	return createOAuthProviderExceptionResponse(error, pathname)
 }
@@ -905,7 +944,7 @@ async function handleOriginAppFetch(
 		}
 	}
 
-	let mcpRequestIds: McpJsonRpcRequestIds = 'unknown'
+	let mcpPeek: McpJsonRpcPeek = { kind: 'unknown' }
 	try {
 		if (url.pathname === oauthPaths.token && request.method === 'POST') {
 			const { response, grantType } = await handleMcpOAuthTokenRequest({
@@ -919,17 +958,23 @@ async function handleOriginAppFetch(
 			})
 		}
 		if (isMcpResourceOwnedPath(url.pathname) && request.method === 'POST') {
-			mcpRequestIds = await peekMcpJsonRpcRequestIds(request)
+			mcpPeek = await peekMcpJsonRpcRequestIds(request)
 		}
 		return await oauthProvider.fetch(request, env, ctx)
 	} catch (error) {
 		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
 		Sentry.captureException(error)
+		if (isMcpResourceOwnedPath(url.pathname)) {
+			// request.clone() tees the body; if the provider threw before
+			// draining the original, discard it so workerd does not kill the
+			// isolate for an unread tee branch.
+			await discardUnreadRequestBody(request)
+		}
 		return createProviderOwnedPathExceptionResponse(
 			error,
 			url.pathname,
 			request,
-			mcpRequestIds,
+			mcpPeek,
 		)
 	}
 }

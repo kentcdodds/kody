@@ -1075,6 +1075,55 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 	expect(await notificationResponse.text()).toBe('')
 	expect(captureException).toHaveBeenCalledTimes(3)
 
+	const invalidBodyResponse = await workerFetch(
+		new Request('https://heykody.dev/mcp', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer test-token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+			},
+			body: JSON.stringify({}),
+		}),
+	)
+	expect(invalidBodyResponse.status).toBe(500)
+	await expect(invalidBodyResponse.json()).resolves.toEqual({
+		jsonrpc: '2.0',
+		id: null,
+		error: {
+			code: -32603,
+			message: 'Internal error',
+		},
+	})
+	expect(captureException).toHaveBeenCalledTimes(4)
+
+	const batchResponse = await workerFetch(
+		new Request('https://heykody.dev/mcp', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer test-token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+			},
+			body: JSON.stringify([
+				{ jsonrpc: '2.0', id: 1, method: 'ping' },
+				{ jsonrpc: '2.0', method: 'notifications/cancelled' },
+			]),
+		}),
+	)
+	expect(batchResponse.status).toBe(500)
+	await expect(batchResponse.json()).resolves.toEqual([
+		{
+			jsonrpc: '2.0',
+			id: 1,
+			error: {
+				code: -32603,
+				message: 'Internal error',
+			},
+		},
+	])
+	expect(captureException).toHaveBeenCalledTimes(5)
+
 	mcpThrow.mockRestore()
 	captureException.mockRestore()
 })
