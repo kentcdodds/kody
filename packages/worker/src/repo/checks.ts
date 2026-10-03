@@ -325,8 +325,21 @@ function formatTypecheckDiagnostics(
 	diagnostics: Array<TypecheckDiagnostic>,
 ) {
 	return diagnostics.map((diagnostic) => {
+		const diagnosticFileName =
+			typeof diagnostic.file?.fileName === 'string'
+				? diagnostic.file.fileName.replace(/\\/g, '/')
+				: null
+		// Harness diagnostics are attributed to a callable source path; keep
+		// that path but drop harness coordinates so later callables are not
+		// labeled with shifted generated line numbers.
+		const locationBelongsToReportedFile =
+			diagnosticFileName != null &&
+			(diagnosticFileName === fileName ||
+				diagnosticFileName.endsWith(`/${fileName}`))
 		const location =
-			typeof diagnostic.start === 'number' && diagnostic.file
+			locationBelongsToReportedFile &&
+			typeof diagnostic.start === 'number' &&
+			diagnostic.file
 				? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start)
 				: null
 		const message = flattenDiagnosticMessageText(diagnostic.messageText)

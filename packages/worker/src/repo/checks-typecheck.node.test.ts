@@ -229,7 +229,10 @@ test('multi-callable typecheck keeps per-entrypoint diagnostics from one harness
 		entryPoints: [{ path: 'src/job-a.ts' }, { path: 'src/job-b.ts' }],
 	})
 	expect(result.ok).toBe(false)
-	expect(result.message).toMatch(/src\/job-b\.ts:\d+:\d+/)
+	// Harness contract failures keep the attributed source path without
+	// attaching shifted harness line/column coordinates.
+	expect(result.message).toMatch(/src\/job-b\.ts /)
 	expect(result.message).toMatch(/not assignable|Argument of type/i)
-	expect(result.message).not.toMatch(/src\/job-a\.ts:\d+:\d+/)
+	expect(result.message).not.toMatch(/src\/job-b\.ts:\d+:\d+/)
+	expect(result.message).not.toMatch(/src\/job-a\.ts/)
 })
