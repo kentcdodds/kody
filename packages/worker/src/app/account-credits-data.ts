@@ -33,6 +33,7 @@ import {
 	readCreditWallet,
 	sumCreditAutoRefillCents,
 	toAccountCreditsLedgerItem,
+	type CreditWallet,
 } from '#worker/billing/credit-wallet.ts'
 import {
 	isPayingForCreditsPro,
@@ -137,6 +138,8 @@ export async function loadAccountCreditsUser(input: {
  * The Credits section of `/account/usage`, plus the wallet read the usage
  * story's alarm needs so the page reads the wallet once. Operator plans get
  * no section; accounts without a wallet get only the switch-to-Pro prompt.
+ * Pass {@link wallet} when `/account/usage` already loaded it for entitlement
+ * resolution so the page does not query `credit_wallets` again.
  */
 export async function loadAccountUsageCredits(input: {
 	env: Env
@@ -146,6 +149,8 @@ export async function loadAccountUsageCredits(input: {
 	canBuyCredits: boolean
 	computeOverage: AccountUsageComputeOverage | null
 	now: Date
+	/** When set, skip the credit_wallets read. */
+	wallet?: CreditWallet
 }): Promise<{
 	credits: AccountUsageCredits | null
 	wallet: { balanceMicroUsd: number; autoRefill: CreditsAlarmAutoRefill } | null
@@ -166,7 +171,9 @@ export async function loadAccountUsageCredits(input: {
 	}
 	const db = input.env.APP_DB
 	const [wallet, refilledThisMonthCents, recent] = await Promise.all([
-		readCreditWallet(db, input.stableUserId),
+		input.wallet
+			? Promise.resolve(input.wallet)
+			: readCreditWallet(db, input.stableUserId),
 		sumCreditAutoRefillCents({
 			db,
 			userId: input.stableUserId,

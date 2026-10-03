@@ -25,12 +25,17 @@ type UsageDbInput = {
 	giftExpiresAt?: string
 }
 
-function createUsageTestDb(input: UsageDbInput, stableUserId: string) {
+function createUsageTestDb(
+	input: UsageDbInput,
+	stableUserId: string,
+	counters: { creditWalletQueries: number } = { creditWalletQueries: 0 },
+) {
 	const rollups = [
 		['dynamic_worker_day', input.uniqueWorkerDays ?? 0],
 		['durable_object_rows_read', input.durableObjectRowsRead ?? 0],
 	].filter(([, count]) => Number(count) > 0)
 	return {
+		counters,
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			const statement = {
@@ -53,6 +58,7 @@ function createUsageTestDb(input: UsageDbInput, stableUserId: string) {
 						} as T
 					}
 					if (normalized.includes('from credit_wallets')) {
+						counters.creditWalletQueries += 1
 						return { balance_micro_usd: input.creditBalanceMicroUsd ?? 0 } as T
 					}
 					if (normalized.includes('from saved_packages')) {
@@ -80,7 +86,7 @@ function createUsageTestDb(input: UsageDbInput, stableUserId: string) {
 			}
 			return { bind: () => statement }
 		},
-	} as unknown as D1Database
+	} as unknown as D1Database & { counters: { creditWalletQueries: number } }
 }
 
 /**
@@ -143,7 +149,12 @@ async function loadUsage(
 		data?.entitlementConsumption.find((entry) => entry.resource === resource)
 	const meterFor = (resource: string) =>
 		data?.computeOverage.meters.find((entry) => entry.resource === resource)
-	return { data, row, meterFor }
+	return {
+		data,
+		row,
+		meterFor,
+		creditWalletQueries: db.counters.creditWalletQueries,
+	}
 }
 
 test('loadAccountUsageData returns plan rows and authoritative UserMeter daily counts', async () => {
@@ -318,6 +329,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 it st
 		creditBalanceMicroUsd: 10_000_000,
 		stripeCustomerId: 'cus_credits',
 	})
+	expect(funded.creditWalletQueries).toBe(1)
 	expect(funded.data?.computeOverage.creditWallet).toBe('funded')
 	expect(funded.data?.computeOverage.creditsStatus).toBe('debiting_credits')
 	expect(funded.data?.computeOverage.creditsCostMicroUsd).toBe(50 * 4_000)

@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { legacyPlanLimits, planLimits } from '#universal/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
@@ -184,46 +184,79 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 	expect(legacyExecute?.week).toBeUndefined()
 })
 
-test('readEntitlementUsageSnapshot reads the weekly window without waiting on the daily read', async () => {
+test('readEntitlementUsageSnapshot uses one UserMeter RPC for daily, weekly, and storage', async () => {
 	const { stableUserId, db } = createUsageTestDb({
-		email: 'weekly-parallel@example.com',
+		email: 'batch-snapshot@example.com',
+		storageBucketEstimates: [1_000],
 	})
 	const env = withUsageEnv({ APP_DB: db })
+	// Warm meters (production usageGet path): every daily key already exists so
+	// the snapshot is one RPC with no cold-bootstrap re-read.
+	for (const resource of [
+		'email_sends_per_day',
+		'email_receives_per_day',
+		'execute_calls_per_day',
+		'outbound_fetches_per_day',
+		'job_runs_per_day',
+		'automation_invocations_per_day',
+	] as const) {
+		await env.meter.seed({
+			userId: stableUserId,
+			resource,
+			day: utcDayKey(now),
+			count: resource === 'execute_calls_per_day' ? 4 : 0,
+		})
+	}
+	await env.meter.seedStorageBytes({ userId: stableUserId, bytes: 2_000 })
 	type MeterStub = {
-		read: (input: { resource: string }) => Promise<unknown>
-		readRange: (input: { resource: string }) => Promise<unknown>
+		read: (input: unknown) => Promise<unknown>
+		readRange: (input: unknown) => Promise<unknown>
+		readStorageBytes: () => Promise<unknown>
+		readUsageSnapshot: (input: unknown) => Promise<unknown>
 	}
 	const userMeter = env.USER_METER as unknown as {
 		get: (id: unknown) => MeterStub
 	}
 	const realGet = userMeter.get
-	let releaseDailyRead!: () => void
-	const dailyReadGate = new Promise<void>((resolve) => {
-		releaseDailyRead = resolve
-	})
-	const weeklyRangeResources: Array<string> = []
+	const calls = {
+		read: 0,
+		readRange: 0,
+		readStorageBytes: 0,
+		readUsageSnapshot: 0,
+	}
 	userMeter.get = (id) => {
 		const meter = realGet(id)
 		return {
 			...meter,
-			async read(input: { resource: string }) {
-				if (input.resource === 'execute_calls_per_day') await dailyReadGate
+			async read(input: unknown) {
+				calls.read += 1
 				return meter.read(input)
 			},
-			async readRange(input: { resource: string }) {
-				weeklyRangeResources.push(input.resource)
+			async readRange(input: unknown) {
+				calls.readRange += 1
 				return meter.readRange(input)
+			},
+			async readStorageBytes() {
+				calls.readStorageBytes += 1
+				return meter.readStorageBytes()
+			},
+			async readUsageSnapshot(input: unknown) {
+				calls.readUsageSnapshot += 1
+				return meter.readUsageSnapshot(input)
 			},
 		}
 	}
 
-	const snapshotPromise = readSnapshot(db, env, stableUserId)
-	await vi.waitFor(() => {
-		expect(weeklyRangeResources).toContain('execute_calls_per_day')
+	const snapshot = await readSnapshot(db, env, stableUserId)
+	expect(calls).toEqual({
+		read: 0,
+		readRange: 0,
+		readStorageBytes: 0,
+		readUsageSnapshot: 1,
 	})
-	releaseDailyRead()
-	const snapshot = await snapshotPromise
-	expect(resource(snapshot, 'execute_calls_per_day')?.week?.limit).toBe(400)
+	expect(resource(snapshot, 'execute_calls_per_day')?.current).toBe(4)
+	expect(resource(snapshot, 'execute_calls_per_day')?.week?.current).toBe(4)
+	expect(resource(snapshot, 'storage_bytes')?.current).toBe(3_000)
 })
 
 test('readEntitlementUsageSnapshot warns when the weekly window is hotter than today', async () => {

@@ -39,6 +39,7 @@ import {
 import {
 	isDailyEntitlementResource,
 	type DailyEntitlementResource,
+	type UserMeterUsageSnapshotResult,
 } from './user-meter-do.ts'
 import {
 	userMeterNamespace,
@@ -211,21 +212,26 @@ export async function resolveBaseUserEntitlement(input: {
 /**
  * Full {@link UserEntitlement} for a `users` row. Reads the wallet balance
  * only for wallet-eligible Pro accounts, so every other account costs no
- * extra query.
+ * extra query. Pass {@link balanceMicroUsd} when the caller already loaded
+ * the wallet (for example `/account/usage`) so the balance is not read twice.
  */
 export async function resolveUserEntitlementFromRow(input: {
 	db: D1Database
 	stableUserId: string
 	row: UserEntitlementRow
 	now?: Date
+	/** When set, skip the credit_wallets balance query. */
+	balanceMicroUsd?: number
 }): Promise<UserEntitlement> {
 	const { plan, ladder, creditsEligible } = resolveUserPlanFromRow(
 		input.row,
 		input.now,
 	)
-	const balanceMicroUsd = creditsEligible
-		? await readCreditWalletBalanceMicroUsd(input.db, input.stableUserId)
-		: 0
+	const balanceMicroUsd = !creditsEligible
+		? 0
+		: input.balanceMicroUsd !== undefined
+			? input.balanceMicroUsd
+			: await readCreditWalletBalanceMicroUsd(input.db, input.stableUserId)
 	return {
 		plan,
 		ladder,
@@ -542,6 +548,134 @@ export async function readWeeklyEntitlementResourceUsage(input: {
 		now: now.toISOString(),
 	})
 	return result.count
+}
+
+/**
+ * Authoritative UserMeter slice for an entitlement usage snapshot: every
+ * requested daily counter, weekly window, and optional storage bytes in one
+ * Durable Object hop (cold keys still bootstrap then re-read once). Point
+ * readers keep {@link readDailyEntitlementResourceUsage},
+ * {@link readWeeklyEntitlementResourceUsage}, and
+ * {@link readStorageBytesFromUserMeter}.
+ */
+export type UserMeterEntitlementUsageCounts = {
+	daily: Partial<Record<DailyEntitlementResource, number>>
+	weekly: Partial<Record<DailyEntitlementResource, number>>
+	storageBytes: number | null
+}
+
+export async function readUserMeterEntitlementUsageSnapshot(input: {
+	db: D1Database
+	env: EntitlementUsageEnv
+	userId: string
+	now: Date
+	dailyResources: ReadonlyArray<DailyEntitlementResource>
+	weeklyResources: ReadonlyArray<DailyEntitlementResource>
+	includeStorageBytes: boolean
+}): Promise<UserMeterEntitlementUsageCounts> {
+	const day = utcDayKey(input.now)
+	const weekStart = utcWeekStart(input.now)
+	const updatedAt = input.now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const request = {
+		day,
+		weekStart,
+		dailyResources: input.dailyResources,
+		weeklyResources: input.weeklyResources,
+		includeStorageBytes: input.includeStorageBytes,
+		now: updatedAt,
+	}
+
+	let snapshot = await meter.readUsageSnapshot(request)
+	const missingDaily = snapshot.daily
+		.filter((entry) => entry.outcome === 'needs_bootstrap')
+		.map((entry) => entry.resource)
+	const storageNeedsBootstrap =
+		input.includeStorageBytes &&
+		snapshot.storageBytes?.outcome === 'needs_bootstrap'
+	let storageBootstrapSkipped = false
+
+	if (missingDaily.length > 0 || storageNeedsBootstrap) {
+		const accountExists = storageNeedsBootstrap
+			? await userAccountRowExists({
+					db: input.db,
+					userId: input.userId,
+				})
+			: false
+		storageBootstrapSkipped = Boolean(storageNeedsBootstrap && !accountExists)
+		const shouldInitializeStorage = Boolean(
+			storageNeedsBootstrap && accountExists,
+		)
+		await Promise.all([
+			...missingDaily.map((resource) =>
+				ensureUserMeterCounterInitializedAtZero({
+					env: input.env,
+					userId: input.userId,
+					resource,
+					day,
+					updatedAt,
+				}),
+			),
+			shouldInitializeStorage
+				? meter.initializeStorageBytes({ bytes: 0, updatedAt })
+				: Promise.resolve(),
+		])
+		if (missingDaily.length > 0 || shouldInitializeStorage) {
+			snapshot = await meter.readUsageSnapshot(request)
+		}
+	}
+
+	return countsFromUserMeterUsageSnapshot({
+		snapshot,
+		dailyResources: input.dailyResources,
+		weeklyResources: input.weeklyResources,
+		includeStorageBytes: input.includeStorageBytes,
+		storageBootstrapSkipped,
+	})
+}
+
+function countsFromUserMeterUsageSnapshot(input: {
+	snapshot: UserMeterUsageSnapshotResult
+	dailyResources: ReadonlyArray<DailyEntitlementResource>
+	weeklyResources: ReadonlyArray<DailyEntitlementResource>
+	includeStorageBytes: boolean
+	storageBootstrapSkipped: boolean
+}): UserMeterEntitlementUsageCounts {
+	const daily: Partial<Record<DailyEntitlementResource, number>> = {}
+	for (const resource of input.dailyResources) {
+		const entry = input.snapshot.daily.find((row) => row.resource === resource)
+		if (!entry || entry.outcome === 'needs_bootstrap') {
+			throw new Error(
+				`UserMeter usage snapshot daily read still needs bootstrap for ${resource}.`,
+			)
+		}
+		daily[resource] = entry.count
+	}
+
+	const weekly: Partial<Record<DailyEntitlementResource, number>> = {}
+	for (const resource of input.weeklyResources) {
+		const entry = input.snapshot.weekly.find((row) => row.resource === resource)
+		if (!entry) {
+			throw new Error(
+				`UserMeter usage snapshot omitted weekly count for ${resource}.`,
+			)
+		}
+		weekly[resource] = entry.count
+	}
+
+	if (!input.includeStorageBytes) {
+		return { daily, weekly, storageBytes: null }
+	}
+	if (input.storageBootstrapSkipped) {
+		return { daily, weekly, storageBytes: 0 }
+	}
+	const storage = input.snapshot.storageBytes
+	if (!storage || storage.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter usage snapshot storage bytes still need bootstrap after initialize.',
+		)
+	}
+	return { daily, weekly, storageBytes: storage.bytes }
 }
 
 async function countRows(db: D1Database, sql: string, params: Array<unknown>) {

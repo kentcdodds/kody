@@ -5,9 +5,11 @@ import {
 } from '#app/account-credits-data.ts'
 import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { isBillingConfigured } from '#worker/billing/billing-config.ts'
+import { readCreditWallet } from '#worker/billing/credit-wallet.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	resolveUserEntitlementFromRow,
+	resolveUserPlanFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
@@ -49,11 +51,17 @@ export async function loadAccountUsageData(input: {
 
 	const manualPlan = parseStoredPlanName(row.plan)
 	const usageUserId = resolveUserStableId(row)
+	const { creditsEligible } = resolveUserPlanFromRow(row, now)
+	// One credit_wallets read for entitlement balance + Credits section.
+	const wallet = creditsEligible
+		? await readCreditWallet(input.env.APP_DB, usageUserId)
+		: null
 	const entitlement = await resolveUserEntitlementFromRow({
 		db: input.env.APP_DB,
 		stableUserId: usageUserId,
 		row,
 		now,
+		...(wallet ? { balanceMicroUsd: wallet.balanceMicroUsd } : {}),
 	})
 	const [snapshot, computeOverage] = await Promise.all([
 		readEntitlementUsageSnapshot({
@@ -79,13 +87,14 @@ export async function loadAccountUsageData(input: {
 		entitlement,
 		stripeCustomerId: row.stripe_customer_id?.trim() || null,
 	})
-	const { credits, wallet } = await loadAccountUsageCredits({
+	const { credits, wallet: creditsWallet } = await loadAccountUsageCredits({
 		env: input.env,
 		stableUserId: usageUserId,
 		entitlement,
 		canBuyCredits,
 		computeOverage,
 		now,
+		...(wallet ? { wallet } : {}),
 	})
 	const [story, whereItWent] = await Promise.all([
 		loadAccountUsageStory({
@@ -96,7 +105,7 @@ export async function loadAccountUsageData(input: {
 			canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
 			computeOverage,
 			now,
-			...(wallet ? { wallet } : {}),
+			...(creditsWallet ? { wallet: creditsWallet } : {}),
 		}),
 		loadCreditAttributionBreakdown({
 			db: input.env.APP_DB,

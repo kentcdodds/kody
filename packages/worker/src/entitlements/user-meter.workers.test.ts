@@ -336,6 +336,86 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 	})
 }, 30_000)
 
+test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call', async () => {
+	const monday = new Date('2026-07-06T15:00:00.000Z')
+	const tuesday = new Date('2026-07-07T15:00:00.000Z')
+	const user = await seedFreeUser('meter-usage-snapshot')
+	await user.meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(monday),
+		count: 10,
+		updatedAt: monday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(tuesday),
+		count: 7,
+		updatedAt: tuesday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'email_sends_per_day',
+		day: utcDayKey(tuesday),
+		count: 3,
+		updatedAt: tuesday.toISOString(),
+	})
+	await user.meter.initializeStorageBytes({
+		bytes: 42,
+		updatedAt: tuesday.toISOString(),
+	})
+
+	const snapshot = await user.meter.readUsageSnapshot({
+		day: utcDayKey(tuesday),
+		weekStart: utcDayKey(monday),
+		dailyResources: ['execute_calls_per_day', 'email_sends_per_day'],
+		weeklyResources: ['execute_calls_per_day'],
+		includeStorageBytes: true,
+		now: tuesday.toISOString(),
+	})
+	expect(snapshot.daily).toEqual([
+		expect.objectContaining({
+			resource: 'execute_calls_per_day',
+			outcome: 'ready',
+			count: 7,
+		}),
+		expect.objectContaining({
+			resource: 'email_sends_per_day',
+			outcome: 'ready',
+			count: 3,
+		}),
+	])
+	expect(snapshot.weekly).toEqual([
+		{
+			resource: 'execute_calls_per_day',
+			outcome: 'ready',
+			count: 17,
+		},
+	])
+	expect(snapshot.storageBytes).toMatchObject({
+		outcome: 'ready',
+		bytes: 42,
+	})
+
+	const cold = await user.meter.readUsageSnapshot({
+		day: utcDayKey(tuesday),
+		weekStart: utcDayKey(monday),
+		dailyResources: ['outbound_fetches_per_day'],
+		weeklyResources: ['outbound_fetches_per_day'],
+		includeStorageBytes: false,
+		now: tuesday.toISOString(),
+	})
+	expect(cold.daily).toEqual([
+		{ resource: 'outbound_fetches_per_day', outcome: 'needs_bootstrap' },
+	])
+	expect(cold.weekly).toEqual([
+		{
+			resource: 'outbound_fetches_per_day',
+			outcome: 'ready',
+			count: 0,
+		},
+	])
+	expect(cold.storageBytes).toBeNull()
+}, 30_000)
+
 test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
 	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)

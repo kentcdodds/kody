@@ -467,7 +467,10 @@ meter-only daily counts (no D1 comparison fields exist). Analytics Engine
 remains the production reporting path for email send/receive aggregates.
 
 **Point-read surfaces** call `readDailyEntitlementResourceUsage` (UserMeter with
-the same cold zero-init path):
+the same cold zero-init path). Account usage UI, `usageGet`, and Waiting
+(`readEntitlementUsageSnapshot`) use one `UserMeter.readUsageSnapshot` RPC for
+every daily counter, weekly window, and storage-bytes read the snapshot needs,
+instead of one RPC per resource:
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
