@@ -8,7 +8,7 @@ import {
 } from './e2e-cloudflare-mock-state.ts'
 import { isExecutedDirectly, resolveNpmCommand } from './node-runtime.ts'
 import { spawnChildProcess, stopChildProcessTree } from './dev-process-utils.ts'
-import { findHealthyWorkerOrigin } from './dev-server.ts'
+import { workerOriginForPort } from './dev-server.ts'
 import {
 	createDefaultEnsureDevDeps,
 	hasKodyDevListeners,
@@ -45,12 +45,16 @@ export async function findUnhealthyOriginDevServerMessage(input: {
 	readProcess: (pid: number) => ProcessIdentity | null
 	protectedPids: ReadonlySet<number>
 }) {
-	if (!hasKodyDevListeners(input)) return null
-	const healthy = await findHealthyWorkerOrigin(input.ports, {
-		probe: input.probeHealth,
-	})
-	if (healthy) return null
-	return formatUnhealthyOriginDevServerHint()
+	for (const port of input.ports) {
+		const hasListener = hasKodyDevListeners({
+			...input,
+			ports: [port],
+		})
+		if (!hasListener) continue
+		if (await input.probeHealth(workerOriginForPort(port))) continue
+		return formatUnhealthyOriginDevServerHint()
+	}
+	return null
 }
 
 export function shouldRetryE2eWebServerFirstStart(input: {

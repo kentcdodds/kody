@@ -359,7 +359,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 test('runDoctor reports node, playwright, hooks, deps, health, and local-d1 checks', async () => {
 	const depsOk = {
 		ok: true,
-		detail: 'installed root dependencies match package-lock.json',
+		detail: 'installed dependencies match package-lock.json',
 	}
 	const doctor = await runDoctor({
 		nodeVersion: 'v26.1.2',

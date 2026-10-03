@@ -77,9 +77,10 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   cached scripts run through `tools/run-nx.ts` so a mid-run remote-cache
   transport flake cannot fail validate after the tasks already succeeded.
 - `npm run install:check` (`tools/check-installed-lockfile.ts`, also
-  `control-kody doctor`'s `deps` check) fails when a root dependency's installed
-  version does not match `package-lock.json`. Cloud Agent snapshots can lag a
-  lockfile bump after `git pull`; this is the `run npm ci` hint.
+  `control-kody doctor`'s `deps` check) fails when a root or workspace
+  dependency's installed version does not match `package-lock.json`. Cloud Agent
+  snapshots can lag a lockfile bump after `git pull`; this is the `run npm ci`
+  hint.
 - `npm run lockfile:check` fails when a locked direct dependency sits inside its
   declared range but outside a peer range that range can still reach.
   `npm install` rewrites `package-lock.json` for that drift (including an

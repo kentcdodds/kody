@@ -20,21 +20,27 @@ export type InstalledLockfileMismatch = {
 	installedVersion: string | null
 }
 
+export function directLockfileDependencyNames(lock: PackageLock) {
+	const names = new Set<string>()
+	for (const [packagePath, meta] of Object.entries(lock.packages ?? {})) {
+		if (packagePath !== '' && packagePath.includes('node_modules')) continue
+		for (const name of [
+			...Object.keys(meta.dependencies ?? {}),
+			...Object.keys(meta.devDependencies ?? {}),
+		]) {
+			names.add(name)
+		}
+	}
+	return names
+}
+
 export function findInstalledLockfileMismatches(input: {
 	lock: PackageLock
 	readInstalledVersion: (name: string) => string | null
 }): Array<InstalledLockfileMismatch> {
 	const packages = input.lock.packages ?? {}
-	const root = packages['']
-	const names = [
-		...Object.keys(root?.dependencies ?? {}),
-		...Object.keys(root?.devDependencies ?? {}),
-	]
 	const mismatches: Array<InstalledLockfileMismatch> = []
-	const seen = new Set<string>()
-	for (const name of names) {
-		if (seen.has(name)) continue
-		seen.add(name)
+	for (const name of directLockfileDependencyNames(input.lock)) {
 		const lockedVersion = packages[`node_modules/${name}`]?.version
 		if (!lockedVersion) continue
 		const installedVersion = input.readInstalledVersion(name)
@@ -66,7 +72,7 @@ export function inspectInstalledLockfile(input: {
 	if (mismatches.length === 0) {
 		return {
 			ok: true,
-			detail: 'installed root dependencies match package-lock.json',
+			detail: 'installed dependencies match package-lock.json',
 		}
 	}
 	return { ok: false, detail: formatInstalledLockfileError(mismatches) }
@@ -81,12 +87,8 @@ export async function checkInstalledLockfile(
 	const lock = JSON.parse(
 		await readFile(packageLockPath, 'utf8'),
 	) as PackageLock
-	const names = [
-		...Object.keys(lock.packages?.['']?.dependencies ?? {}),
-		...Object.keys(lock.packages?.['']?.devDependencies ?? {}),
-	]
 	const versions = new Map<string, string | null>()
-	for (const name of new Set(names)) {
+	for (const name of directLockfileDependencyNames(lock)) {
 		versions.set(name, await readInstalledVersion(name))
 	}
 	return inspectInstalledLockfile({

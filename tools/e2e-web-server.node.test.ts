@@ -93,4 +93,14 @@ test('e2e webServer names an unhealthy leftover origin before starting Vite', as
 			protectedPids: new Set(),
 		}),
 	).toBeNull()
+
+	expect(
+		await findUnhealthyOriginDevServerMessage({
+			ports: [3742, 3743],
+			probeHealth: async (origin) => origin.includes(':3743'),
+			listListenerPids: (port) => (port === 3742 || port === 3743 ? [9] : []),
+			readProcess: () => identity,
+			protectedPids: new Set(),
+		}),
+	).toBe(hint)
 })
