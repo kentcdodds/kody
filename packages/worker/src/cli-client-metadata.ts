@@ -1,3 +1,5 @@
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+
 export const cliClientIdMetadataPath = '/oauth/cli-client-metadata.json'
 export const cliOAuthCallbackUrl = 'http://127.0.0.1:43742/callback'
 export const cliClientName = '@kodycodes/cli'
@@ -21,7 +23,7 @@ export function buildCliClientIdMetadataDocument(origin: string) {
 		response_types: ['code'],
 		token_endpoint_auth_method: 'none',
 		application_type: 'native',
-		scope: 'profile email',
+		scope: mcpOauthScopes.join(' '),
 	}
 }
 

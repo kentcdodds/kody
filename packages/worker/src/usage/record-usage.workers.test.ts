@@ -48,7 +48,7 @@ async function recordAll(
 const blobRow = (userId: string, blobs: Array<string>) => [
 	userId,
 	...blobs,
-	...Array(7 - blobs.length).fill(''),
+	...Array(8 - blobs.length).fill(''),
 ]
 
 function dataPoint(

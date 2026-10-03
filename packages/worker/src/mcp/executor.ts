@@ -205,6 +205,12 @@ type DynamicWorkerExecutorInput = {
 	 */
 	surface?: DynamicWorkerDaySurface
 	/**
+	 * Saved package id when this worker belongs to a known package run.
+	 * Falls back to `invocation.packageContext.packageId` at claim time.
+	 * Omit for ad hoc execute; never guess.
+	 */
+	packageId?: string | null
+	/**
 	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
 	 * nested surfaces.
 	 */
@@ -571,6 +577,11 @@ export function createExecuteExecutor(input: {
 	 */
 	surface?: DynamicWorkerDaySurface
 	/**
+	 * Saved package id when this worker belongs to a known package run.
+	 * Omit for ad hoc execute; never guess.
+	 */
+	packageId?: string | null
+	/**
 	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
 	 * nested surfaces.
 	 */
@@ -629,6 +640,7 @@ export function createExecuteExecutor(input: {
 		rawFetchHostSink: input.rawFetchHostSink,
 		recordExecuteUsage: input.recordExecuteUsage,
 		surface: input.surface ?? 'execute',
+		packageId: input.packageId,
 		executeShape: input.executeShape,
 		onWorkerId: input.onWorkerId,
 		waitUntil: input.waitUntil,
@@ -682,11 +694,16 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				workerOptions,
 			})
 			input.onWorkerId?.(workerId)
+			const attributedPackageId =
+				input.packageId?.trim() ||
+				invocation?.packageContext?.packageId?.trim() ||
+				null
 			const claimedDay = recordUniqueDynamicWorkerDay({
 				env: input.usageEnv,
 				userId: input.gatewayProps.userId,
 				workerId,
 				surface: input.surface ?? 'execute',
+				...(attributedPackageId ? { packageId: attributedPackageId } : {}),
 			})
 			await runExecuteBookkeeping(
 				claimedDay,

@@ -4,6 +4,7 @@ import {
 } from '@modelcontextprotocol/client'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 
 export type AppAuthUser = {
 	email: string
@@ -146,7 +147,7 @@ export async function authorizeOAuthClient(
 	authorizeUrl.searchParams.set('response_type', 'code')
 	authorizeUrl.searchParams.set('client_id', client.clientId)
 	authorizeUrl.searchParams.set('redirect_uri', client.redirectUri)
-	authorizeUrl.searchParams.set('scope', 'profile email')
+	authorizeUrl.searchParams.set('scope', mcpOauthScopes.join(' '))
 	authorizeUrl.searchParams.set('state', 'kody-mcp-e2e-state')
 	authorizeUrl.searchParams.set('resource', resource)
 

@@ -1252,6 +1252,7 @@ export async function runBundledModuleWithRegistry(
 				runSurface: options?.runSurface,
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
+			packageId: options?.packageContext?.packageId ?? null,
 			executeShape: options?.executeShape,
 			allowOutboundFetch: !closedWorldRetrieverRuntime,
 			onWorkerId: runRecordHandle

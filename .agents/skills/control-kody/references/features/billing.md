@@ -38,6 +38,13 @@ Every newly created person account receives a $5 house grant (held until the
 account is credit-eligible Pro). Grant extra credits to a test account from
 `/admin/users/:stableUserId` (admin only) instead of paying.
 
+Directly under the included-compute period total, **Where it went** ranks
+packages by past-include credits (plus one **Ad hoc** row for direct execute and
+unattributed debits). Expand a package row for the compute vs Rows read split
+and a package link; expand Ad hoc for a cumulative graph. The same period total,
+split, and cumulative graph appear on the owner package settings page. Customer
+copy never says UWD.
+
 `/account/usage` and `usageGet` lead with activity (code executions, job runs,
 workflow runs, package calls). Worker compute and Rows read are an include bar
 capped at 100%, with past-include usage as dollars on credits. Free sees those

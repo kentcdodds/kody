@@ -46,6 +46,7 @@ import {
 	renderCreditsAlarm,
 	renderIncludedComputePanel,
 } from '#client/routes/account-usage-story.tsx'
+import { WhereItWentPanel } from '#client/routes/account-usage-where-it-went.tsx'
 
 const usageApiPath = '/account/usage.json'
 const billingPath = '/account/billing'
@@ -496,6 +497,7 @@ export function AccountUsageRoute(handle: Handle) {
 							meters: usage.includedCompute,
 							summary: usage.includedComputeSummary,
 						})}
+						<WhereItWentPanel breakdown={usage.whereItWent} />
 						{usage.warnings.length > 0 ? (
 							<AccountManagementPanel
 								title={accountUsageWarningsPanelTitle(usage.warnings)}

@@ -137,6 +137,15 @@ the `@cloudflare/shell` workspace filesystem does not set, so repo sessions fail
 to initialize. Remove the cap once a newer release (or `@cloudflare/shell`)
 handles those errors and repo-session tests pass against it.
 
+### `zod` → `4.6.5`
+
+Pins a single Zod copy across the workspace. Without this override,
+`@cloudflare/vitest-pool-workers@0.22.0` (exact `zod@4.4.3`) and `@kody/worker`
+(`zod@^4.6.5`) resolve two trees, and the Worker-local copy misses
+`patches/zod+4.6.5.patch`, which trims `zod/v4/locales` to English-only for the
+startup budget. Keep this pin aligned with the Worker Zod range and refresh the
+locales patch when bumping.
+
 ## Development overrides
 
 These packages are only reached through dev tooling, so `audit:prod` does not
@@ -146,7 +155,7 @@ vulnerable releases.
 ### `brace-expansion` → `>=5.0.12 <6.0.0`
 
 Keeps the `brace-expansion` copy (via `nx` and its `minimatch`) at or above the
-current advisory floor. Upstream `nx@23.2.0` pins `brace-expansion@5.0.9`
+current advisory floor. Upstream `nx@23.2.1` pins `brace-expansion@5.0.9`
 exactly and `minimatch@10.2.5` declares `^5.0.5`, both of which allow vulnerable
 releases, so this override cannot be removed yet.
 

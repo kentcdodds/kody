@@ -18,7 +18,10 @@ import {
 	storageBucketKindFromStorageId,
 } from '#worker/storage-buckets/service.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
-import { buildPackageStorageId } from '#worker/storage-ids.ts'
+import {
+	buildPackageStorageId,
+	packageIdFromStorageId,
+} from '#worker/storage-ids.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { recordDurableObjectRowsRead } from '#worker/usage/durable-object-rows.ts'
 import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
@@ -771,6 +774,7 @@ export function storageRunnerRpc(input: {
 		})
 	}
 
+	const attributedPackageId = packageIdFromStorageId(input.storageId)
 	// Key-value reads on a SQLite-backed Durable Object are billed as rows
 	// read: one per key (including cache hits) and one per listed entry. The
 	// KV API exposes no cursor, so these are the billing units, not a guess.
@@ -780,6 +784,7 @@ export function storageRunnerRpc(input: {
 			userId: input.userId,
 			doClass: 'StorageRunner',
 			rowsRead,
+			...(attributedPackageId ? { packageId: attributedPackageId } : {}),
 		})
 	}
 

@@ -18,10 +18,12 @@ import {
 	type AccountUsageLoaderData,
 	type AccountUsageWeekWindow,
 } from '#universal/loader-data.ts'
+import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
 
 type UsageUserRow = UserEntitlementRow & {
 	id: number
 	stable_user_id: string
+	username: string
 	stripe_customer_id: string | null
 }
 
@@ -38,7 +40,7 @@ export async function loadAccountUsageData(input: {
 }): Promise<AccountUsageLoaderData | null> {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, stable_user_id, stripe_customer_id, ${userEntitlementColumnsSql()}
+		`SELECT id, stable_user_id, username, stripe_customer_id, ${userEntitlementColumnsSql()}
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -85,16 +87,25 @@ export async function loadAccountUsageData(input: {
 		computeOverage,
 		now,
 	})
-	const story = await loadAccountUsageStory({
-		db: input.env.APP_DB,
-		stableUserId: usageUserId,
-		plan: entitlement.plan,
-		creditWallet: entitlement.creditWallet,
-		canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
-		computeOverage,
-		now,
-		...(wallet ? { wallet } : {}),
-	})
+	const [story, whereItWent] = await Promise.all([
+		loadAccountUsageStory({
+			db: input.env.APP_DB,
+			stableUserId: usageUserId,
+			plan: entitlement.plan,
+			creditWallet: entitlement.creditWallet,
+			canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
+			computeOverage,
+			now,
+			...(wallet ? { wallet } : {}),
+		}),
+		loadCreditAttributionBreakdown({
+			db: input.env.APP_DB,
+			stableUserId: usageUserId,
+			username: row.username,
+			computeOverage,
+			now,
+		}),
+	])
 
 	return {
 		ok: true,
@@ -110,6 +121,7 @@ export async function loadAccountUsageData(input: {
 		computeOverage,
 		canBuyCredits,
 		...story,
+		whereItWent,
 		credits,
 		...(input.notice ? { notice: input.notice } : {}),
 		...(input.error ? { error: input.error } : {}),

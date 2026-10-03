@@ -1991,6 +1991,7 @@ export async function buildPackageAppWorker(input: {
 			userId: input.userId,
 			workerId: build.workerId,
 			surface,
+			packageId: input.savedPackage.id,
 			waitUntil: input.waitUntil,
 		})
 	}
@@ -2008,6 +2009,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 	userId: string
 	workerId: string
 	surface: 'app_fetch' | 'app_realtime'
+	packageId: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const tracked = recordUniqueDynamicWorkerDay({
@@ -2015,6 +2017,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 		userId: input.userId,
 		workerId: input.workerId,
 		surface: input.surface,
+		packageId: input.packageId,
 	}).catch((error: unknown) => {
 		console.warn('package-app-dynamic-worker-day-record-failed', error)
 	})

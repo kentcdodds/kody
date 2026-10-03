@@ -211,6 +211,7 @@ async function loadPackagePageUncached(input: {
 				env: input.env,
 				requestUrl: input.request.url,
 				userId: target.userId,
+				username: target.username,
 				packageId: target.savedPackage.id,
 			}),
 		])
