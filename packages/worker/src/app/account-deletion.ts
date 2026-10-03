@@ -82,7 +82,7 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
-import { invalidatePackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
+import { deletePackageSubscriptionTopicCacheForUser } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import {
 	communityIconKvListingPrefixes,
@@ -1379,7 +1379,7 @@ async function deleteRetrieverCache(input: {
 		input.warnings.push(`Package retriever KV cleanup failed: ${message}`)
 	}
 	try {
-		await invalidatePackageSubscriptionTopicMap({
+		await deletePackageSubscriptionTopicCacheForUser({
 			env: input.env,
 			userId: input.userId,
 		})

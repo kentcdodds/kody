@@ -14,9 +14,9 @@ import {
 } from './infrastructure-codes.ts'
 import { invokePackageSubscription } from './service.ts'
 import {
-	packageSubscriptionTopicMapVersion,
+	fillPackageSubscriptionTopicMapFromWakeScan,
+	readPackageSubscriptionTopicGeneration,
 	tryReadPackageSubscriptionTopicMap,
-	writePackageSubscriptionTopicMap,
 } from './subscription-topic-cache.ts'
 
 export {
@@ -107,14 +107,16 @@ export async function loadMatchingPackageSubscriptions(input: {
 	}
 	if (savedPackages.length === 0) {
 		try {
-			await writePackageSubscriptionTopicMap({
+			const generation = await readPackageSubscriptionTopicGeneration({
 				env: input.env,
-				map: {
-					version: packageSubscriptionTopicMapVersion,
-					userId: input.userId,
-					byTopic: {},
-					cachedAt: new Date().toISOString(),
-				},
+				userId: input.userId,
+			})
+			await fillPackageSubscriptionTopicMapFromWakeScan({
+				env: input.env,
+				userId: input.userId,
+				generation,
+				byTopic: {},
+				manifestLoadFailures: 0,
 			})
 		} catch (error) {
 			console.warn('package-subscription-topic-map-fill-failed', {
@@ -128,6 +130,10 @@ export async function loadMatchingPackageSubscriptions(input: {
 	const subscriptions: Array<LoadedPackageSubscription> = []
 	const discoveryErrors: Array<unknown> = []
 	const byTopic = new Map<string, Set<string>>()
+	const generation = await readPackageSubscriptionTopicGeneration({
+		env: input.env,
+		userId: input.userId,
+	}).catch(() => 0)
 	const settled = await mapSettledInChunks(
 		savedPackages,
 		async (savedPackage) => {
@@ -168,29 +174,31 @@ export async function loadMatchingPackageSubscriptions(input: {
 		discoveryErrors.push(result.reason)
 	}
 
-	try {
-		const serialized: Record<string, Array<string>> = {}
-		for (const topic of [...byTopic.keys()].sort((left, right) =>
-			left.localeCompare(right),
-		)) {
-			serialized[topic] = [...(byTopic.get(topic) ?? [])].sort((left, right) =>
+	// Incomplete scans must not be cached: a temporary manifest failure would
+	// drop that package from every later wake until the next publish.
+	if (discoveryErrors.length === 0) {
+		try {
+			const serialized: Record<string, Array<string>> = {}
+			for (const topic of [...byTopic.keys()].sort((left, right) =>
 				left.localeCompare(right),
-			)
-		}
-		await writePackageSubscriptionTopicMap({
-			env: input.env,
-			map: {
-				version: packageSubscriptionTopicMapVersion,
+			)) {
+				serialized[topic] = [...(byTopic.get(topic) ?? [])].sort(
+					(left, right) => left.localeCompare(right),
+				)
+			}
+			await fillPackageSubscriptionTopicMapFromWakeScan({
+				env: input.env,
 				userId: input.userId,
+				generation,
 				byTopic: serialized,
-				cachedAt: new Date().toISOString(),
-			},
-		})
-	} catch (error) {
-		console.warn('package-subscription-topic-map-fill-failed', {
-			userId: input.userId,
-			error,
-		})
+				manifestLoadFailures: 0,
+			})
+		} catch (error) {
+			console.warn('package-subscription-topic-map-fill-failed', {
+				userId: input.userId,
+				error,
+			})
+		}
 	}
 
 	return { subscriptions, discoveryErrors }

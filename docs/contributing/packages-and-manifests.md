@@ -357,9 +357,11 @@ Wake discovery prefers a normalized source of truth (each package's
 topic→package-id map
 (`packages/worker/src/package-invocations/subscription-topic-cache.ts`). A wake
 reads that one key; on a miss it scans manifests once, fills KV, and uses the
-result. Publish and unpublish delete-then-recompute the map in the same write
-path so wakes never match a stale projection. There is no TTL — a TTL could hide
-a newly published subscription. Do not add a denormalized topic-index table; the
+result. Publish and unpublish bump a generation stamp then delete-and-recompute
+the map in the same write path so a failed delete or a late wake write cannot
+leave wakes matching a stale projection. Incomplete scans (manifest load
+failures) never write the map. There is no TTL — a TTL could hide a newly
+published subscription. Do not add a denormalized topic-index table; the
 manifest stays authoritative.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery

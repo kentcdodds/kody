@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
@@ -16,10 +17,14 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 const {
+	buildPackageSubscriptionTopicGenerationKey,
 	buildPackageSubscriptionTopicMapKey,
+	bumpPackageSubscriptionTopicGeneration,
 	getOrFillPackageSubscriptionTopicMap,
 	invalidatePackageSubscriptionTopicMap,
+	readPackageSubscriptionTopicMap,
 	refreshPackageSubscriptionTopicMap,
+	writePackageSubscriptionTopicMap,
 } = await import('./subscription-topic-cache.ts')
 const { loadMatchingPackageSubscriptions } =
 	await import('./admin-package-subscriptions.ts')
@@ -86,6 +91,20 @@ function manifestFor(topics: Array<string>) {
 	}
 }
 
+function seedPackages(packages: Array<ReturnType<typeof savedPackage>>) {
+	mocks.listSavedPackagesByUserId.mockResolvedValue(packages)
+	mocks.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			const match = packages.find((entry) => entry.sourceId === input.sourceId)
+			return manifestFor(match?.topics ?? [])
+		},
+	)
+	mocks.listSavedPackagesByIds.mockImplementation(
+		async (_db: unknown, input: { packageIds: Array<string> }) =>
+			packages.filter((entry) => input.packageIds.includes(entry.id)),
+	)
+}
+
 test('wake miss fills KV then a second wake does not reload every manifest', async () => {
 	const { kv, store } = createKv()
 	const env = {
@@ -105,17 +124,7 @@ test('wake miss fills KV then a second wake does not reload every manifest', asy
 			topics: ['email.message.received'],
 		}),
 	]
-	mocks.listSavedPackagesByUserId.mockResolvedValue(packages)
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			const match = packages.find((entry) => entry.sourceId === input.sourceId)
-			return manifestFor(match?.topics ?? [])
-		},
-	)
-	mocks.listSavedPackagesByIds.mockImplementation(
-		async (_db: unknown, input: { packageIds: Array<string> }) =>
-			packages.filter((entry) => input.packageIds.includes(entry.id)),
-	)
+	seedPackages(packages)
 
 	const first = await loadMatchingPackageSubscriptions({
 		env,
@@ -141,7 +150,6 @@ test('wake miss fills KV then a second wake does not reload every manifest', asy
 	expect(
 		second.subscriptions.map((entry) => entry.savedPackage.id).sort(),
 	).toEqual(['pkg-a', 'pkg-c'])
-	// Cache hit: only candidate subscriber manifests, not every saved package.
 	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledTimes(2)
 	expect(
@@ -157,25 +165,14 @@ test('KV miss still finds the right subscribers', async () => {
 		APP_DB: {},
 		BUNDLE_ARTIFACTS_KV: kv,
 	} as Env
-	const packages = [
+	seedPackages([
 		savedPackage({ id: 'pkg-noise', kodyId: 'noise', topics: [] }),
 		savedPackage({
 			id: 'pkg-hit',
 			kodyId: 'hit',
 			topics: ['repo.pushed'],
 		}),
-	]
-	mocks.listSavedPackagesByUserId.mockResolvedValue(packages)
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			const match = packages.find((entry) => entry.sourceId === input.sourceId)
-			return manifestFor(match?.topics ?? [])
-		},
-	)
-	mocks.listSavedPackagesByIds.mockImplementation(
-		async (_db: unknown, input: { packageIds: Array<string> }) =>
-			packages.filter((entry) => input.packageIds.includes(entry.id)),
-	)
+	])
 
 	const result = await loadMatchingPackageSubscriptions({
 		env,
@@ -201,17 +198,7 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 		}),
 		savedPackage({ id: 'pkg-new', kodyId: 'new', topics: [] }),
 	]
-	mocks.listSavedPackagesByUserId.mockResolvedValue(before)
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			const match = before.find((entry) => entry.sourceId === input.sourceId)
-			return manifestFor(match?.topics ?? [])
-		},
-	)
-	mocks.listSavedPackagesByIds.mockImplementation(
-		async (_db: unknown, input: { packageIds: Array<string> }) =>
-			before.filter((entry) => input.packageIds.includes(entry.id)),
-	)
+	seedPackages(before)
 
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
@@ -221,7 +208,6 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 	const key = buildPackageSubscriptionTopicMapKey('user-1')
 	expect(store.has(key)).toBe(true)
 
-	// Simulate publish: pkg-new gains the topic; pkg-old drops it.
 	const after = [
 		savedPackage({ id: 'pkg-old', kodyId: 'old', topics: [] }),
 		savedPackage({
@@ -230,17 +216,7 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 			topics: ['integration.auth.failed'],
 		}),
 	]
-	mocks.listSavedPackagesByUserId.mockResolvedValue(after)
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			const match = after.find((entry) => entry.sourceId === input.sourceId)
-			return manifestFor(match?.topics ?? [])
-		},
-	)
-	mocks.listSavedPackagesByIds.mockImplementation(
-		async (_db: unknown, input: { packageIds: Array<string> }) =>
-			after.filter((entry) => input.packageIds.includes(entry.id)),
-	)
+	seedPackages(after)
 
 	await refreshPackageSubscriptionTopicMap({
 		env,
@@ -258,10 +234,170 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 	expect(matched.subscriptions.map((entry) => entry.savedPackage.id)).toEqual([
 		'pkg-new',
 	])
-	// Refreshed map is live immediately — only the new subscriber is loaded.
 	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 	expect(mocks.loadPackageManifestBySourceId.mock.calls[0]?.[0]).toEqual(
 		expect.objectContaining({ sourceId: 'source-pkg-new' }),
+	)
+})
+
+test('incomplete scan does not cache a partial topic map', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv, store } = createKv()
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as Env
+	const packages = [
+		savedPackage({
+			id: 'pkg-ok',
+			kodyId: 'ok',
+			topics: ['email.message.received'],
+		}),
+		savedPackage({
+			id: 'pkg-bad',
+			kodyId: 'bad',
+			topics: ['email.message.received'],
+		}),
+	]
+	mocks.listSavedPackagesByUserId.mockResolvedValue(packages)
+	mocks.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			if (input.sourceId === 'source-pkg-bad') {
+				throw new Error('manifest unavailable')
+			}
+			return manifestFor(['email.message.received'])
+		},
+	)
+	mocks.listSavedPackagesByIds.mockResolvedValue([packages[0]!])
+
+	const first = await loadMatchingPackageSubscriptions({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		topic: 'email.message.received',
+	})
+	expect(first.discoveryErrors).toHaveLength(1)
+	expect(store.has(buildPackageSubscriptionTopicMapKey('user-1'))).toBe(false)
+
+	mocks.loadPackageManifestBySourceId.mockClear()
+	mocks.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			const match = packages.find((entry) => entry.sourceId === input.sourceId)
+			return manifestFor(match?.topics ?? [])
+		},
+	)
+	mocks.listSavedPackagesByIds.mockImplementation(
+		async (_db: unknown, input: { packageIds: Array<string> }) =>
+			packages.filter((entry) => input.packageIds.includes(entry.id)),
+	)
+
+	const second = await loadMatchingPackageSubscriptions({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+		topic: 'email.message.received',
+	})
+	expect(
+		second.subscriptions.map((entry) => entry.savedPackage.id).sort(),
+	).toEqual(['pkg-bad', 'pkg-ok'])
+	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledTimes(2)
+})
+
+test('generation bump makes a late wake write a miss instead of overwriting publish', async () => {
+	const { kv, store } = createKv()
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as Env
+	seedPackages([
+		savedPackage({
+			id: 'pkg-a',
+			kodyId: 'a',
+			topics: ['repo.pushed'],
+		}),
+	])
+
+	await getOrFillPackageSubscriptionTopicMap({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+	})
+
+	const stale = {
+		version: 1 as const,
+		userId: 'user-1',
+		generation: 0,
+		byTopic: { 'repo.pushed': ['pkg-stale'] },
+		cachedAt: '2026-10-02T00:00:00.000Z',
+	}
+	await bumpPackageSubscriptionTopicGeneration({ env, userId: 'user-1' })
+	await writePackageSubscriptionTopicMap({ env, map: stale })
+
+	// Stale write is rejected; the pre-bump map remains but reads as a miss.
+	expect(
+		store.get(buildPackageSubscriptionTopicMapKey('user-1')),
+	).not.toContain('pkg-stale')
+	await expect(
+		readPackageSubscriptionTopicMap({ env, userId: 'user-1' }),
+	).resolves.toBeNull()
+
+	seedPackages([
+		savedPackage({
+			id: 'pkg-a',
+			kodyId: 'a',
+			topics: ['repo.pushed'],
+		}),
+	])
+	const refreshed = await refreshPackageSubscriptionTopicMap({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+	})
+	expect(refreshed?.byTopic['repo.pushed']).toEqual(['pkg-a'])
+})
+
+test('generation bump alone forces a miss when map delete fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { kv, store } = createKv()
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as Env
+	seedPackages([
+		savedPackage({
+			id: 'pkg-a',
+			kodyId: 'a',
+			topics: ['repo.pushed'],
+		}),
+	])
+	await getOrFillPackageSubscriptionTopicMap({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'user-1',
+	})
+	expect(store.has(buildPackageSubscriptionTopicMapKey('user-1'))).toBe(true)
+
+	kv.delete = vi.fn(async () => {
+		throw new Error('kv delete failed')
+	}) as unknown as KVNamespace['delete']
+
+	await expect(
+		refreshPackageSubscriptionTopicMap({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-1',
+		}),
+	).resolves.toEqual(
+		expect.objectContaining({
+			byTopic: { 'repo.pushed': ['pkg-a'] },
+		}),
+	)
+	expect(store.get(buildPackageSubscriptionTopicGenerationKey('user-1'))).toBe(
+		'1',
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-subscription-topic-map-invalidate-failed',
+		expect.objectContaining({ userId: 'user-1' }),
 	)
 })
 
@@ -283,7 +419,7 @@ test('invalidate drops the map so the next wake cannot use a stale projection', 
 	expect(store.has(key)).toBe(false)
 })
 
-test('written map has no expiration TTL that could hide a new subscription', async () => {
+test('written map and generation have no expiration TTL', async () => {
 	const { kv } = createKv()
 	const env = {
 		APP_DB: {},
@@ -299,6 +435,7 @@ test('written map has no expiration TTL that could hide a new subscription', asy
 		buildPackageSubscriptionTopicMapKey('user-1'),
 		expect.any(String),
 	)
-	const putOptions = (kv.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[2]
-	expect(putOptions).toBeUndefined()
+	for (const call of (kv.put as ReturnType<typeof vi.fn>).mock.calls) {
+		expect(call[2]).toBeUndefined()
+	}
 })
