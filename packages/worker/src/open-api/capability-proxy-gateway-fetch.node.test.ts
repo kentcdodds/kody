@@ -169,3 +169,45 @@ test('runCapabilityProxyGatewayFetch propagates missing-secret caller errors fro
 	})
 	expect(executeGatewayFetch).toHaveBeenCalledTimes(1)
 })
+
+test('runCapabilityProxyGatewayFetch without packageId does not grant secret authority', async () => {
+	executeGatewayFetch.mockResolvedValue(
+		new Response(JSON.stringify({ ok: true }), {
+			status: 200,
+			headers: { 'content-type': 'application/json' },
+		}),
+	)
+
+	await runCapabilityProxyGatewayFetch({
+		ctx: {
+			env: { APP_DB: {} },
+			callerContext: {
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-1', email: 'user@example.com' },
+				storageContext: null,
+			},
+		} as never,
+		args: [
+			{
+				request: {
+					url: 'https://api.usefathom.com/v1/sites',
+					headers: {
+						authorization: 'Bearer {{secret:demoToken|scope=user}}',
+					},
+				},
+			},
+		],
+	})
+
+	expect(authorizeLocalExecuteOwnedPackageId).not.toHaveBeenCalled()
+	const gatewayArg = executeGatewayFetch.mock.calls[0]?.[0] as {
+		props: {
+			grantedSecretAuthorityPackageIds?: Array<string>
+			storageContext: { packageId: string | null }
+		}
+		request: Request
+	}
+	expect(gatewayArg.props.grantedSecretAuthorityPackageIds).toBeUndefined()
+	expect(gatewayArg.props.storageContext.packageId).toBeNull()
+	expect(gatewayArg.request.headers.get('x-kody-secret-authority')).toBeNull()
+})

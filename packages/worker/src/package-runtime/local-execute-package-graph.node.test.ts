@@ -557,12 +557,145 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 	}
 })
 
+test('local meter stamp overrides closed-over gatewayFetch packageId for nested imports', async () => {
+	const { AsyncLocalStorage } = await import('node:async_hooks')
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+
+	const alsStart = shim.indexOf('const __kodySecretAuthorityAls')
+	const alsEnd = shim.indexOf('// Pure placeholder builders')
+	expect(alsStart).toBeGreaterThan(-1)
+	expect(alsEnd).toBeGreaterThan(alsStart)
+	const alsSource = shim
+		.slice(alsStart, alsEnd)
+		.replaceAll(/^export /gm, '')
+		.replaceAll('/** @type {any} */ (globalThis)', 'globalThis')
+
+	const meterStart = shim.indexOf(
+		'export function __kodyMeterStaticPackageExport',
+	)
+	const meterEnd = shim.indexOf('export function packageStorage()', meterStart)
+	expect(meterStart).toBeGreaterThan(-1)
+	expect(meterEnd).toBeGreaterThan(meterStart)
+	const meterSource = shim
+		.slice(meterStart, meterEnd)
+		.replaceAll(/^export /gm, '')
+
+	const gatewayStart = shim.indexOf('const __kodyNullBodyStatuses')
+	const gatewayEnd = shim.indexOf(
+		'export function __kodyCreatePackageBoundStorage',
+	)
+	expect(gatewayStart).toBeGreaterThan(-1)
+	expect(gatewayEnd).toBeGreaterThan(gatewayStart)
+	const gatewaySource = shim
+		.slice(gatewayStart, gatewayEnd)
+		.replaceAll(/^export /gm, '')
+
+	const gatewayCalls: Array<unknown> = []
+	const kody = {
+		gatewayFetch: async (args: unknown) => {
+			gatewayCalls.push(args)
+			return {
+				status: 200,
+				statusText: 'OK',
+				headers: {},
+				bodyBase64: btoa('gw'),
+			}
+		},
+	}
+	const {
+		__kodyCreatePackageBoundGatewayFetch,
+		__kodyGatewayFetch,
+		__kodyMeterStaticPackageExport,
+		__kodyGetSecretAuthority,
+	} = new Function(
+		'AsyncLocalStorage',
+		'kody',
+		`${alsSource}
+${gatewaySource}
+${meterSource}
+return {
+	__kodyCreatePackageBoundGatewayFetch,
+	__kodyGatewayFetch,
+	__kodyMeterStaticPackageExport,
+	__kodyGetSecretAuthority,
+};`,
+	)(AsyncLocalStorage, kody) as {
+		__kodyCreatePackageBoundGatewayFetch: (
+			packageId: string,
+		) => (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+		__kodyGatewayFetch: (
+			input: RequestInfo | URL,
+			init?: RequestInit,
+		) => Promise<Response>
+		__kodyMeterStaticPackageExport: <T>(packageId: string, exportValue: T) => T
+		__kodyGetSecretAuthority: () => string | null
+	}
+
+	const outerBoundFetch =
+		__kodyCreatePackageBoundGatewayFetch('pkg-outer-friction')
+	const nestedWake = __kodyMeterStaticPackageExport(
+		'pkg-nested-grok-bot',
+		async () => {
+			expect(__kodyGetSecretAuthority()).toBe('pkg-nested-grok-bot')
+			await outerBoundFetch('https://api2.cursor.sh/automations/webhook/x', {
+				method: 'POST',
+				headers: {
+					authorization: 'Bearer {{secret:grokBotWake.nested|scope=package}}',
+				},
+			})
+			return { duringStamp: __kodyGetSecretAuthority() }
+		},
+	)
+
+	expect(__kodyGetSecretAuthority()).toBeNull()
+	const result = await nestedWake()
+	expect(result.duringStamp).toBe('pkg-nested-grok-bot')
+	expect(__kodyGetSecretAuthority()).toBeNull()
+	expect(gatewayCalls).toHaveLength(1)
+	expect(gatewayCalls[0]).toMatchObject({
+		packageId: 'pkg-nested-grok-bot',
+		request: {
+			url: 'https://api2.cursor.sh/automations/webhook/x',
+			headers: {
+				authorization: 'Bearer {{secret:grokBotWake.nested|scope=package}}',
+			},
+		},
+	})
+
+	gatewayCalls.length = 0
+	await outerBoundFetch('https://api.example.com/v1', {
+		headers: {
+			authorization: 'Bearer {{secret:demoToken|scope=user}}',
+		},
+	})
+	expect(gatewayCalls).toHaveLength(1)
+	// Without a meter stamp, the closed-over outer package id is used.
+	expect(gatewayCalls[0]).toMatchObject({
+		packageId: 'pkg-outer-friction',
+	})
+
+	gatewayCalls.length = 0
+	await __kodyGatewayFetch('https://api.example.com/v1', {
+		headers: {
+			authorization: 'Bearer {{secret:demoToken|scope=user}}',
+		},
+	})
+	expect(gatewayCalls).toHaveLength(1)
+	// Missing stamp + unbound fetch → no packageId on the hop (origin hides
+	// package-scoped secrets).
+	expect((gatewayCalls[0] as { packageId?: string }).packageId).toBeUndefined()
+})
+
 test('createLocalExecuteRuntimeShimSource uses a relative host import from path-like module names', () => {
 	const nestedPath =
 		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e2f676d61696c/.__kody_virtual__/runtime.js'
 	const nested = createLocalExecuteRuntimeShimSource(nestedPath)
 	expect(nested).not.toMatch(/from ["']kody:runtime["']/)
-	const importMatch = /from ("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(nested)
+	expect(nested).toContain('from "node:async_hooks"')
+	const importMatch =
+		/default as __kodyHostRuntimeDefault,\n\} from ("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(
+			nested,
+		)
 	expect(importMatch?.[1]).toBeDefined()
 	const specifier = JSON.parse(
 		importMatch![1]!.startsWith("'")

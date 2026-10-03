@@ -20,7 +20,9 @@ import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
  * Cloud execute builds a bundler provenance grant set once per run. Local
  * execute has no sandbox graph on origin per hop, so each call validates the
  * stamped package id against caller ownership before running the ordinary
- * storage / mounted-secret tools for that single id.
+ * storage / mounted-secret tools for that single id. Nested static imports
+ * stamp gatewayFetch via the local meter ALS (see local-execute-runtime-support)
+ * so package-scoped secrets align with cloud without a run-wide grant set.
  */
 
 function isPackageSecretAvailabilityError(error: unknown) {
