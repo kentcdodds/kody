@@ -1334,7 +1334,6 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 		expect.objectContaining({ id: 'source-1', publishedCommit: 'commit-base' }),
 	)
 
-	// A failing D1 revert still surfaces the original persistence error.
 	preparePublish(
 		'commit-published-double-fail',
 		{ 'kody.json': jobManifest },
@@ -1409,7 +1408,6 @@ test('publishFromExternalRef rejects stale expected HEAD values and checks fast-
 	)
 	expect(mockModule.resolveArtifactDefaultBranchHead).not.toHaveBeenCalled()
 
-	// Best-effort publish git-note setup logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue(
@@ -1574,13 +1572,11 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 		],
 	] as const
 	for (const [kvGet, prefix, run] of stagedRunners) {
-		// Expired staging fails closed with an actionable message.
 		kvGet.mockResolvedValueOnce(null as never)
 		const expired = await run(`${prefix}:user-1:gone`)
 		expect(expired.ok).toBe(false)
 		expect(expired.message).toContain('staging data expired')
 
-		// A staging key namespaced to another user is rejected before any read.
 		kvGet.mockClear()
 		const crossUser = await run(`${prefix}:user-2:abc`)
 		expect(crossUser.ok).toBe(false)
