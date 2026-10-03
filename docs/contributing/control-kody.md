@@ -23,7 +23,8 @@ npm run control-kody -- search --origin <preview> --query "packageSave" [--domai
 Same entry: `node tools/control-kody.ts`.
 
 `doctor` checks Node 26, the Playwright browser revision in
-`node_modules/playwright-core/browsers.json`, git `core.hooksPath`, origin
+`node_modules/playwright-core/browsers.json`, git `core.hooksPath`, installed
+root dependencies vs `package-lock.json` (`run npm ci` when they drift), origin
 `/health`, and local APP_DB. Playwright passes only when `chromium-<rev>` and
 `chromium_headless_shell-<rev>` each contain `INSTALLATION_COMPLETE`. A missing
 revision fails with the unzip steps in

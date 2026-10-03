@@ -103,11 +103,15 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 ## Dependency install
 
 Cloud Agent environment setup and local setup both run `npm install`. CI runs
-`npm ci`. `npm install` keeps `package-lock.json` unchanged when every locked
-direct dependency satisfies the peer ranges its declared range can still reach,
-including optional peers. `npm run lockfile:check` (part of `npm run validate`
-and the CI static job) rejects a lockfile `npm install` would rewrite, such as
-an `@cloudflare/workers-types` pin older than wrangler's peer range.
+`npm ci`. A snapshot built before a lockfile bump still has the old
+`node_modules` after `git pull`; `npm run install:check` (prevalidate) and
+`control-kody doctor`'s `deps` check fail with `run npm ci` instead of
+downstream type/bundle errors. `npm install` keeps `package-lock.json` unchanged
+when every locked direct dependency satisfies the peer ranges its declared range
+can still reach, including optional peers. `npm run lockfile:check` (part of
+`npm run validate` and the CI static job) rejects a lockfile `npm install` would
+rewrite, such as an `@cloudflare/workers-types` pin older than wrangler's peer
+range.
 
 ## GitHub CLI
 
@@ -146,7 +150,7 @@ ship-pr already routes through kody-bot — not for pushing the branch.
 
 | Task               | Command                                                                                                                                                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Install deps       | `npm install`                                                                                                                                                               |
+| Install deps       | `npm ci` after pulling a lockfile bump; `npm run install:check` / `control-kody doctor` say so when `node_modules` lags                                                     |
 | Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                                                                                                                              |
 | Migrate local D1   | `npm run migrate:local`                                                                                                                                                     |
 | Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below)                                                                                                             |
@@ -188,7 +192,10 @@ ship-pr already routes through kody-bot — not for pushing the branch.
   `{"ok":true,"commitSha":...,"commit":...,"pullRequest":...,"deploy":...}`.
   Locally the extra fields are `null` unless a deploy var is set. Platform and
   runtime health paths (`/__platform/health`, `/__runtime/health`) 404 on the
-  origin port.
+  origin port. After `npm ci` or a merge that changes source under a running
+  `dev:ensure` process, `/health` can hang while workerd crash-loops. Stop that
+  Vite PID before `npm run test:e2e:run`; the e2e web server refuses to start
+  and names the leftover when 3742–3751 is listening but unhealthy.
 
 ## Environment file
 

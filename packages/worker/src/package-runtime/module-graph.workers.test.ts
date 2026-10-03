@@ -244,7 +244,9 @@ async function publishImportablePackage(input: {
 
 test(
 	'saved package bundles and executes npm dependencies declared in package.json',
-	{ timeout: 20_000 },
+	// Contended `npm run validate` on Cloud Agent VMs can spend ~20s here
+	// (Friction #2760). Isolated run is ~14s for the whole file.
+	{ timeout: 40_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const bundle = await buildKodyModuleBundle({
@@ -287,7 +289,7 @@ export default async function run() {
 
 test(
 	'ad hoc execute synthesizes and executes npm dependencies through the bundler',
-	{ timeout: 20_000 },
+	{ timeout: 40_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const sourceFiles = createAdHocExecuteSourceFiles(`import kleur from 'kleur'

@@ -49,29 +49,37 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - Push-time hooks intentionally stop short of `npm run validate`; Playwright
   E2E, MCP E2E, and repo-wide format checks remain explicit checks because they
   are heavier than the push gate.
-- `npm run validate` is the single authoritative local gate. It is read-only and
-  executes `format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
-  Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
-  `jobs:build`, `runtime:build`, `platform:build`, `primitives:check`,
-  `migrations:check`, `deploy-guardrails:check`, `workflows:check`,
-  `docs:check-temporal`, `docs:check-decisions`, `mermaid:check`, `audit:prod`,
-  `lockfile:check`, and `overrides:check` in parallel, reporting every failure
-  (sibling checks are not aborted on the first failure, including when one of
-  the docs or mermaid checks fails). The unit-test and Playwright legs set
-  `CI=1` so timeouts, worker limits, and Nx cache hashes match the contended
-  parallel layout used in GitHub Actions. CI runs the same checks as parallel
-  jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅
-  Validate). If `npm run validate` passes locally, CI will pass. Trusted writers
-  (Cloud Agent environments, and same-repo validate) set
-  `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads task
-  artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate uses
-  the read token and can only GET (see
+- `npm run validate` is the single authoritative local gate. It is read-only.
+  `prevalidate` runs `install:check` first so a snapshot whose `node_modules`
+  lags `package-lock.json` fails with `run npm ci` instead of type/bundle
+  errors. Then it executes `format:check`, `lint`, `typecheck`, `test:node`,
+  `test:workers`, Playwright E2E, MCP E2E, `backup:build`, `status:build`,
+  `nx-cache:build`, `jobs:build`, `runtime:build`, `platform:build`,
+  `worker-startup-bundles:check`, `primitives:check`, `migrations:check`,
+  `deploy-guardrails:check`, `workflows:check`, `docs:check-temporal`,
+  `docs:check-decisions`, `mermaid:check`, `audit:prod`, `lockfile:check`, and
+  `overrides:check` in parallel, reporting every failure (sibling checks are not
+  aborted on the first failure, including when one of the docs or mermaid checks
+  fails). `worker-startup-time:check` runs after that parallel phase so the CPU
+  budget measures the bundle, not contention from e2e and Worker builds. The
+  unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and Nx
+  cache hashes match the contended parallel layout used in GitHub Actions. CI
+  runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP,
+  🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes locally, CI
+  will pass. Trusted writers (Cloud Agent environments, and same-repo validate)
+  set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads
+  task artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate
+  uses the read token and can only GET (see
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
   [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)). Those
   cached scripts run through `tools/run-nx.ts` so a mid-run remote-cache
   transport flake cannot fail validate after the tasks already succeeded.
+- `npm run install:check` (`tools/check-installed-lockfile.ts`, also
+  `control-kody doctor`'s `deps` check) fails when a root dependency's installed
+  version does not match `package-lock.json`. Cloud Agent snapshots can lag a
+  lockfile bump after `git pull`; this is the `run npm ci` hint.
 - `npm run lockfile:check` fails when a locked direct dependency sits inside its
   declared range but outside a peer range that range can still reach.
   `npm install` rewrites `package-lock.json` for that drift (including an

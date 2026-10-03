@@ -107,14 +107,16 @@ non-library caller to find which of our modules imported it.
 
 ## CI tripwire
 
-`npm run worker-startup-time:check` (`tools/check-worker-startup-time.ts`, part
-of `npm run validate` and the CI static job) profiles each production entry
-three times with `wrangler check startup` and compares the best sample to
-`tools/worker-startup-budget.json`. Budgets sit well above the steady-state
-reading and well below the level that made uploads flaky, so the check catches a
-re-eagerised domain graph or a new heavy import without failing on runner noise.
-It complements `worker-startup-bundles:check`, which measures bytes and enforces
-import-graph boundaries deterministically. Byte ceilings live in
+`npm run worker-startup-time:check` (`tools/check-worker-startup-time.ts`, the
+serial tail of `npm run validate` and a dedicated CI static step) profiles each
+production entry three times with `wrangler check startup` and compares the best
+sample to `tools/worker-startup-budget.json`. Local validate runs this after the
+parallel jobs so sampled CPU is not inflated by e2e and Worker builds. Budgets
+sit well above the steady-state reading and well below the level that made
+uploads flaky, so the check catches a re-eagerised domain graph or a new heavy
+import without failing on runner noise. It complements
+`worker-startup-bundles:check`, which measures bytes and enforces import-graph
+boundaries deterministically. Byte ceilings live in
 `tools/worker-startup-bundle-budget.json`. Append measured notes to
 `tools/worker-startup-bundle-notes.md` instead of rewriting the checker.
 
