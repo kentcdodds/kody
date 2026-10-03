@@ -341,8 +341,13 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			// non-secret multipart POSTs keep working under --local.
 			if (typeof FormData !== "undefined" && body instanceof FormData) {
 				let formText = "";
-				for (const value of body.values()) {
-					if (typeof value === "string") formText += value + "\\n";
+				for (const [name, value] of body.entries()) {
+					formText += name + "\\n";
+					if (typeof value === "string") {
+						formText += value + "\\n";
+					} else if (value && typeof value.name === "string") {
+						formText += value.name + "\\n";
+					}
 				}
 				if (
 					__kodyRequestHasSecretPlaceholders(url, headers, formText)
@@ -401,6 +406,19 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			init?.redirect ?? (input instanceof Request ? input.redirect : null);
 		if (redirect != null) fallbackInit.redirect = redirect;
 		return globalThis.fetch(url, fallbackInit);
+	}
+	const contentType = Object.entries(headers).find(
+		([key]) => key.toLowerCase() === "content-type",
+	)?.[1];
+	// Multipart bodies are opaque to the fetch gateway — fail closed instead of
+	// hopping with unresolved {{secret:…}} still embedded in the bytes.
+	if (
+		typeof contentType === "string" &&
+		contentType.toLowerCase().includes("multipart/")
+	) {
+		throw new Error(
+			"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
+		);
 	}
 	const result = await kody.gatewayFetch({
 		...(packageId ? { packageId } : {}),

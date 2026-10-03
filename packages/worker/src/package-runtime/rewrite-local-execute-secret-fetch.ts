@@ -271,7 +271,14 @@ type SecretPlaceholderLiteral = {
 function collectExactSecretPlaceholderStringLiterals(source: string) {
 	const parsed = parseModuleSource(source) as unknown as ModuleAstNode
 	const literals: Array<SecretPlaceholderLiteral> = []
-	walkAst(parsed, (node) => {
+	walkAst(parsed, (node, parent) => {
+		if (
+			parent &&
+			parent.key === node &&
+			(parent as { computed?: boolean }).computed === false
+		) {
+			return
+		}
 		if (node.type !== 'StringLiteral' && node.type !== 'Literal') return
 		const value = node.value
 		if (typeof value !== 'string') return
@@ -294,16 +301,20 @@ function collectExactSecretPlaceholderStringLiterals(source: string) {
 	return literals.filter((literal) => literal.name.length > 0)
 }
 
-function walkAst(node: unknown, visit: (node: ModuleAstNode) => void) {
+function walkAst(
+	node: unknown,
+	visit: (node: ModuleAstNode, parent?: ModuleAstNode) => void,
+	parent?: ModuleAstNode,
+) {
 	if (!node || typeof node !== 'object') return
 	const typed = node as ModuleAstNode
-	if (typeof typed.type === 'string') visit(typed)
+	if (typeof typed.type === 'string') visit(typed, parent)
 	for (const value of Object.values(typed)) {
 		if (Array.isArray(value)) {
-			for (const entry of value) walkAst(entry, visit)
+			for (const entry of value) walkAst(entry, visit, typed)
 			continue
 		}
-		walkAst(value, visit)
+		walkAst(value, visit, typed)
 	}
 }
 

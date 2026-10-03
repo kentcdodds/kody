@@ -21,12 +21,16 @@ export async function request() {
 	expect(moduleSourceHasSecretPlaceholderLiterals(rewritten.source)).toBe(false)
 })
 
-test('rewriteLocalExecuteSecretPlaceholderLiterals leaves template-literal prose alone', () => {
-	const source =
-		"const tip = `Use '{{secret:demoToken|scope=user}}' in fetch headers`;\n"
+test('rewriteLocalExecuteSecretPlaceholderLiterals leaves non-computed object keys alone', () => {
+	const source = `const map = { '{{secret:demoToken|scope=user}}': true }
+const value = '{{secret:demoToken|scope=user}}'
+`
 	const rewritten = rewriteLocalExecuteSecretPlaceholderLiterals(source)
-	expect(rewritten.rewritten).toBe(false)
-	expect(rewritten.source).toBe(source)
+	expect(rewritten.rewritten).toBe(true)
+	expect(rewritten.source).toContain(
+		"{ '{{secret:demoToken|scope=user}}': true }",
+	)
+	expect(rewritten.source).toContain('__kodySecretRef("demoToken", "user")')
 })
 
 test('rewriteLocalExecuteModuleForSecretAwareFetch binds gateway fetch and strips templates', () => {
