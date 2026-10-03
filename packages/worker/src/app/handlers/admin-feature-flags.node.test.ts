@@ -493,3 +493,45 @@ test('admin feature flags set_user_override validates user identity and existenc
 		],
 	})
 })
+
+test('admin feature flags clear_user_override accepts the same identity as set', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const { post, expectFlag, expectError } = createFeatureFlagsClient({
+		users: [
+			{ id: 1, username: 'admin-user' },
+			{ id: 2, username: 'jane' },
+		],
+	})
+	const setOverride = () =>
+		post({
+			action: 'set_user_override',
+			key: 'demo-indicator',
+			enabled: true,
+			username: 'jane',
+		})
+	const clearOverride = (identity: Record<string, unknown>) =>
+		post({
+			action: 'clear_user_override',
+			key: 'demo-indicator',
+			...identity,
+		})
+
+	await setOverride()
+	await expectError(await clearOverride({}), 400)
+	await expectError(
+		await clearOverride({ stableUserId: stableUserId(2), username: 'jane' }),
+		400,
+	)
+	await expectError(await clearOverride({ username: 'missing-user' }), 404)
+
+	await expectFlag(await clearOverride({ username: 'jane' }), {
+		overrides: [],
+	})
+
+	await setOverride()
+	await expectFlag(await clearOverride({ stableUserId: stableUserId(2) }), {
+		overrides: [],
+	})
+})
