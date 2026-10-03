@@ -180,7 +180,10 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	// constraints, read-only policy). storageQuery wraps these as
 	// McpCallerError; this message match covers plain Errors that still
 	// arrive via RPC without subclass identity.
+	// Restrict to storageQuery so that D1 errors from other capabilities
+	// (e.g. application database FK/unique violations) still reach Sentry.
 	if (
+		payload.capabilityName === 'storageQuery' &&
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error && isUserStorageSqlCallerMessage(entry.message),

@@ -73,6 +73,32 @@ test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platfor
 			error.message === 'no such table: articles: SQLITE_ERROR',
 	)
 
+	// Extended Cloudflare suffix form (KODY-8P): "SQLITE_CONSTRAINT (extended: …)"
+	mockModule.sqlQuery.mockRejectedValueOnce(
+		new Error(
+			'FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)',
+		),
+	)
+
+	await expect(
+		storageQueryCapability.handler(
+			{
+				storage_id: 'storage-1',
+				query: "INSERT INTO probe_t (parent_id) VALUES (99)",
+				writable: true,
+			},
+			{
+				env: {} as Env,
+				callerContext: createCallerContext(),
+			} as never,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message ===
+				'FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)',
+	)
+
 	const platformError = new Error(
 		'Durable Object reset because its code was updated.',
 	)
