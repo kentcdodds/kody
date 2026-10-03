@@ -14,7 +14,6 @@ import {
 	normalizeWorkspaceModulePath,
 	resolveRelativeModulePath,
 	rootSourcePrefix,
-	resolveWorkspaceSourceFilePath,
 } from './module-graph-paths.ts'
 import {
 	assertBundleHasNoUnresolvedBareImports,
@@ -22,8 +21,9 @@ import {
 } from './module-graph-artifacts.ts'
 import {
 	collectDynamicPackageImportProxyModules,
+	getOrPrepareKodyGraphFiles,
 	mergePublishedArtifactDependencies,
-	prepareKodyGraphFiles,
+	type PreparedKodyGraphCache,
 } from './module-graph-import-rewriting.ts'
 import { moduleSourceDeclaresDefaultExport } from './module-export-names.ts'
 import { resolveKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
@@ -173,6 +173,10 @@ function cloneRuntimeBundle(bundle: RuntimeBundle): RuntimeBundle {
 	}
 }
 
+function clonePreparedGraphFiles(files: Record<string, string>) {
+	return { ...files }
+}
+
 export async function buildKodyModuleBundle(input: {
 	env: Env
 	baseUrl: string
@@ -185,23 +189,26 @@ export async function buildKodyModuleBundle(input: {
 	// Opt-in: cache createWorkerBundle by prepared-files digest (see createModuleBundleCacheKey).
 	reuseCachedBundle?: boolean
 	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
+	/**
+	 * Request-scoped prepare cache so module + importable-module targets for
+	 * the same entry share one prepareKodyGraphFiles pass.
+	 */
+	prepareCache?: PreparedKodyGraphCache
 }) {
 	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-	const { files, packages, publishedArtifactDependencies } =
-		await prepareKodyGraphFiles({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceFiles: input.sourceFiles,
-			entryPoint: input.entryPoint,
-			rootPackageId: input.rootPackageId,
-			allowPlatformScopes,
-		})
-	const entryPoint =
-		resolveWorkspaceSourceFilePath({
-			files: input.sourceFiles,
-			path: input.entryPoint,
-		}) ?? normalizePackageWorkspacePath(input.entryPoint)
+	const prepared = await getOrPrepareKodyGraphFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceFiles: input.sourceFiles,
+		entryPoint: input.entryPoint,
+		rootPackageId: input.rootPackageId,
+		allowPlatformScopes,
+		prepareCache: input.prepareCache,
+	})
+	const files = clonePreparedGraphFiles(prepared.files)
+	const { packages, publishedArtifactDependencies } = prepared
+	const entryPoint = prepared.entryPoint
 	const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_execute_entry__.js')
 	const entrySource = input.sourceFiles[entryPoint]
@@ -282,23 +289,26 @@ export async function buildKodyImportableModuleBundle(input: {
 	// Saved-package UUID when the root source is a saved package's own module;
 	// stamps root modules with package provenance (see RewriteState).
 	rootPackageId?: string | null
+	/**
+	 * Request-scoped prepare cache so module + importable-module targets for
+	 * the same entry share one prepareKodyGraphFiles pass.
+	 */
+	prepareCache?: PreparedKodyGraphCache
 }) {
 	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-	const { files, packages, publishedArtifactDependencies } =
-		await prepareKodyGraphFiles({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			sourceFiles: input.sourceFiles,
-			entryPoint: input.entryPoint,
-			rootPackageId: input.rootPackageId,
-			allowPlatformScopes,
-		})
-	const entryPoint =
-		resolveWorkspaceSourceFilePath({
-			files: input.sourceFiles,
-			path: input.entryPoint,
-		}) ?? normalizePackageWorkspacePath(input.entryPoint)
+	const prepared = await getOrPrepareKodyGraphFiles({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		sourceFiles: input.sourceFiles,
+		entryPoint: input.entryPoint,
+		rootPackageId: input.rootPackageId,
+		allowPlatformScopes,
+		prepareCache: input.prepareCache,
+	})
+	const files = clonePreparedGraphFiles(prepared.files)
+	const { packages, publishedArtifactDependencies } = prepared
+	const entryPoint = prepared.entryPoint
 	const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 	const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_import_entry__.js')
 	files[bootstrapPath] = createImportableEntrypointSource({
@@ -348,24 +358,23 @@ export async function buildKodyAppBundle(input: {
 	// stamps root modules with package provenance (see RewriteState).
 	rootPackageId?: string | null
 	cacheKey?: string | null
+	prepareCache?: PreparedKodyGraphCache
 }) {
 	const buildBundle = async () => {
 		const allowPlatformScopes = await resolveAllowPlatformScopes(input)
-		const { files, packages, publishedArtifactDependencies } =
-			await prepareKodyGraphFiles({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceFiles: input.sourceFiles,
-				entryPoint: input.entryPoint,
-				rootPackageId: input.rootPackageId,
-				allowPlatformScopes,
-			})
-		const entryPoint =
-			resolveWorkspaceSourceFilePath({
-				files: input.sourceFiles,
-				path: input.entryPoint,
-			}) ?? normalizePackageWorkspacePath(input.entryPoint)
+		const prepared = await getOrPrepareKodyGraphFiles({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceFiles: input.sourceFiles,
+			entryPoint: input.entryPoint,
+			rootPackageId: input.rootPackageId,
+			allowPlatformScopes,
+			prepareCache: input.prepareCache,
+		})
+		const files = clonePreparedGraphFiles(prepared.files)
+		const { packages, publishedArtifactDependencies } = prepared
+		const entryPoint = prepared.entryPoint
 		const normalizedEntrypoint = joinPath(rootSourcePrefix, entryPoint)
 		const bootstrapPath = joinPath(rootSourcePrefix, '.__kody_app_entry__.js')
 		files[bootstrapPath] = createAppEntrypointSource({

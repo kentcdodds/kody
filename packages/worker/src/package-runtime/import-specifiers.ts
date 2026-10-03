@@ -15,6 +15,18 @@ export type DynamicImportExpressionNode = {
 	literalSpecifier: string | null
 }
 
+export type CollectedModuleImportNodes = {
+	literalImports: Array<LiteralImportNode>
+	dynamicImportExpressions: Array<DynamicImportExpressionNode>
+}
+
+/**
+ * Request-scoped cache of one AST pass per source string. Keys are the source
+ * text (with an optional type-only prefix) so reachability and rewrite share
+ * the same parse without denormalizing package data.
+ */
+export type ModuleImportNodesCache = Map<string, CollectedModuleImportNodes>
+
 function readLiteralStringNode(
 	node: unknown,
 ): { start: number; end: number; specifier: string } | null {
@@ -72,11 +84,24 @@ function isTypeOnlyImportOrExport(node: ModuleAstNode) {
 	return hasOnlyTypeSpecifiers(node)
 }
 
-export function collectLiteralImportNodes(
+function moduleImportNodesCacheKey(
 	source: string,
 	options?: { includeTypeOnly?: boolean },
-): Array<LiteralImportNode> {
-	const nodes: Array<LiteralImportNode> = []
+) {
+	return options?.includeTypeOnly === true ? `\0type\0${source}` : source
+}
+
+/**
+ * One Babel parse + one AST walk for both literal import sites and dynamic
+ * `import()` expressions. Callers that previously parsed twice for rewrite
+ * should use this (or {@link collectModuleImportNodesCached}) instead.
+ */
+export function collectModuleImportNodes(
+	source: string,
+	options?: { includeTypeOnly?: boolean },
+): CollectedModuleImportNodes {
+	const literalImports: Array<LiteralImportNode> = []
+	const dynamicImportExpressions: Array<DynamicImportExpressionNode> = []
 
 	function visit(node: unknown): void {
 		if (node == null || typeof node !== 'object') return
@@ -86,7 +111,14 @@ export function collectLiteralImportNodes(
 		}
 		if (!('type' in node)) return
 		const typedNode = node as ModuleAstNode & {
-			source?: { type?: string; value?: unknown; start?: number; end?: number }
+			start?: number
+			end?: number
+			source?: {
+				type?: string
+				value?: unknown
+				start?: number
+				end?: number
+			}
 		}
 		if (
 			typedNode.type === 'ImportDeclaration' ||
@@ -101,13 +133,28 @@ export function collectLiteralImportNodes(
 			}
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
-				nodes.push({ ...literalNode, kind: 'static' })
+				literalImports.push({ ...literalNode, kind: 'static' })
 			}
 		}
 		if (typedNode.type === 'ImportExpression') {
-			const literalNode = readLiteralStringNode(typedNode.source)
+			const sourceNode = typedNode.source
+			const literalNode = readLiteralStringNode(sourceNode)
 			if (literalNode) {
-				nodes.push({ ...literalNode, kind: 'dynamic' })
+				literalImports.push({ ...literalNode, kind: 'dynamic' })
+			}
+			if (
+				typeof typedNode.start === 'number' &&
+				typeof typedNode.end === 'number' &&
+				typeof sourceNode?.start === 'number' &&
+				typeof sourceNode.end === 'number'
+			) {
+				dynamicImportExpressions.push({
+					start: typedNode.start,
+					end: typedNode.end,
+					sourceStart: sourceNode.start,
+					sourceEnd: sourceNode.end,
+					literalSpecifier: literalNode?.specifier ?? null,
+				})
 			}
 		}
 		if (
@@ -116,7 +163,7 @@ export function collectLiteralImportNodes(
 		) {
 			const literalNode = readLiteralStringNode(typedNode.source)
 			if (literalNode) {
-				nodes.push({ ...literalNode, kind: 'static' })
+				literalImports.push({ ...literalNode, kind: 'static' })
 			}
 		}
 		for (const value of Object.values(
@@ -133,10 +180,40 @@ export function collectLiteralImportNodes(
 		const program = parseModuleSource(source)
 		visit(program)
 	} catch {
-		return []
+		return { literalImports: [], dynamicImportExpressions: [] }
 	}
 
-	return nodes.sort((left, right) => left.start - right.start)
+	return {
+		literalImports: literalImports.sort(
+			(left, right) => left.start - right.start,
+		),
+		dynamicImportExpressions: dynamicImportExpressions.sort(
+			(left, right) => left.start - right.start,
+		),
+	}
+}
+
+export function collectModuleImportNodesCached(
+	cache: ModuleImportNodesCache | undefined,
+	source: string,
+	options?: { includeTypeOnly?: boolean },
+): CollectedModuleImportNodes {
+	if (!cache) {
+		return collectModuleImportNodes(source, options)
+	}
+	const key = moduleImportNodesCacheKey(source, options)
+	const hit = cache.get(key)
+	if (hit) return hit
+	const nodes = collectModuleImportNodes(source, options)
+	cache.set(key, nodes)
+	return nodes
+}
+
+export function collectLiteralImportNodes(
+	source: string,
+	options?: { includeTypeOnly?: boolean },
+): Array<LiteralImportNode> {
+	return collectModuleImportNodes(source, options).literalImports
 }
 
 const typeOnlyWrapperNodeTypes = new Set([
@@ -268,56 +345,7 @@ export function collectLiteralImportSpecifiers(
 export function collectDynamicImportExpressionNodes(
 	source: string,
 ): Array<DynamicImportExpressionNode> {
-	const nodes: Array<DynamicImportExpressionNode> = []
-
-	function visit(node: unknown): void {
-		if (node == null || typeof node !== 'object') return
-		if (Array.isArray(node)) {
-			for (const item of node) visit(item)
-			return
-		}
-		if (!('type' in node)) return
-		const typedNode = node as ModuleAstNode & {
-			start?: number
-			end?: number
-			source?: { start?: number; end?: number }
-		}
-		if (typedNode.type === 'ImportExpression') {
-			const sourceNode = typedNode.source
-			if (
-				typeof typedNode.start === 'number' &&
-				typeof typedNode.end === 'number' &&
-				typeof sourceNode?.start === 'number' &&
-				typeof sourceNode.end === 'number'
-			) {
-				nodes.push({
-					start: typedNode.start,
-					end: typedNode.end,
-					sourceStart: sourceNode.start,
-					sourceEnd: sourceNode.end,
-					literalSpecifier:
-						readLiteralStringNode(sourceNode)?.specifier ?? null,
-				})
-			}
-		}
-		for (const value of Object.values(
-			typedNode as unknown as Record<string, unknown>,
-		)) {
-			if (value == null) continue
-			if (typeof value === 'object') {
-				visit(value)
-			}
-		}
-	}
-
-	try {
-		const program = parseModuleSource(source)
-		visit(program)
-	} catch {
-		return []
-	}
-
-	return nodes.sort((left, right) => left.start - right.start)
+	return collectModuleImportNodes(source).dynamicImportExpressions
 }
 
 export function isBarePackageImportSpecifier(specifier: string) {

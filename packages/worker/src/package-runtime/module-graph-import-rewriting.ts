@@ -25,8 +25,8 @@ import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 import { assertNotSealedSecretProviderExport } from '#mcp/secrets/secret-providers/sealed-export.ts'
 import {
 	collectBundlerResolvedSpecifiers,
-	collectDynamicImportExpressionNodes,
-	collectLiteralImportNodes,
+	collectModuleImportNodesCached,
+	type ModuleImportNodesCache,
 } from './import-specifiers.ts'
 import { type BundleArtifactDependency } from './published-runtime-artifacts.ts'
 import {
@@ -134,6 +134,11 @@ type RewriteState = {
 	 * rewrite pass.
 	 */
 	publishedArtifactDependencies: Array<BundleArtifactDependency>
+	/**
+	 * Shared with reachability so each source string is parsed once per
+	 * prepare.
+	 */
+	importNodesCache: ModuleImportNodesCache
 }
 
 async function maybeEnsurePublishedArtifactTarget(input: {
@@ -525,8 +530,10 @@ async function rewriteKodyImports(input: {
 	 */
 	sourcePackageId: string | null
 }) {
-	const importNodes = collectLiteralImportNodes(input.source)
-	const dynamicImportNodes = collectDynamicImportExpressionNodes(input.source)
+	const {
+		literalImports: importNodes,
+		dynamicImportExpressions: dynamicImportNodes,
+	} = collectModuleImportNodesCached(input.state.importNodesCache, input.source)
 	if (importNodes.length === 0 && dynamicImportNodes.length === 0) {
 		return input.source
 	}
@@ -617,6 +624,33 @@ async function rewriteKodyImports(input: {
 	return helpers.length > 0 ? `${helpers.join('\n')}\n${rewritten}` : rewritten
 }
 
+export type PreparedKodyGraph = {
+	files: Record<string, string>
+	packages: LoadedKodyGraphPackages
+	publishedArtifactDependencies: Array<BundleArtifactDependency>
+	allowPlatformScopes: boolean
+	entryPoint: string
+}
+
+/**
+ * Request-scoped prepare cache keyed by entry + root package + platform-scope
+ * flag. Callers that build both module and importable-module bootstraps for
+ * the same export must share one Map so prepare runs once per graph.
+ */
+export type PreparedKodyGraphCache = Map<string, Promise<PreparedKodyGraph>>
+
+function preparedKodyGraphCacheKey(input: {
+	entryPoint: string
+	rootPackageId: string | null
+	allowPlatformScopes: boolean
+}) {
+	return JSON.stringify([
+		normalizePackageWorkspacePath(input.entryPoint),
+		input.rootPackageId,
+		input.allowPlatformScopes,
+	])
+}
+
 export async function prepareKodyGraphFiles(input: {
 	env: Env
 	baseUrl: string
@@ -625,7 +659,7 @@ export async function prepareKodyGraphFiles(input: {
 	entryPoint: string
 	rootPackageId?: string | null
 	allowPlatformScopes?: boolean
-}) {
+}): Promise<PreparedKodyGraph> {
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
 	}
@@ -635,11 +669,14 @@ export async function prepareKodyGraphFiles(input: {
 			files: input.sourceFiles,
 			path: input.entryPoint,
 		}) ?? normalizePackageWorkspacePath(input.entryPoint)
+	const importNodesCache: ModuleImportNodesCache = new Map()
 	const reachableRootFiles = collectReachableSourceFilePaths({
 		files: input.sourceFiles,
 		entryPoint,
 		rootPackage,
+		importNodesCache,
 	})
+	const allowPlatformScopes = input.allowPlatformScopes === true
 	const state: RewriteState = {
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -648,11 +685,12 @@ export async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
-		allowPlatformScopes: input.allowPlatformScopes === true,
+		allowPlatformScopes,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
 		publishedArtifactDependencies: [],
+		importNodesCache,
 	}
 	for (const [filePath, content] of Object.entries(input.sourceFiles)) {
 		const normalizedSourcePath = normalizePackageWorkspacePath(filePath)
@@ -705,6 +743,41 @@ export async function prepareKodyGraphFiles(input: {
 		files: refreshKodyRuntimeModules(files) as Record<string, string>,
 		packages: state.packages,
 		publishedArtifactDependencies: state.publishedArtifactDependencies,
+		allowPlatformScopes,
+		entryPoint,
+	}
+}
+
+/**
+ * Prepare once per export graph within a request. Concurrent module +
+ * importable-module builders for the same entry share the pending promise.
+ * Failures are not cached so a retry can rebuild.
+ */
+export async function getOrPrepareKodyGraphFiles(
+	input: Parameters<typeof prepareKodyGraphFiles>[0] & {
+		prepareCache?: PreparedKodyGraphCache
+	},
+): Promise<PreparedKodyGraph> {
+	const allowPlatformScopes = input.allowPlatformScopes === true
+	const rootPackageId = input.rootPackageId?.trim() || null
+	const cache = input.prepareCache
+	if (!cache) {
+		return await prepareKodyGraphFiles(input)
+	}
+	const key = preparedKodyGraphCacheKey({
+		entryPoint: input.entryPoint,
+		rootPackageId,
+		allowPlatformScopes,
+	})
+	const existing = cache.get(key)
+	if (existing) return await existing
+	const pending = prepareKodyGraphFiles(input)
+	cache.set(key, pending)
+	try {
+		return await pending
+	} catch (error) {
+		cache.delete(key)
+		throw error
 	}
 }
 

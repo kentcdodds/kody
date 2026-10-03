@@ -26,7 +26,10 @@ import {
 	collectStaticKodyPackageImportsFromFiles,
 	isTypeDeclarationFilePath,
 } from './static-kody-imports.ts'
-import { collectLiteralImportNodes } from './import-specifiers.ts'
+import {
+	collectModuleImportNodesCached,
+	type ModuleImportNodesCache,
+} from './import-specifiers.ts'
 import { type BundleArtifactDependency } from './published-runtime-artifacts.ts'
 import {
 	dirname,
@@ -97,6 +100,11 @@ export function collectReachableSourceFilePaths(input: {
 		prefix: string
 	} | null
 	includeTypeOnly?: boolean
+	/**
+	 * Optional request-scoped AST cache so prepare can reuse the same parse
+	 * when rewriting the same source files.
+	 */
+	importNodesCache?: ModuleImportNodesCache
 }) {
 	const reachable = new Set<string>()
 	const stack = [
@@ -117,9 +125,13 @@ export function collectReachableSourceFilePaths(input: {
 		const source = input.files[filePath]
 		if (source == null) continue
 		reachable.add(filePath)
-		for (const node of collectLiteralImportNodes(source, {
-			includeTypeOnly: input.includeTypeOnly,
-		})) {
+		for (const node of collectModuleImportNodesCached(
+			input.importNodesCache,
+			source,
+			{
+				includeTypeOnly: input.includeTypeOnly,
+			},
+		).literalImports) {
 			if (
 				node.kind === 'static' &&
 				node.specifier.startsWith(packageSpecifierPrefix)

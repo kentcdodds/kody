@@ -48,6 +48,7 @@ import {
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { type PreparedKodyGraphCache } from '#worker/package-runtime/module-graph.ts'
 import {
 	hasPublishedRuntimeArtifacts,
 	loadPublishedSourceManifestSnapshot,
@@ -786,9 +787,22 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async collectWorkspaceFiles(
 		root = repoSessionWorkspacePrefix,
 	): Promise<Record<string, string>> {
+		const snapshot = await this.collectWorkspacePublishSnapshot(root)
+		return snapshot.files
+	}
+
+	/**
+	 * One workspace walk that yields both the relative-path file map and the
+	 * tree hash used for checks_outdated. Publish reuses this instead of
+	 * globbing and re-reading every file three times.
+	 */
+	private async collectWorkspacePublishSnapshot(
+		root = repoSessionWorkspacePrefix,
+	): Promise<{ files: Record<string, string>; treeHash: string }> {
 		const entries = await this.listWorkspaceFileEntries(root)
 		const rootPrefix = `${root.replace(/\/+$/, '')}/`
 		const files: Record<string, string> = {}
+		const chunks: Array<string> = []
 		for (const entry of entries) {
 			// Raw bytes — UTF-8 `readFile` replaces invalid sequences with
 			// U+FFFD (PNG `0x89` → `0xFD`), which then poisons `/_assets`.
@@ -806,9 +820,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			const relativePath = entry.path.startsWith(rootPrefix)
 				? entry.path.slice(rootPrefix.length)
 				: entry.path
-			files[relativePath] = bytesToSnapshotString(bytes, relativePath)
+			const content = bytesToSnapshotString(bytes, relativePath)
+			files[relativePath] = content
+			chunks.push(`${entry.path}\n${content}\n`)
 		}
-		return files
+		const data = new TextEncoder().encode(chunks.join(''))
+		const digest = await crypto.subtle.digest('SHA-256', data)
+		const treeHash = [...new Uint8Array(digest)]
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('')
+		return { files, treeHash }
 	}
 
 	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
@@ -2529,6 +2550,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const results: Array<IsolatedArtifactRebuildTargetResult> = []
 		const remaining: Array<PublishedPackageArtifactBuildTarget> = []
+		const snapshotCache = new Map()
 		for (const target of input.targets) {
 			const alreadyBuilt =
 				!input.force &&
@@ -2538,6 +2560,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceId: input.sourceId,
 					publishedCommit: input.publishedCommit,
 					target,
+					snapshotCache,
 				}))
 			if (alreadyBuilt) {
 				results.push({
@@ -2588,6 +2611,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				results.push(...failTargets(remaining, message))
 				return { ok: false, message, results }
 			}
+			const prepareCache: PreparedKodyGraphCache = new Map()
 			for (const target of remaining) {
 				try {
 					const kvKey =
@@ -2599,6 +2623,7 @@ class RepoSessionBase extends DurableObject<Env> {
 							target,
 							baseUrl: input.baseUrl,
 							sourceFiles,
+							prepareCache,
 						})
 					results.push({
 						ok: true,
@@ -2694,6 +2719,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		target: PublishedPackageArtifactBuildTarget
 		baseUrl?: string
 		sourceFiles: Record<string, string>
+		prepareCache?: PreparedKodyGraphCache
 	}) {
 		const sourceAtPublishedCommit = {
 			...input.source,
@@ -2705,6 +2731,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			buildKodyModuleBundle,
 			buildKodyImportableModuleBundle,
 		} = await import('#worker/package-runtime/module-graph.ts')
+		const prepareCache = input.prepareCache ?? new Map()
 		return await persistPublishedPackageArtifactTarget({
 			env: this.env,
 			userId: input.userId,
@@ -2720,6 +2747,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
 					cacheKey: null,
+					prepareCache,
 				}),
 			buildAppClientBundle: async ({ entryPoint }) =>
 				await buildKodyAppClientBundle({
@@ -2734,6 +2762,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceFiles: input.sourceFiles,
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
+					prepareCache,
 				}),
 			buildImportableModuleBundle: async ({ entryPoint }) =>
 				await buildKodyImportableModuleBundle({
@@ -2743,6 +2772,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceFiles: input.sourceFiles,
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
+					prepareCache,
 				}),
 		})
 	}
@@ -2937,7 +2967,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const sessionBranch = sessionRow.session_branch
 		const checkStatus = await this.readCheckStatus()
-		const currentTreeHash = await this.computeTreeHash()
+		const workspaceSnapshot = await this.collectWorkspacePublishSnapshot()
+		const currentTreeHash = workspaceSnapshot.treeHash
 		if (
 			(!input.force && !checkStatus.runId) ||
 			(!input.force && !checkStatus.ok) ||
@@ -2978,8 +3009,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		}
 		if (source.entity_kind === 'package') {
-			const workspaceFiles = await this.collectWorkspaceFiles()
-			const afterContent = workspaceFiles[source.manifest_path]
+			const afterContent = workspaceSnapshot.files[source.manifest_path]
 			if (typeof afterContent !== 'string') {
 				throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 			}
@@ -3036,7 +3066,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 			throw error
 		}
-		const snapshotFiles = await this.collectWorkspaceFiles()
+		// Commit/push do not rewrite workspace file bytes, so reuse the
+		// snapshot collected once above for the published source KV write.
+		const snapshotFiles = workspaceSnapshot.files
 		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
 		if (input.promotePublished === false) {
 			return {

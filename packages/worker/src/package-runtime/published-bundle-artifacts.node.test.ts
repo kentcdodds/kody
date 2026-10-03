@@ -11,6 +11,24 @@ import {
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
+	listEntitySourcesByIds: vi.fn(
+		async (_db: unknown, ids: ReadonlyArray<string>) => {
+			const sources = []
+			for (const id of ids) {
+				const forUser = await mockModule.getEntitySourceByIdForUser(_db, {
+					id,
+					userId: 'user-1',
+				})
+				if (forUser) {
+					sources.push(forUser)
+					continue
+				}
+				const any = await mockModule.getEntitySourceById(_db, id)
+				if (any) sources.push(any)
+			}
+			return sources
+		},
+	),
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
 	readPublishedBundleArtifact: vi.fn(),
@@ -40,6 +58,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceByIdForUser(...args),
+	listEntitySourcesByIds: (db: unknown, ids: ReadonlyArray<string>) =>
+		mockModule.listEntitySourcesByIds(db, ids),
 }))
 
 vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
@@ -495,19 +515,26 @@ function priorModuleArtifact(input: {
 	artifactName: string
 	entryPoint: string
 	publishedCommit?: string
+	artifactKind?: 'module' | 'importable-module'
 }) {
 	const publishedCommit = input.publishedCommit ?? 'commit-old'
+	const artifactKind = input.artifactKind ?? 'module'
 	const mainModule = `dist/${input.entryPoint.replaceAll('/', '_')}.js`
 	return {
 		row: makeRow({
-			id: `row-${input.artifactName}`,
+			id:
+				artifactKind === 'module'
+					? `row-${input.artifactName}`
+					: `row-${artifactKind}-${input.artifactName}`,
 			publishedCommit,
+			artifactKind,
 			artifactName: input.artifactName,
 			entryPoint: input.entryPoint,
-			kvKey: `bundle-artifact:v1:source-1:${publishedCommit}:module:${input.artifactName}:${input.entryPoint}`,
+			kvKey: `bundle-artifact:v1:source-1:${publishedCommit}:${artifactKind}:${input.artifactName}:${input.entryPoint}`,
 		}),
 		artifact: {
 			...makeKvArtifact({
+				kind: artifactKind,
 				publishedCommit,
 				artifactName: input.artifactName,
 				entryPoint: input.entryPoint,
@@ -732,4 +759,121 @@ test('rebuildPublishedPackageArtifacts reuses unchanged prior artifacts and only
 			entryPoint: 'src/a.ts',
 		}),
 	)
+})
+
+test('rebuildPublishedPackageArtifacts shares snapshot reads across already-built targets and batches dependency source lookups', async () => {
+	const built = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+		publishedCommit: 'commit-built',
+	})
+	const builtImportable = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+		publishedCommit: 'commit-built',
+		artifactKind: 'importable-module',
+	})
+	mockModule.getPublishedBundleArtifactByIdentity.mockImplementation(
+		async (
+			_db: unknown,
+			query: { artifactKind: string; entryPoint: string },
+		) => {
+			if (query.entryPoint !== 'src/a.ts') return null
+			return query.artifactKind === 'importable-module'
+				? builtImportable.row
+				: built.row
+		},
+	)
+	mockModule.readPublishedBundleArtifact.mockImplementation(
+		async (input: { kvKey: string }) => {
+			if (input.kvKey === builtImportable.row.kvKey) {
+				return {
+					...builtImportable.artifact,
+					kind: 'importable-module',
+					createdAt: '2026-09-05T16:00:01.000Z',
+				}
+			}
+			return {
+				...built.artifact,
+				createdAt: '2026-09-05T16:00:01.000Z',
+			}
+		},
+	)
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: reusePreviousFiles,
+		invalidateArtifactsBefore: '2026-09-05T16:00:00.000Z',
+	})
+	mockModule.listEntitySourcesByIds.mockClear()
+	mockModule.readPublishedSourceSnapshot.mockClear()
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: reusePreviousFiles,
+		invalidateArtifactsBefore: '2026-09-05T16:00:00.000Z',
+	})
+
+	await rebuildPublishedPackageArtifacts(
+		makeRebuildInput({
+			name: '@alice/already-built',
+			description: 'fixture',
+			exports: { '.': './src/a.ts' },
+			publishedCommit: 'commit-built',
+			env: kvEnv,
+			buildModuleBundle: vi.fn(),
+			buildImportableModuleBundle: vi.fn(),
+		}),
+	)
+
+	// module + importable already-built checks share one snapshot read.
+	expect(mockModule.readPublishedSourceSnapshot).toHaveBeenCalledTimes(1)
+
+	const depArtifact = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+		publishedCommit: 'commit-old',
+	})
+	depArtifact.artifact.dependencies = [
+		{ sourceId: 'source-dep-a', publishedCommit: 'dep-1', kodyId: 'dep-a' },
+		{ sourceId: 'source-dep-b', publishedCommit: 'dep-1', kodyId: 'dep-b' },
+	]
+	depArtifact.row.publishedCommit = 'commit-old'
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
+		depArtifact.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(depArtifact.artifact)
+	stubSnapshots({ 'commit-old': {}, 'commit-reuse': {} })
+	mockModule.listEntitySourcesByIds.mockResolvedValue([
+		{
+			id: 'source-dep-a',
+			user_id: 'user-1',
+			published_commit: 'dep-1',
+		},
+		{
+			id: 'source-dep-b',
+			user_id: 'user-1',
+			published_commit: 'dep-1',
+		},
+	])
+	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:reused')
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValue(true)
+	mockModule.listEntitySourcesByIds.mockClear()
+
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env: kvEnv,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-reuse',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(true)
+	expect(mockModule.listEntitySourcesByIds).toHaveBeenCalledTimes(1)
+	expect(mockModule.listEntitySourcesByIds).toHaveBeenCalledWith(
+		{},
+		expect.arrayContaining(['source-dep-a', 'source-dep-b']),
+	)
+	expect(mockModule.getEntitySourceByIdForUser).not.toHaveBeenCalled()
 })

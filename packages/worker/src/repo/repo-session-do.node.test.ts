@@ -1389,6 +1389,29 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	)
 })
 
+test('publishSession walks the workspace once for tree hash, privacy, and snapshot', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const files = {
+		'package.json':
+			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+		'index.ts': 'export default async function run() { return "ok" }\n',
+	}
+	preparePublish('commit-one-walk', files)
+	mockModule.workspaceGlob.mockClear()
+	mockModule.workspaceReadFileBytes.mockClear()
+
+	await publish()
+
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ files }),
+	)
+	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
+	// One read per workspace file (not 3× from hash + privacy + snapshot).
+	expect(mockModule.workspaceReadFileBytes).toHaveBeenCalledTimes(
+		Object.keys(files).length,
+	)
+})
+
 test('publishFromExternalRef rejects stale expected HEAD values and checks fast-forward ancestry through the ephemeral clone', async () => {
 	setCommonSessionFixtures()
 	// Clone tip is the remote default-branch HEAD at clone time; a mismatch

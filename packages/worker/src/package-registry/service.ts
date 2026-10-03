@@ -38,6 +38,7 @@ import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { type PreparedKodyGraphCache } from '#worker/package-runtime/module-graph.ts'
 import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
@@ -365,6 +366,7 @@ export async function refreshSavedPackageProjection(input: {
 			if (loadedFiles) {
 				// Artifacts stay on the hot path: invoke needs them immediately
 				// and there is no safe cold-build substitute for a fresh publish.
+				const prepareCache: PreparedKodyGraphCache = new Map()
 				await rebuildPublishedPackageArtifacts({
 					env: input.env,
 					userId: input.userId,
@@ -382,6 +384,7 @@ export async function refreshSavedPackageProjection(input: {
 							entryPoint,
 							rootPackageId: savedPackage.id,
 							cacheKey: null,
+							prepareCache,
 						})
 					},
 					buildAppClientBundle: async ({ entryPoint }) => {
@@ -402,6 +405,7 @@ export async function refreshSavedPackageProjection(input: {
 							sourceFiles: loadedFiles,
 							entryPoint,
 							rootPackageId: savedPackage.id,
+							prepareCache,
 						})
 					},
 					buildImportableModuleBundle: async ({ entryPoint }) => {
@@ -414,6 +418,7 @@ export async function refreshSavedPackageProjection(input: {
 							sourceFiles: loadedFiles,
 							entryPoint,
 							rootPackageId: savedPackage.id,
+							prepareCache,
 						})
 					},
 				})
