@@ -13,7 +13,6 @@
 import { createMatcher } from 'remix/route-pattern/match'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
 import { routes } from '#universal/routes.ts'
-import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 
 export const sessionCookieName = 'kody_session'
 
@@ -103,9 +102,6 @@ export function resolveAppPageCacheControl(input: {
 		return { cacheControl: 'no-store' }
 	}
 	if (requestHasSessionCookie(input.request)) {
-		return { cacheControl: 'no-store' }
-	}
-	if (requestHasSiteBannerDismissCookie(input.request)) {
 		return { cacheControl: 'no-store' }
 	}
 	// Frame reloads share the page URL. Caching that response stores the

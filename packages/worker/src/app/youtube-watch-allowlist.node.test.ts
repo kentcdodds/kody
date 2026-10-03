@@ -53,7 +53,7 @@ test('loadPlaylistVideoIds fails open when YouTube is unreachable', async () => 
 	).resolves.toEqual([])
 })
 
-test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id and env extras', async () => {
+test('resolveYoutubeWatchAllowedVideoIds always includes the sample id and env extras', async () => {
 	const extraVideoId = 'dQw4w9wgvcQ'
 	const fetchImpl = async () => {
 		throw new Error('playlist fetch should not run')
@@ -94,38 +94,7 @@ test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists
 			throw new Error('playlist fetch should not run')
 		},
 		loadPlaylists: false,
-		listedBanners: [
-			{
-				ctaHref: `/?youtubeId=${videoId}`,
-				secondaryHref: null,
-				imageUrl: null,
-			},
-		],
 	})
 	expect(ids).toContain(videoId)
-	expect(ids).toEqual(expect.arrayContaining(bundledDocWatchVideoIds()))
-})
-
-test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying D1', async () => {
-	const bannerVideoId = 'dQw4w9wgvcQ'
-	const ids = await resolveYoutubeWatchAllowedVideoIds({
-		env: {
-			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
-			APP_DB: {
-				prepare() {
-					throw new Error('site_banners should not be queried')
-				},
-			},
-		} as unknown as Env,
-		listedBanners: [
-			{
-				ctaHref: `/?youtubeId=${bannerVideoId}`,
-				secondaryHref: null,
-				imageUrl: null,
-			},
-		],
-	})
-	expect(ids).toContain(videoId)
-	expect(ids).toContain(bannerVideoId)
 	expect(ids).toEqual(expect.arrayContaining(bundledDocWatchVideoIds()))
 })

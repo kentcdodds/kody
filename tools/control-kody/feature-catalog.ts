@@ -270,7 +270,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/admin/roles.json',
 			'/admin/reserved-usernames.json',
 			'/admin/feature-flags.json',
-			'/admin/banners.json',
 			'/admin/platform-integrations.json',
 			'/admin/provider-marks.json',
 			'/admin/codemods.json',

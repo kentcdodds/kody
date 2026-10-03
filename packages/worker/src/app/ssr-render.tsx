@@ -16,11 +16,6 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import {
-	loadEnabledSiteBannersForSsr,
-	loadSiteBannerLoaderData,
-} from '#app/site-banner-ssr.ts'
-import { type SiteBannerRecord } from '#universal/site-banners.ts'
 import { loadYoutubeWatchLoaderData } from '#app/youtube-watch-ssr.ts'
 import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
@@ -79,10 +74,6 @@ export type RenderAppPageInput = {
 	extraSetCookies?: Array<string>
 	/** Loader phases already recorded for this request; session + ssr append. */
 	serverTiming?: Array<ServerTimingEntry>
-	/** Shared enabled-banner read started by the handler, if any. */
-	listedBanners?:
-		| Promise<ReadonlyArray<SiteBannerRecord>>
-		| ReadonlyArray<SiteBannerRecord>
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
@@ -107,26 +98,16 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
-	const listedBanners = input.listedBanners ?? loadEnabledSiteBannersForSsr(env)
-	const [siteBanner, youtubeWatch] = await Promise.all([
-		pushServerTiming(serverTiming, 'siteBanner', () =>
-			loadSiteBannerLoaderData({
-				request,
-				env,
-				session,
-				pathname: requestUrl.pathname,
-				listedBanners,
-			}),
-		),
-		pushServerTiming(serverTiming, 'youtubeWatch', () =>
+	const youtubeWatch = await pushServerTiming(
+		serverTiming,
+		'youtubeWatch',
+		() =>
 			loadYoutubeWatchLoaderData({
 				env,
-				listedBanners,
 				loadPlaylists: parseYoutubeWatchSearch(requestUrl.search) !== null,
 			}),
-		),
-	])
-	const pageLoaderData = { ...loaderData, siteBanner, youtubeWatch }
+	)
+	const pageLoaderData = { ...loaderData, youtubeWatch }
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientAssets = getClientEntryAssets(requestUrl.pathname)
 	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'

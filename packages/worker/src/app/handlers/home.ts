@@ -12,7 +12,6 @@ import {
 	withVaryAccept,
 } from '#app/markdown-negotiation.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
-import { loadEnabledSiteBannersForSsr } from '#app/site-banner-ssr.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
 import { type routes } from '#universal/routes.ts'
@@ -30,9 +29,8 @@ export function createHomeHandler(env: Env) {
 			}
 
 			const walkthroughHosts = pickWalkthroughHosts()
-			// Start the banner list and hero playlist with auth so signed-in
-			// / (always no-store) does not pay those after auth finishes.
-			const listedBanners = loadEnabledSiteBannersForSsr(env)
+			// Start the hero playlist with auth so signed-in / (always
+			// no-store) does not pay that after auth finishes.
 			const landingHeroVideos = loadLandingHeroVideos({ env })
 			const user = await readAuthenticatedAppUser(request, env, {
 				prefetchFeatureFlags: true,
@@ -52,7 +50,6 @@ export function createHomeHandler(env: Env) {
 							walkthroughHosts,
 							landingHeroVideos: await landingHeroVideos,
 						},
-						listedBanners,
 					}),
 				),
 				origin,

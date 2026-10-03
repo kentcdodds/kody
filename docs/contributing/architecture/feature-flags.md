@@ -75,8 +75,7 @@ flag:
 - **MCP**:
   `adminFeatureFlagSet({ key, enabled: true, audience: "experiments_opt_in" })`.
 
-Audience values: `everyone` (default) | `experiments_opt_in`. Distinct from
-site-banner audiences.
+Audience values: `everyone` (default) | `experiments_opt_in`.
 
 ## Surfaces
 

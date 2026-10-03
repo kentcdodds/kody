@@ -87,15 +87,6 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 		],
 		['/account', {}],
 		['/', { session: { id: 'user-1' } }],
-		[
-			'/',
-			{
-				request: request(
-					'https://example.com/',
-					'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
-				),
-			},
-		],
 		['/', { request: request('https://example.com/', 'kody_session=stale') }],
 		['/', { responseSetsCookie: true }],
 	]

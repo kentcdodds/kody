@@ -51,7 +51,6 @@ import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { NotFoundPage } from './not-found-page.tsx'
 import { InternalErrorPage } from './internal-error-page.tsx'
-import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
 import { stripHomeOgQueryFromLocation } from './strip-home-og-query.ts'
@@ -318,7 +317,6 @@ export function App(handle: Handle<AppProps>) {
 						>
 							Skip to content
 						</a>
-						<SiteBanner snapshot={handle.props.loaderData?.siteBanner} />
 						{isAuthShellPath ? null : (
 							<SiteHeader
 								loggedIn={isLoggedIn}

@@ -338,12 +338,6 @@ const adminNavItems = [
 		paths: ['/admin/feature-flags'],
 	},
 	{
-		href: '/admin/banners',
-		label: 'Banners',
-		icon: 'announcement',
-		paths: ['/admin/banners'],
-	},
-	{
 		href: '/admin/platform-integrations',
 		label: 'Platform integrations',
 		icon: 'globe',
