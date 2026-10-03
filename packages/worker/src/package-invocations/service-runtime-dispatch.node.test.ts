@@ -1,6 +1,9 @@
 import { expect, test, vi } from 'vitest'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { deliverPackageEvent } from './service.ts'
 import {
 	packageInvocationsRepoMockModule as repoMockModule,
@@ -314,10 +317,15 @@ test('package events deliver with filters, idempotent replay, and retryable fail
 	})
 
 	failSubscriberManifestLoads(seed)
+	consoleWarn.mockImplementation(() => {})
 	await expect(
 		deliver(db, { ...message, idempotencyKey: 'discord:manifest-error' }),
 	).rejects.toThrow(
 		/Failed to load package manifest for package event dispatch/,
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'admin-package-subscription-manifest-load-failed',
+		expect.objectContaining({ packageId: 'pkg-subscriber' }),
 	)
 
 	patchSeededManifest(seedRuntimeDispatchPackages(), 'source-subscriber', {
