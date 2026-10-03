@@ -53,4 +53,32 @@ describe('zod worker startup barrel patch', () => {
 		expect(typeof classic.z.toJSONSchema).toBe('function')
 		expect(typeof mini.toJSONSchema).toBe('function')
 	})
+
+	test('classic and mini declaration barrels omit the stripped exports', async () => {
+		const { readFile } = await import('node:fs/promises')
+		const classicDts = await readFile(
+			new URL('../node_modules/zod/v4/classic/external.d.ts', import.meta.url),
+			'utf8',
+		)
+		const miniDts = await readFile(
+			new URL('../node_modules/zod/v4/mini/external.d.ts', import.meta.url),
+			'utf8',
+		)
+		const coreDts = await readFile(
+			new URL('../node_modules/zod/v4/core/index.d.ts', import.meta.url),
+			'utf8',
+		)
+		for (const snippet of [
+			'compile',
+			'withParser',
+			'fromJSONSchema',
+			'deepPartial',
+			'INVALID',
+			'CompileOptions',
+		]) {
+			expect(classicDts).not.toMatch(new RegExp(`\\b${snippet}\\b`))
+			expect(miniDts).not.toMatch(new RegExp(`\\b${snippet}\\b`))
+		}
+		expect(coreDts).not.toContain('./compile.js')
+	})
 })
