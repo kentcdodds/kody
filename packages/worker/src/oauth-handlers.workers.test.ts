@@ -1048,13 +1048,32 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 	const mcpBody = await mcpResponse.json()
 	expect(mcpBody).toEqual({
 		jsonrpc: '2.0',
-		id: null,
+		id: 1,
 		error: {
 			code: -32603,
 			message: 'Internal error',
 		},
 	})
 	expect(captureException).toHaveBeenCalledTimes(2)
+
+	const notificationResponse = await workerFetch(
+		new Request('https://heykody.dev/mcp', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer test-token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				method: 'notifications/initialized',
+			}),
+		}),
+	)
+	expect(notificationResponse.status).toBe(500)
+	expect(notificationResponse.headers.get('Content-Type')).toBeNull()
+	expect(await notificationResponse.text()).toBe('')
+	expect(captureException).toHaveBeenCalledTimes(3)
 
 	mcpThrow.mockRestore()
 	captureException.mockRestore()

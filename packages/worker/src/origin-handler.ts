@@ -26,6 +26,7 @@ import {
 	protectedResourceMetadataPath,
 	withMcpCors,
 } from './mcp-auth.ts'
+import { extractJsonRpcRequestIds } from './mcp/sse-response-guard.ts'
 import { handleMcpClientIdMetadataRequest } from './mcp-client/client-id-metadata.ts'
 import { handleCliClientIdMetadataRequest } from './cli-client-metadata.ts'
 import {
@@ -527,27 +528,130 @@ function isMalformedOAuthClientException(error: unknown, pathname: string) {
  * clients treat the call as a failed request instead of an OAuth token error
  * (or a Cloudflare 1101 if the error is rethrown). Real OAuth routes keep the
  * RFC 6749 error object. This does not cover isolate kills.
+ *
+ * Request IDs are peeked from a clone before `oauthProvider.fetch` so the error
+ * can correlate with the pending call. Peeking is capped so large execute
+ * bodies are not doubled in memory (memory-limit faults are out of scope).
  */
-function createMcpProviderExceptionResponse(request: Request) {
+const mcpJsonRpcIdPeekLimitBytes = 64_000
+
+type McpJsonRpcRequestIds = Array<string | number> | 'unknown'
+
+/**
+ * Read at most `maxBytes` from a request body. Returns `null` when the body
+ * exceeds the cap so callers can skip JSON-RPC id peeking without buffering a
+ * large execute payload.
+ */
+async function readRequestTextUpTo(
+	request: Request,
+	maxBytes: number,
+): Promise<string | null> {
+	const body = request.body
+	if (!body) {
+		const text = await request.text()
+		return text.length > maxBytes ? null : text
+	}
+	const reader = body.getReader()
+	const chunks: Array<Uint8Array> = []
+	let total = 0
+	try {
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (!value) continue
+			total += value.byteLength
+			if (total > maxBytes) {
+				await reader.cancel()
+				return null
+			}
+			chunks.push(value)
+		}
+	} finally {
+		reader.releaseLock()
+	}
+	const merged = new Uint8Array(total)
+	let offset = 0
+	for (const chunk of chunks) {
+		merged.set(chunk, offset)
+		offset += chunk.byteLength
+	}
+	return new TextDecoder().decode(merged)
+}
+
+async function peekMcpJsonRpcRequestIds(
+	request: Request,
+): Promise<McpJsonRpcRequestIds> {
+	const contentLengthHeader = request.headers.get('Content-Length')
+	if (contentLengthHeader !== null) {
+		const contentLength = Number(contentLengthHeader)
+		if (
+			!Number.isFinite(contentLength) ||
+			contentLength <= 0 ||
+			contentLength > mcpJsonRpcIdPeekLimitBytes
+		) {
+			return 'unknown'
+		}
+	}
+	try {
+		const text = await readRequestTextUpTo(
+			request.clone(),
+			mcpJsonRpcIdPeekLimitBytes,
+		)
+		if (text === null || text === '') return 'unknown'
+		return extractJsonRpcRequestIds(JSON.parse(text))
+	} catch {
+		return 'unknown'
+	}
+}
+
+function createMcpJsonRpcInternalError(id: string | number | null) {
+	return {
+		jsonrpc: '2.0' as const,
+		id,
+		error: {
+			code: -32603,
+			message: 'Internal error',
+		},
+	}
+}
+
+function createMcpProviderExceptionResponse(
+	request: Request,
+	requestIds: McpJsonRpcRequestIds,
+) {
+	const headers = {
+		'Cache-Control': 'no-store',
+		'Content-Type': 'application/json',
+	}
+	if (requestIds === 'unknown') {
+		return withMcpCors(
+			request,
+			new Response(JSON.stringify(createMcpJsonRpcInternalError(null)), {
+				status: 500,
+				headers,
+			}),
+		)
+	}
+	// Notifications have a method but no id — JSON-RPC forbids a response body.
+	if (requestIds.length === 0) {
+		return withMcpCors(
+			request,
+			new Response(null, {
+				status: 500,
+				headers: { 'Cache-Control': 'no-store' },
+			}),
+		)
+	}
+	const body =
+		requestIds.length === 1
+			? createMcpJsonRpcInternalError(requestIds[0]!)
+			: requestIds.map((id) => createMcpJsonRpcInternalError(id))
 	return withMcpCors(
 		request,
-		new Response(
-			JSON.stringify({
-				jsonrpc: '2.0',
-				id: null,
-				error: {
-					code: -32603,
-					message: 'Internal error',
-				},
-			}),
-			{
-				status: 500,
-				headers: {
-					'Cache-Control': 'no-store',
-					'Content-Type': 'application/json',
-				},
-			},
-		),
+		new Response(JSON.stringify(body), {
+			status: 500,
+			headers,
+		}),
 	)
 }
 
@@ -587,9 +691,10 @@ function createProviderOwnedPathExceptionResponse(
 	error: unknown,
 	pathname: string,
 	request: Request,
+	mcpRequestIds: McpJsonRpcRequestIds,
 ) {
 	if (isMcpResourceOwnedPath(pathname)) {
-		return createMcpProviderExceptionResponse(request)
+		return createMcpProviderExceptionResponse(request, mcpRequestIds)
 	}
 	return createOAuthProviderExceptionResponse(error, pathname)
 }
@@ -800,6 +905,7 @@ async function handleOriginAppFetch(
 		}
 	}
 
+	let mcpRequestIds: McpJsonRpcRequestIds = 'unknown'
 	try {
 		if (url.pathname === oauthPaths.token && request.method === 'POST') {
 			const { response, grantType } = await handleMcpOAuthTokenRequest({
@@ -812,6 +918,9 @@ async function handleOriginAppFetch(
 				grantType,
 			})
 		}
+		if (isMcpResourceOwnedPath(url.pathname) && request.method === 'POST') {
+			mcpRequestIds = await peekMcpJsonRpcRequestIds(request)
+		}
 		return await oauthProvider.fetch(request, env, ctx)
 	} catch (error) {
 		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
@@ -820,6 +929,7 @@ async function handleOriginAppFetch(
 			error,
 			url.pathname,
 			request,
+			mcpRequestIds,
 		)
 	}
 }
