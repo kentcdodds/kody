@@ -2,11 +2,12 @@ import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	anonymousHtmlCacheControl,
 	anonymousVisibilityGatedCacheControl,
+	clearRetiredSiteBannerDismissCookie,
 	isCacheableAnonymousPath,
+	requestHasRetiredSiteBannerDismissCookie,
 	requestHasSessionCookie,
 } from '#app/anonymous-html-cache.ts'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
-import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 import { prefersMarkdown } from '#app/markdown-negotiation.ts'
 
 export const anonymousHtmlEdgeCacheHeader = 'X-Kody-Cache'
@@ -40,7 +41,9 @@ export function isAnonymousHtmlCacheRequest(
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false
-	if (requestHasSiteBannerDismissCookie(request)) return false
+	// Skip shared cache while the retired dismiss cookie is present so origin
+	// can expire it (Set-Cookie responses are never stored).
+	if (requestHasRetiredSiteBannerDismissCookie(request)) return false
 	if (requestBypassesAnonymousDocumentCache(request)) return false
 	if (requestBypassesAnonymousHtmlCache(request)) return false
 	if (prefersMarkdown(request)) return false
@@ -78,7 +81,11 @@ export function isAnonymousHtmlCacheStoreable(response: Response) {
 	if (response.status !== 200) return false
 	if (response.headers.has('Set-Cookie')) return false
 	const contentType = response.headers.get('Content-Type') ?? ''
-	if (!contentType.toLowerCase().includes('text/html')) return false
+	const lowerType = contentType.toLowerCase()
+	// Marketing HTML plus the llms.txt plain-text indexes share this store.
+	if (!lowerType.includes('text/html') && !lowerType.includes('text/plain')) {
+		return false
+	}
 	const cacheControl = response.headers.get('Cache-Control')
 	return (
 		cacheControl === anonymousHtmlCacheControl ||
@@ -102,10 +109,18 @@ function stripCookieVary(headers: Headers) {
  * client abort) can still end cleanly at whatever bytes were written. Only a
  * body that reached the closing `</html>` is a document worth sharing; a
  * shorter one served as a HIT is a blank page for every anonymous visitor
- * until the entry expires.
+ * until the entry expires. Plain-text companions (llms.txt) only need a
+ * non-empty body.
  */
 export function isCompleteHtmlDocument(html: string) {
 	return /<\/html\s*>/i.test(html)
+}
+
+function isStoreableAnonymousCacheBody(contentType: string, body: string) {
+	const lowerType = contentType.toLowerCase()
+	if (lowerType.includes('text/html')) return isCompleteHtmlDocument(body)
+	if (lowerType.includes('text/plain')) return body.length > 0
+	return false
 }
 
 export function buildAnonymousHtmlCacheEntry(response: Response, html: string) {
@@ -129,15 +144,18 @@ async function storeCompleteAnonymousHtml(
 	response: Response,
 ) {
 	// Buffer first: an errored or truncated body must never reach `put`.
-	const html = await response.text()
-	if (!isCompleteHtmlDocument(html)) {
-		console.warn('anonymous-html-cache-skip-incomplete', {
-			url: cacheKey.url,
-			bytes: html.length,
-		})
+	const body = await response.text()
+	const contentType = response.headers.get('Content-Type') ?? ''
+	if (!isStoreableAnonymousCacheBody(contentType, body)) {
+		if (contentType.toLowerCase().includes('text/html')) {
+			console.warn('anonymous-html-cache-skip-incomplete', {
+				url: cacheKey.url,
+				bytes: body.length,
+			})
+		}
 		return
 	}
-	await cache.put(cacheKey, buildAnonymousHtmlCacheEntry(response, html))
+	await cache.put(cacheKey, buildAnonymousHtmlCacheEntry(response, body))
 }
 
 function withAnonymousHtmlCacheLookup(
@@ -183,7 +201,9 @@ export async function serveAnonymousHtmlFromCache(
 	next: () => Promise<Response>,
 ): Promise<Response> {
 	const eligible = isAnonymousHtmlCacheRequest(request, env)
-	if (!eligible) return next()
+	if (!eligible) {
+		return expireRetiredSiteBannerDismissCookie(request, await next())
+	}
 
 	const cacheKey = buildAnonymousHtmlCacheKey(request, env)
 	const cache = workerDefaultCache()
@@ -214,4 +234,27 @@ export async function serveAnonymousHtmlFromCache(
 		)
 	}
 	return withMiss
+}
+
+function expireRetiredSiteBannerDismissCookie(
+	request: Request,
+	response: Response,
+): Response {
+	if (!requestHasRetiredSiteBannerDismissCookie(request)) return response
+	const headers = new Headers(response.headers)
+	headers.append(
+		'Set-Cookie',
+		clearRetiredSiteBannerDismissCookie({
+			secure: new URL(request.url).protocol === 'https:',
+		}),
+	)
+	// Do not let intermediaries store the clear response; the next request
+	// without the cookie can use the shared anonymous HTML cache again.
+	headers.set('Cache-Control', 'no-store')
+	headers.delete('Vary')
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
 }

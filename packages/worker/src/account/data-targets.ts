@@ -125,12 +125,6 @@ export const accountOperatorOwnedD1Surfaces = [
 		reason:
 			'Platform-owned storage-bucket inventory cursor across RepoSessionIndex owners (one singleton row). Not user data; account deletion does not touch it.',
 	},
-	{
-		table: 'site_banners',
-		surface: 'site_banners',
-		reason:
-			'Operator-owned site announcement banners (global config like feature flags; no user_id). Per-user dismissals remain user-scoped and covered by their own target.',
-	},
 ] as const
 
 /** Targets that account export should skip (deletion still covers them). */
@@ -501,7 +495,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// CASCADE), but account deletion still issues an explicit DELETE so the
 	// cascade stays self-contained when FK enforcement is disabled.
 	{ kind: 'db_user_id', table: 'feature_flag_user_overrides' },
-	{ kind: 'db_user_id', table: 'site_banner_dismissals' },
 	// Two-factor verification rows are keyed by `target` = stringified db user
 	// id rather than a user_id column, so they need the dedicated kind.
 	{ kind: 'db_user_target', table: 'verifications' },

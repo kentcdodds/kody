@@ -98,7 +98,7 @@ export async function authorizeLocalExecuteOwnedPackageId(input: {
 	if (authorized.has(input.packageId)) return input.packageId
 	if (storageOwnerByPackageId.has(input.packageId)) {
 		throw new Error(
-			'Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, or oauthClientCredentials on execute --local. Use cloud execute.',
+			'Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, gatewayFetch, or oauthClientCredentials on execute --local. Use cloud execute.',
 		)
 	}
 	throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))

@@ -251,6 +251,41 @@ export function createInMemoryUserMeterEnv() {
 				if (!existing) return { outcome: 'needs_bootstrap' as const }
 				return ready(existing)
 			},
+			async readUsageSnapshot(input: {
+				day: string
+				weekStart: string
+				dailyResources: ReadonlyArray<string>
+				weeklyResources: ReadonlyArray<string>
+				includeStorageBytes?: boolean
+			}) {
+				const daily = input.dailyResources.map((resource) => {
+					if (!isDailyEntitlementResource(resource)) {
+						throw new Error(`Invalid daily resource: ${resource}`)
+					}
+					const existing = readRow(resource, input.day)
+					return existing
+						? { resource, ...ready(existing) }
+						: { resource, outcome: 'needs_bootstrap' as const }
+				})
+				const weekly = input.weeklyResources.map((resource) => {
+					if (!isDailyEntitlementResource(resource)) {
+						throw new Error(`Invalid daily resource: ${resource}`)
+					}
+					return {
+						resource,
+						outcome: 'ready' as const,
+						count: sumRange(resource, input.weekStart, input.day),
+					}
+				})
+				const storageBytes = input.includeStorageBytes
+					? (() => {
+							const existing = storageByUser.get(userId)
+							if (!existing) return { outcome: 'needs_bootstrap' as const }
+							return storageReady(existing)
+						})()
+					: null
+				return { daily, weekly, storageBytes }
+			},
 			async readRange(input: {
 				resource: string
 				startDay: string

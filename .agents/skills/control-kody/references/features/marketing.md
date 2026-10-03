@@ -42,10 +42,10 @@ see the player and chooser. Chooser membership and order come from the unlisted
 playlist `PLBPBUA8boGLA`. Client navigations load
 `GET /landing-hero-videos.json`. The lite player embeds the selected chooser
 video only, without a playlist id, so YouTube chrome uses that video's title.
-Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a banner.
-`/?youtubeId=<id>` opens the site-wide allowlisted YouTube overlay on those
-routes; unknown or disallowed ids do not open the player. Enabled site banners
-can appear in the first HTML.
+Chooser ids are on the YouTube allowlist for `/youtube-thumb` without a playlist
+round-trip on plain documents. `/?youtubeId=<id>` opens the site-wide
+allowlisted YouTube overlay on those routes; unknown or disallowed ids do not
+open the player.
 
 ## APIs
 

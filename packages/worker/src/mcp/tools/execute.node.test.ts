@@ -23,6 +23,7 @@ import {
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -64,6 +65,7 @@ const mockModule = vi.hoisted(() => ({
 			'execute-invoke': false,
 		}),
 	),
+	consumeDailyEntitlement: vi.fn(),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -93,6 +95,19 @@ vi.mock(
 		}
 	},
 )
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementsService>()
+	return {
+		...actual,
+		consumeDailyEntitlement: (
+			...args: Parameters<typeof actual.consumeDailyEntitlement>
+		) => {
+			mockModule.consumeDailyEntitlement(...args)
+			return actual.consumeDailyEntitlement(...args)
+		},
+	}
+})
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createPackageEventTools: (...args: Array<unknown>) =>
@@ -993,4 +1008,30 @@ export default async function main(params) {
 	expect(killed.isError).toBe(true)
 	expect(killed.structuredContent.error).toBe(executeInvokeFlagOffMessage)
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('execute does not consume daily entitlement when live flag resolution fails', async () => {
+	const userId = await createStableUserIdFromEmail('flag-fail@example.com')
+	const handler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: {
+			userId,
+			email: 'flag-fail@example.com',
+		},
+	})
+	mockModule.resolveCallerFeatureFlags.mockRejectedValueOnce(
+		new Error('flag resolution failed'),
+	)
+
+	const denied = await handler({
+		code: shouldNotRunCode,
+		conversationId: 'conv-flag-fail',
+	})
+
+	expect(denied.isError).toBe(true)
+	expect(denied.structuredContent.error).toBe('flag resolution failed')
+	expect(denied.structuredContent).not.toHaveProperty('entitlement')
+	expect(mockModule.consumeDailyEntitlement).not.toHaveBeenCalled()
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
 })

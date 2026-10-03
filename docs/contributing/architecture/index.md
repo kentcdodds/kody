@@ -82,9 +82,6 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
-- [Site banners](./site-banners.md): operator-owned announcement banners with
-  page targeting, audience, priority, dismiss, and SSR rendering, managed at
-  `/admin/banners`.
 - [YouTube watch overlay](./youtube-watch.md): site-wide `/?youtubeId=` player
   and first-party thumbnail proxy for allowlisted YouTube videos.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable

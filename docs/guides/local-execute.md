@@ -113,16 +113,21 @@ local runtime shim that binds `createAuthenticatedFetch`, `secretHeaders`,
 through CapabilityProxy hops (or pure placeholder builders for `secretHeaders`).
 `createAuthenticatedFetch` becomes `kody.authenticatedFetch` on origin, which
 expands `{{integration-token:…}}` via the same fetch gateway as cloud execute —
-long-lived OAuth tokens never enter local workerd. Published bundles that inline
-the virtual runtime (instead of importing `.__kody_virtual__/runtime.js`) are
-rewritten onto that shim during package-graph prep so Dropbox-style artifacts
-work under `--local` without cloud's ALS preload. Stamped `packageStorage` /
-`packageSecrets` hop as `kody.packageStorage*` / `kody.packageSecret*` with
-per-call ownership / share grant checks. Gmail-style helpers such as
-`@kentcdodds/google` and Dropbox helpers such as `@kentcdodds/dropbox` can
-complete authenticated outbound fetch under `--local` after package-graph
-download (responses over 4 MiB still need cloud execute or a smaller
-projection).
+long-lived OAuth tokens never enter local workerd. Published modules that use
+ambient `fetch` with `{{secret:…}}` placeholders are rewritten during
+package-graph prep: quoted secret literals become `__kodySecretRef(...)`, and
+`fetch` is rebound to `kody.gatewayFetch` so expansion still happens on origin
+(missing secrets fail closed before any third-party request). Published bundles
+that inline the virtual runtime (instead of importing
+`.__kody_virtual__/runtime.js`) are rewritten onto that shim during
+package-graph prep so Dropbox-style artifacts work under `--local` without
+cloud's ALS preload. Stamped `packageStorage` / `packageSecrets` hop as
+`kody.packageStorage*` / `kody.packageSecret*` with per-call ownership / share
+grant checks. Gmail-style helpers such as `@kentcdodds/google`, Dropbox helpers
+such as `@kentcdodds/dropbox`, and secret-backed helpers such as
+`@kentcdodds/fathom-analytics` can complete authenticated outbound fetch under
+`--local` after package-graph download (responses over 4 MiB still need cloud
+execute or a smaller projection).
 
 Ad hoc modules that import `createAuthenticatedFetch` directly from
 `kody:runtime` (not via a stamped `kody:@…` package) still need a CLI runtime

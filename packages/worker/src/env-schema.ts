@@ -266,8 +266,7 @@ export const EnvSchema = object({
 	// `none` disables playlists. Unset means no playlist fetch (tests).
 	YOUTUBE_ALLOWED_PLAYLIST_IDS: optionalNonEmptyStringSchema,
 	// Comma-separated extra YouTube video ids allowed by the overlay and
-	// first-party thumbnail proxy, in addition to playlist items and ids
-	// extracted from enabled banner hrefs.
+	// first-party thumbnail proxy, in addition to playlist items.
 	YOUTUBE_ALLOWED_VIDEO_IDS: optionalNonEmptyStringSchema,
 	// Optional YouTube Data API key for the homepage hero playlist (playlist
 	// order). When unset, the Worker reads the same unlisted playlist through

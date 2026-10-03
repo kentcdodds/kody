@@ -75,8 +75,7 @@ flag:
 - **MCP**:
   `adminFeatureFlagSet({ key, enabled: true, audience: "experiments_opt_in" })`.
 
-Audience values: `everyone` (default) | `experiments_opt_in`. Distinct from
-site-banner audiences.
+Audience values: `everyone` (default) | `experiments_opt_in`.
 
 ## Surfaces
 
@@ -186,13 +185,15 @@ Current flag state cannot reconstruct who was inside a percentage rollout last
 week, so measured flags record **exposures** at their configured write site
 `(stable user id, flag key, on/off, assignment source, timestamp)`. Most flags
 use the two evaluation chokepoints (the app session flag cache and the MCP
-caller flag resolver). Flags with `exposureRecording: 'paid-ranked-search'`
-(Jev) write only from paid list-mode ranked search so free opt-ins and
-non-search traffic stay outside that experiment frame. The write path mirrors
-usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
-production/preview, the D1 `feature_flag_exposure_rollups` table (migration
-`0001-squashed-init.sql`, 90-day retention) in local dev and tests — and never
-throws.
+caller flag resolver). Each chokepoint records **once per HTTP / MCP request**
+(memoized on the `Request` or `McpCallerContext`); call sites within the same
+request reuse that evaluation and do not re-write exposures. Flags with
+`exposureRecording: 'paid-ranked-search'` (Jev) write only from paid list-mode
+ranked search so free opt-ins and non-search traffic stay outside that
+experiment frame. The write path mirrors usage metering — the `FLAG_EXPOSURES`
+Analytics Engine dataset in production/preview, the D1
+`feature_flag_exposure_rollups` table (migration `0001-squashed-init.sql`,
+90-day retention) in local dev and tests — and never throws.
 
 The assignment source (`default` / `global` / `rollout` / `override`) is what
 keeps the readout honest: `override` users are hand-picked and excluded from

@@ -114,7 +114,6 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(counts.batchSizes).toEqual([2, 3])
 	expect(loadOnboardingData).not.toHaveBeenCalled()
 	const homeInput = vi.mocked(renderAppPage).mock.calls.at(-1)?.[0]
-	expect(homeInput?.listedBanners).toEqual(expect.any(Promise))
 	expect(homeInput?.loaderData?.onboarding).toMatchObject({
 		loggedIn: true,
 		username: 'home-user',

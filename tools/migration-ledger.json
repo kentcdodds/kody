@@ -311,6 +311,10 @@
 		{
 			"filename": "0077-usage-attribution-daily.sql",
 			"sha256": "2fe2d5406363f6a97d298128afb4ef4995ca794c57c51035bec4d691d9bb04fe"
+		},
+		{
+			"filename": "0078-drop-site-banners.sql",
+			"sha256": "5c2e70e9668f9c61a4e3608b70f6c4518cae8c8cb364b9c9cabe7717b9d2b733"
 		}
 	]
 }

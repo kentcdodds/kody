@@ -190,7 +190,7 @@ for (const operation of packageOperations) {
 			operation.expected,
 		)
 		await expect(operation.run(db, sharedPackageId)).rejects.toThrow(
-			/Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, or oauthClientCredentials on execute --local/,
+			/Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, gatewayFetch, or oauthClientCredentials on execute --local/,
 		)
 		await expect(operation.run(db, 'unknown-package')).rejects.toThrow(
 			/not authorized for storage access/,

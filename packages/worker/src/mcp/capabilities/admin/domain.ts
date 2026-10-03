@@ -46,9 +46,6 @@ import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 import { adminRunLogSqlBillingCapability } from './admin-run-log-sql-billing.ts'
 import { adminUserMeterStorageReconcileCapability } from './admin-user-meter-storage-reconcile.ts'
 import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.ts'
-import { adminBannerDeleteCapability } from './admin-banner-delete.ts'
-import { adminBannerListCapability } from './admin-banner-list.ts'
-import { adminBannerSaveCapability } from './admin-banner-save.ts'
 import { adminReservedUsernameAddCapability } from './admin-reserved-username-add.ts'
 import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
 import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
@@ -93,9 +90,6 @@ export const adminDomain = defineDomain({
 		'retention',
 		'unverified account purge',
 		'reserved username',
-		'banner',
-		'announcement',
-		'site banner',
 		'credits',
 		'credit grant',
 		'credit eligibility',
@@ -137,9 +131,6 @@ export const adminDomain = defineDomain({
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,
-		adminBannerListCapability,
-		adminBannerSaveCapability,
-		adminBannerDeleteCapability,
 		adminReservedUsernameListCapability,
 		adminReservedUsernameAddCapability,
 		adminReservedUsernameRemoveCapability,

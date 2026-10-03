@@ -9,11 +9,13 @@ import {
 	joinPath,
 	normalizeWorkspaceModulePath,
 	packageImportProxyPrefix,
+	packageRuntimeModulePrefix,
 	packageSourcePrefix,
 	resolveRelativeModulePath,
 	rootSourcePrefix,
 	runtimeModulePath,
 } from './module-graph-paths.ts'
+import { rewriteLocalExecuteModuleForSecretAwareFetch } from './rewrite-local-execute-secret-fetch.ts'
 import {
 	createPackageImportProxySource,
 	createRuntimeModuleReexportSource,
@@ -135,6 +137,11 @@ export async function buildLocalExecutePackageGraph(input: {
 		)
 	}
 
+	const packageIdsByPrefix = collectPackageIdsByModulePrefix(
+		modulesByName.keys(),
+	)
+	const packageIdByModulePath = new Map<string, string>()
+
 	for (const specifier of staticImports) {
 		const proxyPath = joinPath(
 			packageImportProxyPrefix,
@@ -160,6 +167,12 @@ export async function buildLocalExecutePackageGraph(input: {
 				`Saved package import ${specifier} is missing its published artifact modules for local execute.`,
 			)
 		}
+		const meteredPackageId = readMeteredProxyPackageId(proxySource)
+		if (meteredPackageId) {
+			const prefix = packagePrefixForPublishedModule(targetPath)
+			if (prefix) packageIdsByPrefix.set(prefix, meteredPackageId)
+			packageIdByModulePath.set(targetPath, meteredPackageId)
+		}
 		// Alias the exact `kody:@…` specifier the CLI embeds next to user code.
 		// Use an unmetered re-export so local workerd does not need cloud
 		// static-call metering helpers from the shared runtime. Target must be
@@ -183,6 +196,34 @@ export async function buildLocalExecutePackageGraph(input: {
 			modulePath,
 			source,
 			primaryRuntimePath,
+		})
+		if (rewritten.rewritten) {
+			modulesByName.set(modulePath, rewritten.source)
+			if (rewritten.packageId) {
+				packageIdByModulePath.set(modulePath, rewritten.packageId)
+				const prefix = packagePrefixForPublishedModule(modulePath)
+				if (prefix) packageIdsByPrefix.set(prefix, rewritten.packageId)
+			}
+		}
+	}
+
+	// Secret-bearing ambient fetch: cloud expands placeholders at the fetch
+	// gateway; local ambient fetch does not. Rebind published modules onto
+	// CapabilityProxy gatewayFetch and rewrite quoted `{{secret:…}}` literals
+	// to `__kodySecretRef(...)` so the resolvable template never leaves origin
+	// via ambient workerd fetch (kody#2808).
+	for (const [modulePath, source] of modulesByName.entries()) {
+		if (!shouldRewritePublishedModuleForSecretAwareFetch(modulePath)) {
+			continue
+		}
+		const packageId =
+			packageIdByModulePath.get(modulePath) ??
+			packageIdForModulePath(modulePath, packageIdsByPrefix)
+		const rewritten = rewriteLocalExecuteModuleForSecretAwareFetch({
+			modulePath,
+			source,
+			primaryRuntimePath,
+			packageId,
 		})
 		if (rewritten.rewritten) {
 			modulesByName.set(modulePath, rewritten.source)
@@ -231,6 +272,82 @@ function shouldOmitPreparedModule(modulePath: string) {
 	if (modulePath.startsWith(`${packageSourcePrefix}/`)) return true
 	if (modulePath.startsWith('.__kody_virtual__/')) return false
 	return true
+}
+
+function shouldRewritePublishedModuleForSecretAwareFetch(modulePath: string) {
+	if (isKodyRuntimeModulePath(modulePath)) return false
+	if (parsePackageRuntimeModulePathPackageId(modulePath) != null) return false
+	if (modulePath.startsWith(packageSpecifierPrefix)) return false
+	return modulePath.includes('/.__published_bundle__/')
+}
+
+function collectPackageIdsByModulePrefix(modulePaths: Iterable<string>) {
+	const packageIdsByPrefix = new Map<string, string>()
+	const marker = `/${packageRuntimeModulePrefix}/`
+	for (const modulePath of modulePaths) {
+		const packageId = parsePackageRuntimeModulePathPackageId(modulePath)
+		if (!packageId) continue
+		const index = modulePath.lastIndexOf(marker)
+		const prefix = index >= 0 ? modulePath.slice(0, index) : ''
+		packageIdsByPrefix.set(prefix, packageId)
+	}
+	return packageIdsByPrefix
+}
+
+function packagePrefixForPublishedModule(modulePath: string) {
+	const bundleIndex = modulePath.indexOf('/.__published_bundle__/')
+	if (bundleIndex >= 0) return modulePath.slice(0, bundleIndex)
+	const virtualIndex = modulePath.indexOf('/.__kody_virtual__/')
+	if (virtualIndex >= 0 && modulePath.includes(`${packageSourcePrefix}/`)) {
+		return modulePath.slice(0, virtualIndex)
+	}
+	return null
+}
+
+function packageIdForModulePath(
+	modulePath: string,
+	packageIdsByPrefix: ReadonlyMap<string, string>,
+) {
+	let bestPackageId: string | null = null
+	let bestPrefixLength = -1
+	for (const [prefix, packageId] of packageIdsByPrefix) {
+		if (prefix.length === 0) {
+			if (
+				bestPrefixLength < 0 &&
+				!modulePath.includes(`${packageSourcePrefix}/`) &&
+				!modulePath.includes('.__kody_packages__/')
+			) {
+				bestPackageId = packageId
+				bestPrefixLength = 0
+			}
+			continue
+		}
+		if (
+			(modulePath === prefix || modulePath.startsWith(`${prefix}/`)) &&
+			prefix.length > bestPrefixLength
+		) {
+			bestPackageId = packageId
+			bestPrefixLength = prefix.length
+		}
+	}
+	return bestPackageId
+}
+
+function readMeteredProxyPackageId(proxySource: string) {
+	const match =
+		/__kodyMeterStaticPackageExport\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(
+			proxySource,
+		)
+	if (!match?.[1]) return null
+	try {
+		return JSON.parse(
+			match[1].startsWith("'")
+				? `"${match[1].slice(1, -1).replaceAll('"', '\\"')}"`
+				: match[1],
+		) as string
+	} catch {
+		return null
+	}
 }
 
 function readProxyTargetAbsolutePath(proxyPath: string, proxySource: string) {

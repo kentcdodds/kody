@@ -87,6 +87,11 @@ const callerFeatureFlagResolutions = new WeakMap<
 	Promise<CallerFeatureFlagResolution | null>
 >()
 
+const callerFeatureFlagMaps = new WeakMap<
+	McpCallerContext,
+	Promise<CallerFeatureFlags>
+>()
+
 async function loadCallerFeatureFlagResolution(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -115,32 +120,7 @@ async function loadCallerFeatureFlagResolution(
 	return await promise
 }
 
-/**
- * Full per-request flag evaluations (enabled + assignment source), cached on
- * the caller context so search behavior and dedicated exposure recording
- * share one assignment.
- */
-export async function resolveCallerFeatureFlagEvaluations(
-	env: Env,
-	callerContext: McpCallerContext,
-): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation> | null> {
-	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
-	return resolution?.evaluations ?? null
-}
-
-/**
- * Resolve the caller's evaluated feature-flag map once per request. Used by
- * registry filtering (search/list) so access checks stay synchronous.
- * Evaluation also records success-metric exposures for measured flags (see
- * `#worker/feature-flags/exposure.ts`) so MCP-only users are represented in
- * admin metric readouts.
- *
- * Fail-closed rules: anonymous callers and authenticated callers whose stable
- * id cannot be resolved to a `users.id` get every flag off, so gated
- * capabilities never appear with a different flag state than the same user's
- * app session would compute.
- */
-export async function resolveCallerFeatureFlags(
+async function resolveAndRecordCallerFeatureFlags(
 	env: Env,
 	callerContext: McpCallerContext,
 ): Promise<CallerFeatureFlags> {
@@ -153,6 +133,49 @@ export async function resolveCallerFeatureFlags(
 	return Object.fromEntries(
 		featureFlagKeys.map((key) => [key, resolution.evaluations[key].enabled]),
 	) as Record<FeatureFlagKey, boolean>
+}
+
+/**
+ * Full per-request flag evaluations (enabled + assignment source), cached on
+ * the caller context so search behavior and dedicated exposure recording
+ * share one assignment. Does not record evaluation-site exposures; call
+ * `resolveCallerFeatureFlags` when those writes are needed.
+ */
+export async function resolveCallerFeatureFlagEvaluations(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation> | null> {
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	return resolution?.evaluations ?? null
+}
+
+/**
+ * Resolve the caller's evaluated feature-flag map once per request (same
+ * `McpCallerContext` object). Used by registry filtering (search/list) so
+ * access checks stay synchronous. Evaluation also records success-metric
+ * exposures for measured flags (see `#worker/feature-flags/exposure.ts`) so
+ * MCP-only users are represented in admin metric readouts — once per request,
+ * not once per call site.
+ *
+ * This is request-scoped only: the stateless `/mcp` lane builds a new caller
+ * context per HTTP request, so each request still evaluates and records once.
+ * Do not add a cross-request or per-isolate TTL cache here.
+ *
+ * Fail-closed rules: anonymous callers and authenticated callers whose stable
+ * id cannot be resolved to a `users.id` get every flag off, so gated
+ * capabilities never appear with a different flag state than the same user's
+ * app session would compute.
+ */
+export async function resolveCallerFeatureFlags(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<CallerFeatureFlags> {
+	let promise = callerFeatureFlagMaps.get(callerContext)
+	if (!promise) {
+		promise = resolveAndRecordCallerFeatureFlags(env, callerContext)
+		callerFeatureFlagMaps.set(callerContext, promise)
+	}
+	return await promise
 }
 
 export function callerCanAccessCapability(

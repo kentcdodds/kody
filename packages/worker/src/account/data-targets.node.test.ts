@@ -244,7 +244,6 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 		'platform_oauth_apps',
 		'platform_provider_marks',
 		'repo_session_storage_bucket_cursor',
-		'site_banners',
 		'system_email_attachments',
 		'system_email_delivery_events',
 		'system_email_messages',
@@ -271,11 +270,9 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 							? 'Operator-provisioned built-in OAuth app'
 							: table === 'platform_provider_marks'
 								? 'Operator-owned provider brand marks'
-								: table === 'site_banners'
-									? 'Operator-owned site announcement'
-									: table.startsWith('repo_session_')
-										? 'Platform-owned'
-										: 'operator-owned system email',
+								: table.startsWith('repo_session_')
+									? 'Platform-owned'
+									: 'operator-owned system email',
 					),
 				}),
 			),

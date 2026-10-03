@@ -64,8 +64,28 @@ export {
 };
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// {{secret:…}} opaque refs from packageSecrets.get). Ambient local fetch does
-// not expand them; pair with createAuthenticatedFetch for secret-bearing calls.
+// opaque refs from packageSecrets.get). Local ambient fetch does not expand
+// them; package-graph rebinds fetch to __kodyGatewayFetch so secret-bearing
+// calls hop through CapabilityProxy to the fetch gateway (same as cloud).
+export function __kodySecretRef(name, scope) {
+	const trimmed = String(name ?? "").trim();
+	if (!trimmed) {
+		throw new Error("__kodySecretRef requires a non-empty secret name.");
+	}
+	if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+		throw new Error(
+			"__kodySecretRef name must use letters, numbers, dots, underscores, or hyphens.",
+		);
+	}
+	if (scope == null) {
+		return "{{" + "secret:" + trimmed + "}}";
+	}
+	if (scope === "package" || scope === "session" || scope === "user") {
+		return "{{" + "secret:" + trimmed + "|scope=" + scope + "}}";
+	}
+	throw new Error(\`Unsupported secret scope "\${scope}".\`);
+}
+
 const __kodyParseSecretNameOrPlaceholder = (value, fieldName) => {
 	const trimmed = String(value ?? "").trim();
 	if (!trimmed) {
@@ -259,6 +279,189 @@ async function __kodyCreateAuthenticatedFetch(providerName, packageId) {
 			},
 		);
 	};
+}
+
+/**
+ * Secret-aware ambient fetch for local execute: hops through CapabilityProxy
+ * \`kody.gatewayFetch\` when the request carries secret / integration-token
+ * placeholders so expansion happens on origin via the same fetch gateway as
+ * cloud execute. Non-secret requests use ambient global fetch (no 4 MiB hop
+ * cap, no CapabilityProxy round-trip).
+ */
+export function __kodyCreatePackageBoundGatewayFetch(packageId) {
+	return async function gatewayFetch(input, init) {
+		return __kodyGatewayFetchCall(input, init, packageId);
+	};
+}
+
+export async function __kodyGatewayFetch(input, init) {
+	return __kodyGatewayFetchCall(input, init, null);
+}
+
+function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
+	const probe = (value) => {
+		if (typeof value !== "string" || !value.includes("{{")) return false;
+		return (
+			// Escape the scope pipe (| in generated source): bare | is regex
+			// alternation and would miss {{secret:name|scope=user}} from
+			// __kodySecretRef.
+			/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
+				value,
+			) ||
+			/{{secret-basic:[^}]+}}/.test(value) ||
+			/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
+			/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
+		);
+	};
+	if (probe(url)) return true;
+	if (probe(bodyText)) return true;
+	for (const value of Object.values(headers ?? {})) {
+		if (probe(value)) return true;
+	}
+	return false;
+}
+
+async function __kodyGatewayFetchCall(input, init, packageId) {
+	let url;
+	let method = "GET";
+	let headers = {};
+	let bodyBytes = null;
+	// Prefer ambient fetch(input, init) when the probe did not consume the
+	// original body - that keeps implicit Content-Type from string /
+	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
+	let reuseOriginal = true;
+	if (typeof input === "string" || input instanceof URL) {
+		url = String(input);
+		method = String(init?.method ?? "GET");
+		headers = Object.fromEntries(new Headers(init?.headers).entries());
+		if (init?.body != null) {
+			const body = init.body;
+			// FormData cannot be byte-probed / gateway-serialized. Detect
+			// placeholders in field strings; otherwise reuse ambient fetch so
+			// non-secret multipart POSTs keep working under --local.
+			if (typeof FormData !== "undefined" && body instanceof FormData) {
+				let formText = "";
+				for (const [name, value] of body.entries()) {
+					formText += name + "\\n";
+					if (typeof value === "string") {
+						formText += value + "\\n";
+					} else if (value && typeof value.name === "string") {
+						formText += value.name + "\\n";
+					}
+				}
+				// Secrets inside multipart field names/values cannot be expanded
+				// by the fetch gateway (body is opaque). Header/URL secrets with
+				// a clean FormData body still hop like cloud.
+				if (
+					__kodyRequestHasSecretPlaceholders("", {}, formText)
+				) {
+					throw new Error(
+						"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
+					);
+				}
+				if (
+					!__kodyRequestHasSecretPlaceholders(url, headers, null)
+				) {
+					return globalThis.fetch(input, init);
+				}
+				const encoded = new Request(url, {
+					method,
+					headers,
+					body,
+				});
+				// Keep the pre-Request url string so path {{secret:…}}
+				// placeholders are not percent-encoded by Request.
+				method = encoded.method;
+				headers = Object.fromEntries(encoded.headers.entries());
+				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
+				reuseOriginal = false;
+			} else {
+			bodyBytes = await __kodyBodyToBytes(body);
+			if (
+				(typeof Blob !== "undefined" && body instanceof Blob) ||
+				(body && typeof body.getReader === "function")
+			) {
+				reuseOriginal = false;
+				if (
+					typeof Blob !== "undefined" &&
+					body instanceof Blob &&
+					body.type
+				) {
+					const hasContentType = Object.keys(headers).some(
+						(key) => key.toLowerCase() === "content-type",
+					);
+					if (!hasContentType) {
+						headers["content-type"] = body.type;
+					}
+				}
+			}
+			}
+		}
+	} else {
+		const merged = new Request(input, init);
+		url = merged.url;
+		method = merged.method;
+		headers = Object.fromEntries(merged.headers.entries());
+		if (method !== "GET" && method !== "HEAD") {
+			bodyBytes = new Uint8Array(await merged.arrayBuffer());
+			reuseOriginal = false;
+		}
+	}
+	const bodyText =
+		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
+	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
+		if (reuseOriginal) {
+			return globalThis.fetch(input, init);
+		}
+		const fallbackInit = {
+			method,
+			headers,
+			...(bodyBytes != null ? { body: bodyBytes } : {}),
+		};
+		const signal =
+			init?.signal ?? (input instanceof Request ? input.signal : null);
+		if (signal != null) fallbackInit.signal = signal;
+		const redirect =
+			init?.redirect ?? (input instanceof Request ? input.redirect : null);
+		if (redirect != null) fallbackInit.redirect = redirect;
+		return globalThis.fetch(url, fallbackInit);
+	}
+	const contentType = Object.entries(headers).find(
+		([key]) => key.toLowerCase() === "content-type",
+	)?.[1];
+	// Multipart bodies are opaque to the fetch gateway. Fail closed only when
+	// placeholders are in the body itself; header/URL secrets still hop so
+	// authenticated uploads match cloud executeGatewayFetch.
+	if (
+		typeof contentType === "string" &&
+		contentType.toLowerCase().includes("multipart/") &&
+		bodyText != null &&
+		__kodyRequestHasSecretPlaceholders("", {}, bodyText)
+	) {
+		throw new Error(
+			"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
+		);
+	}
+	const result = await kody.gatewayFetch({
+		...(packageId ? { packageId } : {}),
+		request: {
+			url,
+			method,
+			headers,
+			...(bodyBytes != null
+				? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
+				: {}),
+		},
+	});
+	const bytes = __kodyBase64ToBytes(result.bodyBase64 ?? "");
+	return new Response(
+		__kodyNullBodyStatuses.has(result.status) ? null : bytes,
+		{
+			status: result.status,
+			statusText: result.statusText,
+			headers: result.headers,
+		},
+	);
 }
 
 export function __kodyCreatePackageBoundStorage(packageId) {

@@ -98,6 +98,30 @@ export type UserMeterConsumeResult =
 
 export type UserMeterReadResult = UserMeterBootstrapState | UserMeterReadyState
 
+/** One daily counter entry from {@link UserMeterRpc.readUsageSnapshot}. */
+export type UserMeterUsageSnapshotDailyEntry = {
+	resource: DailyEntitlementResource
+} & UserMeterReadResult
+
+/** One weekly window sum from {@link UserMeterRpc.readUsageSnapshot}. */
+export type UserMeterUsageSnapshotWeeklyEntry = {
+	resource: DailyEntitlementResource
+	outcome: 'ready'
+	count: number
+}
+
+/**
+ * Combined meter read for entitlement usage snapshots: daily counters for
+ * `day`, weekly sums from `weekStart` through `day`, and optional storage
+ * bytes. Missing daily keys and a missing storage singleton still report
+ * `needs_bootstrap` so callers can cold-init the same way as point reads.
+ */
+export type UserMeterUsageSnapshotResult = {
+	daily: Array<UserMeterUsageSnapshotDailyEntry>
+	weekly: Array<UserMeterUsageSnapshotWeeklyEntry>
+	storageBytes: UserMeterStorageBytesReadResult | null
+}
+
 export type UserMeterRefundResult = UserMeterReadyState
 
 export type UserMeterInitializeResult = UserMeterReadyState & {
@@ -911,6 +935,63 @@ class UserMeterBase extends DurableObject<Env> {
 		const row = this.readRow(resource, day)
 		if (!row) return { outcome: 'needs_bootstrap' }
 		return readyState(row.count, row.revision)
+	}
+
+	/**
+	 * One-RPC read of every daily counter, weekly window, and optional storage
+	 * bytes an entitlement usage snapshot needs. Prunes stale counters once.
+	 * Missing daily keys and a missing storage singleton still return
+	 * `needs_bootstrap` so callers can cold-init the same way as {@link read}
+	 * / {@link readStorageBytes}; this method does not write.
+	 */
+	async readUsageSnapshot(input: {
+		day: string
+		weekStart: string
+		dailyResources: ReadonlyArray<string>
+		weeklyResources: ReadonlyArray<string>
+		includeStorageBytes?: boolean
+		now?: string
+	}): Promise<UserMeterUsageSnapshotResult> {
+		const day = assertUtcDayKey(input.day)
+		const weekStart = assertUtcDayKey(input.weekStart)
+		if (weekStart > day) {
+			throw new Error(
+				`UserMeter readUsageSnapshot weekStart ${JSON.stringify(weekStart)} is after day ${JSON.stringify(day)}.`,
+			)
+		}
+		const now = input.now ? new Date(input.now) : new Date()
+		this.deleteStaleCounters(Number.isNaN(now.valueOf()) ? new Date() : now)
+
+		const daily: Array<UserMeterUsageSnapshotDailyEntry> = []
+		for (const raw of input.dailyResources) {
+			const resource = assertDailyResource(raw)
+			const row = this.readRow(resource, day)
+			daily.push(
+				row
+					? { resource, ...readyState(row.count, row.revision) }
+					: { resource, outcome: 'needs_bootstrap' },
+			)
+		}
+
+		const weekly: Array<UserMeterUsageSnapshotWeeklyEntry> = []
+		for (const raw of input.weeklyResources) {
+			const resource = assertDailyResource(raw)
+			weekly.push({
+				resource,
+				outcome: 'ready',
+				count: this.sumRange(resource, weekStart, day),
+			})
+		}
+
+		const storageBytes = input.includeStorageBytes
+			? (() => {
+					const row = this.readStorageRow()
+					if (!row) return { outcome: 'needs_bootstrap' as const }
+					return this.storageReadyState(row.bytes, row.revision)
+				})()
+			: null
+
+		return { daily, weekly, storageBytes }
 	}
 
 	/**
@@ -1818,6 +1899,18 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		day: string
 		now?: string
 	}) => Promise<UserMeterReadResult>
+	/**
+	 * Batch read for entitlement usage snapshots: daily counters, weekly
+	 * windows, and optional storage bytes in one Durable Object hop.
+	 */
+	readUsageSnapshot: (input: {
+		day: string
+		weekStart: string
+		dailyResources: ReadonlyArray<string>
+		weeklyResources: ReadonlyArray<string>
+		includeStorageBytes?: boolean
+		now?: string
+	}) => Promise<UserMeterUsageSnapshotResult>
 	refund: (input: {
 		resource: string
 		day: string

@@ -760,20 +760,49 @@ test('anonymous homepage document: doctype, preloads, scroll restoration, loop t
 	expect(timing).toContain('ssr;dur=')
 	expect(response.headers.get('Vary')).toBe('Cookie')
 	const publicCache = 'public, max-age=60, stale-while-revalidate=300'
-	for (const path of ['/', '/onboarding', '/docs/how-kody-works']) {
-		const { response: page } = await render(env, path)
+	for (const path of [
+		'/',
+		'/onboarding',
+		'/docs/how-kody-works',
+		'/login',
+		'/signup',
+	]) {
+		const { response: page, html } = await render(env, path)
 		expect(page.headers.get('Cache-Control')).toBe(publicCache)
+		expect(page.headers.get('Vary')).toBe('Cookie')
+		if (path === '/login' || path === '/signup') {
+			const props = readAppRootProps(html)
+			expect(props.session).toBeNull()
+			expect(html).not.toMatch(/csrf|nonce=/i)
+			expect(html).not.toContain('user@example.com')
+		}
 	}
 
-	// Any session cookie (even stale) and auth pages stay private.
+	// Any session cookie (even stale) stays private; auth paths included.
 	for (const [path, cookie] of [
 		['/', 'kody_session=stale-or-unsigned'],
 		['/', await cookieFor()],
-		['/login', undefined],
+		['/login', 'kody_session=stale-or-unsigned'],
+		['/signup', await cookieFor()],
 	] as const) {
 		const { response: page } = await render(env, path, { cookie })
 		expect(page.headers.get('Cache-Control')).toBe('no-store')
 	}
+
+	// Anonymous auth HTML is viewer-independent aside from Remix handle ids
+	// (same per-render variance already accepted for cached /pricing).
+	function normalizeRemixIds(input: string) {
+		return input
+			.replace(/<!-- rmx:h:h[0-9a-f]+ -->/g, '<!-- rmx:h:HID -->')
+			.replace(/"h[0-9a-f]+":\{"exportName"/g, '"HID":{"exportName"')
+			.replace(/\bs[0-9a-f]+-\d+/g, 'sHANDLE')
+	}
+	const loginA = await render(env, '/login')
+	const loginB = await render(env, '/login')
+	expect(normalizeRemixIds(loginA.html)).toBe(normalizeRemixIds(loginB.html))
+	const signupA = await render(env, '/signup')
+	const signupB = await render(env, '/signup')
+	expect(normalizeRemixIds(signupA.html)).toBe(normalizeRemixIds(signupB.html))
 })
 
 test('renderAppPage inlines the stylesheet only when ASSETS serves HTML-safe CSS', async () => {

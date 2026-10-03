@@ -119,6 +119,8 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	const llms = await call(createLlmsTxtHandler, '/llms.txt')
 	expect(llms.status).toBe(200)
 	expect(llms.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+	expect(llms.headers.get('Cache-Control')).toBe(publicCache)
+	expect(llms.headers.get('Vary')).toBe('Cookie')
 	const llmsBody = await llms.text()
 	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
 	expect(llmsBody).not.toContain('/docs/values.md')

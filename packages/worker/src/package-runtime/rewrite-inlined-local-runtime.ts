@@ -596,6 +596,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		]
 			.filter(Boolean)
 			.join('\n')
+		const emitFetchBinding = !input.authorBindings.has('fetch')
 		return `
 import {
 	kody,
@@ -605,13 +606,20 @@ import {
 	workflows,
 	packages,
 	events,
+	__kodySecretRef,
 	__kodyCreatePackageBoundAuthenticatedFetch,
+	${emitFetchBinding ? '__kodyCreatePackageBoundGatewayFetch,' : ''}
 	__kodyCreatePackageBoundStorage,
 	__kodyCreatePackageBoundSecrets,
 	__kodyCreatePackageBoundOauthClientCredentials,
 } from ${shim};
 
 ${packageBoundLines.join('\n')}
+${
+	emitFetchBinding
+		? `var fetch = __kodyCreatePackageBoundGatewayFetch(${packageIdLiteral});`
+		: ''
+}
 ${aliases}
 ${facadeBlock}
 `.trim()

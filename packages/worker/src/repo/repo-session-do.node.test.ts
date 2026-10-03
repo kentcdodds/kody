@@ -1334,7 +1334,6 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 		expect.objectContaining({ id: 'source-1', publishedCommit: 'commit-base' }),
 	)
 
-	// A failing D1 revert still surfaces the original persistence error.
 	preparePublish(
 		'commit-published-double-fail',
 		{ 'kody.json': jobManifest },
@@ -1358,30 +1357,35 @@ test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for 
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
-	// Best-effort publish git-note attachment logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
-	// The manifest entry must be present in files per the real
-	// writePublishedSourceSnapshot contract; git internals are excluded.
 	const files = {
 		'kody.json': jobManifest,
 		'package.json': '{"name":"demo","kody":{"id":"demo"}}',
 		'src/index.ts': 'export default {}',
 	}
 	preparePublish('commit-published-new', { ...files, '.git/config': '' })
-
+	mockModule.workspaceGlob.mockClear()
+	mockModule.workspaceReadFileBytes.mockClear()
 	await publish()
-
-	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledTimes(1)
-	const snapshotCall = mockModule.writePublishedSourceSnapshot.mock.calls[0]![0]
-	expect(snapshotCall.source.id).toBe('source-1')
-	expect(snapshotCall.source.published_commit).toBe('commit-published-new')
-	expect(snapshotCall.files).toEqual(files)
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: expect.objectContaining({
+				id: 'source-1',
+				published_commit: 'commit-published-new',
+			}),
+			files,
+		}),
+	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			id: 'source-1',
 			publishedCommit: 'commit-published-new',
 		}),
+	)
+	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
+	expect(mockModule.workspaceReadFileBytes).toHaveBeenCalledTimes(
+		Object.keys(files).length,
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('publish_git_note'),
@@ -1427,7 +1431,6 @@ test('publishFromExternalRef rejects stale expected HEAD values and checks fast-
 	)
 	expect(mockModule.resolveArtifactDefaultBranchHead).not.toHaveBeenCalled()
 
-	// Best-effort publish git-note setup logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
 	mockModule.getEntitySourceById.mockResolvedValue(
@@ -1592,13 +1595,11 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 		],
 	] as const
 	for (const [kvGet, prefix, run] of stagedRunners) {
-		// Expired staging fails closed with an actionable message.
 		kvGet.mockResolvedValueOnce(null as never)
 		const expired = await run(`${prefix}:user-1:gone`)
 		expect(expired.ok).toBe(false)
 		expect(expired.message).toContain('staging data expired')
 
-		// A staging key namespaced to another user is rejected before any read.
 		kvGet.mockClear()
 		const crossUser = await run(`${prefix}:user-2:abc`)
 		expect(crossUser.ok).toBe(false)
