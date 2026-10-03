@@ -456,6 +456,32 @@ test('runDoctor reports node, playwright, hooks, deps, health, and local-d1 chec
 	expect(staleInstall.checks.find((check) => check.name === 'deps')?.ok).toBe(
 		false,
 	)
+
+	const unreadableLockfile = await runDoctor({
+		nodeVersion: 'v26.1.2',
+		homeDir: tmpdir(),
+		hooksPath: '.husky',
+		inspectPlaywright: playwrightOk,
+		inspectInstalledLockfile: async () => {
+			throw new Error('Unexpected end of JSON input')
+		},
+		probeHealth: async () => true,
+		ports: [3742],
+		origin: null,
+		persistRoot: tmpdir(),
+	})
+	expect(unreadableLockfile.ok).toBe(false)
+	expect(
+		unreadableLockfile.checks.find((check) => check.name === 'deps'),
+	).toEqual({
+		name: 'deps',
+		ok: false,
+		detail:
+			'Could not inspect package-lock.json: Unexpected end of JSON input. Check that the file is readable and valid JSON.',
+	})
+	expect(
+		unreadableLockfile.checks.some((check) => check.name === 'health'),
+	).toBe(true)
 })
 
 test('readHealth accepts a unique short SHA and a descendant live SHA', async () => {

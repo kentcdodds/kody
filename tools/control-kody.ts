@@ -496,9 +496,18 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
 			: 'git core.hooksPath is empty. Run npm run hooks:ensure.',
 	})
 
-	const installedLockfile = await (
+	const inspectInstalledLockfile =
 		deps.inspectInstalledLockfile ?? checkInstalledLockfile
-	)()
+	let installedLockfile: { ok: boolean; detail: string }
+	try {
+		installedLockfile = await inspectInstalledLockfile()
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error)
+		installedLockfile = {
+			ok: false,
+			detail: `Could not inspect package-lock.json: ${detail}. Check that the file is readable and valid JSON.`,
+		}
+	}
 	checks.push({
 		name: 'deps',
 		ok: installedLockfile.ok,
