@@ -218,3 +218,18 @@ test('runtime rebuild typecheck of published source only verifies the callable c
 		message: 'No semantic diagnostics for 1 package runtime entrypoint(s).',
 	})
 })
+
+test('multi-callable typecheck keeps per-entrypoint diagnostics from one harness program', async () => {
+	const result = await typecheckPackageEntrypointsFromSourceFiles({
+		sourceFiles: {
+			'package.json': createManifest({}),
+			'src/job-a.ts': 'export default async function run() { return "a" }\n',
+			'src/job-b.ts': 'export default 42\n',
+		},
+		entryPoints: [{ path: 'src/job-a.ts' }, { path: 'src/job-b.ts' }],
+	})
+	expect(result.ok).toBe(false)
+	expect(result.message).toMatch(/src\/job-b\.ts:\d+:\d+/)
+	expect(result.message).toMatch(/not assignable|Argument of type/i)
+	expect(result.message).not.toMatch(/src\/job-a\.ts:\d+:\d+/)
+})

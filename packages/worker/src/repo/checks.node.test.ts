@@ -432,6 +432,72 @@ export default async (params) => {
 	expect(getSemanticDiagnostics).toHaveBeenCalledWith(moduleCheckPath)
 })
 
+test('runRepoChecks typechecks every callable through one language-service program', async () => {
+	const getSemanticDiagnostics = vi.fn((path: string) =>
+		path === moduleCheckPath ? [] : [],
+	)
+	const { result, typeScriptFileSystem } = await runChecks(
+		packageFiles(
+			manifest(
+				'multi-callable',
+				{
+					jobs: {
+						alpha: onceJob('src/job-a.ts'),
+						beta: onceJob('src/job-b.ts'),
+					},
+					subscriptions: {
+						'email.message.received': { handler: './src/on-email.ts' },
+					},
+				},
+				{
+					exports: {
+						'.': './src/index.ts',
+						'./job-a': './src/job-a.ts',
+						'./job-b': './src/job-b.ts',
+						'./on-email': './src/on-email.ts',
+					},
+				},
+			),
+			{
+				'src/index.ts': 'export const ready = true\n',
+				'src/job-a.ts': 'export default async () => ({ a: true })\n',
+				'src/job-b.ts': 'export default async () => ({ b: true })\n',
+				'src/on-email.ts': 'export default async (event) => event\n',
+			},
+		),
+		{ getSemanticDiagnostics },
+	)
+
+	expect(result.ok).toBe(true)
+	expect(findCheck(result, 'typecheck')?.ok).toBe(true)
+	expect(getSemanticDiagnostics).toHaveBeenCalledTimes(1)
+	expect(getSemanticDiagnostics).toHaveBeenCalledWith(moduleCheckPath)
+	const harnessWrite = typeScriptFileSystem.write.mock.calls.find(
+		(call) => call[0] === moduleCheckPath,
+	)?.[1]
+	expect(harnessWrite).toEqual(
+		expect.stringContaining('import userEntrypoint0 from'),
+	)
+	expect(harnessWrite).toEqual(
+		expect.stringContaining('import userEntrypoint1 from'),
+	)
+	expect(harnessWrite).toEqual(
+		expect.stringContaining('import userEntrypoint2 from'),
+	)
+	expect(harnessWrite).toEqual(
+		expect.stringContaining('__kodyTypecheckModule(userEntrypoint0)'),
+	)
+	expect(harnessWrite).toEqual(
+		expect.stringContaining('__kodyTypecheckModule(userEntrypoint2)'),
+	)
+	// One harness write — not one rewrite per callable target.
+	expect(
+		typeScriptFileSystem.write.mock.calls.filter(
+			(call) => call[0] === moduleCheckPath,
+		),
+	).toHaveLength(1)
+})
+
 test('runRepoChecks still reports unknown globals for package-owned jobs', async () => {
 	const { result } = await runChecks(
 		packageFiles(

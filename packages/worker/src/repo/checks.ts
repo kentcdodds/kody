@@ -59,6 +59,7 @@ import {
 } from '#worker/worker-bundler-modules.ts'
 import {
 	createRepoCapabilitiesModuleTypecheckHarness,
+	mapRepoCapabilitiesModuleTypecheckHarnessLines,
 	repoBackedModuleEntrypointExportErrorMessage,
 	repoCapabilitiesModuleTypecheckHarnessPath,
 } from './repo-kody-execution.ts'
@@ -293,6 +294,7 @@ type TypecheckDiagnostic = {
 	start?: number
 	length?: number
 	file?: {
+		fileName?: string
 		text?: string
 		getLineAndCharacterOfPosition(pos: number): {
 			line: number
@@ -861,21 +863,49 @@ function getPackageTypecheckDiagnostics(input: {
 		fileName: string
 		diagnostics: Array<TypecheckDiagnostic>
 	}> = []
-	for (const target of input.targets) {
-		if (target.kind === 'module') continue
-		writePrelude(target.emittedEventTopics)
+	const callableTargets = input.targets.filter(
+		(target) => target.kind !== 'module',
+	)
+	if (callableTargets.length > 0) {
+		const entryPoints = callableTargets.map((target) => target.path)
+		writePrelude(callableTargets[0]!.emittedEventTopics)
+		const harnessSource = createRepoCapabilitiesModuleTypecheckHarness({
+			entryPoints,
+		})
 		input.fileSystem.write(
 			repoCapabilitiesModuleTypecheckHarnessPath,
-			createRepoCapabilitiesModuleTypecheckHarness({
-				entryPoint: target.path,
-			}),
+			harnessSource,
 		)
-		results.push({
-			fileName: target.path,
-			diagnostics: input.languageService.getSemanticDiagnostics(
-				repoCapabilitiesModuleTypecheckHarnessPath,
-			),
+		const lineToEntryPoint = mapRepoCapabilitiesModuleTypecheckHarnessLines({
+			entryPoints,
 		})
+		const harnessDiagnostics = input.languageService.getSemanticDiagnostics(
+			repoCapabilitiesModuleTypecheckHarnessPath,
+		)
+		const diagnosticsByEntryPoint = new Map<
+			string,
+			Array<TypecheckDiagnostic>
+		>()
+		for (const entryPoint of entryPoints) {
+			diagnosticsByEntryPoint.set(entryPoint, [])
+		}
+		for (const diagnostic of harnessDiagnostics) {
+			const attributedPath = attributeTypecheckDiagnosticToEntryPoint({
+				diagnostic,
+				entryPoints,
+				lineToEntryPoint,
+			})
+			const bucket =
+				diagnosticsByEntryPoint.get(attributedPath) ??
+				diagnosticsByEntryPoint.get(entryPoints[0]!)
+			bucket?.push(diagnostic)
+		}
+		for (const target of callableTargets) {
+			results.push({
+				fileName: target.path,
+				diagnostics: diagnosticsByEntryPoint.get(target.path) ?? [],
+			})
+		}
 	}
 	if (!input.reachableSourceFilePaths) return results
 	writePrelude(input.targets.flatMap((target) => target.emittedEventTopics))
@@ -890,6 +920,39 @@ function getPackageTypecheckDiagnostics(input: {
 		})
 	}
 	return results
+}
+
+function attributeTypecheckDiagnosticToEntryPoint(input: {
+	diagnostic: TypecheckDiagnostic
+	entryPoints: ReadonlyArray<string>
+	lineToEntryPoint: Map<number, string>
+}) {
+	const diagnosticFileName =
+		typeof input.diagnostic.file?.fileName === 'string'
+			? input.diagnostic.file.fileName.replace(/\\/g, '/')
+			: null
+	if (diagnosticFileName) {
+		const matchingEntry = input.entryPoints.find(
+			(entryPoint) =>
+				diagnosticFileName === entryPoint ||
+				diagnosticFileName.endsWith(`/${entryPoint}`),
+		)
+		if (matchingEntry) return matchingEntry
+	}
+	if (
+		diagnosticFileName?.endsWith(repoCapabilitiesModuleTypecheckHarnessPath) ||
+		diagnosticFileName === repoCapabilitiesModuleTypecheckHarnessPath ||
+		diagnosticFileName == null
+	) {
+		if (typeof input.diagnostic.start === 'number' && input.diagnostic.file) {
+			const { line } = input.diagnostic.file.getLineAndCharacterOfPosition(
+				input.diagnostic.start,
+			)
+			const fromLine = input.lineToEntryPoint.get(line)
+			if (fromLine) return fromLine
+		}
+	}
+	return input.entryPoints[0]!
 }
 
 function formatPackageTypecheckDiagnostics(
