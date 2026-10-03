@@ -303,6 +303,55 @@ type TypecheckDiagnostic = {
 	}
 }
 
+/**
+ * `@typescript/vfs` throws formatted compiler-options diagnostics (for
+ * example TS2688 when a package tsconfig lists `types: ["node"]` and the
+ * check filesystem has no `@types/node`) instead of returning them from
+ * `getSemanticDiagnostics`. Invalid `tsconfig.json` parse errors are
+ * thrown the same way from the worker-bundler host. Authors own those
+ * configs — surface them as typecheck failures so publish returns
+ * `checks_failed` instead of a Sentry-visible internal error.
+ */
+function isTypescriptLanguageServiceCallerErrorMessage(message: string) {
+	const trimmed = message.trimStart()
+	return /^error TS\d+:/m.test(trimmed) || trimmed.startsWith('tsconfig.json:')
+}
+
+async function createRepoChecksTypescriptLanguageService(input: {
+	fileSystem: RepoChecksFileSystem
+}): Promise<
+	| {
+			ok: true
+			fileSystem: {
+				write(path: string, content: string): void
+			}
+			languageService: {
+				dispose(): void
+				getSemanticDiagnostics(path: string): Array<TypecheckDiagnostic>
+			}
+	  }
+	| { ok: false; message: string }
+> {
+	const { createTypescriptLanguageService } =
+		await loadWorkerBundlerTypescriptTools()
+	try {
+		const created = await createTypescriptLanguageService({
+			fileSystem: input.fileSystem,
+		})
+		return {
+			ok: true,
+			fileSystem: created.fileSystem,
+			languageService: created.languageService,
+		}
+	} catch (error) {
+		const message = getErrorMessage(error).trimEnd()
+		if (isTypescriptLanguageServiceCallerErrorMessage(message)) {
+			return { ok: false, message }
+		}
+		throw error
+	}
+}
+
 function flattenDiagnosticMessageText(messageText: unknown): string {
 	if (typeof messageText === 'string') return messageText
 	if (
@@ -1051,13 +1100,13 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
-	const { createTypescriptLanguageService } =
-		await loadWorkerBundlerTypescriptTools()
-	const { fileSystem, languageService } = await createTypescriptLanguageService(
-		{
-			fileSystem: typecheckFileSystem,
-		},
-	)
+	const created = await createRepoChecksTypescriptLanguageService({
+		fileSystem: typecheckFileSystem,
+	})
+	if (!created.ok) {
+		return created
+	}
+	const { fileSystem, languageService } = created
 	try {
 		const diagnostics = getPackageTypecheckDiagnostics({
 			targets: input.entryPoints.map((entryPoint) => ({
@@ -1238,13 +1287,13 @@ export async function runPackageTypecheckLanguageService(input: {
 		repoChecksSyntheticTsconfigPath,
 		buildRepoChecksTsconfig(baseTsconfig),
 	)
-	const { createTypescriptLanguageService } =
-		await loadWorkerBundlerTypescriptTools()
-	const { fileSystem, languageService } = await createTypescriptLanguageService(
-		{
-			fileSystem: typecheckFileSystem,
-		},
-	)
+	const created = await createRepoChecksTypescriptLanguageService({
+		fileSystem: typecheckFileSystem,
+	})
+	if (!created.ok) {
+		return created
+	}
+	const { fileSystem, languageService } = created
 	try {
 		const reachableSourceFilePaths =
 			baseTsconfig == null
