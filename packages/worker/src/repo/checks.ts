@@ -311,10 +311,19 @@ type TypecheckDiagnostic = {
  * thrown the same way from the worker-bundler host. Authors own those
  * configs — surface them as typecheck failures so publish returns
  * `checks_failed` instead of a Sentry-visible internal error.
+ *
+ * Match `error TS####:` anywhere: formatDiagnostics uses a bare
+ * `error TS####:` prefix for config diagnostics without a file, and
+ * `path(line,col): error TS####:` when the diagnostic points at the
+ * author tsconfig (or the synthetic extends base we copy it into).
  */
 function isTypescriptLanguageServiceCallerErrorMessage(message: string) {
 	const trimmed = message.trimStart()
-	return /^error TS\d+:/m.test(trimmed) || trimmed.startsWith('tsconfig.json:')
+	return (
+		/\berror TS\d+:/.test(trimmed) ||
+		trimmed.startsWith('tsconfig.json:') ||
+		trimmed.startsWith('.__kody_repo_tsconfig_base__.json:')
+	)
 }
 
 async function createRepoChecksTypescriptLanguageService(input: {

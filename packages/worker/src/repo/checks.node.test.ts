@@ -589,6 +589,55 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 	).toBe(repoTsconfig)
 })
 
+test('runRepoChecks returns typecheck failure for formatDiagnostics path(line,col) form', async () => {
+	// @typescript/vfs formatDiagnostics uses `path(line,col): error TS####:`
+	// when the diagnostic names the synthetic extends base. That must still
+	// become checks_failed, not a thrown internal error (Bugbot on #2877).
+	const files = packageFiles(manifest('tsconfig-path-diag'), {
+		'tsconfig.json': JSON.stringify({
+			compilerOptions: { strict: true, noEmit: true },
+		}),
+	})
+	withRequiredPackageDocs(files)
+	setupDefaultBundleMocks()
+	let snapshotFiles = new Map<string, string>()
+	const snapshot = {
+		read: vi.fn((path: string) => snapshotFiles.get(path) ?? null),
+	}
+	mockModule.createFileSystemSnapshot.mockImplementation(
+		async (entries: AsyncIterable<readonly [string, string]>) => {
+			snapshotFiles = new Map()
+			for await (const [path, content] of entries) {
+				snapshotFiles.set(path, content)
+			}
+			return snapshot
+		},
+	)
+	const message =
+		".__kody_repo_tsconfig_base__.json(1,1): error TS5023: Unknown compiler option 'totallyBogusOption'."
+	mockModule.createTypescriptLanguageService.mockRejectedValue(
+		new Error(message),
+	)
+	const result = await runRepoChecks({
+		workspace: {
+			async readFile(path: string) {
+				return files.get(path) ?? null
+			},
+			async glob() {
+				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
+			},
+		},
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+	})
+	expect(result.ok).toBe(false)
+	expect(findCheck(result, 'typecheck')).toEqual({
+		kind: 'typecheck',
+		ok: false,
+		message,
+	})
+})
+
 test('runRepoChecks validates static kody package dependency declarations and returns manifest failures instead of throwing', async () => {
 	// Invalid kody.dependencies (npm-style ranges, non-package specifiers) must
 	// return checks_failed, not throw — otherwise MCP observability opens a
