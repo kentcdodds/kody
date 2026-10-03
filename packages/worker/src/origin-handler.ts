@@ -425,6 +425,31 @@ const mcpApiHandler = {
 	},
 } satisfies ExportedHandler<Env>
 
+function isLoopbackHostname(hostname: string) {
+	return (
+		hostname === 'localhost' ||
+		hostname.endsWith('.localhost') ||
+		hostname === '127.0.0.1' ||
+		hostname === '[::1]' ||
+		hostname === '::1'
+	)
+}
+
+/**
+ * Returns a 308 redirect to the HTTPS equivalent of `url` when the resolved
+ * app origin is plain `http:` on a non-loopback host; otherwise `null`.
+ * Loopback hosts stay on HTTP for local development.
+ */
+function getInsecureOriginRedirect(appOrigin: string, url: URL) {
+	const origin = new URL(appOrigin)
+	if (origin.protocol !== 'http:' || isLoopbackHostname(origin.hostname)) {
+		return null
+	}
+	const secureUrl = new URL(url)
+	secureUrl.protocol = 'https:'
+	return Response.redirect(secureUrl.toString(), 308)
+}
+
 function getOriginOAuthProvider(resource: string) {
 	const existing = oauthProvidersByResource.get(resource)
 	if (existing) return existing
@@ -685,9 +710,14 @@ async function handleOriginAppFetch(
 	// `/.well-known/oauth-protected-resource/mcp`). Do not serve a second
 	// custom document here — it would diverge from the library's audience.
 
-	const resource = mcpOAuthResourceUri(
-		getAppBaseUrl({ env, requestUrl: request.url }),
-	)
+	// OAuthProvider v1 rejects a non-loopback `http:` resource URI, and the
+	// resource is derived from the request origin. Upgrade plain-HTTP requests
+	// (crawlers hitting `http://kody.codes/...`) to HTTPS instead of throwing.
+	const appOrigin = getAppBaseUrl({ env, requestUrl: request.url })
+	const insecureRedirect = getInsecureOriginRedirect(appOrigin, url)
+	if (insecureRedirect) return insecureRedirect
+
+	const resource = mcpOAuthResourceUri(appOrigin)
 	const oauthProvider = getOriginOAuthProvider(resource)
 
 	// Gemini (and other browser MCP hosts) treat an empty-bodied 401 as a hard
