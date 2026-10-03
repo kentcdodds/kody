@@ -63,9 +63,12 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 		],
 		[home, { headers: { Authorization: 'Bearer x' } }, false],
 		[home, { headers: { 'Cache-Control': 'no-cache' } }, false],
-		['https://kody.codes/login', {}, false],
 		[home, { headers: { Accept: 'text/markdown' } }, false],
 		[home, { headers: { Accept: 'text/html' } }, true],
+		['https://kody.codes/llms.txt', {}, true],
+		['https://kody.codes/docs/llms.txt', {}, true],
+		['https://kody.codes/login', {}, false],
+		['https://kody.codes/signup', {}, false],
 		[
 			'https://kody.codes/community',
 			{ headers: { 'x-remix-target': 'community-listings' } },
@@ -115,7 +118,15 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 		[{ status: 404 }, false],
 		[{ setCookie: 'kody_session=x; Path=/' }, false],
 		[{ contentType: 'application/json' }, false],
+		[{ contentType: 'text/plain; charset=utf-8' }, true],
 		[{ cacheControl: 'no-store' }, false],
+		[
+			{
+				contentType: 'text/plain; charset=utf-8',
+				cacheControl: 'public, max-age=300',
+			},
+			false,
+		],
 	]
 	expect(
 		storeableCases.filter(

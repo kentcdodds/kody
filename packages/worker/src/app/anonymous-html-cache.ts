@@ -1,5 +1,6 @@
 /**
- * Shared Cache-Control for anonymous marketing HTML. Session pages and any
+ * Shared Cache-Control for anonymous marketing HTML (and the viewer-independent
+ * `/llms.txt` / `/docs/llms.txt` plain-text indexes). Session pages and any
  * response that sets a cookie stay `no-store`. The origin Worker stores
  * cookie-less GET responses in `caches.default` keyed on canonical origin +
  * pathname + search plus a `__accept=html` marker; markdown-preferring
@@ -38,6 +39,9 @@ const cacheableAnonymousExactPaths = new Set([
 	'/onboarding',
 	'/docs',
 	'/docs/connect',
+	// Viewer-independent docs indexes (plain text, same Cache API path).
+	'/llms.txt',
+	'/docs/llms.txt',
 ])
 
 // Public package surfaces: home, tree, and the listing-uuid shapes they

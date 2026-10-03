@@ -119,3 +119,39 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	})
 	expect(await edgeCache.match(setCookieKey)).toBeUndefined()
 })
+
+test('anonymous llms.txt is stored in caches.default; /login and /signup are not', async () => {
+	const probe = crypto.randomUUID()
+	const llmsPaths = ['/llms.txt', '/docs/llms.txt'] as const
+	for (const pathname of llmsPaths) {
+		const url = `https://test.kody.dev${pathname}?edge-cache=${probe}`
+		const miss = await workerFetch(new Request(url))
+		expect(miss.status).toBe(200)
+		expect(miss.headers.get('Content-Type')).toMatch(/text\/plain/i)
+		expect(miss.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		expect(miss.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		const missBody = await miss.text()
+		expect(missBody.startsWith('# Kody')).toBe(true)
+
+		const hit = await workerFetch(new Request(url))
+		expect(hit.status).toBe(200)
+		expect(hit.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		expect(hit.headers.get('Vary')?.toLowerCase()).toContain('cookie')
+		await expect(hit.text()).resolves.toBe(missBody)
+	}
+
+	for (const pathname of ['/login', '/signup'] as const) {
+		const url = `https://test.kody.dev${pathname}?edge-cache=${probe}`
+		const first = await workerFetch(new Request(url))
+		expect(first.status).toBe(200)
+		expect(first.headers.get(anonymousHtmlEdgeCacheHeader)).toBeNull()
+		expect(first.headers.get('Cache-Control')).toBe('no-store')
+		await first.body?.cancel()
+
+		const second = await workerFetch(new Request(url))
+		expect(second.headers.get(anonymousHtmlEdgeCacheHeader)).toBeNull()
+		expect(second.headers.get('Cache-Control')).toBe('no-store')
+		await second.body?.cancel()
+	}
+})

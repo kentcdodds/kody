@@ -78,7 +78,11 @@ export function isAnonymousHtmlCacheStoreable(response: Response) {
 	if (response.status !== 200) return false
 	if (response.headers.has('Set-Cookie')) return false
 	const contentType = response.headers.get('Content-Type') ?? ''
-	if (!contentType.toLowerCase().includes('text/html')) return false
+	const lowerType = contentType.toLowerCase()
+	// Marketing HTML plus the llms.txt plain-text indexes share this store.
+	if (!lowerType.includes('text/html') && !lowerType.includes('text/plain')) {
+		return false
+	}
 	const cacheControl = response.headers.get('Cache-Control')
 	return (
 		cacheControl === anonymousHtmlCacheControl ||
@@ -102,10 +106,18 @@ function stripCookieVary(headers: Headers) {
  * client abort) can still end cleanly at whatever bytes were written. Only a
  * body that reached the closing `</html>` is a document worth sharing; a
  * shorter one served as a HIT is a blank page for every anonymous visitor
- * until the entry expires.
+ * until the entry expires. Plain-text companions (llms.txt) only need a
+ * non-empty body.
  */
 export function isCompleteHtmlDocument(html: string) {
 	return /<\/html\s*>/i.test(html)
+}
+
+function isStoreableAnonymousCacheBody(contentType: string, body: string) {
+	const lowerType = contentType.toLowerCase()
+	if (lowerType.includes('text/html')) return isCompleteHtmlDocument(body)
+	if (lowerType.includes('text/plain')) return body.length > 0
+	return false
 }
 
 export function buildAnonymousHtmlCacheEntry(response: Response, html: string) {
@@ -129,15 +141,18 @@ async function storeCompleteAnonymousHtml(
 	response: Response,
 ) {
 	// Buffer first: an errored or truncated body must never reach `put`.
-	const html = await response.text()
-	if (!isCompleteHtmlDocument(html)) {
-		console.warn('anonymous-html-cache-skip-incomplete', {
-			url: cacheKey.url,
-			bytes: html.length,
-		})
+	const body = await response.text()
+	const contentType = response.headers.get('Content-Type') ?? ''
+	if (!isStoreableAnonymousCacheBody(contentType, body)) {
+		if (contentType.toLowerCase().includes('text/html')) {
+			console.warn('anonymous-html-cache-skip-incomplete', {
+				url: cacheKey.url,
+				bytes: body.length,
+			})
+		}
 		return
 	}
-	await cache.put(cacheKey, buildAnonymousHtmlCacheEntry(response, html))
+	await cache.put(cacheKey, buildAnonymousHtmlCacheEntry(response, body))
 }
 
 function withAnonymousHtmlCacheLookup(

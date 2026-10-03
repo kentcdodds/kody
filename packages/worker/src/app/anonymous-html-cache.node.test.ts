@@ -55,6 +55,8 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 		'/onboarding/step-1',
 		'/docs',
 		'/docs/how-kody-works',
+		'/llms.txt',
+		'/docs/llms.txt',
 	]
 	expect(
 		sharedPaths.map((pathname) => [pathname, pageCache(pathname)]),
@@ -64,6 +66,11 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 	expect(isCacheableAnonymousPath('/docs/connect')).toBe(true)
 	expect(isCacheableAnonymousPath('/docs/nested/path')).toBe(false)
 	expect(isCacheableAnonymousPath('/onboarding/step-2/notion')).toBe(true)
+	// Auth pages stay out of the anonymous edge cache (separate #2690 decision).
+	expect(isCacheableAnonymousPath('/login')).toBe(false)
+	expect(isCacheableAnonymousPath('/signup')).toBe(false)
+	expect(pageCache('/login')).toEqual(noStore)
+	expect(pageCache('/signup')).toEqual(noStore)
 
 	const privateCases: Array<[string, Partial<PageCacheInput>]> = [
 		// Local dev: a browser-cached document would be what Vite's post-HMR page

@@ -60,6 +60,44 @@ test('a complete anonymous document is stored and replayed', async () => {
 	expect(hit.text).toBe(completeDocument)
 })
 
+test('anonymous llms.txt plain text is stored and replayed like marketing HTML', async () => {
+	const body = '# Kody\n\n> viewer-independent docs index\n'
+	function storeablePlain(text: string) {
+		return new Response(text, {
+			status: 200,
+			headers: {
+				'Content-Type': 'text/plain; charset=utf-8',
+				'Cache-Control': anonymousHtmlCacheControl,
+				Vary: 'Cookie',
+			},
+		})
+	}
+	for (const pathname of ['/llms.txt', '/docs/llms.txt'] as const) {
+		const url = `https://test.kody.dev${pathname}?plain=${crypto.randomUUID()}`
+		const miss = await serve(new Request(url), () => storeablePlain(body))
+		expect(miss.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		expect(miss.text).toBe(body)
+		await expect(miss.cached?.text()).resolves.toBe(body)
+
+		const hit = await serve(new Request(url), () => {
+			throw new Error('upstream must not run on a HIT')
+		})
+		expect(hit.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.text).toBe(body)
+	}
+})
+
+test('auth pages are not admitted to the anonymous Cache API path', async () => {
+	for (const pathname of ['/login', '/signup'] as const) {
+		const url = `https://test.kody.dev${pathname}?auth=${crypto.randomUUID()}`
+		const result = await serve(new Request(url), () =>
+			storeableHtml(completeDocument),
+		)
+		expect(result.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBeNull()
+		expect(result.cached).toBeUndefined()
+	}
+})
+
 test('a 200 whose body stopped after the doctype is served once but never stored', async () => {
 	silenceExpectedConsoleWarns(['anonymous-html-cache-skip-incomplete'])
 	const url = `https://test.kody.dev/onboarding?truncated=${crypto.randomUUID()}`
