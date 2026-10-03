@@ -2,21 +2,29 @@ import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
-	apiHandler,
 	handleAuthorizeRouteException,
 	handleAuthorizeRequest,
 	handleAuthorizeInfo,
 	handleOAuthCallback,
+	handleOAuthProtectedApiMe,
 	oauthPaths,
 } from './oauth-handlers.ts'
-import { sharedOAuthProviderOptions } from '#worker/oauth-provider-options.ts'
 import {
+	createSharedOAuthProviderOptions,
+	mcpOAuthResourceUri,
+} from '#worker/oauth-provider-options.ts'
+import {
+	createMcpBrowserLandingResponse,
+	createMcpMissingCredentialResponse,
 	handleMcpRequest,
-	handleProtectedResourceMetadata,
-	isProtectedResourceMetadataRequest,
+	hasMcpBearerCredential,
+	isBrowserMcpNavigation,
+	mcpCorsHeadersForRequest,
 	mcpResourcePath,
 	protectedResourceMetadataPath,
+	withMcpCors,
 } from './mcp-auth.ts'
 import { handleMcpClientIdMetadataRequest } from './mcp-client/client-id-metadata.ts'
 import { handleCliClientIdMetadataRequest } from './cli-client-metadata.ts'
@@ -148,20 +156,14 @@ const appHandler = withCors({
 		// Remote MCP clients in browser hosts (Gemini custom apps, etc.) call
 		// `/mcp` cross-origin. Reflect any Origin and expose WWW-Authenticate so
 		// the client can read the OAuth challenge; same-origin stays the default
-		// for the rest of the app.
+		// for the rest of the app. Authenticated `/mcp` traffic goes through
+		// OAuthProvider's apiHandler (library CORS); this covers defaultHandler
+		// fallthrough and other same-origin paths that still hit appHandler.
 		if (
 			url.pathname === mcpResourcePath ||
 			url.pathname === `${mcpResourcePath}/`
 		) {
-			return {
-				'Access-Control-Allow-Origin': origin,
-				'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
-				'Access-Control-Allow-Headers':
-					'Authorization, Content-Type, Accept, MCP-Protocol-Version, Last-Event-ID, Mcp-Session-Id',
-				'Access-Control-Expose-Headers':
-					'WWW-Authenticate, MCP-Session-Id, Content-Type',
-				Vary: 'Origin',
-			}
+			return mcpCorsHeadersForRequest(request)
 		}
 		if (origin !== requestOrigin) return null
 		return {
@@ -346,28 +348,18 @@ const appHandler = withCors({
 			return new Response(null, { status: 204 })
 		}
 
-		if (isProtectedResourceMetadataRequest(url.pathname)) {
-			return handleProtectedResourceMetadata(request, env)
-		}
-
 		// Trailing-slash variants 404 otherwise; some MCP client docs (and paste
 		// habits) include the slash. Keep the protected resource at `/mcp`.
+		// Authenticated `/mcp` is owned by OAuthProvider's apiHandler; this is
+		// fallthrough only.
 		if (url.pathname === `${mcpResourcePath}/`) {
 			const canonical = new URL(request.url)
 			canonical.pathname = mcpResourcePath
 			return Response.redirect(canonical.toString(), 308)
 		}
 
-		if (url.pathname === mcpResourcePath) {
-			return handleMcpRequest({
-				request,
-				env,
-				ctx,
-				fetchMcp: (mcpRequest, mcpEnv, mcpContext) =>
-					loadLegacyMcpFetch().then((fetchLegacy) =>
-						fetchLegacy(mcpRequest, mcpEnv, mcpContext),
-					),
-			})
+		if (url.pathname === '/api/me') {
+			return handleOAuthProtectedApiMe(request, env)
 		}
 
 		// Non-production inline package apps. Production requests normally redirect
@@ -412,19 +404,42 @@ const appHandler = withCors({
 	},
 })
 
-// Endpoints, scopes, TTLs, CIMD, and onError live in
+// Endpoints, scopes, TTLs, CIMD, resource, and onError live in
 // `#worker/oauth-provider-options.ts` so the handler-less `getOAuthApi`
 // fallback (`#worker/oauth-helpers.ts`) is configured identically.
-const oauthProvider = new OAuthProvider({
-	...sharedOAuthProviderOptions,
-	apiHandler,
-	defaultHandler: {
-		fetch(request, env, ctx) {
-			// @ts-expect-error https://github.com/cloudflare/workers-oauth-provider/issues/71
-			return appHandler(request, env, ctx)
-		},
+// v1 pins `resourceMetadata.resource` per origin (preview/local/production),
+// so providers are created lazily and cached by resource URI.
+const oauthProvidersByResource = new Map<string, OAuthProvider>()
+
+const mcpApiHandler = {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+		return handleMcpRequest({
+			request,
+			env,
+			ctx,
+			fetchMcp: (mcpRequest, mcpEnv, mcpContext) =>
+				loadLegacyMcpFetch().then((fetchLegacy) =>
+					fetchLegacy(mcpRequest, mcpEnv, mcpContext),
+				),
+		})
 	},
-})
+} satisfies ExportedHandler<Env>
+
+function getOriginOAuthProvider(resource: string) {
+	const existing = oauthProvidersByResource.get(resource)
+	if (existing) return existing
+	const provider = new OAuthProvider({
+		...createSharedOAuthProviderOptions(resource),
+		apiHandler: mcpApiHandler,
+		defaultHandler: {
+			fetch(request, env, ctx) {
+				return appHandler(request, env, ctx)
+			},
+		},
+	})
+	oauthProvidersByResource.set(resource, provider)
+	return provider
+}
 
 /**
  * Aligns with @cloudflare/workers-oauth-provider's addCorsHeaders for well-known routes.
@@ -459,7 +474,8 @@ function isOAuthProviderOwnedPath(pathname: string) {
 		pathname === oauthPaths.discovery ||
 		pathname === protectedResourceMetadataPath ||
 		pathname.startsWith(`${protectedResourceMetadataPath}/`) ||
-		pathname.startsWith(oauthPaths.apiPrefix)
+		pathname === mcpResourcePath ||
+		pathname.startsWith(`${mcpResourcePath}/`)
 	)
 }
 
@@ -664,44 +680,48 @@ async function handleOriginAppFetch(
 		return handleOidcLogoutRequest(request, env)
 	}
 
-	// Serve both RFC 9728 PRM paths before OAuthProvider: the root document
-	// and the path-aware `.../mcp` document. 0.10+ would otherwise publish
-	// origin-only resource metadata on the path-aware URL and disagree with
-	// `<origin>/mcp` token audiences.
-	if (isProtectedResourceMetadataRequest(url.pathname)) {
+	// RFC 9728 PRM for `/mcp` is served by OAuthProvider once
+	// `resourceMetadata.resource` is set (path-aware URL only:
+	// `/.well-known/oauth-protected-resource/mcp`). Do not serve a second
+	// custom document here — it would diverge from the library's audience.
+
+	const resource = mcpOAuthResourceUri(
+		getAppBaseUrl({ env, requestUrl: request.url }),
+	)
+	const oauthProvider = getOriginOAuthProvider(resource)
+
+	// Gemini (and other browser MCP hosts) treat an empty-bodied 401 as a hard
+	// failure. The library's missing-bearer challenge has no JSON body, so
+	// short-circuit that case with Kody's JSON challenge before OAuthProvider.
+	// Browser HTML navigations to `/mcp` get a landing page instead of 401.
+	if (url.pathname === `${mcpResourcePath}/`) {
+		const canonical = new URL(request.url)
+		canonical.pathname = mcpResourcePath
+		return Response.redirect(canonical.toString(), 308)
+	}
+	if (url.pathname === mcpResourcePath) {
 		if (request.method === 'OPTIONS') {
-			return addOAuthDiscoveryCorsHeaders(
+			return withMcpCors(
+				request,
 				new Response(null, {
 					status: 204,
 					headers: { 'Content-Length': '0' },
 				}),
-				request,
 			)
 		}
-		if (request.method === 'GET' || request.method === 'HEAD') {
-			const metadataRequest =
-				request.method === 'GET'
-					? request
-					: new Request(request.url, {
-							method: 'GET',
-							headers: request.headers,
-						})
-			const metadataResponse = handleProtectedResourceMetadata(
-				metadataRequest,
-				env,
+		if (isBrowserMcpNavigation(request)) {
+			return createMcpBrowserLandingResponse(request)
+		}
+		if (!hasMcpBearerCredential(request)) {
+			return withMcpCors(
+				request,
+				createMcpMissingCredentialResponse(
+					getAppBaseUrl({ env, requestUrl: request.url }),
+				),
 			)
-			if (request.method === 'HEAD') {
-				return addOAuthDiscoveryCorsHeaders(
-					new Response(null, {
-						status: metadataResponse.status,
-						headers: metadataResponse.headers,
-					}),
-					request,
-				)
-			}
-			return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
 		}
 	}
+
 	try {
 		if (url.pathname === oauthPaths.token && request.method === 'POST') {
 			const { response, grantType } = await handleMcpOAuthTokenRequest({

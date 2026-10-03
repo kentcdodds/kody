@@ -93,7 +93,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		const mcpBeforeVerify = await postUnauthenticatedMcpInitialize(origin)
 		expect(mcpBeforeVerify.status).toBe(401)
 		expect(mcpBeforeVerify.headers.get('www-authenticate') ?? '').toMatch(
-			/resource_metadata="[^"]*\/.well-known\/oauth-protected-resource"/,
+			/resource_metadata="[^"]*\/.well-known\/oauth-protected-resource\/mcp"/,
 		)
 
 		let verificationEmail = null as MockEmailMessage | null
@@ -180,7 +180,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			/^Bearer\s+/,
 		)
 		expect(mcpAfterVerify.headers.get('www-authenticate') ?? '').toContain(
-			`${origin}/.well-known/oauth-protected-resource`,
+			`${origin}/.well-known/oauth-protected-resource/mcp`,
 		)
 	} finally {
 		deleteUserInE2eDatabase(email)

@@ -33,6 +33,10 @@
 
 import * as cloudflareWorkers from 'cloudflare:workers'
 import {
+	creditAttributionMeterFromUsageEventType,
+	normalizeCreditAttributionPackageId,
+} from '#universal/credit-attribution.ts'
+import {
 	isCoalescedCountUsageEventType,
 	type UsageEventType,
 } from '#universal/usage-event-types.ts'
@@ -105,6 +109,12 @@ export type UsageEvent = {
 	 * never the JSON.
 	 */
 	paramsChars?: number | null
+	/**
+	 * Saved package id when the billable unit is known to belong to one
+	 * package. Written to Analytics Engine blob9. Empty means Ad hoc
+	 * (direct execute or unattributed). Never guess.
+	 */
+	packageId?: string | null
 }
 
 export const dynamicWorkerCacheReuses = ['hit', 'miss'] as const
@@ -120,6 +130,7 @@ export const usageEventBlobIndexes = {
 	surface: 5,
 	executeShape: 6,
 	cacheReuse: 7,
+	packageId: 8,
 } as const
 
 export const usageEventDoubleIndexes = {
@@ -140,9 +151,10 @@ export function usageEventBlobs(
 		| 'surface'
 		| 'executeShape'
 		| 'cacheReuse'
+		| 'packageId'
 	>,
 	timestamp: string,
-): [string, string, string, string, string, string, string, string] {
+): [string, string, string, string, string, string, string, string, string] {
 	return [
 		event.userId,
 		event.eventType,
@@ -152,6 +164,7 @@ export function usageEventBlobs(
 		event.surface ?? '',
 		event.executeShape ?? '',
 		event.cacheReuse ?? '',
+		event.packageId?.trim() || '',
 	]
 }
 
@@ -173,6 +186,15 @@ ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	total_duration_ms = total_duration_ms + excluded.total_duration_ms,
 	total_cpu_ms = total_cpu_ms + excluded.total_cpu_ms,
 	total_bytes = total_bytes + excluded.total_bytes,
+	updated_at = excluded.updated_at
+`.trim()
+
+const usageAttributionDailyUpsertStatement = `
+INSERT INTO usage_attribution_daily (
+	user_id, day, package_id, meter, units, updated_at
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+ON CONFLICT (user_id, day, package_id, meter) DO UPDATE SET
+	units = units + excluded.units,
 	updated_at = excluded.updated_at
 `.trim()
 
@@ -268,6 +290,9 @@ function emitUsageSpan(event: UsageEvent) {
 			if (event.paramsChars != null) {
 				span.setAttribute('kody.params_chars', event.paramsChars)
 			}
+			if (event.packageId) {
+				span.setAttribute('kody.package_id', event.packageId)
+			}
 		})
 	} catch (error) {
 		console.debug('usage-span-failed', error)
@@ -323,8 +348,39 @@ async function writeUsageRollup(
 				timestamp,
 			)
 			.run()
+		await writeUsageAttributionDaily(env, event, timestamp, eventCount)
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
+	}
+}
+
+/**
+ * Local/dev path: stamp billable units into `usage_attribution_daily` so
+ * `/account/usage` can show Where it went without Analytics Engine.
+ * Production recomputes this table from AE hourly.
+ */
+async function writeUsageAttributionDaily(
+	env: UsageEnv,
+	event: UsageEvent,
+	timestamp: string,
+	eventCount: number,
+) {
+	if (!env.APP_DB) return
+	const meter = creditAttributionMeterFromUsageEventType(event.eventType)
+	if (!meter) return
+	try {
+		await env.APP_DB.prepare(usageAttributionDailyUpsertStatement)
+			.bind(
+				event.userId,
+				timestamp.slice(0, 'YYYY-MM-DD'.length),
+				normalizeCreditAttributionPackageId(event.packageId),
+				meter,
+				eventCount,
+				timestamp,
+			)
+			.run()
+	} catch (error) {
+		console.warn('usage-attribution-daily-failed', error)
 	}
 }
 

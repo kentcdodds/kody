@@ -50,6 +50,10 @@ import {
 	type IncludedComputeMeter,
 } from '#universal/usage-presentation.ts'
 import {
+	type CreditAttributionBreakdown,
+	type CreditAttributionRow,
+} from '#universal/credit-attribution.ts'
+import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
 	type AccountActivityTriageFilter,
@@ -1748,6 +1752,11 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	publishedCommit: string | null
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null
+	/**
+	 * This UTC month's past-include credits for this package only (owner
+	 * view). Always a row for owners (zero credits when nothing past include).
+	 */
+	creditAttribution?: CreditAttributionRow | null
 }
 
 type AccountPackagePublishDiffFile = {
@@ -2443,6 +2452,11 @@ export type AccountUsageStoryData = {
 }
 
 /**
+ * Credits spent this period attributed to packages (and Ad hoc). Loaded with
+ * `/account/usage`; package pages reuse the same breakdown shape.
+ */
+
+/**
  * Credits section of `/account/usage`. Without a wallet (Free, retired
  * Standard/Pro, gift/referral overlays, manual grants) it is only the
  * switch-to-Pro prompt: no balance, no purchase UI.
@@ -2556,6 +2570,11 @@ export type AccountUsageLoaderData = AccountUsageStoryData & {
 	computeOverage: AccountUsageComputeOverage
 	/** True only for the purchasable Pro with a Stripe customer. */
 	canBuyCredits: boolean
+	/**
+	 * Past-include credits by package (and Ad hoc). Directly under the period
+	 * credit total on `/account/usage`.
+	 */
+	whereItWent: CreditAttributionBreakdown
 	/** Null for operator plans, which have no credits story. */
 	credits: AccountUsageCredits | null
 	/** Credits outcome (top-up added, settings saved) shown in that section. */

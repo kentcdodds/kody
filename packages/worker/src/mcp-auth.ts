@@ -1,5 +1,7 @@
 import {
+	insufficientScope,
 	type OAuthHelpers,
+	type OAuthResourceAuth,
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
@@ -26,7 +28,8 @@ import {
 	extractJsonRpcRequestIds,
 	guardLegacyLaneSseResponse,
 } from './mcp/sse-response-guard.ts'
-import { oauthScopes } from './oauth-handlers.ts'
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+import { mcpOAuthResourceUri } from '#worker/oauth-provider-options.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { recordInboundMcpConnectionLastUsed } from '#worker/inbound-mcp-connection-last-used.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
@@ -46,36 +49,35 @@ type OAuthContextProps = McpServerProps & {
 
 type OAuthExecutionContext = ExecutionContext & {
 	props?: OAuthContextProps
+	auth?: OAuthResourceAuth
 }
 
+/**
+ * RFC 9728 path-aware PRM URL for `<origin>/mcp`
+ * (`/.well-known/oauth-protected-resource/mcp`). v1 of the OAuth provider
+ * serves only this document; the root well-known path is not an alias.
+ */
+export function mcpProtectedResourceMetadataUrl(origin: string) {
+	return `${origin}${protectedResourceMetadataPath}${mcpResourcePath}`
+}
+
+/**
+ * Expected PRM document shape for `<origin>/mcp`. Kept for tests and agent
+ * discovery copy; the live document is served by
+ * `@cloudflare/workers-oauth-provider` once `resourceMetadata.resource` is set.
+ * Do not serve a second copy from app code.
+ */
 export function buildProtectedResourceMetadata(origin: string) {
 	return {
-		resource: `${origin}${mcpResourcePath}`,
+		resource: mcpOAuthResourceUri(origin),
 		authorization_servers: [origin],
-		scopes_supported: oauthScopes,
-		// Match @cloudflare/workers-oauth-provider's path-based metadata document.
-		// Browser MCP clients (Gemini custom apps, etc.) fetch the root PRM from
-		// WWW-Authenticate; omitting this field leaves header-bearer support
-		// ambiguous and has broken Gemini's pre-DCR handshake in production.
+		scopes_supported: mcpOauthScopes,
 		bearer_methods_supported: ['header'],
 	}
 }
 
 export function isProtectedResourceMetadataRequest(pathname: string) {
-	return (
-		pathname === protectedResourceMetadataPath ||
-		pathname === `${protectedResourceMetadataPath}${mcpResourcePath}`
-	)
-}
-
-export function handleProtectedResourceMetadata(request: Request, env?: Env) {
-	const origin = getAppBaseUrl({
-		env: env ?? {},
-		requestUrl: request.url,
-	})
-	return new Response(JSON.stringify(buildProtectedResourceMetadata(origin)), {
-		headers: { 'Content-Type': 'application/json' },
-	})
+	return pathname === `${protectedResourceMetadataPath}${mcpResourcePath}`
 }
 
 export const mcpInvalidTokenDescription =
@@ -84,9 +86,9 @@ export const mcpInvalidTokenDescription =
 type McpUnauthorizedKind = 'missing_credential' | 'invalid_token'
 
 function buildWwwAuthenticateHeader(origin: string, kind: McpUnauthorizedKind) {
-	const resourceMetadata = `${origin}${protectedResourceMetadataPath}`
+	const resourceMetadata = mcpProtectedResourceMetadataUrl(origin)
 	const scope =
-		oauthScopes.length > 0 ? `, scope="${oauthScopes.join(' ')}"` : ''
+		mcpOauthScopes.length > 0 ? `, scope="${mcpOauthScopes.join(' ')}"` : ''
 	const resourceAndScope = `resource_metadata="${resourceMetadata}"${scope}`
 	switch (kind) {
 		case 'missing_credential':
@@ -127,16 +129,27 @@ function readBearerToken(authorization: string | null) {
 	return token.length > 0 ? token : null
 }
 
+/** True when Authorization carries a non-empty Bearer token. */
+export function hasMcpBearerCredential(request: Request) {
+	return readBearerToken(request.headers.get('Authorization')) !== null
+}
+
 function createUnauthorizedResponse(origin: string, kind: McpUnauthorizedKind) {
 	// Keep a JSON body in addition to WWW-Authenticate. Some remote MCP clients
 	// (notably Gemini custom connected apps) treat an empty 401 as a hard
-	// connectivity failure and never start OAuth discovery / DCR.
+	// connectivity failure and never start OAuth discovery / DCR. The library's
+	// missing-bearer challenge is empty-bodied, so origin-handler short-circuits
+	// that case through this helper before OAuthProvider runs.
 	return Response.json(createUnauthorizedBody(kind), {
 		status: 401,
 		headers: {
 			'WWW-Authenticate': buildWwwAuthenticateHeader(origin, kind),
 		},
 	})
+}
+
+export function createMcpMissingCredentialResponse(origin: string) {
+	return createUnauthorizedResponse(origin, 'missing_credential')
 }
 
 function acceptsMediaType(accept: string, mediaType: string) {
@@ -150,7 +163,7 @@ function acceptsMediaType(accept: string, mediaType: string) {
 	})
 }
 
-function isBrowserMcpNavigation(request: Request) {
+export function isBrowserMcpNavigation(request: Request) {
 	if (request.method !== 'GET' || request.headers.has('Authorization')) {
 		return false
 	}
@@ -163,7 +176,7 @@ function isBrowserMcpNavigation(request: Request) {
 	)
 }
 
-function createMcpBrowserLandingResponse(request: Request) {
+export function createMcpBrowserLandingResponse(request: Request) {
 	const onboardingUrl = new URL('/onboarding', request.url).toString()
 	return new Response(
 		`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kody MCP endpoint</title></head><body><main style="font-family:system-ui,sans-serif;max-width:36rem;margin:4rem auto;padding:0 1rem"><p style="font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:#57606a">Kody secure connection</p><h1>This endpoint is for AI agents</h1><p>You’ve reached Kody’s MCP endpoint. AI agents use this address to connect to Kody, so there isn’t anything to browse here.</p><p><a href="${onboardingUrl}">Follow the guide to connect your agent</a></p></main></body></html>`,
@@ -174,6 +187,37 @@ function createMcpBrowserLandingResponse(request: Request) {
 			},
 		},
 	)
+}
+
+/** CORS for browser-hosted MCP clients (Gemini custom apps, etc.). */
+export function mcpCorsHeadersForRequest(
+	request: Request,
+): Record<string, string> | null {
+	const origin = request.headers.get('Origin')
+	if (!origin) return null
+	return {
+		'Access-Control-Allow-Origin': origin,
+		'Access-Control-Allow-Methods': 'GET, HEAD, POST, DELETE, OPTIONS',
+		'Access-Control-Allow-Headers':
+			'Authorization, Content-Type, Accept, MCP-Protocol-Version, Last-Event-ID, Mcp-Session-Id',
+		'Access-Control-Expose-Headers':
+			'WWW-Authenticate, MCP-Session-Id, Content-Type',
+		Vary: 'Origin',
+	}
+}
+
+export function withMcpCors(request: Request, response: Response) {
+	const cors = mcpCorsHeadersForRequest(request)
+	if (!cors) return response
+	const headers = new Headers(response.headers)
+	for (const [name, value] of Object.entries(cors)) {
+		headers.set(name, value)
+	}
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
 }
 
 export function createEmailVerificationRequiredResponse(origin: string) {
@@ -219,8 +263,31 @@ function audienceMatches(
 ) {
 	if (!audience) return false
 	const allowed = Array.isArray(audience) ? audience : [audience]
-	const resourcePath = `${origin}${mcpResourcePath}`
-	return allowed.some((value) => value === origin || value === resourcePath)
+	const resource = mcpOAuthResourceUri(origin)
+	// v1 audiences are exact against resourceMetadata.resource (`<origin>/mcp`).
+	return allowed.some((value) => value === resource)
+}
+
+function tokenHasRequiredMcpScopes(scope: ReadonlyArray<string>) {
+	return mcpOauthScopes.every((required) => scope.includes(required))
+}
+
+function resourceAuthFromTokenSummary(
+	token: string,
+	summary: TokenSummary,
+	origin: string,
+): OAuthResourceAuth {
+	return {
+		token,
+		audience:
+			typeof summary.audience === 'string'
+				? summary.audience
+				: mcpOAuthResourceUri(origin),
+		expiresAt: summary.expiresAt,
+		scope: [...(summary.scope ?? summary.grant.scope ?? [])],
+		userId: summary.userId,
+		clientId: summary.grant.clientId,
+	}
 }
 
 /**
@@ -300,27 +367,61 @@ export async function handleMcpRequest({
 		return createMcpBrowserLandingResponse(request)
 	}
 
-	// Rejections before a grant resolves are deliberately not audited. They are
-	// reachable by any anonymous request, so writing a row per attempt would let
-	// a stranger drive unbounded D1 writes, and an unattributable "someone sent
-	// a bad token" carries little signal on its own. Flood control for anonymous
-	// traffic belongs at the edge; see docs/contributing/security.md.
-	const token = readBearerToken(request.headers.get('Authorization'))
-	if (token === null) {
-		return createUnauthorizedResponse(origin, 'missing_credential')
-	}
-
-	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-	if (!helpers) {
-		return createUnauthorizedResponse(origin, 'invalid_token')
-	}
-
-	const tokenSummary = await helpers.unwrapToken(token)
-	if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
-		return createUnauthorizedResponse(origin, 'invalid_token')
-	}
-
 	const context = ctx as OAuthExecutionContext
+	const providerAuth = context.auth
+	let tokenSummary: TokenSummary | null = null
+	let accessToken: string | null = null
+
+	if (providerAuth) {
+		// OAuthProvider apiHandler already validated the bearer token and audience.
+		accessToken = providerAuth.token
+		tokenSummary = {
+			id: 'provider',
+			grantId: 'provider',
+			userId: providerAuth.userId ?? '',
+			createdAt: 0,
+			expiresAt: providerAuth.expiresAt ?? 0,
+			audience: providerAuth.audience,
+			scope: providerAuth.scope,
+			grant: {
+				clientId: providerAuth.clientId ?? '',
+				scope: providerAuth.scope,
+				props: (context.props ?? null) as TokenSummary['grant']['props'],
+			},
+		}
+		if (!tokenHasRequiredMcpScopes(providerAuth.scope)) {
+			return insufficientScope(providerAuth, mcpOauthScopes)
+		}
+	} else {
+		// Rejections before a grant resolves are deliberately not audited. They are
+		// reachable by any anonymous request, so writing a row per attempt would let
+		// a stranger drive unbounded D1 writes, and an unattributable "someone sent
+		// a bad token" carries little signal on its own. Flood control for anonymous
+		// traffic belongs at the edge; see docs/contributing/security.md.
+		const token = readBearerToken(request.headers.get('Authorization'))
+		if (token === null) {
+			return createUnauthorizedResponse(origin, 'missing_credential')
+		}
+		accessToken = token
+
+		const helpers = (env as OAuthEnv).OAUTH_PROVIDER
+		if (!helpers) {
+			return createUnauthorizedResponse(origin, 'invalid_token')
+		}
+
+		tokenSummary = await helpers.unwrapToken(token)
+		if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
+			return createUnauthorizedResponse(origin, 'invalid_token')
+		}
+		const scopes = tokenSummary.scope ?? tokenSummary.grant.scope ?? []
+		if (!tokenHasRequiredMcpScopes(scopes)) {
+			return insufficientScope(
+				resourceAuthFromTokenSummary(token, tokenSummary, origin),
+				mcpOauthScopes,
+			)
+		}
+	}
+
 	const grantProps = tokenSummary.grant.props ?? null
 	const authContext = await buildMcpUserContextFromGrantProps(env, grantProps)
 
@@ -351,9 +452,15 @@ export async function handleMcpRequest({
 	// issued access tokens can still unwrap for up to an hour, so reject them
 	// the same way browser cookies die — hosts then refresh, the revoked grant
 	// fails, and they start a new OAuth flow.
+	let tokenCreatedAtMs = tokenSummary.createdAt * 1000
+	if (providerAuth && accessToken) {
+		const helpers = (env as OAuthEnv).OAUTH_PROVIDER
+		const unwrapped = helpers ? await helpers.unwrapToken(accessToken) : null
+		if (unwrapped) tokenCreatedAtMs = unwrapped.createdAt * 1000
+	}
 	if (
 		isCredentialInvalidatedByStoredPasswordChange({
-			issuedAtMs: tokenSummary.createdAt * 1000,
+			issuedAtMs: tokenCreatedAtMs,
 			storedPasswordChangedAt: authContext.passwordChangedAt,
 		})
 	) {

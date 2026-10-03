@@ -1,5 +1,6 @@
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 
@@ -22,8 +23,6 @@ export const openaiAppsChallengeToken =
 
 /** Matches the MCP server `version` advertised on both protocol lanes. */
 export const kodyMcpServerCardVersion = '1.0.0'
-
-const mcpOauthScopes = ['profile', 'email'] as const
 
 const aiCrawlerUserAgents = [
 	'GPTBot',
@@ -337,7 +336,7 @@ export function buildAuthMarkdown(origin: string): string {
 		'## OAuth',
 		'',
 		`- Authorization server: \`${origin}${oauthPaths.discovery}\``,
-		`- Protected resource: \`${origin}/.well-known/oauth-protected-resource\``,
+		`- Protected resource: \`${origin}/.well-known/oauth-protected-resource/mcp\``,
 		`- Resource: \`${mcp}\``,
 		`- Scopes: \`${mcpOauthScopes.join('`, `')}\``,
 		`- Dynamic client registration: \`${registerUri}\``,
@@ -457,7 +456,7 @@ export function listAgentDiscoveryLinks(
 			type: 'application/xml',
 		},
 		{
-			href: `${origin}/.well-known/oauth-protected-resource`,
+			href: `${origin}/.well-known/oauth-protected-resource/mcp`,
 			rel: 'oauth-protected-resource',
 			type: 'application/json',
 		},

@@ -9,11 +9,12 @@
 	// `#worker`/`#app` import maps, and the pre-bundled generated
 	// modules resolve identically to the main Worker.
 	"name": "kody-runtime",
-	"compatibility_date": "2026-04-16",
 	// Birthday Week 2026-10-01: pending I/O keeps a DO from idle eviction for
 	// up to 15 minutes per operation (execute / StorageRunner / RunLog /
-	// PackageRealtimeSession). Flag instead of date bump — see platform-worker.
+	// PackageRealtimeSession). Date default on 2026-10-01; bump here for the
+	// execute-path DO host. Keep the flag explicit — see platform-worker.
 	// https://developers.cloudflare.com/workers/configuration/compatibility-flags/#durable-object-io-tasks-prevent-eviction
+	"compatibility_date": "2026-10-01",
 	"compatibility_flags": [
 		"nodejs_compat",
 		"global_fetch_strictly_public",

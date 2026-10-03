@@ -2,7 +2,11 @@
 // `cloudflare:workers` import) stays off the platform/runtime startup path
 // and out of node unit tests until `resolveOAuthHelpers` actually needs it.
 import type * as WorkersOAuthProvider from '@cloudflare/workers-oauth-provider'
-import { sharedOAuthProviderOptions } from '#worker/oauth-provider-options.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	createSharedOAuthProviderOptions,
+	mcpOAuthResourceUri,
+} from '#worker/oauth-provider-options.ts'
 
 type OAuthHelpers = WorkersOAuthProvider.OAuthHelpers
 
@@ -40,6 +44,11 @@ const inertHandler = {
  * Returns `undefined` only when `OAUTH_KV` itself is missing. Callers type
  * `OAUTH_PROVIDER` as the subset of `OAuthHelpers` they consume; the full
  * library type is assignable to every such subset.
+ *
+ * Background callers have no request URL, so the helpers bind to
+ * `getAppBaseUrl({ env })` + `/mcp` (APP_BASE_URL, else production default).
+ * Grant listing/revocation and unwrap do not re-check that audience; token
+ * minting on the request path uses a per-origin provider instead.
  */
 export async function resolveOAuthHelpers<Helpers extends object>(
 	env: Env & { OAUTH_PROVIDER?: Helpers },
@@ -48,9 +57,10 @@ export async function resolveOAuthHelpers<Helpers extends object>(
 	if (!env.OAUTH_KV) return undefined
 	const { getOAuthApi } =
 		await import('./node_modules/.kody-generated/oauth-provider.mjs')
+	const resource = mcpOAuthResourceUri(getAppBaseUrl({ env }))
 	return getOAuthApi<Env>(
 		{
-			...sharedOAuthProviderOptions,
+			...createSharedOAuthProviderOptions(resource),
 			apiHandler: inertHandler,
 			defaultHandler: inertHandler,
 		},

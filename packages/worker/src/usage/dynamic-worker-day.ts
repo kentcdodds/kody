@@ -28,6 +28,11 @@ export async function recordUniqueDynamicWorkerDay(input: {
 	userId: string | null | undefined
 	workerId: string
 	surface: DynamicWorkerDaySurface
+	/**
+	 * Saved package id when this claim belongs to a known package run.
+	 * Omit for ad hoc execute; never guess.
+	 */
+	packageId?: string | null
 	now?: Date
 }): Promise<{ created: boolean } | undefined> {
 	try {
@@ -50,6 +55,9 @@ export async function recordUniqueDynamicWorkerDay(input: {
 				outcome: 'success',
 				timestamp: now.toISOString(),
 				surface: input.surface,
+				...(input.packageId?.trim()
+					? { packageId: input.packageId.trim() }
+					: {}),
 			})
 		}
 		return claimed
