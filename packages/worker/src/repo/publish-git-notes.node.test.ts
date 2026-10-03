@@ -12,12 +12,11 @@ const mockGit = vi.hoisted(() => ({
 	readNote: vi.fn(async () => new TextEncoder().encode('{"v":1}\n')),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: mockGit,
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: mockGit,
+		http: {},
+	}),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({

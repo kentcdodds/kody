@@ -16,19 +16,18 @@ const gitMocks = vi.hoisted(() => ({
 	]),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		clone: (...args: Parameters<typeof git.clone>) => gitMocks.clone(...args),
-		log: (...args: Parameters<typeof git.log>) => gitMocks.log(...args),
-		checkout: (...args: Parameters<typeof git.checkout>) =>
-			gitMocks.checkout(...args),
-		listFiles: (...args: Parameters<typeof git.listFiles>) =>
-			gitMocks.listFiles(...args),
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			clone: (...args: Parameters<typeof git.clone>) => gitMocks.clone(...args),
+			log: (...args: Parameters<typeof git.log>) => gitMocks.log(...args),
+			checkout: (...args: Parameters<typeof git.checkout>) =>
+				gitMocks.checkout(...args),
+			listFiles: (...args: Parameters<typeof git.listFiles>) =>
+				gitMocks.listFiles(...args),
+		},
+		http: {},
+	}),
 }))
 
 vi.mock('./artifacts-git-retry.ts', () => ({

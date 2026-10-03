@@ -33,6 +33,10 @@ declare module '*/node_modules/.kody-generated/local-execute-runtime-support.mjs
 	): string
 }
 
+declare module '*/node_modules/.kody-generated/isomorphic-git.mjs' {
+	export { git, http, createGit } from './repo/isomorphic-git-module.ts'
+}
+
 /**
  * The platform-supplied `remix` and `@remix-run/ui` packages for package
  * apps: one code-split pre-bundle of the Workers-safe `remix/<subpath>`

@@ -142,9 +142,10 @@ handles those errors and repo-session tests pass against it.
 Pins a single Zod copy across the workspace. Without this override,
 `@cloudflare/vitest-pool-workers@0.22.0` (exact `zod@4.4.3`) and `@kody/worker`
 (`zod@^4.6.5`) resolve two trees, and the Worker-local copy misses
-`patches/zod+4.6.5.patch`, which trims `zod/v4/locales` to English-only for the
-startup budget. Keep this pin aligned with the Worker Zod range and refresh the
-locales patch when bumping.
+`patches/zod+4.6.5.patch`, which trims `zod/v4/locales` to English-only and
+strips unused `compile` / `fromJSONSchema` / `deepPartial` barrel exports for
+the startup budget. Keep this pin aligned with the Worker Zod range and refresh
+the patch when bumping.
 
 ## Development overrides
 

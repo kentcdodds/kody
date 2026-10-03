@@ -1,3 +1,76 @@
+diff --git a/node_modules/zod/v4/classic/external.cjs b/node_modules/zod/v4/classic/external.cjs
+index 15a0faa..fa4b284 100644
+--- a/node_modules/zod/v4/classic/external.cjs
++++ b/node_modules/zod/v4/classic/external.cjs
+@@ -26,7 +26,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
+     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.coerce = exports.iso = exports.ZodISODuration = exports.ZodISOTime = exports.ZodISODate = exports.ZodISODateTime = exports.locales = exports.output = exports.input = exports.deepPartial = exports.fromJSONSchema = exports.toJSONSchema = exports.getDiscriminatedOption = exports.ZodCompileUnsupportedError = exports.ZodCompileAsyncError = exports.withParser = exports.compile = exports.toZod = exports.INVALID = exports.NEVER = exports.util = exports.TimePrecision = exports.flattenError = exports.formatError = exports.prettifyError = exports.treeifyError = exports.regexes = exports.clone = exports.$brand = exports.$input = exports.$output = exports.memoizer = exports.config = exports.registry = exports.globalRegistry = exports.core = void 0;
++exports.coerce = exports.iso = exports.ZodISODuration = exports.ZodISOTime = exports.ZodISODate = exports.ZodISODateTime = exports.locales = exports.output = exports.input = exports.toJSONSchema = exports.getDiscriminatedOption = exports.toZod = exports.NEVER = exports.util = exports.TimePrecision = exports.flattenError = exports.formatError = exports.prettifyError = exports.treeifyError = exports.regexes = exports.clone = exports.$brand = exports.$input = exports.$output = exports.memoizer = exports.config = exports.registry = exports.globalRegistry = exports.core = void 0;
+ exports.core = __importStar(require("../core/index.cjs"));
+ __exportStar(require("./schemas.cjs"), exports);
+ __exportStar(require("./checks.cjs"), exports);
+@@ -50,19 +50,10 @@ Object.defineProperty(exports, "flattenError", { enumerable: true, get: function
+ Object.defineProperty(exports, "TimePrecision", { enumerable: true, get: function () { return index_js_1.TimePrecision; } });
+ Object.defineProperty(exports, "util", { enumerable: true, get: function () { return index_js_1.util; } });
+ Object.defineProperty(exports, "NEVER", { enumerable: true, get: function () { return index_js_1.NEVER; } });
+-Object.defineProperty(exports, "INVALID", { enumerable: true, get: function () { return index_js_1.INVALID; } });
+ Object.defineProperty(exports, "toZod", { enumerable: true, get: function () { return index_js_1.toZod; } });
+-Object.defineProperty(exports, "compile", { enumerable: true, get: function () { return index_js_1.compile; } });
+-Object.defineProperty(exports, "withParser", { enumerable: true, get: function () { return index_js_1.withParser; } });
+-Object.defineProperty(exports, "ZodCompileAsyncError", { enumerable: true, get: function () { return index_js_1.ZodCompileAsyncError; } });
+-Object.defineProperty(exports, "ZodCompileUnsupportedError", { enumerable: true, get: function () { return index_js_1.ZodCompileUnsupportedError; } });
+ Object.defineProperty(exports, "getDiscriminatedOption", { enumerable: true, get: function () { return index_js_1.getDiscriminatedOption; } });
+ var json_schema_processors_js_1 = require("../core/json-schema-processors.cjs");
+ Object.defineProperty(exports, "toJSONSchema", { enumerable: true, get: function () { return json_schema_processors_js_1.toJSONSchema; } });
+-var from_json_schema_js_1 = require("./from-json-schema.cjs");
+-Object.defineProperty(exports, "fromJSONSchema", { enumerable: true, get: function () { return from_json_schema_js_1.fromJSONSchema; } });
+-var deep_partial_js_1 = require("./deep-partial.cjs");
+-Object.defineProperty(exports, "deepPartial", { enumerable: true, get: function () { return deep_partial_js_1.deepPartial; } });
+ // Types and values both, from one module — re-exporting the types from core would collide.
+ var in_out_js_1 = require("./in-out.cjs");
+ Object.defineProperty(exports, "input", { enumerable: true, get: function () { return in_out_js_1.input; } });
+diff --git a/node_modules/zod/v4/classic/external.js b/node_modules/zod/v4/classic/external.js
+index 435be16..4bff288 100644
+--- a/node_modules/zod/v4/classic/external.js
++++ b/node_modules/zod/v4/classic/external.js
+@@ -4,10 +4,8 @@ export * from "./checks.js";
+ export * from "./errors.js";
+ export * from "./parse.js";
+ export * from "./compat.js";
+-export { globalRegistry, registry, config, memoizer, $output, $input, $brand, clone, regexes, treeifyError, prettifyError, formatError, flattenError, TimePrecision, util, NEVER, INVALID, toZod, compile, withParser, ZodCompileAsyncError, ZodCompileUnsupportedError, getDiscriminatedOption, } from "../core/index.js";
++export { globalRegistry, registry, config, memoizer, $output, $input, $brand, clone, regexes, treeifyError, prettifyError, formatError, flattenError, TimePrecision, util, NEVER, toZod, getDiscriminatedOption, } from "../core/index.js";
+ export { toJSONSchema } from "../core/json-schema-processors.js";
+-export { fromJSONSchema } from "./from-json-schema.js";
+-export { deepPartial } from "./deep-partial.js";
+ // Types and values both, from one module — re-exporting the types from core would collide.
+ export { input, output } from "./in-out.js";
+ export * as locales from "../locales/index.js";
+diff --git a/node_modules/zod/v4/core/index.cjs b/node_modules/zod/v4/core/index.cjs
+index 26253ee..6c493c5 100644
+--- a/node_modules/zod/v4/core/index.cjs
++++ b/node_modules/zod/v4/core/index.cjs
+@@ -41,7 +41,6 @@ exports.regexes = __importStar(require("./regexes.cjs"));
+ exports.locales = __importStar(require("../locales/index.cjs"));
+ __exportStar(require("./registries.cjs"), exports);
+ __exportStar(require("./doc.cjs"), exports);
+-__exportStar(require("./compile.cjs"), exports);
+ __exportStar(require("./api.cjs"), exports);
+ __exportStar(require("./to-json-schema.cjs"), exports);
+ var json_schema_processors_js_1 = require("./json-schema-processors.cjs");
+diff --git a/node_modules/zod/v4/core/index.js b/node_modules/zod/v4/core/index.js
+index f5bc49e..4f113b6 100644
+--- a/node_modules/zod/v4/core/index.js
++++ b/node_modules/zod/v4/core/index.js
+@@ -11,7 +11,6 @@ export * as regexes from "./regexes.js";
+ export * as locales from "../locales/index.js";
+ export * from "./registries.js";
+ export * from "./doc.js";
+-export * from "./compile.js";
+ export * from "./api.js";
+ export * from "./to-json-schema.js";
+ export { toJSONSchema } from "./json-schema-processors.js";
 diff --git a/node_modules/zod/v4/locales/index.cjs b/node_modules/zod/v4/locales/index.cjs
 index 25672aa..0a5ba21 100644
 --- a/node_modules/zod/v4/locales/index.cjs
@@ -237,3 +310,50 @@ index 0870717..9f25ff7 100644
 -export { default as zhCN } from "./zh-CN.js";
 -export { default as zhTW } from "./zh-TW.js";
 -export { default as yo } from "./yo.js";
+diff --git a/node_modules/zod/v4/mini/external.cjs b/node_modules/zod/v4/mini/external.cjs
+index 935d793..ff825d3 100644
+--- a/node_modules/zod/v4/mini/external.cjs
++++ b/node_modules/zod/v4/mini/external.cjs
+@@ -26,13 +26,11 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
+     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.coerce = exports.ZodMiniISODuration = exports.ZodMiniISOTime = exports.ZodMiniISODate = exports.ZodMiniISODateTime = exports.iso = exports.locales = exports.toJSONSchema = exports.getDiscriminatedOption = exports.ZodCompileUnsupportedError = exports.ZodCompileAsyncError = exports.withParser = exports.compile = exports.toZod = exports.INVALID = exports.NEVER = exports.util = exports.TimePrecision = exports.flattenError = exports.formatError = exports.prettifyError = exports.treeifyError = exports.regexes = exports.clone = exports.$brand = exports.$input = exports.$output = exports.memoizer = exports.config = exports.registry = exports.globalRegistry = exports.output = exports.input = exports.deepPartial = exports.core = void 0;
++exports.coerce = exports.ZodMiniISODuration = exports.ZodMiniISOTime = exports.ZodMiniISODate = exports.ZodMiniISODateTime = exports.iso = exports.locales = exports.toJSONSchema = exports.getDiscriminatedOption = exports.toZod = exports.NEVER = exports.util = exports.TimePrecision = exports.flattenError = exports.formatError = exports.prettifyError = exports.treeifyError = exports.regexes = exports.clone = exports.$brand = exports.$input = exports.$output = exports.memoizer = exports.config = exports.registry = exports.globalRegistry = exports.output = exports.input = exports.core = void 0;
+ exports.core = __importStar(require("../core/index.cjs"));
+ __exportStar(require("./parse.cjs"), exports);
+ __exportStar(require("./schemas.cjs"), exports);
+ __exportStar(require("./checks.cjs"), exports);
+-var deep_partial_js_1 = require("./deep-partial.cjs");
+-Object.defineProperty(exports, "deepPartial", { enumerable: true, get: function () { return deep_partial_js_1.deepPartial; } });
+ var in_out_js_1 = require("./in-out.cjs");
+ Object.defineProperty(exports, "input", { enumerable: true, get: function () { return in_out_js_1.input; } });
+ Object.defineProperty(exports, "output", { enumerable: true, get: function () { return in_out_js_1.output; } });
+@@ -53,12 +51,7 @@ Object.defineProperty(exports, "flattenError", { enumerable: true, get: function
+ Object.defineProperty(exports, "TimePrecision", { enumerable: true, get: function () { return index_js_1.TimePrecision; } });
+ Object.defineProperty(exports, "util", { enumerable: true, get: function () { return index_js_1.util; } });
+ Object.defineProperty(exports, "NEVER", { enumerable: true, get: function () { return index_js_1.NEVER; } });
+-Object.defineProperty(exports, "INVALID", { enumerable: true, get: function () { return index_js_1.INVALID; } });
+ Object.defineProperty(exports, "toZod", { enumerable: true, get: function () { return index_js_1.toZod; } });
+-Object.defineProperty(exports, "compile", { enumerable: true, get: function () { return index_js_1.compile; } });
+-Object.defineProperty(exports, "withParser", { enumerable: true, get: function () { return index_js_1.withParser; } });
+-Object.defineProperty(exports, "ZodCompileAsyncError", { enumerable: true, get: function () { return index_js_1.ZodCompileAsyncError; } });
+-Object.defineProperty(exports, "ZodCompileUnsupportedError", { enumerable: true, get: function () { return index_js_1.ZodCompileUnsupportedError; } });
+ Object.defineProperty(exports, "getDiscriminatedOption", { enumerable: true, get: function () { return index_js_1.getDiscriminatedOption; } });
+ var json_schema_processors_js_1 = require("../core/json-schema-processors.cjs");
+ Object.defineProperty(exports, "toJSONSchema", { enumerable: true, get: function () { return json_schema_processors_js_1.toJSONSchema; } });
+diff --git a/node_modules/zod/v4/mini/external.js b/node_modules/zod/v4/mini/external.js
+index 9a3f8ea..74ad4c2 100644
+--- a/node_modules/zod/v4/mini/external.js
++++ b/node_modules/zod/v4/mini/external.js
+@@ -2,9 +2,8 @@ export * as core from "../core/index.js";
+ export * from "./parse.js";
+ export * from "./schemas.js";
+ export * from "./checks.js";
+-export { deepPartial } from "./deep-partial.js";
+ export { input, output } from "./in-out.js";
+-export { globalRegistry, registry, config, memoizer, $output, $input, $brand, clone, regexes, treeifyError, prettifyError, formatError, flattenError, TimePrecision, util, NEVER, INVALID, toZod, compile, withParser, ZodCompileAsyncError, ZodCompileUnsupportedError, getDiscriminatedOption, } from "../core/index.js";
++export { globalRegistry, registry, config, memoizer, $output, $input, $brand, clone, regexes, treeifyError, prettifyError, formatError, flattenError, TimePrecision, util, NEVER, toZod, getDiscriminatedOption, } from "../core/index.js";
+ export { toJSONSchema } from "../core/json-schema-processors.js";
+ export * as locales from "../locales/index.js";
+ /** A special constant with type `never` */

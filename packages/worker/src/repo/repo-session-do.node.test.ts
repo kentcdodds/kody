@@ -120,17 +120,18 @@ vi.mock('@cloudflare/shell/git', () => ({
 	createGit: vi.fn(() => mockModule.git),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		push: (...args: Parameters<typeof git.push>) => mockModule.rawPush(...args),
-		commit: (...args: Parameters<typeof git.commit>) =>
-			mockModule.rawCommit(...args),
-		readBlob: mockModule.readBlob,
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			push: (...args: Parameters<typeof git.push>) =>
+				mockModule.rawPush(...args),
+			commit: (...args: Parameters<typeof git.commit>) =>
+				mockModule.rawCommit(...args),
+			readBlob: mockModule.readBlob,
+		},
+		http: {},
+		createGit: () => mockModule.git,
+	}),
 }))
 
 vi.mock('./repo-sessions.ts', () => ({

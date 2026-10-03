@@ -5,15 +5,14 @@ const gitMocks = vi.hoisted(() => ({
 	listServerRefs: vi.fn(),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		listServerRefs: (...args: Array<unknown>) =>
-			gitMocks.listServerRefs(...args),
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			listServerRefs: (...args: Array<unknown>) =>
+				gitMocks.listServerRefs(...args),
+		},
+		http: {},
+	}),
 }))
 
 const {

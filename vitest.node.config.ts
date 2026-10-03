@@ -9,9 +9,12 @@ export default mergeConfig(
 			// Inline so the `cloudflare:workers` alias below applies inside these
 			// packages; the OAuth provider (aliased below from its generated
 			// deferred module) imports `WorkerEntrypoint` at module top.
+			// isomorphic-git is aliased from its generated additional module to
+			// the thin re-export entry for the same reason.
 			noExternal: [
 				'@cloudflare/codemode',
 				'@cloudflare/workers-oauth-provider',
+				'isomorphic-git',
 			],
 		},
 		resolve: {
@@ -93,6 +96,13 @@ export default mergeConfig(
 					replacement: resolve(
 						rootDir,
 						'packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+					),
+				},
+				{
+					find: './node_modules/.kody-generated/isomorphic-git.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/repo/isomorphic-git-module.ts',
 					),
 				},
 			],

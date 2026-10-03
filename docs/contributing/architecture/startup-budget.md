@@ -69,14 +69,16 @@ non-library caller to find which of our modules imported it.
    again. Shared helpers (`{domain}/shared.ts`) are the supported static entry
    points, so keep them light: helpers, not schema catalogs.
 2. **Heavy libraries load on first use.** `isomorphic-git` goes through
-   `packages/worker/src/repo/isomorphic-git-lazy.ts`, including platform
-   `RepoSession`. A static `isomorphic-git` import on that entry evaluates the
-   library during startup. The MCP server SDK goes through
-   `loadMcpServerModule()` in `packages/worker/src/mcp/protocol-metrics.ts` and
-   the lazy stateless-lane / legacy-lane loaders in `mcp-auth.ts` and
-   `origin-handler.ts`. The platform worker is the exception: the `MCP` Durable
-   Object class extends the agents SDK base class at module scope, so that
-   worker carries the SDK cost by design.
+   `packages/worker/src/isomorphic-git-load.ts` (re-exported as
+   `repo/isomorphic-git-lazy.ts`), including platform `RepoSession`. That helper
+   loads the pre-bundled `isomorphic-git.mjs` additional module (not a bare
+   `import('isomorphic-git')`, which Wrangler would inline into the main byte
+   graph). The MCP server SDK goes through `loadMcpServerModule()` in
+   `packages/worker/src/mcp/protocol-metrics.ts` and the lazy stateless-lane /
+   legacy-lane loaders in `mcp-auth.ts` and `origin-handler.ts`. The platform
+   worker is the exception: the `MCP` Durable Object class extends the agents
+   SDK base class at module scope, so that worker carries the SDK cost by
+   design.
 3. **No module-scope formatters or wasm on the startup path.** Build `Intl.*`
    objects on first use (see `universal/dynamic-worker-cost.ts`). Keep
    WebAssembly imports inside modules that are only reached lazily.
@@ -87,6 +89,21 @@ non-library caller to find which of our modules imported it.
    trimmed. `patches/zod+4.6.5.patch` keeps only `en` (already applied by Zod's
    classic entry). Do not import other locale modules on the startup path; when
    bumping Zod, refresh that patch.
+6. **Keep Zod `compile` off the Worker graph.** Zod 4.6+ re-exports `compile`
+   (and `fromJSONSchema` / `deepPartial`) through the classic and mini barrels
+   onto the `z` / `z.core` namespace. That forces `compile.js` into every Worker
+   main even when nothing calls it. The same patch strips those barrel exports.
+   Do not call `z.compile()` on the module-scope capability schema path
+   (`new Function`, extra construction). Keep using ordinary schema parse.
+7. **Defer isomorphic-git as an additional module.** `loadIsomorphicGit()` in
+   `packages/worker/src/isomorphic-git-load.ts` imports
+   `node_modules/.kody-generated/isomorphic-git.mjs` (built by
+   `tools/build-worker-bundler-modules.ts`), not a bare
+   `import('isomorphic-git')`. Wrangler inlines bare dynamic imports into the
+   main byte graph; the generated specifier must stay
+   `./node_modules/.kody-generated/…` relative to `packages/worker/src` (a `../`
+   path from `repo/` inlines the module). Same pattern as oauth-provider and
+   local-execute-runtime-support.
 
 ## CI tripwire
 

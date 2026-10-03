@@ -154,6 +154,9 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			oauthProviderPackageSourcePath,
 			'/packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
 			'/packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+			'/packages/worker/src/repo/isomorphic-git-module.ts',
+			'/node_modules/isomorphic-git/',
+			'/node_modules/@cloudflare/shell/dist/git/',
 		],
 	},
 	{
@@ -168,6 +171,9 @@ export const startupBundles: ReadonlyArray<StartupBundleSpec> = [
 			oauthProviderPackageSourcePath,
 			'/packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
 			'/packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+			'/packages/worker/src/repo/isomorphic-git-module.ts',
+			'/node_modules/isomorphic-git/',
+			'/node_modules/@cloudflare/shell/dist/git/',
 		],
 	},
 ]

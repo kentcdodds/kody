@@ -4,12 +4,17 @@ import { describe, expect, test } from 'vitest'
 const require = createRequire(import.meta.url)
 
 /**
- * Guards the Zod locales barrel patch (`patches/zod+4.6.5.patch`). Without it,
- * `import { z } from 'zod'` pulls ~50 locale modules into every Worker main
- * module (~190 KB on runtime/platform). See
- * docs/contributing/architecture/startup-budget.md.
+ * Guards the Zod Worker startup patch (`patches/zod+4.6.5.patch`).
+ *
+ * 1. Locales barrel stays English-only. Without that trim, `import { z } from
+ *    'zod'` pulls ~50 locale modules into every Worker main (~190 KB).
+ * 2. Classic / mini / core barrels omit `compile` (and related exports) plus
+ *    unused `fromJSONSchema` / `deepPartial`. Zod 4.6 re-exports `compile` onto
+ *    the `z` namespace via `export * as core`, which Wrangler cannot tree-shake
+ *    (~32 KB compile.js plus from-json-schema). See
+ *    docs/contributing/architecture/startup-budget.md.
  */
-describe('zod locales barrel patch', () => {
+describe('zod worker startup barrel patch', () => {
 	test('exposes only the English locale from the locales index', async () => {
 		const locales = await import('zod/v4/locales/index.js')
 		expect(Object.keys(locales).sort()).toEqual(['en'])
@@ -26,5 +31,26 @@ describe('zod locales barrel patch', () => {
 		expect(result.success).toBe(false)
 		if (result.success) return
 		expect(result.error.issues[0]?.message).toMatch(/string/i)
+	})
+
+	test('classic and mini barrels omit compile and fromJSONSchema', async () => {
+		const classic = await import('zod')
+		const mini = await import('zod/mini')
+		const classicKeys = Object.keys(classic.z)
+		const miniKeys = Object.keys(mini)
+		for (const key of [
+			'compile',
+			'withParser',
+			'ZodCompileAsyncError',
+			'ZodCompileUnsupportedError',
+			'INVALID',
+			'fromJSONSchema',
+			'deepPartial',
+		]) {
+			expect(classicKeys).not.toContain(key)
+			expect(miniKeys).not.toContain(key)
+		}
+		expect(typeof classic.z.toJSONSchema).toBe('function')
+		expect(typeof mini.toJSONSchema).toBe('function')
 	})
 })

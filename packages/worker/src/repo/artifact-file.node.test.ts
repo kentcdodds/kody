@@ -20,15 +20,18 @@ const mocks = vi.hoisted(() => ({
 	readArtifactSourceSnapshot: vi.fn(),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
-		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
-		init: (...args: Array<unknown>) => mocks.init(...args),
-		readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
-		walk: (...args: Array<unknown>) => mocks.walk(...args),
-		TREE: (...args: Parameters<typeof git.TREE>) => mocks.TREE(...args),
-	},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
+			fetch: (...args: Array<unknown>) => mocks.fetch(...args),
+			init: (...args: Array<unknown>) => mocks.init(...args),
+			readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
+			walk: (...args: Array<unknown>) => mocks.walk(...args),
+			TREE: (...args: Parameters<typeof git.TREE>) => mocks.TREE(...args),
+		},
+		http: {},
+	}),
 }))
 
 vi.mock('./artifacts.ts', () => {

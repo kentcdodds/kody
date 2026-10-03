@@ -13,17 +13,16 @@ const mocks = vi.hoisted(() => ({
 	>(() => false),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
-		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
-		init: (...args: Array<unknown>) => mocks.init(...args),
-		log: (...args: Array<unknown>) => mocks.log(...args),
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('#worker/repo/isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
+			fetch: (...args: Array<unknown>) => mocks.fetch(...args),
+			init: (...args: Array<unknown>) => mocks.init(...args),
+			log: (...args: Array<unknown>) => mocks.log(...args),
+		},
+		http: {},
+	}),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', () => ({
