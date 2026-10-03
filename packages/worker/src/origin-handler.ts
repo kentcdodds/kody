@@ -429,7 +429,7 @@ function isLoopbackHostname(hostname: string) {
 	return (
 		hostname === 'localhost' ||
 		hostname.endsWith('.localhost') ||
-		hostname === '127.0.0.1' ||
+		/^127(?:\.\d{1,3}){3}$/.test(hostname) ||
 		hostname === '[::1]' ||
 		hostname === '::1'
 	)
@@ -447,6 +447,9 @@ function getInsecureOriginRedirect(appOrigin: string, url: URL) {
 	}
 	const secureUrl = new URL(url)
 	secureUrl.protocol = 'https:'
+	// An explicit HTTP port does not imply a TLS listener on the same port;
+	// target the default HTTPS port (443) instead.
+	secureUrl.port = ''
 	return Response.redirect(secureUrl.toString(), 308)
 }
 
