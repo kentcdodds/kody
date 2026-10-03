@@ -347,8 +347,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				conversationId: 'conv-storage-2',
 				storageId: 'storage-fk-1',
 				context: {
-					sqlPreview:
-						"INSERT INTO probe_t (parent_id) VALUES (99)",
+					sqlPreview: 'INSERT INTO probe_t (parent_id) VALUES (99)',
 				},
 			},
 		),

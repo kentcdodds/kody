@@ -84,7 +84,7 @@ test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platfor
 		storageQueryCapability.handler(
 			{
 				storage_id: 'storage-1',
-				query: "INSERT INTO probe_t (parent_id) VALUES (99)",
+				query: 'INSERT INTO probe_t (parent_id) VALUES (99)',
 				writable: true,
 			},
 			{
