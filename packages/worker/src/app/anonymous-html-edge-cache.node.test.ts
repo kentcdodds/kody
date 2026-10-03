@@ -67,8 +67,18 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 		[home, { headers: { Accept: 'text/html' } }, true],
 		['https://kody.codes/llms.txt', {}, true],
 		['https://kody.codes/docs/llms.txt', {}, true],
-		['https://kody.codes/login', {}, false],
-		['https://kody.codes/signup', {}, false],
+		['https://kody.codes/login', {}, true],
+		['https://kody.codes/signup', {}, true],
+		[
+			'https://kody.codes/login',
+			{ headers: { Cookie: 'kody_session=stale' } },
+			false,
+		],
+		[
+			'https://kody.codes/signup',
+			{ headers: { Cookie: 'kody_session=stale' } },
+			false,
+		],
 		[
 			'https://kody.codes/community',
 			{ headers: { 'x-remix-target': 'community-listings' } },

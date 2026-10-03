@@ -87,14 +87,36 @@ test('anonymous llms.txt plain text is stored and replayed like marketing HTML',
 	}
 })
 
-test('auth pages are not admitted to the anonymous Cache API path', async () => {
+test('anonymous auth pages are stored; cookie-bearing requests bypass the shared cache', async () => {
 	for (const pathname of ['/login', '/signup'] as const) {
 		const url = `https://test.kody.dev${pathname}?auth=${crypto.randomUUID()}`
-		const result = await serve(new Request(url), () =>
+		const miss = await serve(new Request(url), () =>
 			storeableHtml(completeDocument),
 		)
-		expect(result.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBeNull()
-		expect(result.cached).toBeUndefined()
+		expect(miss.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		await expect(miss.cached?.text()).resolves.toBe(completeDocument)
+
+		const hit = await serve(new Request(url), () => {
+			throw new Error('upstream must not run on a HIT')
+		})
+		expect(hit.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.text).toBe(completeDocument)
+
+		const withCookie = await serve(
+			new Request(url, { headers: { Cookie: 'kody_session=stale' } }),
+			() =>
+				new Response(completeDocument, {
+					status: 200,
+					headers: {
+						'Content-Type': 'text/html; charset=utf-8',
+						'Cache-Control': 'no-store',
+					},
+				}),
+		)
+		expect(
+			withCookie.response.headers.get(anonymousHtmlEdgeCacheHeader),
+		).toBeNull()
+		expect(withCookie.response.headers.get('Cache-Control')).toBe('no-store')
 	}
 })
 

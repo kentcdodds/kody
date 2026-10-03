@@ -1,9 +1,9 @@
 /**
- * Shared Cache-Control for anonymous marketing HTML (and the viewer-independent
- * `/llms.txt` / `/docs/llms.txt` plain-text indexes). Session pages and any
- * response that sets a cookie stay `no-store`. The origin Worker stores
- * cookie-less GET responses in `caches.default` keyed on canonical origin +
- * pathname + search plus a `__accept=html` marker; markdown-preferring
+ * Shared Cache-Control for anonymous marketing HTML, auth entry pages, and the
+ * viewer-independent `/llms.txt` / `/docs/llms.txt` plain-text indexes. Session
+ * pages and any response that sets a cookie stay `no-store`. The origin Worker
+ * stores cookie-less GET responses in `caches.default` keyed on canonical
+ * origin + pathname + search plus a `__accept=html` marker; markdown-preferring
  * `Accept` values (`prefersMarkdown`) bypass the store. Frame fetches
  * (`x-remix-target` or the `__frame` query param) bypass it too: those caches
  * key on the URL, and returning the document nests another site shell inside
@@ -42,6 +42,11 @@ const cacheableAnonymousExactPaths = new Set([
 	// Viewer-independent docs indexes (plain text, same Cache API path).
 	'/llms.txt',
 	'/docs/llms.txt',
+	// Anonymous auth shells: Turnstile site key + OAuth provider list are
+	// deployment config. Session cookies, Set-Cookie, and banner-dismiss
+	// cookies still force no-store via resolveAppPageCacheControl.
+	'/login',
+	'/signup',
 ])
 
 // Public package surfaces: home, tree, and the listing-uuid shapes they
