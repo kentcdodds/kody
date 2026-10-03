@@ -6,6 +6,12 @@
  * local-execute-runtime-support / worker-bundler). Callers under `repo/` must
  * not import the `.mjs` with a `../` path — that inlines the module into the
  * main entry.
+ *
+ * Type the payload with `typeof import(...)` queries only. A top-level
+ * `import type` from `isomorphic-git` / `isomorphic-git/http/web` /
+ * `@cloudflare/shell/git` still lands those packages in Wrangler's main
+ * source map (forbidden by the startup-bundle check) even when erased at
+ * runtime.
  */
 
 export type IsomorphicGit = {
