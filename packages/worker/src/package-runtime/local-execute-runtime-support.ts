@@ -610,7 +610,7 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 			// intrinsic AsyncFunction prototype — never target.constructor.
 			if (Object.getPrototypeOf(target) === __kodyAsyncFunctionPrototype) {
 				return __kodyRunWithSecretAuthority(stampedId, async () =>
-					Reflect.apply(target, thisArg, argumentsList),
+					await Reflect.apply(target, thisArg, argumentsList),
 				);
 			}
 			return __kodyRunWithSecretAuthority(stampedId, () =>

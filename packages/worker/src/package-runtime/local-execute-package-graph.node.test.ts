@@ -637,6 +637,10 @@ return {
 		'pkg-nested-grok-bot',
 		async () => {
 			expect(__kodyGetSecretAuthority()).toBe('pkg-nested-grok-bot')
+			// Preliminary await before fetch — workerd keeps ALS only when the
+			// meter wrapper awaits the callee inside ALS.run (kody#2876 / Devin).
+			await Promise.resolve()
+			expect(__kodyGetSecretAuthority()).toBe('pkg-nested-grok-bot')
 			await outerBoundFetch('https://api2.cursor.sh/automations/webhook/x', {
 				method: 'POST',
 				headers: {
