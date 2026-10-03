@@ -495,6 +495,12 @@ function addOAuthDiscoveryCorsHeaders(
 	})
 }
 
+function isMcpResourceOwnedPath(pathname: string) {
+	return (
+		pathname === mcpResourcePath || pathname.startsWith(`${mcpResourcePath}/`)
+	)
+}
+
 function isOAuthProviderOwnedPath(pathname: string) {
 	return (
 		pathname === oauthPaths.token ||
@@ -502,8 +508,7 @@ function isOAuthProviderOwnedPath(pathname: string) {
 		pathname === oauthPaths.discovery ||
 		pathname === protectedResourceMetadataPath ||
 		pathname.startsWith(`${protectedResourceMetadataPath}/`) ||
-		pathname === mcpResourcePath ||
-		pathname.startsWith(`${mcpResourcePath}/`)
+		isMcpResourceOwnedPath(pathname)
 	)
 }
 
@@ -514,6 +519,35 @@ function isMalformedOAuthClientException(error: unknown, pathname: string) {
 	return (
 		pathname === oauthPaths.token &&
 		message.includes("Cannot read properties of undefined (reading 'some')")
+	)
+}
+
+/**
+ * Catchable throws on `/mcp` must stay on the connection as JSON-RPC so MCP
+ * clients treat the call as a failed request instead of an OAuth token error
+ * (or a Cloudflare 1101 if the error is rethrown). Real OAuth routes keep the
+ * RFC 6749 error object. This does not cover isolate kills.
+ */
+function createMcpProviderExceptionResponse(request: Request) {
+	return withMcpCors(
+		request,
+		new Response(
+			JSON.stringify({
+				jsonrpc: '2.0',
+				id: null,
+				error: {
+					code: -32603,
+					message: 'Internal error',
+				},
+			}),
+			{
+				status: 500,
+				headers: {
+					'Cache-Control': 'no-store',
+					'Content-Type': 'application/json',
+				},
+			},
+		),
 	)
 }
 
@@ -547,6 +581,17 @@ function createOAuthProviderExceptionResponse(
 		}),
 		{ status: pathname === oauthPaths.register ? 400 : 500, headers },
 	)
+}
+
+function createProviderOwnedPathExceptionResponse(
+	error: unknown,
+	pathname: string,
+	request: Request,
+) {
+	if (isMcpResourceOwnedPath(pathname)) {
+		return createMcpProviderExceptionResponse(request)
+	}
+	return createOAuthProviderExceptionResponse(error, pathname)
 }
 
 const workerHandler = {
@@ -771,7 +816,11 @@ async function handleOriginAppFetch(
 	} catch (error) {
 		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
 		Sentry.captureException(error)
-		return createOAuthProviderExceptionResponse(error, url.pathname)
+		return createProviderOwnedPathExceptionResponse(
+			error,
+			url.pathname,
+			request,
+		)
 	}
 }
 

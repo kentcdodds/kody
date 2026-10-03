@@ -4,6 +4,7 @@ import {
 	type AuthRequest,
 	type ClientInfo,
 	type CompleteAuthorizationOptions,
+	OAuthProvider,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
@@ -946,7 +947,7 @@ test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client'
 	captureException.mockRestore()
 })
 
-test('worker entrypoint returns OAuth errors for provider-owned route exceptions', async () => {
+test('worker entrypoint returns OAuth errors for provider-owned route exceptions and JSON-RPC for /mcp', async () => {
 	const registerResponse = await workerFetch(
 		new Request('https://heykody.dev/oauth/register', {
 			method: 'POST',
@@ -1010,6 +1011,52 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 		error_description: 'Invalid OAuth client registration.',
 	})
 	expect(captureException).toHaveBeenCalledOnce()
+
+	// Catchable throws on `/mcp` must be JSON-RPC, not the OAuth token error
+	// shape — MCP clients drop or mis-handle OAuth `{ error: "server_error" }`.
+	const providerFetch = OAuthProvider.prototype.fetch
+	const mcpThrow = vi
+		.spyOn(OAuthProvider.prototype, 'fetch')
+		.mockImplementation(async function (this: OAuthProvider, request, ...rest) {
+			if (new URL(request.url).pathname === '/mcp') {
+				throw new Error('simulated mcp provider failure')
+			}
+			return providerFetch.call(this, request, ...rest)
+		})
+	const mcpResponse = await workerFetch(
+		new Request('https://heykody.dev/mcp', {
+			method: 'POST',
+			headers: {
+				Authorization: 'Bearer test-token',
+				'Content-Type': 'application/json',
+				Accept: 'application/json, text/event-stream',
+				Origin: 'https://gemini.google.com',
+			},
+			body: JSON.stringify({
+				jsonrpc: '2.0',
+				id: 1,
+				method: 'initialize',
+				params: {},
+			}),
+		}),
+	)
+	expect(mcpResponse.status).toBe(500)
+	expect(mcpResponse.headers.get('Content-Type')).toContain('application/json')
+	expect(mcpResponse.headers.get('Access-Control-Allow-Origin')).toBe(
+		'https://gemini.google.com',
+	)
+	const mcpBody = await mcpResponse.json()
+	expect(mcpBody).toEqual({
+		jsonrpc: '2.0',
+		id: null,
+		error: {
+			code: -32603,
+			message: 'Internal error',
+		},
+	})
+	expect(captureException).toHaveBeenCalledTimes(2)
+
+	mcpThrow.mockRestore()
 	captureException.mockRestore()
 })
 

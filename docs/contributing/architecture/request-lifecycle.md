@@ -114,6 +114,12 @@ Requests are handled in this order:
      `executeEvidence` (never execute) so organic last-success is not one cron
      tick behind the live heartbeat. Persist merges with any newer timestamp
      written while that fetch was in flight.
+   - Catchable throws while serving `/mcp` (including through `OAuthProvider`'s
+     `apiHandler`) are mapped to an HTTP JSON-RPC `-32603` Internal error
+     response on the same connection so MCP clients see a failed request instead
+     of an OAuth `{ error: "server_error" }` body or a Cloudflare 1101 from a
+     rethrown exception. Real OAuth routes keep their RFC 6749 error shape.
+     Isolate kills are outside this catch.
 7. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to
