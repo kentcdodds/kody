@@ -26,7 +26,6 @@ import {
 	protectedResourceMetadataPath,
 	withMcpCors,
 } from './mcp-auth.ts'
-import { extractJsonRpcRequestIds } from './mcp/sse-response-guard.ts'
 import { handleMcpClientIdMetadataRequest } from './mcp-client/client-id-metadata.ts'
 import { handleCliClientIdMetadataRequest } from './cli-client-metadata.ts'
 import {
@@ -533,20 +532,38 @@ function isMalformedOAuthClientException(error: unknown, pathname: string) {
  * Request IDs are peeked from a clone before `oauthProvider.fetch` so the error
  * can correlate with the pending call. Peeking is capped so large execute
  * bodies are not doubled in memory (memory-limit faults are out of scope).
- * On the catch path the original body is discarded so an unread clone tee
- * cannot terminate the isolate.
+ * When a clone was created, the catch path discards the original body so an
+ * unread tee cannot terminate the isolate.
  */
 const mcpJsonRpcIdPeekLimitBytes = 64_000
+const mcpJsonRpcIdPeekDeadlineMs = 250
 
 type McpJsonRpcPeek =
 	| { kind: 'unknown' }
 	| { kind: 'notifications' }
 	| { kind: 'requests'; ids: Array<string | number>; batch: boolean }
 
+type McpJsonRpcPeekResult = {
+	peek: McpJsonRpcPeek
+	/** True when `request.clone()` ran (a tee exists that may need draining). */
+	cloned: boolean
+}
+
+function isJsonRpcId(value: unknown): value is string | number {
+	return typeof value === 'string' || typeof value === 'number'
+}
+
+function isValidJsonRpcMessage(message: Record<string, unknown>) {
+	if (message['jsonrpc'] !== '2.0') return false
+	if (typeof message['method'] !== 'string') return false
+	if ('id' in message && !isJsonRpcId(message['id'])) return false
+	return true
+}
+
 /**
- * Read at most `maxBytes` from a request body. Returns `null` when the body
- * exceeds the cap so callers can skip JSON-RPC id peeking without buffering a
- * large execute payload.
+ * Read at most `maxBytes` from a request body within `deadlineMs`. Returns
+ * `null` when the body exceeds the cap, the deadline expires, or the stream
+ * cannot be read — callers then skip JSON-RPC id peeking.
  */
 async function readRequestTextUpTo(
 	request: {
@@ -554,18 +571,31 @@ async function readRequestTextUpTo(
 		text(): Promise<string>
 	},
 	maxBytes: number,
+	deadlineMs: number,
 ): Promise<string | null> {
 	const body = request.body
 	if (!body) {
-		const text = await request.text()
+		const text = await Promise.race([
+			request.text(),
+			new Promise<null>((resolve) => {
+				setTimeout(() => resolve(null), deadlineMs)
+			}),
+		])
+		if (text === null) return null
 		return text.length > maxBytes ? null : text
 	}
 	const reader = body.getReader()
 	const chunks: Array<Uint8Array> = []
 	let total = 0
+	let timedOut = false
+	const timeoutId = setTimeout(() => {
+		timedOut = true
+		void reader.cancel()
+	}, deadlineMs)
 	try {
 		for (;;) {
 			const { done, value } = await reader.read()
+			if (timedOut) return null
 			if (done) break
 			if (!value) continue
 			total += value.byteLength
@@ -578,8 +608,16 @@ async function readRequestTextUpTo(
 			}
 			chunks.push(value)
 		}
+	} catch {
+		if (timedOut) return null
+		throw new Error('MCP JSON-RPC id peek body read failed')
 	} finally {
-		reader.releaseLock()
+		clearTimeout(timeoutId)
+		try {
+			reader.releaseLock()
+		} catch {
+			// Already canceled/released after deadline or over-limit cancel.
+		}
 	}
 	const merged = new Uint8Array(total)
 	let offset = 0
@@ -595,24 +633,27 @@ function classifyParsedMcpJsonRpcBody(parsed: unknown): McpJsonRpcPeek {
 		if (parsed.length === 0) return { kind: 'unknown' }
 		const messages = parsed.filter(isRecord)
 		if (messages.length !== parsed.length) return { kind: 'unknown' }
-		if (messages.some((message) => typeof message['method'] !== 'string')) {
-			return { kind: 'unknown' }
-		}
-		const ids = extractJsonRpcRequestIds(parsed)
+		if (!messages.every(isValidJsonRpcMessage)) return { kind: 'unknown' }
+		const ids = messages
+			.filter((message) => 'id' in message)
+			.map((message) => message['id'] as string | number)
 		if (ids.length === 0) return { kind: 'notifications' }
 		return { kind: 'requests', ids, batch: true }
 	}
-	if (!isRecord(parsed) || typeof parsed['method'] !== 'string') {
+	if (!isRecord(parsed) || !isValidJsonRpcMessage(parsed)) {
 		return { kind: 'unknown' }
 	}
-	const ids = extractJsonRpcRequestIds(parsed)
-	if (ids.length === 0) return { kind: 'notifications' }
-	return { kind: 'requests', ids, batch: false }
+	if (!('id' in parsed)) return { kind: 'notifications' }
+	return {
+		kind: 'requests',
+		ids: [parsed['id'] as string | number],
+		batch: false,
+	}
 }
 
 async function peekMcpJsonRpcRequestIds(
 	request: Request,
-): Promise<McpJsonRpcPeek> {
+): Promise<McpJsonRpcPeekResult> {
 	const contentLengthHeader = request.headers.get('Content-Length')
 	if (contentLengthHeader !== null) {
 		const contentLength = Number(contentLengthHeader)
@@ -621,18 +662,24 @@ async function peekMcpJsonRpcRequestIds(
 			contentLength <= 0 ||
 			contentLength > mcpJsonRpcIdPeekLimitBytes
 		) {
-			return { kind: 'unknown' }
+			return { peek: { kind: 'unknown' }, cloned: false }
 		}
 	}
 	try {
 		const text = await readRequestTextUpTo(
 			request.clone(),
 			mcpJsonRpcIdPeekLimitBytes,
+			mcpJsonRpcIdPeekDeadlineMs,
 		)
-		if (text === null || text === '') return { kind: 'unknown' }
-		return classifyParsedMcpJsonRpcBody(JSON.parse(text))
+		if (text === null || text === '') {
+			return { peek: { kind: 'unknown' }, cloned: true }
+		}
+		return {
+			peek: classifyParsedMcpJsonRpcBody(JSON.parse(text)),
+			cloned: true,
+		}
 	} catch {
-		return { kind: 'unknown' }
+		return { peek: { kind: 'unknown' }, cloned: true }
 	}
 }
 
@@ -945,6 +992,7 @@ async function handleOriginAppFetch(
 	}
 
 	let mcpPeek: McpJsonRpcPeek = { kind: 'unknown' }
+	let mcpPeekCloned = false
 	try {
 		if (url.pathname === oauthPaths.token && request.method === 'POST') {
 			const { response, grantType } = await handleMcpOAuthTokenRequest({
@@ -958,16 +1006,19 @@ async function handleOriginAppFetch(
 			})
 		}
 		if (isMcpResourceOwnedPath(url.pathname) && request.method === 'POST') {
-			mcpPeek = await peekMcpJsonRpcRequestIds(request)
+			const peeked = await peekMcpJsonRpcRequestIds(request)
+			mcpPeek = peeked.peek
+			mcpPeekCloned = peeked.cloned
 		}
 		return await oauthProvider.fetch(request, env, ctx)
 	} catch (error) {
 		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
 		Sentry.captureException(error)
-		if (isMcpResourceOwnedPath(url.pathname)) {
-			// request.clone() tees the body; if the provider threw before
-			// draining the original, discard it so workerd does not kill the
-			// isolate for an unread tee branch.
+		if (mcpPeekCloned) {
+			// Only discard when a clone tee exists. Skipping avoids buffering a
+			// large body that was never cloned (Content-Length over the peek
+			// limit). When cloned, drain the original so workerd does not kill
+			// the isolate for an unread tee branch.
 			await discardUnreadRequestBody(request)
 		}
 		return createProviderOwnedPathExceptionResponse(
