@@ -8,7 +8,7 @@ import { creditDebitCostMicroUsd, type CreditDebitMeter } from './credits.ts'
 import { type ComputeOverageWarningResource } from './compute-overage.ts'
 
 /** Empty package_id in D1 / AE blob9 means Ad hoc (direct execute + unknown). */
-export const creditAttributionAdHocPackageId = ''
+const creditAttributionAdHocPackageId = ''
 
 export const creditAttributionAdHocName = 'Ad hoc'
 
@@ -60,14 +60,14 @@ export type CreditAttributionMeterInclude = {
 	include: number
 }
 
-export type CreditAttributionMeterSplit = {
+type CreditAttributionMeterSplit = {
 	meter: CreditAttributionMeter
 	/** Customer label: Worker compute / Rows read. */
 	label: string
 	creditsMicroUsd: number
 }
 
-export type CreditAttributionCumulativePoint = {
+type CreditAttributionCumulativePoint = {
 	day: string
 	creditsMicroUsd: number
 }
