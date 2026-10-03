@@ -155,7 +155,7 @@ vulnerable releases.
 ### `brace-expansion` → `>=5.0.12 <6.0.0`
 
 Keeps the `brace-expansion` copy (via `nx` and its `minimatch`) at or above the
-current advisory floor. Upstream `nx@23.2.0` pins `brace-expansion@5.0.9`
+current advisory floor. Upstream `nx@23.2.1` pins `brace-expansion@5.0.9`
 exactly and `minimatch@10.2.5` declares `^5.0.5`, both of which allow vulnerable
 releases, so this override cannot be removed yet.
 
