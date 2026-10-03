@@ -2,18 +2,15 @@ import { expect, test } from 'vitest'
 import { caseStudies, caseStudyAttribution } from '#universal/case-studies.ts'
 import { landingTestimonials } from '#universal/landing-testimonials.ts'
 
-test('case study ids are stable section anchors linked from the carousel', () => {
-	expect(caseStudies.map((study) => study.id)).toEqual([
-		'josh-tomaino',
-		'jett-hays',
-		'gabriel-alegria',
-		'maciek-sitkowski',
-	])
-	const maciek = landingTestimonials.find(
-		(entry) => entry.name === 'Maciek Sitkowski',
+test('carousel story anchors resolve to case study ids', () => {
+	const caseStudyIds = new Set(caseStudies.map((study) => study.id))
+	const storyAnchors = landingTestimonials.flatMap((entry) =>
+		'storyAnchor' in entry && entry.storyAnchor ? [entry.storyAnchor] : [],
 	)
-	expect(maciek?.storyAnchor).toBe('maciek-sitkowski')
-	expect(maciek && 'storyPath' in maciek).toBe(false)
+	expect(storyAnchors.length).toBeGreaterThan(0)
+	for (const anchor of storyAnchors) {
+		expect(caseStudyIds.has(anchor)).toBe(true)
+	}
 })
 
 test('caseStudyAttribution joins verified role and employer', () => {

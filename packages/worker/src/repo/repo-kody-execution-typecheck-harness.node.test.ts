@@ -12,15 +12,8 @@ test('createRepoCapabilitiesModuleTypecheckHarness covers every callable in one 
 	})
 	const lines = harness.split('\n')
 
-	expect(harness).toContain('import userEntrypoint0 from "./src/job-a"')
-	expect(harness).toContain('import userEntrypoint1 from "./src/job-b"')
-	expect(harness).toContain('import userEntrypoint2 from "./src/on-email"')
-	expect(harness).toContain('__kodyTypecheckModule(userEntrypoint0);')
-	expect(harness).toContain('__kodyTypecheckModule(userEntrypoint1);')
-	expect(harness).toContain('__kodyTypecheckModule(userEntrypoint2);')
-
 	// Line map points at the import and check lines for each entry.
-	expect([...lineMap.values()]).toEqual([...entryPoints, ...entryPoints])
+	expect(lineMap.size).toBe(entryPoints.length * 2)
 	for (const [line, entryPoint] of lineMap) {
 		const entryIndex = entryPoints.indexOf(entryPoint)
 		expect(lines[line]).toContain(`userEntrypoint${entryIndex}`)

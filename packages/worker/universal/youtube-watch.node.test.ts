@@ -80,7 +80,7 @@ test('playlist Atom feed parser reads yt:videoId entries', () => {
 	).toEqual([videoId, 'abcdefghijk'])
 })
 
-test('allowlist merge includes playlist, extra ids, and banner hrefs', () => {
+test('allowlist merge includes playlist, extra ids, and YouTube hrefs', () => {
 	expect(
 		mergeYoutubeWatchAllowlist({
 			playlistVideoIds: [videoId],

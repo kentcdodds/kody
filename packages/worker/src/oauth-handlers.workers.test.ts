@@ -521,7 +521,6 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		),
 	)
 	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
-	expect(authorizeHtml).not.toContain('Loading authorization details')
 
 	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(

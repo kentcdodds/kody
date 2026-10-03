@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	handleWebhookSubscriptionChallenge,
-	normalizeWebhookChallenge,
 	webhookChallengeAllowsGet,
 	webhookChallengeAllowsPost,
 	webhookChallengeMaxParamChars,
@@ -150,13 +149,7 @@ const slackChallengeSigned = {
 	},
 } as const
 
-test('normalizeWebhookChallenge is identity for subscription-challenge', () => {
-	expect(normalizeWebhookChallenge(stravaHubChallenge)).toEqual(
-		stravaHubChallenge,
-	)
-	expect(normalizeWebhookChallenge(metaHubChallenge).respond).toEqual({
-		as: 'text',
-	})
+test('subscription-challenge method gates follow GET vs POST presets', () => {
 	expect(webhookChallengeAllowsGet(webSubChallenge)).toBe(true)
 	expect(webhookChallengeAllowsPost(slackChallenge)).toBe(true)
 	expect(webhookChallengeAllowsPost(metaHubChallenge)).toBe(false)

@@ -3,13 +3,10 @@ import {
 	anonymousHtmlCacheControl,
 	anonymousPersonalizedJsonCacheHeaders,
 	anonymousVisibilityGatedCacheControl,
-	clearRetiredSiteBannerDismissCookie,
 	isCacheableAnonymousPath,
 	publicSharedJsonCacheHeaders,
-	requestHasRetiredSiteBannerDismissCookie,
 	requestHasSessionCookie,
 	resolveAppPageCacheControl,
-	retiredSiteBannerDismissCookieName,
 } from '#app/anonymous-html-cache.ts'
 
 type PageCacheInput = Parameters<typeof resolveAppPageCacheControl>[0]
@@ -46,24 +43,6 @@ test('requestHasSessionCookie matches only the kody_session name', () => {
 			requestHasSessionCookie(request('https://example.com/', cookie)),
 		).toBe(expected)
 	}
-})
-
-test('retired site-banner dismiss cookie helpers detect and expire it', () => {
-	const dismiss = `${retiredSiteBannerDismissCookieName}=11111111-1111-4111-8111-111111111111`
-	expect(
-		requestHasRetiredSiteBannerDismissCookie(
-			request('https://example.com/', dismiss),
-		),
-	).toBe(true)
-	expect(
-		requestHasRetiredSiteBannerDismissCookie(request('https://example.com/')),
-	).toBe(false)
-	expect(clearRetiredSiteBannerDismissCookie({ secure: true })).toBe(
-		`${retiredSiteBannerDismissCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly; Secure`,
-	)
-	expect(clearRetiredSiteBannerDismissCookie({ secure: false })).toBe(
-		`${retiredSiteBannerDismissCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly`,
-	)
 })
 
 test('anonymous marketing HTML is cacheable only without a session', () => {
