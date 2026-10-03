@@ -369,7 +369,8 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					headers,
 					body,
 				});
-				url = encoded.url;
+				// Keep the pre-Request url string so path {{secret:…}}
+				// placeholders are not percent-encoded by Request.
 				method = encoded.method;
 				headers = Object.fromEntries(encoded.headers.entries());
 				bodyBytes = new Uint8Array(await encoded.arrayBuffer());

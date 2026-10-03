@@ -514,6 +514,25 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 				.bodyBase64,
 		).toEqual(expect.any(String))
 
+		gatewayCalls.length = 0
+		ambientCalls.length = 0
+		const pathSecretForm = new FormData()
+		pathSecretForm.set('note', 'hello')
+		await __kodyGatewayFetch(
+			'https://api.example.com/bot{{secret:demoToken|scope=user}}/upload',
+			{
+				method: 'POST',
+				body: pathSecretForm,
+			},
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/bot{{secret:demoToken|scope=user}}/upload',
+			},
+		})
+
 		const namedForm = new FormData()
 		namedForm.set('{{secret:demoToken|scope=user}}', 'field-value')
 		await expect(
