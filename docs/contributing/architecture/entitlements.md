@@ -333,9 +333,14 @@ deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 Platform accounts are not granted. The balance is held until the account is
 credit-eligible Pro (include → credits → stop); this is not a Free prepaid
 wallet product and does not unlock spend on Free. The grant runs at account
-creation. When Stripe later flips `stripe_credits_eligible` on,
-`refreshStripePlanForUser` calls `forgiveCreditUsageBeforeUnlock` so Free-period
-usage above the Pro include is not charged against the welcome balance.
+creation as best-effort: if D1 fails, signup still succeeds and
+`users.signup_welcome_credits_pending` is set. Password / OAuth / passkey / 2FA
+login and `/account/usage` wallet loads call
+`reconcileSignupWelcomeCreditsIfPending`, which retries only when that flag is
+set (default 0, so pre-ship accounts are not backfilled). When Stripe later
+flips `stripe_credits_eligible` on, `refreshStripePlanForUser` calls
+`forgiveCreditUsageBeforeUnlock` so Free-period usage above the Pro include is
+not charged against the welcome balance.
 
 **Admin eligibility.** To give an account the wallet without a Stripe checkout,
 set its manual plan to `pro` (`adminUserUpdate`), fund it (`adminCreditGrant`),

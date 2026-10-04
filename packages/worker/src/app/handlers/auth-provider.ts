@@ -73,7 +73,10 @@ import {
 	serializeReferralCookie,
 } from '#universal/referral-cookie.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
-import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
+import {
+	maybeGrantSignupWelcomeCredits,
+	reconcileSignupWelcomeCreditsIfPending,
+} from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
@@ -480,6 +483,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					options.issuedAt ?? Date.now(),
 				)
 				await touchLastActiveAt(env.APP_DB, { stableUserId })
+				await reconcileSignupWelcomeCreditsIfPending({
+					db: env.APP_DB,
+					userId: stableUserId,
+				})
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'auth',

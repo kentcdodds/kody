@@ -79,8 +79,10 @@ export const creditAdminGrantNoteMaxLength = 500
 /**
  * House-funded welcome credits granted once per new person account at
  * signup (password, OAuth, or admin-created). Ledger id is deterministic
- * so retries never double-grant. Not a Stripe top-up; held until the
- * account is credit-eligible Pro (include → credits → stop).
+ * so retries never double-grant. Creation-time failures set
+ * `signup_welcome_credits_pending` for a later login/wallet-touch retry.
+ * Not a Stripe top-up; held until the account is credit-eligible Pro
+ * (include → credits → stop).
  */
 export const signupWelcomeCreditCents = 500
 export const signupWelcomeCreditNote = 'Welcome credits'

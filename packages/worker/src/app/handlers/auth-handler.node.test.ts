@@ -16,6 +16,9 @@ const welcomeCreditMocks = vi.hoisted(() => ({
 		balanceMicroUsd: 5_000_000,
 		createdAt: '2026-09-29T00:00:00.000Z',
 	})),
+	reconcileSignupWelcomeCreditsIfPending: vi.fn<
+		typeof signupWelcomeCredits.reconcileSignupWelcomeCreditsIfPending
+	>(async () => null),
 }))
 
 vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
@@ -30,6 +33,11 @@ vi.mock('#worker/billing/signup-welcome-credits.ts', () => ({
 			typeof signupWelcomeCredits.maybeGrantSignupWelcomeCredits
 		>
 	) => welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
+	reconcileSignupWelcomeCreditsIfPending: (
+		...args: Parameters<
+			typeof signupWelcomeCredits.reconcileSignupWelcomeCreditsIfPending
+		>
+	) => welcomeCreditMocks.reconcileSignupWelcomeCreditsIfPending(...args),
 }))
 
 const { createAuthHandler } = await import('#app/handlers/auth.ts')

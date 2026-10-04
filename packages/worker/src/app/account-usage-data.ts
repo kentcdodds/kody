@@ -6,6 +6,7 @@ import {
 import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { isBillingConfigured } from '#worker/billing/billing-config.ts'
 import { readCreditWallet } from '#worker/billing/credit-wallet.ts'
+import { reconcileSignupWelcomeCreditsIfPending } from '#worker/billing/signup-welcome-credits.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
 	resolveUserEntitlementFromRow,
@@ -51,6 +52,13 @@ export async function loadAccountUsageData(input: {
 
 	const manualPlan = parseStoredPlanName(row.plan)
 	const usageUserId = resolveUserStableId(row)
+	// Best-effort: retry a creation-time welcome grant that failed earlier.
+	// No-ops unless signup_welcome_credits_pending is set (no pre-ship backfill).
+	await reconcileSignupWelcomeCreditsIfPending({
+		db: input.env.APP_DB,
+		userId: usageUserId,
+		now,
+	})
 	const { creditsEligible } = resolveUserPlanFromRow(row, now)
 	// One credit_wallets read for entitlement balance + Credits section.
 	const wallet = creditsEligible

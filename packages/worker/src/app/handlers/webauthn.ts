@@ -29,6 +29,7 @@ import {
 } from '#app/passkeys.ts'
 import { type routes } from '#universal/routes.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
+import { reconcileSignupWelcomeCreditsIfPending } from '#worker/billing/signup-welcome-credits.ts'
 import {
 	createWebAuthnChallengeCookie,
 	destroyWebAuthnChallengeCookie,
@@ -341,11 +342,12 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			// A verified passkey assertion already satisfies MFA (possession +
 			// user verification), so skip the TOTP challenge even when 2FA is
 			// enabled. Password and social logins still require it.
+			const stableUserId = resolveUserStableId(userRecord)
 			headers.append(
 				'Set-Cookie',
 				await createAuthCookie(
 					{
-						stableUserId: resolveUserStableId(userRecord),
+						stableUserId,
 						email: userRecord.email,
 						rememberMe,
 					},
@@ -353,7 +355,11 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 				),
 			)
 			await touchLastActiveAt(env.APP_DB, {
-				stableUserId: resolveUserStableId(userRecord),
+				stableUserId,
+			})
+			await reconcileSignupWelcomeCreditsIfPending({
+				db: env.APP_DB,
+				userId: stableUserId,
 			})
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),
