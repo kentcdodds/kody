@@ -156,7 +156,8 @@ const skipReplies = args.includes('--skip-replies') || dryRun
 if (!owner || !repo || !prNumber) usage()
 
 const comments = loadPullReviewComments({ owner, repo, prNumber })
-const findings = classifyReviewBotComments(comments)
+const topLevelComments = comments.filter((comment) => !comment.in_reply_to_id)
+const findings = classifyReviewBotComments(topLevelComments)
 const invalid = findings.filter((finding) => finding.verdict === 'invalid')
 const valid = findings.filter(isShipPrBlocker)
 
