@@ -602,6 +602,10 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	const packageAppHostSource = workerOptions?.modules['package-app-entry.js']
 	expect(packageAppHostSource).toContain('packages: null,')
 	expect(packageAppHostSource).not.toContain('createPackagesProxy')
+	expect(packageAppHostSource).toContain('enrichUnboundPackagesInvokeError')
+	expect(packageAppHostSource).toContain(
+		'There is no author-facing `packages.invoke`',
+	)
 })
 
 test('buildPackageAppWorker claims the unique Dynamic Worker day with its surface off the stub path, only after acquiring the stub', async () => {

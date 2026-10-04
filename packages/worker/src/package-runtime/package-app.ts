@@ -92,6 +92,7 @@ import {
 	resolvePackageAppClientArtifact,
 } from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { createNullPackagesInvokeRewriteHostSource } from './unbound-runtime-helpers.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -637,6 +638,8 @@ function serializeRuntimeError(error) {
 	};
 }
 
+${createNullPackagesInvokeRewriteHostSource()}
+
 function createConsoleLogCapture() {
 	const logs = [];
 	const previousConsole = globalThis.console;
@@ -789,13 +792,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			});
 			return response;
 		} catch (error) {
+			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
-				error: serializeRuntimeError(error),
+				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw error;
+			throw enrichedError;
 		} finally {
 			consoleCapture.restore();
 		}
@@ -853,13 +857,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			});
 			return result;
 		} catch (error) {
+			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
-				error: serializeRuntimeError(error),
+				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw error;
+			throw enrichedError;
 		} finally {
 			consoleCapture.restore();
 		}

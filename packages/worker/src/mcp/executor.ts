@@ -74,7 +74,10 @@ import {
 	secretAuthorityHeaderName,
 	takeSecretAuthorityFromCapabilityArgs,
 } from '#mcp/secrets/secret-authority.ts'
-import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import {
+	buildUnboundRuntimeHelperNextStep,
+	parseUnboundRuntimeHelperMessage,
+} from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import {
 	getDynamicWorkerEvaluationContext,
@@ -1714,31 +1717,6 @@ const kodyRuntimeExportNames = new Set([
 	'packages',
 	'events',
 ])
-
-/**
- * Remedies for guard-less access to an optional `kody:runtime` export that
- * the execution context intentionally left unbound (`undefined` / `null` so
- * `if (email) { ... }` guards stay falsy). The message itself is produced
- * by `createUnboundRuntimeHelperMessage` in
- * `#worker/package-runtime/unbound-runtime-helpers.ts`.
- */
-const unboundRuntimeHelperNextSteps: Record<string, string> = {
-	packages:
-		'There is no author-facing `packages.invoke`; `packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
-	events:
-		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
-	packageSecrets:
-		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
-	email:
-		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
-}
-
-function buildUnboundRuntimeHelperNextStep(helperName: string) {
-	return (
-		unboundRuntimeHelperNextSteps[helperName] ??
-		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as statically importing the owning saved package's export.`
-	)
-}
 
 /**
  * workerd throws this when an RPC stub outlives the execution context that

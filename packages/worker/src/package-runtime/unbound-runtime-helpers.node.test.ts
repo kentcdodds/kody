@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import {
+	createNullPackagesInvokeRewriteHostSource,
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
 	parseUnboundRuntimeHelperMessage,
+	rewriteNullPackagesInvokeErrorMessage,
+	buildUnboundRuntimeHelperNextStep,
 } from './unbound-runtime-helpers.ts'
 
 const allOptionalHelperNames = new Set([
@@ -184,4 +187,43 @@ test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeH
 	] as const) {
 		expect(parseUnboundRuntimeHelperMessage(input)).toBe(expected)
 	}
+})
+
+test('rewriteNullPackagesInvokeErrorMessage adds unbound helper text and packages nextStep', () => {
+	const bare = "Cannot read properties of null (reading 'invoke')"
+	const rewritten = rewriteNullPackagesInvokeErrorMessage(bare)
+	expect(rewritten).toContain(bare)
+	expect(parseUnboundRuntimeHelperMessage(rewritten ?? '')).toBe('packages')
+	expect(rewritten).toContain(buildUnboundRuntimeHelperNextStep('packages'))
+	expect(rewritten).toContain('static `kody:@scope/package/export`')
+	expect(rewriteNullPackagesInvokeErrorMessage(rewritten ?? '')).toBeNull()
+	expect(
+		rewriteNullPackagesInvokeErrorMessage(
+			"Cannot read properties of null (reading 'getMessage')",
+		),
+	).toBeNull()
+})
+
+test('createNullPackagesInvokeRewriteHostSource mirrors rewriteNullPackagesInvokeErrorMessage', () => {
+	const hostSource = createNullPackagesInvokeRewriteHostSource()
+	expect(hostSource).toContain('enrichUnboundPackagesInvokeError')
+	expect(hostSource).toContain(buildUnboundRuntimeHelperNextStep('packages'))
+	const sandbox = { Error }
+	const runner = new Function(
+		'exports',
+		`${hostSource}\nexports.rewrite = rewriteNullPackagesInvokeErrorMessage;\nexports.enrich = enrichUnboundPackagesInvokeError;`,
+	)
+	const exports: {
+		rewrite?: (message: string) => string | null
+		enrich?: (error: unknown) => Error
+	} = {}
+	runner(exports)
+	const bare = "Cannot read properties of null (reading 'invoke')"
+	expect(exports.rewrite?.(bare)).toBe(
+		rewriteNullPackagesInvokeErrorMessage(bare),
+	)
+	const enriched = exports.enrich?.(new TypeError(bare))
+	expect(enriched).toBeInstanceOf(Error)
+	expect(enriched?.message).toBe(rewriteNullPackagesInvokeErrorMessage(bare))
+	expect(sandbox.Error).toBe(Error)
 })
