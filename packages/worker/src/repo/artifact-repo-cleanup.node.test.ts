@@ -1,11 +1,17 @@
 import { expect, test, vi } from 'vitest'
 import { createRepoSessionRow } from '#worker/test-support/run-kody-registry.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as PushSubscriptions from './artifacts-push-subscriptions.ts'
 import type * as PushSubscriptionStore from './artifacts-push-subscription-store.ts'
 import type * as RepoSessions from './repo-sessions.ts'
 
 const mockModule = vi.hoisted(() => ({
 	deleteArtifactRepo: vi.fn(),
+	getArtifactRepo: vi.fn(
+		async (_repoName?: string): Promise<{ status: string }> => ({
+			status: 'not_found',
+		}),
+	),
 	getEntitySourceById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	listEntitySourcesByUser: vi.fn(),
@@ -30,6 +36,7 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('./artifacts.ts', () => ({
 	getArtifactsBinding: () => ({
 		delete: (...args: Array<unknown>) => mockModule.deleteArtifactRepo(...args),
+		get: (repoName: string) => mockModule.getArtifactRepo(repoName),
 	}),
 	hasArtifactsAccess: (...args: Array<unknown>) =>
 		mockModule.hasArtifactsAccess(...args),
@@ -211,6 +218,55 @@ test('generic source cleanup deletes the source root with user scope checks', as
 		artifactAccessUnavailable: true,
 	})
 	expect(missingAccessWarnings).toHaveLength(1)
+})
+
+test('deleteUserScopedArtifactRepo waitUntilAbsent polls until get reports not_found', async () => {
+	mockModule.hasArtifactsAccess.mockReturnValue(true)
+	mockModule.deleteArtifactRepo.mockResolvedValue(repoDeleted)
+	mockModule.getArtifactRepo
+		.mockResolvedValueOnce({ status: 'ready' })
+		.mockResolvedValueOnce({ status: 'not_found' })
+
+	await expect(
+		deleteUserScopedArtifactRepo({
+			env,
+			userId: 'user-1',
+			repoName: 'package-wait-1',
+			waitUntilAbsent: true,
+			waitUntilAbsentDelayMs: 1,
+		}),
+	).resolves.toBe(true)
+
+	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('package-wait-1')
+	expect(mockModule.getArtifactRepo).toHaveBeenCalledTimes(2)
+})
+
+test('deleteUserScopedArtifactRepo waitUntilAbsent returns false when delete stays visible', async () => {
+	mockModule.hasArtifactsAccess.mockReturnValue(true)
+	mockModule.deleteArtifactRepo.mockResolvedValue(repoDeleted)
+	mockModule.getArtifactRepo.mockResolvedValue({ status: 'ready' })
+	const warnings: Array<string> = []
+	consoleWarn.mockImplementation(() => {})
+
+	await expect(
+		deleteUserScopedArtifactRepo({
+			env,
+			userId: 'user-1',
+			repoName: 'package-wait-stuck',
+			warnings,
+			waitUntilAbsent: true,
+			waitUntilAbsentAttempts: 2,
+			waitUntilAbsentDelayMs: 1,
+		}),
+	).resolves.toBe(false)
+
+	expect(warnings).toEqual([
+		'Artifact repo "package-wait-stuck" still present after delete (ready).',
+	])
+	expect(mockModule.getArtifactRepo).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('artifact repo delete not yet absent'),
+	)
 })
 
 test('account cleanup deletes stored Artifacts push subscriptions before repos', async () => {

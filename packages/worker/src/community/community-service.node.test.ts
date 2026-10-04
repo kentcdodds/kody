@@ -1259,6 +1259,7 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 		env: createEnv(),
 		userId: 'user-2',
 		repoName: expect.stringMatching(/^package-/),
+		waitUntilAbsent: true,
 	})
 	expect(mockModule.ensureEntitySource).toHaveBeenCalledTimes(2)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
@@ -1273,6 +1274,56 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 	)
 	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
 	expect(result.originCommit).toBe('commit-1')
+})
+
+test('forkCommunityListing does not insert a fork when fallback snapshot sync returns null', async () => {
+	mockForkable()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'origin-source-1',
+		repo_id: 'package-origin-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.forkArtifactRepo.mockResolvedValue({
+		id: 'repo-fork',
+		name: 'package-dest',
+	})
+	mockModule.ensureEntitySource
+		.mockResolvedValueOnce({
+			id: 'fork-source-1',
+			repo_id: 'package-dest',
+			user_id: 'user-2',
+		})
+		.mockResolvedValueOnce({
+			id: 'fork-source-1',
+			repo_id: 'package-dest',
+			user_id: 'user-2',
+			bootstrapAccess: {
+				remote: 'https://example.test/dest.git',
+				token: 'bootstrap',
+				defaultBranch: 'main',
+				expiresAt: '2099-01-01T00:00:00.000Z',
+			},
+		})
+	const destCloneError = new Error(
+		'Artifacts git clone failed for https://example.test/dest.git: HTTP Error: 500 Internal Server Error',
+	)
+	mockModule.persistForkedArtifactRepoContents.mockRejectedValue(destCloneError)
+	mockModule.deleteUserScopedArtifactRepo.mockResolvedValueOnce(true)
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue(null)
+	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
+
+	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toThrow(
+		/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
+	)
+
+	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
+	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
+		env: createEnv(),
+		userId: 'user-2',
+		repoName: expect.stringMatching(/^package-/),
+		waitUntilAbsent: true,
+	})
 })
 
 test('forkCommunityListing maps isolate memory resets to CommunityForkResourceLimitError', async () => {

@@ -1637,6 +1637,7 @@ export async function persistPreparedCommunityFork(
 					env: prepared.env,
 					userId: prepared.userId,
 					repoName: destRepoId,
+					waitUntilAbsent: true,
 				})
 				if (!destDeleted) {
 					throw error
@@ -1666,7 +1667,7 @@ export async function persistPreparedCommunityFork(
 					throw error
 				}
 				originCommit = fallbackTree.originCommit
-				await syncArtifactSourceSnapshot({
+				const snapshotCommit = await syncArtifactSourceSnapshot({
 					env: prepared.env,
 					baseUrl: prepared.baseUrl,
 					userId: prepared.userId,
@@ -1676,6 +1677,9 @@ export async function persistPreparedCommunityFork(
 					serverTiming,
 					runPublishChecks: false,
 				})
+				if (snapshotCommit == null) {
+					throw error
+				}
 			}
 		} else {
 			await syncArtifactSourceSnapshot({
