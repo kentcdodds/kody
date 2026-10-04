@@ -86,6 +86,11 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(expandHtml.match(/data-record-row="true"/g)).toHaveLength(1)
 	expect(expandHtml.match(/data-record-focus="true"/g)).toHaveLength(1)
 	expect(expandHtml).not.toContain('data-record-focus-pending')
+	// Expanded record row must leave the column track model (display:block),
+	// otherwise colSpan={columns.length} invents a phantom column when a
+	// drop: column is display:none under table-layout:fixed (#2780).
+	expect(expandHtml).toContain('data-record-row="true"')
+	expect(expandHtml).toMatch(/display:\s*block/)
 
 	// Selected without a loaded record must not point assistive tech at a
 	// missing expanded region.

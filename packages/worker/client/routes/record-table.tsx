@@ -366,7 +366,17 @@ const primaryCellContentCss = {
 }
 
 const recordRowCss = {
+	// Break out of table column tracks. A `colSpan={columns.length}` cell
+	// under `table-layout: fixed` invents a phantom column when a `drop`
+	// column is `display: none` (container query), which squeezes the
+	// visible columns. Block layout keeps the record full-width without
+	// participating in the column count — same idea as the card fallback
+	// below 620px, applied only to the expanded record row.
+	display: 'block',
+	width: '100%',
 	'& > td': {
+		display: 'block',
+		width: '100%',
 		padding: 0,
 		backgroundColor: colors.background,
 		boxShadow: `inset 3px 0 0 ${colors.primary}`,
@@ -374,6 +384,7 @@ const recordRowCss = {
 		// The editor (datetime-local, combobox, long help text) must not
 		// contribute min-content width back into the table.
 		minWidth: 0,
+		boxSizing: 'border-box' as const,
 	},
 }
 
