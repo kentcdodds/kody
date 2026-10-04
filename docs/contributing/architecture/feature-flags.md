@@ -141,6 +141,19 @@ members with
 `adminFeatureFlagSet({ key: "execute-invoke", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
+`connection-profiles` is an experiment (default **off**, registry
+`defaultAudience: experiments_opt_in`) for named connection profiles on
+`/account/connections`. When on, experimenters create profiles with package
+grant allowlists (read/execute) for MCP `?profile=` URLs and profile-bound API
+tokens. Unlimited (no profile param) is the default connection. When off, the
+list page hides profiles and callers without the flag ignore `?profile=`. The
+declared `successMetric` is `execute` event count, goal increase: experimenters
+create restricted agent connections and keep executing against granted packages.
+Exposures are recorded at the evaluation chokepoints. Enable for experiment
+members with
+`adminFeatureFlagSet({ key: "connection-profiles", enabled: true, audience: "experiments_opt_in" })`.
+Remove the flag and gate sites when the experiment ends.
+
 `package-share-grants` is a rollout kill switch for person-to-person package
 shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.
 Signed-in users can opt themselves in from `/docs/package-sharing` (a per-user

@@ -119,8 +119,8 @@ package-graph prep: quoted secret literals become `__kodySecretRef(...)`, and
 `fetch` is rebound to `kody.gatewayFetch` so expansion still happens on origin
 (missing secrets fail closed before any third-party request). Static `kody:@…`
 import proxies wrap function exports in `__kodyMeterStaticPackageExport` so
-nested inlined callees run under that package's stamp ALS — gatewayFetch then
-prefers the meter stamp over the outer module-path binding, matching cloud
+nested inlined callees run under that package's stamp ALS. gatewayFetch prefers
+the meter stamp over the outer module-path binding so nested callees use
 stamp-aligned package-scoped secrets. Published bundles that inline the virtual
 runtime (instead of importing `.__kody_virtual__/runtime.js`) are rewritten onto
 that shim during package-graph prep so Dropbox-style artifacts work under
@@ -136,8 +136,6 @@ Ad hoc modules that import `createAuthenticatedFetch` directly from
 `kody:runtime` (not via a stamped `kody:@…` package) still need a CLI runtime
 that exports the same CapabilityProxy-backed helper and enters the runtime ALS
 before evaluating user code; package imports do not.
-
-CLI consumer: [kody-bot/cli#13](https://github.com/kody-bot/cli/pull/13).
 
 ## Metering
 

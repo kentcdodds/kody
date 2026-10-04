@@ -70,9 +70,8 @@ External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 canonicalize to the same grant/cache key. The item's websites are the host
 allowlist; empty websites refuse the fetch. Ad hoc execute does not need a
 package grant; saved packages do (`secretProviderLock` returns the Allow URL).
-Revoke a grant on `/account/secret-providers`. Shared packages use the owner's
-provider binding. Search does not crawl vaults. Bind providers on
-`/account/secret-providers`. See
+Bind and revoke on `/account/secret-providers`. Shared packages use the owner's
+provider binding. Search does not crawl vaults. See
 [Custom secret providers](../guides/secret-providers.md).
 
 When an API requires Basic Auth derived from two saved secrets, import
