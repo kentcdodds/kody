@@ -55,7 +55,7 @@ test('rethrowCommunityForkFailure wraps resource limits without leaking isolate 
 	)
 })
 
-test('rethrowCommunityForkFailure remaps Artifacts git transients to a retry next step', () => {
+test('rethrowCommunityForkFailure remaps Artifacts git transients to a reportable unavailable error', () => {
 	const wrapped = new Error(
 		'Artifacts git clone failed for https://acct.artifacts.cloudflare.net/git/production/repo.git: HTTP Error: 500 Internal Server Error',
 	)
@@ -64,11 +64,13 @@ test('rethrowCommunityForkFailure remaps Artifacts git transients to a retry nex
 		throw new Error('expected rethrow')
 	} catch (error) {
 		expect(error).toBeInstanceOf(Error)
-		expect((error as Error).message).toBe(
-			'The package source is temporarily unavailable. Retry the call.',
+		expect((error as Error).name).toBe('ArtifactsGitUnavailableError')
+		expect((error as Error).message).toMatch(
+			/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
 		)
 		expect((error as Error).cause).toBe(wrapped)
 		expect((error as Error).message).not.toContain('artifacts.cloudflare.net')
 		expect((error as Error).message).not.toContain('HTTP Error')
+		expect((error as Error).message).not.toMatch(/temporarily unavailable/i)
 	}
 })

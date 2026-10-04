@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import {
+	ArtifactsGitUnavailableError,
 	getArtifactsGitHttpStatus,
 	isArtifactsGitPackfileCorruptionSentryMessage,
 	isArtifactsGitTransientErrorMessage,
@@ -187,7 +188,7 @@ test('Artifacts git remap helper requires Artifacts markers and skips source-rec
 	expect(
 		isArtifactsGitTransientRemapError(
 			new Error(
-				'The package source is temporarily unavailable. Retry the call.',
+				'The package source could not be read after retries (HTTP 5xx). Report id: report-1.',
 				{
 					cause: wrappedHttp,
 				},
@@ -230,4 +231,41 @@ test('Artifacts git remap helper requires Artifacts markers and skips source-rec
 			}),
 		),
 	).toBe(false)
+})
+
+test('ArtifactsGitUnavailableError classifies exhausted failures with a report id', () => {
+	const wrappedHttp = wrapArtifactsGitHttpError({
+		operation: 'git clone',
+		remote: 'https://example.test/repo.git',
+		error: httpError(500),
+	})
+	const unavailable = new ArtifactsGitUnavailableError(wrappedHttp, 'report-1')
+	expect(unavailable.message).toBe(
+		'The package source could not be read after retries (HTTP 5xx). Report id: report-1.',
+	)
+	expect(unavailable.toApiDetails()).toEqual({
+		report_id: 'report-1',
+		upstream_status_class: 'http_5xx',
+		upstream_status: 500,
+	})
+
+	const corruption = new ArtifactsGitUnavailableError(
+		packfileCorruptionError(),
+		'report-2',
+	)
+	expect(corruption.statusClass).toBe('packfile_corruption')
+	expect(corruption.message).toContain('corrupt pack')
+
+	const missing = new ArtifactsGitUnavailableError(
+		wrapArtifactsGitHttpError({
+			operation: 'git fetch',
+			remote: 'https://example.test/repo.git',
+			error: new Error(
+				'Could not find c48d4ab947e943e8681e5f992e945b8e0d97a9d8.',
+			),
+		}),
+		'report-3',
+	)
+	expect(missing.statusClass).toBe('missing_object')
+	expect(missing.message).toContain('missing object or ref')
 })

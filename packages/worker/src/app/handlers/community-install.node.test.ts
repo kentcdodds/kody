@@ -219,7 +219,9 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		status: 503,
 		payload: {
 			ok: false,
-			error: 'The package source is temporarily unavailable. Retry the call.',
+			error: expect.stringMatching(
+				/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
+			),
 		},
 	})
 

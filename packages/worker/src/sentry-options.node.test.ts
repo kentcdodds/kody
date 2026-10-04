@@ -409,13 +409,13 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 
 	// KODY-8P: Open API remaps exhausted Artifacts git transients to ApiError
 	// (503 internal_error) with the wrapper as cause. Drop via the cause chain
-	// even when the public message is the sanitized retry sentence.
+	// even when the public message includes a report id instead of "retry".
 	const artifactsGitWrapper = new Error(
 		`Artifacts git clone failed for ${artifactsRepo}: HTTP Error: 500 Internal Server Error`,
 		{ cause: new Error('HTTP Error: 500 Internal Server Error') },
 	)
 	const remappedArtifactsApiError = new Error(
-		artifactsGitTemporarilyUnavailableMessage,
+		'The package source could not be read after retries (HTTP 5xx). Report id: report-1.',
 		{ cause: artifactsGitWrapper },
 	)
 	remappedArtifactsApiError.name = 'ApiError'
@@ -429,6 +429,23 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 	expect(filterSentryEvent(remappedArtifactsEvent)).toBe(remappedArtifactsEvent)
+
+	const legacyRetryRemap = new Error(
+		artifactsGitTemporarilyUnavailableMessage,
+		{
+			cause: artifactsGitWrapper,
+		},
+	)
+	legacyRetryRemap.name = 'ApiError'
+	expect(
+		filterSentryEvent(
+			exceptionEvent({
+				type: 'ApiError',
+				value: legacyRetryRemap.message,
+			}),
+			{ originalException: legacyRetryRemap },
+		),
+	).toBeNull()
 
 	// Bare TimeoutError / unrelated wraps must not drop via the remapped path.
 	const bareTimeout = new Error('The operation timed out.')

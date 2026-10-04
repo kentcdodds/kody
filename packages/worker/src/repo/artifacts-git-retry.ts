@@ -25,13 +25,167 @@ import {
 export const artifactsGitHttpRetryDelaysMs = [50, 150] as const
 
 /**
- * Public message when Cloudflare Artifacts git is temporarily unavailable
- * after call-site retries (HTTP 5xx / 429, packfile corruption, or read
- * timeout). Keep free of remotes, hosts, account ids, and status codes —
- * Open API / MCP / website install callers see this next step only.
+ * Status class for exhausted Artifacts git failures after call-site retries.
+ * Keep free of remotes and hosts — Open API `details` and user-facing
+ * messages use these labels only.
+ */
+export type ArtifactsGitExhaustedStatusClass =
+	| 'http_5xx'
+	| 'http_429'
+	| 'packfile_corruption'
+	| 'timeout'
+	| 'missing_object'
+	| 'unknown'
+
+/**
+ * Legacy constant kept for message-substring detectors (for example vendor
+ * outage heuristics). Prefer `ArtifactsGitUnavailableError` / `toApiError`
+ * for new call sites — exhausted failures no longer tell callers to retry.
  */
 export const artifactsGitTemporarilyUnavailableMessage =
 	'The package source is temporarily unavailable. Retry the call.'
+
+const artifactsGitWrappedFailureMessagePattern =
+	/^Artifacts (?:listServerRefs|git fetch|git clone) failed for /i
+
+/**
+ * User-facing message when Artifacts git failed after retries (or failed in a
+ * way retries cannot fix). Includes a report id and a coarse upstream class so
+ * bug reports can be traced without leaking remotes or hosts.
+ */
+export function buildArtifactsGitUnavailableMessage(input: {
+	reportId: string
+	statusClass: ArtifactsGitExhaustedStatusClass
+}) {
+	const classLabel = artifactsGitStatusClassLabel(input.statusClass)
+	return `The package source could not be read after retries (${classLabel}). Report id: ${input.reportId}.`
+}
+
+export function artifactsGitStatusClassLabel(
+	statusClass: ArtifactsGitExhaustedStatusClass,
+) {
+	switch (statusClass) {
+		case 'http_5xx':
+			return 'HTTP 5xx'
+		case 'http_429':
+			return 'HTTP 429'
+		case 'packfile_corruption':
+			return 'corrupt pack'
+		case 'timeout':
+			return 'read timeout'
+		case 'missing_object':
+			return 'missing object or ref'
+		case 'unknown':
+			return 'storage read failure'
+		default: {
+			const exhaustive: never = statusClass
+			throw new Error(
+				`Unhandled Artifacts git status class: ${String(exhaustive)}`,
+			)
+		}
+	}
+}
+
+export function isArtifactsGitMissingObjectMessage(message: string) {
+	return (
+		/Could not find\b/i.test(message) ||
+		/\bOID\b.*\bnot found\b/i.test(message) ||
+		/\bnot a valid\b.*\boid\b/i.test(message) ||
+		/\bNo such ref\b/i.test(message) ||
+		/\bFailed to resolve\b.*\bref\b/i.test(message)
+	)
+}
+
+export function isArtifactsGitMissingObjectError(error: unknown) {
+	for (const entry of getErrorCauseChain(error)) {
+		if (!(entry instanceof Error)) continue
+		if (
+			'code' in entry &&
+			typeof entry.code === 'string' &&
+			['NotFoundError', 'ResolveTreeError'].includes(entry.code)
+		) {
+			return true
+		}
+		if (isArtifactsGitMissingObjectMessage(entry.message)) return true
+	}
+	return false
+}
+
+export function isArtifactsGitWrappedFailureMessage(message: string) {
+	return artifactsGitWrappedFailureMessagePattern.test(message.trim())
+}
+
+export function isArtifactsGitWrappedFailureError(error: unknown) {
+	return getErrorCauseChain(error).some(
+		(entry) =>
+			entry instanceof Error &&
+			isArtifactsGitWrappedFailureMessage(entry.message),
+	)
+}
+
+export function classifyArtifactsGitExhaustedFailure(error: unknown): {
+	statusClass: ArtifactsGitExhaustedStatusClass
+	httpStatus: number | null
+} {
+	const httpStatus = getArtifactsGitHttpStatus(error)
+	if (isIsomorphicGitPackfileCorruptionError(error)) {
+		return { statusClass: 'packfile_corruption', httpStatus }
+	}
+	if (isArtifactsGitTimeoutError(error)) {
+		return { statusClass: 'timeout', httpStatus }
+	}
+	if (isArtifactsGitMissingObjectError(error)) {
+		return { statusClass: 'missing_object', httpStatus }
+	}
+	if (httpStatus === 429) {
+		return { statusClass: 'http_429', httpStatus }
+	}
+	if (httpStatus != null && httpStatus >= 500 && httpStatus <= 599) {
+		return { statusClass: 'http_5xx', httpStatus }
+	}
+	return { statusClass: 'unknown', httpStatus }
+}
+
+/**
+ * Remapped exhausted Artifacts git failure for Open API / MCP / website
+ * install. Keeps `internal_error` + HTTP 503 (closed client contract) while
+ * putting a report id and upstream status class in the message and details.
+ */
+export class ArtifactsGitUnavailableError extends Error {
+	readonly reportId: string
+	readonly statusClass: ArtifactsGitExhaustedStatusClass
+	readonly httpStatus: number | null
+
+	constructor(cause: unknown, reportId: string = crypto.randomUUID()) {
+		const classified = classifyArtifactsGitExhaustedFailure(cause)
+		super(
+			buildArtifactsGitUnavailableMessage({
+				reportId,
+				statusClass: classified.statusClass,
+			}),
+			{ cause },
+		)
+		this.name = 'ArtifactsGitUnavailableError'
+		this.reportId = reportId
+		this.statusClass = classified.statusClass
+		this.httpStatus = classified.httpStatus
+	}
+
+	toApiDetails() {
+		return {
+			report_id: this.reportId,
+			upstream_status_class: this.statusClass,
+			...(this.httpStatus != null ? { upstream_status: this.httpStatus } : {}),
+		}
+	}
+}
+
+export function toArtifactsGitUnavailableError(
+	error: unknown,
+): ArtifactsGitUnavailableError {
+	if (error instanceof ArtifactsGitUnavailableError) return error
+	return new ArtifactsGitUnavailableError(error)
+}
 
 export function isTransientArtifactsGitHttpStatus(status: number) {
 	return (

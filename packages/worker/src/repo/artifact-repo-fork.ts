@@ -11,6 +11,13 @@ import {
 	type ArtifactBootstrapAccess,
 	type ArtifactCreateRepoResult,
 } from './artifacts.ts'
+import {
+	getArtifactsGitHttpStatus,
+	isArtifactsGitMissingObjectError,
+	isArtifactsGitTransientRemapError,
+	isArtifactsGitWrappedFailureError,
+	isIsomorphicGitPackfileCorruptionError,
+} from './artifacts-git-retry.ts'
 import { updateEntitySource } from './entity-sources.ts'
 import { syncArtifactSourceSnapshot } from './source-sync.ts'
 import { type EntitySourceRow } from './types.ts'
@@ -193,4 +200,22 @@ async function buildDestHeadRewriteFiles(input: {
 
 export function shouldFallbackFromArtifactFork(error: unknown) {
 	return isArtifactRepoNotFoundError(error)
+}
+
+/**
+ * After a storage-layer Artifacts fork, rewriting dest HEAD opens a RepoSession
+ * git clone of the forked dest. Cloudflare sometimes returns persistent HTTP
+ * 5xx / corrupt packs for that dest even when the origin remote is healthy
+ * (KODY-8P / @kody/discord). Fall back to writing the already-prepared full
+ * tree into a fresh empty repo — same outcome as the origin-not-found path.
+ */
+export function shouldFallbackFromForkedArtifactPersist(error: unknown) {
+	if (isArtifactsGitTransientRemapError(error)) return true
+	if (isIsomorphicGitPackfileCorruptionError(error)) return true
+	if (isArtifactsGitMissingObjectError(error)) return true
+	if (!isArtifactsGitWrappedFailureError(error)) return false
+	const status = getArtifactsGitHttpStatus(error)
+	if (status == null) return true
+	if (status === 404 || status === 429) return true
+	return status >= 500 && status <= 599
 }

@@ -262,3 +262,34 @@ test('persistForkedArtifactRepoContents stamps dest HEAD only when the rewrite i
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
+
+test('shouldFallbackFromForkedArtifactPersist matches exhausted Artifacts git dest failures only', async () => {
+	const { shouldFallbackFromForkedArtifactPersist } =
+		await import('./artifact-repo-fork.ts')
+	expect(
+		shouldFallbackFromForkedArtifactPersist(
+			new Error(
+				'Artifacts git clone failed for https://example.test/dest.git: HTTP Error: 500 Internal Server Error',
+			),
+		),
+	).toBe(true)
+	expect(
+		shouldFallbackFromForkedArtifactPersist(
+			new Error(
+				'Artifacts git fetch failed for https://example.test/dest.git: Packfile payload corrupted: calculated abc but expected def.',
+			),
+		),
+	).toBe(true)
+	expect(
+		shouldFallbackFromForkedArtifactPersist(
+			new Error(
+				'Artifacts git clone failed for https://example.test/dest.git: HTTP Error: 401 Unauthorized',
+			),
+		),
+	).toBe(false)
+	expect(
+		shouldFallbackFromForkedArtifactPersist(
+			new Error('package.json rewrite failed'),
+		),
+	).toBe(false)
+})

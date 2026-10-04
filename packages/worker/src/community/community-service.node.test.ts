@@ -104,6 +104,11 @@ vi.mock('#worker/repo/artifact-repo-fork.ts', () => ({
 	...pickMocks('forkArtifactRepo', 'persistForkedArtifactRepoContents'),
 	shouldFallbackFromArtifactFork: (error: unknown) =>
 		error instanceof Error && /not found/i.test(error.message),
+	shouldFallbackFromForkedArtifactPersist: (error: unknown) =>
+		error instanceof Error &&
+		/Artifacts (?:listServerRefs|git fetch|git clone) failed/i.test(
+			error.message,
+		),
 }))
 vi.mock('#worker/repo/entity-sources.ts', () =>
 	pickMocks('deleteEntitySource', 'getEntitySourceById'),
@@ -1202,6 +1207,65 @@ test('forkCommunityListing copies at the Artifacts layer when the origin repo ex
 		expect.objectContaining({ origin_commit: 'commit-head' }),
 	)
 	expect(result.originCommit).toBe('commit-head')
+})
+
+test('forkCommunityListing falls back to full-tree sync when forked dest git clone fails', async () => {
+	mockForkable()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'origin-source-1',
+		repo_id: 'package-origin-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.forkArtifactRepo.mockResolvedValue({
+		id: 'repo-fork',
+		name: 'package-dest',
+	})
+	mockModule.ensureEntitySource
+		.mockResolvedValueOnce({
+			id: 'fork-source-1',
+			repo_id: 'package-dest',
+			user_id: 'user-2',
+		})
+		.mockResolvedValueOnce({
+			id: 'fork-source-1',
+			repo_id: 'package-dest',
+			user_id: 'user-2',
+			bootstrapAccess: {
+				remote: 'https://example.test/dest.git',
+				token: 'bootstrap',
+				defaultBranch: 'main',
+				expiresAt: '2099-01-01T00:00:00.000Z',
+			},
+		})
+	mockModule.persistForkedArtifactRepoContents.mockRejectedValue(
+		new Error(
+			'Artifacts git clone failed for https://example.test/dest.git: HTTP Error: 500 Internal Server Error',
+		),
+	)
+	mockModule.deleteUserScopedArtifactRepo.mockResolvedValueOnce(true)
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-fallback')
+
+	const result = await fork({ kodyId: 'my-discord-gateway' })
+
+	expect(mockModule.persistForkedArtifactRepoContents).toHaveBeenCalled()
+	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
+		env: createEnv(),
+		userId: 'user-2',
+		repoName: expect.stringMatching(/^package-/),
+	})
+	expect(mockModule.ensureEntitySource).toHaveBeenCalledTimes(2)
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: 'fork-source-1',
+			bootstrapAccess: expect.objectContaining({ token: 'bootstrap' }),
+			runPublishChecks: false,
+			files: expect.objectContaining({
+				'package.json': expect.any(String),
+			}),
+		}),
+	)
+	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
+	expect(result.originCommit).toBe('commit-1')
 })
 
 test('forkCommunityListing maps isolate memory resets to CommunityForkResourceLimitError', async () => {

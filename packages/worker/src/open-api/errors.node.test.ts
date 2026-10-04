@@ -1,9 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
-import {
-	artifactsGitTemporarilyUnavailableMessage,
-	wrapArtifactsGitHttpError,
-} from '#worker/repo/artifacts-git-retry.ts'
+import { wrapArtifactsGitHttpError } from '#worker/repo/artifacts-git-retry.ts'
 import { ApiError, toApiError } from './errors.ts'
 
 test('ApiError.toBody redacts Kody credentials in error details', () => {
@@ -45,7 +42,7 @@ function artifactsGitHttpError(statusCode: number) {
 	return error
 }
 
-test('toApiError maps transient Artifacts git failures to 503 internal_error with a sanitized retry message', () => {
+test('toApiError maps exhausted Artifacts git failures to 503 internal_error with report id details', () => {
 	const remote =
 		'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git'
 	const wrapped = wrapArtifactsGitHttpError({
@@ -59,9 +56,16 @@ test('toApiError maps transient Artifacts git failures to 503 internal_error wit
 	expect(apiError).toMatchObject({
 		status: 503,
 		code: 'internal_error',
-		message: artifactsGitTemporarilyUnavailableMessage,
 	})
-	expect(apiError.cause).toBe(wrapped)
+	expect(apiError.message).toMatch(
+		/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
+	)
+	expect(apiError.message).not.toMatch(/temporarily unavailable/i)
+	expect(apiError.details).toEqual({
+		report_id: expect.any(String),
+		upstream_status_class: 'http_5xx',
+		upstream_status: 500,
+	})
 	expect(apiError.message).not.toContain('secret')
 	expect(apiError.message).not.toContain('artifacts.cloudflare.net')
 	expect(apiError.message).not.toContain('HTTP Error')
@@ -70,7 +74,12 @@ test('toApiError maps transient Artifacts git failures to 503 internal_error wit
 	expect(apiError.toBody()).toEqual({
 		error: {
 			code: 'internal_error',
-			message: artifactsGitTemporarilyUnavailableMessage,
+			message: apiError.message,
+			details: {
+				report_id: expect.any(String),
+				upstream_status_class: 'http_5xx',
+				upstream_status: 500,
+			},
 		},
 	})
 })

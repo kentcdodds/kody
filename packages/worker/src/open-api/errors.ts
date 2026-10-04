@@ -17,8 +17,10 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import {
+	ArtifactsGitUnavailableError,
 	artifactsGitTemporarilyUnavailableMessage,
 	isArtifactsGitTransientRemapError,
+	toArtifactsGitUnavailableError,
 } from '#worker/repo/artifacts-git-retry.ts'
 
 export { artifactsGitTemporarilyUnavailableMessage }
@@ -116,9 +118,10 @@ export function notFound(message: string) {
 /**
  * Map a thrown value to the public error envelope. Caller errors become
  * 400 (or 404 when they say something was not found); unknown errors are
- * 500 with a generic message so internals never leak. Transient Artifacts
- * git unavailability is 503 `internal_error` with a sanitized retry
- * message (closed OpenAPI code enum — no new public code).
+ * 500 with a generic message so internals never leak. Exhausted Artifacts
+ * git unavailability is 503 `internal_error` with a report id and upstream
+ * status class in the message/details (closed OpenAPI code enum — no new
+ * public code).
  */
 export function toApiError(error: unknown): ApiError {
 	if (error instanceof ApiError) return error
@@ -159,12 +162,17 @@ export function toApiError(error: unknown): ApiError {
 			? notFound(message)
 			: invalidRequest(message)
 	}
-	if (isArtifactsGitTransientRemapError(error)) {
+	if (
+		error instanceof ArtifactsGitUnavailableError ||
+		isArtifactsGitTransientRemapError(error)
+	) {
+		const unavailable = toArtifactsGitUnavailableError(error)
 		return new ApiError({
 			status: 503,
 			code: 'internal_error',
-			message: artifactsGitTemporarilyUnavailableMessage,
-			cause: error,
+			message: unavailable.message,
+			details: unavailable.toApiDetails(),
+			cause: unavailable,
 		})
 	}
 	return new ApiError({
