@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,7 @@ import {
 	checkMigrationFilenames,
 	checkMigrationLedger,
 	checkMigrationsDirectory,
+	checkRepositoryMigrationFilenameReferences,
 	collectMigrationFilenameReferences,
 	expectedMigrationBaselineSha256,
 	formatMigrationPrefix,
@@ -453,12 +454,41 @@ test('migrations:check flags docs and source references to missing migration fil
 					content:
 						"const visibilityMigration = '0074-platform-oauth-app-visibility.sql'",
 				},
+				{
+					path: 'packages/worker/src/app/note.tsx',
+					content:
+						"const visibilityMigration = '0074-platform-oauth-app-visibility.sql'",
+				},
 			],
 		}),
 	).toEqual([
 		'docs/contributing/architecture/integrations.md references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
 		'packages/worker/src/integrations/platform-apps.node.test.ts references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
+		'packages/worker/src/app/note.tsx references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
 	])
+})
+
+test('migrations:check walks tsx files when scanning the repository', async () => {
+	const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'migration-tsx-refs-'))
+	const srcDir = path.join(tempRoot, 'packages', 'worker', 'src')
+	const migrationsDir = path.join(tempRoot, 'packages', 'worker', 'migrations')
+	try {
+		await mkdir(srcDir, { recursive: true })
+		await mkdir(migrationsDir, { recursive: true })
+		await writeFile(path.join(migrationsDir, '0001-squashed-init.sql'), '--\n')
+		await writeFile(
+			path.join(srcDir, 'note.tsx'),
+			"const visibilityMigration = '0074-platform-oauth-app-visibility.sql'\n",
+		)
+		const errors = await checkRepositoryMigrationFilenameReferences(tempRoot)
+		expect(
+			errors.filter((error) => error.includes('packages/worker/src/note.tsx')),
+		).toEqual([
+			'packages/worker/src/note.tsx references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
+		])
+	} finally {
+		await rm(tempRoot, { recursive: true, force: true })
+	}
 })
 
 test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and non-allowlisted prefix reuse', () => {

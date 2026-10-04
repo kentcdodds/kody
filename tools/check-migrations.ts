@@ -38,7 +38,7 @@ const placeholderMigrationDescriptions = new Set([
 	'kebab-case-description',
 ])
 
-const migrationReferenceFilePattern = /\.(?:md|mdx|mdc|ts)$/
+const migrationReferenceFilePattern = /\.(?:md|mdx|mdc|ts|tsx)$/
 
 const skipMigrationReferenceDirectoryNames = new Set([
 	'node_modules',

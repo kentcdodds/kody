@@ -23,7 +23,7 @@ in [Seed test account](./seeding.md).
   pre-commit hook when the staged diff is not docs-only) enforces the naming
   rules above against the checked-in, append-only `tools/migration-ledger.json`.
   It also flags `NNNN-kebab.sql` references in `docs/` and
-  `packages/worker/src|universal` that do not name a file in
+  `packages/worker/src|universal` (including `.tsx`) that do not name a file in
   `packages/worker/migrations` (or the jobs/audit migration directories), so a
   renumber cannot leave a dangling docs or test name. Instructional placeholders
   such as `0076-my-change.sql` are allowed. Decision records and dated audits
