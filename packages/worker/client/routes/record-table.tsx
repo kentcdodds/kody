@@ -186,11 +186,41 @@ const defaultScrollHeight = '22rem'
  * Columns drop one priority at a time as the container narrows, then the
  * whole table becomes cards. Each threshold is its own class so a cell can
  * carry exactly one.
+ *
+ * Between the drop threshold and the 620px card fallback, hide with
+ * zero-width + `visibility: hidden` rather than `display: none`. Under
+ * `table-layout: fixed`, `display: none` removes the column from the track
+ * count while an expand row still uses `colSpan={columns.length}`, which
+ * invents a phantom track and squeezes the visible columns (#2780). Zero
+ * width keeps the column in the track model so colspan stays honest. At
+ * the card breakpoint the whole table leaves table layout, so `display:
+ * none` is fine again and avoids empty card rows.
  */
+const dropHiddenTableCss = {
+	width: 0,
+	minWidth: 0,
+	maxWidth: 0,
+	paddingInline: 0,
+	border: 'none',
+	overflow: 'hidden',
+	visibility: 'hidden',
+	fontSize: 0,
+	lineHeight: 0,
+} as const
+
 const dropCss = {
-	1: css({ '@container (max-width: 680px)': { display: 'none' } }),
-	2: css({ '@container (max-width: 780px)': { display: 'none' } }),
-	3: css({ '@container (max-width: 900px)': { display: 'none' } }),
+	1: css({
+		'@container (max-width: 680px)': dropHiddenTableCss,
+		'@container (max-width: 620px)': { display: 'none' },
+	}),
+	2: css({
+		'@container (max-width: 780px)': dropHiddenTableCss,
+		'@container (max-width: 620px)': { display: 'none' },
+	}),
+	3: css({
+		'@container (max-width: 900px)': dropHiddenTableCss,
+		'@container (max-width: 620px)': { display: 'none' },
+	}),
 } as const
 
 const numericCss = css({
@@ -366,17 +396,7 @@ const primaryCellContentCss = {
 }
 
 const recordRowCss = {
-	// Break out of table column tracks. A `colSpan={columns.length}` cell
-	// under `table-layout: fixed` invents a phantom column when a `drop`
-	// column is `display: none` (container query), which squeezes the
-	// visible columns. Block layout keeps the record full-width without
-	// participating in the column count — same idea as the card fallback
-	// below 620px, applied only to the expanded record row.
-	display: 'block',
-	width: '100%',
 	'& > td': {
-		display: 'block',
-		width: '100%',
 		padding: 0,
 		backgroundColor: colors.background,
 		boxShadow: `inset 3px 0 0 ${colors.primary}`,
@@ -384,7 +404,6 @@ const recordRowCss = {
 		// The editor (datetime-local, combobox, long help text) must not
 		// contribute min-content width back into the table.
 		minWidth: 0,
-		boxSizing: 'border-box' as const,
 	},
 }
 
