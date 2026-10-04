@@ -340,6 +340,9 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 	expect(session.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'user-1' }),
 	)
+	expect(session.runChecks.mock.calls[0]?.[0]).not.toHaveProperty(
+		'requirePackageDocs',
+	)
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: 'user-1',
@@ -377,6 +380,40 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 		}),
 	).rejects.toThrow('update type error')
 	expect(failing.publishSession).not.toHaveBeenCalled()
+
+	const docsExempt = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+		}),
+		publishingSession('commit-docs-exempt'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			requirePackageDocs: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-docs-exempt')
+	expect(docsExempt.runChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ requirePackageDocs: false }),
+	)
+})
+
+test('syncArtifactSourceSnapshot forwards requirePackageDocs false on bootstrap', async () => {
+	const bootstrap = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-bootstrap-docs'),
+	})
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			requirePackageDocs: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-bootstrap-docs')
+	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith(
+		expect.objectContaining({ requirePackageDocs: false }),
+	)
 })
 
 test('syncArtifactSourceSnapshot loopback first-publish runs package checks before snapshot', async () => {

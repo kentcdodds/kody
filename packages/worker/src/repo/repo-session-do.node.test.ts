@@ -1403,12 +1403,40 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	})
 	expect(ok.publishedCommit).toBe('commit-bootstrap-pkg-ok')
 	expect(mockModule.runRepoChecks).toHaveBeenCalled()
+	expect(mockModule.runRepoChecks.mock.calls.at(-1)?.[0]).not.toHaveProperty(
+		'requirePackageDocs',
+	)
 	expect(mockModule.git.push).toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
 			publishedCommit: 'commit-bootstrap-pkg-ok',
 		}),
+	)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
+	seedWorkspace(files, { fallback: null })
+	mockModule.gitState.headCommit = 'commit-bootstrap-docs-exempt'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	await repoSession().bootstrapSource({
+		sessionId: 'session-bootstrap-docs-exempt',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		requirePackageDocs: false,
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: artifactsRemote('package-package-1'),
+			token: 'art_v1_bootstrap?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+		edits: [
+			{ kind: 'write', path: 'package.json', content: userPackageJson },
+			{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
+		],
+	})
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ requirePackageDocs: false }),
 	)
 })
 

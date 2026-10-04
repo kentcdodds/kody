@@ -777,6 +777,10 @@ async function processPackageForMode(input: {
 					destructiveOverwriteConfirmed: true,
 					promotePublished: !isSavedPackageLocked(input.savedPackage.lockedAt),
 					commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
+					// Align with runChecksOnFiles preflight (requirePackageDocs:
+					// false) so legacy packages without README/AGENTS can publish
+					// approved transforms. Other publish checks still run.
+					requirePackageDocs: false,
 				})
 				if (afterCommit == null) {
 					return emptyItemResult({
@@ -1022,6 +1026,8 @@ async function processRevertStep(input: {
 											savedPackage.lockedAt,
 										),
 										commitMessage: `revert codemod(${input.codemod.id})`,
+										// Same docs exemption as apply and preflight.
+										requirePackageDocs: false,
 									})
 									if (afterCommit == null) {
 										result = emptyItemResult({

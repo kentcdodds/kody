@@ -1611,6 +1611,10 @@ export async function persistPreparedCommunityFork(
 				files: prepared.files,
 				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 				serverTiming,
+				// Match installCommunityListing's runRepoChecks: legacy
+				// listings without README/AGENTS must still fork; the
+				// installer's own check result decides live vs adaptation.
+				requirePackageDocs: false,
 			})
 		}
 

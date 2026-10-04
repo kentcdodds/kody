@@ -63,6 +63,13 @@ type SyncArtifactSourceInput = {
 	 * Used by fleet codemods on locked packages.
 	 */
 	promotePublished?: boolean
+	/**
+	 * Forwarded to `runRepoChecks`. Community install and platform codemods
+	 * pass `false` so legacy trees without README/AGENTS stay forkable and
+	 * migratable. Omit (default true) for packageSave and other authoring
+	 * lanes — same default as `publishFromExternalRef`.
+	 */
+	requirePackageDocs?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -231,6 +238,9 @@ export async function syncArtifactSourceSnapshot(
 								...(input.expectedPackageScope !== undefined
 									? { expectedPackageScope: input.expectedPackageScope }
 									: {}),
+								...(input.requirePackageDocs === false
+									? { requirePackageDocs: false }
+									: {}),
 							})
 							if (!checks.ok) {
 								throw new Error(formatFailedRepoCheckMessages(checks.results))
@@ -282,6 +292,9 @@ export async function syncArtifactSourceSnapshot(
 						bootstrapAccess: input.bootstrapAccess ?? null,
 						...(input.existingHeadCommit
 							? { existingHeadCommit: input.existingHeadCommit }
+							: {}),
+						...(input.requirePackageDocs === false
+							? { requirePackageDocs: false }
 							: {}),
 					})
 					if (input.serverTiming && result.serverTiming) {
@@ -339,6 +352,9 @@ export async function syncArtifactSourceSnapshot(
 				userId: input.userId,
 				...(input.expectedPackageScope !== undefined
 					? { expectedPackageScope: input.expectedPackageScope }
+					: {}),
+				...(input.requirePackageDocs === false
+					? { requirePackageDocs: false }
 					: {}),
 			})
 			if (!checkRun.ok) {

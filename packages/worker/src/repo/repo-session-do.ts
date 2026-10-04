@@ -1614,6 +1614,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
+		/**
+		 * Forwarded to `runRepoChecks`. Community forks pass `false` so
+		 * listings without README/AGENTS stay installable; default matches
+		 * `publishFromExternalRef` (docs required).
+		 */
+		requirePackageDocs?: boolean
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -1765,6 +1771,9 @@ class RepoSessionBase extends DurableObject<Env> {
 						env: this.env,
 						baseUrl: source.source_root,
 						userId: input.userId,
+						...(input.requirePackageDocs === false
+							? { requirePackageDocs: false }
+							: {}),
 					})
 					if (!checks.ok) {
 						throw new Error(formatFailedRepoCheckMessages(checks.results))
@@ -2416,6 +2425,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 		expectedPackageScope?: string
+		/**
+		 * Forwarded to `runRepoChecks`. Codemod / community lanes may pass
+		 * `false`; authoring publish defaults to requiring docs.
+		 */
+		requirePackageDocs?: boolean
 	}): Promise<RepoSessionCheckRun> {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
@@ -2439,6 +2453,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			// Honor an explicit scope even on a still-plain repo: promote
 			// runs package checks before flipping entity_kind.
 			expectedPackageScope: input.expectedPackageScope,
+			...(input.requirePackageDocs === false
+				? { requirePackageDocs: false }
+				: {}),
 		})
 		const { sourceFiles: _sourceFiles, ...publicResult } = result
 		const runId = crypto.randomUUID()

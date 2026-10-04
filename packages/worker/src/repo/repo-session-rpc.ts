@@ -133,11 +133,13 @@ export type RepoSessionRpc = {
 		edits: Array<Exclude<RepoSessionEdit, { kind: 'delete' | 'move' }>>
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
+		requirePackageDocs?: boolean
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string
 		userId: string
 		expectedPackageScope?: string
+		requirePackageDocs?: boolean
 	}) => Promise<RepoSessionCheckRun>
 	runIsolatedCheckPhase: (
 		payload: IsolatedCheckPhaseRequest,
