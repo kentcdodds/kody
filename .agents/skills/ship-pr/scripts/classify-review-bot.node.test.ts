@@ -19,8 +19,9 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 		body: 'This is a bug: null pointer when the session is missing.',
 		html_url: 'https://example.test/1',
 	})
+	expect(valid).not.toBeNull()
 	expect(valid?.verdict).toBe('valid')
-	expect(isShipPrBlocker(valid)).toBe(true)
+	expect(isShipPrBlocker(valid!)).toBe(true)
 
 	const invalid = classifyReviewBotComment({
 		id: 2,
@@ -28,9 +29,10 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 		body: 'Nit: rename this variable for style-only consistency.',
 		html_url: 'https://example.test/2',
 	})
+	expect(invalid).not.toBeNull()
 	expect(invalid?.verdict).toBe('invalid')
-	expect(isShipPrBlocker(invalid)).toBe(false)
-	expect(invalidReplyBody(invalid)).toMatch(/in-repo review-bot sort/)
+	expect(isShipPrBlocker(invalid!)).toBe(false)
+	expect(invalidReplyBody(invalid!)).toMatch(/in-repo review-bot sort/)
 
 	const unsure = classifyReviewBotComment({
 		id: 3,
@@ -38,8 +40,9 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 		body: 'Consider whether this helper belongs closer to the call site.',
 		html_url: 'https://example.test/3',
 	})
+	expect(unsure).not.toBeNull()
 	expect(unsure?.verdict).toBe('unsure')
-	expect(isShipPrBlocker(unsure)).toBe(true)
+	expect(isShipPrBlocker(unsure!)).toBe(true)
 
 	const findings = classifyReviewBotComments([
 		{
