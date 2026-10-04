@@ -330,29 +330,55 @@ export function ConnectSecretSetRoute(handle: Handle) {
 										alignItems: 'center',
 									})}
 								>
-									<input
-										type={showSecretValue ? 'text' : 'password'}
-										required
-										autoFocus={Boolean(autofocusKey)}
-										data-field="secret-value"
-										data-testid="connect-secret-set-value"
-										{...passwordManagerIgnoreProps}
-										value={state.value}
-										placeholder="Paste the secret value"
-										mix={[
-											on('input', (event) => {
-												editorState = {
-													...state,
-													value: event.currentTarget.value,
-												}
-												handle.update()
-											}),
-											css({
-												...inputCss,
-												paddingRight: '4.5rem',
-											}),
-										]}
-									/>
+									{showSecretValue ? (
+										<input
+											type="text"
+											required
+											autoFocus={Boolean(autofocusKey)}
+											data-field="secret-value"
+											data-testid="connect-secret-set-value"
+											{...passwordManagerIgnoreProps}
+											value={state.value}
+											placeholder="Paste the secret value"
+											mix={[
+												on('input', (event) => {
+													editorState = {
+														...state,
+														value: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css({
+													...inputCss,
+													paddingRight: '4.5rem',
+												}),
+											]}
+										/>
+									) : (
+										<input
+											type="password"
+											required
+											autoFocus={Boolean(autofocusKey)}
+											data-field="secret-value"
+											data-testid="connect-secret-set-value"
+											{...passwordManagerIgnoreProps}
+											value={state.value}
+											placeholder="Paste the secret value"
+											mix={[
+												on('input', (event) => {
+													editorState = {
+														...state,
+														value: event.currentTarget.value,
+													}
+													handle.update()
+												}),
+												css({
+													...inputCss,
+													paddingRight: '4.5rem',
+												}),
+											]}
+										/>
+									)}
 									<button
 										type="button"
 										aria-label={
