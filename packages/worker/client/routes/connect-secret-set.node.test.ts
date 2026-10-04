@@ -84,18 +84,35 @@ test('findMatchingSecretForSetup resolves rotation targets by name and scope', (
 		})?.id,
 	).toBe('user:exampleApiKey')
 	expect(
-		findMatchingSecretForSetup(secrets, {
-			name: 'token',
-			scope: 'package',
-			packageId: 'pkg_2',
-		})?.id,
+		findMatchingSecretForSetup(
+			secrets,
+			{
+				name: 'token',
+				scope: 'package',
+				packageId: 'pkg_2',
+			},
+			{ explicitPackageId: 'pkg_2' },
+		)?.id,
 	).toBe('package:pkg_2:token')
+	// Editor fallback packageId without an explicit query packageId must not
+	// match another package's secret.
 	expect(
 		findMatchingSecretForSetup(secrets, {
 			name: 'token',
 			scope: 'package',
-			packageId: 'pkg_other',
+			packageId: 'pkg_2',
 		}),
+	).toBeNull()
+	expect(
+		findMatchingSecretForSetup(
+			secrets,
+			{
+				name: 'token',
+				scope: 'package',
+				packageId: 'pkg_other',
+			},
+			{ explicitPackageId: 'pkg_other' },
+		),
 	).toBeNull()
 })
 
@@ -130,6 +147,18 @@ test('hydrateEditorStateForExistingSecret preserves policy unless the query sets
 		currentId: 'user:exampleApiKey',
 		description: 'Existing description',
 		expiresAt: '2026-12-01T00:00:00.000Z',
+		allowedHosts: ['api.example.com'],
+		allowedPackages: ['pkg_1'],
+	})
+
+	// Empty policy params must not wipe existing grants.
+	expect(
+		hydrateEditorStateForExistingSecret(
+			{ ...base, allowedHosts: [''], allowedPackages: [] },
+			existing,
+			'/connect/secret-set?name=exampleApiKey&allowedHosts=&allowedPackages=',
+		),
+	).toMatchObject({
 		allowedHosts: ['api.example.com'],
 		allowedPackages: ['pkg_1'],
 	})

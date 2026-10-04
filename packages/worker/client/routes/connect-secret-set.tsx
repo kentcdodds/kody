@@ -98,6 +98,7 @@ export function readConnectSecretSetView(input: {
 export function findMatchingSecretForSetup(
 	secrets: AccountSecretsLoaderData['secrets'],
 	state: Pick<EditorState, 'name' | 'scope' | 'packageId'>,
+	options: { explicitPackageId?: string | null } = {},
 ) {
 	const name = state.name.trim()
 	if (!name) return null
@@ -105,8 +106,22 @@ export function findMatchingSecretForSetup(
 		secrets.find((secret) => {
 			if (secret.name !== name || secret.scope !== state.scope) return false
 			if (state.scope !== 'package') return true
-			return secret.packageId === state.packageId
+			// Require an explicit packageId from the setup URL. Do not match
+			// against the editor fallback (first package option).
+			const packageId = options.explicitPackageId?.trim()
+			if (!packageId) return false
+			return secret.packageId === packageId
 		}) ?? null
+	)
+}
+
+function queryHasNonEmptyList(params: URLSearchParams, keys: Array<string>) {
+	return keys.some((key) =>
+		params
+			.getAll(key)
+			.some((value) =>
+				value.split(',').some((entry) => entry.trim().length > 0),
+			),
 	)
 }
 
@@ -116,11 +131,15 @@ export function hydrateEditorStateForExistingSecret(
 	href: string,
 ) {
 	const params = new URL(href, 'http://localhost').searchParams
-	const queryHasHosts = params.has('allowedHosts') || params.has('allowed-host')
-	const queryHasPackages =
-		params.has('allowedPackages') ||
-		params.has('package_id') ||
-		params.has('package')
+	const queryHasHosts = queryHasNonEmptyList(params, [
+		'allowedHosts',
+		'allowed-host',
+	])
+	const queryHasPackages = queryHasNonEmptyList(params, [
+		'allowedPackages',
+		'package_id',
+		'package',
+	])
 	const queryHasDescription = Boolean(params.get('description')?.trim())
 	const queryHasExpires = Boolean(params.get('expiresAt')?.trim())
 	return {
@@ -178,7 +197,12 @@ export function ConnectSecretSetRoute(handle: Handle) {
 			showSecretValue = false
 		}
 		let next = createEditorStateFromNewSecretQuery(packageOptions, href)
-		const existing = findMatchingSecretForSetup(data?.secrets ?? [], next)
+		const explicitPackageId = new URL(href, 'http://localhost').searchParams
+			.get('packageId')
+			?.trim()
+		const existing = findMatchingSecretForSetup(data?.secrets ?? [], next, {
+			explicitPackageId,
+		})
 		if (existing) {
 			next = hydrateEditorStateForExistingSecret(next, existing, href)
 		}
@@ -191,13 +215,22 @@ export function ConnectSecretSetRoute(handle: Handle) {
 		event.preventDefault()
 		if (saving || !editorState || saved) return
 		const requestQueryKey = appliedQueryKey
+		const requestHref = getCurrentHref()
 		saving = true
 		message = null
 		handle.update()
 		try {
+			const explicitPackageId = new URL(
+				requestHref,
+				'http://localhost',
+			).searchParams
+				.get('packageId')
+				?.trim()
 			const current =
 				editorState.currentId ??
-				findMatchingSecretForSetup(data?.secrets ?? [], editorState)?.id ??
+				findMatchingSecretForSetup(data?.secrets ?? [], editorState, {
+					explicitPackageId,
+				})?.id ??
 				null
 			const allowedHosts = normalizeAllowedHosts(
 				editorState.allowedHosts.filter((host) => host.trim()),
@@ -242,8 +275,10 @@ export function ConnectSecretSetRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save secret.')
 			}
-			if (requestQueryKey !== appliedQueryKey) return
+			// Always refresh loaded secrets so a later save on another link can
+			// still resolve currentId, even if this request's query is stale.
 			data = payload
+			if (requestQueryKey !== appliedQueryKey) return
 			saved = true
 			savedForQueryKey = requestQueryKey
 			editorState = {
