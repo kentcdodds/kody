@@ -57,10 +57,13 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   lags `package-lock.json` fails with `run npm ci` instead of type/bundle
   errors. Then it executes `format:check`, `lint`, `typecheck`, `test:node`,
   `test:workers`, Playwright E2E, MCP E2E, `backup:build`, `status:build`,
-  `nx-cache:build`, `jobs:build`, `runtime:build`, `platform:build`,
+  `nx-cache:build`, `jobs:build`, `highlight:build`, `api:build`,
+  `api-docs:build`, `runtime:build`, `platform:build`,
   `worker-startup-bundles:check`, `primitives:check`, `migrations:check`,
-  `deploy-guardrails:check`, `workflows:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `mermaid:check`, `audit:prod`, `lockfile:check`, and
+  `deploy-guardrails:check`, `workflows:check`,
+  `origin-production-exports:check`, `docs:check-temporal`,
+  `docs:check-decisions`, `docs:check-no-packages-invoke`, `mermaid:check`,
+  `slop-ratchet:check`, `knip`, `audit:prod`, `lockfile:check`, and
   `overrides:check` in parallel, reporting every failure (sibling checks are not
   aborted on the first failure, including when one of the docs or mermaid checks
   fails). `worker-startup-time:check` runs after that parallel phase so the CPU

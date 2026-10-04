@@ -3,8 +3,8 @@
 Contributor and agent papercuts while working in this repository live as GitHub
 issues labeled `friction`. They are not files in the tree.
 
-This is not [platform friction](../../guides/platform-friction.md). That guide
-is for user-facing Kody product feedback. This page is for developing the
+This is not [platform friction](../guides/platform-friction.md). That guide is
+for user-facing Kody product feedback. This page is for developing the
 `kentcdodds/kody` repo: confusing docs, a test that only fails locally, a
 command that needs a secret handshake, a type that lies.
 

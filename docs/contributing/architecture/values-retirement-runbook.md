@@ -21,16 +21,16 @@ Live leftover count as of 2026-08-24: 19 buckets / 46 entries / 19 users; 0
 
 Do not invent a replacement primitive.
 
-| Job                                 | Destination                                                        | Production examples (2026-08-19)                           |
-| ----------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| Platform UI dismiss                 | `users.onboarding_checklist_dismissed_at`                          | `onboardingChecklistDismissed` (operator + several others) |
-| Durable facts / preferences         | memories (`meta_memory_*`, verify-first)                           | address, timezone, profile blobs                           |
-| Package runtime state / cache       | `packageStorage()`                                                 | automation state/plan keys, chunked job/blob names         |
-| Versioned calibration               | plain repo (live-at-HEAD)                                          | shade config already on a live-at-HEAD repo                |
-| Package-owned knobs                 | `packageStorage()` or a file in that package repo                  | detector / package setting keys                            |
-| Shared ids used by several packages | owning package export, or one small settings package others invoke | Discord channel ids, org/app ids                           |
-| OAuth client ids                    | integrations / platform OAuth apps                                 | `*ClientId` / `*-client-id` names                          |
-| Credentials                         | secrets                                                            | bearer-token-like rows (readable + searchable today)       |
+| Job                                 | Destination                                                                   | Production examples (2026-08-19)                           |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Platform UI dismiss                 | `users.onboarding_checklist_dismissed_at`                                     | `onboardingChecklistDismissed` (operator + several others) |
+| Durable facts / preferences         | memories (`meta_memory_*`, verify-first)                                      | address, timezone, profile blobs                           |
+| Package runtime state / cache       | `packageStorage()`                                                            | automation state/plan keys, chunked job/blob names         |
+| Versioned calibration               | plain repo (live-at-HEAD)                                                     | shade config already on a live-at-HEAD repo                |
+| Package-owned knobs                 | `packageStorage()` or a file in that package repo                             | detector / package setting keys                            |
+| Shared ids used by several packages | owning package export, or one small settings package others statically import | Discord channel ids, org/app ids                           |
+| OAuth client ids                    | integrations / platform OAuth apps                                            | `*ClientId` / `*-client-id` names                          |
+| Credentials                         | secrets                                                                       | bearer-token-like rows (readable + searchable today)       |
 
 `app` and `session` scopes have no production rows. Do not migrate them; delete
 the unused buckets with the tables.

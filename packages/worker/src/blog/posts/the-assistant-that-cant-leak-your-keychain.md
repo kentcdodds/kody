@@ -140,7 +140,7 @@ and everything it accumulates lives in an account you own.
 
 An assistant's home holding 51 keys had better be built like it. The full
 secrets model is documented at
-[secrets and values](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
+[Secrets and host approval](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
 and the code behind every claim in this post is in
 [the repo](https://github.com/kentcdodds/kody).
 

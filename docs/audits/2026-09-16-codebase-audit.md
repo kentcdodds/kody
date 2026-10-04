@@ -20,7 +20,7 @@ platform-feedback submit. Other findings stay recommendations.
 | --- | -------- | ------------- | ----------------------------------------------------------------- |
 | H1  | High     | security      | `communityForkAdopt` was callable from package runtimes           |
 | H2  | High     | security      | Sandbox stamp ALS runner is reachable via well-known symbols      |
-| H3  | High     | performance   | StorageRunner `sqlQuery` has no row cap                           |
+| H3  | High     | performance   | StorageRunner `sqlQuery` row cap (addressed)                      |
 | M1  | Medium   | security      | Package runtimes inherit almost the full user capability map      |
 | M2  | Medium   | security      | Secret host approval accepts raw IPs                              |
 | M3  | Medium   | security      | Inbound mail auth fail-open plus header-From reply                |
@@ -117,23 +117,23 @@ first-party credential leak to package code) showed up in the surfaces reviewed.
   community package can name a useful grant id (it must already be in the run’s
   grant set). Not exercised as a live PoC in this review.
 
-### H3 — StorageRunner `sqlQuery` has no row cap
+### H3 — StorageRunner `sqlQuery` row cap (addressed)
 
 - **Area:** performance (customer bill and operator DO rows-read)
 - **Location:** `StorageRunnerBase.sqlQuery` / `cursorToSqlResult` in
   `packages/worker/src/storage-runner.ts`; `recordDurableObjectRowsRead` in
   `packages/worker/src/usage/durable-object-rows.ts`
-- **Evidence:** Caller SQL runs and `cursor.toArray()` materializes the full
-  result. There is no LIMIT rewrite or `rowsRead` abort.
+- **Evidence (audit date):** Caller SQL ran and `cursor.toArray()` materialized
+  the full result with no LIMIT rewrite or `rowsRead` abort.
   `durable_object_rows_read` meters this path for monthly overage. KV
-  list/export is already paged.
-- **Impact:** `SELECT * FROM t` on a large bucket bills the owner’s include and
-  Cloudflare rows-read, and can blow Worker memory/CPU on the RPC.
-- **Recommended fix:** Cap at the export page size (1 000), set `truncated`, or
-  abort when `rowsRead` crosses a budget. Document the cap in package storage
-  usage docs.
-- **False-positive risk:** Low for “unbounded.” Authors can write LIMIT
-  themselves; the platform still pays if they do not.
+  list/export was already paged.
+- **Status:** Addressed. `cursorToSqlResult` stops collecting at
+  `maxStorageSqlQueryRows` (same budget as the export page size) and sets
+  `truncated` when more rows remain. Mutating statements can drain overflow so
+  RETURNING still finishes; read-only SELECT/EXPLAIN/PRAGMA stop early.
+- **Residual:** Authors can still write an unbounded `SELECT` that walks a large
+  cursor before the cap truncates the returned rows; metering still sees
+  `rowsRead`. The platform no longer returns an uncapped result array.
 
 ---
 

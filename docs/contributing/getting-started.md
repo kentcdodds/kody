@@ -137,9 +137,11 @@ npm run validate
 
 `npm run validate` is the single authoritative local gate. It runs format, lint,
 typecheck, unit tests, Playwright E2E, MCP E2E, backup/status/nx-cache/jobs/
-runtime/platform dry-run builds, structure checks, and the production dependency
-audit (`audit:prod`) in parallel. CI runs the same checks as parallel jobs (node
-and workers unit suites on separate runners).
+highlight/api/api-docs/runtime/platform dry-run builds, structure checks
+(including `docs:check-no-packages-invoke`, `slop-ratchet:check`, and `knip`),
+and the production dependency audit (`audit:prod`) in parallel, then
+`worker-startup-time:check`. CI runs the same checks as parallel jobs (node and
+workers unit suites on separate runners).
 
 To seed a deterministic test login after migrations:
 

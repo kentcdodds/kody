@@ -8,12 +8,6 @@
 		"build": {
 			"cache": true
 		},
-		"build-client": {
-			"cache": true
-		},
-		"build-client-web": {
-			"cache": true
-		},
 		"typecheck": {
 			"cache": true
 		},
