@@ -907,10 +907,11 @@ console.log('theme', config.theme)
 
 `public/styles.css` (optional `assets` directory, served as-is).
 
-`remix/component` and the other `remix/…` subpaths are inlined from the platform
-copy, so a Remix client needs no import map. Using another browser package from
-the client? Either add it to `package.json#dependencies` to inline it, or switch
-`client` to the object form and pair it with an import map — see
+`remix/component` and the other `remix/…` subpaths resolve from the `remix`
+dependency your package declared (publish installs it into the snapshot), so a
+Remix client needs no import map. Using another browser package from the client?
+Either add it to `package.json#dependencies` to inline it, or switch `client` to
+the object form and pair it with an import map — see
 [Import maps and externals](#import-maps-and-externals) for the copy-paste pair.
 
 ### Two graphs, not one
