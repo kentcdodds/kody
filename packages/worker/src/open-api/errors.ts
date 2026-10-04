@@ -16,6 +16,16 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
+import { isTransientArtifactsGitError } from '#worker/repo/artifacts-git-retry.ts'
+
+/**
+ * Public message when Cloudflare Artifacts git is temporarily unavailable
+ * after call-site retries (HTTP 5xx / 429, packfile corruption, or read
+ * timeout). Keep free of remotes, hosts, account ids, and status codes —
+ * MCP `api` callers see code + message only.
+ */
+export const artifactsGitTemporarilyUnavailableMessage =
+	'The package source is temporarily unavailable. Retry the call.'
 
 export const apiErrorCodes = [
 	'invalid_request',
@@ -67,8 +77,12 @@ export class ApiError extends Error {
 		details?: unknown
 		headers?: Record<string, string>
 		meteringUserId?: string
+		cause?: unknown
 	}) {
-		super(input.message)
+		super(
+			input.message,
+			input.cause === undefined ? undefined : { cause: input.cause },
+		)
 		this.name = 'ApiError'
 		this.status = input.status
 		this.code = input.code
@@ -106,7 +120,9 @@ export function notFound(message: string) {
 /**
  * Map a thrown value to the public error envelope. Caller errors become
  * 400 (or 404 when they say something was not found); unknown errors are
- * 500 with a generic message so internals never leak.
+ * 500 with a generic message so internals never leak. Transient Artifacts
+ * git unavailability is 503 `internal_error` with a sanitized retry
+ * message (closed OpenAPI code enum — no new public code).
  */
 export function toApiError(error: unknown): ApiError {
 	if (error instanceof ApiError) return error
@@ -116,6 +132,7 @@ export function toApiError(error: unknown): ApiError {
 			code: 'account_deleting',
 			message:
 				'Account deletion is in progress; user-owned writes are disabled.',
+			cause: error,
 		})
 	}
 	if (error instanceof AccountWriteLeaseLostError) {
@@ -124,6 +141,7 @@ export function toApiError(error: unknown): ApiError {
 			code: 'account_deleting',
 			message:
 				'Account deletion is in progress; retry after the current write finishes.',
+			cause: error,
 		})
 	}
 	const limitError = getErrorCauseChain(error).find(
@@ -136,6 +154,7 @@ export function toApiError(error: unknown): ApiError {
 			code: 'entitlement_limit',
 			message: getErrorMessage(limitError),
 			details: limitError.details,
+			cause: error,
 		})
 	}
 	if (isMcpCallerError(error) || isJobIntervalFloorError(error)) {
@@ -144,10 +163,19 @@ export function toApiError(error: unknown): ApiError {
 			? notFound(message)
 			: invalidRequest(message)
 	}
+	if (isTransientArtifactsGitError(error)) {
+		return new ApiError({
+			status: 503,
+			code: 'internal_error',
+			message: artifactsGitTemporarilyUnavailableMessage,
+			cause: error,
+		})
+	}
 	return new ApiError({
 		status: 500,
 		code: 'internal_error',
 		message: 'Internal error. Retry later or report it if it persists.',
+		cause: error,
 	})
 }
 

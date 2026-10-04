@@ -5,6 +5,7 @@ import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
 } from './entitlements/errors.ts'
+import { artifactsGitTemporarilyUnavailableMessage } from './open-api/errors.ts'
 import {
 	buildArtifactsOpaqueInternalErrorMessage,
 	buildArtifactsRepoLookupTimeoutMessage,
@@ -318,7 +319,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 
 	// User-code errors drop via the typed originalException (including causes).
-	const userCodeEvent = exceptionEvent({ type: 'UserCodeError', value: 'boom' })
+	const userCodeEvent = exceptionEvent({
+		type: 'UserCodeError',
+		value: 'boom',
+	})
 	expect(
 		filterSentryEvent(userCodeEvent, {
 			originalException: new UserCodeError('boom'),
@@ -402,6 +406,29 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			{ originalException: new Error(entitlementLimitError.message) },
 		),
 	).not.toBeNull()
+
+	// KODY-8P: Open API remaps exhausted Artifacts git transients to ApiError
+	// (503 internal_error) with the wrapper as cause. Drop via the cause chain
+	// even when the public message is the sanitized retry sentence.
+	const artifactsGitWrapper = new Error(
+		`Artifacts git clone failed for ${artifactsRepo}: HTTP Error: 500 Internal Server Error`,
+		{ cause: new Error('HTTP Error: 500 Internal Server Error') },
+	)
+	const remappedArtifactsApiError = new Error(
+		artifactsGitTemporarilyUnavailableMessage,
+		{ cause: artifactsGitWrapper },
+	)
+	remappedArtifactsApiError.name = 'ApiError'
+	const remappedArtifactsEvent = exceptionEvent({
+		type: 'ApiError',
+		value: remappedArtifactsApiError.message,
+	})
+	expect(
+		filterSentryEvent(remappedArtifactsEvent, {
+			originalException: remappedArtifactsApiError,
+		}),
+	).toBeNull()
+	expect(filterSentryEvent(remappedArtifactsEvent)).toBe(remappedArtifactsEvent)
 })
 
 test('filterSentryEvent redacts Kody credentials from event messages', () => {

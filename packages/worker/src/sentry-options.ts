@@ -11,7 +11,10 @@ import {
 	isEntitlementLimitError,
 } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
-import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
+import {
+	isArtifactsGitTransientErrorMessage,
+	isTransientArtifactsGitError,
+} from './repo/artifacts-git-retry.ts'
 import {
 	isArtifactsGitReadTimeoutMessage,
 	isArtifactsOpaqueInternalRetryMessage,
@@ -482,8 +485,17 @@ export function filterCloudflareOpaqueInternalErrorSentryEvent(
  * Also drops source-safety remaps of Artifacts repo-lookup and git-HEAD
  * timeouts (`TimeoutError` / ArtifactsGitTimeoutError) so a lookup stall is
  * not labeled a git failure and neither opens Sentry issues.
+ *
+ * Open API / MCP map exhausted transient Artifacts git failures to
+ * `ApiError` (`internal_error`, HTTP 503) with the wrapper as `cause`
+ * (KODY-8P). Match `hint.originalException` through the cause chain so those
+ * remapped events stay filtered the same way as the raw wrapper.
  */
-export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
+export function isArtifactsGitTransientHttpErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (isTransientArtifactsGitError(hint?.originalException)) return true
 	return sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
@@ -495,8 +507,9 @@ export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
 
 export function filterArtifactsGitTransientHttpErrorSentryEvent(
 	event: ErrorEvent,
+	hint?: EventHint,
 ) {
-	if (!isArtifactsGitTransientHttpErrorSentryEvent(event)) return event
+	if (!isArtifactsGitTransientHttpErrorSentryEvent(event, hint)) return event
 	return null
 }
 
@@ -613,7 +626,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterDurableObjectOverloadedSentryEvent(event) === null) return null
 	if (filterCloudflareOpaqueInternalErrorSentryEvent(event) === null)
 		return null
-	if (filterArtifactsGitTransientHttpErrorSentryEvent(event) === null)
+	if (filterArtifactsGitTransientHttpErrorSentryEvent(event, hint) === null)
 		return null
 	if (filterMcpAgentSessionDestroyedAbortSentryEvent(event) === null)
 		return null
@@ -678,7 +691,8 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// Artifacts git protocol HTTP 5xx / 429 wrappers (listServerRefs /
 		// git fetch / git clone), stalled info/refs deadlines, and
 		// isomorphic-git "Packfile payload corrupted" events are dropped the
-		// same way after brief call-site retries — see
+		// same way after brief call-site retries — including when Open API
+		// remaps them to ApiError with the wrapper as cause (KODY-8P) — see
 		// filterArtifactsGitTransientHttpErrorSentryEvent.
 		// Bare Durable Object abort token `destroyed` from Agents MCP session
 		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see

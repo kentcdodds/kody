@@ -254,7 +254,13 @@ export async function runCapabilityProxyCall(input: {
 		const fromCapability = error instanceof CapabilityInvocationError
 		const cause = fromCapability ? error.cause : error
 		const apiError = toApiError(cause)
-		if (cause instanceof ApiError || apiError.status < 500) {
+		if (
+			cause instanceof ApiError ||
+			apiError.status < 500 ||
+			// Transient Artifacts git (and similar) already mapped to sanitized
+			// 503 internal_error — keep that envelope instead of capability_error.
+			(apiError.status === 503 && apiError.code === 'internal_error')
+		) {
 			throwRedacted(apiError, redactor)
 		}
 		if (fromCapability) {
@@ -285,5 +291,6 @@ function throwRedacted(
 		message,
 		details: redactor.redactUnknown(apiError.details),
 		headers: apiError.headers,
+		cause: apiError,
 	})
 }
