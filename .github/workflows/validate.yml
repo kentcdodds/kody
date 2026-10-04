@@ -197,9 +197,10 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
-      # Self-driving test-time budget: this job fails itself when wall-clock
-      # exceeds 60s (see tools/ci/enforce-unit-job-budget.ts). No second
-      # reporter. Setup + tests both count; do not delete tests to stay under.
+      # Self-driving test-time budget: on an Nx cache hit, this job fails itself
+      # when wall-clock exceeds 60s (tools/ci/enforce-unit-job-budget.ts). A cold
+      # cache miss does not fail the budget. Setup + tests both count; do not
+      # delete tests to stay under.
       - name: ⏱️ Mark job start
         run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -217,17 +218,19 @@ jobs:
           worker-env: 'true'
 
       - name: 🧪 Node unit tests
-        run: npm run test:node
+        run: |
+          set -o pipefail
+          npm run test:node 2>&1 | tee unit-job-nx.log
         env:
           MIGRATION_VALIDATION_BASE: >-
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
-      - name: ⏱️ Unit job budget (≤60s)
+      - name: ⏱️ Unit job budget (≤60s on cache hit)
         if: success()
         run: >-
           node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch
-          "$UNIT_JOB_START_EPOCH"
+          "$UNIT_JOB_START_EPOCH" --nx-log unit-job-nx.log
 
   workers:
     runs-on: ubuntu-latest
@@ -237,9 +240,10 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
-      # Self-driving test-time budget: this job fails itself when wall-clock
-      # exceeds 90s (see tools/ci/enforce-unit-job-budget.ts). No second
-      # reporter. Setup + tests both count; do not delete tests to stay under.
+      # Self-driving test-time budget: on an Nx cache hit, this job fails itself
+      # when wall-clock exceeds 90s (tools/ci/enforce-unit-job-budget.ts). A cold
+      # cache miss does not fail the budget. Setup + tests both count; do not
+      # delete tests to stay under.
       - name: ⏱️ Mark job start
         run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -255,13 +259,15 @@ jobs:
           migrate-local: 'true'
 
       - name: ☁️ Workers unit tests
-        run: npm run test:workers
+        run: |
+          set -o pipefail
+          npm run test:workers 2>&1 | tee unit-job-nx.log
 
-      - name: ⏱️ Unit job budget (≤90s)
+      - name: ⏱️ Unit job budget (≤90s on cache hit)
         if: success()
         run: >-
           node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch
-          "$UNIT_JOB_START_EPOCH"
+          "$UNIT_JOB_START_EPOCH" --nx-log unit-job-nx.log
 
   mcp:
     runs-on: ubuntu-latest
