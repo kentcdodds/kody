@@ -3,6 +3,7 @@ import {
 	findMatchingSecretForSetup,
 	hydrateEditorStateForExistingSecret,
 	readConnectSecretSetView,
+	readInvalidExpiresAtQuery,
 	resolvePackageIdForSecretSet,
 } from './connect-secret-set.tsx'
 import { createEmptyEditorState } from './account-secrets-shared.ts'
@@ -192,6 +193,22 @@ test('hydrateEditorStateForExistingSecret preserves policy unless the query sets
 		allowedHosts: ['new.example.com'],
 		allowedPackages: ['pkg_2'],
 	})
+})
+
+test('readInvalidExpiresAtQuery validates the raw query independently of hydrated state', () => {
+	expect(
+		readInvalidExpiresAtQuery('/connect/secret-set?name=exampleApiKey'),
+	).toBeNull()
+	expect(
+		readInvalidExpiresAtQuery(
+			'/connect/secret-set?name=exampleApiKey&expiresAt=2026-12-01T00:00:00.000Z',
+		),
+	).toBeNull()
+	expect(
+		readInvalidExpiresAtQuery(
+			'/connect/secret-set?name=exampleApiKey&expiresAt=not-a-date',
+		),
+	).toMatch(/invalid expiresAt/i)
 })
 
 test('resolvePackageIdForSecretSet rejects missing or unknown package ids', () => {

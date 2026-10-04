@@ -1,3 +1,4 @@
+import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
@@ -167,13 +168,20 @@ function readExplicitPackageId(href: string) {
 	)
 }
 
-function readInvalidExpiresAtQuery(href: string, state: EditorState) {
+export function readInvalidExpiresAtQuery(href: string) {
 	const raw = new URL(href, 'http://localhost').searchParams
 		.get('expiresAt')
 		?.trim()
 	if (!raw) return null
-	if (state.expiresAt.trim()) return null
-	return 'This setup link has an invalid expiresAt value.'
+	try {
+		const normalized = normalizeSecretExpiresAt(raw)
+		if (!normalized) {
+			return 'This setup link has an invalid expiresAt value.'
+		}
+		return null
+	} catch {
+		return 'This setup link has an invalid expiresAt value.'
+	}
 }
 
 export function resolvePackageIdForSecretSet(input: {
@@ -328,7 +336,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 		message = null
 		handle.update()
 		try {
-			const invalidExpires = readInvalidExpiresAtQuery(requestHref, editorState)
+			const invalidExpires = readInvalidExpiresAtQuery(requestHref)
 			if (invalidExpires) {
 				throw new Error(invalidExpires)
 			}
@@ -432,7 +440,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 				: []
 		const autofocusKey = getNewSecretValueAutofocusKey(currentHref)
 		const setupError =
-			readInvalidExpiresAtQuery(currentHref, state) ??
+			readInvalidExpiresAtQuery(currentHref) ??
 			resolvePackageIdForSecretSet({
 				scope: state.scope,
 				explicitPackageId: readExplicitPackageId(currentHref),
