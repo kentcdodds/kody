@@ -105,6 +105,14 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 			.prepare(`SELECT balance_micro_usd FROM credit_wallets WHERE user_id = ?`)
 			.get(created.stableUserId),
 	).toEqual({ balance_micro_usd: 5_000_000 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT signup_welcome_credits_pending AS pending
+				 FROM users WHERE stable_user_id = ?`,
+			)
+			.get(created.stableUserId),
+	).toEqual({ pending: 0 })
 })
 
 test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and skips reserved generated ones', async () => {

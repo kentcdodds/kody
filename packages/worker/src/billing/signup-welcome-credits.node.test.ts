@@ -83,18 +83,36 @@ afterEach(() => {
 	vi.restoreAllMocks()
 })
 
-test('failed creation-time grant marks pending; login reconcile grants once without double-crediting', async () => {
+test('failed creation-time grant keeps insert pending; login reconcile grants once without double-crediting', async () => {
 	const { sqlite, db } = createDb()
 	const stableUserId = 'stable-welcome-retry'
+	// Person-account inserts set pending=1 in the same write so a later D1
+	// failure during the grant cannot erase the retry signal.
 	seedUser(sqlite, {
 		stableUserId,
 		email: 'welcome-retry@example.com',
 		username: 'welcome-retry',
+		pending: true,
 	})
 
 	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 	const failingDb = {
-		prepare: db.prepare.bind(db),
+		prepare(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
+			if (
+				normalized.includes('update users') &&
+				normalized.includes('signup_welcome_credits_pending')
+			) {
+				return {
+					bind: () => ({
+						run: async () => {
+							throw new Error('D1 unavailable')
+						},
+					}),
+				}
+			}
+			return db.prepare(query)
+		},
 		batch: async () => {
 			throw new Error('D1 unavailable')
 		},
@@ -107,10 +125,15 @@ test('failed creation-time grant marks pending; login reconcile grants once with
 			now,
 		}),
 	).toBeNull()
+	// Mark-pending also failed, but the insert flag remains.
 	expect(pendingFlag(sqlite, stableUserId)).toBe(1)
 	expect(ledgerCount(sqlite, stableUserId)).toBe(0)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'signup-welcome-credits-failed',
+		expect.any(Error),
+	)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'signup-welcome-credits-mark-pending-failed',
 		expect.any(Error),
 	)
 

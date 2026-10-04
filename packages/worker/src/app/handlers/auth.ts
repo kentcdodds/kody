@@ -334,6 +334,10 @@ export function createAuthHandler(env: Env) {
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
 							plan: resolvePlanWrite(null),
+							// Set with the insert so a later D1 blip during the
+							// grant cannot erase the retry signal (default 0
+							// still grandfathering pre-ship rows).
+							signup_welcome_credits_pending: 1,
 							...firstTouchAttributionCreateFields(signupAttribution),
 							last_active_at: createdAt,
 						},

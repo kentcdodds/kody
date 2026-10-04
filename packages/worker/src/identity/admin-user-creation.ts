@@ -128,8 +128,10 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	try {
 		const result = await input.db
 			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-				 VALUES (?, ?, ?, ?, ?, 'free')`,
+				`INSERT INTO users (
+					username, email, password_hash, email_verified_at, stable_user_id,
+					plan, signup_welcome_credits_pending
+				) VALUES (?, ?, ?, ?, ?, 'free', 1)`,
 			)
 			.bind(
 				username,

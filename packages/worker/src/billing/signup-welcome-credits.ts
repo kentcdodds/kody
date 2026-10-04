@@ -3,12 +3,14 @@
  * outside `credit-wallet.ts` so the debit/auto-refill graph (runtime worker)
  * does not carry signup-only grant code.
  *
- * Creation-time grants are best-effort (`maybeGrantSignupWelcomeCredits`) so
- * signup still succeeds when D1 blips. A failed grant sets
- * `users.signup_welcome_credits_pending`; login and wallet-touch call
+ * New person-account inserts set `users.signup_welcome_credits_pending = 1`
+ * in the same write that creates the row, so a later D1 failure during the
+ * grant cannot erase the retry signal. Creation-time grants are best-effort
+ * (`maybeGrantSignupWelcomeCredits`) so signup still succeeds when D1 blips;
+ * success clears the flag. Login and wallet-touch call
  * `reconcileSignupWelcomeCreditsIfPending` to retry. The ledger id is
  * deterministic (`signup_welcome:{stableUserId}`), so retries never
- * double-grant. Pending defaults to 0, so pre-ship accounts are not
+ * double-grant. Migration default is 0, so pre-ship accounts are not
  * backfilled.
  */
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
@@ -144,8 +146,9 @@ export async function grantSignupWelcomeCredits(input: {
 /**
  * Best-effort wrapper for account-creation sites. Signup must not fail when
  * the welcome grant cannot run (fake test DBs, transient D1 errors); the
- * deterministic ledger id still makes a later retry safe. On failure, marks
- * `signup_welcome_credits_pending` so login / wallet-touch can reconcile.
+ * deterministic ledger id still makes a later retry safe. Person-account
+ * inserts already set `signup_welcome_credits_pending = 1`; this clears it on
+ * success and re-asserts it on failure as belt-and-suspenders.
  */
 export async function maybeGrantSignupWelcomeCredits(input: {
 	db: D1Database
