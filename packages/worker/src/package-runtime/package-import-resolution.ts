@@ -52,6 +52,8 @@ export type ResolvedPackageImport = {
 	platformScope: string | null
 	shareOwned?: boolean
 	storageOwnerUserId?: string
+	/** Skip profile grant checks (platform or nested share-owner helpers). */
+	bypassConnectionProfileGrant?: boolean
 }
 
 function unsupportedSpecifierError(specifier: string) {
@@ -135,6 +137,9 @@ export async function resolveSavedPackageImport(input: {
 				platformScope: null,
 				shareOwned: true,
 				storageOwnerUserId: input.nestedShareOwnerUserId,
+				// Nested helpers of an already-granted shared package ride that
+				// package's published graph; they are not independently choosable.
+				bypassConnectionProfileGrant: true,
 			})
 		}
 	}
@@ -177,6 +182,11 @@ function allowResolvedPackageImport(
 	const grants = getRequestConnectionProfileGrants()
 	// Outside a profile wrap (undefined) or unlimited (null) → allow.
 	if (grants === undefined || grants === null) return resolution
+	// Platform packages and nested share-owner helpers are infrastructure for
+	// an already-granted package graph, not chooser entries.
+	if (resolution.platformScope || resolution.bypassConnectionProfileGrant) {
+		return resolution
+	}
 	if (
 		connectionProfileAllows({
 			grants,

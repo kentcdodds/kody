@@ -123,13 +123,27 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 					'cliCredentialBootstrap cannot run inside saved-package, job, webhook, or app runtimes. Call it from the MCP api tool or the Open API.',
 				)
 			}
+			if (
+				typeof ctx.callerContext.connectionProfileName === 'string' &&
+				ctx.callerContext.connectionProfileName.trim()
+			) {
+				throw new McpCallerError(
+					'cliCredentialBootstrap is not available on a named connection profile. Mint a profile-bound API token with tokenCreate instead.',
+				)
+			}
 			const parent =
 				ctx.openApiPrincipal?.kind === 'token'
 					? {
 							scopes: ctx.openApiPrincipal.token.scopes,
 							maxExpiresAt: ctx.openApiPrincipal.token.max_expires_at,
+							profileName: ctx.openApiPrincipal.token.profile_name ?? null,
 						}
 					: undefined
+			if (parent?.profileName) {
+				throw new McpCallerError(
+					'cliCredentialBootstrap is not available on a profile-bound API token. Mint a profile-bound child token with tokenCreate instead.',
+				)
+			}
 			return mintCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
 				userId: user.userId,

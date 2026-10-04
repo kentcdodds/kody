@@ -3,9 +3,7 @@ import {
 	type ConnectionProfileAction,
 	type ConnectionProfileGrant,
 } from '#universal/connection-profiles/grants.ts'
-import { connectionProfilesFlagKey } from '#universal/feature-flags/registry.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
 import {
 	profileGrantsAllow,
 	profileGrantsReveal,
@@ -53,11 +51,9 @@ export async function resolveConnectionProfileActor(input: {
 	if (!userId) {
 		return { grants: [], profileName }
 	}
-	const flags = await resolveCallerFeatureFlags(input.env, input.callerContext)
-	if (flags[connectionProfilesFlagKey] !== true) {
-		// Non-experimenters: ignore unknown profile bindings; keep unlimited.
-		return { grants: null, profileName: null }
-	}
+	// A stamped profile name always enforces that profile's grants (including
+	// empty / missing → deny all). The feature flag only gates UI and new
+	// authorize bindings — never widen an already-restricted credential.
 	const grants = await resolveConnectionProfileGrants({
 		db: input.env.APP_DB,
 		userId,

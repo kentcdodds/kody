@@ -46,13 +46,6 @@ export const getPackageCapability = defineDomainCapability(
 		outputSchema: packageDetailSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			await assertCallerCanAccessResource({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
-				resourceType: 'package',
-				resourceId: args.package_id,
-				action: 'read',
-			})
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
 				user,
@@ -111,6 +104,13 @@ export const getPackageCapability = defineDomainCapability(
 				}
 				throw new McpCallerError('Saved package not found for this user.')
 			}
+			await assertCallerCanAccessResource({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				resourceType: 'package',
+				resourceId: saved.id,
+				action: 'read',
+			})
 			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,

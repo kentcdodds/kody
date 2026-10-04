@@ -6,6 +6,7 @@ import {
 } from '#universal/connection-profiles/names.ts'
 import { connectionProfilesFlagKey } from '#universal/feature-flags/registry.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import { ConnectionProfileAuthorizeError } from '#worker/connection-profiles/authorize-error.ts'
 import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
 import { mcpOAuthResourceUri } from '#worker/oauth-provider-options.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
@@ -49,17 +50,33 @@ export async function resolveAuthorizeConnectionProfile(input: {
 		}
 	}
 
+	if (
+		fromAuthorizeUrl &&
+		fromResource &&
+		normalizeConnectionProfileName(fromAuthorizeUrl) !==
+			normalizeConnectionProfileName(fromResource)
+	) {
+		throw new ConnectionProfileAuthorizeError(
+			'Connection profile on the authorize URL and OAuth resource do not match.',
+		)
+	}
+
 	const candidate = fromAuthorizeUrl ?? fromResource
 	if (!candidate) return null
 
 	const name = normalizeConnectionProfileName(candidate)
-	if (getConnectionProfileNameValidationError(name)) return null
+	if (getConnectionProfileNameValidationError(name)) {
+		throw new ConnectionProfileAuthorizeError(
+			`Invalid connection profile name "${candidate}".`,
+		)
+	}
 
 	const enabled = await isFeatureEnabled(
 		input.env.APP_DB,
 		connectionProfilesFlagKey,
 		await resolveDbUserId(input.env.APP_DB, input.userId),
 	)
+	// Non-experimenters: ignore ?profile= and keep today's unlimited connection.
 	if (!enabled) return null
 
 	const profile = await getConnectionProfileByName({
@@ -67,8 +84,13 @@ export async function resolveAuthorizeConnectionProfile(input: {
 		userId: input.userId,
 		name,
 	})
-	// Unknown profile name: do not bind (avoid locking a grant to a typo).
-	return profile ? profile.name : null
+	if (!profile) {
+		// Named profile that does not exist must not mint an unlimited grant.
+		throw new ConnectionProfileAuthorizeError(
+			`Connection profile "${name}" was not found.`,
+		)
+	}
+	return profile.name
 }
 
 async function resolveDbUserId(db: D1Database, stableUserId: string) {

@@ -178,6 +178,9 @@ export async function applyConnectionProfileMutation(input: {
 		if (error instanceof McpCallerError) {
 			return { ok: false, error: error.message, status: 400 }
 		}
+		if (error instanceof Error) {
+			return { ok: false, error: error.message, status: 400 }
+		}
 		throw error
 	}
 	const loaded = await loadConnectionProfilesForAccount({

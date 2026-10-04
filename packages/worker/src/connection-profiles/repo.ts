@@ -13,6 +13,7 @@ import {
 	normalizeConnectionProfileName,
 } from '#universal/connection-profiles/names.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 
 export type ConnectionProfileRecord = {
 	id: string
@@ -45,6 +46,25 @@ function mapRow(row: ConnectionProfileRow): ConnectionProfileRecord {
 
 function newProfileId() {
 	return crypto.randomUUID()
+}
+
+async function assertProfilePackageGrantsOwned(input: {
+	db: D1Database
+	userId: string
+	grants: ReadonlyArray<ConnectionProfileGrant>
+}) {
+	for (const grant of input.grants) {
+		if (grant.resourceType !== 'package') continue
+		const saved = await getSavedPackageById(input.db, {
+			userId: input.userId,
+			packageId: grant.resourceId,
+		})
+		if (!saved) {
+			throw new McpCallerError(
+				`Package "${grant.resourceId}" was not found for this account.`,
+			)
+		}
+	}
 }
 
 export async function listConnectionProfiles(input: {
@@ -110,7 +130,19 @@ export async function createConnectionProfile(input: {
 	if (nameError) {
 		throw new McpCallerError(connectionProfileNameErrorMessage(nameError))
 	}
-	const grants = normalizeConnectionProfileGrants(input.grants ?? [])
+	let grants: Array<ConnectionProfileGrant>
+	try {
+		grants = normalizeConnectionProfileGrants(input.grants ?? [])
+	} catch (error) {
+		throw new McpCallerError(
+			error instanceof Error ? error.message : String(error),
+		)
+	}
+	await assertProfilePackageGrantsOwned({
+		db: input.db,
+		userId: input.userId,
+		grants,
+	})
 	const id = newProfileId()
 	const now = new Date().toISOString()
 	try {
@@ -172,10 +204,23 @@ export async function updateConnectionProfile(input: {
 			throw new McpCallerError(connectionProfileNameErrorMessage(nameError))
 		}
 	}
-	const grants =
-		input.grants === undefined
-			? existing.grants
-			: normalizeConnectionProfileGrants(input.grants)
+	let grants: Array<ConnectionProfileGrant>
+	if (input.grants === undefined) {
+		grants = existing.grants
+	} else {
+		try {
+			grants = normalizeConnectionProfileGrants(input.grants)
+		} catch (error) {
+			throw new McpCallerError(
+				error instanceof Error ? error.message : String(error),
+			)
+		}
+		await assertProfilePackageGrantsOwned({
+			db: input.db,
+			userId: input.userId,
+			grants,
+		})
+	}
 	const now = new Date().toISOString()
 	try {
 		await input.db

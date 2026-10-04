@@ -64,6 +64,7 @@ import {
 	connectionProfileGrantFields,
 	resolveAuthorizeConnectionProfile,
 } from '#worker/connection-profiles/oauth.ts'
+import { isConnectionProfileAuthorizeError } from '#worker/connection-profiles/authorize-error.ts'
 
 export { oauthPaths }
 
@@ -1142,12 +1143,26 @@ async function tryHandleSilentOidcAuthorize(
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
-	const connectionProfileName = await resolveAuthorizeConnectionProfile({
-		env,
-		request,
-		authRequest,
-		userId: approvedUserId,
-	})
+	let connectionProfileName: string | null
+	try {
+		connectionProfileName = await resolveAuthorizeConnectionProfile({
+			env,
+			request,
+			authRequest,
+			userId: approvedUserId,
+		})
+	} catch (error) {
+		if (isConnectionProfileAuthorizeError(error)) {
+			const redirectTo = oidcClientErrorRedirect(
+				authRequest,
+				'invalid_request',
+				error.message,
+			)
+			if (redirectTo) return Response.redirect(redirectTo, 302)
+			return respondAuthorizeError(request, error.message)
+		}
+		throw error
+	}
 	const profileFields = connectionProfileGrantFields(connectionProfileName)
 	const { redirectTo: providerRedirectTo } =
 		await helpers.completeAuthorization({
@@ -1527,12 +1542,38 @@ export async function handleAuthorizeRequest(
 			: authorizeSession.issuedAt
 				? Math.floor(authorizeSession.issuedAt / 1000)
 				: Math.floor(Date.now() / 1000)
-		const connectionProfileName = await resolveAuthorizeConnectionProfile({
-			env,
-			request,
-			authRequest,
-			userId,
-		})
+		let connectionProfileName: string | null
+		try {
+			connectionProfileName = await resolveAuthorizeConnectionProfile({
+				env,
+				request,
+				authRequest,
+				userId,
+			})
+		} catch (error) {
+			if (isConnectionProfileAuthorizeError(error)) {
+				const redirectTo = createOidcClientErrorRedirectUrl(
+					authRequest,
+					'invalid_request',
+					error.message,
+					request,
+					env,
+				)
+				if (redirectTo) {
+					return wantsJson(request)
+						? jsonResponse({ ok: false, error: error.message, redirectTo })
+						: Response.redirect(redirectTo, 302)
+				}
+				return respondAuthorizeError(
+					request,
+					error.message,
+					400,
+					'invalid_request',
+					createSetCookieHeaders([setCookie]),
+				)
+			}
+			throw error
+		}
 		const profileFields = connectionProfileGrantFields(connectionProfileName)
 		const { redirectTo: providerRedirectTo } =
 			await helpers.completeAuthorization({

@@ -26,6 +26,7 @@ import {
 import { type NativeApiOperationId } from './operations.ts'
 import { connectionProfilesFlagKey } from '#universal/feature-flags/registry.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import { readCallerConnectionProfileName } from '#worker/connection-profiles/access.ts'
 import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
 import {
 	connectionProfileNameErrorMessage,
@@ -167,12 +168,17 @@ async function assertCallerMayRotate(
 	)
 	const outlives =
 		Date.parse(target.max_expires_at) > Date.parse(caller.max_expires_at)
-	if (missing.length === 0 && !outlives) return
+	const callerProfile = caller.profile_name ?? null
+	const targetProfile = target.profile_name ?? null
+	const profileEscalation =
+		callerProfile != null && callerProfile !== targetProfile
+	if (missing.length === 0 && !outlives && !profileEscalation) return
 	throw new ApiError({
 		status: 403,
 		code: 'insufficient_scope',
-		message:
-			missing.length > 0
+		message: profileEscalation
+			? 'This profile-bound API token cannot rotate a token for a different connection profile (or an unlimited token).'
+			: missing.length > 0
 				? `This API token cannot rotate a token with scopes it does not hold: ${missing.join(', ')}.`
 				: 'This API token cannot rotate a token that outlives it.',
 		details: { missing_scopes: missing },
@@ -239,6 +245,9 @@ export const tokenOperationDefinitions: Record<
 							profileName: ctx.principal.token.profile_name ?? null,
 						}
 					: undefined
+			const callerProfileName = readCallerConnectionProfileName(
+				ctx.callerContext,
+			)
 			let profileName: string | null = null
 			if (input.profile !== undefined) {
 				profileName = normalizeConnectionProfileName(input.profile)
@@ -276,6 +285,29 @@ export const tokenOperationDefinitions: Record<
 				profileName = profile.name
 			} else if (parent?.profileName) {
 				profileName = parent.profileName
+			} else if (callerProfileName) {
+				// MCP OAuth / session callers inherit their stamped profile so they
+				// cannot mint an unlimited token by omitting `profile`.
+				profileName = callerProfileName
+			}
+			if (
+				callerProfileName &&
+				profileName &&
+				callerProfileName !== profileName
+			) {
+				throw new ApiError({
+					status: 403,
+					code: 'insufficient_scope',
+					message: `This connection profile can only mint tokens for profile "${callerProfileName}".`,
+				})
+			}
+			if (callerProfileName && !profileName) {
+				throw new ApiError({
+					status: 403,
+					code: 'insufficient_scope',
+					message:
+						'This connection profile cannot mint an unlimited API token.',
+				})
 			}
 			return mintApiToken({
 				db: ctx.env.APP_DB,
