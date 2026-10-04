@@ -37,6 +37,8 @@ export default async function main() {
 }
 ```
 
-ship-pr uses `./sort-review-bot-comments` so only **valid** (and unsure)
-review-bot findings are merge blockers. Prefer local CLI execute
+ship-pr uses `./sort-review-bot-comments` so only **valid** (and unsure) Bugbot
+/ Devin / Seer findings from that export are blockers for those bots. CodeRabbit
+and other reviewers stay outside this sort — address their valid feedback
+separately. Prefer local CLI execute
 ([prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)).
