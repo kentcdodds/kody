@@ -197,7 +197,7 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 			binding: 'BUNDLE_ARTIFACTS_KV',
 			sourceTable: 'published_bundle_artifacts',
 			sourceColumn: 'kv_key',
-			prefixTemplate: 'bundle-artifact:v2:',
+			prefixTemplate: 'bundle-artifact:v1:',
 		},
 		{
 			id: 'source_snapshot',

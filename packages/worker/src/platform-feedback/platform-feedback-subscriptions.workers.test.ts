@@ -143,7 +143,7 @@ async function seedSubscribedPackage(input: {
 
 	const expectedPayloadJson = JSON.stringify(input.expectedPayload)
 	const subscriptionArtifact = {
-		version: 2,
+		version: 1,
 		kind: 'module',
 		artifactName: `subscription:${platformFeedbackSubmittedTopic}`,
 		sourceId,

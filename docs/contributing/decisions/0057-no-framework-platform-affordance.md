@@ -26,11 +26,12 @@ did not bring.
 
 ## Consequences
 
-`withPlatformRemixFiles` / `loadPlatformRemixFiles` and the `remixVersion` /
-`remixUiVersion` artifact stamps are gone. `bundleArtifactVersion` bumps from 1
-to 2 so artifacts built with platform injection are abandoned and rebuild
-without it. Bundling asserts that `node_modules/` paths in the bundler file set
-already exist in the package snapshot (`assertNoPlatformSuppliedNodeModules`). A
+`withPlatformRemixFiles` / `loadPlatformRemixFiles` and writing `remixVersion` /
+`remixUiVersion` artifact stamps are gone. Readers reject stored payloads that
+still carry those stamps so injection-built artifacts stop serving, while
+ordinary npm-backed v1 artifacts keep working without a forced republish.
+Bundling asserts that `node_modules/` paths in the bundler file set already
+exist in the package snapshot (`assertNoPlatformSuppliedNodeModules`). A
 TanStack (or other framework) audit found no matching platform injection path —
 only a docs mention of considering TanStack AI for origin, not package-app
 injection. Do not invent one. Publish does not reject Remix or `@remix-run/*` as

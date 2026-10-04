@@ -119,7 +119,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
 
 function makeKvArtifact(overrides: Record<string, unknown> = {}) {
 	return {
-		version: 2,
+		version: 1,
 		kind: 'module',
 		artifactName: '.',
 		sourceId: 'source-1',
@@ -427,9 +427,9 @@ test('rebuildPublishedPackageArtifacts stores app bundles with artifactName null
 	)
 	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalledWith(
 		expect.objectContaining({
-			kvKey: 'bundle-artifact:v2:source-1:commit-1:app:_:app.js',
+			kvKey: 'bundle-artifact:v1:source-1:commit-1:app:_:app.js',
 			artifact: expect.objectContaining({
-				version: 2,
+				version: 1,
 				kind: 'app',
 			}),
 		}),
@@ -534,7 +534,7 @@ function priorModuleArtifact(input: {
 			artifactKind,
 			artifactName: input.artifactName,
 			entryPoint: input.entryPoint,
-			kvKey: `bundle-artifact:v2:source-1:${publishedCommit}:${artifactKind}:${input.artifactName}:${input.entryPoint}`,
+			kvKey: `bundle-artifact:v1:source-1:${publishedCommit}:${artifactKind}:${input.artifactName}:${input.entryPoint}`,
 		}),
 		artifact: {
 			...makeKvArtifact({
@@ -641,7 +641,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	expect(await reuse({ entry: 'a', snapshotCache })).toBe(true)
 	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalledWith(
 		expect.objectContaining({
-			kvKey: 'bundle-artifact:v2:source-1:commit-2:module:.:src/a.ts',
+			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
 			artifact: expect.objectContaining({
 				publishedCommit: 'commit-2',
 				entryPoint: 'src/a.ts',
@@ -654,7 +654,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 		expect.objectContaining({
 			id: 'row-.',
 			publishedCommit: 'commit-2',
-			kvKey: 'bundle-artifact:v2:source-1:commit-2:module:.:src/a.ts',
+			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
 		}),
 	)
 	expect(await reuse({ entry: 'b', snapshotCache })).toBe(false)

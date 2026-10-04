@@ -88,7 +88,7 @@ function makeArtifact(
 	}>,
 ) {
 	return {
-		version: 2,
+		version: 1,
 		kind: 'importable-module' as const,
 		artifactName: '.',
 		sourceId: 'source-1',

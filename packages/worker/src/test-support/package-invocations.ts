@@ -596,7 +596,7 @@ export function seedPackageResolution() {
 				publishedCommit: 'commit-1',
 			},
 			artifact: {
-				version: 2,
+				version: 1,
 				kind: 'module',
 				artifactName: './dispatch-message-created',
 				sourceId: 'source-1',
@@ -722,7 +722,7 @@ export function createModuleArtifact(input: {
 			publishedCommit: input.publishedCommit,
 		},
 		artifact: {
-			version: 2,
+			version: 1,
 			kind: 'module',
 			artifactName: input.artifactName,
 			sourceId: input.sourceId,

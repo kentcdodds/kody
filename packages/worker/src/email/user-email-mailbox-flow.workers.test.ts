@@ -103,7 +103,7 @@ async function seedSubscribedPackage(input: {
 	input.bundleKv.set(
 		artifactKey,
 		JSON.stringify({
-			version: 2,
+			version: 1,
 			kind: 'module',
 			artifactName: `subscription:${inboundTopic}`,
 			sourceId,

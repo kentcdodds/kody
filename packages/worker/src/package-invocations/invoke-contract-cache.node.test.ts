@@ -169,7 +169,7 @@ function createFixture(input: {
 		},
 	})
 	const artifact = {
-		version: 2,
+		version: 1,
 		kind: 'module' as const,
 		artifactName: './get-issue-state',
 		sourceId,
