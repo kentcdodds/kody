@@ -55,18 +55,22 @@ not wait** on it for low/medium risk — proceed with CI and whatever Bugbot
 actually ran (skip waiting on Bugbot after `github_account_mismatch`). Only wait
 on CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
-**Review-bot sort (Bugbot / Devin / Seer):** before treating review-bot threads
-as merge blockers, run `kody:@kentcdodds/repo-health/sort-review-bot-comments`
-(prefer-local CLI execute). Address only `mustAddress` / `valid` (includes
+**Review-bot sort (Bugbot / Devin / Seer only):** before treating those bots'
+threads as merge blockers, run
+`kody:@kentcdodds/repo-health/sort-review-bot-comments` (prefer-local CLI
+execute). For **those three bots**, address `mustAddress` / `valid` (includes
 **unsure** — never auto-dismiss unsure). Invalid findings already get a short
-kody-bot reply from that export and are not blockers. See
+kody-bot reply from that export and are not blockers. `mustAddress` is **not**
+exhaustive for every reviewer — still inspect and address valid **CodeRabbit**
+(and other non-sorted) feedback separately when those reviews ran (same
+CodeRabbit wait rules as above). See
 [repo health](../../../docs/contributing/repo-health.md).
 
 ```javascript
 import sortReviewBotComments from 'kody:@kentcdodds/repo-health/sort-review-bot-comments'
 
 const sorted = await sortReviewBotComments({ prUrl, dryRun: false })
-// ship-pr addresses sorted.mustAddress only
+// Gate Bugbot/Devin/Seer via sorted.mustAddress; CodeRabbit stays separate
 ```
 
 ## Loop
@@ -78,9 +82,10 @@ const sorted = await sortReviewBotComments({ prUrl, dryRun: false })
    (`gh pr view --json headRefOid`). Checks for an abandoned commit are not a
    red PR; wait on the new head.
 3. Fix failures; for **medium+**, wait on AI reviewer(s) (Bugbot first; see
-   above for CodeRabbit), run review-bot sort, and address **valid** feedback
-   (`mustAddress` from repo-health — unsure counts as valid). While the PR is
-   open, also fix obvious in-scope low-risk repo friction you are already
+   above for CodeRabbit), run review-bot sort for Bugbot/Devin/Seer
+   (`mustAddress` — unsure counts as valid), and separately address valid
+   CodeRabbit (or other non-sorted) feedback when those reviews ran. While the
+   PR is open, also fix obvious in-scope low-risk repo friction you are already
    touching, mention the fix, and let CI finish again before merging. Rebase
    only when actually unmergeable. Immediately before merge, recheck tip-of-main
    mergeability (`gh pr view --json mergeable,mergeStateStatus`). If GitHub
