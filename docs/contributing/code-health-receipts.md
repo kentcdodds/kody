@@ -24,10 +24,13 @@ figures below were measured directly against the repository (2026-08-30).
   deploy guardrails, temporal-docs and decision-record checks, the file-size
   ratchet, knip dead-code analysis, and `audit:prod` (production dependencies,
   failing on moderate or higher).
-- `tools/file-size-ratchet.json` enforces budgets of 800 lines for client routes
-  and 2,000 lines for node test files. Line counts are measured **after** the
-  repo formatter (`oxfmt`), matching the formatted tree CI checks. Files may
-  only shrink out of the grandfathered list; new oversized files fail CI.
+- `tools/file-size-ratchet.json` enforces budgets of 20 lines for root
+  `AGENTS.md` (raise `agents-md` `maxLines` in
+  `tools/check-file-size-ratchet.ts` only on purpose; never grandfather it in
+  the snapshot), 800 lines for client routes, and 2,000 lines for node test
+  files. Line counts are measured **after** the repo formatter (`oxfmt`),
+  matching the formatted tree CI checks. Route/test files may only shrink out
+  of the grandfathered list; new oversized files fail CI.
 - `knip` fails the gate on unused files, exports, and types.
 - `tools/check-decorative-banners.ts` rejects decorative comment banners.
 

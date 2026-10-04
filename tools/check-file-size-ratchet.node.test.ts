@@ -32,7 +32,7 @@ test('countLines treats a trailing newline as one terminator, not an extra line'
 test('parseFileSizeRatchetSnapshot rejects a malformed snapshot', () => {
 	expect(() => parseFileSizeRatchetSnapshot('[]')).toThrow(/must be an object/)
 	expect(() => parseFileSizeRatchetSnapshot('{"client-routes":[]}')).toThrow(
-		/node-tests/,
+		/agents-md/,
 	)
 })
 
@@ -69,6 +69,7 @@ test('checkFileSizeRatchet allows grandfathered files and rejects new over-budge
 			mkdir(testsDir, { recursive: true }),
 		])
 		await Promise.all([
+			writeFile(path.join(cwd, 'AGENTS.md'), `${lines(10)}\n`),
 			writeFile(path.join(routesDir, 'small.tsx'), `${lines(10)}\n`),
 			writeFile(path.join(routesDir, 'legacy.tsx'), `${lines(900)}\n`),
 			writeFile(path.join(routesDir, 'new-large.tsx'), `${lines(801)}\n`),
@@ -81,6 +82,7 @@ test('checkFileSizeRatchet allows grandfathered files and rejects new over-budge
 		])
 
 		const snapshot: FileSizeRatchetSnapshot = {
+			'agents-md': [],
 			'client-routes': ['packages/worker/client/routes/legacy.tsx'],
 			'node-tests': [
 				'packages/worker/src/legacy.node.test.ts',
@@ -119,6 +121,9 @@ test('checkFileSizeRatchet allows grandfathered files and rejects new over-budge
 					file: 'packages/worker/src/legacy.node.test.ts',
 					kind: 'new-over-budget',
 				}),
+				expect.objectContaining({
+					file: 'AGENTS.md',
+				}),
 			]),
 		)
 	} finally {
@@ -134,6 +139,7 @@ test('checkFileSizeRatchet measures budget after formatting, not the raw working
 		await Promise.all([
 			mkdir(routesDir, { recursive: true }),
 			mkdir(testsDir, { recursive: true }),
+			writeFile(path.join(cwd, 'AGENTS.md'), `${lines(10)}\n`),
 		])
 
 		// Raw file is under the 2000-line node-test budget, but oxfmt expands
@@ -174,6 +180,7 @@ test('checkFileSizeRatchet measures budget after formatting, not the raw working
 		)
 
 		const snapshot: FileSizeRatchetSnapshot = {
+			'agents-md': [],
 			'client-routes': [],
 			'node-tests': [],
 		}
@@ -202,6 +209,31 @@ test('checkFileSizeRatchet measures budget after formatting, not the raw working
 				}),
 			]),
 		)
+	} finally {
+		await rm(cwd, { recursive: true, force: true })
+	}
+})
+
+test('checkFileSizeRatchet rejects oversized AGENTS.md even when snapshot-listed', async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), 'agents-md-ratchet-'))
+	try {
+		await writeFile(path.join(cwd, 'AGENTS.md'), `${lines(22)}\n`)
+		const snapshot: FileSizeRatchetSnapshot = {
+			'agents-md': ['AGENTS.md'],
+			'client-routes': [],
+			'node-tests': [],
+		}
+		const result = await checkFileSizeRatchet(cwd, snapshot, identityFormat)
+		expect(result.ok).toBe(false)
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				file: 'AGENTS.md',
+				groupId: 'agents-md',
+				kind: 'new-over-budget',
+				lineCount: 22,
+				maxLines: 20,
+			}),
+		])
 	} finally {
 		await rm(cwd, { recursive: true, force: true })
 	}

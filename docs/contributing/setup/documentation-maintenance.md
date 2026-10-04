@@ -12,6 +12,8 @@ for the other setup pages.
   `docs/contributing` when contributor workflows, architecture notes, or
   verification guidance change.
 - Treat docs updates as part of done work.
-- Keep `AGENTS.md` concise and index-like; put details in focused docs.
+- Keep `AGENTS.md` concise and index-like; put details in focused docs. The
+  `agents-md` file-size ratchet (`npm run file-size-ratchet:check`) holds the
+  line budget.
 - When failures repeat, promote lessons from docs into tests, lint rules, or
   scripts.
