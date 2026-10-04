@@ -360,10 +360,13 @@ export async function syncArtifactSourceSnapshot(
 		// runRepoChecks path publishFromExternalRef uses, then publish without
 		// force so the session check-status contract still holds. Destructive
 		// overwrite still needs force for history rewrite / force-push, but
-		// only after checks pass.
+		// only after checks pass. When runPublishChecks is false (community
+		// inert-fork lane), skip runChecks and keep force so publishSession
+		// does not return checks_outdated.
 		const forcePublish =
 			source.entity_kind !== 'package' ||
-			input.destructiveOverwriteConfirmed === true
+			input.destructiveOverwriteConfirmed === true ||
+			input.runPublishChecks === false
 		if (source.entity_kind === 'package' && input.runPublishChecks !== false) {
 			const checkRun = await session.runChecks({
 				sessionId,

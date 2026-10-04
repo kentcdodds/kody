@@ -462,7 +462,11 @@ test('syncArtifactSourceSnapshot skips publish checks when runPublishChecks is f
 		}),
 	).resolves.toBe('commit-skip-update')
 	expect(session.runChecks).not.toHaveBeenCalled()
-	expect(session.publishSession).toHaveBeenCalled()
+	expect(session.publishSession).toHaveBeenCalledWith({
+		sessionId: expect.stringMatching(/^source-sync-source-1-/),
+		userId: 'user-1',
+		force: true,
+	})
 })
 
 test('syncArtifactSourceSnapshot loopback first-publish runs package checks before snapshot', async () => {
