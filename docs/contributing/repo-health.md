@@ -4,14 +4,14 @@ Budgets for this repository are enforced in CI and in-repo checkers. Agents run
 `npm run validate` (and ship-pr for review-bot sort). There is no separate
 package gate.
 
-| Budget                    | Where it fails                                                                                                                                                                                                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root `AGENTS.md` line cap | File-size ratchet (`agents-md` group, 20 lines after oxfmt, not grandfatherable) via `npm run file-size-ratchet:check` / Validate 🧹 Static. Do not add another AGENTS.md check.                                                                                            |
-| Unit test time            | Validate `🧪 Node` (≤60s) and `☁️ Workers` (≤90s) fail **themselves** when that job's wall-clock exceeds the budget **on an Nx cache hit** (`tools/ci/enforce-unit-job-budget.ts`). A cold cache miss does not fail the budget. No separate workflow or follow-up reporter. |
-| Review-bot comment sort   | [ship-pr](../../.agents/skills/ship-pr/SKILL.md) step only (Bugbot / Devin / Seer). Invalid findings get a short kody-bot reply and drop off the blocker list; valid and unsure stay blockers; unsure is never auto-dismissed. Not a CI job.                                |
+| Budget                    | Where it fails                                                                                                                                                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root `AGENTS.md` line cap | File-size ratchet (`agents-md` group, 20 lines after oxfmt, not grandfatherable) via `npm run file-size-ratchet:check` / Validate 🧹 Static. Do not add another AGENTS.md check.                                                                                 |
+| Unit test time            | Validate `🧪 Node` (≤360s) and `☁️ Workers` (≤300s) fail **themselves** when that job's wall-clock exceeds the cold-run baseline (`tools/ci/enforce-unit-job-budget.ts`). Cache hit or miss does not change the cap. No separate workflow or follow-up reporter. |
+| Review-bot comment sort   | [ship-pr](../../.agents/skills/ship-pr/SKILL.md) step only (Bugbot / Devin / Seer). Invalid findings get a short kody-bot reply and drop off the blocker list; valid and unsure stay blockers; unsure is never auto-dismissed. Not a CI job.                     |
 
-Do not delete or skip tests to stay under the unit-time budget. Warm (cache-hit)
-overruns fail the job; cold misses are skipped for the budget only.
+Do not delete or skip tests to stay under the unit-time budget. Any overrun of
+the cold-run caps fails the job.
 
 ## Agent entry (review-bot sort)
 
