@@ -79,8 +79,11 @@ export const unboundRuntimeHelperNextSteps: Readonly<Record<string, string>> = {
 }
 
 export function buildUnboundRuntimeHelperNextStep(helperName: string) {
+	const mapped = Object.hasOwn(unboundRuntimeHelperNextSteps, helperName)
+		? unboundRuntimeHelperNextSteps[helperName]
+		: undefined
 	return (
-		unboundRuntimeHelperNextSteps[helperName] ??
+		mapped ??
 		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as statically importing the owning saved package's export.`
 	)
 }

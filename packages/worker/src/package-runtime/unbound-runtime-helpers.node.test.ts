@@ -190,6 +190,16 @@ test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeH
 	}
 })
 
+test('buildUnboundRuntimeHelperNextStep ignores inherited Object keys', () => {
+	expect(buildUnboundRuntimeHelperNextStep('packages')).toContain(
+		'There is no author-facing `packages.invoke`',
+	)
+	expect(buildUnboundRuntimeHelperNextStep('toString')).toContain(
+		"optional `toString` export of 'kody:runtime'",
+	)
+	expect(typeof buildUnboundRuntimeHelperNextStep('toString')).toBe('string')
+})
+
 test('rewriteNullPackagesInvokeErrorMessage requires packages.invoke source evidence', () => {
 	const bare = "Cannot read properties of null (reading 'invoke')"
 	const packagesInvokeModules = {
