@@ -3,6 +3,7 @@ import {
 	createNullPackagesInvokeRewriteHostSource,
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
+	modulesContainUnboundPackagesInvokeAccess,
 	parseUnboundRuntimeHelperMessage,
 	rewriteNullPackagesInvokeErrorMessage,
 	buildUnboundRuntimeHelperNextStep,
@@ -189,26 +190,63 @@ test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeH
 	}
 })
 
-test('rewriteNullPackagesInvokeErrorMessage adds unbound helper text and packages nextStep', () => {
+test('rewriteNullPackagesInvokeErrorMessage requires packages.invoke source evidence', () => {
 	const bare = "Cannot read properties of null (reading 'invoke')"
-	const rewritten = rewriteNullPackagesInvokeErrorMessage(bare)
+	const packagesInvokeModules = {
+		'entry.js': `import { packages } from 'kody:runtime'
+export default async () => await packages.invoke('kody:@owner/pkg/export', { params: {} })`,
+	}
+	const unrelatedInvokeModules = {
+		'entry.js': `export default async () => {
+	const client = null
+	return client.invoke()
+}`,
+	}
+	const rewritten = rewriteNullPackagesInvokeErrorMessage({
+		originalMessage: bare,
+		modules: packagesInvokeModules,
+	})
 	expect(rewritten).toContain(bare)
 	expect(parseUnboundRuntimeHelperMessage(rewritten ?? '')).toBe('packages')
 	expect(rewritten).toContain(buildUnboundRuntimeHelperNextStep('packages'))
 	expect(rewritten).toContain('static `kody:@scope/package/export`')
-	expect(rewriteNullPackagesInvokeErrorMessage(rewritten ?? '')).toBeNull()
 	expect(
-		rewriteNullPackagesInvokeErrorMessage(
-			"Cannot read properties of null (reading 'getMessage')",
-		),
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: rewritten ?? '',
+			modules: packagesInvokeModules,
+		}),
 	).toBeNull()
+	expect(
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: bare,
+			modules: unrelatedInvokeModules,
+		}),
+	).toBeNull()
+	expect(
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: "Cannot read properties of null (reading 'getMessage')",
+			modules: packagesInvokeModules,
+		}),
+	).toBeNull()
+	expect(modulesContainUnboundPackagesInvokeAccess(packagesInvokeModules)).toBe(
+		true,
+	)
+	expect(
+		modulesContainUnboundPackagesInvokeAccess(unrelatedInvokeModules),
+	).toBe(false)
 })
 
-test('createNullPackagesInvokeRewriteHostSource mirrors rewriteNullPackagesInvokeErrorMessage', () => {
-	const hostSource = createNullPackagesInvokeRewriteHostSource()
+test('createNullPackagesInvokeRewriteHostSource mirrors rewrite when enabled', () => {
+	const packagesInvokeModules = {
+		'entry.js': `import { packages } from 'kody:runtime'
+export default async () => await packages.invoke('kody:@owner/pkg/export', { params: {} })`,
+	}
+	const hostSource = createNullPackagesInvokeRewriteHostSource({
+		enabled: modulesContainUnboundPackagesInvokeAccess(packagesInvokeModules),
+	})
 	expect(hostSource).toContain('enrichUnboundPackagesInvokeError')
+	expect(hostSource).toContain('__kodyRewriteNullPackagesInvoke = true')
 	expect(hostSource).toContain(buildUnboundRuntimeHelperNextStep('packages'))
-	const sandbox = { Error }
 	const runner = new Function(
 		'exports',
 		`${hostSource}\nexports.rewrite = rewriteNullPackagesInvokeErrorMessage;\nexports.enrich = enrichUnboundPackagesInvokeError;`,
@@ -220,10 +258,29 @@ test('createNullPackagesInvokeRewriteHostSource mirrors rewriteNullPackagesInvok
 	runner(exports)
 	const bare = "Cannot read properties of null (reading 'invoke')"
 	expect(exports.rewrite?.(bare)).toBe(
-		rewriteNullPackagesInvokeErrorMessage(bare),
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: bare,
+			modules: packagesInvokeModules,
+		}),
 	)
 	const enriched = exports.enrich?.(new TypeError(bare))
 	expect(enriched).toBeInstanceOf(Error)
-	expect(enriched?.message).toBe(rewriteNullPackagesInvokeErrorMessage(bare))
-	expect(sandbox.Error).toBe(Error)
+	expect(enriched?.message).toBe(
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: bare,
+			modules: packagesInvokeModules,
+		}),
+	)
+	const disabledHost = createNullPackagesInvokeRewriteHostSource({
+		enabled: false,
+	})
+	expect(disabledHost).toContain('__kodyRewriteNullPackagesInvoke = false')
+	const disabledExports: {
+		rewrite?: (message: string) => string | null
+	} = {}
+	new Function(
+		'exports',
+		`${disabledHost}\nexports.rewrite = rewriteNullPackagesInvokeErrorMessage;`,
+	)(disabledExports)
+	expect(disabledExports.rewrite?.(bare)).toBeNull()
 })

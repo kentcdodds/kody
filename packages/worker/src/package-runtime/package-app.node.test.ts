@@ -604,6 +604,9 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 	expect(packageAppHostSource).not.toContain('createPackagesProxy')
 	expect(packageAppHostSource).toContain('enrichUnboundPackagesInvokeError')
 	expect(packageAppHostSource).toContain(
+		'__kodyRewriteNullPackagesInvoke = false',
+	)
+	expect(packageAppHostSource).toContain(
 		'There is no author-facing `packages.invoke`',
 	)
 })

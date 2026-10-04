@@ -92,12 +92,18 @@ import {
 	resolvePackageAppClientArtifact,
 } from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
-import { createNullPackagesInvokeRewriteHostSource } from './unbound-runtime-helpers.ts'
+import {
+	createNullPackagesInvokeRewriteHostSource,
+	modulesContainUnboundPackagesInvokeAccess,
+} from './unbound-runtime-helpers.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 
-function createPackageAppWorkerSource(input: { mainModule: string }) {
+function createPackageAppWorkerSource(input: {
+	mainModule: string
+	rewriteNullPackagesInvoke: boolean
+}) {
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -638,7 +644,9 @@ function serializeRuntimeError(error) {
 	};
 }
 
-${createNullPackagesInvokeRewriteHostSource()}
+${createNullPackagesInvokeRewriteHostSource({
+	enabled: input.rewriteNullPackagesInvoke,
+})}
 
 function createConsoleLogCapture() {
 	const logs = [];
@@ -1864,6 +1872,8 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		...hydratedModules,
 		[mainModule]: createPackageAppWorkerSource({
 			mainModule: bundled.mainModule,
+			rewriteNullPackagesInvoke:
+				modulesContainUnboundPackagesInvokeAccess(hydratedModules),
 		}),
 	}
 	return {

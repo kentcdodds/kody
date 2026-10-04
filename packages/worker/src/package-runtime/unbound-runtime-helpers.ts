@@ -88,24 +88,49 @@ export function buildUnboundRuntimeHelperNextStep(helperName: string) {
 const nullPackagesInvokePropertyPattern =
 	/Cannot read properties of null \(reading 'invoke'\)/
 
+const packagesUnboundHelperNames = new Set(['packages'])
+
+/**
+ * True when the module graph contains a guard-less `packages.invoke` access
+ * that can produce a null-property TypeError. Same source heuristic execute
+ * uses via `findUnboundRuntimeHelperAccess` — do not rewrite from the bare
+ * TypeError text alone (unrelated `null.invoke` must stay unhinted).
+ */
+export function modulesContainUnboundPackagesInvokeAccess(
+	modules: WorkerLoaderModules,
+) {
+	return (
+		findUnboundRuntimeHelperAccess({
+			errorMessage: "Cannot read properties of null (reading 'invoke')",
+			modules,
+			unboundHelperNames: packagesUnboundHelperNames,
+		})?.helperName === 'packages'
+	)
+}
+
 /**
  * Package-app workers always bind `packages: null` so leftover
  * `if (packages)` guards stay falsy. Guard-less `packages.invoke` therefore
  * throws a bare null-property TypeError with no migration hint. Rewrite that
  * shape to the same unbound-helper message + packages nextStep execute uses,
- * without making `packages` truthy.
+ * without making `packages` truthy. Requires module-graph evidence that the
+ * access is the unbound `packages` helper (not any null `.invoke`).
  */
-export function rewriteNullPackagesInvokeErrorMessage(
-	originalMessage: string,
-): string | null {
-	if (!nullPackagesInvokePropertyPattern.test(originalMessage)) return null
+export function rewriteNullPackagesInvokeErrorMessage(input: {
+	originalMessage: string
+	modules: WorkerLoaderModules
+}): string | null {
+	if (!nullPackagesInvokePropertyPattern.test(input.originalMessage)) {
+		return null
+	}
+	if (!modulesContainUnboundPackagesInvokeAccess(input.modules)) return null
 	const packagesNextStep = buildUnboundRuntimeHelperNextStep('packages')
-	if (originalMessage.includes(packagesNextStep)) return null
+	if (input.originalMessage.includes(packagesNextStep)) return null
 	const unboundHelper =
-		parseUnboundRuntimeHelperMessage(originalMessage) === 'packages'
-			? originalMessage
+		parseUnboundRuntimeHelperMessage(input.originalMessage) === 'packages'
+			? input.originalMessage
 			: createUnboundRuntimeHelperMessage({
-					originalMessage,
+					originalMessage: input.originalMessage,
 					helperName: 'packages',
 					reference: 'packages.invoke',
 				})
@@ -116,16 +141,22 @@ export function rewriteNullPackagesInvokeErrorMessage(
 /**
  * Self-contained package-app host helpers that mirror
  * `rewriteNullPackagesInvokeErrorMessage` for fetch/realtime catch paths
- * (generated workers cannot import TypeScript modules).
+ * (generated workers cannot import TypeScript modules). `enabled` is precomputed
+ * at worker build from the hydrated module graph via
+ * `modulesContainUnboundPackagesInvokeAccess`.
  */
-export function createNullPackagesInvokeRewriteHostSource() {
+export function createNullPackagesInvokeRewriteHostSource(input: {
+	enabled: boolean
+}) {
 	const packagesNextStep = buildUnboundRuntimeHelperNextStep('packages')
 	const unboundHelperSuffix =
 		'The optional kody:runtime export "packages" is not bound in this execution context, which likely caused `packages.invoke` to fail.'
 	return `
+const __kodyRewriteNullPackagesInvoke = ${input.enabled ? 'true' : 'false'};
 const __kodyPackagesUnboundNextStep = ${JSON.stringify(packagesNextStep)};
 const __kodyPackagesUnboundHelperSuffix = ${JSON.stringify(unboundHelperSuffix)};
 function rewriteNullPackagesInvokeErrorMessage(originalMessage) {
+	if (!__kodyRewriteNullPackagesInvoke) return null;
 	if (
 		!/Cannot read properties of null \\(reading 'invoke'\\)/.test(
 			originalMessage,
