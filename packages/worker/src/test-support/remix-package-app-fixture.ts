@@ -1,14 +1,183 @@
+import { build, type Plugin } from 'esbuild'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 /**
- * A mid-complexity Remix package app used by the workers bundling test and
- * the MCP end-to-end test. It is the shape
- * `docs/guides/package-apps.md` documents as Example A (Remix recipe), so
- * the tests prove the recipe as written — including the boilerplate the
- * host does not apply (JSX import source, remount, explicit island ids).
+ * A mid-complexity Remix package app used by the MCP end-to-end test. It is
+ * the shape `docs/guides/package-apps.md` documents as Example A (Remix
+ * recipe), so the test proves the recipe as written — including the
+ * boilerplate the host does not apply (JSX import source, remount, explicit
+ * island ids).
+ *
+ * Remix arrives as an ordinary package dependency: package.json declares
+ * `remix@3.0.0`, and the fixture plants a self-contained
+ * `node_modules/remix` built from the repo install for the recipe subpaths.
+ * That matches what createWorker does when `node_modules/<name>/package.json`
+ * is already present (skip npm install for that name) without requiring the
+ * Worker to fetch remix from the registry during the MCP e2e window.
  */
-export function createRemixPackageAppFiles(input: {
+
+const remixPackageName = 'remix'
+
+/** Recipe subpaths the fixture imports (and their JSX runtimes). */
+const remixRecipeSubpaths = [
+	'component',
+	'component/jsx-dev-runtime',
+	'component/jsx-runtime',
+	'component/server',
+	'data-schema',
+	'data-schema/form-data',
+	'middleware/form-data',
+	'response/html',
+	'response/redirect',
+	'router',
+	'routes',
+] as const
+
+const nodeBuiltins = new Set([
+	'assert',
+	'async_hooks',
+	'buffer',
+	'child_process',
+	'crypto',
+	'events',
+	'fs',
+	'http',
+	'https',
+	'inspector',
+	'module',
+	'net',
+	'os',
+	'path',
+	'perf_hooks',
+	'process',
+	'stream',
+	'tls',
+	'url',
+	'util',
+	'worker_threads',
+	'zlib',
+])
+
+const remixExternalsPlugin: Plugin = {
+	name: 'remix-fixture-externals',
+	setup(pluginBuild) {
+		pluginBuild.onResolve({ filter: /^cloudflare:/ }, (args) => ({
+			path: args.path,
+			external: true,
+		}))
+		pluginBuild.onResolve({ filter: /^node:/ }, (args) => ({
+			path: args.path,
+			external: true,
+		}))
+		pluginBuild.onResolve({ filter: /^[a-z_]+$/ }, (args) => {
+			if (!nodeBuiltins.has(args.path)) return null
+			return { path: `node:${args.path}`, external: true }
+		})
+	},
+}
+
+type RemixExportTarget = string | { default?: string; types?: string }
+
+let packageSuppliedRemixFilesPromise: Promise<Record<string, string>> | null =
+	null
+
+function resolveRepoRoot() {
+	return path.resolve(
+		path.dirname(fileURLToPath(import.meta.url)),
+		'../../../..',
+	)
+}
+
+/**
+ * Bundle the recipe's `remix/<subpath>` entries from the repo install into a
+ * self-contained `node_modules/remix` package. createWorker skips npm install
+ * for any dependency whose `node_modules/<name>/package.json` is already in
+ * the snapshot, so planting these files is what makes the e2e publish resolve
+ * remix from the package instead of the registry.
+ */
+export async function loadPackageSuppliedRemixFiles(): Promise<
+	Record<string, string>
+> {
+	packageSuppliedRemixFilesPromise ??= (async () => {
+		const repoRoot = resolveRepoRoot()
+		const remixPackageDir = path.join(
+			repoRoot,
+			'node_modules',
+			remixPackageName,
+		)
+		const remixPackage = JSON.parse(
+			await readFile(path.join(remixPackageDir, 'package.json'), 'utf8'),
+		) as { version: string; exports: Record<string, RemixExportTarget> }
+		const entryPoints: Record<string, string> = {}
+		const vendoredExports: Record<string, string> = {
+			'./package.json': './package.json',
+		}
+		for (const subpath of remixRecipeSubpaths) {
+			const target = remixPackage.exports[`./${subpath}`]
+			const targetFile =
+				typeof target === 'string' ? target : (target?.default ?? null)
+			if (!targetFile) {
+				throw new Error(
+					`remix@${remixPackage.version} does not export "./${subpath}"; update remixRecipeSubpaths.`,
+				)
+			}
+			entryPoints[`${remixPackageName}/dist/${subpath}`] = path.join(
+				remixPackageDir,
+				targetFile,
+			)
+			vendoredExports[`./${subpath}`] = `./dist/${subpath}.js`
+		}
+		const bundleOutdir = path.join(repoRoot, 'node_modules')
+		const result = await build({
+			entryPoints,
+			bundle: true,
+			splitting: true,
+			format: 'esm',
+			platform: 'neutral',
+			mainFields: ['module', 'main'],
+			conditions: ['workerd', 'worker', 'browser', 'import', 'default'],
+			target: 'es2022',
+			minify: true,
+			write: false,
+			outdir: bundleOutdir,
+			chunkNames: 'remix/dist/chunks/[name]-[hash]',
+			plugins: [remixExternalsPlugin],
+			logLevel: 'silent',
+		})
+		const files: Record<string, string> = {
+			[`node_modules/${remixPackageName}/package.json`]: JSON.stringify(
+				{
+					name: remixPackageName,
+					version: remixPackage.version,
+					type: 'module',
+					exports: vendoredExports,
+				},
+				null,
+				'\t',
+			),
+		}
+		for (const output of result.outputFiles) {
+			const relative = path
+				.relative(bundleOutdir, output.path)
+				.replaceAll(path.sep, '/')
+			if (relative.startsWith('..')) {
+				throw new Error(
+					`remix fixture prebuild emitted "${output.path}" outside node_modules.`,
+				)
+			}
+			files[`node_modules/${relative}`] = output.text
+		}
+		return files
+	})()
+	return await packageSuppliedRemixFilesPromise
+}
+
+export async function createRemixPackageAppFiles(input: {
 	username: string
 	kodyId: string
-}): Record<string, string> {
+}): Promise<Record<string, string>> {
 	const packageJson = {
 		name: `@${input.username}/${input.kodyId}`,
 		private: true,
@@ -26,7 +195,7 @@ export function createRemixPackageAppFiles(input: {
 			},
 		},
 	}
-	return {
+	const authored: Record<string, string> = {
 		'package.json': `${JSON.stringify(packageJson, null, '\t')}\n`,
 		'tsconfig.json': `${JSON.stringify(
 			{
@@ -353,4 +522,6 @@ void app.ready().then(() => {
 `,
 		'public/styles.css': 'body { font-family: system-ui, sans-serif; }\n',
 	}
+	const remixFiles = await loadPackageSuppliedRemixFiles()
+	return { ...authored, ...remixFiles }
 }
