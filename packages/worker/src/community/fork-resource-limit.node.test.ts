@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -59,6 +59,7 @@ test('rethrowCommunityForkFailure remaps Artifacts git transients to a reportabl
 	const wrapped = new Error(
 		'Artifacts git clone failed for https://acct.artifacts.cloudflare.net/git/production/repo.git: HTTP Error: 500 Internal Server Error',
 	)
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 	try {
 		rethrowCommunityForkFailure(wrapped)
 		throw new Error('expected rethrow')
@@ -72,5 +73,10 @@ test('rethrowCommunityForkFailure remaps Artifacts git transients to a reportabl
 		expect((error as Error).message).not.toContain('artifacts.cloudflare.net')
 		expect((error as Error).message).not.toContain('HTTP Error')
 		expect((error as Error).message).not.toMatch(/temporarily unavailable/i)
+		expect(errorSpy).toHaveBeenCalledWith(
+			expect.stringContaining('"message":"artifacts-git-unavailable"'),
+		)
+	} finally {
+		errorSpy.mockRestore()
 	}
 })

@@ -1,6 +1,10 @@
 import { rewritePackageManifestForFork } from '#worker/community/fork-scan.ts'
+import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { readArtifactFileAtCommit } from './artifact-file.ts'
+import {
+	readArtifactFileAtCommit,
+	readArtifactTreeAtCommit,
+} from './artifact-file.ts'
 import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
 import {
 	getArtifactsBinding,
@@ -218,4 +222,74 @@ export function shouldFallbackFromForkedArtifactPersist(error: unknown) {
 	if (status == null) return true
 	if (status === 404 || status === 429) return true
 	return status >= 500 && status <= 599
+}
+
+/**
+ * Build the file tree for a storage-fork → full-tree fallback.
+ *
+ * Storage fork copies origin HEAD. `preparedFiles` may still be the listing
+ * pin when no KV snapshot exists for HEAD. Prefer reading the copied dest HEAD
+ * tree from origin before deleting the broken dest; refuse to publish a stale
+ * prepared tree when dest HEAD is ahead of the prepared commit.
+ */
+export async function resolveCommunityForkArtifactsGitFallbackTree(input: {
+	env: Env
+	destRepoId: string
+	originRepoId: string | null
+	preparedOriginCommit: string
+	preparedFiles: Record<string, string>
+	expectedPackageScope: string
+	targetKodyId: string
+	listingName: string
+	targetName: string
+}): Promise<{ files: Record<string, string>; originCommit: string } | null> {
+	let destHeadCommit: string | null = null
+	try {
+		const destHead = await resolveArtifactSourceHead(
+			input.env,
+			input.destRepoId,
+		)
+		destHeadCommit = destHead.commit
+	} catch {
+		destHeadCommit = null
+	}
+
+	if (!destHeadCommit || destHeadCommit === input.preparedOriginCommit) {
+		return {
+			files: input.preparedFiles,
+			originCommit: destHeadCommit ?? input.preparedOriginCommit,
+		}
+	}
+
+	if (!input.originRepoId) return null
+
+	let originTree: Record<string, string> | null = null
+	try {
+		originTree = await readArtifactTreeAtCommit({
+			env: input.env,
+			repoId: input.originRepoId,
+			commit: destHeadCommit,
+		})
+	} catch {
+		return null
+	}
+	const packageJson = originTree?.['package.json']
+	if (!originTree || typeof packageJson !== 'string') return null
+
+	const rewrittenManifest = rewritePackageManifestForFork({
+		manifestContent: packageJson,
+		expectedPackageScope: input.expectedPackageScope,
+		targetKodyId: input.targetKodyId,
+	})
+	return {
+		originCommit: destHeadCommit,
+		files: rewriteForkedPackageSelfReferences({
+			files: {
+				...originTree,
+				'package.json': rewrittenManifest.content,
+			},
+			originPackageName: input.listingName,
+			nextPackageName: input.targetName,
+		}),
+	}
 }

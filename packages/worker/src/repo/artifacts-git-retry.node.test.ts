@@ -12,6 +12,7 @@ import {
 	isTransientArtifactsGitHttpError,
 	isTransientArtifactsGitHttpStatus,
 	runArtifactsGitWithRetry,
+	toArtifactsGitUnavailableError,
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 
@@ -268,4 +269,24 @@ test('ArtifactsGitUnavailableError classifies exhausted failures with a report i
 	)
 	expect(missing.statusClass).toBe('missing_object')
 	expect(missing.message).toContain('missing object or ref')
+})
+
+test('toArtifactsGitUnavailableError logs the minted report id once', () => {
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		const wrappedHttp = wrapArtifactsGitHttpError({
+			operation: 'git clone',
+			remote: 'https://example.test/repo.git',
+			error: httpError(500),
+		})
+		const first = toArtifactsGitUnavailableError(wrappedHttp)
+		expect(errorSpy).toHaveBeenCalledWith(
+			expect.stringContaining(`"reportId":"${first.reportId}"`),
+		)
+		errorSpy.mockClear()
+		expect(toArtifactsGitUnavailableError(first)).toBe(first)
+		expect(errorSpy).not.toHaveBeenCalled()
+	} finally {
+		errorSpy.mockRestore()
+	}
 })

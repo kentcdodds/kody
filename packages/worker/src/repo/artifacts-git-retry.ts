@@ -184,7 +184,19 @@ export function toArtifactsGitUnavailableError(
 	error: unknown,
 ): ArtifactsGitUnavailableError {
 	if (error instanceof ArtifactsGitUnavailableError) return error
-	return new ArtifactsGitUnavailableError(error)
+	const unavailable = new ArtifactsGitUnavailableError(error)
+	// Minted report ids must appear in server logs so bug reports can be traced
+	// (Open API logs the original error before remap; website install does too).
+	console.error(
+		JSON.stringify({
+			message: 'artifacts-git-unavailable',
+			reportId: unavailable.reportId,
+			statusClass: unavailable.statusClass,
+			httpStatus: unavailable.httpStatus,
+			cause: getErrorMessage(error),
+		}),
+	)
+	return unavailable
 }
 
 export function isTransientArtifactsGitHttpStatus(status: number) {

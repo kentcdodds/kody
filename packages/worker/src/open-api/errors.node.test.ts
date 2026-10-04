@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
 import { wrapArtifactsGitHttpError } from '#worker/repo/artifacts-git-retry.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ApiError, toApiError } from './errors.ts'
 
 test('ApiError.toBody redacts Kody credentials in error details', () => {
@@ -43,6 +44,7 @@ function artifactsGitHttpError(statusCode: number) {
 }
 
 test('toApiError maps exhausted Artifacts git failures to 503 internal_error with report id details', () => {
+	consoleError.mockImplementation(() => {})
 	const remote =
 		'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git'
 	const wrapped = wrapArtifactsGitHttpError({
@@ -82,6 +84,9 @@ test('toApiError maps exhausted Artifacts git failures to 503 internal_error wit
 			},
 		},
 	})
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('"message":"artifacts-git-unavailable"'),
+	)
 })
 
 test('toApiError keeps non-transient internal failures as generic 500', () => {

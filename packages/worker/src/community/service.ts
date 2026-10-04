@@ -45,6 +45,7 @@ import {
 import {
 	forkArtifactRepo,
 	persistForkedArtifactRepoContents,
+	resolveCommunityForkArtifactsGitFallbackTree,
 	shouldFallbackFromArtifactFork,
 	shouldFallbackFromForkedArtifactPersist,
 } from '#worker/repo/artifact-repo-fork.ts'
@@ -1610,9 +1611,26 @@ export async function persistPreparedCommunityFork(
 			} catch (error) {
 				// Storage-layer fork can leave a dest whose git clone fails with
 				// persistent Artifacts HTTP 5xx / corrupt pack even when origin
-				// is healthy. Fall back to writing the prepared full tree into a
-				// fresh empty repo (same as origin-not-found).
+				// is healthy. Fall back to writing a full tree into a fresh empty
+				// repo. Prefer dest HEAD from origin when preparation still holds
+				// an older listing-pin snapshot.
 				if (!shouldFallbackFromForkedArtifactPersist(error)) {
+					throw error
+				}
+				const fallbackTree = await resolveCommunityForkArtifactsGitFallbackTree(
+					{
+						env: prepared.env,
+						destRepoId,
+						originRepoId: prepared.originRepoId,
+						preparedOriginCommit: prepared.originCommit,
+						preparedFiles: prepared.files,
+						expectedPackageScope: prepared.expectedPackageScope,
+						targetKodyId: prepared.targetKodyId,
+						listingName: prepared.listingName,
+						targetName: prepared.targetName,
+					},
+				)
+				if (!fallbackTree) {
 					throw error
 				}
 				const destDeleted = await deleteUserScopedArtifactRepo({
@@ -1629,6 +1647,8 @@ export async function persistPreparedCommunityFork(
 						listingId: prepared.listingId,
 						packageId: prepared.packageId,
 						sourceId: ensuredSource.id,
+						originCommit: fallbackTree.originCommit,
+						preparedOriginCommit: prepared.originCommit,
 						error: getErrorMessage(error),
 					}),
 				)
@@ -1645,12 +1665,13 @@ export async function persistPreparedCommunityFork(
 				if (!ensuredSource.bootstrapAccess) {
 					throw error
 				}
+				originCommit = fallbackTree.originCommit
 				await syncArtifactSourceSnapshot({
 					env: prepared.env,
 					baseUrl: prepared.baseUrl,
 					userId: prepared.userId,
 					sourceId: ensuredSource.id,
-					files: prepared.files,
+					files: fallbackTree.files,
 					bootstrapAccess: ensuredSource.bootstrapAccess,
 					serverTiming,
 					runPublishChecks: false,

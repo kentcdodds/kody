@@ -109,6 +109,13 @@ vi.mock('#worker/repo/artifact-repo-fork.ts', () => ({
 		/Artifacts (?:listServerRefs|git fetch|git clone) failed/i.test(
 			error.message,
 		),
+	resolveCommunityForkArtifactsGitFallbackTree: async (input: {
+		preparedFiles: Record<string, string>
+		preparedOriginCommit: string
+	}) => ({
+		files: input.preparedFiles,
+		originCommit: input.preparedOriginCommit,
+	}),
 }))
 vi.mock('#worker/repo/entity-sources.ts', () =>
 	pickMocks('deleteEntitySource', 'getEntitySourceById'),
