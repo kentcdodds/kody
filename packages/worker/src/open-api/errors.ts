@@ -16,7 +16,7 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
-import { isTransientArtifactsGitError } from '#worker/repo/artifacts-git-retry.ts'
+import { isArtifactsGitTransientRemapError } from '#worker/repo/artifacts-git-retry.ts'
 
 /**
  * Public message when Cloudflare Artifacts git is temporarily unavailable
@@ -163,7 +163,7 @@ export function toApiError(error: unknown): ApiError {
 			? notFound(message)
 			: invalidRequest(message)
 	}
-	if (isTransientArtifactsGitError(error)) {
+	if (isArtifactsGitTransientRemapError(error)) {
 		return new ApiError({
 			status: 503,
 			code: 'internal_error',

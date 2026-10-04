@@ -429,8 +429,37 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 	expect(filterSentryEvent(remappedArtifactsEvent)).toBe(remappedArtifactsEvent)
-})
 
+	// Bare TimeoutError / unrelated wraps must not drop via the remapped path.
+	const bareTimeout = new Error('The operation timed out.')
+	bareTimeout.name = 'TimeoutError'
+	const oauthTimeoutEvent = exceptionEvent({
+		type: 'Error',
+		value: 'Token refresh failed for integration "google".',
+	})
+	expect(
+		filterSentryEvent(oauthTimeoutEvent, {
+			originalException: new Error(
+				'Token refresh failed for integration "google".',
+				{ cause: bareTimeout },
+			),
+		}),
+	).toBe(oauthTimeoutEvent)
+
+	const sourceRecoveryEvent = exceptionEvent({
+		type: 'Error',
+		value:
+			'packageGetGitRemote stopped by the production package source safety policy. Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
+	})
+	expect(
+		filterSentryEvent(sourceRecoveryEvent, {
+			originalException: new Error(
+				'packageGetGitRemote stopped by the production package source safety policy. Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
+				{ cause: artifactsGitWrapper },
+			),
+		}),
+	).toBe(sourceRecoveryEvent)
+})
 test('filterSentryEvent redacts Kody credentials from event messages', () => {
 	const apiToken = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`
 	const bootstrapCode = `kody_bc_${'c'.repeat(16)}_${'D'.repeat(32)}`

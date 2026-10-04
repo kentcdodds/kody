@@ -88,3 +88,39 @@ test('toApiError keeps non-transient internal failures as generic 500', () => {
 	expect(apiError.cause).toBe(original)
 	expect(getErrorMessage(apiError.cause)).toBe('unexpected storage corruption')
 })
+
+test('toApiError does not remap bare TimeoutError or source-recovery wraps as Artifacts git', () => {
+	const bareTimeout = new Error('The operation timed out.')
+	bareTimeout.name = 'TimeoutError'
+	expect(toApiError(bareTimeout)).toMatchObject({
+		status: 500,
+		code: 'internal_error',
+		message: 'Internal error. Retry later or report it if it persists.',
+	})
+
+	const oauthTimeout = new Error(
+		'Token refresh failed for integration "google" with HTTP 503 (server_error).',
+		{ cause: bareTimeout },
+	)
+	expect(toApiError(oauthTimeout)).toMatchObject({
+		status: 500,
+		code: 'internal_error',
+		message: 'Internal error. Retry later or report it if it persists.',
+	})
+
+	const recovery = new Error(
+		'packageGetGitRemote stopped by the production package source safety policy. Kody could not verify a restorable backup snapshot for source "source-1" at published commit "abc": Artifacts git clone failed for https://example.test/repo.git: HTTP Error: 500 Internal Server Error. Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
+		{
+			cause: wrapArtifactsGitHttpError({
+				operation: 'git clone',
+				remote: 'https://example.test/repo.git',
+				error: artifactsGitHttpError(500),
+			}),
+		},
+	)
+	expect(toApiError(recovery)).toMatchObject({
+		status: 500,
+		code: 'internal_error',
+		message: 'Internal error. Retry later or report it if it persists.',
+	})
+})

@@ -4,6 +4,7 @@ import {
 	isArtifactsGitPackfileCorruptionSentryMessage,
 	isArtifactsGitTransientErrorMessage,
 	isArtifactsGitTransientHttpErrorMessage,
+	isArtifactsGitTransientRemapError,
 	isIsomorphicGitPackfileCorruptionError,
 	isArtifactsGitTimeoutError,
 	isTransientArtifactsGitError,
@@ -174,4 +175,48 @@ test('Artifacts git packfile corruption is transient, wrapped for git clone, and
 		/Packfile payload corrupted/,
 	)
 	expect(persistent).toHaveBeenCalledTimes(3)
+})
+
+test('Artifacts git remap helper requires Artifacts markers and skips source-recovery outer wraps', () => {
+	const wrappedHttp = wrapArtifactsGitHttpError({
+		operation: 'git clone',
+		remote: 'https://example.test/repo.git',
+		error: httpError(500),
+	})
+	expect(isArtifactsGitTransientRemapError(wrappedHttp)).toBe(true)
+	expect(
+		isArtifactsGitTransientRemapError(
+			new Error(
+				'The package source is temporarily unavailable. Retry the call.',
+				{
+					cause: wrappedHttp,
+				},
+			),
+		),
+	).toBe(true)
+
+	const bareTimeout = new Error('The operation timed out.')
+	bareTimeout.name = 'TimeoutError'
+	expect(isArtifactsGitTransientRemapError(bareTimeout)).toBe(false)
+	expect(isTransientArtifactsGitError(bareTimeout)).toBe(true)
+	expect(
+		isArtifactsGitTransientRemapError(
+			new Error('oauth refresh stalled', { cause: bareTimeout }),
+		),
+	).toBe(false)
+
+	const artifactsTimeout = new Error(
+		'Artifacts git request timed out after 8000ms.',
+	)
+	artifactsTimeout.name = 'ArtifactsGitTimeoutError'
+	expect(isArtifactsGitTransientRemapError(artifactsTimeout)).toBe(true)
+
+	expect(
+		isArtifactsGitTransientRemapError(
+			new Error(
+				'packageGetGitRemote stopped by the production package source safety policy. Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
+				{ cause: wrappedHttp },
+			),
+		),
+	).toBe(false)
 })

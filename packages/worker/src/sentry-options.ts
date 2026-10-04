@@ -13,7 +13,7 @@ import {
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import {
 	isArtifactsGitTransientErrorMessage,
-	isTransientArtifactsGitError,
+	isArtifactsGitTransientRemapError,
 } from './repo/artifacts-git-retry.ts'
 import {
 	isArtifactsGitReadTimeoutMessage,
@@ -495,7 +495,7 @@ export function isArtifactsGitTransientHttpErrorSentryEvent(
 	event: ErrorEvent,
 	hint?: EventHint,
 ) {
-	if (isTransientArtifactsGitError(hint?.originalException)) return true
+	if (isArtifactsGitTransientRemapError(hint?.originalException)) return true
 	return sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
