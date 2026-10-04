@@ -33,6 +33,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Friction log](./friction-log.md) (when/where to file and how to judge fixes;
   one issue via `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
   `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
+- [Repo health](./repo-health.md) (one package of autonomous budgets —
+  `kody:@kentcdodds/repo-health`; breaches file friction and stop)
 
 ## Code and tooling
 

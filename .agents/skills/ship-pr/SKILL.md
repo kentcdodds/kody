@@ -55,6 +55,20 @@ not wait** on it for low/medium risk — proceed with CI and whatever Bugbot
 actually ran (skip waiting on Bugbot after `github_account_mismatch`). Only wait
 on CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
+**Review-bot sort (Bugbot / Devin / Seer):** before treating review-bot threads
+as merge blockers, run `kody:@kentcdodds/repo-health/sort-review-bot-comments`
+(prefer-local CLI execute). Address only `mustAddress` / `valid` (includes
+**unsure** — never auto-dismiss unsure). Invalid findings already get a short
+kody-bot reply from that export and are not blockers. See
+[repo health](../../../docs/contributing/repo-health.md).
+
+```javascript
+import sortReviewBotComments from 'kody:@kentcdodds/repo-health/sort-review-bot-comments'
+
+const sorted = await sortReviewBotComments({ prUrl, dryRun: false })
+// ship-pr addresses sorted.mustAddress only
+```
+
 ## Loop
 
 1. Mark ready — `kody:@kentcdodds/github/pr/set-review-status`
@@ -64,16 +78,17 @@ on CodeRabbit when the change is **high** risk (or the user explicitly asks).
    (`gh pr view --json headRefOid`). Checks for an abandoned commit are not a
    red PR; wait on the new head.
 3. Fix failures; for **medium+**, wait on AI reviewer(s) (Bugbot first; see
-   above for CodeRabbit) and address valid feedback. While the PR is open, also
-   fix obvious in-scope low-risk repo friction you are already touching, mention
-   the fix, and let CI finish again before merging. Rebase only when actually
-   unmergeable. Immediately before merge, recheck tip-of-main mergeability
-   (`gh pr view --json mergeable,mergeStateStatus`). If GitHub flipped the PR to
-   CONFLICTING after green checks, fetch `origin/main`, rebase once, push, and
-   wait for CI again. Recheck mergeability after that recovery CI succeeds and
-   before merging. If it is still CONFLICTING after the single rebase, stop and
-   report the conflict — do not rebase again, and do not treat “green then
-   conflicting” as a surprise dead-end. For **medium+**, also run
+   above for CodeRabbit), run review-bot sort, and address **valid** feedback
+   (`mustAddress` from repo-health — unsure counts as valid). While the PR is
+   open, also fix obvious in-scope low-risk repo friction you are already
+   touching, mention the fix, and let CI finish again before merging. Rebase
+   only when actually unmergeable. Immediately before merge, recheck tip-of-main
+   mergeability (`gh pr view --json mergeable,mergeStateStatus`). If GitHub
+   flipped the PR to CONFLICTING after green checks, fetch `origin/main`, rebase
+   once, push, and wait for CI again. Recheck mergeability after that recovery
+   CI succeeds and before merging. If it is still CONFLICTING after the single
+   rebase, stop and report the conflict — do not rebase again, and do not treat
+   “green then conflicting” as a surprise dead-end. For **medium+**, also run
    `npm run control-kody -- preview` (or `npm run preview:manual-test`) as the
    seeded user **with data for this change** (`control-kody request` /
    `--request`; do not cat the cookie into curl or Python — see
