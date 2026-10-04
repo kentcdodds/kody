@@ -5,8 +5,9 @@ surface, or storage home. Architecture docs and code describe how the system
 works today; this folder records product-shaped decisions **already made**,
 usually a no with a revisit-if.
 
-Linked from [AGENTS.md](../../../AGENTS.md) for that check — not as homework and
-not as a museum.
+Linked from the [contributor map](../index.md) (and the short
+[AGENTS.md](../../../AGENTS.md) window into it) for that check — not as homework
+and not as a museum.
 
 A good record is half a page: context, the decision, consequences. See
 [0025](./0025-no-package-services-primitive.md) for the shape that actually

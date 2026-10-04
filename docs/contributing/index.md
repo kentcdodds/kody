@@ -35,6 +35,14 @@ style, tests, MCP capabilities, and runtime architecture.
   `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
 - [Repo health](./repo-health.md) (one package of autonomous budgets —
   `kody:@kentcdodds/repo-health`; breaches file friction and stop)
+- Prefer local CLI execute when Node ≥22 + CLI are available (MCP agents:
+  `cliCredentialBootstrap`; interactive: `kody login`; CI/headless: scoped
+  `KODY_API_TOKEN`; if `--local` cannot run, use Open API / MCP `api` or fix the
+  environment): [local execute](../guides/local-execute.md),
+  [Open API](../guides/open-api.md), and
+  [prefer-local-cli-execute skill](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
+- PR system recaps (visual plan/recap blocks in PR descriptions):
+  [visual-recap skill](../../.agents/skills/visual-recap/SKILL.md)
 
 ## Code and tooling
 
