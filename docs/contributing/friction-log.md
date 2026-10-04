@@ -232,7 +232,9 @@ issue. Review that work instead of opening a second PR.
 
 ## Always finish with record-outcome
 
-Daily investigators run this last, exactly once, via Kody MCP `execute`:
+Daily investigators run this last, exactly once, via
+`npx @kodycodes/cli execute --local` (hosted MCP `execute` is banned — see
+[prefer-local](../../.agents/skills/prefer-local-cli-execute/SKILL.md)):
 
 ```ts
 import recordOutcome from 'kody:@kentcdodds/friction-log/record-outcome'
