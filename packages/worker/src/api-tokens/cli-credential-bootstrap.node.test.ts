@@ -45,6 +45,8 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 		`npx @kodycodes/cli auth bootstrap --code ${minted.bootstrap_code}`,
 	)
 	expect(minted.scopes).toEqual(['account:read', 'local-execute'])
+	expect(minted.idle_ttl_seconds).toBe(14 * 24 * 60 * 60)
+	expect(minted.max_lifetime_seconds).toBe(90 * 24 * 60 * 60)
 	expect(parseApiToken(minted.bootstrap_code)).toBeNull()
 	expect(parseCliBootstrapCode(minted.bootstrap_code)?.codeId).toBeTruthy()
 
@@ -56,6 +58,13 @@ test('bootstrap mint returns a one-shot code, not a kody_at_, and redeem yields 
 	expect(redeemed.userId).toBe(userId)
 	expect(redeemed.token.created_via).toBe('cli-bootstrap')
 	expect(redeemed.token.scopes).toEqual(['account:read', 'local-execute'])
+	expect(redeemed.token.idle_ttl_seconds).toBe(14 * 24 * 60 * 60)
+	expect(redeemed.token.expires_at).toBe(
+		at(30 + 14 * 24 * 60 * 60).toISOString(),
+	)
+	expect(redeemed.token.max_expires_at).toBe(
+		at(30 + 90 * 24 * 60 * 60).toISOString(),
+	)
 	const auth = await authenticateApiToken({
 		db,
 		token: redeemed.token.token,
@@ -180,4 +189,44 @@ test('bootstrap respects parent token scopes', async () => {
 			now: start,
 		}),
 	).rejects.toThrow(/scopes it does not hold/)
+})
+
+test('bootstrap defaults to a 2-week idle TTL and 3-month max lifetime', async () => {
+	const { db } = createDb()
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		now: start,
+	})
+	expect(minted.idle_ttl_seconds).toBe(1_209_600)
+	expect(minted.max_lifetime_seconds).toBe(7_776_000)
+
+	const redeemed = await redeemCliCredentialBootstrap({
+		db,
+		code: minted.bootstrap_code,
+		now: start,
+	})
+	expect(redeemed.token.idle_ttl_seconds).toBe(1_209_600)
+	expect(redeemed.token.expires_at).toBe(at(1_209_600).toISOString())
+	expect(redeemed.token.max_expires_at).toBe(at(7_776_000).toISOString())
+})
+
+test('bootstrap rejects idle or max lifetime values above the bootstrap policy caps', async () => {
+	const { db } = createDb()
+	await expect(
+		mintCliCredentialBootstrap({
+			db,
+			userId,
+			idleTtlSeconds: 14 * 24 * 60 * 60 + 1,
+			now: start,
+		}),
+	).rejects.toThrow(/idle_ttl_seconds/)
+	await expect(
+		mintCliCredentialBootstrap({
+			db,
+			userId,
+			maxLifetimeSeconds: 90 * 24 * 60 * 60 + 1,
+			now: start,
+		}),
+	).rejects.toThrow(/max_lifetime_seconds/)
 })

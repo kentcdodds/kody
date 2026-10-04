@@ -10,6 +10,7 @@ import {
 } from './scopes.ts'
 import {
 	apiTokenPolicy,
+	cliBootstrapTokenLifetimePolicy,
 	mintApiToken,
 	type ApiTokenMintParent,
 	type ApiTokenSecretView,
@@ -33,6 +34,12 @@ export const cliCredentialBootstrapPolicy = {
 		'local-execute',
 		'account:read',
 	] as const satisfies ReadonlyArray<ApiTokenScope>,
+	defaultIdleTtlSeconds: cliBootstrapTokenLifetimePolicy.defaultIdleTtlSeconds,
+	minIdleTtlSeconds: cliBootstrapTokenLifetimePolicy.minIdleTtlSeconds,
+	maxIdleTtlSeconds: cliBootstrapTokenLifetimePolicy.maxIdleTtlSeconds,
+	defaultMaxLifetimeSeconds:
+		cliBootstrapTokenLifetimePolicy.defaultMaxLifetimeSeconds,
+	maxMaxLifetimeSeconds: cliBootstrapTokenLifetimePolicy.maxMaxLifetimeSeconds,
 	cliCommand: (code: string) =>
 		`npx @kodycodes/cli auth bootstrap --code ${code}`,
 } as const
@@ -205,19 +212,19 @@ export async function mintCliCredentialBootstrap(input: {
 
 	const idleTtlSeconds = readIntegerOption({
 		value: input.idleTtlSeconds,
-		fallback: apiTokenPolicy.defaultIdleTtlSeconds,
-		min: apiTokenPolicy.minIdleTtlSeconds,
-		max: apiTokenPolicy.maxIdleTtlSeconds,
+		fallback: cliCredentialBootstrapPolicy.defaultIdleTtlSeconds,
+		min: cliCredentialBootstrapPolicy.minIdleTtlSeconds,
+		max: cliCredentialBootstrapPolicy.maxIdleTtlSeconds,
 		field: 'idle_ttl_seconds',
 	})
 	const maxLifetimeSeconds = readIntegerOption({
 		value: input.maxLifetimeSeconds,
 		fallback: Math.max(
-			apiTokenPolicy.defaultMaxLifetimeSeconds,
+			cliCredentialBootstrapPolicy.defaultMaxLifetimeSeconds,
 			idleTtlSeconds,
 		),
 		min: idleTtlSeconds,
-		max: apiTokenPolicy.maxMaxLifetimeSeconds,
+		max: cliCredentialBootstrapPolicy.maxMaxLifetimeSeconds,
 		field: 'max_lifetime_seconds',
 	})
 	let effectiveMaxLifetimeSeconds = maxLifetimeSeconds

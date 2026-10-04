@@ -38,6 +38,22 @@ export const apiTokenPolicy = {
 	inactiveRetentionSeconds: 7 * 24 * 60 * 60,
 } as const
 
+/**
+ * Lifetimes for API tokens minted by CLI credential bootstrap redeem
+ * (`created_via: cli-bootstrap`). Distinct from `tokenCreate` defaults so
+ * agents can keep a local CLI credential across Cloud Agent sessions without
+ * widening ordinary scoped API tokens.
+ */
+export const cliBootstrapTokenLifetimePolicy = {
+	/** 2 weeks unused before the sliding expiry goes stale. */
+	defaultIdleTtlSeconds: 14 * 24 * 60 * 60,
+	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
+	maxIdleTtlSeconds: 14 * 24 * 60 * 60,
+	/** 3 months absolute lifetime from mint. */
+	defaultMaxLifetimeSeconds: 90 * 24 * 60 * 60,
+	maxMaxLifetimeSeconds: 90 * 24 * 60 * 60,
+} as const
+
 export const apiTokenCreatedVia = ['api', 'mcp-api', 'cli-bootstrap'] as const
 export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
 
@@ -283,21 +299,25 @@ export async function mintApiToken(input: {
 			)
 		}
 	}
+	const lifetimePolicy =
+		input.createdVia === 'cli-bootstrap'
+			? cliBootstrapTokenLifetimePolicy
+			: apiTokenPolicy
 	const idleTtlSeconds = readIntegerOption({
 		value: input.idleTtlSeconds,
-		fallback: apiTokenPolicy.defaultIdleTtlSeconds,
-		min: apiTokenPolicy.minIdleTtlSeconds,
-		max: apiTokenPolicy.maxIdleTtlSeconds,
+		fallback: lifetimePolicy.defaultIdleTtlSeconds,
+		min: lifetimePolicy.minIdleTtlSeconds,
+		max: lifetimePolicy.maxIdleTtlSeconds,
 		field: 'idle_ttl_seconds',
 	})
 	const maxLifetimeSeconds = readIntegerOption({
 		value: input.maxLifetimeSeconds,
 		fallback: Math.max(
-			apiTokenPolicy.defaultMaxLifetimeSeconds,
+			lifetimePolicy.defaultMaxLifetimeSeconds,
 			idleTtlSeconds,
 		),
 		min: idleTtlSeconds,
-		max: apiTokenPolicy.maxMaxLifetimeSeconds,
+		max: lifetimePolicy.maxMaxLifetimeSeconds,
 		field: 'max_lifetime_seconds',
 	})
 	let maxExpiresAtMs = addSeconds(now, maxLifetimeSeconds).getTime()

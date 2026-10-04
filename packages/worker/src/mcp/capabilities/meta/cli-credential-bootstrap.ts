@@ -43,20 +43,20 @@ const inputSchema = z
 		idle_ttl_seconds: z
 			.number()
 			.int()
-			.min(apiTokenPolicy.minIdleTtlSeconds)
-			.max(apiTokenPolicy.maxIdleTtlSeconds)
+			.min(cliCredentialBootstrapPolicy.minIdleTtlSeconds)
+			.max(cliCredentialBootstrapPolicy.maxIdleTtlSeconds)
 			.optional()
 			.describe(
-				`Seconds without use before the eventual token expires (default ${apiTokenPolicy.defaultIdleTtlSeconds}).`,
+				`Seconds without use before the eventual token expires (default ${cliCredentialBootstrapPolicy.defaultIdleTtlSeconds}).`,
 			),
 		max_lifetime_seconds: z
 			.number()
 			.int()
-			.min(apiTokenPolicy.minIdleTtlSeconds)
-			.max(apiTokenPolicy.maxMaxLifetimeSeconds)
+			.min(cliCredentialBootstrapPolicy.minIdleTtlSeconds)
+			.max(cliCredentialBootstrapPolicy.maxMaxLifetimeSeconds)
 			.optional()
 			.describe(
-				`Absolute lifetime cap for the eventual token in seconds (default ${apiTokenPolicy.defaultMaxLifetimeSeconds}).`,
+				`Absolute lifetime cap for the eventual token in seconds (default ${cliCredentialBootstrapPolicy.defaultMaxLifetimeSeconds}).`,
 			),
 		redeem_ttl_seconds: z
 			.number()

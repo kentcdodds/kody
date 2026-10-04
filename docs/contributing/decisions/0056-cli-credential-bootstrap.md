@@ -32,10 +32,12 @@ One credential-bootstrap primitive, dual-exposed:
    Rejected for the MCP `api` tool principal so redeem cannot dump secrets into
    chat.
 
-Default eventual scopes: `local-execute` + `account:read`. Token parents cannot
-escalate scopes or outlive their own `max_expires_at`. `tokenCreate` remains for
-CI/headless and power users. Interactive humans who already ran `kody login`
-skip bootstrap (0055).
+Default eventual scopes: `local-execute` + `account:read`. Default eventual
+token lifetimes: 2 weeks unused (`idle_ttl_seconds` 1209600) and 3 months
+absolute (`max_lifetime_seconds` 7776000). Token parents cannot escalate scopes
+or outlive their own `max_expires_at`. `tokenCreate` remains for CI/headless and
+power users (and keeps its own shorter defaults). Interactive humans who already
+ran `kody login` skip bootstrap (0055).
 
 Do **not** add OAuth device flow. Do **not** accept bootstrap codes as general
 Open API Bearers. Do **not** scavenge host MCP tokens from disk.
