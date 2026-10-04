@@ -76,8 +76,6 @@ style, tests, MCP capabilities, and runtime architecture.
   (stamp/grant model under fork-only official packages and no author-facing
   invoke)
 - [Package codemods](./package-codemods.md)
-- [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
-  (historical soak notes; the helper is unbound)
 - [Public packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md) (unadvertised
   drain; first-party HTTP is [inbound webhooks](../use/webhooks.md))
