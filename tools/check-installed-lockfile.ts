@@ -21,11 +21,12 @@ export type InstalledLockfileMismatch = {
 	installedVersion: string | null
 }
 
+export function isWorkspaceLockfilePath(packagePath: string) {
+	return packagePath === '' || !packagePath.split('/').includes('node_modules')
+}
+
 export function workspaceLockfilePaths(lock: PackageLock) {
-	return Object.keys(lock.packages ?? {}).filter(
-		(packagePath) =>
-			packagePath === '' || !packagePath.includes('node_modules'),
-	)
+	return Object.keys(lock.packages ?? {}).filter(isWorkspaceLockfilePath)
 }
 
 export function resolveLockfileInstallPath(

@@ -4,8 +4,46 @@ import {
 	findInstalledLockfileMismatches,
 	formatInstalledLockfileError,
 	inspectInstalledLockfile,
+	isWorkspaceLockfilePath,
 	resolveLockfileInstallPath,
 } from './check-installed-lockfile.ts'
+
+test('workspace lockfile paths match node_modules as a path segment', () => {
+	expect(isWorkspaceLockfilePath('')).toBe(true)
+	expect(isWorkspaceLockfilePath('packages/worker')).toBe(true)
+	expect(isWorkspaceLockfilePath('packages/node_modules-utils')).toBe(true)
+	expect(isWorkspaceLockfilePath('node_modules/remix')).toBe(false)
+	expect(isWorkspaceLockfilePath('packages/worker/node_modules/satori')).toBe(
+		false,
+	)
+})
+
+test('installed lockfile check includes workspaces whose names contain node_modules text', () => {
+	const lock = {
+		packages: {
+			'packages/node_modules-utils': {
+				dependencies: { leftpad: '1.0.0' },
+			},
+			'packages/node_modules-utils/node_modules/leftpad': {
+				version: '1.0.0',
+			},
+		},
+	}
+
+	expect(
+		findInstalledLockfileMismatches({
+			lock,
+			readInstalledVersion: () => null,
+		}),
+	).toEqual([
+		{
+			name: 'leftpad',
+			installPath: 'packages/node_modules-utils/node_modules/leftpad',
+			lockedVersion: '1.0.0',
+			installedVersion: null,
+		},
+	])
+})
 
 test('installed lockfile check flags stale or missing workspace and root dependencies', () => {
 	const lock = {
