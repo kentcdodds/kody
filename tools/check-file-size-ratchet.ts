@@ -99,6 +99,13 @@ export async function formatSourceWithRepoOxfmt(
 	options: FormatConfig = defaultFormatOptions,
 ): Promise<string> {
 	const result = await format(relativePath, sourceText, options)
+	const errors = result.errors.filter((error) => error.severity === 'Error')
+	if (errors.length > 0) {
+		const messages = errors.map((error) => error.message).join('; ')
+		throw new Error(
+			`Oxfmt failed to format ${relativePath} (${messages}). File-size ratchet counts lines after a successful format only.`,
+		)
+	}
 	return result.code
 }
 

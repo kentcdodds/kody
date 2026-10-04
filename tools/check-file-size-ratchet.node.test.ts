@@ -50,6 +50,15 @@ test('formatOptionsFromOxfmtConfig drops ignorePatterns and overrides', () => {
 	expect(options).not.toHaveProperty('$schema')
 })
 
+test('formatSourceWithRepoOxfmt throws when oxfmt returns Error-severity diagnostics', async () => {
+	await expect(
+		formatSourceWithRepoOxfmt('broken.node.test.ts', 'const x = {\n'),
+	).rejects.toThrow(/Oxfmt failed to format broken\.node\.test\.ts/)
+	await expect(
+		formatSourceWithRepoOxfmt('ok.node.test.ts', 'const x = 1\n'),
+	).resolves.toContain('const x = 1')
+})
+
 test('checkFileSizeRatchet allows grandfathered files and rejects new over-budget files', async () => {
 	const cwd = await mkdtemp(path.join(os.tmpdir(), 'file-size-ratchet-'))
 	try {
