@@ -16,16 +16,12 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
-import { isArtifactsGitTransientRemapError } from '#worker/repo/artifacts-git-retry.ts'
+import {
+	artifactsGitTemporarilyUnavailableMessage,
+	isArtifactsGitTransientRemapError,
+} from '#worker/repo/artifacts-git-retry.ts'
 
-/**
- * Public message when Cloudflare Artifacts git is temporarily unavailable
- * after call-site retries (HTTP 5xx / 429, packfile corruption, or read
- * timeout). Keep free of remotes, hosts, account ids, and status codes —
- * MCP `api` callers see code + message only.
- */
-export const artifactsGitTemporarilyUnavailableMessage =
-	'The package source is temporarily unavailable. Retry the call.'
+export { artifactsGitTemporarilyUnavailableMessage }
 
 export const apiErrorCodes = [
 	'invalid_request',

@@ -190,9 +190,38 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	)
 	expect(await post()).toEqual({
 		status: 500,
-		payload: { ok: false, error: 'Unable to install this public package.' },
+		payload: {
+			ok: false,
+			error: 'Internal error. Retry later or report it if it persists.',
+		},
 	})
 	expect(consoleError).toHaveBeenCalled()
+
+	const artifactsClone = Object.assign(
+		new Error('HTTP Error: 500 Internal Server Error'),
+		{
+			code: 'HttpError',
+			name: 'HttpError',
+			data: {
+				statusCode: 500,
+				statusMessage: 'Internal Server Error',
+				response: '',
+			},
+		},
+	)
+	mockModule.installCommunityListing.mockRejectedValue(
+		new Error(
+			'Artifacts git clone failed for https://example.test/repo.git: HTTP Error: 500 Internal Server Error',
+			{ cause: artifactsClone },
+		),
+	)
+	expect(await post()).toEqual({
+		status: 503,
+		payload: {
+			ok: false,
+			error: 'The package source is temporarily unavailable. Retry the call.',
+		},
+	})
 
 	mockModule.installCommunityListing.mockRejectedValue(
 		new Error(durableObjectIsolateMemoryResetMessage),

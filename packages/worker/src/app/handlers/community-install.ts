@@ -18,6 +18,7 @@ import {
 import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { toApiError } from '#worker/open-api/errors.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
@@ -156,10 +157,14 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					)
 					return jsonResponse({ ok: false, error: mapped.message }, 503)
 				}
+				// Same Open API remap as communityFork: Artifacts git transients
+				// become 503 with a retry next step; other unknowns keep the
+				// generic internal message that says retry or report.
+				const apiError = toApiError(error)
 				console.error('Community install failed:', error)
 				return jsonResponse(
-					{ ok: false, error: 'Unable to install this public package.' },
-					500,
+					{ ok: false, error: apiError.message },
+					apiError.status,
 				)
 			}
 		},

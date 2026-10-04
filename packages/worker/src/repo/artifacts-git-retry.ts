@@ -24,6 +24,15 @@ import {
  */
 export const artifactsGitHttpRetryDelaysMs = [50, 150] as const
 
+/**
+ * Public message when Cloudflare Artifacts git is temporarily unavailable
+ * after call-site retries (HTTP 5xx / 429, packfile corruption, or read
+ * timeout). Keep free of remotes, hosts, account ids, and status codes —
+ * Open API / MCP / website install callers see this next step only.
+ */
+export const artifactsGitTemporarilyUnavailableMessage =
+	'The package source is temporarily unavailable. Retry the call.'
+
 export function isTransientArtifactsGitHttpStatus(status: number) {
 	return (
 		status === 429 ||

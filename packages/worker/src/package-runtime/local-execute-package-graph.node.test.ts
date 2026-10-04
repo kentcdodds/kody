@@ -62,23 +62,18 @@ const examplePackage = {
 	kodyId: 'example-package',
 }
 
-function manifestJson(input: {
-	name: string
-	kodyId: string
-	exports: Record<string, string>
-}) {
-	return JSON.stringify({
-		name: input.name,
-		exports: input.exports,
-		kody: { id: input.kodyId, description: 'Example package' },
-	})
-}
-
 function makeLoadedSource(input: {
 	exports: Record<string, string>
 	files: Record<string, string>
 	publishedCommit?: string | null
+	dependencies?: Record<string, string>
 }) {
+	const packageJson = JSON.stringify({
+		name: examplePackage.name,
+		exports: input.exports,
+		...(input.dependencies ? { dependencies: input.dependencies } : {}),
+		kody: { id: examplePackage.kodyId, description: 'Example package' },
+	})
 	return {
 		source: {
 			id: 'source-1',
@@ -88,12 +83,10 @@ function makeLoadedSource(input: {
 			name: examplePackage.name,
 			exports: input.exports,
 			kody: { id: examplePackage.kodyId, description: 'Example package' },
+			...(input.dependencies ? { dependencies: input.dependencies } : {}),
 		},
 		files: {
-			'package.json': manifestJson({
-				...examplePackage,
-				exports: input.exports,
-			}),
+			'package.json': packageJson,
 			...input.files,
 		},
 	}
@@ -839,6 +832,32 @@ export default async () => hello()`
 		buildLocalExecutePackageGraph({ ...graphInput, code }),
 	).rejects.toMatchObject({
 		code: 'package_import_unpublished',
+	} satisfies Partial<LocalExecutePackageGraphError>)
+})
+
+test('buildLocalExecutePackageGraph maps missing runtime bundles to retry-or-report', async () => {
+	const code = `import hello from 'kody:@kentcdodds/example-package/hello'
+export default async () => hello()`
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		makeLoadedSource({
+			exports: { './hello': './src/hello.ts' },
+			dependencies: { marked: '18.0.2' },
+			files: {
+				'src/hello.ts':
+					'import { marked } from "marked"\nexport default async function hello() { return marked.parse("**ok**") }',
+			},
+		}),
+	)
+
+	await expect(
+		buildLocalExecutePackageGraph({ ...graphInput, code }),
+	).rejects.toMatchObject({
+		code: 'package_import_unpublished',
+		message: expect.stringMatching(
+			/missing a published runtime bundle.*Retry later or report it if it persists\./,
+		),
 	} satisfies Partial<LocalExecutePackageGraphError>)
 })
 

@@ -1,10 +1,10 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
-import { wrapArtifactsGitHttpError } from '#worker/repo/artifacts-git-retry.ts'
+import {
+	artifactsGitTemporarilyUnavailableMessage,
+	wrapArtifactsGitHttpError,
+} from '#worker/repo/artifacts-git-retry.ts'
 import { ApiError, toApiError } from './errors.ts'
-
-const artifactsGitTemporarilyUnavailableMessage =
-	'The package source is temporarily unavailable. Retry the call.'
 
 test('ApiError.toBody redacts Kody credentials in error details', () => {
 	const apiToken = `kody_at_${'a'.repeat(20)}_${'B'.repeat(43)}`

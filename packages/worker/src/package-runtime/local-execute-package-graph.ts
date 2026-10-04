@@ -164,7 +164,7 @@ export async function buildLocalExecutePackageGraph(input: {
 		if (!modulesByName.has(targetPath)) {
 			throw new LocalExecutePackageGraphError(
 				'package_import_unpublished',
-				`Saved package import ${specifier} is missing its published artifact modules for local execute.`,
+				`Saved package import ${specifier} is missing its published artifact modules for local execute. Retry later or report it if it persists.`,
 			)
 		}
 		const meteredPackageId = readMeteredProxyPackageId(proxySource)
@@ -382,6 +382,15 @@ function mapPrepareFailure(
 			? error.message
 			: 'Could not resolve package imports.'
 	const importList = imports.join(', ')
+	// Missing published runtime bundle: consumer cannot republish an upstream
+	// package. Honest next step matches Open API internal_error copy.
+	if (/no published runtime bundle artifact is available yet/i.test(message)) {
+		return new LocalExecutePackageGraphError(
+			'package_import_unpublished',
+			`Saved package import(s) for local execute are missing a published runtime bundle (${importList}). Retry later or report it if it persists.`,
+			{ cause: error },
+		)
+	}
 	if (/not found/i.test(message) || /was not found/i.test(message)) {
 		return new LocalExecutePackageGraphError(
 			'package_import_unresolved',
