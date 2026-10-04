@@ -157,3 +157,38 @@ test('ensureLocalExecuteMeterStaticPackageExportImport is a no-op without meter 
 	})
 	expect(ensured).toEqual({ source, rewritten: false })
 })
+
+test('ensureLocalExecuteMeterStaticPackageExportImport still binds free calls beside aliased imports', () => {
+	const source = `import { __kodyMeterStaticPackageExport as meter } from "../../../../../.__kody_virtual__/runtime.js";
+var editMessage = __kodyMeterStaticPackageExport("pkg-discord", rawEdit);
+export default editMessage;
+`
+	const ensured = ensureLocalExecuteMeterStaticPackageExportImport({
+		modulePath:
+			'.__kody_packages__/demo/.__published_bundle__/artifact/dist/index.js',
+		source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+	})
+	expect(ensured.rewritten).toBe(true)
+	expect(ensured.source).toContain('__kodyMeterStaticPackageExport as meter')
+	expect(ensured.source).toMatch(
+		/import\s*\{\s*__kodyMeterStaticPackageExport\s*,/,
+	)
+	expect(ensured.source).toContain(
+		'__kodyMeterStaticPackageExport("pkg-discord", rawEdit)',
+	)
+})
+
+test('ensureLocalExecuteMeterStaticPackageExportImport is a no-op when the local name is already bound', () => {
+	const source = `import { __kodyMeterStaticPackageExport } from "../../.__kody_virtual__/runtime.js";
+var editMessage = __kodyMeterStaticPackageExport("pkg-discord", rawEdit);
+export default editMessage;
+`
+	const ensured = ensureLocalExecuteMeterStaticPackageExportImport({
+		modulePath:
+			'.__kody_packages__/demo/.__published_bundle__/artifact/dist/index.js',
+		source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+	})
+	expect(ensured).toEqual({ source, rewritten: false })
+})

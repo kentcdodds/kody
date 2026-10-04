@@ -26,8 +26,6 @@ const secretRefMarker = '__kodySecretRef('
 const meterStaticPackageExportName = '__kodyMeterStaticPackageExport'
 const meterStaticPackageExportCallPattern =
 	/\b__kodyMeterStaticPackageExport\s*\(/
-const meterStaticPackageExportImportPattern =
-	/\bimport\s*\{[^}]*\b__kodyMeterStaticPackageExport\b/
 
 export function moduleSourceHasSecretPlaceholderLiterals(source: string) {
 	try {
@@ -259,7 +257,10 @@ export function ensureLocalExecuteMeterStaticPackageExportImport(input: {
 	if (!meterStaticPackageExportCallPattern.test(input.source)) {
 		return { source: input.source, rewritten: false }
 	}
-	if (meterStaticPackageExportImportPattern.test(input.source)) {
+	// Require a local binding named exactly `__kodyMeterStaticPackageExport`.
+	// An aliased import (`… as meter`) does not bind the free call site.
+	const localBindings = collectTopLevelFetchCollisionNames(input.source)
+	if (localBindings?.has(meterStaticPackageExportName)) {
 		return { source: input.source, rewritten: false }
 	}
 
@@ -273,9 +274,6 @@ export function ensureLocalExecuteMeterStaticPackageExportImport(input: {
 	).exec(input.source)
 	if (existingImport && typeof existingImport.index === 'number') {
 		const names = existingImport[1] ?? ''
-		if (names.includes(meterStaticPackageExportName)) {
-			return { source: input.source, rewritten: false }
-		}
 		const trimmedNames = names.trim()
 		const nextNames = trimmedNames
 			? `${meterStaticPackageExportName}, ${trimmedNames}`
