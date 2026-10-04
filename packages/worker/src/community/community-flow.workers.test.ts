@@ -102,12 +102,14 @@ function createFlowHarness() {
 	// Publish checks and artifact rebuilds run the real worker bundler, which
 	// warns that it is experimental.
 	silenceIncidentalRuntimeWarnings()
+	// Default `onUnhandledFrame: 'error'` keeps workerd off the network.
+	// `bypass` attempted real DNS for artifacts-mock.test and flooded the
+	// Workers suite.
 	const artifactsMock = createMswWorkerServer(
 		createArtifactsMswHandlers({
 			accountId: mockAccountId,
 			apiBaseUrl: artifactsApiBaseUrl,
 		}),
-		{ onUnhandledFrame: 'bypass' },
 	)
 	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
 	const queuedListingPublished: Array<
