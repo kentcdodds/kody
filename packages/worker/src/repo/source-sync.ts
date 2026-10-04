@@ -305,6 +305,9 @@ export async function syncArtifactSourceSnapshot(
 						...(input.existingHeadCommit
 							? { existingHeadCommit: input.existingHeadCommit }
 							: {}),
+						...(input.expectedPackageScope !== undefined
+							? { expectedPackageScope: input.expectedPackageScope }
+							: {}),
 						...(input.requirePackageDocs === false
 							? { requirePackageDocs: false }
 							: {}),

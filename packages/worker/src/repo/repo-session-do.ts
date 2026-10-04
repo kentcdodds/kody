@@ -1626,6 +1626,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		 * persists first and evaluates checks separately.
 		 */
 		runPublishChecks?: boolean
+		/**
+		 * Forwarded to `runRepoChecks` so bootstrap rejects a wrong
+		 * `package.json#name` scope before advancing published_commit.
+		 */
+		expectedPackageScope?: string
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -1777,6 +1782,9 @@ class RepoSessionBase extends DurableObject<Env> {
 						env: this.env,
 						baseUrl: source.source_root,
 						userId: input.userId,
+						...(input.expectedPackageScope !== undefined
+							? { expectedPackageScope: input.expectedPackageScope }
+							: {}),
 						...(input.requirePackageDocs === false
 							? { requirePackageDocs: false }
 							: {}),

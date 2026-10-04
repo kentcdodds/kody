@@ -1442,6 +1442,31 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	restoreRepoSessionMockBaseline()
 	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
 	seedWorkspace(files, { fallback: null })
+	mockModule.gitState.headCommit = 'commit-bootstrap-scope'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	await repoSession().bootstrapSource({
+		sessionId: 'session-bootstrap-scope',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		expectedPackageScope: 'renamed-user',
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: artifactsRemote('package-package-1'),
+			token: 'art_v1_bootstrap?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+		edits: [
+			{ kind: 'write', path: 'package.json', content: userPackageJson },
+			{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
+		],
+	})
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ expectedPackageScope: 'renamed-user' }),
+	)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
+	seedWorkspace(files, { fallback: null })
 	mockModule.gitState.headCommit = 'commit-bootstrap-skip-checks'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
 	mockModule.runRepoChecks.mockClear()

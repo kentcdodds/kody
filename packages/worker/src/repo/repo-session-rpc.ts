@@ -135,6 +135,7 @@ export type RepoSessionRpc = {
 		existingHeadCommit?: string
 		requirePackageDocs?: boolean
 		runPublishChecks?: boolean
+		expectedPackageScope?: string
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string

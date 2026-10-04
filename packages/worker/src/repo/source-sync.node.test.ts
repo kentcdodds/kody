@@ -416,6 +416,22 @@ test('syncArtifactSourceSnapshot forwards requirePackageDocs false on bootstrap'
 	)
 })
 
+test('syncArtifactSourceSnapshot forwards expectedPackageScope on bootstrap', async () => {
+	const bootstrap = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-bootstrap-scope'),
+	})
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			expectedPackageScope: 'renamed-user',
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-bootstrap-scope')
+	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith(
+		expect.objectContaining({ expectedPackageScope: 'renamed-user' }),
+	)
+})
+
 test('syncArtifactSourceSnapshot skips publish checks when runPublishChecks is false', async () => {
 	const bootstrap = setupSync(sourceRow(packageSource), {
 		bootstrapSource: bootstrapped('commit-bootstrap-skip'),
