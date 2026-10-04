@@ -16,39 +16,68 @@ type PackageLock = {
 
 export type InstalledLockfileMismatch = {
 	name: string
+	installPath: string
 	lockedVersion: string
 	installedVersion: string | null
 }
 
-export function directLockfileDependencyNames(lock: PackageLock) {
-	const names = new Set<string>()
-	for (const [packagePath, meta] of Object.entries(lock.packages ?? {})) {
-		if (packagePath !== '' && packagePath.includes('node_modules')) continue
-		for (const name of [
-			...Object.keys(meta.dependencies ?? {}),
-			...Object.keys(meta.devDependencies ?? {}),
-		]) {
-			names.add(name)
-		}
+export function workspaceLockfilePaths(lock: PackageLock) {
+	return Object.keys(lock.packages ?? {}).filter(
+		(packagePath) =>
+			packagePath === '' || !packagePath.includes('node_modules'),
+	)
+}
+
+export function resolveLockfileInstallPath(
+	packages: Record<string, LockPackage>,
+	workspacePath: string,
+	name: string,
+) {
+	const segments = workspacePath === '' ? [] : workspacePath.split('/')
+	for (let depth = segments.length; depth >= 0; depth--) {
+		const prefix = depth === 0 ? '' : segments.slice(0, depth).join('/')
+		const installPath = prefix
+			? `${prefix}/node_modules/${name}`
+			: `node_modules/${name}`
+		if (packages[installPath]?.version) return installPath
 	}
-	return names
+	return null
 }
 
 export function findInstalledLockfileMismatches(input: {
 	lock: PackageLock
-	readInstalledVersion: (name: string) => string | null
+	readInstalledVersion: (installPath: string) => string | null
 }): Array<InstalledLockfileMismatch> {
 	const packages = input.lock.packages ?? {}
 	const mismatches: Array<InstalledLockfileMismatch> = []
-	for (const name of directLockfileDependencyNames(input.lock)) {
-		const lockedVersion = packages[`node_modules/${name}`]?.version
-		if (!lockedVersion) continue
-		const installedVersion = input.readInstalledVersion(name)
-		if (installedVersion === lockedVersion) continue
-		mismatches.push({ name, lockedVersion, installedVersion })
+	const checkedInstallPaths = new Set<string>()
+	for (const workspacePath of workspaceLockfilePaths(input.lock)) {
+		const meta = packages[workspacePath] ?? {}
+		for (const name of [
+			...Object.keys(meta.dependencies ?? {}),
+			...Object.keys(meta.devDependencies ?? {}),
+		]) {
+			const installPath = resolveLockfileInstallPath(
+				packages,
+				workspacePath,
+				name,
+			)
+			if (!installPath || checkedInstallPaths.has(installPath)) continue
+			checkedInstallPaths.add(installPath)
+			const lockedVersion = packages[installPath]?.version
+			if (!lockedVersion) continue
+			const installedVersion = input.readInstalledVersion(installPath)
+			if (installedVersion === lockedVersion) continue
+			mismatches.push({
+				name,
+				installPath,
+				lockedVersion,
+				installedVersion,
+			})
+		}
 	}
 	return mismatches.toSorted((left, right) =>
-		left.name.localeCompare(right.name),
+		left.installPath.localeCompare(right.installPath),
 	)
 }
 
@@ -58,7 +87,7 @@ export function formatInstalledLockfileError(
 	const details = mismatches
 		.map((mismatch) => {
 			const installed = mismatch.installedVersion ?? 'missing'
-			return `${mismatch.name}@${mismatch.lockedVersion} (installed ${installed})`
+			return `${mismatch.name}@${mismatch.lockedVersion} at ${mismatch.installPath} (installed ${installed})`
 		})
 		.join(', ')
 	return `Installed dependencies do not match package-lock.json: ${details}. Run \`npm ci\`.`
@@ -66,7 +95,7 @@ export function formatInstalledLockfileError(
 
 export function inspectInstalledLockfile(input: {
 	lock: PackageLock
-	readInstalledVersion: (name: string) => string | null
+	readInstalledVersion: (installPath: string) => string | null
 }) {
 	const mismatches = findInstalledLockfileMismatches(input)
 	if (mismatches.length === 0) {
@@ -81,28 +110,38 @@ export function inspectInstalledLockfile(input: {
 export async function checkInstalledLockfile(
 	packageLockPath = defaultPackageLockPath,
 	readInstalledVersion: (
-		name: string,
+		installPath: string,
 	) => Promise<string | null> = readInstalledPackageVersion,
 ) {
 	const lock = JSON.parse(
 		await readFile(packageLockPath, 'utf8'),
 	) as PackageLock
+	const packages = lock.packages ?? {}
 	const versions = new Map<string, string | null>()
-	for (const name of directLockfileDependencyNames(lock)) {
-		versions.set(name, await readInstalledVersion(name))
+	for (const workspacePath of workspaceLockfilePaths(lock)) {
+		const meta = packages[workspacePath] ?? {}
+		for (const name of [
+			...Object.keys(meta.dependencies ?? {}),
+			...Object.keys(meta.devDependencies ?? {}),
+		]) {
+			const installPath = resolveLockfileInstallPath(
+				packages,
+				workspacePath,
+				name,
+			)
+			if (!installPath || versions.has(installPath)) continue
+			versions.set(installPath, await readInstalledVersion(installPath))
+		}
 	}
 	return inspectInstalledLockfile({
 		lock,
-		readInstalledVersion: (name) => versions.get(name) ?? null,
+		readInstalledVersion: (installPath) => versions.get(installPath) ?? null,
 	})
 }
 
-async function readInstalledPackageVersion(name: string) {
+async function readInstalledPackageVersion(installPath: string) {
 	try {
-		const raw = await readFile(
-			path.join('node_modules', ...name.split('/'), 'package.json'),
-			'utf8',
-		)
+		const raw = await readFile(path.join(installPath, 'package.json'), 'utf8')
 		const pkg = JSON.parse(raw) as { version?: string }
 		return typeof pkg.version === 'string' ? pkg.version : null
 	} catch {
