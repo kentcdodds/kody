@@ -132,7 +132,8 @@ export function classifyReviewBotComment(comment) {
 			reason: 'security-related finding',
 		},
 		{
-			re: /\b(bug|incorrect|broken|crash|regress|race\s+condition|null\s+pointer|type\s+error)\b/i,
+			// Do not treat "not a bug" as a defect claim.
+			re: /\b((?<!not\s+a\s)bug|incorrect|broken|crash|regress|race\s+condition|null\s+pointer|type\s+error)\b/i,
 			reason: 'defect / correctness claim',
 		},
 		{
