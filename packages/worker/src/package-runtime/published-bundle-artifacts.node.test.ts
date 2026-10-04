@@ -798,6 +798,21 @@ test('reusePublishedPackageArtifactIfUnchanged rebuilds when platform Remix vers
 	expect(await reuse()).toBe(false)
 	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
 
+	const staleUiVersion = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+	})
+	staleUiVersion.artifact.remixVersion = platformRemixVersions.remixVersion
+	staleUiVersion.artifact.remixUiVersion = '0.0.0-stale-ui'
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
+		staleUiVersion.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(
+		staleUiVersion.artifact,
+	)
+	expect(await reuse()).toBe(false)
+	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
+
 	const missingVersions = priorModuleArtifact({
 		artifactName: '.',
 		entryPoint: 'src/a.ts',
