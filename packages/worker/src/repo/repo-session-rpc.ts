@@ -134,6 +134,7 @@ export type RepoSessionRpc = {
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
 		requirePackageDocs?: boolean
+		runPublishChecks?: boolean
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string

@@ -416,6 +416,39 @@ test('syncArtifactSourceSnapshot forwards requirePackageDocs false on bootstrap'
 	)
 })
 
+test('syncArtifactSourceSnapshot skips publish checks when runPublishChecks is false', async () => {
+	const bootstrap = setupSync(sourceRow(packageSource), {
+		bootstrapSource: bootstrapped('commit-bootstrap-skip'),
+	})
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			runPublishChecks: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-bootstrap-skip')
+	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith(
+		expect.objectContaining({ runPublishChecks: false }),
+	)
+
+	const session = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+		}),
+		publishingSession('commit-skip-update'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			runPublishChecks: false,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-skip-update')
+	expect(session.runChecks).not.toHaveBeenCalled()
+	expect(session.publishSession).toHaveBeenCalled()
+})
+
 test('syncArtifactSourceSnapshot loopback first-publish runs package checks before snapshot', async () => {
 	const loopbackAccess = {
 		...bootstrapAccess,

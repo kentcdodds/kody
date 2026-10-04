@@ -64,12 +64,20 @@ type SyncArtifactSourceInput = {
 	 */
 	promotePublished?: boolean
 	/**
-	 * Forwarded to `runRepoChecks`. Community install and platform codemods
-	 * pass `false` so legacy trees without README/AGENTS stay forkable and
-	 * migratable. Omit (default true) for packageSave and other authoring
-	 * lanes — same default as `publishFromExternalRef`.
+	 * Forwarded to `runRepoChecks`. Platform codemods pass `false` so legacy
+	 * trees without README/AGENTS stay migratable. Omit (default true) for
+	 * packageSave and other authoring lanes — same default as
+	 * `publishFromExternalRef`.
 	 */
 	requirePackageDocs?: boolean
+	/**
+	 * When false, skip the throwing publish-check gate in bootstrap / loopback
+	 * / package update sync. Community install persists an inert fork first and
+	 * runs its own `runRepoChecks` to choose live vs `adaptation_required`;
+	 * failing persist on check failure would break that path. Omit (default
+	 * true) for packageSave — same gate strength as `publishFromExternalRef`.
+	 */
+	runPublishChecks?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -226,8 +234,12 @@ export async function syncArtifactSourceSnapshot(
 						}
 						// Same publish gate as bootstrapSource / publishFromExternalRef:
 						// do not stamp published_commit or the published snapshot until
-						// runRepoChecks passes on this tree.
-						if (source.entity_kind === 'package') {
+						// runRepoChecks passes on this tree. Community install opts out
+						// via runPublishChecks: false (its own checks drive adaptation).
+						if (
+							source.entity_kind === 'package' &&
+							input.runPublishChecks !== false
+						) {
 							const checks = await runRepoChecks({
 								workspace: createSnapshotFilesWorkspace(input.files),
 								manifestPath: source.manifest_path,
@@ -296,6 +308,9 @@ export async function syncArtifactSourceSnapshot(
 						...(input.requirePackageDocs === false
 							? { requirePackageDocs: false }
 							: {}),
+						...(input.runPublishChecks === false
+							? { runPublishChecks: false }
+							: {}),
 					})
 					if (input.serverTiming && result.serverTiming) {
 						input.serverTiming.push(...result.serverTiming)
@@ -346,7 +361,7 @@ export async function syncArtifactSourceSnapshot(
 		const forcePublish =
 			source.entity_kind !== 'package' ||
 			input.destructiveOverwriteConfirmed === true
-		if (source.entity_kind === 'package') {
+		if (source.entity_kind === 'package' && input.runPublishChecks !== false) {
 			const checkRun = await session.runChecks({
 				sessionId,
 				userId: input.userId,

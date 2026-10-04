@@ -1438,6 +1438,36 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
 	)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
+	seedWorkspace(files, { fallback: null })
+	mockModule.gitState.headCommit = 'commit-bootstrap-skip-checks'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.runRepoChecks.mockClear()
+	await repoSession().bootstrapSource({
+		sessionId: 'session-bootstrap-skip-checks',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		runPublishChecks: false,
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: artifactsRemote('package-package-1'),
+			token: 'art_v1_bootstrap?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+		edits: [
+			{ kind: 'write', path: 'package.json', content: userPackageJson },
+			{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
+		],
+	})
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-bootstrap-skip-checks',
+		}),
+	)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for downstream readers and never leaves inconsistent published commits when snapshot collection or persistence fails', async () => {

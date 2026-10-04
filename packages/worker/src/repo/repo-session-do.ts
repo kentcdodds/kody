@@ -1615,11 +1615,17 @@ class RepoSessionBase extends DurableObject<Env> {
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
 		/**
-		 * Forwarded to `runRepoChecks`. Community forks pass `false` so
-		 * listings without README/AGENTS stay installable; default matches
-		 * `publishFromExternalRef` (docs required).
+		 * Forwarded to `runRepoChecks`. Community forks may also set
+		 * `runPublishChecks: false` so install can persist an inert source
+		 * before its own checks choose live vs adaptation. Default matches
+		 * `publishFromExternalRef` (docs required) when checks run.
 		 */
 		requirePackageDocs?: boolean
+		/**
+		 * When false, skip the throwing publish-check gate. Community install
+		 * persists first and evaluates checks separately.
+		 */
+		runPublishChecks?: boolean
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -1751,7 +1757,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				return commit
 			},
 		)
-		if (source.entity_kind === 'package') {
+		if (source.entity_kind === 'package' && input.runPublishChecks !== false) {
 			await pushServerTiming(
 				serverTiming,
 				'bootstrap-repo-checks',
