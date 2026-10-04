@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs'
-import { basename } from 'node:path'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
@@ -283,12 +284,22 @@ export function shouldSeedCompanionAccount(
 	return options.local && options.email !== regularTestEmail
 }
 
+/**
+ * Build wrangler d1 execute args. Prefer `{ file }` for seed SQL — large
+ * `--saved-packages` payloads exceed process argv limits when passed via
+ * `--command`.
+ */
 export function buildSeedWranglerArgs(
-	sql: string,
 	options: CliOptions,
+	input: { command: string } | { file: string },
 	env: NodeJS.ProcessEnv = process.env,
 ) {
-	const args = ['d1', 'execute', 'APP_DB', '--command', sql]
+	const args = ['d1', 'execute', 'APP_DB']
+	if ('file' in input) {
+		args.push('--file', input.file)
+	} else {
+		args.push('--command', input.command)
+	}
 	if (options.local) {
 		args.push(
 			'--local',
@@ -316,9 +327,21 @@ function executeSeedSql(
 	options: CliOptions,
 	env: NodeJS.ProcessEnv = process.env,
 ) {
-	const result = runWrangler(buildSeedWranglerArgs(sql, options, env))
-	if (result.status !== 0) {
-		fail('Failed to write seed user directly to D1.')
+	// Always write SQL to a temp file so `--saved-packages N` stays under the
+	// process argument size limit (wrangler --command puts the whole string
+	// on argv).
+	const tempDir = mkdtempSync(join(tmpdir(), 'kody-seed-sql-'))
+	const sqlPath = join(tempDir, 'seed.sql')
+	try {
+		writeFileSync(sqlPath, sql, 'utf8')
+		const result = runWrangler(
+			buildSeedWranglerArgs(options, { file: sqlPath }, env),
+		)
+		if (result.status !== 0) {
+			fail('Failed to write seed user directly to D1.')
+		}
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true })
 	}
 }
 

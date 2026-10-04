@@ -52,7 +52,9 @@ export function buildSeedSavedPackagesSql(input: {
 			email: input.email,
 			index,
 		})
-		const name = `seed-pkg-${index}`
+		// Reserved fixture leaf so local UI seeds do not collide with a
+		// hand-created package that happens to use `seed-pkg-N`.
+		const name = `local-seed-pkg-${index}`
 		const description = `Local seed metadata-only package ${index}`
 		statements.push(
 			`
