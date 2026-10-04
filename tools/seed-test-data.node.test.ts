@@ -1,13 +1,26 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
 import { toHex } from '../packages/shared/src/hex.ts'
-import { stableUserIdFromEmail } from './seed-sql.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	buildSeedFeatureFlagOverrideSql,
+	buildSeedSavedPackagesSql,
+	seedSavedPackageIds,
+	stableUserIdFromEmail,
+} from './seed-sql.ts'
 import {
 	buildSeedSql,
 	shouldSeedCompanionAccount,
 	parseArgs,
 	resolveWranglerEnv,
 } from './seed-test-data.ts'
+
+function mockProcessExit() {
+	const spy = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	return { [Symbol.dispose]: () => spy.mockRestore() }
+}
 
 test('seed data arg parsing defaults to local mode and derives usernames from email unless overridden', () => {
 	const defaultOptions = parseArgs(['--email', 'alice.dev+preview@example.com'])
@@ -122,4 +135,93 @@ test('companion fixture account is local-only', () => {
 	expect(
 		shouldSeedCompanionAccount({ local: true, email: 'jane@example.com' }),
 	).toBe(false)
+})
+
+test('local seed can add metadata-only packages and feature flag overrides', () => {
+	const options = parseArgs([
+		'--local',
+		'--saved-packages',
+		'3',
+		'--enable-flag',
+		'connection-profiles',
+		'--enable-flag',
+		'demo-indicator',
+	])
+	expect(options.savedPackages).toBe(3)
+	expect(options.enableFlags).toEqual(['connection-profiles', 'demo-indicator'])
+
+	const sql = buildSeedSql(
+		[
+			{
+				email: 'jane@example.com',
+				username: 'jane',
+				passwordHash: 'hash',
+				admin: false,
+			},
+		],
+		{
+			savedPackages: 3,
+			enableFlags: ['connection-profiles'],
+		},
+	)
+	const { packageId, sourceId } = seedSavedPackageIds({
+		email: 'jane@example.com',
+		index: 1,
+	})
+	expect(sql).toContain(`'${packageId}'`)
+	expect(sql).toContain(`'${sourceId}'`)
+	expect(sql).toContain(`'seed-pkg-1'`)
+	expect(sql).toContain(`'seed-pkg-3'`)
+	expect(sql).toContain(`flag_key`)
+	expect(sql).toContain(`'connection-profiles'`)
+	expect(sql).toContain(`WHERE u.email = 'jane@example.com'`)
+	// Metadata-only: no artifact or entity_sources rows.
+	expect(sql).not.toContain('entity_sources')
+	expect(sql).not.toContain('published_bundle_artifacts')
+
+	const packagesOnly = buildSeedSavedPackagesSql({
+		email: 'jane@example.com',
+		count: 2,
+	})
+	expect(packagesOnly.match(/INSERT INTO saved_packages/g)).toHaveLength(2)
+
+	const flagSql = buildSeedFeatureFlagOverrideSql({
+		email: 'jane@example.com',
+		flagKey: 'connection-profiles',
+	})
+	expect(flagSql).toContain('feature_flag_user_overrides')
+	expect(flagSql).toContain(`'connection-profiles'`)
+})
+
+test('saved-packages and enable-flag are rejected for remote seed', () => {
+	consoleError.mockImplementation(() => {})
+	using _exit = mockProcessExit()
+
+	expect(() => parseArgs(['--remote', '--saved-packages', '2'])).toThrow(
+		'process.exit called',
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('local-only'),
+	)
+
+	expect(() =>
+		parseArgs(['--remote', '--enable-flag', 'connection-profiles']),
+	).toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('local-only'),
+	)
+
+	expect(() => parseArgs(['--local', '--enable-flag', 'not-a-flag'])).toThrow(
+		'process.exit called',
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('Unknown feature flag key'),
+	)
+
+	expect(() => parseArgs(['--local', '--saved-packages', '0'])).toThrow(
+		'process.exit called',
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('--saved-packages must be an integer'),
+	)
 })

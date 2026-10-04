@@ -33,6 +33,16 @@ See the [setup index](./index.md) for the other setup pages.
 - Each seeded account also gets a sample user-lane Google integration with
   Personal and Work connections so `/account/integrations` can be exercised
   without a live OAuth dance.
+- Local-only account UI fixtures (no ARTIFACTS binding, no control-kody
+  command):
+  - `--saved-packages <n>` upserts `n` metadata-only `saved_packages` rows per
+    seeded account (deterministic ids; no `entity_sources` or published
+    artifacts). Enough for package pickers such as connection profiles.
+  - `--enable-flag <key>` upserts a per-user override that forces the registry
+    flag on for each seeded account (repeatable). Keys must exist in
+    `packages/worker/universal/feature-flags/registry.ts`.
+  - Example for flagged connections UI as jane (and kody when using defaults):
+    - `node tools/seed-test-data.ts --local --saved-packages 40 --enable-flag connection-profiles`
 - These credentials are a test fixture only and should not be used to describe
   product behavior. Pass `--no-admin` to seed the default account without the
   admin role.

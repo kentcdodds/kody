@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
+import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 
 /**
  * SQL builders shared by the seeding CLI (`tools/seed-test-data.ts`), the E2E
@@ -15,6 +16,90 @@ import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
  */
 export function stableUserIdFromEmail(email: string) {
 	return createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
+}
+
+/**
+ * Deterministic TEXT ids for local metadata-only seed packages (and their
+ * unique `source_id` values) so re-seeding upserts the same rows.
+ */
+export function seedSavedPackageIds(input: { email: string; index: number }): {
+	packageId: string
+	sourceId: string
+} {
+	const userId = stableUserIdFromEmail(input.email)
+	const packageId = createHash('sha256')
+		.update(`seed-saved-package:${userId}:${input.index}`)
+		.digest('hex')
+	const sourceId = createHash('sha256')
+		.update(`seed-saved-package-source:${userId}:${input.index}`)
+		.digest('hex')
+	return { packageId, sourceId }
+}
+
+/**
+ * Metadata-only `saved_packages` rows for local UI fixtures. No
+ * `entity_sources`, artifacts, or ARTIFACTS binding — enough for account
+ * pickers that list packages by `user_id`.
+ */
+export function buildSeedSavedPackagesSql(input: {
+	email: string
+	count: number
+}) {
+	const userId = quoteSqlString(stableUserIdFromEmail(input.email))
+	const statements: Array<string> = []
+	for (let index = 1; index <= input.count; index += 1) {
+		const { packageId, sourceId } = seedSavedPackageIds({
+			email: input.email,
+			index,
+		})
+		const name = `seed-pkg-${index}`
+		const description = `Local seed metadata-only package ${index}`
+		statements.push(
+			`
+INSERT INTO saved_packages (
+	id, user_id, name, kody_id, description, tags_json, search_text,
+	source_id, has_app, hidden, is_private
+) VALUES (
+	${quoteSqlString(packageId)}, ${userId}, ${quoteSqlString(name)},
+	${quoteSqlString(name)}, ${quoteSqlString(description)}, '[]',
+	${quoteSqlString(`${name} ${description}`)}, ${quoteSqlString(sourceId)},
+	0, 0, 1
+)
+ON CONFLICT(id) DO UPDATE SET
+	name = excluded.name,
+	kody_id = excluded.kody_id,
+	description = excluded.description,
+	tags_json = excluded.tags_json,
+	search_text = excluded.search_text,
+	source_id = excluded.source_id,
+	has_app = excluded.has_app,
+	hidden = excluded.hidden,
+	is_private = excluded.is_private,
+	updated_at = CURRENT_TIMESTAMP;`.trim(),
+		)
+	}
+	return statements.join('\n')
+}
+
+/**
+ * Per-user feature-flag override (forced on) for a seeded account. Resolves
+ * `users.id` by email so the FK matches the numeric override column.
+ */
+export function buildSeedFeatureFlagOverrideSql(input: {
+	email: string
+	flagKey: FeatureFlagKey
+}) {
+	const flagKey = quoteSqlString(input.flagKey)
+	const email = quoteSqlString(input.email)
+	return `
+INSERT INTO feature_flag_user_overrides (flag_key, user_id, enabled, updated_by, updated_at)
+SELECT ${flagKey}, u.id, 1, u.id, CURRENT_TIMESTAMP
+FROM users u
+WHERE u.email = ${email}
+ON CONFLICT(flag_key, user_id) DO UPDATE SET
+	enabled = excluded.enabled,
+	updated_by = excluded.updated_by,
+	updated_at = CURRENT_TIMESTAMP;`.trim()
 }
 
 export function buildRoleAssignmentSql(input: { email: string; role: string }) {
