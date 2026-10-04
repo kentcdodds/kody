@@ -33,8 +33,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Friction log](./friction-log.md) (when/where to file and how to judge fixes;
   one issue via `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
   `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
-- [Repo health](./repo-health.md) (one package of autonomous budgets —
-  `kody:@kentcdodds/repo-health`; breaches file friction and stop)
+- [Repo health](./repo-health.md) (CI + in-repo budgets: AGENTS.md ratchet,
+  Validate unit-job timing, ship-pr review-bot sort)
 - Prefer local CLI execute when Node ≥22 + CLI are available (MCP agents:
   `cliCredentialBootstrap`; interactive: `kody login`; CI/headless: scoped
   `KODY_API_TOKEN`; if `--local` cannot run, use Open API / MCP `api` or fix the

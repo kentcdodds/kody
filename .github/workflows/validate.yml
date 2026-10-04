@@ -197,6 +197,12 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
+      # Self-driving test-time budget: this job fails itself when wall-clock
+      # exceeds 60s (see tools/ci/enforce-unit-job-budget.ts). No second
+      # reporter. Setup + tests both count; do not delete tests to stay under.
+      - name: ⏱️ Mark job start
+        run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
@@ -217,6 +223,12 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
+      - name: ⏱️ Unit job budget (≤60s)
+        if: success()
+        run: >-
+          node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch
+          "$UNIT_JOB_START_EPOCH"
+
   workers:
     runs-on: ubuntu-latest
     name: ☁️ Workers
@@ -225,6 +237,12 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
+      # Self-driving test-time budget: this job fails itself when wall-clock
+      # exceeds 90s (see tools/ci/enforce-unit-job-budget.ts). No second
+      # reporter. Setup + tests both count; do not delete tests to stay under.
+      - name: ⏱️ Mark job start
+        run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
@@ -238,6 +256,12 @@ jobs:
 
       - name: ☁️ Workers unit tests
         run: npm run test:workers
+
+      - name: ⏱️ Unit job budget (≤90s)
+        if: success()
+        run: >-
+          node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch
+          "$UNIT_JOB_START_EPOCH"
 
   mcp:
     runs-on: ubuntu-latest

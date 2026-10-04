@@ -1,44 +1,23 @@
 # Repo health
 
-Autonomous **repo-health budgets** for this repository live in one Kody package
-— [`@kentcdodds/repo-health`](https://kody.codes/@kentcdodds/repo-health) — not
-as separate bots or automations per concern. Checks are data in that package. A
-schedule and a pull-request webhook share the same runner.
+Budgets for this repository are enforced in CI and in-repo checkers. Agents run
+`npm run validate` (and ship-pr for review-bot sort). There is no separate
+package gate.
 
-When an **enforced** budget moves the wrong way, the package files a GitHub
-friction issue via `kody:@kentcdodds/friction-log/create` on `kentcdodds/kody`
-and **stops**. It does not open a fix PR. The [friction log](./friction-log.md)
-project ships two-way fixes.
+| Budget                    | Where it fails                                                                                                                                                                                                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Root `AGENTS.md` line cap | File-size ratchet (`agents-md` group, 20 lines after oxfmt, not grandfatherable) via `npm run file-size-ratchet:check` / Validate 🧹 Static. Do not add another AGENTS.md check.                                                             |
+| Unit test time            | Validate `🧪 Node` (≤60s) and `☁️ Workers` (≤90s) fail **themselves** when that job's wall-clock exceeds the budget (`tools/ci/enforce-unit-job-budget.ts`). No separate workflow or follow-up reporter.                                     |
+| Review-bot comment sort   | [ship-pr](../../.agents/skills/ship-pr/SKILL.md) step only (Bugbot / Devin / Seer). Invalid findings get a short kody-bot reply and drop off the blocker list; valid and unsure stay blockers; unsure is never auto-dismissed. Not a CI job. |
 
-## Enforced now
+Do not delete or skip tests to stay under the unit-time budget. Keep Nx cache
+hits healthy so the legs stay warm.
 
-| Check                     | What fails                                                                                                                                   |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents-md-line-cap`      | Root `AGENTS.md` grows past the package budget (keep aligned with the in-repo `agents-md` line budget in `npm run file-size-ratchet:check`). |
-| `test-time-budget`        | Validate `🧪 Node` or `☁️ Workers` exceeds the CI-measured budget + headroom.                                                                |
-| `review-bot-comment-sort` | Surfaces Bugbot / Devin / Seer findings for ship-pr; invalid ones get a short kody-bot reply and are not blockers. Unsure stays valid.       |
+## Agent entry (review-bot sort)
 
-## Stubbed (same package, not enforced)
-
-`docs-link-rot`, `homepage-perf-bytes`, `accessibility-new-violations` — named
-budgets with stub runners until a later PR.
-
-## Agent entry points
-
-```ts
-import scan from 'kody:@kentcdodds/repo-health/scan'
-import sortReviewBotComments from 'kody:@kentcdodds/repo-health/sort-review-bot-comments'
-
-export default async function main() {
-	return {
-		scan: await scan({ dryRun: true }),
-		sort: await sortReviewBotComments({ prUrl, dryRun: true }),
-	}
-}
+```bash
+node .agents/skills/ship-pr/scripts/sort-review-bot-comments.mjs --pr-url "$PR_URL"
 ```
 
-ship-pr uses `./sort-review-bot-comments` so only **valid** (and unsure) Bugbot
-/ Devin / Seer findings from that export are blockers for those bots. CodeRabbit
-and other reviewers stay outside this sort — address their valid feedback
-separately. Prefer local CLI execute
-([prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)).
+Use `--dry-run` to classify without posting invalid replies. Gate Bugbot / Devin
+/ Seer via `mustAddress`; CodeRabbit and other reviewers stay outside this sort.
