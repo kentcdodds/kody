@@ -16,6 +16,34 @@ const mockModule = vi.hoisted(() => ({
 	loadLockedSavedPackage: vi.fn<typeof PublishLock.loadLockedSavedPackage>(
 		async () => null,
 	),
+	runRepoChecks: vi.fn(
+		async (
+			..._args: Array<unknown>
+		): Promise<{
+			ok: boolean
+			results: Array<{ kind: string; ok: boolean; message: string }>
+			manifest: {
+				name: string
+				exports: { '.': string }
+				kody: { id: string; description: string }
+			} | null
+			sourceFiles: Record<string, string>
+		}> => ({
+			ok: true,
+			results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+			manifest: {
+				name: '@scope/demo',
+				exports: { '.': './src/index.ts' },
+				kody: { id: 'demo', description: 'Demo' },
+			},
+			sourceFiles: {},
+		}),
+	),
+	writeArtifactSourceSnapshot: vi.fn(async (..._args: Array<unknown>) => ({
+		published_commit: 'commit-mock-1',
+		files: {} as Record<string, string>,
+	})),
+	isLoopbackArtifactsRemote: vi.fn((..._args: Array<unknown>) => false),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
@@ -37,6 +65,13 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 			typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
 		>
 	) => mockModule.writePublishedSourceSnapshot(...args),
+	buildPublishedSourceSnapshotKvKey: ({
+		sourceId,
+		publishedCommit,
+	}: {
+		sourceId: string
+		publishedCommit: string
+	}) => `snapshot:${sourceId}:${publishedCommit}`,
 }))
 
 vi.mock(
@@ -51,6 +86,27 @@ vi.mock(
 		}
 	},
 )
+
+vi.mock('./checks.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./checks.ts')>()
+	return {
+		...actual,
+		runRepoChecks: mockModule.runRepoChecks,
+	}
+})
+
+vi.mock('./artifact-source-snapshot.ts', () => ({
+	writeArtifactSourceSnapshot: mockModule.writeArtifactSourceSnapshot,
+}))
+
+vi.mock('./artifacts.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./artifacts.ts')>()
+	return {
+		...actual,
+		isLoopbackArtifactsRemote: mockModule.isLoopbackArtifactsRemote,
+		hasArtifactsAccess: () => true,
+	}
+})
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
 
@@ -123,6 +179,19 @@ function publishingSession(publishedCommit: string) {
 			totalChanged: 1,
 			edits: [],
 		})),
+		runChecks: vi.fn(async () => ({
+			ok: true as const,
+			results: [{ kind: 'manifest' as const, ok: true, message: 'ok' }],
+			manifest: {
+				name: '@scope/demo',
+				exports: { '.': './src/index.ts' },
+				kody: { id: 'demo', description: 'Demo' },
+			},
+			sourceFiles: {},
+			runId: 'check-run-1',
+			treeHash: 'tree-1',
+			checkedAt: '2026-04-18T00:00:00.000Z',
+		})),
 		publishSession: vi.fn(async () => ({
 			status: 'ok' as const,
 			sessionId: 'source-sync-source-1-session',
@@ -137,10 +206,26 @@ function setupSync(
 	overrides: Record<string, ReturnType<typeof vi.fn>> = {},
 ) {
 	vi.clearAllMocks()
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+		sourceFiles: {},
+	})
+	mockModule.isLoopbackArtifactsRemote.mockReturnValue(false)
+	mockModule.writeArtifactSourceSnapshot.mockResolvedValue({
+		published_commit: 'commit-mock-1',
+		files: {},
+	})
 	const client = {
 		bootstrapSource: vi.fn(),
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
+		runChecks: vi.fn(),
 		publishSession: vi.fn(),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
@@ -223,6 +308,8 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 			rollbackOnError: true,
 		}),
 	)
+	// Jobs still force-publish without package runChecks.
+	expect(session.runChecks).not.toHaveBeenCalled()
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: 'user-1',
@@ -232,6 +319,108 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(session.discardSession).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'user-1' }),
+	)
+})
+
+test('syncArtifactSourceSnapshot runs package checks before updating a published package', async () => {
+	const session = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+			indexed_commit: 'commit-existing-1',
+		}),
+		publishingSession('commit-session-pkg'),
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-session-pkg')
+	expect(session.runChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'user-1' }),
+	)
+	expect(session.publishSession).toHaveBeenCalledWith({
+		sessionId: expect.stringMatching(/^source-sync-source-1-/),
+		userId: 'user-1',
+	})
+	expect(session.publishSession.mock.calls[0]?.[0]).not.toHaveProperty('force')
+
+	const failing = setupSync(
+		sourceRow({
+			...packageSource,
+			published_commit: 'commit-existing-1',
+		}),
+		{
+			...publishingSession('commit-should-not'),
+			runChecks: vi.fn(async () => ({
+				ok: false as const,
+				results: [
+					{
+						kind: 'typecheck' as const,
+						ok: false,
+						message: 'update type error',
+					},
+				],
+				manifest: null,
+				sourceFiles: {},
+				runId: 'check-run-fail',
+				treeHash: 'tree-fail',
+				checkedAt: '2026-04-18T00:00:00.000Z',
+			})),
+		},
+	)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			files: { 'package.json': packageJson },
+		}),
+	).rejects.toThrow('update type error')
+	expect(failing.publishSession).not.toHaveBeenCalled()
+})
+
+test('syncArtifactSourceSnapshot loopback first-publish runs package checks before snapshot', async () => {
+	const loopbackAccess = {
+		...bootstrapAccess,
+		remote: 'http://127.0.0.1:8787/git/default/package-1.git',
+	}
+	setupSync(sourceRow(packageSource))
+	mockModule.isLoopbackArtifactsRemote.mockReturnValue(true)
+	mockModule.runRepoChecks.mockResolvedValueOnce({
+		ok: false as const,
+		results: [
+			{ kind: 'typecheck' as const, ok: false, message: 'loopback type error' },
+		],
+		manifest: null as null,
+		sourceFiles: {} as Record<string, string>,
+	})
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			bootstrapAccess: loopbackAccess,
+			files: { 'package.json': packageJson },
+		}),
+	).rejects.toThrow('loopback type error')
+	expect(mockModule.runRepoChecks).toHaveBeenCalled()
+	expect(mockModule.writeArtifactSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	setupSync(sourceRow(packageSource))
+	mockModule.isLoopbackArtifactsRemote.mockReturnValue(true)
+	await expect(
+		syncArtifactSourceSnapshot({
+			...syncInput,
+			bootstrapAccess: loopbackAccess,
+			files: { 'package.json': packageJson },
+		}),
+	).resolves.toBe('commit-mock-1')
+	expect(mockModule.runRepoChecks).toHaveBeenCalled()
+	expect(mockModule.writeArtifactSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ publishedCommit: 'commit-mock-1' }),
 	)
 })
 

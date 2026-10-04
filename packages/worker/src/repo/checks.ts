@@ -117,6 +117,40 @@ export type RepoCheckRunResult =
 			sourceFiles: Record<string, string>
 	  }
 
+/**
+ * Join failed check messages for callers that throw instead of returning
+ * `checks_failed` (bootstrap / packageSave sync). Same messages
+ * `publishFromExternalRef` exposes on `failed_checks`.
+ */
+export function formatFailedRepoCheckMessages(
+	results: ReadonlyArray<RepoCheckResult>,
+	fallback = 'Publish checks failed.',
+) {
+	const failed = results
+		.filter((entry) => !entry.ok)
+		.map((entry) => entry.message)
+		.filter((message) => message.trim().length > 0)
+	return failed.length > 0 ? failed.join('\n') : fallback
+}
+
+/**
+ * In-memory workspace over a path→content map for the same `runRepoChecks`
+ * surface used by external publish and community install.
+ */
+export function createSnapshotFilesWorkspace(files: Record<string, string>) {
+	return {
+		async readFile(path: string) {
+			return files[normalizeRepoWorkspacePath(path)] ?? null
+		},
+		async glob() {
+			return Object.keys(files).map((path) => ({
+				path,
+				type: 'file' as const,
+			}))
+		},
+	}
+}
+
 function toRepoCheckRunResult(input: {
 	results: Array<RepoCheckResult>
 	manifest: AuthoredPackageJson

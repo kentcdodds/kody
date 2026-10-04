@@ -1,6 +1,9 @@
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import { runRepoChecks, type RepoCheckResult } from '#worker/repo/checks.ts'
-import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
+import {
+	createSnapshotFilesWorkspace,
+	runRepoChecks,
+	type RepoCheckResult,
+} from '#worker/repo/checks.ts'
 import {
 	persistPreparedCommunityFork,
 	prepareCommunityFork,
@@ -57,20 +60,6 @@ export type InstallCommunityListingResult =
 			failedChecks: Array<RepoCheckResult>
 			crossScopeReferences: Array<CrossScopeReference>
 	  })
-
-function createSnapshotFilesWorkspace(files: Record<string, string>) {
-	return {
-		async readFile(path: string) {
-			return files[normalizeRepoWorkspacePath(path)] ?? null
-		},
-		async glob() {
-			return Object.keys(files).map((path) => ({
-				path,
-				type: 'file' as const,
-			}))
-		},
-	}
-}
 
 /**
  * One-click install: fork a community listing into the caller's scope and,

@@ -12,9 +12,13 @@ vi.mock('./service.ts', () => ({
 	persistPreparedCommunityFork: mockModule.persistPreparedCommunityFork,
 }))
 
-vi.mock('#worker/repo/checks.ts', () => ({
-	runRepoChecks: mockModule.runRepoChecks,
-}))
+vi.mock('#worker/repo/checks.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#worker/repo/checks.ts')>()
+	return {
+		...actual,
+		runRepoChecks: mockModule.runRepoChecks,
+	}
+})
 
 vi.mock('#worker/package-registry/service.ts', () => ({
 	refreshSavedPackageProjection: mockModule.refreshSavedPackageProjection,

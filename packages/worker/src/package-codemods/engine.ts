@@ -8,8 +8,11 @@ import { refreshSavedPackageProjection } from '#worker/package-registry/service.
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
-import { runRepoChecks, type RepoCheckRunResult } from '#worker/repo/checks.ts'
-import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
+import {
+	createSnapshotFilesWorkspace,
+	runRepoChecks,
+	type RepoCheckRunResult,
+} from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	createPackageCodemodRun,
@@ -119,20 +122,6 @@ function resolveStepLimit(mode: PackageCodemodRunMode, limit?: number) {
 		Math.max(limit ?? heavyDefaultStepLimit, 1),
 		heavyMaxStepLimit,
 	)
-}
-
-function createSnapshotFilesWorkspace(files: Record<string, string>) {
-	return {
-		async readFile(path: string) {
-			return files[normalizeRepoWorkspacePath(path)] ?? null
-		},
-		async glob(_pattern: string) {
-			return Object.keys(files).map((path) => ({
-				path,
-				type: 'file' as const,
-			}))
-		},
-	}
 }
 
 function normalizeFailureMessage(message: string) {

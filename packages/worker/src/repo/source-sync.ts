@@ -4,6 +4,11 @@ import {
 	isLoopbackArtifactsRemote,
 } from './artifacts.ts'
 import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
+import {
+	createSnapshotFilesWorkspace,
+	formatFailedRepoCheckMessages,
+	runRepoChecks,
+} from './checks.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
@@ -198,11 +203,6 @@ export async function syncArtifactSourceSnapshot(
 						if (oversizedFile) {
 							throw new Error(buildRepoLargeFileMessage(oversizedFile))
 						}
-						const snapshot = await writeArtifactSourceSnapshot({
-							env: input.env,
-							repoId: source.repo_id,
-							files: input.files,
-						})
 						// Plain repos have no manifest requirement (live-at-HEAD).
 						if (source.entity_kind !== 'repo') {
 							const manifestContent = input.files[source.manifest_path]
@@ -217,6 +217,30 @@ export async function syncArtifactSourceSnapshot(
 								manifestPath: source.manifest_path,
 							})
 						}
+						// Same publish gate as bootstrapSource / publishFromExternalRef:
+						// do not stamp published_commit or the published snapshot until
+						// runRepoChecks passes on this tree.
+						if (source.entity_kind === 'package') {
+							const checks = await runRepoChecks({
+								workspace: createSnapshotFilesWorkspace(input.files),
+								manifestPath: source.manifest_path,
+								sourceRoot: source.source_root || '/',
+								env: input.env,
+								baseUrl: input.baseUrl,
+								userId: input.userId,
+								...(input.expectedPackageScope !== undefined
+									? { expectedPackageScope: input.expectedPackageScope }
+									: {}),
+							})
+							if (!checks.ok) {
+								throw new Error(formatFailedRepoCheckMessages(checks.results))
+							}
+						}
+						const snapshot = await writeArtifactSourceSnapshot({
+							env: input.env,
+							repoId: source.repo_id,
+							files: input.files,
+						})
 						await writePublishedSourceSnapshot({
 							env: input.env,
 							source: {
@@ -300,10 +324,31 @@ export async function syncArtifactSourceSnapshot(
 			dryRun: false,
 			rollbackOnError: true,
 		})
+		// packageSave updates previously used publishSession({ force: true }),
+		// which skipped the check-status gate. For packages, run the same
+		// runRepoChecks path publishFromExternalRef uses, then publish without
+		// force so the session check-status contract still holds. Destructive
+		// overwrite still needs force for history rewrite / force-push, but
+		// only after checks pass.
+		const forcePublish =
+			source.entity_kind !== 'package' ||
+			input.destructiveOverwriteConfirmed === true
+		if (source.entity_kind === 'package') {
+			const checkRun = await session.runChecks({
+				sessionId,
+				userId: input.userId,
+				...(input.expectedPackageScope !== undefined
+					? { expectedPackageScope: input.expectedPackageScope }
+					: {}),
+			})
+			if (!checkRun.ok) {
+				throw new Error(formatFailedRepoCheckMessages(checkRun.results))
+			}
+		}
 		const publishResult = await session.publishSession({
 			sessionId,
 			userId: input.userId,
-			force: true,
+			...(forcePublish ? { force: true } : {}),
 			...(input.destructiveOverwriteConfirmed === true
 				? { destructiveOverwriteConfirmed: true }
 				: {}),

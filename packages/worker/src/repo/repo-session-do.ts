@@ -68,6 +68,7 @@ import {
 	runPackageTypecheckLanguageService,
 	runRepoChecks,
 	runRepoSourceWalkChecks,
+	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
 import {
@@ -1744,6 +1745,33 @@ class RepoSessionBase extends DurableObject<Env> {
 				return commit
 			},
 		)
+		if (source.entity_kind === 'package') {
+			await pushServerTiming(
+				serverTiming,
+				'bootstrap-repo-checks',
+				async () => {
+					const manifestPath = resolveRepoWorkspacePath(
+						source.manifest_path,
+						repoSessionWorkspacePrefix,
+					)
+					const sourceRoot = resolveRepoWorkspacePath(
+						source.source_root || repoSessionWorkspacePrefix,
+						repoSessionWorkspacePrefix,
+					)
+					const checks = await runRepoChecks({
+						workspace: this.workspace,
+						manifestPath,
+						sourceRoot,
+						env: this.env,
+						baseUrl: source.source_root,
+						userId: input.userId,
+					})
+					if (!checks.ok) {
+						throw new Error(formatFailedRepoCheckMessages(checks.results))
+					}
+				},
+			)
+		}
 		const snapshotFiles = await pushServerTiming(
 			serverTiming,
 			'bootstrap-workspace-snapshot',

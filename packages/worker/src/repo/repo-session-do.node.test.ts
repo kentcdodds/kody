@@ -196,6 +196,27 @@ vi.mock('./checks.ts', () => ({
 	runPackageTypecheckLanguageService: (
 		...args: Parameters<typeof Checks.runPackageTypecheckLanguageService>
 	) => mockModule.runPackageTypecheckLanguageService(...args),
+	formatFailedRepoCheckMessages: (
+		results: Array<{ ok: boolean; message: string }>,
+		fallback = 'Publish checks failed.',
+	) => {
+		const failed = results
+			.filter((entry) => !entry.ok)
+			.map((entry) => entry.message)
+			.filter((message) => message.trim().length > 0)
+		return failed.length > 0 ? failed.join('\n') : fallback
+	},
+	createSnapshotFilesWorkspace: (files: Record<string, string>) => ({
+		async readFile(path: string) {
+			return files[path.trim().replace(/^\/+/, '')] ?? null
+		},
+		async glob() {
+			return Object.keys(files).map((path) => ({
+				path,
+				type: 'file' as const,
+			}))
+		},
+	}),
 }))
 
 vi.mock('./external-publish-clone.ts', () => ({
@@ -1287,6 +1308,7 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 		expect.objectContaining({ branch: 'main', singleBranch: true }),
 	)
 	expect(mockModule.git.init).not.toHaveBeenCalled()
+	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -1309,6 +1331,85 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 	await bootstrap('session-bootstrap-empty')
 	expect(mockModule.git.init).toHaveBeenCalled()
 	expect(mockModule.git.clone).not.toHaveBeenCalled()
+})
+
+test('bootstrapSource runs publish repo checks before advancing a package published_commit', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const unpublishedPackage = sourceRow({
+		published_commit: null,
+		manifest_path: 'package.json',
+	})
+	const files = {
+		'package.json': userPackageJson,
+		'src/index.ts': 'export const ready = true\n',
+		'README.md': '# Demo\n',
+		'AGENTS.md': '# Agents\n',
+	}
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
+	seedWorkspace(files, { fallback: null })
+	mockModule.gitState.headCommit = 'commit-bootstrap-pkg'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.runRepoChecks.mockResolvedValueOnce({
+		ok: false,
+		results: [
+			{ kind: 'typecheck', ok: false, message: 'src/index.ts type error' },
+		],
+		manifest: null,
+		sourceFiles: files,
+	})
+
+	await expect(
+		repoSession().bootstrapSource({
+			sessionId: 'session-bootstrap-checks',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			bootstrapAccess: {
+				defaultBranch: 'main',
+				remote: artifactsRemote('package-package-1'),
+				token: 'art_v1_bootstrap?expires=1760000000',
+				expiresAt: '2025-10-09T08:53:20.000Z',
+			},
+			edits: [
+				{ kind: 'write', path: 'package.json', content: userPackageJson },
+				{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
+			],
+		}),
+	).rejects.toThrow('src/index.ts type error')
+	expect(mockModule.runRepoChecks).toHaveBeenCalled()
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedPackage)
+	seedWorkspace(files, { fallback: null })
+	mockModule.gitState.headCommit = 'commit-bootstrap-pkg-ok'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	const ok = await repoSession().bootstrapSource({
+		sessionId: 'session-bootstrap-checks-ok',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: artifactsRemote('package-package-1'),
+			token: 'art_v1_bootstrap?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+		edits: [
+			{ kind: 'write', path: 'package.json', content: userPackageJson },
+			{ kind: 'write', path: 'src/index.ts', content: files['src/index.ts'] },
+		],
+	})
+	expect(ok.publishedCommit).toBe('commit-bootstrap-pkg-ok')
+	expect(mockModule.runRepoChecks).toHaveBeenCalled()
+	expect(mockModule.git.push).toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			publishedCommit: 'commit-bootstrap-pkg-ok',
+		}),
+	)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV for downstream readers and never leaves inconsistent published commits when snapshot collection or persistence fails', async () => {
