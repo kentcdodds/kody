@@ -134,6 +134,13 @@ export type PublishedBundleArtifact = {
 		kodyId: string
 		sourceId: string
 	} | null
+	/**
+	 * Platform-injected Remix versions bundled into this artifact via
+	 * `withPlatformRemixFiles`. Absent on older artifacts; reuse treats a
+	 * missing or mismatched pair as dirty so a platform Remix bump rebuilds.
+	 */
+	remixVersion?: string
+	remixUiVersion?: string
 	createdAt: string
 }
 
@@ -515,6 +522,12 @@ export async function readPublishedBundleArtifact(input: {
 					sourceId: artifact.packageContext.sourceId ?? artifact.sourceId,
 				}
 			: null,
+		...(typeof artifact.remixVersion === 'string'
+			? { remixVersion: artifact.remixVersion }
+			: {}),
+		...(typeof artifact.remixUiVersion === 'string'
+			? { remixUiVersion: artifact.remixUiVersion }
+			: {}),
 		modules: deserializeWorkerLoaderModules(artifact.modules),
 		createdAt: artifact.createdAt,
 	} satisfies PublishedBundleArtifact

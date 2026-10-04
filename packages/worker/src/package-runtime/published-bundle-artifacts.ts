@@ -32,6 +32,7 @@ import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
 } from './package-artifact-targets.ts'
+import { loadPlatformRemixFiles } from './package-app-remix.ts'
 import { publishedPackageArtifactTargetInputsChanged } from './published-bundle-artifact-inputs.ts'
 
 type PersistPublishedBundleArtifactInput = {
@@ -152,6 +153,7 @@ export async function persistPublishedBundleArtifact(
 		artifactName,
 		entryPoint,
 	})
+	const platformRemix = await loadPlatformRemixFiles()
 	const artifact: PublishedBundleArtifact = {
 		version: 1,
 		kind: input.kind,
@@ -164,6 +166,8 @@ export async function persistPublishedBundleArtifact(
 		dependencies: input.dependencies,
 		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
+		remixVersion: platformRemix.remixVersion,
+		remixUiVersion: platformRemix.remixUiVersion,
 		createdAt: new Date().toISOString(),
 	}
 	const rowInput = toDbRowInput({
@@ -332,11 +336,13 @@ function readPublishedSourceSnapshotCached(input: {
 
 /**
  * Copy a prior-commit artifact onto `publishedCommit` when the target's
- * bundler inputs are unchanged and captured `kody:@` dependency commits
- * still match those sources' current `published_commit`. Artifacts are
- * keyed by commit, so reuse writes the same modules under the new commit
- * key and retargets the identity row. Returns false (rebuild) when prior
- * artifacts or snapshots are missing, inputs changed, bundled dependency
+ * bundler inputs are unchanged, captured `kody:@` dependency commits still
+ * match those sources' current `published_commit`, and the artifact's
+ * stamped platform Remix versions match the versions the platform would
+ * inject now. Artifacts are keyed by commit, so reuse writes the same
+ * modules under the new commit key and retargets the identity row. Returns
+ * false (rebuild) when prior artifacts or snapshots are missing, inputs
+ * changed, Remix versions mismatch or are absent, bundled dependency
  * snapshots are stale, or the copy fails.
  */
 export async function reusePublishedPackageArtifactIfUnchanged(input: {
@@ -366,6 +372,13 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	}
 	const priorCommit = loaded.artifact.publishedCommit
 	if (loaded.row.publishedCommit !== priorCommit) {
+		return false
+	}
+	const platformRemix = await loadPlatformRemixFiles()
+	if (
+		loaded.artifact.remixVersion !== platformRemix.remixVersion ||
+		loaded.artifact.remixUiVersion !== platformRemix.remixUiVersion
+	) {
 		return false
 	}
 	const [previousSnapshot, nextSnapshot] = await Promise.all([
