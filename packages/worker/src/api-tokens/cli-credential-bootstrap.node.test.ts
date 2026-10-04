@@ -211,6 +211,48 @@ test('bootstrap defaults to a 2-week idle TTL and 3-month max lifetime', async (
 	expect(redeemed.token.max_expires_at).toBe(at(7_776_000).toISOString())
 })
 
+test('bootstrap default lifetimes clamp to a shorter API-token parent', async () => {
+	const { db } = createDb()
+	const parentRemainingSeconds = 6 * 24 * 60 * 60
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		parent: {
+			scopes: ['tokens:write', 'local-execute', 'account:read'],
+			maxExpiresAt: at(parentRemainingSeconds).toISOString(),
+		},
+		now: start,
+	})
+	expect(minted.idle_ttl_seconds).toBe(parentRemainingSeconds)
+	expect(minted.max_lifetime_seconds).toBe(parentRemainingSeconds)
+
+	const redeemed = await redeemCliCredentialBootstrap({
+		db,
+		code: minted.bootstrap_code,
+		now: start,
+	})
+	expect(redeemed.token.idle_ttl_seconds).toBe(parentRemainingSeconds)
+	expect(redeemed.token.max_expires_at).toBe(
+		at(parentRemainingSeconds).toISOString(),
+	)
+})
+
+test('bootstrap still rejects an explicit idle TTL longer than the parent', async () => {
+	const { db } = createDb()
+	await expect(
+		mintCliCredentialBootstrap({
+			db,
+			userId,
+			idleTtlSeconds: 14 * 24 * 60 * 60,
+			parent: {
+				scopes: ['tokens:write', 'local-execute', 'account:read'],
+				maxExpiresAt: at(6 * 24 * 60 * 60).toISOString(),
+			},
+			now: start,
+		}),
+	).rejects.toThrow(/expires too soon/)
+})
+
 test('bootstrap rejects idle or max lifetime values above the bootstrap policy caps', async () => {
 	const { db } = createDb()
 	await expect(
