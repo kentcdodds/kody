@@ -4,20 +4,19 @@
  * (`package:<id>:read`) is reusable as an API/OAuth scope later.
  */
 
-export const connectionProfileResourceTypes = ['package'] as const
-export type ConnectionProfileResourceType =
+const connectionProfileResourceTypes = ['package'] as const
+type ConnectionProfileResourceType =
 	(typeof connectionProfileResourceTypes)[number]
 
-export const connectionProfileActions = ['read', 'execute', 'write'] as const
+const connectionProfileActions = ['read', 'execute', 'write'] as const
 export type ConnectionProfileAction = (typeof connectionProfileActions)[number]
 
 /** Actions accepted when writing a profile in v1. */
-export const connectionProfileV1Actions = ['read', 'execute'] as const
-export type ConnectionProfileV1Action =
-	(typeof connectionProfileV1Actions)[number]
+const connectionProfileV1Actions = ['read', 'execute'] as const
+type ConnectionProfileV1Action = (typeof connectionProfileV1Actions)[number]
 
 export type ConnectionProfileGrant = {
-	resourceType: string
+	resourceType: ConnectionProfileResourceType
 	resourceId: string
 	actions: Array<ConnectionProfileAction>
 }
@@ -27,14 +26,23 @@ export type ConnectionProfileGrantString =
 
 const actionSet: ReadonlySet<string> = new Set(connectionProfileActions)
 const v1ActionSet: ReadonlySet<string> = new Set(connectionProfileV1Actions)
+const resourceTypeSet: ReadonlySet<string> = new Set(
+	connectionProfileResourceTypes,
+)
 
-export function isConnectionProfileAction(
+function isConnectionProfileResourceType(
+	value: unknown,
+): value is ConnectionProfileResourceType {
+	return typeof value === 'string' && resourceTypeSet.has(value)
+}
+
+function isConnectionProfileAction(
 	value: unknown,
 ): value is ConnectionProfileAction {
 	return typeof value === 'string' && actionSet.has(value)
 }
 
-export function isConnectionProfileV1Action(
+function isConnectionProfileV1Action(
 	value: unknown,
 ): value is ConnectionProfileV1Action {
 	return typeof value === 'string' && v1ActionSet.has(value)
@@ -159,7 +167,7 @@ export function normalizeConnectionProfileGrants(
 		if (!resourceType || !resourceId) {
 			throw new Error('Each profile grant needs resourceType and resourceId.')
 		}
-		if (resourceType !== 'package') {
+		if (!isConnectionProfileResourceType(resourceType)) {
 			throw new Error(
 				`Unsupported connection profile resource type "${resourceType}". Only "package" is accepted.`,
 			)

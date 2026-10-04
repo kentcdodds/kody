@@ -2,7 +2,7 @@
 
 export const connectionProfileNameMaxLength = 64
 
-export const connectionProfileReservedNames = ['unlimited'] as const
+const connectionProfileReservedNames = ['unlimited'] as const
 
 export type ConnectionProfileNameValidationError =
 	| 'empty'
