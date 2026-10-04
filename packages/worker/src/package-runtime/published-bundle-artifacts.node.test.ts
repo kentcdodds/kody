@@ -64,8 +64,7 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('./package-app-remix.ts', () => ({
-	loadPlatformRemixFiles: (...args: Array<unknown>) =>
-		mockModule.loadPlatformRemixFiles(...args),
+	loadPlatformRemixFiles: () => mockModule.loadPlatformRemixFiles(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -351,6 +350,23 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 	)
 	mockModule.readPublishedSourceSnapshot.mockResolvedValueOnce(invalidatedAt)
 	expect(await isBuilt()).toBe(true)
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(makeRow())
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(
+		makeKvArtifact({ remixVersion: '3.0.0-rc.2' }),
+	)
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
+	expect(await isBuilt()).toBe(false)
+
+	const {
+		remixVersion: _missingRemixVersion,
+		remixUiVersion: _missingRemixUiVersion,
+		...artifactWithoutRemixVersions
+	} = makeKvArtifact()
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(
+		artifactWithoutRemixVersions,
+	)
+	expect(await isBuilt()).toBe(false)
 })
 
 test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', async () => {

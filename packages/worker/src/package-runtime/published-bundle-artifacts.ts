@@ -89,6 +89,21 @@ function normalizeEntryPoint(entryPoint: string) {
 	return trimmed
 }
 
+/**
+ * True when the artifact's stamped platform Remix versions match what
+ * `withPlatformRemixFiles` would inject now. Missing stamps (older
+ * artifacts) count as a mismatch so a platform Remix bump rebuilds.
+ */
+async function publishedPackageArtifactRemixVersionsMatch(
+	artifact: PublishedBundleArtifact,
+) {
+	const platformRemix = await loadPlatformRemixFiles()
+	return (
+		artifact.remixVersion === platformRemix.remixVersion &&
+		artifact.remixUiVersion === platformRemix.remixUiVersion
+	)
+}
+
 function toDbRowInput(input: {
 	userId: string
 	sourceId: string
@@ -250,10 +265,12 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 
 /**
  * True when a published bundle artifact already exists for this target
- * identity at `publishedCommit` (row + KV payload) and is not older than the
- * snapshot's `invalidateArtifactsBefore` cutoff. Used to skip rebuild work
- * that would only rewrite the same commit's artifact, while still repairing
- * leftovers after a mismatched already_published snapshot rewrite.
+ * identity at `publishedCommit` (row + KV payload), stamped platform Remix
+ * versions match the current platform, and the artifact is not older than
+ * the snapshot's `invalidateArtifactsBefore` cutoff. Used to skip rebuild
+ * work that would only rewrite the same commit's artifact, while still
+ * repairing leftovers after a mismatched already_published snapshot rewrite
+ * or a platform Remix bump.
  */
 export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	env: Env
@@ -277,6 +294,9 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 		loaded.row.publishedCommit !== input.publishedCommit ||
 		loaded.artifact.publishedCommit !== input.publishedCommit
 	) {
+		return false
+	}
+	if (!(await publishedPackageArtifactRemixVersionsMatch(loaded.artifact))) {
 		return false
 	}
 	const snapshot = await readPublishedSourceSnapshotCached({
@@ -374,11 +394,7 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	if (loaded.row.publishedCommit !== priorCommit) {
 		return false
 	}
-	const platformRemix = await loadPlatformRemixFiles()
-	if (
-		loaded.artifact.remixVersion !== platformRemix.remixVersion ||
-		loaded.artifact.remixUiVersion !== platformRemix.remixUiVersion
-	) {
+	if (!(await publishedPackageArtifactRemixVersionsMatch(loaded.artifact))) {
 		return false
 	}
 	const [previousSnapshot, nextSnapshot] = await Promise.all([
