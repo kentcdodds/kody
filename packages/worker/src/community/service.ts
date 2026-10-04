@@ -1592,6 +1592,7 @@ export async function persistPreparedCommunityFork(
 	}
 	try {
 		let originCommit = prepared.originCommit
+		let syncedFiles = prepared.files
 		if (copiedAtStorageLayer) {
 			try {
 				const persisted = await persistForkedArtifactRepoContents({
@@ -1667,12 +1668,13 @@ export async function persistPreparedCommunityFork(
 					throw error
 				}
 				originCommit = fallbackTree.originCommit
+				syncedFiles = fallbackTree.files
 				const snapshotCommit = await syncArtifactSourceSnapshot({
 					env: prepared.env,
 					baseUrl: prepared.baseUrl,
 					userId: prepared.userId,
 					sourceId: ensuredSource.id,
-					files: fallbackTree.files,
+					files: syncedFiles,
 					bootstrapAccess: ensuredSource.bootstrapAccess,
 					serverTiming,
 					runPublishChecks: false,
@@ -1723,7 +1725,7 @@ export async function persistPreparedCommunityFork(
 			durationMs: Date.now() - persistStartedAt,
 			listingId: prepared.listingId,
 			packageId: prepared.packageId,
-			filesCount: Object.keys(prepared.files).length,
+			filesCount: Object.keys(syncedFiles).length,
 		})
 
 		return {
@@ -1734,8 +1736,8 @@ export async function persistPreparedCommunityFork(
 			targetName: prepared.targetName,
 			originCommit,
 			crossScopeReferences: prepared.crossScopeReferences,
-			filesCount: Object.keys(prepared.files).length,
-			files: prepared.files,
+			filesCount: Object.keys(syncedFiles).length,
+			files: syncedFiles,
 			...(serverTiming && serverTiming.length > 0 ? { serverTiming } : {}),
 		}
 	} catch (error) {

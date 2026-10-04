@@ -62,7 +62,14 @@ function preparedFork(overrides: { crossScopeReferences?: unknown } = {}) {
 	}
 }
 
-function forkResult(overrides: { crossScopeReferences?: unknown } = {}) {
+function forkResult(
+	overrides: {
+		crossScopeReferences?: unknown
+		files?: Record<string, string>
+		filesCount?: number
+		originCommit?: string
+	} = {},
+) {
 	return {
 		...forkFields,
 		crossScopeReferences: [],
@@ -252,4 +259,33 @@ test('install overlaps Artifacts persist with publish checks', async () => {
 	persistFailChecksGate.resolve()
 	await expect(persistThrowPromise).rejects.toThrow('artifact bootstrap failed')
 	expect(checksFinished).toBe(true)
+})
+
+test('install re-checks and projects the synced fork files when fallback differs from prepare', async () => {
+	mockCleanInstall()
+	const syncedFiles = {
+		'package.json': '{"name":"@userb/demo","version":"2.0.0"}',
+		'src/index.ts': 'export default async function main() { return 2 }',
+		'README.md': '# dest HEAD',
+	}
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(
+		forkResult({
+			files: syncedFiles,
+			filesCount: Object.keys(syncedFiles).length,
+			originCommit: 'commit-dest-head',
+		}),
+	)
+	mockModule.runRepoChecks
+		.mockResolvedValueOnce({ ok: true, results: [] })
+		.mockResolvedValueOnce({ ok: true, results: [] })
+
+	await expect(install()).resolves.toMatchObject({
+		status: 'installed',
+		originCommit: 'commit-dest-head',
+	})
+
+	expect(mockModule.runRepoChecks).toHaveBeenCalledTimes(2)
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
+		expect.objectContaining({ sourceFiles: syncedFiles }),
+	)
 })

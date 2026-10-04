@@ -177,7 +177,22 @@ export async function installCommunityListing(input: {
 		throw checksSettled.reason
 	}
 	const fork = persistSettled.value
-	const checks = checksSettled.value
+	// Overlapped checks used the prepared pin snapshot. When Artifacts dest
+	// clone fallback syncs a newer dest-HEAD tree, re-check that tree before
+	// projecting so install does not publish different contents than the fork.
+	let checks = checksSettled.value
+	if (fork.files !== prepared.files) {
+		checks = await runRepoChecks({
+			workspace: createSnapshotFilesWorkspace(fork.files),
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			expectedPackageScope: input.expectedPackageScope,
+			requirePackageDocs: false,
+		})
+	}
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,
 		packageId: fork.packageId,
@@ -221,7 +236,7 @@ export async function installCommunityListing(input: {
 		userEmail: input.userEmail,
 		packageId: fork.packageId,
 		sourceId: fork.sourceId,
-		sourceFiles: prepared.files,
+		sourceFiles: fork.files,
 		waitUntil: input.waitUntil,
 	})
 	logInstallPhaseTiming({

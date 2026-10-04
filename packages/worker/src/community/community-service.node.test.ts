@@ -52,6 +52,15 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		syncArtifactSourceSnapshot: vi.fn(),
 		forkArtifactRepo: vi.fn(),
 		persistForkedArtifactRepoContents: vi.fn(),
+		resolveCommunityForkArtifactsGitFallbackTree: vi.fn(
+			async (input: {
+				preparedFiles: Record<string, string>
+				preparedOriginCommit: string
+			}) => ({
+				files: input.preparedFiles,
+				originCommit: input.preparedOriginCommit,
+			}),
+		),
 		deleteEntitySource: vi.fn(),
 		cleanupArtifactReposForPackage: vi.fn(),
 		deleteUserScopedArtifactRepo: vi.fn(async () => false),
@@ -101,7 +110,11 @@ vi.mock('#worker/repo/source-sync.ts', () =>
 	pickMocks('syncArtifactSourceSnapshot'),
 )
 vi.mock('#worker/repo/artifact-repo-fork.ts', () => ({
-	...pickMocks('forkArtifactRepo', 'persistForkedArtifactRepoContents'),
+	...pickMocks(
+		'forkArtifactRepo',
+		'persistForkedArtifactRepoContents',
+		'resolveCommunityForkArtifactsGitFallbackTree',
+	),
 	shouldFallbackFromArtifactFork: (error: unknown) =>
 		error instanceof Error && /not found/i.test(error.message),
 	shouldFallbackFromForkedArtifactPersist: (error: unknown) =>
@@ -109,13 +122,6 @@ vi.mock('#worker/repo/artifact-repo-fork.ts', () => ({
 		/Artifacts (?:listServerRefs|git fetch|git clone) failed/i.test(
 			error.message,
 		),
-	resolveCommunityForkArtifactsGitFallbackTree: async (input: {
-		preparedFiles: Record<string, string>
-		preparedOriginCommit: string
-	}) => ({
-		files: input.preparedFiles,
-		originCommit: input.preparedOriginCommit,
-	}),
 }))
 vi.mock('#worker/repo/entity-sources.ts', () =>
 	pickMocks('deleteEntitySource', 'getEntitySourceById'),
@@ -1250,6 +1256,18 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 		),
 	)
 	mockModule.deleteUserScopedArtifactRepo.mockResolvedValueOnce(true)
+	const fallbackFiles = {
+		'package.json':
+			'{"name":"@jane/my-discord-gateway","version":"1.0.0","type":"module","kody":{"id":"my-discord-gateway"}}',
+		'README.md': '# newer dest HEAD',
+		'src/index.ts': 'export default async function main() {}',
+	}
+	mockModule.resolveCommunityForkArtifactsGitFallbackTree.mockResolvedValueOnce(
+		{
+			files: fallbackFiles,
+			originCommit: 'commit-dest-head',
+		},
+	)
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-fallback')
 
 	const result = await fork({ kodyId: 'my-discord-gateway' })
@@ -1267,13 +1285,16 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 			sourceId: 'fork-source-1',
 			bootstrapAccess: expect.objectContaining({ token: 'bootstrap' }),
 			runPublishChecks: false,
-			files: expect.objectContaining({
-				'package.json': expect.any(String),
-			}),
+			files: fallbackFiles,
 		}),
 	)
-	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
-	expect(result.originCommit).toBe('commit-1')
+	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ origin_commit: 'commit-dest-head' }),
+	)
+	expect(result.originCommit).toBe('commit-dest-head')
+	expect(result.files).toBe(fallbackFiles)
+	expect(result.filesCount).toBe(Object.keys(fallbackFiles).length)
 })
 
 test('forkCommunityListing does not insert a fork when fallback snapshot sync returns null', async () => {
