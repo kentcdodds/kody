@@ -319,6 +319,62 @@ export default async function main() { return await listSites() }`,
 	expect(runtimeShim).toContain('kody.gatewayFetch')
 })
 
+test('buildLocalExecutePackageGraph imports free nested meter helper for inlined callees', async () => {
+	const nestedPackageId = '41095c29-4539-4f2f-a6fb-646348602c18'
+	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
+		makeLoadedSource({
+			exports: { './advance': './src/advance.ts' },
+			files: {
+				'src/advance.ts': `export default async function advance() { return null }`,
+			},
+		}),
+	)
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		makeArtifactHit({
+			artifactName: './advance',
+			entryPoint: 'src/advance.ts',
+			mainModule: 'dist/advance.js',
+			modules: {
+				'dist/advance.js': `var DISCORD_BOT_AUTHORIZATION = "Bot {{secret:discordBotTokenKentPersonalAutomation}}";
+async function discordFetch(path, init) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Authorization", DISCORD_BOT_AUTHORIZATION);
+  return fetch("https://discord.com/api/v10" + path, { ...init, headers });
+}
+var editMessage = __kodyMeterStaticPackageExport(${JSON.stringify(nestedPackageId)}, async function edit() {
+  return discordFetch("/channels/1/messages/2", { method: "PATCH", body: "{}" });
+});
+export default async function advance() {
+  return editMessage({ dryRun: true });
+}
+`,
+			},
+		}),
+	)
+
+	const graph = await buildLocalExecutePackageGraph({
+		...graphInput,
+		code: `import advance from 'kody:@kentcdodds/example-package/advance'
+export default async function main() { return await advance() }`,
+	})
+
+	const bundle = graph.modules.find((module) =>
+		module.name.endsWith('/dist/advance.js'),
+	)
+	expect(bundle).toBeDefined()
+	expect(bundle?.esModule).toMatch(
+		/import\s*\{[^}]*__kodyMeterStaticPackageExport[^}]*\}/,
+	)
+	expect(bundle?.esModule).toContain(
+		`__kodyMeterStaticPackageExport(${JSON.stringify(nestedPackageId)}`,
+	)
+	expect(bundle?.esModule).toContain('__kodyCreatePackageBoundGatewayFetch')
+	expect(bundle?.esModule).toMatch(
+		/__kodyCreatePackageBoundGatewayFetch\("pkg-1"\)/,
+	)
+})
+
 test('local secretHeaders.basic parses opaque {{secret:…}} refs like cloud', () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
 	const start = shim.indexOf('const __kodyParseSecretNameOrPlaceholder')

@@ -23,6 +23,11 @@ const secretPlaceholderExactPattern =
 const gatewayFetchBindingMarker = '__kodyCreatePackageBoundGatewayFetch'
 const unboundGatewayFetchMarker = '__kodyGatewayFetch as fetch'
 const secretRefMarker = '__kodySecretRef('
+const meterStaticPackageExportName = '__kodyMeterStaticPackageExport'
+const meterStaticPackageExportCallPattern =
+	/\b__kodyMeterStaticPackageExport\s*\(/
+const meterStaticPackageExportImportPattern =
+	/\bimport\s*\{[^}]*\b__kodyMeterStaticPackageExport\b/
 
 export function moduleSourceHasSecretPlaceholderLiterals(source: string) {
 	try {
@@ -237,6 +242,61 @@ const fetch = __kodyCreatePackageBoundGatewayFetch(${JSON.stringify(input.packag
 }
 
 /**
+ * Cloud execute exposes `__kodyMeterStaticPackageExport` as a free binding via
+ * the runtime preload. Published bundles therefore call it without an import
+ * when they inline nested `kody:@…` callees. Local package-graph replaces the
+ * virtual runtime with an ESM shim that only exports the helper — so inlined
+ * free calls throw `… is not defined` under `--local` unless we import it.
+ *
+ * Prefer merging into an existing named import from the primary runtime shim
+ * (secret-aware fetch / inlined-runtime rewrites often already added one).
+ */
+export function ensureLocalExecuteMeterStaticPackageExportImport(input: {
+	modulePath: string
+	source: string
+	primaryRuntimePath: string
+}): { source: string; rewritten: boolean } {
+	if (!meterStaticPackageExportCallPattern.test(input.source)) {
+		return { source: input.source, rewritten: false }
+	}
+	if (meterStaticPackageExportImportPattern.test(input.source)) {
+		return { source: input.source, rewritten: false }
+	}
+
+	const relativeShim = createRelativeImportSpecifier(
+		normalizeWorkspaceModulePath(input.modulePath),
+		normalizeWorkspaceModulePath(input.primaryRuntimePath),
+	)
+	const shimLiteral = JSON.stringify(relativeShim)
+	const existingImport = new RegExp(
+		`import\\s*\\{([^}]*)\\}\\s*from\\s*${escapeRegExp(shimLiteral)};?`,
+	).exec(input.source)
+	if (existingImport && typeof existingImport.index === 'number') {
+		const names = existingImport[1] ?? ''
+		if (names.includes(meterStaticPackageExportName)) {
+			return { source: input.source, rewritten: false }
+		}
+		const trimmedNames = names.trim()
+		const nextNames = trimmedNames
+			? `${meterStaticPackageExportName}, ${trimmedNames}`
+			: meterStaticPackageExportName
+		const replacement = `import { ${nextNames} } from ${shimLiteral};`
+		const start = existingImport.index
+		const end = start + existingImport[0].length
+		return {
+			source: `${input.source.slice(0, start)}${replacement}${input.source.slice(end)}`,
+			rewritten: true,
+		}
+	}
+
+	return {
+		source: `import { ${meterStaticPackageExportName} } from ${shimLiteral};
+${input.source}`,
+		rewritten: true,
+	}
+}
+
+/**
  * Apply placeholder literal rewrite + gateway fetch binding for one
  * published package module returned by package-graph.
  */
@@ -255,10 +315,20 @@ export function rewriteLocalExecuteModuleForSecretAwareFetch(input: {
 		primaryRuntimePath: input.primaryRuntimePath,
 		packageId: input.packageId,
 	})
-	return {
+	const withMeter = ensureLocalExecuteMeterStaticPackageExportImport({
+		modulePath: input.modulePath,
 		source: withFetch.source,
-		rewritten: placeholders.rewritten || withFetch.rewritten,
+		primaryRuntimePath: input.primaryRuntimePath,
+	})
+	return {
+		source: withMeter.source,
+		rewritten:
+			placeholders.rewritten || withFetch.rewritten || withMeter.rewritten,
 	}
+}
+
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 type SecretPlaceholderLiteral = {

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	ensureLocalExecuteMeterStaticPackageExportImport,
 	injectLocalExecuteGatewayFetchBinding,
 	moduleSourceHasSecretPlaceholderLiterals,
 	rewriteLocalExecuteModuleForSecretAwareFetch,
@@ -89,4 +90,70 @@ const SECRET = __kodySecretRef("demoToken", "user");
 	})
 	expect(again.rewritten).toBe(false)
 	expect(again.source).toBe(source)
+})
+
+test('ensureLocalExecuteMeterStaticPackageExportImport merges into existing shim import', () => {
+	const source = `import {
+	__kodySecretRef,
+	__kodyCreatePackageBoundGatewayFetch,
+} from "../../../../../.__kody_virtual__/runtime.js";
+var fetch = __kodyCreatePackageBoundGatewayFetch("280d0259-20e7-4fbb-9e22-5a50728bcf65");
+var DISCORD_BOT_AUTHORIZATION = "Bot {{secret:discordBotTokenKentPersonalAutomation}}";
+var editMessage = __kodyMeterStaticPackageExport("41095c29-4539-4f2f-a6fb-646348602c18", rawEdit);
+export default async function advance() { return editMessage }
+`
+	const ensured = ensureLocalExecuteMeterStaticPackageExportImport({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/platform-feedback-discord-notifier/.__published_bundle__/2e2f616476616e6365/bundle.js',
+		source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+	})
+	expect(ensured.rewritten).toBe(true)
+	expect(ensured.source).toContain('__kodyMeterStaticPackageExport')
+	expect(ensured.source).toMatch(
+		/import\s*\{[^}]*__kodyMeterStaticPackageExport[^}]*\}\s*from\s*"\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/\.__kody_virtual__\/runtime\.js"/,
+	)
+	expect(ensured.source.match(/__kodyMeterStaticPackageExport/g)?.length).toBe(
+		2,
+	)
+})
+
+test('rewriteLocalExecuteModuleForSecretAwareFetch imports nested meter helper', () => {
+	const source = `var DISCORD_BOT_AUTHORIZATION = "Bot {{secret:discordBotTokenKentPersonalAutomation}}";
+async function discordFetch(path, init) {
+  const headers = new Headers(init.headers || {});
+  headers.set("Authorization", DISCORD_BOT_AUTHORIZATION);
+  return fetch("https://discord.com/api/v10" + path, { ...init, headers });
+}
+var editMessage = __kodyMeterStaticPackageExport("41095c29-4539-4f2f-a6fb-646348602c18", async function edit() {
+  return discordFetch("/channels/1/messages/2", { method: "PATCH", body: "{}" });
+});
+export default editMessage;
+`
+	const rewritten = rewriteLocalExecuteModuleForSecretAwareFetch({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/platform-feedback-discord-notifier/.__published_bundle__/advance/bundle.js',
+		source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+		packageId: '280d0259-20e7-4fbb-9e22-5a50728bcf65',
+	})
+	expect(rewritten.rewritten).toBe(true)
+	expect(rewritten.source).toContain('__kodyCreatePackageBoundGatewayFetch')
+	expect(rewritten.source).toMatch(
+		/import\s*\{[^}]*__kodyMeterStaticPackageExport[^}]*\}/,
+	)
+	expect(rewritten.source).toContain(
+		'__kodyMeterStaticPackageExport("41095c29-4539-4f2f-a6fb-646348602c18"',
+	)
+})
+
+test('ensureLocalExecuteMeterStaticPackageExportImport is a no-op without meter calls', () => {
+	const source = `export default async function main() { return 1 }`
+	const ensured = ensureLocalExecuteMeterStaticPackageExportImport({
+		modulePath:
+			'.__kody_packages__/demo/.__published_bundle__/artifact/dist/index.js',
+		source,
+		primaryRuntimePath: '.__kody_virtual__/runtime.js',
+	})
+	expect(ensured).toEqual({ source, rewritten: false })
 })

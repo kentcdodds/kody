@@ -121,7 +121,12 @@ package-graph prep: quoted secret literals become `__kodySecretRef(...)`, and
 import proxies wrap function exports in `__kodyMeterStaticPackageExport` so
 nested inlined callees run under that package's stamp ALS. gatewayFetch prefers
 the meter stamp over the outer module-path binding so nested callees use
-stamp-aligned package-scoped secrets. Published bundles that inline the virtual
+stamp-aligned package-scoped secrets. Published bundles that **call**
+`__kodyMeterStaticPackageExport` as a free binding (cloud preload) are rewritten
+to import it from the local runtime shim — otherwise `--local` throws
+`__kodyMeterStaticPackageExport is not defined` before nested secret-aware fetch
+can run (same class as Discord `edit-message` / `send-shipped-pr` under packages
+that inline nested `kody:@…` deps). Published bundles that inline the virtual
 runtime (instead of importing `.__kody_virtual__/runtime.js`) are rewritten onto
 that shim during package-graph prep so Dropbox-style artifacts work under
 `--local` without cloud's ALS preload. Stamped `packageStorage` /
