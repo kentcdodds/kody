@@ -137,6 +137,29 @@ test('community page handler returns bare listings frame HTML for target header'
 		},
 	])
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	const sameLeafOnlyResponse = await handler.handler({
+		request: new Request('https://example.com/community', {
+			headers: { 'x-remix-target': 'community-listings' },
+		}),
+		params: {},
+		url: new URL('https://example.com/community'),
+	} as never)
+	const sameLeafOnlyHtml = await sameLeafOnlyResponse.text()
+	expect(sameLeafOnlyHtml).not.toContain(
+		'data-testid="community-listing-viewer-install-listing-1"',
+	)
+	expect(sameLeafOnlyHtml).not.toContain('Installed')
+
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		{
+			listingId: 'listing-1',
+			targetKodyId: 'github-triage',
+			forkedPackageId: 'pkg-github',
+			forkedSourceId: 'src-github',
+			createdAt: '2026-08-01T00:00:00.000Z',
+			originCommit: 'abc1234567890',
+		},
+	])
 	const signedInResponse = await handler.handler({
 		request: new Request('https://example.com/community', {
 			headers: { 'x-remix-target': 'community-listings' },

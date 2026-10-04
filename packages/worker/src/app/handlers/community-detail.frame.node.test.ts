@@ -110,6 +110,7 @@ async function renderDetail({
 	branch = 'main',
 	profileVisibility = 'public',
 	savedPackagesByKodyId = [] as Array<Record<string, string>>,
+	forks = [] as Array<Record<string, string>>,
 } = {}) {
 	// Every render addresses `listing-1` with its own source fixture; the
 	// in-isolate listing cache must not carry one answer into the next.
@@ -124,7 +125,7 @@ async function renderDetail({
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
 		viewer && { roles: [], ...viewer },
 	)
-	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue(forks)
 	mockModule.listSavedPackagesByKodyIds.mockResolvedValue(savedPackagesByKodyId)
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 	mockModule.getMcpUserPackageScope.mockResolvedValue(
@@ -175,6 +176,20 @@ test('community detail handler returns bare detail frame HTML for target header'
 	)
 	expect(privateOwner.html).not.toContain('href="/@kentcdodds"')
 
+	const sameLeafOnly = await renderDetail({
+		viewer: { mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' } },
+		savedPackagesByKodyId: [
+			{
+				id: 'pkg-github',
+				kodyId: 'github-triage',
+				name: '@burhan/github-triage',
+				sourceId: 'src-github',
+			},
+		],
+	})
+	expect(sameLeafOnly.html).not.toContain('data-package-title-status="open"')
+	expect(sameLeafOnly.html).not.toContain('href="/@burhan/github-triage"')
+
 	const signedIn = await renderDetail({
 		viewer: { mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' } },
 		savedPackagesByKodyId: [
@@ -183,6 +198,16 @@ test('community detail handler returns bare detail frame HTML for target header'
 				kodyId: 'github-triage',
 				name: '@burhan/github-triage',
 				sourceId: 'src-github',
+			},
+		],
+		forks: [
+			{
+				listingId: 'listing-1',
+				targetKodyId: 'github-triage',
+				forkedPackageId: 'pkg-github',
+				forkedSourceId: 'src-github',
+				createdAt: '2026-08-01T00:00:00.000Z',
+				originCommit: 'abc1234567890',
 			},
 		],
 	})
