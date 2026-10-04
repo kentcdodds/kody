@@ -160,14 +160,14 @@ export function hydrateEditorStateForExistingSecret(
 	}
 }
 
-export function readExplicitPackageId(href: string) {
+function readExplicitPackageId(href: string) {
 	return (
 		new URL(href, 'http://localhost').searchParams.get('packageId')?.trim() ||
 		null
 	)
 }
 
-export function readInvalidExpiresAtQuery(href: string, state: EditorState) {
+function readInvalidExpiresAtQuery(href: string, state: EditorState) {
 	const raw = new URL(href, 'http://localhost').searchParams
 		.get('expiresAt')
 		?.trim()
@@ -198,7 +198,7 @@ export function resolvePackageIdForSecretSet(input: {
 	return { packageId }
 }
 
-export function resolveSavePolicyFromSetup(input: {
+function resolveSavePolicyFromSetup(input: {
 	href: string
 	state: EditorState
 	existing: AccountSecretsLoaderData['secrets'][number] | null
