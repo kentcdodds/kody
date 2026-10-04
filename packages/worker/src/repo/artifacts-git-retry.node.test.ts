@@ -219,4 +219,15 @@ test('Artifacts git remap helper requires Artifacts markers and skips source-rec
 			),
 		),
 	).toBe(false)
+
+	expect(
+		isArtifactsGitTransientRemapError(
+			new Error('Internal error. Retry later or report it if it persists.', {
+				cause: new Error(
+					'packageGetGitRemote stopped by the production package source safety policy. Stop and report this source recovery problem instead of rebuilding or overwriting the package in place.',
+					{ cause: wrappedHttp },
+				),
+			}),
+		),
+	).toBe(false)
 })

@@ -155,14 +155,20 @@ export function isArtifactsGitTimeoutMessage(message: string) {
  * transient (KODY-8P). Requires an Artifacts-specific marker in the cause
  * chain — wrapper HTTP phrase, packfile phrase, `ArtifactsGitTimeoutError`,
  * or the Artifacts timeout message — not a bare `TimeoutError` or a nested
- * `HTTP Error: NNN` under an unrelated outer failure. Outermost source-recovery
- * stop guidance is never remapped to a retryable package-source error.
+ * `HTTP Error: NNN` under an unrelated outer failure. Source-recovery stop
+ * guidance anywhere in the cause chain is never remapped (including after
+ * `toApiError` wraps the recovery error as a generic `ApiError`).
  */
 export function isArtifactsGitTransientRemapError(error: unknown) {
 	const chain = getErrorCauseChain(error)
 	if (chain.length === 0) return false
-	const topMessage = getErrorMessage(chain[0])
-	if (topMessage.includes('Stop and report this source recovery problem')) {
+	if (
+		chain.some((entry) =>
+			getErrorMessage(entry).includes(
+				'Stop and report this source recovery problem',
+			),
+		)
+	) {
 		return false
 	}
 	return chain.some((entry) => {
