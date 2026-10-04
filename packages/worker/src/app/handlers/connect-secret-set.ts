@@ -13,8 +13,14 @@ export function createConnectSecretSetHandler(env: Env) {
 				return user
 			}
 
+			// Load secrets metadata without the setup query. Prefill params like
+			// name + allowedHosts must not be parsed as a host-approval request.
+			const secretsRequest = new Request(
+				new URL('/account/secrets.json', request.url),
+				{ headers: request.headers },
+			)
 			const accountSecrets = await loadAccountSecretsData({
-				request,
+				request: secretsRequest,
 				env,
 				user,
 			})

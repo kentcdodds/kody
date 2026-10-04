@@ -310,6 +310,10 @@ export async function accountSecretsRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
+	const prefillName = url.searchParams.get('name')?.trim()
+	if (url.pathname === '/account/secrets/new' && prefillName) {
+		return routeLoaderRedirect(`/connect/secret-set${url.search}`)
+	}
 	const href = `${url.pathname}${url.search}`
 	const requestUrl = buildSecretsApiRequestUrl(href)
 	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {

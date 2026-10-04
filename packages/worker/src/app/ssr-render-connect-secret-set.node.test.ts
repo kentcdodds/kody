@@ -111,6 +111,9 @@ test('renderAppPage server-renders the dedicated connect-secret-set page', async
 	expect(html).not.toContain('New secret')
 	expect(html).not.toContain('Passwords and tokens Kody can use for you.')
 	expect(html).not.toContain('data-testid="account-secrets"')
+	// Setup prefill must not surface host-approval errors for a new secret.
+	expect(html).not.toContain('None of the listed secrets were found')
+	expect(html).not.toContain('data-testid="connect-secret-set-error"')
 })
 
 test('renderAppPage shows empty state without a secret name', async () => {

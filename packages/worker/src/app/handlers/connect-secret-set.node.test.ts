@@ -86,4 +86,11 @@ test('connect secret-set page requires a signed-in user and embeds secrets data'
 			loaderData: { accountSecrets },
 		}),
 	)
+	expect(mockModule.loadAccountSecretsData).toHaveBeenCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				url: 'https://example.com/account/secrets.json',
+			}),
+		}),
+	)
 })

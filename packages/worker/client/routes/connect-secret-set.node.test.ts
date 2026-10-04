@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest'
-import { readConnectSecretSetView } from './connect-secret-set.tsx'
+import {
+	findMatchingSecretForSetup,
+	hydrateEditorStateForExistingSecret,
+	readConnectSecretSetView,
+} from './connect-secret-set.tsx'
+import { createEmptyEditorState } from './account-secrets-shared.ts'
 
 test('connect secret-set view focuses the form when a name is present', () => {
 	expect(
@@ -36,5 +41,114 @@ test('connect secret-set view focuses the form when a name is present', () => {
 		saved: true,
 		showForm: false,
 		showBackToSecrets: true,
+	})
+})
+
+test('findMatchingSecretForSetup resolves rotation targets by name and scope', () => {
+	const secrets = [
+		{
+			id: 'user:exampleApiKey',
+			name: 'exampleApiKey',
+			scope: 'user' as const,
+			description: 'Existing',
+			packageId: null,
+			packageTitle: null,
+			allowedHosts: ['api.example.com'],
+			allowedPackages: ['pkg_1'],
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			expiresAt: null,
+			ttlMs: null,
+		},
+		{
+			id: 'package:pkg_2:token',
+			name: 'token',
+			scope: 'package' as const,
+			description: '',
+			packageId: 'pkg_2',
+			packageTitle: 'Notes',
+			allowedHosts: [],
+			allowedPackages: [],
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			expiresAt: null,
+			ttlMs: null,
+		},
+	]
+
+	expect(
+		findMatchingSecretForSetup(secrets, {
+			name: 'exampleApiKey',
+			scope: 'user',
+			packageId: '',
+		})?.id,
+	).toBe('user:exampleApiKey')
+	expect(
+		findMatchingSecretForSetup(secrets, {
+			name: 'token',
+			scope: 'package',
+			packageId: 'pkg_2',
+		})?.id,
+	).toBe('package:pkg_2:token')
+	expect(
+		findMatchingSecretForSetup(secrets, {
+			name: 'token',
+			scope: 'package',
+			packageId: 'pkg_other',
+		}),
+	).toBeNull()
+})
+
+test('hydrateEditorStateForExistingSecret preserves policy unless the query sets it', () => {
+	const existing = {
+		id: 'user:exampleApiKey',
+		name: 'exampleApiKey',
+		scope: 'user' as const,
+		description: 'Existing description',
+		packageId: null,
+		packageTitle: null,
+		allowedHosts: ['api.example.com'],
+		allowedPackages: ['pkg_1'],
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+		expiresAt: '2026-12-01T00:00:00.000Z',
+		ttlMs: null,
+	}
+	const base = {
+		...createEmptyEditorState([]),
+		name: 'exampleApiKey',
+		scope: 'user' as const,
+	}
+
+	expect(
+		hydrateEditorStateForExistingSecret(
+			base,
+			existing,
+			'/connect/secret-set?name=exampleApiKey',
+		),
+	).toMatchObject({
+		currentId: 'user:exampleApiKey',
+		description: 'Existing description',
+		expiresAt: '2026-12-01T00:00:00.000Z',
+		allowedHosts: ['api.example.com'],
+		allowedPackages: ['pkg_1'],
+	})
+
+	expect(
+		hydrateEditorStateForExistingSecret(
+			{
+				...base,
+				description: 'From query',
+				allowedHosts: ['new.example.com'],
+				allowedPackages: ['pkg_2'],
+			},
+			existing,
+			'/connect/secret-set?name=exampleApiKey&description=From%20query&allowedHosts=new.example.com&allowedPackages=pkg_2',
+		),
+	).toMatchObject({
+		currentId: 'user:exampleApiKey',
+		description: 'From query',
+		allowedHosts: ['new.example.com'],
+		allowedPackages: ['pkg_2'],
 	})
 })
