@@ -5,8 +5,11 @@ import { expect, test } from 'vitest'
 import {
 	checkFileSizeRatchet,
 	countLines,
+	formatOptionsFromOxfmtConfig,
+	formatSourceWithRepoOxfmt,
 	parseFileSizeRatchetSnapshot,
 	type FileSizeRatchetSnapshot,
+	type FormatSourceForRatchet,
 } from './check-file-size-ratchet.ts'
 
 function lines(count: number) {
@@ -15,6 +18,9 @@ function lines(count: number) {
 		(_, index) => `line-${String(index)}`,
 	).join('\n')
 }
+
+const identityFormat: FormatSourceForRatchet = async (_path, sourceText) =>
+	sourceText
 
 test('countLines treats a trailing newline as one terminator, not an extra line', () => {
 	expect(countLines('')).toBe(0)
@@ -28,6 +34,20 @@ test('parseFileSizeRatchetSnapshot rejects a malformed snapshot', () => {
 	expect(() => parseFileSizeRatchetSnapshot('{"client-routes":[]}')).toThrow(
 		/node-tests/,
 	)
+})
+
+test('formatOptionsFromOxfmtConfig drops ignorePatterns and overrides', () => {
+	const options = formatOptionsFromOxfmtConfig({
+		printWidth: 80,
+		semi: false,
+		ignorePatterns: ['**/dist/**'],
+		overrides: [{ files: ['**/package.json'], options: { useTabs: false } }],
+		$schema: 'https://example.test/schema.json',
+	})
+	expect(options).toEqual({ printWidth: 80, semi: false })
+	expect(options).not.toHaveProperty('ignorePatterns')
+	expect(options).not.toHaveProperty('overrides')
+	expect(options).not.toHaveProperty('$schema')
 })
 
 test('checkFileSizeRatchet allows grandfathered files and rejects new over-budget files', async () => {
@@ -59,7 +79,7 @@ test('checkFileSizeRatchet allows grandfathered files and rejects new over-budge
 			],
 		}
 
-		const result = await checkFileSizeRatchet(cwd, snapshot)
+		const result = await checkFileSizeRatchet(cwd, snapshot, identityFormat)
 		expect(result.ok).toBe(false)
 		expect(result.issues).toEqual(
 			expect.arrayContaining([
@@ -89,6 +109,87 @@ test('checkFileSizeRatchet allows grandfathered files and rejects new over-budge
 				expect.objectContaining({
 					file: 'packages/worker/src/legacy.node.test.ts',
 					kind: 'new-over-budget',
+				}),
+			]),
+		)
+	} finally {
+		await rm(cwd, { recursive: true, force: true })
+	}
+})
+
+test('checkFileSizeRatchet measures budget after formatting, not the raw working tree', async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), 'file-size-ratchet-fmt-'))
+	try {
+		const routesDir = path.join(cwd, 'packages', 'worker', 'client', 'routes')
+		const testsDir = path.join(cwd, 'packages', 'worker', 'src')
+		await Promise.all([
+			mkdir(routesDir, { recursive: true }),
+			mkdir(testsDir, { recursive: true }),
+		])
+
+		// Raw file is under the 2000-line node-test budget, but oxfmt expands
+		// the joined expect onto many lines — the pre-#2867 false-green case.
+		const padding = Array.from(
+			{ length: 1990 },
+			(_, index) => `const pad${String(index)} = ${String(index)}`,
+		).join('\n')
+		const joinedExpect =
+			'expect({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, j: 10, k: 11, l: 12, m: 13 }).toEqual({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9, j: 10, k: 11, l: 12, m: 13 })'
+		const overAfterFormat = `${padding}\n${joinedExpect}\n`
+		expect(countLines(overAfterFormat)).toBeLessThanOrEqual(2000)
+		expect(
+			countLines(
+				await formatSourceWithRepoOxfmt('x.node.test.ts', overAfterFormat),
+			),
+		).toBeGreaterThan(2000)
+
+		await writeFile(
+			path.join(testsDir, 'joined-over.node.test.ts'),
+			overAfterFormat,
+		)
+
+		// Same shape but already under budget after format.
+		const underPadding = Array.from(
+			{ length: 10 },
+			(_, index) => `const ok${String(index)} = ${String(index)}`,
+		).join('\n')
+		const underAfterFormat = `${underPadding}\n${joinedExpect}\n`
+		expect(
+			countLines(
+				await formatSourceWithRepoOxfmt('y.node.test.ts', underAfterFormat),
+			),
+		).toBeLessThanOrEqual(2000)
+		await writeFile(
+			path.join(testsDir, 'joined-under.node.test.ts'),
+			underAfterFormat,
+		)
+
+		const snapshot: FileSizeRatchetSnapshot = {
+			'client-routes': [],
+			'node-tests': [],
+		}
+
+		const identityResult = await checkFileSizeRatchet(
+			cwd,
+			snapshot,
+			identityFormat,
+		)
+		expect(identityResult.ok).toBe(true)
+
+		const formattedResult = await checkFileSizeRatchet(cwd, snapshot)
+		expect(formattedResult.ok).toBe(false)
+		expect(formattedResult.issues).toEqual([
+			expect.objectContaining({
+				file: 'packages/worker/src/joined-over.node.test.ts',
+				kind: 'new-over-budget',
+				maxLines: 2000,
+			}),
+		])
+		expect(formattedResult.issues[0]?.lineCount).toBeGreaterThan(2000)
+		expect(formattedResult.issues).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: 'packages/worker/src/joined-under.node.test.ts',
 				}),
 			]),
 		)

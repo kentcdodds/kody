@@ -25,8 +25,9 @@ figures below were measured directly against the repository (2026-08-30).
   ratchet, knip dead-code analysis, and `audit:prod` (production dependencies,
   failing on moderate or higher).
 - `tools/file-size-ratchet.json` enforces budgets of 800 lines for client routes
-  and 2,000 lines for node test files. Files may only shrink out of the
-  grandfathered list; new oversized files fail CI.
+  and 2,000 lines for node test files. Line counts are measured **after** the
+  repo formatter (`oxfmt`), matching the formatted tree CI checks. Files may
+  only shrink out of the grandfathered list; new oversized files fail CI.
 - `knip` fails the gate on unused files, exports, and types.
 - `tools/check-decorative-banners.ts` rejects decorative comment banners.
 

@@ -1,5 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { format, type FormatConfig, type OxfmtConfig } from 'oxfmt'
+import oxfmtConfig from '../oxfmt.config.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 export const defaultSnapshotRelativePath = path.join(
@@ -51,6 +53,15 @@ export type FileSizeRatchetResult = {
 	}>
 }
 
+/**
+ * Formats source the same way pre-commit / CI expect before line budgets are
+ * counted. Injected in unit tests; production uses repo oxfmt config.
+ */
+export type FormatSourceForRatchet = (
+	relativePath: string,
+	sourceText: string,
+) => Promise<string>
+
 const skipDirectoryNames = new Set([
 	'.git',
 	'.wrangler',
@@ -66,6 +77,29 @@ export function countLines(content: string) {
 	const normalized = content.endsWith('\n') ? content.slice(0, -1) : content
 	if (normalized.length === 0) return 1
 	return normalized.split('\n').length
+}
+
+export function formatOptionsFromOxfmtConfig(
+	config: OxfmtConfig & { $schema?: unknown },
+): FormatConfig {
+	const {
+		ignorePatterns: _ignorePatterns,
+		overrides: _overrides,
+		$schema: _schema,
+		...options
+	} = config
+	return options
+}
+
+const defaultFormatOptions = formatOptionsFromOxfmtConfig(oxfmtConfig)
+
+export async function formatSourceWithRepoOxfmt(
+	relativePath: string,
+	sourceText: string,
+	options: FormatConfig = defaultFormatOptions,
+): Promise<string> {
+	const result = await format(relativePath, sourceText, options)
+	return result.code
 }
 
 export function parseFileSizeRatchetSnapshot(
@@ -141,6 +175,7 @@ export async function listRatchetGroupFiles(
 export async function checkFileSizeRatchet(
 	cwd: string,
 	snapshot: FileSizeRatchetSnapshot,
+	formatSource: FormatSourceForRatchet = formatSourceWithRepoOxfmt,
 ): Promise<FileSizeRatchetResult> {
 	const issues: Array<FileSizeRatchetIssue> = []
 	const underBudgetSnapshotEntries: FileSizeRatchetResult['underBudgetSnapshotEntries'] =
@@ -152,9 +187,10 @@ export async function checkFileSizeRatchet(
 		const existing = new Set(files)
 
 		for (const relativePath of files) {
-			const lineCount = countLines(
-				await readFile(path.join(cwd, relativePath), 'utf8'),
-			)
+			const raw = await readFile(path.join(cwd, relativePath), 'utf8')
+			// Budget matches CI's formatted tree: count after oxfmt, not the
+			// pre-format working tree (joined lines can expand on commit).
+			const lineCount = countLines(await formatSource(relativePath, raw))
 			if (lineCount <= group.maxLines) {
 				if (allowlist.has(relativePath)) {
 					underBudgetSnapshotEntries.push({
@@ -201,7 +237,7 @@ function formatIssues(issues: ReadonlyArray<FileSizeRatchetIssue>) {
 			if (issue.kind === 'stale-snapshot') {
 				return `${issue.file} is listed in the ${issue.groupId} snapshot but no longer exists. Remove it from ${defaultSnapshotRelativePath}.`
 			}
-			return `${issue.file} has ${String(issue.lineCount)} lines (budget ${String(issue.maxLines)}). Split it or add it to ${defaultSnapshotRelativePath} only when shrinking an existing grandfathered file is impossible.`
+			return `${issue.file} has ${String(issue.lineCount)} lines after formatting (budget ${String(issue.maxLines)}). Split it or add it to ${defaultSnapshotRelativePath} only when shrinking an existing grandfathered file is impossible.`
 		})
 		.join('\n')
 }
@@ -222,7 +258,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
 		console.error(
 			[
 				`File-size ratchet failed (${String(result.issues.length)} issue(s)).`,
-				'Client routes stay at or under 800 lines unless they are already in the snapshot. Node tests stay at or under 2000 lines unless they are already in the snapshot. The snapshot is an allowlist of existing oversized files; it must not grow except to record a file that was already over budget.',
+				'Client routes stay at or under 800 lines after formatting unless they are already in the snapshot. Node tests stay at or under 2000 lines after formatting unless they are already in the snapshot. The snapshot is an allowlist of existing oversized files; it must not grow except to record a file that was already over budget.',
 				'',
 				formatIssues(result.issues),
 			].join('\n'),
