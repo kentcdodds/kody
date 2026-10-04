@@ -28,7 +28,8 @@ type PackageOption = NonNullable<
 	AccountConnectedAgentsLoaderData['connectionProfilePackageOptions']
 >[number]
 
-type GrantAction = 'read' | 'execute'
+const grantActions = ['read', 'execute'] as const
+type GrantAction = (typeof grantActions)[number]
 
 type DraftGrant = {
 	resourceId: string
@@ -487,7 +488,11 @@ function renderGrantSummary(
 					<span mix={css(packageIdentityCss)}>
 						{packageLabel(grant.resourceId, packagesById)}
 					</span>
-					<span mix={css(mutedCss)}>{grant.actions.join(' · ')}</span>
+					<span mix={css(mutedCss)}>
+						{grantActions
+							.filter((action) => grant.actions.includes(action))
+							.join(' · ')}
+					</span>
 				</li>
 			))}
 		</ul>
@@ -536,7 +541,7 @@ function renderGrantsEditor(input: {
 									)}
 								</span>
 								<div mix={css(actionsRowCss)}>
-									{(['read', 'execute'] as const).map((action) => {
+									{grantActions.map((action) => {
 										const checked = grant[action]
 										const otherChecked =
 											action === 'read' ? grant.execute : grant.read

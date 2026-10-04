@@ -266,6 +266,7 @@ test('connection profiles list only granted packages and add more through a pack
 	expect(profileCard).toContain('aria-label="Packages granted to ci"')
 	expect(profileCard).toContain('>@jane/tool-03<')
 	expect(profileCard).toContain('>read<')
+	expect(profileCard).toContain('>read · execute<')
 	expect(profileCard).toContain('>Unknown package<')
 	expect(profileCard).not.toContain('@jane/tool-04')
 	expect(profileCard).toContain('aria-label="Edit packages for ci"')
