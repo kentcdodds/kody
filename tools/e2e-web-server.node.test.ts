@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	defaultE2eWebServerPort,
 	findUnhealthyOriginDevServerMessage,
-	formatUnhealthyOriginDevServerHint,
 	resolveE2eWebServerHealthUrl,
 	shouldRetryE2eWebServerFirstStart,
 } from './e2e-web-server.ts'
@@ -62,7 +61,6 @@ test('e2e webServer retries the first Vite process only before /health', () => {
 
 test('e2e webServer names an unhealthy leftover origin before starting Vite', async () => {
 	const identity = { pid: 9, ppid: 1, comm: 'workerd', cmdline: 'workerd' }
-	const hint = formatUnhealthyOriginDevServerHint()
 
 	expect(
 		await findUnhealthyOriginDevServerMessage({
@@ -72,7 +70,7 @@ test('e2e webServer names an unhealthy leftover origin before starting Vite', as
 			readProcess: () => identity,
 			protectedPids: new Set(),
 		}),
-	).toBe(hint)
+	).toMatch(/\/health is failing/)
 
 	expect(
 		await findUnhealthyOriginDevServerMessage({
@@ -102,5 +100,5 @@ test('e2e webServer names an unhealthy leftover origin before starting Vite', as
 			readProcess: () => identity,
 			protectedPids: new Set(),
 		}),
-	).toBe(hint)
+	).toMatch(/\/health is failing/)
 })

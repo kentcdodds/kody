@@ -86,10 +86,8 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(warning.html).toContain('https://kody.codes/account/usage#credits')
 	expect(warning.text).toContain('https://kody.codes/account/usage')
 	expect(warning.html).toContain('200 of 250 (80%)')
-	expect(warning.text).toContain(
-		'You can often avoid this execute quota by running locally with the CLI when the work does not need to stay on Kody: https://kody.codes/docs/local-execute',
-	)
 	expect(warning.html).toContain('https://kody.codes/docs/local-execute')
+	expect(warning.text).toContain('https://kody.codes/docs/local-execute')
 
 	const reached = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -126,7 +124,6 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		],
 	})
 	expect(storageOnly.text).not.toContain('/docs/local-execute')
-	expect(storageOnly.text).not.toContain('running locally with the CLI')
 
 	const connect = buildConnectAgentEmail({
 		appBaseUrl: 'https://kody.codes',

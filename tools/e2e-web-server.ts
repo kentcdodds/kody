@@ -34,7 +34,7 @@ export function resolveE2eWebServerHealthUrl(
  * After Playwright starts specs, a crash must kill this wrapper so the
  * suite-level dead-server retry can start a fresh run.
  */
-export function formatUnhealthyOriginDevServerHint() {
+function formatUnhealthyOriginDevServerHint() {
 	return 'An existing kody `dev:ensure` server is listening but /health is failing. Stop that Vite/workerd process before `npm run test:e2e:run`; a crash-looping origin on 3742 collides with the e2e web server (inspector port / fetchWorkerExportTypes).'
 }
 

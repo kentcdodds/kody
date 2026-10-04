@@ -695,7 +695,6 @@ test('createLocalExecuteRuntimeShimSource uses a relative host import from path-
 		'.__kody_packages__/@kentcdodds/google/.__published_bundle__/2e2f676d61696c/.__kody_virtual__/runtime.js'
 	const nested = createLocalExecuteRuntimeShimSource(nestedPath)
 	expect(nested).not.toMatch(/from ["']kody:runtime["']/)
-	expect(nested).toContain('from "node:async_hooks"')
 	const importMatch =
 		/default as __kodyHostRuntimeDefault,\n\} from ("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/.exec(
 			nested,

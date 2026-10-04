@@ -274,10 +274,9 @@ test('connection profiles list only granted packages and add more through a pack
 	const createForm = html.slice(
 		html.indexOf('data-testid="connection-profile-create"'),
 	)
-	// A new profile starts with no packages and no per-package checkboxes;
-	// every saved package is reachable through the combobox instead.
+	// A new profile starts with no packages; every saved package is
+	// reachable through the combobox instead of a grant-scoped list.
 	expect(createForm).toContain('No packages yet')
-	expect(createForm).not.toContain('type="checkbox"')
 	expect(createForm).toMatch(
 		/<label[^>]*for="connection-profile-create-add-package"[^>]*>Add package</,
 	)

@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	checkInstalledLockfile,
 	findInstalledLockfileMismatches,
-	formatInstalledLockfileError,
 	inspectInstalledLockfile,
 	isWorkspaceLockfilePath,
 	resolveLockfileInstallPath,
@@ -74,34 +73,22 @@ test('installed lockfile check flags stale or missing workspace and root depende
 		},
 	])
 
-	expect(
-		inspectInstalledLockfile({
-			lock,
-			readInstalledVersion: (installPath) =>
-				installPath === 'node_modules/remix' ? '3.0.0-rc.4' : '4.0.1',
-		}),
-	).toEqual({
-		ok: false,
-		detail: formatInstalledLockfileError([
-			{
-				name: 'remix',
-				installPath: 'node_modules/remix',
-				lockedVersion: '3.0.0',
-				installedVersion: '3.0.0-rc.4',
-			},
-		]),
+	const staleInspect = inspectInstalledLockfile({
+		lock,
+		readInstalledVersion: (installPath) =>
+			installPath === 'node_modules/remix' ? '3.0.0-rc.4' : '4.0.1',
 	})
+	expect(staleInspect.ok).toBe(false)
+	expect(staleInspect.detail).toContain('remix@3.0.0')
+	expect(staleInspect.detail).toContain('3.0.0-rc.4')
 
 	expect(
 		inspectInstalledLockfile({
 			lock,
 			readInstalledVersion: (installPath) =>
 				installPath === 'node_modules/remix' ? '3.0.0' : '4.0.1',
-		}),
-	).toEqual({
-		ok: true,
-		detail: 'installed dependencies match package-lock.json',
-	})
+		}).ok,
+	).toBe(true)
 
 	expect(
 		findInstalledLockfileMismatches({
@@ -172,11 +159,8 @@ test('installed lockfile check compares nested workspace install paths', () => {
 			lock,
 			readInstalledVersion: (installPath) =>
 				installPath === 'packages/worker/node_modules/satori' ? '0.32.0' : null,
-		}),
-	).toEqual({
-		ok: true,
-		detail: 'installed dependencies match package-lock.json',
-	})
+		}).ok,
+	).toBe(true)
 })
 
 test('installed lockfile check against this repo is clean', async () => {

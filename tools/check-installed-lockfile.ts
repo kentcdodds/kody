@@ -82,7 +82,7 @@ export function findInstalledLockfileMismatches(input: {
 	)
 }
 
-export function formatInstalledLockfileError(
+function formatInstalledLockfileError(
 	mismatches: ReadonlyArray<InstalledLockfileMismatch>,
 ) {
 	const details = mismatches
