@@ -86,13 +86,13 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(expandHtml.match(/data-record-row="true"/g)).toHaveLength(1)
 	expect(expandHtml.match(/data-record-focus="true"/g)).toHaveLength(1)
 	expect(expandHtml).not.toContain('data-record-focus-pending')
-	// Drop columns stay in the table track model above the card breakpoint
-	// (zero-width + visibility:hidden) so expand colSpan cannot invent a
-	// phantom column under table-layout:fixed (#2780). Cards still use
-	// display:none at 620px.
+	// Drop columns stay in the table track model (zero-width +
+	// visibility:hidden) so expand colSpan cannot invent a phantom column
+	// under table-layout:fixed (#2780). Cards remove them via data-drop.
 	expect(expandHtml).toMatch(/visibility:\s*hidden/)
 	expect(expandHtml).toMatch(/max-width:\s*0/)
-	expect(expandHtml).toContain('@container (max-width: 620px)')
+	expect(expandHtml).toContain('data-drop="2"')
+	expect(expandHtml).toContain('td[data-drop]')
 
 	// Selected without a loaded record must not point assistive tech at a
 	// missing expanded region.
