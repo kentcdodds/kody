@@ -153,12 +153,29 @@ function signedInUser() {
 
 const request = (path: string) => new Request(`https://example.com${path}`)
 
-test('community index overlays matching kody_id installs for signed-in viewers', async () => {
+test('community index overlays fork installs and ignores same-leaf packages without a fork', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([viewerGithubPackage])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+
+	const sameLeafOnly = await loadCommunityIndexData(
+		{} as Env,
+		request('/community'),
+	)
+	expect(sameLeafOnly.listings).toHaveLength(1)
+	expect(sameLeafOnly.listings[0]?.viewerInstall).toBeUndefined()
+
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
+	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
+	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		viewerFork(),
+	])
 	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([viewerGithubPackage])
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 

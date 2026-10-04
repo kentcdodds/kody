@@ -47,11 +47,16 @@ const githubPackage = {
 	sourceId: 'src-github',
 }
 
-test('resolveViewerListingInstalls prefers kody matches, then forks, and classifies outdated vs ahead from ancestry', () => {
+test('resolveViewerListingInstalls requires a fork row; same-leaf alone is not installed', () => {
 	const resolved = resolveViewerListingInstalls({
-		listings: ['github', 'cloudflare', 'notion', 'slack', 'dropbox'].map(
-			(kodyId) => ({ id: `listing-${kodyId}`, kodyId }),
-		),
+		listings: [
+			'github',
+			'cloudflare',
+			'notion',
+			'slack',
+			'dropbox',
+			'discord',
+		].map((kodyId) => ({ id: `listing-${kodyId}`, kodyId })),
 		packageScope: 'burhan',
 		savedPackages: [
 			githubPackage,
@@ -60,6 +65,12 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 				kodyId: 'my-notion',
 				name: '@burhan/my-notion',
 				sourceId: 'src-notion',
+			},
+			{
+				id: 'pkg-discord-own',
+				kodyId: 'discord',
+				name: '@burhan/discord',
+				sourceId: 'src-discord-own',
 			},
 		],
 		forks: [
@@ -98,11 +109,20 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 				'src-dropbox-new',
 				'2026-08-03T00:00:00.000Z',
 			),
+			fork(
+				'listing-github',
+				'github',
+				'pkg-github',
+				'src-github',
+				'2026-08-01T00:00:00.000Z',
+				'commit-same',
+			),
 		],
 	})
 	expect(Object.fromEntries(resolved)).toEqual({
 		'listing-github': install('github', 'src-github', {
 			packageId: 'pkg-github',
+			originCommit: 'commit-same',
 		}),
 		'listing-cloudflare': install('cloudflare', 'src-cf', {
 			status: 'adaptation_required',
@@ -114,6 +134,8 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 			status: 'adaptation_required',
 		}),
 	})
+	expect(resolved.has('listing-discord')).toBe(false)
+	expect(resolved.has('listing-slack')).toBe(false)
 
 	const githubCases: Array<{
 		name: string
@@ -151,7 +173,7 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 			expected: { forkAhead: true, originCommit: 'commit-tip' },
 		},
 		{
-			name: 'self-authored',
+			name: 'renamed-fork-wins-over-same-leaf-non-fork',
 			pinnedCommit: 'commit-new',
 			fork: fork(
 				'listing-github',
@@ -161,7 +183,14 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 				'2026-08-02T00:00:00.000Z',
 				'commit-old',
 			),
-			expected: {},
+			expected: {
+				status: 'adaptation_required',
+				targetName: '@burhan/github-custom',
+				sourceId: 'src-github-custom',
+				packageId: null,
+				forkAhead: true,
+				originCommit: 'commit-old',
+			},
 		},
 	]
 	for (const {
@@ -193,4 +222,55 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and classif
 			}),
 		})
 	}
+})
+
+test('same-leaf package without fork is not installed; real fork of listing is', () => {
+	const listingId = 'listing-discord'
+	const listing = { id: listingId, kodyId: 'discord', pinnedCommit: 'pin-1' }
+	const sameLeafOwn = {
+		id: 'pkg-own-discord',
+		kodyId: 'discord',
+		name: '@jelias/discord',
+		sourceId: 'src-own-discord',
+	}
+	const forkedInstall = {
+		id: 'pkg-forked-discord',
+		kodyId: 'discord',
+		name: '@jelias/discord-from-community',
+		sourceId: 'src-forked-discord',
+	}
+
+	const withoutFork = resolveViewerListingInstalls({
+		listings: [listing],
+		packageScope: 'jelias',
+		savedPackages: [sameLeafOwn],
+		forks: [],
+	})
+	expect(withoutFork.has(listingId)).toBe(false)
+
+	const withFork = resolveViewerListingInstalls({
+		listings: [listing],
+		packageScope: 'jelias',
+		savedPackages: [sameLeafOwn, forkedInstall],
+		forks: [
+			fork(
+				listingId,
+				'discord',
+				forkedInstall.id,
+				forkedInstall.sourceId,
+				'2026-08-01T00:00:00.000Z',
+				'pin-1',
+			),
+		],
+	})
+	expect(withFork.get(listingId)).toEqual({
+		status: 'installed',
+		targetName: forkedInstall.name,
+		sourceId: forkedInstall.sourceId,
+		packageId: forkedInstall.id,
+		listingAhead: false,
+		forkAhead: false,
+		originCommit: 'pin-1',
+		listingPinnedCommit: 'pin-1',
+	})
 })

@@ -12,16 +12,17 @@ export type ForkListingRelation = 'synced' | 'outdated' | 'ahead'
  * Equal absorb-marker SHAs are synced. When they differ, outdated is only
  * proven when the listing pin is not an ancestor of the fork tip. Any other
  * inequality — pin is an ancestor, or ancestry is unknown — is ahead.
+ * Missing absorb-marker or listing-pin linkage is not synced (`null`).
  */
 export function classifyForkListingRelation(input: {
 	originCommit: string | null | undefined
 	listingPinnedCommit: string | null | undefined
 	listingPinIsAncestorOfForkTip?: boolean | null
-}): ForkListingRelation {
+}): ForkListingRelation | null {
 	const originCommit = input.originCommit?.trim() ?? ''
 	const listingPinnedCommit = input.listingPinnedCommit?.trim() ?? ''
 	if (originCommit.length === 0 || listingPinnedCommit.length === 0) {
-		return 'synced'
+		return null
 	}
 	if (originCommit === listingPinnedCommit) return 'synced'
 	if (input.listingPinIsAncestorOfForkTip === false) return 'outdated'

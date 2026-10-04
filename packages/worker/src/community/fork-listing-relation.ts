@@ -94,7 +94,7 @@ export async function applySavedPackageForkListingAncestry(input: {
 
 function withForkListingRelation(
 	record: SavedPackageWithCommunityProvenanceRecord,
-	relation: ForkListingRelation,
+	relation: ForkListingRelation | null,
 ): SavedPackageWithCommunityProvenanceRecord {
 	if (record.listingCurrent == null) return record
 	if (record.listingCurrent !== true) {
