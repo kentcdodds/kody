@@ -12,11 +12,11 @@ project ships two-way fixes.
 
 ## Enforced now
 
-| Check                     | What fails                                                                                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents-md-line-cap`      | Root `AGENTS.md` grows past the package budget (interim cap = pre-shrink length until [#2898](https://github.com/kentcdodds/kody/pull/2898) lands). |
-| `test-time-budget`        | Validate `🧪 Node` or `☁️ Workers` exceeds the CI-measured budget + headroom.                                                                       |
-| `review-bot-comment-sort` | Surfaces Bugbot / Devin / Seer findings for ship-pr; invalid ones get a short kody-bot reply and are not blockers. Unsure stays valid.              |
+| Check                     | What fails                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents-md-line-cap`      | Root `AGENTS.md` grows past the package budget (keep aligned with the in-repo `agents-md` line budget in `npm run file-size-ratchet:check`). |
+| `test-time-budget`        | Validate `🧪 Node` or `☁️ Workers` exceeds the CI-measured budget + headroom.                                                                |
+| `review-bot-comment-sort` | Surfaces Bugbot / Devin / Seer findings for ship-pr; invalid ones get a short kody-bot reply and are not blockers. Unsure stays valid.       |
 
 ## Stubbed (same package, not enforced)
 
