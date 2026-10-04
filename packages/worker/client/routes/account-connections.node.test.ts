@@ -226,6 +226,65 @@ test('connections page swaps the copy card for a verify note while the email is 
 	expect(html).toContain('No agents have authorized yet.')
 })
 
+test('connection profiles list only granted packages and add more through a package combobox', async () => {
+	const packageOptions = Array.from({ length: 40 }, (_, index) => ({
+		id: `pkg-${index}`,
+		name: `tool-${index}`,
+		kodyId: `@jane/tool-${String(index).padStart(2, '0')}`,
+	}))
+	const html = await renderConnectionsPage({
+		...connectedCursor,
+		connectionProfilesEnabled: true,
+		connectionProfilePackageOptions: packageOptions,
+		connectionProfiles: [
+			{
+				id: 'profile-ci',
+				name: 'ci',
+				grants: [
+					{ resourceType: 'package', resourceId: 'pkg-3', actions: ['read'] },
+					{
+						resourceType: 'package',
+						resourceId: 'pkg-gone',
+						actions: ['execute', 'read'],
+					},
+				],
+				mcpServerUrl: 'https://kody.example/mcp?profile=ci',
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			},
+		],
+	})
+
+	expect(html).toContain('data-testid="connection-profiles"')
+	expect(html).toContain('>https://kody.example/mcp?profile=ci<')
+	const profileCard = html.slice(
+		html.indexOf('data-testid="connection-profile-profile-ci"'),
+		html.indexOf('data-testid="connection-profile-create"'),
+	)
+	// The profile card lists only its grants (a deleted package stays visible
+	// so it can still be removed), not one row per account package.
+	expect(profileCard).toContain('aria-label="Packages granted to ci"')
+	expect(profileCard).toContain('>@jane/tool-03<')
+	expect(profileCard).toContain('>read<')
+	expect(profileCard).toContain('>Unknown package<')
+	expect(profileCard).not.toContain('@jane/tool-04')
+	expect(profileCard).toContain('aria-label="Edit packages for ci"')
+
+	const createForm = html.slice(
+		html.indexOf('data-testid="connection-profile-create"'),
+	)
+	// A new profile starts with no packages and no per-package checkboxes;
+	// every saved package is reachable through the combobox instead.
+	expect(createForm).toContain('No packages yet')
+	expect(createForm).not.toContain('type="checkbox"')
+	expect(createForm).toMatch(
+		/<label[^>]*for="connection-profile-create-add-package"[^>]*>Add package</,
+	)
+	expect(createForm).toContain('placeholder="Search saved packages"')
+	expect(createForm.match(/role="option"/g)).toHaveLength(40)
+	expect(createForm).not.toContain('pkg-3"')
+})
+
 test('account rail lists Connections and Repositories at the same level as the other sections', () => {
 	const items = accountNavItemsFor({
 		username: 'jane',

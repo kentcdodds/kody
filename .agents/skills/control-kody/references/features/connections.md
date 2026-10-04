@@ -7,9 +7,13 @@ Not listed — then one host's install steps. The MCP URL card covers any other
 host that speaks MCP. Also links the Advanced MCP OAuth clients page.
 
 Experimenters (`connection-profiles` flag, audience `experiments_opt_in`) also
-see named connection profiles on the list page: create a profile, pick package
-read/execute grants, copy `?profile=` MCP URL. Unlimited remains the default
-connection (no profile param).
+see named connection profiles on the list page: create a profile, add packages
+through the **Add package** combobox (each granted package is one row with
+read/execute toggles and Remove), copy `?profile=` MCP URL, and **Edit
+packages** on an existing profile (saves via `intent: 'update'`; the name is not
+editable there). Only granted packages render as rows, so large accounts do not
+get one checkbox per package. Unlimited remains the default connection (no
+profile param).
 
 ## How to get there
 

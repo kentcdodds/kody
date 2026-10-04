@@ -19,7 +19,7 @@ import {
 	AgentPickerGrid,
 	AgentSurfaceInstructions,
 } from '#client/routes/onboarding-mcp-client-tabs.tsx'
-import { renderConnectionProfilesPanel } from '#client/routes/connection-profiles-panel.tsx'
+import { createConnectionProfiles } from '#client/routes/connection-profiles-panel.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -31,10 +31,7 @@ import {
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import {
-	type AccountConnectionProfileView,
-	type AccountConnectedAgentsLoaderData,
-} from '#universal/loader-data.ts'
+import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
 import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	type McpClientKind,
@@ -98,21 +95,9 @@ export function AccountConnectionsRoute(handle: Handle) {
 	const connectedAgents = createAccountConnectedAgents(handle)
 	let mcpServerUrl = ''
 	let message: string | null = null
-	let connectionProfilesEnabled = false
-	let connectionProfiles: Array<AccountConnectionProfileView> = []
-	let connectionProfilePackageOptions: Array<{
-		id: string
-		name: string
-		kodyId: string
-	}> = []
-	let profileDraftName = ''
-	let profileDraftGrants: Array<{
-		resourceId: string
-		read: boolean
-		execute: boolean
-	}> = []
-	let profileBusy = false
-	let profileMessage: string | null = null
+	const connectionProfiles = createConnectionProfiles(handle, {
+		onSaved: applyPayload,
+	})
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AccountConnectedAgentsLoaderData | null = null
 	let appliedError: Error | null = null
@@ -129,56 +114,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
 		connectedAgents.applyPayload(payload)
 		mcpServerUrl = payload.mcpServerUrl
-		connectionProfilesEnabled = payload.connectionProfilesEnabled === true
-		connectionProfiles = payload.connectionProfiles ?? []
-		connectionProfilePackageOptions =
-			payload.connectionProfilePackageOptions ?? []
+		connectionProfiles.applyPayload(payload)
 		message = null
-	}
-
-	async function postProfileMutation(body: Record<string, unknown>) {
-		if (profileBusy) return
-		profileBusy = true
-		profileMessage = null
-		handle.update()
-		try {
-			const response = await fetch(connectedAgentsApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify(body),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountConnectedAgentsLoaderData & {
-					error?: string
-				}
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(
-					(payload && 'error' in payload && typeof payload.error === 'string'
-						? payload.error
-						: null) ?? 'Unable to update connection profile.',
-				)
-			}
-			applyPayload(payload)
-			if (body.intent === 'create') {
-				profileDraftName = ''
-				profileDraftGrants = []
-			}
-		} catch (error) {
-			profileMessage =
-				error instanceof Error ? error.message : 'Unable to update profile.'
-		} finally {
-			profileBusy = false
-			handle.update()
-		}
 	}
 
 	return () => {
@@ -225,58 +162,7 @@ export function AccountConnectionsRoute(handle: Handle) {
 							view,
 							connectedAgents,
 							mcpServerUrl,
-							connectionProfilesEnabled,
 							connectionProfiles,
-							connectionProfilePackageOptions,
-							profileDraftName,
-							profileDraftGrants,
-							profileBusy,
-							profileMessage,
-							onDraftName: (value) => {
-								profileDraftName = value
-								handle.update()
-							},
-							onTogglePackage: (packageId) => {
-								const existing = profileDraftGrants.find(
-									(grant) => grant.resourceId === packageId,
-								)
-								profileDraftGrants = existing
-									? profileDraftGrants.filter(
-											(grant) => grant.resourceId !== packageId,
-										)
-									: [
-											...profileDraftGrants,
-											{ resourceId: packageId, read: true, execute: true },
-										]
-								handle.update()
-							},
-							onToggleAction: (packageId, action, enabled) => {
-								profileDraftGrants = profileDraftGrants.map((grant) =>
-									grant.resourceId === packageId
-										? { ...grant, [action]: enabled }
-										: grant,
-								)
-								handle.update()
-							},
-							onCreate: () => {
-								void postProfileMutation({
-									intent: 'create',
-									name: profileDraftName,
-									grants: profileDraftGrants
-										.filter((grant) => grant.read || grant.execute)
-										.map((grant) => ({
-											resourceType: 'package',
-											resourceId: grant.resourceId,
-											actions: [
-												...(grant.read ? (['read'] as const) : []),
-												...(grant.execute ? (['execute'] as const) : []),
-											],
-										})),
-								})
-							},
-							onDelete: (profileId) => {
-								void postProfileMutation({ intent: 'delete', profileId })
-							},
 						})
 					: null}
 			</AccountManagementShell>
@@ -300,30 +186,7 @@ function renderReadyView(input: {
 	view: AccountConnectionsView | null
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
 	mcpServerUrl: string
-	connectionProfilesEnabled: boolean
-	connectionProfiles: Array<AccountConnectionProfileView>
-	connectionProfilePackageOptions: Array<{
-		id: string
-		name: string
-		kodyId: string
-	}>
-	profileDraftName: string
-	profileDraftGrants: Array<{
-		resourceId: string
-		read: boolean
-		execute: boolean
-	}>
-	profileBusy: boolean
-	profileMessage: string | null
-	onDraftName: (value: string) => void
-	onTogglePackage: (packageId: string) => void
-	onToggleAction: (
-		packageId: string,
-		action: 'read' | 'execute',
-		enabled: boolean,
-	) => void
-	onCreate: () => void
-	onDelete: (profileId: string) => void
+	connectionProfiles: ReturnType<typeof createConnectionProfiles>
 }) {
 	if (input.view === null) {
 		return (
@@ -349,22 +212,9 @@ function renderReadyView(input: {
 						),
 					})}
 					{renderMcpUrlPanel({ mcpServerUrl: input.mcpServerUrl })}
-					{input.connectionProfilesEnabled
-						? renderConnectionProfilesPanel({
-								profiles: input.connectionProfiles,
-								packageOptions: input.connectionProfilePackageOptions,
-								agents: input.connectedAgents.listAgents(),
-								busy: input.profileBusy,
-								message: input.profileMessage,
-								draftName: input.profileDraftName,
-								draftGrants: input.profileDraftGrants,
-								onDraftName: input.onDraftName,
-								onTogglePackage: input.onTogglePackage,
-								onToggleAction: input.onToggleAction,
-								onCreate: input.onCreate,
-								onDelete: input.onDelete,
-							})
-						: null}
+					{input.connectionProfiles.render({
+						agents: input.connectedAgents.listAgents(),
+					})}
 					{renderAdvancedPanel()}
 				</>
 			)
