@@ -141,7 +141,13 @@ export function createConnectionProfiles(
 
 	async function saveEdit() {
 		if (!editDraft) return
-		const { profileId, grants } = editDraft
+		const { profileId } = editDraft
+		const knownPackageIds = new Set(packageOptions.map((pkg) => pkg.id))
+		// The update re-checks ownership of every grant, so a package deleted
+		// since the profile was saved has to leave the payload.
+		const grants = editDraft.grants.filter((grant) =>
+			knownPackageIds.has(grant.resourceId),
+		)
 		const saved = await postMutation(
 			{ intent: 'update', profileId, grants: toGrantPayload(grants) },
 			{ kind: 'profile', profileId },
@@ -456,6 +462,19 @@ function packageLabel(
 	return packagesById.get(packageId)?.kodyId ?? 'Unknown package'
 }
 
+/** A deleted package keeps its id so several of them stay distinguishable. */
+function renderPackageIdentity(
+	packageId: string,
+	packagesById: ReadonlyMap<string, PackageOption>,
+) {
+	return (
+		<span mix={css(packageIdentityCss)}>
+			{packageLabel(packageId, packagesById)}
+			{packagesById.has(packageId) ? null : <code>{packageId}</code>}
+		</span>
+	)
+}
+
 function sortByPackageLabel<T extends { resourceId: string }>(
 	grants: ReadonlyArray<T>,
 	packagesById: ReadonlyMap<string, PackageOption>,
@@ -485,9 +504,7 @@ function renderGrantSummary(
 		>
 			{sortByPackageLabel(profile.grants, packagesById).map((grant) => (
 				<li key={grant.resourceId} mix={css(grantSummaryRowCss)}>
-					<span mix={css(packageIdentityCss)}>
-						{packageLabel(grant.resourceId, packagesById)}
-					</span>
+					{renderPackageIdentity(grant.resourceId, packagesById)}
 					<span mix={css(mutedCss)}>
 						{grantActions
 							.filter((action) => grant.actions.includes(action))
@@ -528,18 +545,26 @@ function renderGrantsEditor(input: {
 				<ul mix={css(grantListCss)}>
 					{sortByPackageLabel(input.grants, input.packagesById).map((grant) => {
 						const label = packageLabel(grant.resourceId, input.packagesById)
+						const testId = `${input.idPrefix}-grant-${grant.resourceId}`
+						if (!input.packagesById.has(grant.resourceId)) {
+							return (
+								<li
+									key={grant.resourceId}
+									data-testid={testId}
+									mix={css(grantEditRowCss)}
+								>
+									{renderPackageIdentity(grant.resourceId, input.packagesById)}
+									<span mix={css(mutedCss)}>Removed when you save</span>
+								</li>
+							)
+						}
 						return (
 							<li
 								key={grant.resourceId}
-								data-testid={`${input.idPrefix}-grant-${grant.resourceId}`}
+								data-testid={testId}
 								mix={css(grantEditRowCss)}
 							>
-								<span mix={css(packageIdentityCss)}>
-									{label}
-									{input.packagesById.has(grant.resourceId) ? null : (
-										<code>{grant.resourceId}</code>
-									)}
-								</span>
+								{renderPackageIdentity(grant.resourceId, input.packagesById)}
 								<div mix={css(actionsRowCss)}>
 									{grantActions.map((action) => {
 										const checked = grant[action]
