@@ -192,6 +192,19 @@ function publishingSession(publishedCommit: string) {
 			treeHash: 'tree-1',
 			checkedAt: '2026-04-18T00:00:00.000Z',
 		})),
+		acceptCurrentTreeForPublish: vi.fn(async () => ({
+			runId: 'accepted-check-1',
+			treeHash: 'tree-accepted',
+			checkedAt: '2026-04-18T00:00:00.000Z',
+			ok: true as const,
+			results: [
+				{
+					kind: 'manifest' as const,
+					ok: true,
+					message: 'accepted without validators',
+				},
+			],
+		})),
 		publishSession: vi.fn(async () => ({
 			status: 'ok' as const,
 			sessionId: 'source-sync-source-1-session',
@@ -226,6 +239,7 @@ function setupSync(
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
 		runChecks: vi.fn(),
+		acceptCurrentTreeForPublish: vi.fn(),
 		publishSession: vi.fn(),
 		discardSession: vi.fn(async () => ({
 			ok: true as const,
@@ -462,11 +476,17 @@ test('syncArtifactSourceSnapshot skips publish checks when runPublishChecks is f
 		}),
 	).resolves.toBe('commit-skip-update')
 	expect(session.runChecks).not.toHaveBeenCalled()
+	expect(session.acceptCurrentTreeForPublish).toHaveBeenCalledWith({
+		sessionId: expect.stringMatching(/^source-sync-source-1-/),
+		userId: 'user-1',
+	})
+	// No force: force would trip overwrite confirmation; stamped check-status
+	// lets publishSession proceed without checks_outdated.
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		userId: 'user-1',
-		force: true,
 	})
+	expect(session.publishSession.mock.calls[0]?.[0]).not.toHaveProperty('force')
 })
 
 test('syncArtifactSourceSnapshot loopback first-publish runs package checks before snapshot', async () => {

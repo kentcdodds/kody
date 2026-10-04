@@ -361,12 +361,12 @@ export async function syncArtifactSourceSnapshot(
 		// force so the session check-status contract still holds. Destructive
 		// overwrite still needs force for history rewrite / force-push, but
 		// only after checks pass. When runPublishChecks is false (community
-		// inert-fork lane), skip runChecks and keep force so publishSession
-		// does not return checks_outdated.
+		// inert-fork lane), skip validators and stamp an accepted check-status
+		// so publishSession proceeds without force — force alone would trip
+		// assertPackageSourceOverwriteAllowed without destructiveOverwriteConfirmed.
 		const forcePublish =
 			source.entity_kind !== 'package' ||
-			input.destructiveOverwriteConfirmed === true ||
-			input.runPublishChecks === false
+			input.destructiveOverwriteConfirmed === true
 		if (source.entity_kind === 'package' && input.runPublishChecks !== false) {
 			const checkRun = await session.runChecks({
 				sessionId,
@@ -381,6 +381,14 @@ export async function syncArtifactSourceSnapshot(
 			if (!checkRun.ok) {
 				throw new Error(formatFailedRepoCheckMessages(checkRun.results))
 			}
+		} else if (
+			source.entity_kind === 'package' &&
+			input.runPublishChecks === false
+		) {
+			await session.acceptCurrentTreeForPublish({
+				sessionId,
+				userId: input.userId,
+			})
 		}
 		const publishResult = await session.publishSession({
 			sessionId,

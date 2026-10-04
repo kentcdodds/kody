@@ -2512,6 +2512,50 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	/**
+	 * Stamp an ok check-status for the current workspace tree without running
+	 * validators. Trusted opt-out for community inert-fork persist
+	 * (`runPublishChecks: false`): publishSession can then proceed without
+	 * `force`, so the destructive-overwrite gate stays intact. Do not use this
+	 * to weaken `publishFromExternalRef` / packageSave (those keep real checks).
+	 */
+	async acceptCurrentTreeForPublish(input: {
+		sessionId: string
+		userId: string
+	}): Promise<RepoSessionCheckStatus> {
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		const runId = crypto.randomUUID()
+		const treeHash = await this.computeTreeHash()
+		const checkedAt = nowIso()
+		const status: RepoSessionCheckStatus = {
+			runId,
+			treeHash,
+			checkedAt,
+			ok: true,
+			results: [
+				{
+					kind: 'manifest',
+					ok: true,
+					message:
+						'Publish checks accepted without running validators (trusted opt-out).',
+				},
+			],
+		}
+		await updateRepoSession(this.env, {
+			id: input.sessionId,
+			userId: sessionRow.user_id,
+			lastCheckRunId: runId,
+			lastCheckTreeHash: treeHash,
+			lastCheckpointAt: checkedAt,
+		})
+		await this.writeCheckStatus(status)
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
+		return status
+	}
+
+	/**
 	 * Pure-compute entrypoint for one heavy repo-check phase, invoked on a
 	 * throwaway Durable Object id so the phase's peak memory lives in its own
 	 * isolate (see isolated-check-phases.ts and kentcdodds/kody#987). It has

@@ -150,6 +150,14 @@ export type RepoSessionRpc = {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionCheckStatus>
+	/**
+	 * Trusted opt-out: stamp ok check-status for the current tree without
+	 * running validators so publishSession can proceed without force.
+	 */
+	acceptCurrentTreeForPublish: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<RepoSessionCheckStatus>
 	listPublishedPackageArtifactTargets: (payload: {
 		sessionId?: string
 		sourceId?: string
