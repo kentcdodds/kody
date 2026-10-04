@@ -141,7 +141,9 @@ export function hydrateEditorStateForExistingSecret(
 		'package',
 	])
 	const queryHasDescription = Boolean(params.get('description')?.trim())
-	const queryHasExpires = Boolean(params.get('expiresAt')?.trim())
+	// Only override expiry when the query parsed to a real value. An invalid
+	// expiresAt must not clear an existing cutoff.
+	const queryHasExpires = Boolean(state.expiresAt.trim())
 	return {
 		...state,
 		currentId: existing.id,
@@ -156,6 +158,84 @@ export function hydrateEditorStateForExistingSecret(
 			? state.allowedPackages
 			: existing.allowedPackages,
 	}
+}
+
+export function readExplicitPackageId(href: string) {
+	return (
+		new URL(href, 'http://localhost').searchParams.get('packageId')?.trim() ||
+		null
+	)
+}
+
+export function readInvalidExpiresAtQuery(href: string, state: EditorState) {
+	const raw = new URL(href, 'http://localhost').searchParams
+		.get('expiresAt')
+		?.trim()
+	if (!raw) return null
+	if (state.expiresAt.trim()) return null
+	return 'This setup link has an invalid expiresAt value.'
+}
+
+export function resolvePackageIdForSecretSet(input: {
+	scope: EditorState['scope']
+	explicitPackageId: string | null
+	packageOptions: Array<{ id: string }>
+}) {
+	if (input.scope !== 'package') return { packageId: null as string | null }
+	const packageId = input.explicitPackageId?.trim() || null
+	if (!packageId) {
+		return {
+			packageId: null,
+			error: 'Package-scoped setup links require a packageId.',
+		}
+	}
+	if (!input.packageOptions.some((option) => option.id === packageId)) {
+		return {
+			packageId: null,
+			error: 'This setup link names a package that is not available.',
+		}
+	}
+	return { packageId }
+}
+
+export function resolveSavePolicyFromSetup(input: {
+	href: string
+	state: EditorState
+	existing: AccountSecretsLoaderData['secrets'][number] | null
+}) {
+	const params = new URL(input.href, 'http://localhost').searchParams
+	const queryHasHosts = queryHasNonEmptyList(params, [
+		'allowedHosts',
+		'allowed-host',
+	])
+	const queryHasPackages = queryHasNonEmptyList(params, [
+		'allowedPackages',
+		'package_id',
+		'package',
+	])
+	const queryHasExpires = Boolean(input.state.expiresAt.trim())
+	const allowedHosts = queryHasHosts
+		? normalizeAllowedHosts(
+				input.state.allowedHosts.filter((host) => host.trim()),
+			)
+		: (input.existing?.allowedHosts ??
+			normalizeAllowedHosts(
+				input.state.allowedHosts.filter((host) => host.trim()),
+			))
+	const allowedPackages =
+		input.state.scope === 'user'
+			? queryHasPackages
+				? [...input.state.allowedPackages].sort((left, right) =>
+						left.localeCompare(right),
+					)
+				: [
+						...(input.existing?.allowedPackages ?? input.state.allowedPackages),
+					].sort((left, right) => left.localeCompare(right))
+			: []
+	const expiresAt = queryHasExpires
+		? input.state.expiresAt || null
+		: (input.existing?.expiresAt ?? (input.state.expiresAt || null))
+	return { allowedHosts, allowedPackages, expiresAt }
 }
 
 export function ConnectSecretSetRoute(handle: Handle) {
@@ -188,7 +268,26 @@ export function ConnectSecretSetRoute(handle: Handle) {
 	function ensureEditorState(href: string) {
 		const packageOptions = data?.packageOptions ?? []
 		const queryKey = setupQueryKey(href, packageOptions)
-		if (editorState && appliedQueryKey === queryKey) return editorState
+		if (editorState && appliedQueryKey === queryKey) {
+			// A concurrent save may refresh secrets without changing the query.
+			// If we can now match an existing secret, re-hydrate policy once.
+			if (!editorState.currentId) {
+				const explicitPackageId = readExplicitPackageId(href)
+				const existing = findMatchingSecretForSetup(
+					data?.secrets ?? [],
+					editorState,
+					{ explicitPackageId },
+				)
+				if (existing) {
+					editorState = hydrateEditorStateForExistingSecret(
+						editorState,
+						existing,
+						href,
+					)
+				}
+			}
+			return editorState
+		}
 		if (appliedQueryKey !== queryKey) {
 			saved = false
 			savedForQueryKey = ''
@@ -197,9 +296,18 @@ export function ConnectSecretSetRoute(handle: Handle) {
 			showSecretValue = false
 		}
 		let next = createEditorStateFromNewSecretQuery(packageOptions, href)
-		const explicitPackageId = new URL(href, 'http://localhost').searchParams
-			.get('packageId')
-			?.trim()
+		const explicitPackageId = readExplicitPackageId(href)
+		const packageResolution = resolvePackageIdForSecretSet({
+			scope: next.scope,
+			explicitPackageId,
+			packageOptions,
+		})
+		if (next.scope === 'package') {
+			next = {
+				...next,
+				packageId: packageResolution.packageId ?? '',
+			}
+		}
 		const existing = findMatchingSecretForSetup(data?.secrets ?? [], next, {
 			explicitPackageId,
 		})
@@ -220,27 +328,33 @@ export function ConnectSecretSetRoute(handle: Handle) {
 		message = null
 		handle.update()
 		try {
-			const explicitPackageId = new URL(
-				requestHref,
-				'http://localhost',
-			).searchParams
-				.get('packageId')
-				?.trim()
-			const current =
-				editorState.currentId ??
-				findMatchingSecretForSetup(data?.secrets ?? [], editorState, {
-					explicitPackageId,
-				})?.id ??
-				null
-			const allowedHosts = normalizeAllowedHosts(
-				editorState.allowedHosts.filter((host) => host.trim()),
+			const invalidExpires = readInvalidExpiresAtQuery(requestHref, editorState)
+			if (invalidExpires) {
+				throw new Error(invalidExpires)
+			}
+			const explicitPackageId = readExplicitPackageId(requestHref)
+			const packageResolution = resolvePackageIdForSecretSet({
+				scope: editorState.scope,
+				explicitPackageId,
+				packageOptions: data?.packageOptions ?? [],
+			})
+			if (packageResolution.error) {
+				throw new Error(packageResolution.error)
+			}
+			const existing = findMatchingSecretForSetup(
+				data?.secrets ?? [],
+				{
+					...editorState,
+					packageId: packageResolution.packageId ?? editorState.packageId,
+				},
+				{ explicitPackageId },
 			)
-			const allowedPackages =
-				editorState.scope === 'user'
-					? [...editorState.allowedPackages].sort((left, right) =>
-							left.localeCompare(right),
-						)
-					: []
+			const current = editorState.currentId ?? existing?.id ?? null
+			const policy = resolveSavePolicyFromSetup({
+				href: requestHref,
+				state: editorState,
+				existing,
+			})
 			const response = await fetch(accountSecretsApiPath, {
 				method: 'POST',
 				headers: {
@@ -253,13 +367,12 @@ export function ConnectSecretSetRoute(handle: Handle) {
 					currentId: current,
 					name: editorState.name,
 					scope: editorState.scope,
-					packageId:
-						editorState.scope === 'package' ? editorState.packageId : null,
+					packageId: packageResolution.packageId,
 					description: editorState.description,
-					expiresAt: editorState.expiresAt || null,
+					expiresAt: policy.expiresAt,
 					value: editorState.value,
-					allowedHosts,
-					allowedPackages,
+					allowedHosts: policy.allowedHosts,
+					allowedPackages: policy.allowedPackages,
 				}),
 			})
 			if (response.status === 401) {
@@ -318,6 +431,14 @@ export function ConnectSecretSetRoute(handle: Handle) {
 						.filter(Boolean)
 				: []
 		const autofocusKey = getNewSecretValueAutofocusKey(currentHref)
+		const setupError =
+			readInvalidExpiresAtQuery(currentHref, state) ??
+			resolvePackageIdForSecretSet({
+				scope: state.scope,
+				explicitPackageId: readExplicitPackageId(currentHref),
+				packageOptions: data?.packageOptions ?? [],
+			}).error ??
+			null
 
 		return (
 			<section mix={css(pageCss)} data-testid="connect-secret-set">
@@ -339,7 +460,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 					</p>
 				</header>
 
-				{loadError ? (
+				{loadError || setupError ? (
 					<section
 						mix={css({
 							...cardCss,
@@ -347,7 +468,9 @@ export function ConnectSecretSetRoute(handle: Handle) {
 						})}
 						data-testid="connect-secret-set-error"
 					>
-						<p mix={css({ margin: 0, color: colors.danger })}>{loadError}</p>
+						<p mix={css({ margin: 0, color: colors.danger })}>
+							{loadError ?? setupError}
+						</p>
 					</section>
 				) : null}
 
@@ -360,7 +483,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 					</p>
 				) : null}
 
-				{view.showForm ? (
+				{view.showForm && !setupError ? (
 					<section mix={css(cardCss)} data-testid="connect-secret-set-card">
 						<form
 							{...passwordManagerIgnoreProps}

@@ -3,6 +3,7 @@ import {
 	findMatchingSecretForSetup,
 	hydrateEditorStateForExistingSecret,
 	readConnectSecretSetView,
+	resolvePackageIdForSecretSet,
 } from './connect-secret-set.tsx'
 import { createEmptyEditorState } from './account-secrets-shared.ts'
 
@@ -163,6 +164,17 @@ test('hydrateEditorStateForExistingSecret preserves policy unless the query sets
 		allowedPackages: ['pkg_1'],
 	})
 
+	// Invalid expiresAt must not clear an existing cutoff.
+	expect(
+		hydrateEditorStateForExistingSecret(
+			{ ...base, expiresAt: '' },
+			existing,
+			'/connect/secret-set?name=exampleApiKey&expiresAt=not-a-date',
+		),
+	).toMatchObject({
+		expiresAt: '2026-12-01T00:00:00.000Z',
+	})
+
 	expect(
 		hydrateEditorStateForExistingSecret(
 			{
@@ -180,4 +192,28 @@ test('hydrateEditorStateForExistingSecret preserves policy unless the query sets
 		allowedHosts: ['new.example.com'],
 		allowedPackages: ['pkg_2'],
 	})
+})
+
+test('resolvePackageIdForSecretSet rejects missing or unknown package ids', () => {
+	expect(
+		resolvePackageIdForSecretSet({
+			scope: 'package',
+			explicitPackageId: null,
+			packageOptions: [{ id: 'pkg_1' }],
+		}).error,
+	).toMatch(/require a packageId/i)
+	expect(
+		resolvePackageIdForSecretSet({
+			scope: 'package',
+			explicitPackageId: 'pkg_missing',
+			packageOptions: [{ id: 'pkg_1' }],
+		}).error,
+	).toMatch(/not available/i)
+	expect(
+		resolvePackageIdForSecretSet({
+			scope: 'package',
+			explicitPackageId: 'pkg_1',
+			packageOptions: [{ id: 'pkg_1' }],
+		}),
+	).toEqual({ packageId: 'pkg_1' })
 })
