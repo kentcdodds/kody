@@ -22,6 +22,7 @@ import {
 	authorizeSharedPackagePermission,
 	packageShareAccessErrorMessage,
 } from '#worker/package-registry/share-grants.ts'
+import { assertCallerCanAccessResource } from '#worker/connection-profiles/access.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
@@ -45,6 +46,13 @@ export const getPackageCapability = defineDomainCapability(
 		outputSchema: packageDetailSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			await assertCallerCanAccessResource({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				resourceType: 'package',
+				resourceId: args.package_id,
+				action: 'read',
+			})
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
 				user,

@@ -108,6 +108,7 @@ function createContext(db: D1Database): ApiInvocationContext {
 			'secret-providers': false,
 			'jev-search-rerank': false,
 			'execute-invoke': false,
+			'connection-profiles': false,
 		}),
 	}
 }

@@ -16,6 +16,7 @@ export function createMcpCallerContext(input: {
 	user?: McpUserContext | null
 	storageContext?: McpStorageContext | null
 	repoContext?: McpRepoContext | null
+	connectionProfileName?: string | null
 }): McpCallerContext {
 	return {
 		baseUrl: input.baseUrl,
@@ -23,6 +24,7 @@ export function createMcpCallerContext(input: {
 		user: input.user ?? null,
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
+		connectionProfileName: input.connectionProfileName ?? null,
 	}
 }
 

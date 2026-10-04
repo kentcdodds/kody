@@ -48,6 +48,12 @@ export const mcpCallerContextSchema = object({
 	user: optional(nullable(mcpUserContextSchema)),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
 	repoContext: optional(nullable(mcpRepoContextSchema)),
+	/**
+	 * Named connection profile bound to this MCP OAuth grant or API token.
+	 * Absent / null = unlimited (today's default connection). Present = the
+	 * profile's grant allowlist (empty allowlist denies everything).
+	 */
+	connectionProfileName: optional(nullable(string())),
 })
 
 type McpUserContextInferred = InferOutput<typeof mcpUserContextSchema>
@@ -65,6 +71,10 @@ export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
 export type McpExecutionOrigin = InferOutput<typeof mcpExecutionOriginSchema>
 type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
 
-export type McpCallerContext = Omit<McpCallerContextInferred, 'user'> & {
+export type McpCallerContext = Omit<
+	McpCallerContextInferred,
+	'user' | 'connectionProfileName'
+> & {
 	user?: McpUserContext | null
+	connectionProfileName?: string | null
 }

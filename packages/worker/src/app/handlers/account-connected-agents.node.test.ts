@@ -170,6 +170,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		{
 			clientId: 'client-a',
 			grantIds: ['grant-1', 'grant-2'],
+			connectionProfileName: null,
 			label: 'Cursor',
 			kind: 'cursor',
 			connectedAt: '2023-11-14T22:13:20.000Z',
@@ -178,6 +179,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		{
 			clientId: 'https://chatgpt.com/oauth/vG3/client.json',
 			grantIds: ['grant-3'],
+			connectionProfileName: null,
 			label: 'ChatGPT.com',
 			kind: 'chatgpt',
 			connectedAt: '2023-11-14T22:16:40.000Z',

@@ -1256,6 +1256,20 @@ export type AccountMcpOauthClientsLoaderData = {
 
 export type AccountConnectedAgentListItem = ConnectedMcpAgent & {
 	grantIds: Array<string>
+	connectionProfileName: string | null
+}
+
+export type AccountConnectionProfileView = {
+	id: string
+	name: string
+	grants: Array<{
+		resourceType: string
+		resourceId: string
+		actions: Array<'read' | 'execute' | 'write'>
+	}>
+	mcpServerUrl: string
+	createdAt: string
+	updatedAt: string
 }
 
 export type AccountConnectedAgentsLoaderData = {
@@ -1267,6 +1281,15 @@ export type AccountConnectedAgentsLoaderData = {
 	 * cannot send an unverified user into the authorize → 403 loop.
 	 */
 	mcpServerUrl: string
+	/** Experimenter-only. Absent/empty when the connection-profiles flag is off. */
+	connectionProfilesEnabled?: boolean
+	connectionProfiles?: Array<AccountConnectionProfileView>
+	/** Owned packages offered when editing profile grants (id + name). */
+	connectionProfilePackageOptions?: Array<{
+		id: string
+		name: string
+		kodyId: string
+	}>
 }
 
 type PackageWebhookVerification = {

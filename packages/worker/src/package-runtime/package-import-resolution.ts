@@ -2,6 +2,8 @@ import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
 import { resolveShareGrantedPackageImport } from '#worker/package-registry/share-grants.ts'
 import { getPlatformAccountByUsername } from '#worker/package-registry/scope-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { connectionProfileAllows } from '#universal/connection-profiles/grants.ts'
+import { getRequestConnectionProfileGrants } from '#worker/connection-profiles/request-grants.ts'
 
 export const packageSpecifierPrefix = 'kody:@'
 
@@ -127,13 +129,13 @@ export async function resolveSavedPackageImport(input: {
 			name: parsed.packageName,
 		})
 		if (ownerOwned) {
-			return {
+			return allowResolvedPackageImport({
 				row: ownerOwned,
 				sourceOwnerUserId: input.nestedShareOwnerUserId,
 				platformScope: null,
 				shareOwned: true,
 				storageOwnerUserId: input.nestedShareOwnerUserId,
-			}
+			})
 		}
 	}
 	const own = await getSavedPackageByName(input.db, {
@@ -141,11 +143,11 @@ export async function resolveSavedPackageImport(input: {
 		name: parsed.packageName,
 	})
 	if (own) {
-		return {
+		return allowResolvedPackageImport({
 			row: own,
 			sourceOwnerUserId: input.userId,
 			platformScope: null,
-		}
+		})
 	}
 	const shared = await resolveShareGrantedPackageImport({
 		db: input.db,
@@ -153,19 +155,39 @@ export async function resolveSavedPackageImport(input: {
 		packageName: parsed.packageName,
 	})
 	if (shared) {
-		return {
+		return allowResolvedPackageImport({
 			row: shared.row,
 			sourceOwnerUserId: shared.sourceOwnerUserId,
 			platformScope: null,
 			shareOwned: true,
 			storageOwnerUserId: shared.sourceOwnerUserId,
-		}
+		})
 	}
 	if (input.allowPlatformScopes !== true) return null
-	return await resolvePlatformScopedPackageImport({
+	const platform = await resolvePlatformScopedPackageImport({
 		db: input.db,
 		packageName: parsed.packageName,
 	})
+	return platform ? allowResolvedPackageImport(platform) : null
+}
+
+function allowResolvedPackageImport(
+	resolution: ResolvedPackageImport,
+): ResolvedPackageImport | null {
+	const grants = getRequestConnectionProfileGrants()
+	// Outside a profile wrap (undefined) or unlimited (null) → allow.
+	if (grants === undefined || grants === null) return resolution
+	if (
+		connectionProfileAllows({
+			grants,
+			resourceType: 'package',
+			resourceId: resolution.row.id,
+			action: 'execute',
+		})
+	) {
+		return resolution
+	}
+	return null
 }
 
 export async function resolvePlatformScopedPackageImport(input: {

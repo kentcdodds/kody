@@ -315,6 +315,10 @@
 		{
 			"filename": "0078-drop-site-banners.sql",
 			"sha256": "5c2e70e9668f9c61a4e3608b70f6c4518cae8c8cb364b9c9cabe7717b9d2b733"
+		},
+		{
+			"filename": "0079-connection-profiles.sql",
+			"sha256": "28ca4ece3c90b7e39995712784642dc31ba3c550c078f724ae999d352cb23478"
 		}
 	]
 }

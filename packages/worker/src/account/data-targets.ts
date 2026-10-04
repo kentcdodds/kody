@@ -184,6 +184,7 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  */
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },
+	{ kind: 'user_id', table: 'connection_profiles' },
 	{ kind: 'user_id', table: 'cli_credential_bootstrap_codes' },
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },

@@ -6,6 +6,7 @@ import {
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import { withCallerConnectionProfileGrants } from '#worker/connection-profiles/access.ts'
 import {
 	executeInvokeFieldDescription,
 	executeInvokeFlagKey,
@@ -426,29 +427,34 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					async () => {
 						try {
 							const inboundSignal = getInboundRequestSignal()
-							const execution = runModuleWithRegistry(
+							const execution = withCallerConnectionProfileGrants({
 								env,
 								callerContext,
-								resolvedModule.code,
-								params,
-								{
-									executorExports: agent.getLoopbackExports(),
-									capabilityRegistry: registry,
-									rawFetchHostSink: rawFetchHosts.sink,
-									conversationId: resolvedConversationId,
-									runRecordHandle: claimedRunHandle,
-									waitUntil,
-									reportProgress: reportProgress ?? undefined,
-									signal: inboundSignal,
-									runRecord: {
-										surface: 'execute',
-										name: null,
-										storageId: activeStorageId,
-										idempotencyKey: normalizedIdempotencyKey,
-										metadata: executeRunMetadata,
-									},
-								},
-							)
+								run: async () =>
+									runModuleWithRegistry(
+										env,
+										callerContext,
+										resolvedModule.code,
+										params,
+										{
+											executorExports: agent.getLoopbackExports(),
+											capabilityRegistry: registry,
+											rawFetchHostSink: rawFetchHosts.sink,
+											conversationId: resolvedConversationId,
+											runRecordHandle: claimedRunHandle,
+											waitUntil,
+											reportProgress: reportProgress ?? undefined,
+											signal: inboundSignal,
+											runRecord: {
+												surface: 'execute',
+												name: null,
+												storageId: activeStorageId,
+												idempotencyKey: normalizedIdempotencyKey,
+												metadata: executeRunMetadata,
+											},
+										},
+									),
+							})
 							// Client disconnect cancels the request task. Keep
 							// the sandbox promise alive so its abort handler can
 							// finish the run record.

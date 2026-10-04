@@ -34,6 +34,7 @@ import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { recordInboundMcpConnectionLastUsed } from '#worker/inbound-mcp-connection-last-used.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
+import { readConnectionProfileNameFromGrantProps } from '#worker/connection-profiles/oauth.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -468,10 +469,13 @@ export async function handleMcpRequest({
 		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
+	const connectionProfileName =
+		readConnectionProfileNameFromGrantProps(grantProps)
 	const props: OAuthContextProps = createMcpCallerContext({
 		baseUrl: origin,
 		executionOrigin: 'interactive',
 		user: mcpUser,
+		connectionProfileName,
 	})
 	context.props = props
 

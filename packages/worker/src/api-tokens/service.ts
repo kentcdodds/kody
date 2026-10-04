@@ -56,6 +56,7 @@ const apiTokenRowSchema = object({
 	last_used_at: nullable(string()),
 	rotated_at: nullable(string()),
 	revoked_at: nullable(string()),
+	profile_name: nullable(string()),
 })
 
 type ApiTokenRow = InferOutput<typeof apiTokenRowSchema>
@@ -80,6 +81,7 @@ export type ApiTokenView = {
 	last_used_at: string | null
 	rotated_at: string | null
 	revoked_at: string | null
+	profile_name: string | null
 }
 
 export type ApiTokenSecretView = ApiTokenView & {
@@ -89,7 +91,13 @@ export type ApiTokenSecretView = ApiTokenView & {
 }
 
 function mapRow(row: Record<string, unknown>): ApiTokenRecord {
-	const parsed = parseSafe(apiTokenRowSchema, row)
+	const parsed = parseSafe(apiTokenRowSchema, {
+		...row,
+		profile_name:
+			typeof row.profile_name === 'string' || row.profile_name === null
+				? row.profile_name
+				: null,
+	})
 	if (!parsed.success) {
 		const message = parsed.issues.map((issue) => issue.message).join(', ')
 		throw new Error(`Invalid API token record: ${message}`)
@@ -126,6 +134,7 @@ export function toApiTokenView(
 		last_used_at: record.last_used_at,
 		rotated_at: record.rotated_at,
 		revoked_at: record.revoked_at,
+		profile_name: record.profile_name ?? null,
 	}
 }
 
@@ -219,10 +228,12 @@ async function countActiveApiTokens(input: {
 /**
  * The token doing the minting, when a token mints a token. A child token can
  * never hold scopes the parent lacks or outlive the parent's absolute expiry.
+ * A profile-bound parent can only mint tokens for the same profile.
  */
 export type ApiTokenMintParent = {
 	scopes: ReadonlyArray<ApiTokenScope>
 	maxExpiresAt: string
+	profileName?: string | null
 }
 
 export async function mintApiToken(input: {
@@ -234,6 +245,7 @@ export async function mintApiToken(input: {
 	maxLifetimeSeconds?: number
 	createdVia: ApiTokenCreatedVia
 	parent?: ApiTokenMintParent
+	profileName?: string | null
 	now?: Date
 }): Promise<ApiTokenSecretView> {
 	const now = input.now ?? new Date()
@@ -257,6 +269,17 @@ export async function mintApiToken(input: {
 		if (missing.length > 0) {
 			throw new McpCallerError(
 				`A token cannot grant scopes it does not hold: ${missing.join(', ')}.`,
+			)
+		}
+	}
+	const profileName =
+		typeof input.profileName === 'string' && input.profileName.trim()
+			? input.profileName.trim()
+			: null
+	if (parent?.profileName) {
+		if (!profileName || profileName !== parent.profileName) {
+			throw new McpCallerError(
+				`A profile-bound token can only mint tokens for the same connection profile ("${parent.profileName}").`,
 			)
 		}
 	}
@@ -313,6 +336,7 @@ export async function mintApiToken(input: {
 		last_used_at: null,
 		rotated_at: null,
 		revoked_at: null,
+		profile_name: profileName,
 	}
 	await input.db
 		.prepare(
@@ -327,8 +351,9 @@ export async function mintApiToken(input: {
 				max_expires_at,
 				created_via,
 				created_at,
-				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				updated_at,
+				profile_name
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			record.id,
@@ -342,6 +367,7 @@ export async function mintApiToken(input: {
 			record.created_via,
 			record.created_at,
 			record.updated_at,
+			record.profile_name,
 		)
 		.run()
 	return {

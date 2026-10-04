@@ -19,6 +19,7 @@ import {
 	type ApiInvocationContext,
 } from './context.ts'
 import { ApiError } from './errors.ts'
+import { readConnectionProfileNameFromGrantProps } from '#worker/connection-profiles/oauth.ts'
 
 type McpOauthGrantProps = {
 	userId?: unknown
@@ -165,6 +166,7 @@ async function authenticateWithApiToken(input: {
 				baseUrl: input.appOrigin,
 				executionOrigin: 'interactive',
 				user: authContext.user,
+				connectionProfileName: record.profile_name ?? null,
 			}),
 			user: authContext.user,
 		},
@@ -235,6 +237,9 @@ async function authenticateWithMcpOauth(input: {
 				baseUrl: input.appOrigin,
 				executionOrigin: 'interactive',
 				user: authContext.user,
+				connectionProfileName: readConnectionProfileNameFromGrantProps(
+					tokenSummary.grant.props,
+				),
 			}),
 			user: authContext.user,
 		},

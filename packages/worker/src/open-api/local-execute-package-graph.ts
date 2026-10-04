@@ -10,6 +10,7 @@ import {
 	type NativeApiOperationDefinition,
 } from './native-operation-helpers.ts'
 import { type NativeApiOperationId } from './operations.ts'
+import { withCallerConnectionProfileGrants } from '#worker/connection-profiles/access.ts'
 
 export const localExecutePackageGraphInputSchema = z
 	.object({
@@ -53,11 +54,16 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 				params,
 			)
 			try {
-				return await buildLocalExecutePackageGraph({
+				return await withCallerConnectionProfileGrants({
 					env: ctx.env,
-					baseUrl: ctx.callerContext.baseUrl,
-					userId: ctx.callerContext.user.userId,
-					code: input.code,
+					callerContext: ctx.callerContext,
+					run: () =>
+						buildLocalExecutePackageGraph({
+							env: ctx.env,
+							baseUrl: ctx.callerContext.baseUrl,
+							userId: ctx.callerContext.user.userId,
+							code: input.code,
+						}),
 				})
 			} catch (error) {
 				throw toLocalExecutePackageGraphApiError(error)

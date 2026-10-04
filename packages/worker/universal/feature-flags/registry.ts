@@ -116,6 +116,20 @@ export const featureFlagDefinitions = [
 				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
+	{
+		key: 'connection-profiles',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Named connection profiles on /account/connections: package grant allowlists (read/execute) for MCP ?profile= URLs and profile-bound API tokens. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Experimenters with connection profiles create restricted agent connections and keep executing against granted packages.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -130,6 +144,9 @@ export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
+
+export const connectionProfilesFlagKey =
+	'connection-profiles' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

@@ -63,6 +63,7 @@ const mockModule = vi.hoisted(() => ({
 			..._args: Parameters<typeof AccessControlModule.resolveCallerFeatureFlags>
 		) => ({
 			'execute-invoke': false,
+			'connection-profiles': false,
 		}),
 	),
 	consumeDailyEntitlement: vi.fn(),
@@ -250,6 +251,7 @@ async function getExecuteRegistration(
 	vi.clearAllMocks()
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': agentExtras.invokeEnabled === true,
+		'connection-profiles': false,
 	})
 	const registerTool = vi.fn()
 
@@ -1000,6 +1002,7 @@ export default async function main(params) {
 
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': false,
+		'connection-profiles': false,
 	})
 	const killed = await onHandler({
 		invoke: 'kody:@acme/github/listRepos',

@@ -60,6 +60,10 @@ import {
 	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
+import {
+	connectionProfileGrantFields,
+	resolveAuthorizeConnectionProfile,
+} from '#worker/connection-profiles/oauth.ts'
 
 export { oauthPaths }
 
@@ -1138,6 +1142,13 @@ async function tryHandleSilentOidcAuthorize(
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
+	const connectionProfileName = await resolveAuthorizeConnectionProfile({
+		env,
+		request,
+		authRequest,
+		userId: approvedUserId,
+	})
+	const profileFields = connectionProfileGrantFields(connectionProfileName)
 	const { redirectTo: providerRedirectTo } =
 		await helpers.completeAuthorization({
 			request: authRequest,
@@ -1145,6 +1156,7 @@ async function tryHandleSilentOidcAuthorize(
 			metadata: {
 				email: approvedEmail,
 				clientId: authRequest.clientId,
+				...profileFields.metadata,
 			},
 			scope: resolvedScopes,
 			props: {
@@ -1154,6 +1166,7 @@ async function tryHandleSilentOidcAuthorize(
 				displayName: username,
 				authTime,
 				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+				...profileFields.props,
 			},
 		})
 	const redirectTo = stampClientAuthorizationRedirect(
@@ -1514,6 +1527,13 @@ export async function handleAuthorizeRequest(
 			: authorizeSession.issuedAt
 				? Math.floor(authorizeSession.issuedAt / 1000)
 				: Math.floor(Date.now() / 1000)
+		const connectionProfileName = await resolveAuthorizeConnectionProfile({
+			env,
+			request,
+			authRequest,
+			userId,
+		})
+		const profileFields = connectionProfileGrantFields(connectionProfileName)
 		const { redirectTo: providerRedirectTo } =
 			await helpers.completeAuthorization({
 				request: authRequest,
@@ -1521,6 +1541,7 @@ export async function handleAuthorizeRequest(
 				metadata: {
 					email: approvedEmail,
 					clientId: authRequest.clientId,
+					...profileFields.metadata,
 				},
 				scope: resolvedScopes,
 				props: {
@@ -1530,6 +1551,7 @@ export async function handleAuthorizeRequest(
 					displayName,
 					authTime,
 					...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+					...profileFields.props,
 				},
 			})
 		const redirectTo = stampClientAuthorizationRedirect(

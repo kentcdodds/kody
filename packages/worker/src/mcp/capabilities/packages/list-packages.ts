@@ -8,6 +8,8 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
+import { resolveConnectionProfileActor } from '#worker/connection-profiles/access.ts'
+import { profileGrantsReveal } from '#worker/connection-profiles/repo.ts'
 import {
 	packageSummaryWithCommunityProvenanceSchema,
 	toPackageSummaryWithCommunityProvenance,
@@ -49,8 +51,22 @@ export const listPackagesCapability = defineDomainCapability(
 					},
 				),
 			})
+			const actor = await resolveConnectionProfileActor({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+			})
+			const visible =
+				actor.grants == null
+					? packages
+					: packages.filter((pkg) =>
+							profileGrantsReveal({
+								grants: actor.grants,
+								resourceType: 'package',
+								resourceId: pkg.id,
+							}),
+						)
 			return {
-				packages: packages.map(toPackageSummaryWithCommunityProvenance),
+				packages: visible.map(toPackageSummaryWithCommunityProvenance),
 			}
 		},
 	},
