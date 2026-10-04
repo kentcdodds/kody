@@ -109,7 +109,7 @@ store Slack OAuth tokens as named secrets.
 
 ## Do not
 
-- Do not send the user to `/account/secrets/new` for Slack OAuth tokens.
+- Do not send the user to `/connect/secret-set` for Slack OAuth tokens.
 - Do not `secretSet` Slack access or refresh tokens.
 - Do not paste tokens or the Slack client secret in chat.
 - Do not treat a bot-token Slack connection as a working `@kody/slack` setup.

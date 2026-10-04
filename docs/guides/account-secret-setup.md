@@ -2,16 +2,21 @@
 id: connect_secret
 title: Secret setup URL reference
 summary:
-  Hosted /account/secrets/new URL shape, query params, approval policy for API
+  Hosted /connect/secret-set URL shape, query params, approval policy for API
   keys and PATs, and post-hoc package approval URLs including bulk approve.
 category: platform
 ---
 
 # Secret setup URL reference
 
-Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
-a secret value such as an API key or personal access token. Secrets stay on the
-setup page; send the URL and wait until they confirm save.
+Use the hosted **`/connect/secret-set`** page whenever the user needs to enter a
+secret value such as an API key or personal access token. That page has one job:
+set this secret. Secrets stay on the setup page; send the URL and wait until
+they confirm save.
+
+In-app "New secret" from `/account/secrets` still opens `/account/secrets/new`
+without query params. Prefill links that include `name` redirect to
+`/connect/secret-set` so agent links do not land on the general secrets list.
 
 If the secret will power a downstream package or package app, open
 `search({ entity: "guide:integration_bootstrap" })` before building that
@@ -19,7 +24,7 @@ package. For the common non-OAuth path after bootstrap, open
 `search({ entity: "guide:secret_backed_integration" })`. This guide covers the
 secret-collection step only.
 
-## When to use `/account/secrets/new`
+## When to use `/connect/secret-set`
 
 Use it when:
 
@@ -28,14 +33,14 @@ Use it when:
   `secretJwtSign`) is missing
 - the user needs to rotate a stored secret value
 
-Send the `/account/secrets/new` URL and have them paste into **Secret value** on
+Send the `/connect/secret-set` URL and have them paste into **Secret value** on
 that page.
 
 ## URL format
 
 Provide the user a URL like:
 
-`https://<your-kody-origin>/account/secrets/new?name=exampleApiKey&description=Example%20API%20key&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=api.example.com&scope=user&allowedPackages=pkg_123`
+`https://<your-kody-origin>/connect/secret-set?name=exampleApiKey&description=Example%20API%20key&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=api.example.com&scope=user&allowedPackages=pkg_123`
 
 When `name` is present, the page focuses and scrolls to the secret value input
 so the user can paste immediately.
@@ -54,8 +59,8 @@ so the user can paste immediately.
 
 ## Approval policy reminders
 
-- A prefilled `allowedHosts` list is on the form under **Where this secret can
-  be sent**. Saving writes that list with the secret.
+- A prefilled `allowedHosts` list is shown on the setup page. Saving writes that
+  list with the secret.
 - When the save URL omitted hosts, or a later call says a host is not approved,
   open **`/connect/secrets`** (`name` / `names` and `hosts`). Package grants use
   `/account/secrets/approve`.
@@ -68,7 +73,7 @@ Self-authored packages and community forks the owner adopted on the website can
 read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Only the
 account owner can add a package to that grant on the secret editor or
-`/account/secrets/approve` — a focused Allow page like `/connect/secrets`.
+`/account/secrets/approve` - a focused Allow page like `/connect/secrets`.
 `secretLock` returns that approval URL. Send the link and wait until they
 confirm. The grant is written on that page. Removing a grant is also
 website-only. When an **unadopted community-forked** package needs access to one

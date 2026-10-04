@@ -4,25 +4,32 @@ import {
 	getNewSecretValueAutofocusKey,
 } from './new-secret-query.ts'
 
-test('prefilled /new?name=... keys autofocus on the secret value', () => {
+test('prefilled /connect/secret-set?name=... keys autofocus on the secret value', () => {
 	expect(getNewSecretValueAutofocusKey('/account/secrets')).toBe('')
 	expect(getNewSecretValueAutofocusKey('/account/secrets/new')).toBe('')
+	expect(getNewSecretValueAutofocusKey('/connect/secret-set')).toBe('')
 	expect(getNewSecretValueAutofocusKey('/account/secrets/new?name=%20')).toBe(
 		'',
 	)
 	expect(
 		getNewSecretValueAutofocusKey(
-			'/account/secrets/new?description=Bot%20token&allowedHosts=discord.com',
+			'/connect/secret-set?description=Bot%20token&allowedHosts=discord.com',
 		),
 	).toBe('')
 
 	const prefilled =
-		'/account/secrets/new?name=discordBotTokenKodyOfficial&description=Discord%20bot%20token&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=discord.com&scope=user'
+		'/connect/secret-set?name=discordBotTokenKodyOfficial&description=Discord%20bot%20token&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=discord.com&scope=user'
 	expect(getNewSecretValueAutofocusKey(prefilled)).toBe(
 		getNewSecretQueryKey(prefilled),
 	)
 	expect(getNewSecretValueAutofocusKey(prefilled).length).toBeGreaterThan(0)
 	expect(getNewSecretValueAutofocusKey(`${prefilled}&q=unrelated-filter`)).toBe(
 		getNewSecretQueryKey(prefilled),
+	)
+
+	const legacyPrefill =
+		'/account/secrets/new?name=discordBotTokenKodyOfficial&allowedHosts=discord.com'
+	expect(getNewSecretValueAutofocusKey(legacyPrefill)).toBe(
+		getNewSecretQueryKey(legacyPrefill),
 	)
 })

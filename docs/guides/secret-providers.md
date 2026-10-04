@@ -20,7 +20,7 @@ saved package you bind; Kody core does not talk to the vault itself.
 ## Bind a provider
 
 1. Save the vault door key as a Kody user secret. Paste it on
-   `/account/secrets/new`, never into chat. URL shape:
+   `/connect/secret-set`, never into chat. URL shape:
    [Secret setup URL reference](./account-secret-setup.md).
 2. Have a saved package that declares `kody.secretProvider.id` (for example
    `1password`) and exports `./secretProvider`.

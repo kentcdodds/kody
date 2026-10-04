@@ -71,7 +71,7 @@ When the token is copied, open
 Send this page. The person pastes the token into **Secret value**:
 
 ```text
-https://kody.codes/account/secrets/new?name=githubAccessToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
+https://kody.codes/connect/secret-set?name=githubAccessToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
 ```
 
 **Expires** on that page is optional. Leave it empty and Kody keeps the secret

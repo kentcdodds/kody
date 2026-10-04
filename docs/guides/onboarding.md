@@ -192,7 +192,7 @@ Only set up a connection when their use needs one. Say the difficulty first.
 - **MCP (easy).** Add a remote MCP server they already have, or one they can
   authorize quickly. Start here when a server exists.
 - **PAT / API key (harder, more powerful).** Store a token they already have as
-  a secret. Packages can use it. Send the `/account/secrets/new` URL and have
+  a secret. Packages can use it. Send the `/connect/secret-set` URL and have
   them paste into **Secret value** on that page. Open
   `search({ entity: "guide:connect_secret" })` or a resolved
   `search({ entity: "guide:provider_<slug>" })`.

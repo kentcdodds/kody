@@ -485,6 +485,7 @@ const routeDocumentHeads = {
 		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')
 	},
 	[routePattern(routes.connectSecrets)]: titleOnly('Allow secret hosts'),
+	[routePattern(routes.connectSecretSet)]: titleOnly('Set secret'),
 	[routePattern(routes.connectWebhookApply)]: titleOnly(
 		'Approve webhook apply destination',
 	),

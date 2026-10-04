@@ -148,6 +148,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		paths: [
 			'/account/secrets',
 			'/connect/secrets',
+			'/connect/secret-set',
 			'/account/secret-providers',
 			'/account/secret-providers/approve',
 		],

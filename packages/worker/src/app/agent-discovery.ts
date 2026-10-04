@@ -53,6 +53,7 @@ const robotsDisallowPaths = [
 	'/webhooks',
 	'/connect/oauth',
 	'/connect/secrets',
+	'/connect/secret-set',
 ] as const
 
 export type AgentSkillDefinition = {

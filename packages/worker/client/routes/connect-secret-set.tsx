@@ -1,0 +1,427 @@
+import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
+import { type Handle, css } from 'remix/component'
+import { on } from '#client/event-mixin.ts'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import {
+	type RouteLoaderResult,
+	routeLoaderRedirect,
+} from '#client/route-loader.ts'
+import {
+	accountSecretsApiPath,
+	readJson,
+} from '#client/routes/account-approval-shared.ts'
+import {
+	createEditorStateFromNewSecretQuery,
+	type EditorState,
+} from '#client/routes/account-secrets-shared.ts'
+import { getNewSecretValueAutofocusKey } from '#client/routes/new-secret-query.ts'
+import { normalizeAllowedHosts } from '#client/routes/secret-normalization.ts'
+import { colors, spacing } from '#universal/styles/tokens.ts'
+import {
+	cardCss,
+	fieldCss,
+	fieldLabelCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	inputCss,
+	pageDescriptionCss,
+	pageEyebrowCss,
+	pageHeaderCss,
+	pageTitleCss,
+	stackedPageCss,
+} from '#universal/styles/style-primitives.ts'
+import { routes } from '#universal/routes.ts'
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '32rem',
+	margin: '0 auto',
+}
+
+const headerCss = {
+	...pageHeaderCss,
+	justifyItems: 'center',
+	textAlign: 'center' as const,
+}
+
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+const secondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+export async function connectSecretSetRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const response = await fetch(accountSecretsApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) {
+		return routeLoaderRedirect('/login')
+	}
+	const payload = (await response.json().catch(() => null)) as
+		| (AccountSecretsLoaderData & { error?: string })
+		| null
+	if (!response.ok || !payload?.ok) {
+		return {
+			accountSecrets: {
+				ok: true,
+				email: '',
+				packageOptions: [],
+				packages: [],
+				secrets: [],
+				selectedSecret: null,
+				approval: null,
+				approvalError:
+					payload?.error || 'Unable to load this secret setup request.',
+			},
+		}
+	}
+	return { accountSecrets: payload }
+}
+
+export function readConnectSecretSetView(input: {
+	name: string
+	saved: boolean
+}) {
+	const hasName = input.name.trim().length > 0
+	return {
+		hasName,
+		saved: input.saved,
+		showForm: hasName && !input.saved,
+		showBackToSecrets: input.saved || !hasName,
+	}
+}
+
+export function ConnectSecretSetRoute(handle: Handle) {
+	let data: AccountSecretsLoaderData | null = null
+	let editorState: EditorState | null = null
+	let appliedQueryKey = ''
+	let saving = false
+	let saved = false
+	let message: string | null = null
+	let showSecretValue = false
+
+	function getCurrentHref() {
+		return readCurrentRouterHref(handle)
+	}
+
+	function applyRouteLoaderData(href: string) {
+		const routeData = tryConsumeRouteLoaderData(handle, 'accountSecrets', href)
+		if (!routeData) return false
+		data = routeData
+		return true
+	}
+
+	function ensureEditorState(href: string) {
+		const packageOptions = data?.packageOptions ?? []
+		const queryKey = `${href}\0${packageOptions.map((item) => item.id).join(',')}`
+		if (editorState && appliedQueryKey === queryKey) return editorState
+		editorState = createEditorStateFromNewSecretQuery(packageOptions, href)
+		appliedQueryKey = queryKey
+		return editorState
+	}
+
+	async function saveSecret(event: SubmitEvent) {
+		event.preventDefault()
+		if (saving || !editorState || saved) return
+		saving = true
+		message = null
+		handle.update()
+		try {
+			const allowedHosts = normalizeAllowedHosts(
+				editorState.allowedHosts.filter((host) => host.trim()),
+			)
+			const allowedPackages =
+				editorState.scope === 'user'
+					? [...editorState.allowedPackages].sort((left, right) =>
+							left.localeCompare(right),
+						)
+					: []
+			const response = await fetch(accountSecretsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'save',
+					currentId: null,
+					name: editorState.name,
+					scope: editorState.scope,
+					packageId:
+						editorState.scope === 'package' ? editorState.packageId : null,
+					description: editorState.description,
+					expiresAt: editorState.expiresAt || null,
+					value: editorState.value,
+					allowedHosts,
+					allowedPackages,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountSecretsLoaderData & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to save secret.')
+			}
+			data = payload
+			saved = true
+			editorState = {
+				...editorState,
+				value: '',
+			}
+		} catch (error) {
+			message =
+				error instanceof Error ? error.message : 'Unable to save secret.'
+		} finally {
+			saving = false
+			handle.update()
+		}
+	}
+
+	return () => {
+		const currentHref = getCurrentHref()
+		applyRouteLoaderData(currentHref)
+		const state = ensureEditorState(currentHref)
+		const view = readConnectSecretSetView({
+			name: state.name,
+			saved,
+		})
+		const hosts = state.allowedHosts.map((host) => host.trim()).filter(Boolean)
+		const autofocusKey = getNewSecretValueAutofocusKey(currentHref)
+		const loadError = data?.approvalError ?? null
+
+		return (
+			<section mix={css(pageCss)} data-testid="connect-secret-set">
+				<header mix={css(headerCss)}>
+					<span mix={css(pageEyebrowCss)}>Set secret</span>
+					<h1 mix={css(pageTitleCss)}>
+						{view.saved
+							? 'Secret saved'
+							: view.hasName
+								? 'Set this secret'
+								: 'Open a secret setup link'}
+					</h1>
+					<p mix={css(pageDescriptionCss)}>
+						{view.saved
+							? 'This secret is saved. Return to your agent and continue.'
+							: view.hasName
+								? 'Paste the secret value below. Agents cannot set this for you.'
+								: 'Open a setup link from Kody to save a secret value such as an API key or personal access token.'}
+					</p>
+				</header>
+
+				{loadError ? (
+					<section
+						mix={css({
+							...cardCss,
+							border: `1px solid ${colors.danger}`,
+						})}
+						data-testid="connect-secret-set-error"
+					>
+						<p mix={css({ margin: 0, color: colors.danger })}>{loadError}</p>
+					</section>
+				) : null}
+
+				{message ? (
+					<p
+						mix={css({ margin: 0, color: colors.danger })}
+						data-testid="connect-secret-set-message"
+					>
+						{message}
+					</p>
+				) : null}
+
+				{view.showForm ? (
+					<section mix={css(cardCss)} data-testid="connect-secret-set-card">
+						<form
+							{...passwordManagerIgnoreProps}
+							mix={[
+								css({ display: 'grid', gap: spacing.md }),
+								on('submit', (event) => {
+									void saveSecret(event)
+								}),
+							]}
+						>
+							<div mix={css({ display: 'grid', gap: spacing.sm })}>
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<span mix={css({ color: colors.textMuted })}>Secret</span>
+									<code data-testid="connect-secret-set-name">
+										{state.name}
+									</code>
+								</div>
+								{state.description.trim() ? (
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css({ color: colors.textMuted })}>
+											Description
+										</span>
+										<span mix={css({ color: colors.text })}>
+											{state.description}
+										</span>
+									</div>
+								) : null}
+								{state.scope === 'package' ? (
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css({ color: colors.textMuted })}>Scope</span>
+										<span mix={css({ color: colors.text })}>
+											Package
+											{state.packageId ? (
+												<>
+													{' '}
+													<code>{state.packageId}</code>
+												</>
+											) : null}
+										</span>
+									</div>
+								) : null}
+								{hosts.length > 0 ? (
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css({ color: colors.textMuted })}>
+											{hosts.length === 1 ? 'Host' : 'Hosts'}
+										</span>
+										<ul
+											mix={css({
+												margin: 0,
+												paddingLeft: spacing.lg,
+												display: 'grid',
+												gap: spacing.xs,
+											})}
+										>
+											{hosts.map((host) => (
+												<li key={host}>
+													<strong mix={css({ color: colors.text })}>
+														{host}
+													</strong>
+												</li>
+											))}
+										</ul>
+									</div>
+								) : null}
+								{state.expiresAt.trim() ? (
+									<div mix={css({ display: 'grid', gap: spacing.xs })}>
+										<span mix={css({ color: colors.textMuted })}>Expires</span>
+										<span mix={css({ color: colors.text })}>
+											{state.expiresAt}
+										</span>
+									</div>
+								) : null}
+							</div>
+
+							<label mix={css(fieldCss)}>
+								<span mix={css(fieldLabelCss)}>Secret value</span>
+								<div
+									mix={css({
+										position: 'relative',
+										display: 'flex',
+										alignItems: 'center',
+									})}
+								>
+									<input
+										type={showSecretValue ? 'text' : 'password'}
+										required
+										autoFocus={Boolean(autofocusKey)}
+										data-field="secret-value"
+										data-testid="connect-secret-set-value"
+										{...passwordManagerIgnoreProps}
+										value={state.value}
+										placeholder="Paste the secret value"
+										mix={[
+											on('input', (event) => {
+												editorState = {
+													...state,
+													value: event.currentTarget.value,
+												}
+												handle.update()
+											}),
+											css({
+												...inputCss,
+												paddingRight: '4.5rem',
+											}),
+										]}
+									/>
+									<button
+										type="button"
+										aria-label={
+											showSecretValue
+												? 'Hide secret value'
+												: 'Show secret value'
+										}
+										mix={[
+											on('click', () => {
+												showSecretValue = !showSecretValue
+												handle.update()
+											}),
+											css({
+												position: 'absolute',
+												right: spacing.sm,
+												border: 'none',
+												background: 'transparent',
+												color: colors.textMuted,
+												cursor: 'pointer',
+												padding: spacing.xs,
+											}),
+										]}
+									>
+										{showSecretValue ? 'Hide' : 'Show'}
+									</button>
+								</div>
+							</label>
+
+							<button
+								type="submit"
+								disabled={saving}
+								data-testid="connect-secret-set-save"
+								mix={css(primaryButtonCss)}
+							>
+								{saving ? 'Saving…' : 'Save secret'}
+							</button>
+						</form>
+					</section>
+				) : null}
+
+				{view.saved && view.hasName ? (
+					<section
+						mix={css(cardCss)}
+						data-testid="connect-secret-set-saved-card"
+					>
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<div mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css({ color: colors.textMuted })}>Secret</span>
+								<code>{state.name}</code>
+							</div>
+						</div>
+						<a
+							href={routes.accountSecrets.href()}
+							mix={css(secondaryButtonCss)}
+							data-testid="connect-secret-set-back"
+						>
+							Back to secrets
+						</a>
+					</section>
+				) : view.showBackToSecrets ? (
+					<a
+						href={routes.accountSecrets.href()}
+						mix={css(secondaryButtonCss)}
+						data-testid="connect-secret-set-back"
+					>
+						Back to secrets
+					</a>
+				) : null}
+			</section>
+		)
+	}
+}

@@ -69,7 +69,7 @@ Flip every one of those. Create the OAuth app yourself and:
 
 The same principle covers plain API keys and personal access tokens. Those go
 into the server-side secret store via
-[a prefilled secrets page](https://kody.codes/account/secrets/new), never pasted
+[a prefilled secrets page](https://kody.codes/connect/secret-set), never pasted
 into chat. They're encrypted, referenced in code as `{{secret:name}}`
 placeholders, and resolved only for hosts you've approved, so the plaintext
 never enters a prompt. The

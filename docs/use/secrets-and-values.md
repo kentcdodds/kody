@@ -3,7 +3,7 @@
 ## Secrets
 
 Credential setup uses **saved secrets**, **`/connect/oauth`** for OAuth,
-**`/account/secrets/new`** for API keys and PATs, or execution-time persistence
+**`/connect/secret-set`** for API keys and PATs, or execution-time persistence
 when a token already exists inside trusted code.
 
 Use **search** first to discover saved secret references or integrations before
@@ -48,7 +48,7 @@ only change description or expiry may omit **`value`**. Package runtimes cannot
 change expiry on a user secret.
 
 The account create/edit form has the same optional expiry field. Agents
-prefilling **`/account/secrets/new`** can set **`expiresAt`** as a query
+prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query
 parameter so the human pastes the token without typing the date. See
 [Account secret setup](../guides/account-secret-setup.md).
 

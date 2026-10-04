@@ -114,7 +114,7 @@ count. Return structured text, not a raw PDF.js handle.
 
 ## Secrets and approval
 
-1. Create the URL and token secrets through `/account/secrets/new` (see
+1. Create the URL and token secrets through `/connect/secret-set` (see
    [secret-backed integration](./secret-backed-integration.md)).
 2. Declare them on the package (`kody.secretMounts` or `{{secret:name}}`).
 3. Stop and send the owner the host-approval and package-approval links. Do not

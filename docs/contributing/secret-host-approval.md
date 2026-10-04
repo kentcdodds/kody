@@ -144,7 +144,7 @@ See [OAuth: bring your own app](../guides/oauth.md).
 For secret-backed fetches (API keys, PATs, webhook HMAC secrets), prefer this
 sequence:
 
-1. Save the credential as a secret (`/account/secrets/new` or `secretSet`).
+1. Save the credential as a secret (`/connect/secret-set` or `secretSet`).
 2. Attempt the outbound request with secret placeholders.
 3. If the request is blocked on host approval, send the user to
    `/connect/secrets`.

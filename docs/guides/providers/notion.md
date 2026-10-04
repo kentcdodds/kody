@@ -52,7 +52,7 @@ Once connected, you can ask Kody things like:
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://kody.codes/account/secrets/new?name=notionToken&description=Notion%20internal%20connection%20token&allowedHosts=api.notion.com&scope=user
+https://kody.codes/connect/secret-set?name=notionToken&description=Notion%20internal%20connection%20token&allowedHosts=api.notion.com&scope=user
 ```
 
 Approve the `api.notion.com` host on the same page after saving.

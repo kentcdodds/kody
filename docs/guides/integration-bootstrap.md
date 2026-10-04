@@ -70,7 +70,7 @@ If those conditions are not met, stop and fix the integration first.
      `search({ entity: "integration:{id}" })` or
      `search({ entity: "secret:{id}" })`.
 3. If the required integration or secret is missing, **stop**.
-   - Surface the exact `/connect/oauth` or `/account/secrets/new` URL in chat.
+   - Surface the exact `/connect/oauth` or `/connect/secret-set` URL in chat.
      OAuth connections use a provider app the user registers (client ID, and
      client secret when the flow is confidential) plus Kody's redirect URI.
    - Wait for the user to confirm they completed the connect flow.

@@ -46,7 +46,7 @@ guides load with `search({ entity: "guide:{id}" })` — not execute.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
-  `/account/secrets/new`, or the flows described in
+  `/connect/secret-set`, or the flows described in
   [Secrets and host approval](./secrets-and-values.md). Per-provider connect
   guides are available: `search({ entity: "guide:provider_<name>" })` (for
   example `provider_github`) or browse

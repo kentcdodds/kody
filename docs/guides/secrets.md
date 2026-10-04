@@ -114,7 +114,7 @@ list. A pasted API key is a secret; a Slack login is an integration. See
 
 A secret can carry an expiry (`expires_at`). Expired secrets stay listed with
 `ttl_ms: 0`, and placeholders treat them as missing so Kody stops sending the
-value. Agents prefilling `/account/secrets/new` can set `expiresAt` in the query
+value. Agents prefilling `/connect/secret-set` can set `expiresAt` in the query
 string so the person pastes the token without typing a date.
 
 ## When a token is coarser than the job
@@ -129,7 +129,7 @@ on connected tool servers.
 
 ## Adding a secret
 
-- Pasting a key or PAT: the agent sends you a prefilled `/account/secrets/new`
+- Pasting a key or PAT: the agent sends you a prefilled `/connect/secret-set`
   link; you paste the value into the page, never into chat. URL shape and
   parameters: [Secret setup URL reference](./account-secret-setup.md).
 - Building an integration around one or more secrets:

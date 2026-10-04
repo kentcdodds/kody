@@ -90,6 +90,20 @@ export function createAccountSecretsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
+			const requestUrl = new URL(request.url)
+			// Prefill agent links use the focused /connect/secret-set page.
+			// Bare /account/secrets/new stays on the account list editor.
+			if (
+				requestUrl.pathname === '/account/secrets/new' &&
+				requestUrl.searchParams.get('name')?.trim()
+			) {
+				const redirectUrl = new URL(
+					`/connect/secret-set${requestUrl.search}`,
+					requestUrl.origin,
+				)
+				return Response.redirect(redirectUrl, 302)
+			}
+
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user

@@ -62,7 +62,7 @@ const interactiveDocRenderers: Readonly<
  * Doc page for `/docs` (the introduction) and `/docs/:slug`: docs shell
  * (sidebar) → section eyebrow → title + meta → `.prose` body rendered from
  * the server's bundled markdown catalog with the first-party link policy
- * (docs link into `/connect/oauth` and `/account/secrets/new`) and copyable
+ * (docs link into `/connect/oauth` and `/connect/secret-set`) and copyable
  * code blocks → previous/next → a quiet foot with the raw markdown twin for
  * agents (`data-rmx-document` so the SPA does not intercept
  * `/docs/:slug.md`). Interactive slugs (how-kody-works, google-oauth) swap

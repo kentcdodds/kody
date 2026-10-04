@@ -51,7 +51,7 @@ fails open and hides the card, because login already attempted `guilds.join`.
 Vendor outages, operator work, and other people's queues do not appear here.
 Session-scoped secret approvals stay on the session that requested them. Missing
 secret _names_ stay off Waiting (the agent’s `nextStep` and
-`/account/secrets/new` already cover those).
+`/connect/secret-set` already cover those).
 
 OAuth last-failure **is** stored on the connection. A reconnectable grant shows
 a Waiting card with Reconnect. A provider 5xx or timeout is stored for

@@ -34,6 +34,8 @@ test('agent discovery documents describe the MCP server and public pages', async
 	)
 	expect(robots).toContain('Disallow: /account')
 	expect(robots).toContain('Disallow: /auth/')
+	expect(robots).toContain('Disallow: /connect/secrets')
+	expect(robots).toContain('Disallow: /connect/secret-set')
 	expect(robots).not.toContain('Disallow: /auth.md')
 	expect(robots).toContain(`Sitemap: ${origin}/sitemap.xml`)
 

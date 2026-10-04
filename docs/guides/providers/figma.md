@@ -89,7 +89,7 @@ plus PKCE, and reconnect behavior.
 2. Save it through the account secrets page. Never paste the token into chat:
 
 ```text
-https://kody.codes/account/secrets/new?name=figmaPat&description=Figma%20personal%20or%20plan%20access%20token&allowedHosts=api.figma.com&scope=user
+https://kody.codes/connect/secret-set?name=figmaPat&description=Figma%20personal%20or%20plan%20access%20token&allowedHosts=api.figma.com&scope=user
 ```
 
 Approve `api.figma.com` on the same page after saving. The name `figmaPat` is

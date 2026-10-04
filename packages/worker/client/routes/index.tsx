@@ -366,6 +366,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.connectSecretsRouteLoader,
 	),
+	[routePattern(routes.connectSecretSet)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectSecretSetRouteLoader,
+	),
 	[routePattern(routes.connectWebhookApply)]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.connectWebhookApplyRouteLoader,
@@ -686,6 +690,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.connectSecrets)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectSecretsRoute />} />
+	),
+	[routePattern(routes.connectSecretSet)]: (
+		<LazyOnboardingRoute render={(m) => <m.ConnectSecretSetRoute />} />
 	),
 	[routePattern(routes.connectWebhookApply)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectWebhookApplyRoute />} />
