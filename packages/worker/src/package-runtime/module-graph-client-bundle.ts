@@ -23,7 +23,7 @@ import {
 	buildPackageAppClientModuleName,
 	clientModuleHashLength,
 } from './package-app-client-module-name.ts'
-import { withPlatformRemixFiles } from './package-app-remix.ts'
+import { assertNoPlatformSuppliedNodeModules } from './package-bundle-node-modules.ts'
 import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import { type RuntimeBundle } from './runtime-bundle-types.ts'
 import { iterateModuleSourceTexts } from './runtime-source-modules.ts'
@@ -268,15 +268,15 @@ export async function buildKodyAppClientBundle(input: {
 		reachable,
 		bundleLabel,
 	})
-	// Optional convenience: the platform's vendored `remix` joins the browser
-	// graph too, so a recipe that imports `remix/component` resolves the same copy
-	// the server bundle used. Bundler options stay on esbuild defaults.
-	const files = await withPlatformRemixFiles(
-		collectBrowserBundleFiles({
-			sourceFiles: input.sourceFiles,
-			reachable,
-		}),
-	)
+	const files = collectBrowserBundleFiles({
+		sourceFiles: input.sourceFiles,
+		reachable,
+	})
+	assertNoPlatformSuppliedNodeModules({
+		snapshotFiles: input.sourceFiles,
+		bundlerFiles: files,
+		bundleLabel,
+	})
 	// Externals come from the manifest in the files being built (not a cached
 	// manifest) so a republish that changes them rebuilds against itself.
 	const externals = rootPackage

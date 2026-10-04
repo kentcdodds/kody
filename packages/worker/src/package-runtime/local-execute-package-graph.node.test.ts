@@ -108,7 +108,7 @@ function makeArtifactHit(input: {
 	return {
 		row: { id: `artifact-${input.artifactName}` },
 		artifact: {
-			version: 1,
+			version: 2,
 			kind: 'importable-module' as const,
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',

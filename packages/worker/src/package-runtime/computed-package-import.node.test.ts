@@ -9,7 +9,7 @@ test('buildComputedPackageImportCallBundle wraps the importable main with a call
 	const bundle = buildComputedPackageImportCallBundle({
 		specifier: 'kody:@kentcdodds/example/probe',
 		artifact: {
-			version: 1,
+			version: 2,
 			kind: 'importable-module',
 			artifactName: './probe',
 			sourceId: 'source-1',

@@ -92,7 +92,7 @@ async function seedSubscribedPackage(input: {
 	input.bundleKv.set(
 		artifactKey,
 		JSON.stringify({
-			version: 1,
+			version: 2,
 			kind: 'module',
 			artifactName,
 			sourceId,

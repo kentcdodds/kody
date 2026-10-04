@@ -27,7 +27,7 @@ import {
 } from './module-graph-import-rewriting.ts'
 import { moduleSourceDeclaresDefaultExport } from './module-export-names.ts'
 import { resolveKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
-import { withPlatformRemixFiles } from './package-app-remix.ts'
+import { assertNoPlatformSuppliedNodeModules } from './package-bundle-node-modules.ts'
 import { createPackageAppJsxBundleOptions } from './package-app-tsconfig.ts'
 import {
 	createAppEntrypointSource,
@@ -109,16 +109,18 @@ async function createWorkerBundle(input: {
 	entryPoint: string
 	sourceFiles?: Record<string, string>
 }) {
+	const snapshotFiles = input.sourceFiles ?? input.files
+	assertNoPlatformSuppliedNodeModules({
+		snapshotFiles,
+		bundlerFiles: input.files,
+		bundleLabel: 'Package bundle',
+	})
 	// Keep the experimental bundler out of the Worker's top-level deploy graph.
 	const { createWorker } = await importWorkerBundler()
-	// Optional convenience: every package bundle can import `remix/<subpath>`
-	// from the platform's vendored copy. JSX comes from the package
-	// tsconfig when present; otherwise esbuild defaults.
-	const files = await withPlatformRemixFiles(input.files)
 	return await createWorker({
-		files,
+		files: input.files,
 		entryPoint: input.entryPoint,
-		...createPackageAppJsxBundleOptions(input.sourceFiles ?? input.files),
+		...createPackageAppJsxBundleOptions(snapshotFiles),
 		__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired: [
 			kodyRuntimeExternalsPlugin,
 		],

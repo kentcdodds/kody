@@ -11,7 +11,6 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
-import { isVendoredRemixPath } from './package-app-remix.ts'
 
 const { buildKodyAppClientBundle, isDeclaredClientExternal } =
 	await import('./module-graph-client-bundle.ts')
@@ -71,17 +70,13 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(call.entryPoint).toBe('src/client.ts')
 	expect(call.bundle).toBe(true)
 	const fileKeys = Object.keys(call.files).sort()
-	expect(fileKeys.filter((key) => !isVendoredRemixPath(key))).toEqual([
+	expect(fileKeys).toEqual([
 		'node_modules/left-pad/index.js',
 		'node_modules/left-pad/package.json',
 		'package.json',
 		'src/client.ts',
 		'src/greet.ts',
 	])
-	// The platform's vendored Remix rides along so `remix/component` resolves in
-	// the browser graph without an npm install.
-	expect(fileKeys).toContain('node_modules/remix/package.json')
-	expect(fileKeys).toContain('node_modules/remix/dist/component.js')
 	// A plain DOM client keeps esbuild's JSX defaults.
 	expect(call).not.toHaveProperty('jsxImportSource')
 
@@ -99,11 +94,10 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(changed.mainModule).not.toBe(bundle.mainModule)
 })
 
-test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client graph imports remix/component', async () => {
-	const remixUiClient =
-		"import { run } from 'remix/component'\nrun({ loadModule: async () => ({}) })"
+test('buildKodyAppClientBundle keeps esbuild JSX defaults unless the package tsconfig sets them', async () => {
+	const trivialClient = 'console.log("client")'
 	for (const [files, expectedJsx] of [
-		[{ 'src/client.ts': remixUiClient }, null],
+		[{ 'src/client.ts': trivialClient }, null],
 		[
 			{
 				'tsconfig.json': JSON.stringify({
@@ -112,14 +106,13 @@ test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client g
 						jsxImportSource: 'remix/component',
 					},
 				}),
-				'src/client.ts': remixUiClient,
+				'src/client.ts': trivialClient,
 			},
 			{ jsx: 'automatic', jsxImportSource: 'remix/component' },
 		],
 		[
 			{
-				'src/client.ts':
-					"import { CacheControl } from 'remix/headers'\nconsole.log(CacheControl)",
+				'src/client.ts': 'console.log("headers")',
 			},
 			null,
 		],
@@ -130,6 +123,9 @@ test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client g
 			entryPoint: 'src/client.ts',
 		})
 		const call = bundlerCall()
+		expect(Object.keys(call.files as Record<string, string>)).not.toContain(
+			'node_modules/remix/package.json',
+		)
 		if (expectedJsx) {
 			expect(call).toMatchObject(expectedJsx)
 		} else {
@@ -137,6 +133,28 @@ test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client g
 			expect(call).not.toHaveProperty('jsxImportSource')
 		}
 	}
+})
+
+test('buildKodyAppClientBundle does not inject remix and fails when the bundle still imports it', async () => {
+	mockBundledOutput(
+		'import { run } from "remix/component";\nrun({ loadModule: async () => ({}) });\n',
+	)
+	await expect(
+		buildKodyAppClientBundle({
+			sourceFiles: {
+				'package.json': packageJson,
+				'src/client.ts':
+					"import { run } from 'remix/component'\nrun({ loadModule: async () => ({}) })",
+			},
+			entryPoint: 'src/client.ts',
+		}),
+	).rejects.toThrow(
+		/still contains unresolved bare package imports after bundling \("remix\/component"\)/,
+	)
+	const call = bundlerCall()
+	expect(Object.keys(call.files as Record<string, string>)).not.toContain(
+		'node_modules/remix/package.json',
+	)
 })
 
 test('buildKodyAppClientBundle rejects kody:, cloudflare:, and node: imports before bundling', async () => {

@@ -35,7 +35,6 @@ import {
 } from '#worker/package-runtime/module-graph-workspace.ts'
 import { validatePackageAppAssetsDirectory } from '#worker/package-runtime/package-app-assets-directory.ts'
 import { validatePackageAppGraphSeparation } from '#worker/package-runtime/package-app-client-graph.ts'
-import { remixPackageName } from '#worker/package-runtime/package-app-remix-subpaths.ts'
 import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
@@ -732,34 +731,11 @@ function formatNpmDependencyCheckMessage(input: {
 	if (input.dependencies.length === 0) {
 		return 'package.json declares no npm dependencies.'
 	}
-	const declared = `package.json declares ${input.dependencies.length} npm ${pluralize(
+	return `package.json declares ${input.dependencies.length} npm ${pluralize(
 		input.dependencies.length,
 		'dependency',
 		'dependencies',
 	)}: ${formatQuotedList(input.dependencies)}.`
-	return input.dependencies.includes(remixPackageName)
-		? `${declared} Kody supplies "${remixPackageName}" to every package bundle at the platform version, so the declared range is not installed.`
-		: declared
-}
-
-const remixInternalPackageScope = '@remix-run/'
-
-/**
- * `@remix-run/*` are the packages behind the `remix` meta-package. Installing
- * one from npm next to the platform's vendored `remix` yields two copies of
- * the same runtime (two component registries, two context-key modules), so
- * publish names the fix instead.
- */
-function findRemixInternalNpmDependencies(dependencies: Array<string>) {
-	return dependencies.filter((dependency) =>
-		dependency.startsWith(remixInternalPackageScope),
-	)
-}
-
-function formatRemixInternalNpmDependencyMessage(dependencies: Array<string>) {
-	return `package.json#dependencies must not list ${formatQuotedList(
-		dependencies,
-	)}: import Remix as "${remixPackageName}/<subpath>" (for example "${remixPackageName}/router", "${remixPackageName}/component"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.`
 }
 
 function getDeclaredStaticKodyPackageDependencies(
@@ -1655,23 +1631,6 @@ export async function runRepoChecks(input: {
 				})
 			}
 		}
-	}
-	const remixInternalDependencies = findRemixInternalNpmDependencies(
-		declaredNpmDependencies,
-	)
-	if (remixInternalDependencies.length > 0) {
-		results.push({
-			kind: 'dependencies',
-			ok: false,
-			message: formatRemixInternalNpmDependencyMessage(
-				remixInternalDependencies,
-			),
-		})
-		return toRepoCheckRunResult({
-			results,
-			manifest,
-			sourceFiles,
-		})
 	}
 	const staticKodyDependencyCheck =
 		validateStaticKodyPackageDependencyDeclarations({

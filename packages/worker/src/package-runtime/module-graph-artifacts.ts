@@ -8,6 +8,7 @@ import {
 	type BundleArtifactDynamicDependency,
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
+	bundleArtifactVersion,
 } from './published-runtime-artifacts.ts'
 import {
 	parseKodyPackageSpecifier,
@@ -263,7 +264,7 @@ export function createPublishedBundleArtifact(input: {
 	} | null
 }): PublishedBundleArtifact {
 	return {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: input.kind,
 		artifactName: input.artifactName?.trim() || null,
 		sourceId: input.sourceId,

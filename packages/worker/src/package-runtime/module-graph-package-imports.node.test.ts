@@ -102,7 +102,7 @@ function makeArtifactHit(artifact: {
 	return {
 		row: { id: `artifact-${artifact.artifactName}` },
 		artifact: {
-			version: 1,
+			version: 2,
 			kind: 'importable-module',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',

@@ -8,11 +8,6 @@ import {
 	reusePublishedPackageArtifactIfUnchanged,
 } from './published-bundle-artifacts.ts'
 
-const platformRemixVersions = vi.hoisted(() => ({
-	remixVersion: '3.0.0-test',
-	remixUiVersion: '0.0.0-test-ui',
-}))
-
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
@@ -36,11 +31,6 @@ const mockModule = vi.hoisted(() => ({
 	),
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
-	loadPlatformRemixFiles: vi.fn(async () => ({
-		remixVersion: platformRemixVersions.remixVersion,
-		remixUiVersion: platformRemixVersions.remixUiVersion,
-		files: {},
-	})),
 	readPublishedBundleArtifact: vi.fn(),
 	readPublishedSourceSnapshot: vi.fn(),
 	updatePublishedBundleArtifactRow: vi.fn(),
@@ -61,10 +51,6 @@ const mockModule = vi.hoisted(() => ({
 		},
 	),
 	writePublishedBundleArtifact: vi.fn(),
-}))
-
-vi.mock('./package-app-remix.ts', () => ({
-	loadPlatformRemixFiles: () => mockModule.loadPlatformRemixFiles(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -133,7 +119,7 @@ function makeRow(overrides: Record<string, unknown> = {}) {
 
 function makeKvArtifact(overrides: Record<string, unknown> = {}) {
 	return {
-		version: 1,
+		version: 2,
 		kind: 'module',
 		artifactName: '.',
 		sourceId: 'source-1',
@@ -144,8 +130,6 @@ function makeKvArtifact(overrides: Record<string, unknown> = {}) {
 		dependencies: [],
 		dynamicDependencies: [],
 		packageContext: null,
-		remixVersion: platformRemixVersions.remixVersion,
-		remixUiVersion: platformRemixVersions.remixUiVersion,
 		createdAt: '2026-05-13T00:00:00.000Z',
 		...overrides,
 	}
@@ -350,23 +334,6 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 	)
 	mockModule.readPublishedSourceSnapshot.mockResolvedValueOnce(invalidatedAt)
 	expect(await isBuilt()).toBe(true)
-
-	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(makeRow())
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(
-		makeKvArtifact({ remixVersion: '3.0.0-rc.2' }),
-	)
-	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
-	expect(await isBuilt()).toBe(false)
-
-	const {
-		remixVersion: _missingRemixVersion,
-		remixUiVersion: _missingRemixUiVersion,
-		...artifactWithoutRemixVersions
-	} = makeKvArtifact()
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(
-		artifactWithoutRemixVersions,
-	)
-	expect(await isBuilt()).toBe(false)
 })
 
 test('rebuildPublishedPackageArtifacts bundles declared subscription handlers', async () => {
@@ -460,10 +427,10 @@ test('rebuildPublishedPackageArtifacts stores app bundles with artifactName null
 	)
 	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalledWith(
 		expect.objectContaining({
-			kvKey: 'bundle-artifact:v1:source-1:commit-1:app:_:app.js',
+			kvKey: 'bundle-artifact:v2:source-1:commit-1:app:_:app.js',
 			artifact: expect.objectContaining({
-				remixVersion: platformRemixVersions.remixVersion,
-				remixUiVersion: platformRemixVersions.remixUiVersion,
+				version: 2,
+				kind: 'app',
 			}),
 		}),
 	)
@@ -567,7 +534,7 @@ function priorModuleArtifact(input: {
 			artifactKind,
 			artifactName: input.artifactName,
 			entryPoint: input.entryPoint,
-			kvKey: `bundle-artifact:v1:source-1:${publishedCommit}:${artifactKind}:${input.artifactName}:${input.entryPoint}`,
+			kvKey: `bundle-artifact:v2:source-1:${publishedCommit}:${artifactKind}:${input.artifactName}:${input.entryPoint}`,
 		}),
 		artifact: {
 			...makeKvArtifact({
@@ -674,7 +641,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	expect(await reuse({ entry: 'a', snapshotCache })).toBe(true)
 	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalledWith(
 		expect.objectContaining({
-			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
+			kvKey: 'bundle-artifact:v2:source-1:commit-2:module:.:src/a.ts',
 			artifact: expect.objectContaining({
 				publishedCommit: 'commit-2',
 				entryPoint: 'src/a.ts',
@@ -687,7 +654,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 		expect.objectContaining({
 			id: 'row-.',
 			publishedCommit: 'commit-2',
-			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
+			kvKey: 'bundle-artifact:v2:source-1:commit-2:module:.:src/a.ts',
 		}),
 	)
 	expect(await reuse({ entry: 'b', snapshotCache })).toBe(false)
@@ -762,95 +729,6 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	})
 	mockModule.updatePublishedBundleArtifactRow.mockResolvedValueOnce(false)
 	expect(await reuse({ entry: 'a' })).toBe(false)
-})
-
-test('reusePublishedPackageArtifactIfUnchanged rebuilds when platform Remix versions mismatch or are missing', async () => {
-	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:reused')
-	mockModule.updatePublishedBundleArtifactRow.mockResolvedValue(true)
-	stubPriorArtifacts({
-		'commit-old': {},
-		'commit-2': {},
-	})
-	const reuse = () =>
-		reusePublishedPackageArtifactIfUnchanged({
-			env: kvEnv,
-			userId: 'user-1',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-2',
-			target: {
-				kind: 'module',
-				artifactName: '.',
-				entryPoint: 'src/a.ts',
-				bundleKind: 'module',
-			},
-		})
-
-	const mismatched = priorModuleArtifact({
-		artifactName: '.',
-		entryPoint: 'src/a.ts',
-	})
-	mismatched.artifact.remixVersion = '3.0.0-rc.2'
-	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
-		mismatched.row,
-	)
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(mismatched.artifact)
-	mockModule.writePublishedBundleArtifact.mockClear()
-	expect(await reuse()).toBe(false)
-	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
-
-	const staleUiVersion = priorModuleArtifact({
-		artifactName: '.',
-		entryPoint: 'src/a.ts',
-	})
-	staleUiVersion.artifact.remixVersion = platformRemixVersions.remixVersion
-	staleUiVersion.artifact.remixUiVersion = '0.0.0-stale-ui'
-	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
-		staleUiVersion.row,
-	)
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(
-		staleUiVersion.artifact,
-	)
-	expect(await reuse()).toBe(false)
-	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
-
-	const missingVersions = priorModuleArtifact({
-		artifactName: '.',
-		entryPoint: 'src/a.ts',
-	})
-	const {
-		remixVersion: _missingRemixVersion,
-		remixUiVersion: _missingRemixUiVersion,
-		...artifactWithoutRemixVersions
-	} = missingVersions.artifact
-	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
-		missingVersions.row,
-	)
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(
-		artifactWithoutRemixVersions,
-	)
-	expect(await reuse()).toBe(false)
-	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
-
-	platformRemixVersions.remixVersion = '3.0.0-rc.4'
-	platformRemixVersions.remixUiVersion = '0.1.0-rc.4'
-	const stampedCurrent = priorModuleArtifact({
-		artifactName: '.',
-		entryPoint: 'src/a.ts',
-	})
-	stampedCurrent.artifact.remixVersion = '3.0.0-rc.4'
-	stampedCurrent.artifact.remixUiVersion = '0.1.0-rc.4'
-	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
-		stampedCurrent.row,
-	)
-	mockModule.readPublishedBundleArtifact.mockResolvedValue(
-		stampedCurrent.artifact,
-	)
-	stubSnapshots({ 'commit-old': {}, 'commit-2': {} })
-	expect(await reuse()).toBe(true)
-	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalled()
-
-	platformRemixVersions.remixVersion = '3.0.0-test'
-	platformRemixVersions.remixUiVersion = '0.0.0-test-ui'
 })
 
 test('rebuildPublishedPackageArtifacts reuses unchanged prior artifacts and only rebuilds dirty targets', async () => {

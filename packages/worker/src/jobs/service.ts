@@ -98,6 +98,7 @@ import {
 import {
 	deletePublishedSourceSnapshot,
 	type PublishedBundleArtifact,
+	bundleArtifactVersion,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	logJobSchedulerError,
@@ -211,7 +212,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		rootPackageId: input.packageContext?.packageId ?? null,
 	})
 	const artifact: PublishedBundleArtifact = {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: 'job',
 		artifactName: input.artifactName ?? null,
 		sourceId: input.sourceId,

@@ -118,11 +118,9 @@ extra RSA hashes) add ~0.5KB. Split listing out of service.ts or the share-grant
 runtime path if this budget is raised again.
 
 - Package-app `/_assets/*` serving (fingerprinted client module, static assets
-  directory) runs here: local dry-run 3_701_307 bytes. The Remix package-app
-  runtime (mounted-URL dispatch in the wrapper source, runtime resolution, and
-  the deferred-module loader for the vendored remix file set — the ~0.5 MB file
-  set itself stays in `package-app-remix.mjs`) adds ~11 KB: local dry-run
-  3_712_214 bytes.
+  directory) runs here: local dry-run 3_701_307 bytes. Package-app runtime
+  (mounted-URL dispatch in the wrapper source and runtime resolution) adds ~11
+  KB: local dry-run 3_712_214 bytes.
 - emailSend destination resolution (verified extras plus default) lives on the
   shared outbound send path: local dry-run 3_725_245 bytes.
 - Repo/package list marks (`refreshIdentityIconForSource` on `repo.pushed`) add

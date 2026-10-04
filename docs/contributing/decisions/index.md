@@ -127,6 +127,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — one-shot `kody_bc_…` code from `cliCredentialBootstrap` (capability + Open
   API); CLI redeems for `kody_at_…` without chat-facing secrets or host-token
   scavenging
+- [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
+  — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
+  TanStack, Preact, or any other framework; packages bring frameworks themselves
 
 ## Historical / UI / implementation
 

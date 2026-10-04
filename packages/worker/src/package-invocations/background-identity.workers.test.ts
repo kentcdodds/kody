@@ -50,7 +50,7 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 
 	mocks.ensureModuleArtifact.mockResolvedValue({
 		artifact: {
-			version: 1,
+			version: 2,
 			kind: 'module',
 			artifactName: 'subscription:email.message.received',
 			sourceId: 'source-1',

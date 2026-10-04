@@ -8,6 +8,7 @@ import {
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
 	type PublishedSourceSnapshot,
+	bundleArtifactVersion,
 	buildPublishedBundleArtifactKvKey,
 	deletePublishedBundleArtifact,
 	hasPublishedRuntimeArtifacts,
@@ -32,7 +33,6 @@ import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
 } from './package-artifact-targets.ts'
-import { loadPlatformRemixFiles } from './package-app-remix.ts'
 import { publishedPackageArtifactTargetInputsChanged } from './published-bundle-artifact-inputs.ts'
 
 type PersistPublishedBundleArtifactInput = {
@@ -87,21 +87,6 @@ function normalizeEntryPoint(entryPoint: string) {
 		throw new Error('Bundle artifact entrypoint must be non-empty.')
 	}
 	return trimmed
-}
-
-/**
- * True when the artifact's stamped platform Remix versions match what
- * `withPlatformRemixFiles` would inject now. Missing stamps (older
- * artifacts) count as a mismatch so a platform Remix bump rebuilds.
- */
-async function publishedPackageArtifactRemixVersionsMatch(
-	artifact: PublishedBundleArtifact,
-) {
-	const platformRemix = await loadPlatformRemixFiles()
-	return (
-		artifact.remixVersion === platformRemix.remixVersion &&
-		artifact.remixUiVersion === platformRemix.remixUiVersion
-	)
 }
 
 function toDbRowInput(input: {
@@ -168,9 +153,8 @@ export async function persistPublishedBundleArtifact(
 		artifactName,
 		entryPoint,
 	})
-	const platformRemix = await loadPlatformRemixFiles()
 	const artifact: PublishedBundleArtifact = {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: input.kind,
 		artifactName,
 		sourceId: input.source.id,
@@ -181,8 +165,6 @@ export async function persistPublishedBundleArtifact(
 		dependencies: input.dependencies,
 		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
-		remixVersion: platformRemix.remixVersion,
-		remixUiVersion: platformRemix.remixUiVersion,
 		createdAt: new Date().toISOString(),
 	}
 	const rowInput = toDbRowInput({
@@ -265,12 +247,11 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 
 /**
  * True when a published bundle artifact already exists for this target
- * identity at `publishedCommit` (row + KV payload), stamped platform Remix
- * versions match the current platform, and the artifact is not older than
- * the snapshot's `invalidateArtifactsBefore` cutoff. Used to skip rebuild
- * work that would only rewrite the same commit's artifact, while still
- * repairing leftovers after a mismatched already_published snapshot rewrite
- * or a platform Remix bump.
+ * identity at `publishedCommit` (row + KV payload) and the artifact is not
+ * older than the snapshot's `invalidateArtifactsBefore` cutoff. Used to
+ * skip rebuild work that would only rewrite the same commit's artifact,
+ * while still repairing leftovers after a mismatched already_published
+ * snapshot rewrite.
  */
 export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	env: Env
@@ -294,9 +275,6 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 		loaded.row.publishedCommit !== input.publishedCommit ||
 		loaded.artifact.publishedCommit !== input.publishedCommit
 	) {
-		return false
-	}
-	if (!(await publishedPackageArtifactRemixVersionsMatch(loaded.artifact))) {
 		return false
 	}
 	const snapshot = await readPublishedSourceSnapshotCached({
@@ -356,13 +334,11 @@ function readPublishedSourceSnapshotCached(input: {
 
 /**
  * Copy a prior-commit artifact onto `publishedCommit` when the target's
- * bundler inputs are unchanged, captured `kody:@` dependency commits still
- * match those sources' current `published_commit`, and the artifact's
- * stamped platform Remix versions match the versions the platform would
- * inject now. Artifacts are keyed by commit, so reuse writes the same
- * modules under the new commit key and retargets the identity row. Returns
- * false (rebuild) when prior artifacts or snapshots are missing, inputs
- * changed, Remix versions mismatch or are absent, bundled dependency
+ * bundler inputs are unchanged and captured `kody:@` dependency commits
+ * still match those sources' current `published_commit`. Artifacts are
+ * keyed by commit, so reuse writes the same modules under the new commit
+ * key and retargets the identity row. Returns false (rebuild) when prior
+ * artifacts or snapshots are missing, inputs changed, bundled dependency
  * snapshots are stale, or the copy fails.
  */
 export async function reusePublishedPackageArtifactIfUnchanged(input: {
@@ -392,9 +368,6 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	}
 	const priorCommit = loaded.artifact.publishedCommit
 	if (loaded.row.publishedCommit !== priorCommit) {
-		return false
-	}
-	if (!(await publishedPackageArtifactRemixVersionsMatch(loaded.artifact))) {
 		return false
 	}
 	const [previousSnapshot, nextSnapshot] = await Promise.all([

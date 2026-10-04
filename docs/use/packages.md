@@ -385,8 +385,8 @@ A package app is a hosted Worker entry:
   handler (a function, `{ fetch }`, or a named `fetch` export). The host strips
   the app mount before forwarding. There is no runtime field; publish rejects
   `kody.app.runtime`. A leftover field on a published snapshot is ignored. Remix
-  is a recipe (`guide:package_apps#remix-recipe`): the platform supplies
-  `remix/<subpath>` at the origin version as an optional convenience
+  is a recipe (`guide:package_apps#remix-recipe`): declare `remix` in
+  `dependencies` like any other package; the platform does not supply frameworks
 - Kody's runtime is available from `kody:runtime` (`packageStorage()`,
   `packageSecrets`, `kody`, `createAuthenticatedFetch`, `workflows`, and
   `packageContext`). Remix controllers can also `get(KodyRuntime)`

@@ -149,7 +149,7 @@ test('buildKodyModuleBundle keeps static imports pinned and rewrites literal dyn
 			return {
 				row: {},
 				artifact: {
-					version: 1,
+					version: 2,
 					kind: 'importable-module',
 					artifactName: input.artifactName ?? './value',
 					sourceId: 'source-1',
@@ -253,7 +253,7 @@ test('hydrateKodyRuntimeModules terminates circular literal dynamic package impo
 						},
 					},
 					artifact: {
-						version: 1,
+						version: 2,
 						kind: 'importable-module' as const,
 						artifactName: './run',
 						sourceId,

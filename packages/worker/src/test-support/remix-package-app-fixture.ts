@@ -13,9 +13,8 @@ export function createRemixPackageAppFiles(input: {
 		name: `@${input.username}/${input.kodyId}`,
 		private: true,
 		exports: { '.': './src/index.ts' },
-		// Types only: publish installs `dependencies`, never `devDependencies`,
-		// so the platform copy of remix is what the bundle uses.
-		devDependencies: { remix: '3.0.0' },
+		// Ordinary npm dependency: the platform does not supply remix.
+		dependencies: { remix: '3.0.0' },
 		kody: {
 			id: input.kodyId,
 			description:
@@ -53,8 +52,9 @@ export function createRemixPackageAppFiles(input: {
 			'Remix recipe. Default-export a fetch handler. The host strips the',
 			'app mount; remount the Request if the route contract is prefixed.',
 			'',
-			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
-			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',
+			'- Import Remix as `remix/<subpath>` and declare `remix` in',
+			'  `package.json#dependencies` (and `@remix-run/ui` if you use primitives).',
+			'  The platform does not supply frameworks.',
 			'- Set `"jsxImportSource": "remix/component"` in tsconfig and/or a per-file pragma.',
 			'- Routes live in `app/routes.ts`, prefixed with `packageContext.appBasePath`;',
 			'  remount in `app/router.ts` so those prefixes match. Build every URL with',

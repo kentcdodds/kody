@@ -628,7 +628,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
 		row: { id: 'artifact-subscription-1', publishedCommit: 'commit-1' },
 		artifact: {
-			version: 1,
+			version: 2,
 			kind: 'module',
 			artifactName: 'subscription:email.message.received',
 			sourceId: 'source-1',

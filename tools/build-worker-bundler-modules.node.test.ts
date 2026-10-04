@@ -3,10 +3,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
-	packageAppRemixSubpaths,
-	packageAppRemixUiSubpaths,
-} from '#worker/package-runtime/package-app-remix-subpaths.ts'
-import {
 	ensureWorkerBundlerModules,
 	leftoverSrcGeneratedBundlerNames,
 	workerBundlerGeneratedDir,
@@ -35,7 +31,6 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
-		'package-app-remix.mjs',
 		'local-execute-runtime-support.mjs',
 		'isomorphic-git.mjs',
 		'esbuild.wasm',
@@ -45,11 +40,15 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 			true,
 		)
 	}
+	expect(
+		await pathExists(
+			path.join(workerBundlerGeneratedDir, 'package-app-remix.mjs'),
+		),
+	).toBe(false)
 	for (const name of [
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
 		'oauth-provider.mjs',
-		'package-app-remix.mjs',
 		'local-execute-runtime-support.mjs',
 		'isomorphic-git.mjs',
 		'esbuild.wasm',
@@ -58,6 +57,11 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 			true,
 		)
 	}
+	expect(
+		await pathExists(
+			path.join(workerBundlerWranglerDir, 'package-app-remix.mjs'),
+		),
+	).toBe(false)
 
 	const generatedWasm = await readFile(
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
@@ -66,91 +70,6 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		path.join(workerBundlerWranglerDir, 'esbuild.wasm'),
 	)
 	expect(generatedWasm.equals(wranglerWasm)).toBe(true)
-})
-
-test('ensureWorkerBundlerModules vendors every allowlisted remix subpath as one code-split file set', async () => {
-	await ensureWorkerBundlerModules()
-	const remixModule = (await import(
-		path.join(workerBundlerGeneratedDir, 'package-app-remix.mjs')
-	)) as {
-		remixVersion: string
-		remixUiVersion: string
-		files: Record<string, string>
-	}
-	const installedRemix = JSON.parse(
-		await readFile(
-			path.join(repoRoot, 'node_modules/remix/package.json'),
-			'utf8',
-		),
-	) as { version: string }
-	const installedRemixUi = JSON.parse(
-		await readFile(
-			path.join(repoRoot, 'node_modules/@remix-run/ui/package.json'),
-			'utf8',
-		),
-	) as { version: string }
-	expect(remixModule.remixVersion).toBe(installedRemix.version)
-	expect(remixModule.remixUiVersion).toBe(installedRemixUi.version)
-
-	const vendoredPackage = JSON.parse(
-		remixModule.files['remix/package.json'] ?? '',
-	) as {
-		name: string
-		exports: Record<string, string>
-	}
-	expect(vendoredPackage.name).toBe('remix')
-	for (const subpath of packageAppRemixSubpaths) {
-		const target = vendoredPackage.exports[`./${subpath}`]
-		expect({ subpath, target }).toEqual({
-			subpath,
-			target: `./dist/${subpath}.js`,
-		})
-		expect(typeof remixModule.files[`remix/dist/${subpath}.js`]).toBe('string')
-	}
-	const vendoredUiPackage = JSON.parse(
-		remixModule.files['@remix-run/ui/package.json'] ?? '',
-	) as {
-		name: string
-		exports: Record<string, string>
-	}
-	expect(vendoredUiPackage.name).toBe('@remix-run/ui')
-	for (const subpath of packageAppRemixUiSubpaths) {
-		const target = vendoredUiPackage.exports[`./${subpath}`]
-		expect({ subpath, target }).toEqual({
-			subpath,
-			target: `./dist/${subpath}.js`,
-		})
-		expect(typeof remixModule.files[`@remix-run/ui/dist/${subpath}.js`]).toBe(
-			'string',
-		)
-	}
-	// Code splitting: `remix/component` and `remix/component/server` must
-	// share one runtime instance, so both entries import a shared chunk
-	// instead of inlining it — and the `@remix-run/ui` primitives reach the
-	// same `remix/dist/chunks/` shared runtime across the package boundary.
-	expect(remixModule.files['remix/dist/component.js']).toMatch(
-		/from"\.\/chunks\//,
-	)
-	expect(remixModule.files['remix/dist/component/server.js']).toMatch(
-		/from"\.\.\/chunks\//,
-	)
-	expect(remixModule.files['@remix-run/ui/dist/tabs.js']).toMatch(
-		/from"\.\.\/\.\.\/\.\.\/remix\/dist\/chunks\//,
-	)
-	// Only nodejs_compat builtins may stay external: everything else the
-	// package-app isolate cannot resolve would fail at load time.
-	const externalSpecifiers = new Set<string>()
-	for (const source of Object.values(remixModule.files)) {
-		for (const match of source.matchAll(
-			/(?:from|import)\s*"((?:node|cloudflare):[^"]+)"/g,
-		)) {
-			externalSpecifiers.add(match[1] ?? '')
-		}
-	}
-	expect([...externalSpecifiers].sort()).toEqual([
-		'node:async_hooks',
-		'node:zlib',
-	])
 })
 
 test('isomorphic-git additional module polyfills Buffer instead of requiring node:buffer', async () => {

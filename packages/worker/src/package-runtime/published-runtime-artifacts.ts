@@ -4,7 +4,7 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 
 const sourceSnapshotVersion = 1
 const sourceManifestSnapshotVersion = 1
-const bundleArtifactVersion = 1
+export const bundleArtifactVersion = 2
 const sourceSnapshotPrefix = 'source-snapshot'
 const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
@@ -134,13 +134,6 @@ export type PublishedBundleArtifact = {
 		kodyId: string
 		sourceId: string
 	} | null
-	/**
-	 * Platform-injected Remix versions bundled into this artifact via
-	 * `withPlatformRemixFiles`. Absent on older artifacts; reuse treats a
-	 * missing or mismatched pair as dirty so a platform Remix bump rebuilds.
-	 */
-	remixVersion?: string
-	remixUiVersion?: string
 	createdAt: string
 }
 
@@ -522,12 +515,6 @@ export async function readPublishedBundleArtifact(input: {
 					sourceId: artifact.packageContext.sourceId ?? artifact.sourceId,
 				}
 			: null,
-		...(typeof artifact.remixVersion === 'string'
-			? { remixVersion: artifact.remixVersion }
-			: {}),
-		...(typeof artifact.remixUiVersion === 'string'
-			? { remixUiVersion: artifact.remixUiVersion }
-			: {}),
 		modules: deserializeWorkerLoaderModules(artifact.modules),
 		createdAt: artifact.createdAt,
 	} satisfies PublishedBundleArtifact
