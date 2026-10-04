@@ -129,9 +129,9 @@ import main from 'kody:@scope/id'
 
 After publish, prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI
 are available (`kody login`, or `KODY_API_TOKEN` in headless envs —
-[Local CLI execute](./local-execute.md)). If `--local` cannot run, use hosted
-MCP `execute` for the smoke module (Open API / MCP `api` cannot run a package
-export; see [Open API](./open-api.md)).
+[Local CLI execute](./local-execute.md)). If `--local` cannot run, fix the
+environment so local works — Open API / MCP `api` cannot run a package export,
+and hosted MCP `execute` is banned (see [Open API](./open-api.md)).
 
 ## Edge cases
 

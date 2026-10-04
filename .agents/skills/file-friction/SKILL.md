@@ -26,10 +26,11 @@ not help the next agent. `create` / `file` soft-skip the same shapes.
 File leftovers with `kody:@kentcdodds/friction-log/file` via prefer-local CLI
 execute when available
 ([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). If `--local`
-cannot run, use hosted MCP `execute` for this package export (Open API / MCP
-`api` cannot invoke it). Pass `target` + `items`, one papercut each. Omit
-secrets. If there is nothing that meets the bar, skip the call. A single issue
-can use `kody:@kentcdodds/friction-log/create` (same `target` contract).
+cannot run, fix the environment so local works — Open API / MCP `api` cannot
+invoke this package export, and hosted MCP `execute` is banned. Pass `target` +
+`items`, one papercut each. Omit secrets. If there is nothing that meets the
+bar, skip the call. A single issue can use
+`kody:@kentcdodds/friction-log/create` (same `target` contract).
 
 ```javascript
 import fileFriction from 'kody:@kentcdodds/friction-log/file'
