@@ -6,20 +6,12 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { isSecretProvidersEnabled } from '#mcp/secrets/secret-providers/flag.ts'
 import {
 	bindSecretProvider,
 	grantSecretProviderToPackage,
 	revokeSecretProviderGrant,
 	unbindSecretProvider,
 } from '#mcp/secrets/secret-providers/service.ts'
-
-async function secretProvidersUnavailable(userId: number, env: Env) {
-	return !(await isSecretProvidersEnabled({
-		db: env.APP_DB,
-		userId,
-	}))
-}
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -32,9 +24,6 @@ export function createAccountSecretProvidersHandler(env: Env) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
-			}
-			if (await secretProvidersUnavailable(user.userId, env)) {
-				return new Response('Not found.', { status: 404 })
 			}
 			const accountSecretProviders = await loadAccountSecretProvidersData({
 				env,
@@ -62,9 +51,6 @@ export function createAccountSecretProvidersApiHandler(env: Env) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
-			}
-			if (await secretProvidersUnavailable(user.userId, env)) {
-				return jsonResponse({ ok: false, error: 'Not found.' }, 404)
 			}
 			if (request.method === 'GET') {
 				return jsonResponse(

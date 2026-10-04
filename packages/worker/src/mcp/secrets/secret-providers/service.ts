@@ -20,7 +20,6 @@ import {
 	createProviderPackageNotGrantedMessage,
 	SecretProviderError,
 } from './errors.ts'
-import { assertSecretProvidersEnabled } from './flag.ts'
 import { normalizeProviderHosts } from './hosts.ts'
 import {
 	clearProviderSecretCacheForBinding,
@@ -146,10 +145,6 @@ export async function bindSecretProvider(input: {
 	doorSecretName: string
 	config?: Record<string, unknown> | null
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const doorSecretName = input.doorSecretName.trim()
 	if (!doorSecretName) {
@@ -215,10 +210,6 @@ export async function unbindSecretProvider(input: {
 	userId: string
 	providerId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	await deleteSecretProviderBinding(input.env.APP_DB, {
 		userId: input.userId,
@@ -235,10 +226,6 @@ export async function listBoundSecretProviders(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderBindings(input.env.APP_DB, {
 		userId: input.userId,
 	})
@@ -251,10 +238,6 @@ export async function grantSecretProviderToPackage(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	await requireBoundProvider({
@@ -288,10 +271,6 @@ export async function revokeSecretProviderGrant(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	const savedPackage = await requireOwnedPackage({
@@ -314,10 +293,6 @@ export async function inspectSecretProviderPackageGrant(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	await requireBoundProvider({
@@ -352,10 +327,6 @@ export async function listSecretProviderGrants(input: {
 	userId: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderGrantsForPackage(input.env.APP_DB, input)
 }
 
@@ -363,10 +334,6 @@ export async function listAccountSecretProviderGrants(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderGrantsForUser(input.env.APP_DB, {
 		userId: input.userId,
 	})
@@ -402,10 +369,6 @@ export async function resolveProviderSecret(input: {
 				packageId: authorityPackageId,
 			})
 		: input.userId
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: ownerUserId,
-	})
 	const binding = await getSecretProviderBinding(input.env.APP_DB, {
 		userId: ownerUserId,
 		providerId,

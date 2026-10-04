@@ -15,11 +15,6 @@ import {
 	createProviderPackageNotGrantedMessage,
 } from './errors.ts'
 import {
-	enableSecretProvidersForTests,
-	isSecretProvidersEnabled,
-	secretProvidersDisabledMessage,
-} from './flag.ts'
-import {
 	bindSecretProvider,
 	grantSecretProviderToPackage,
 	inspectSecretProviderPackageGrant,
@@ -80,9 +75,7 @@ function seedPackage(
  * Seeds the owner + guest accounts, the `op` provider package, the `deploy`
  * consumer package, the door secret, and a provider binding.
  */
-async function createHarness(
-	input: { flag?: boolean; bound?: boolean; userId?: string } = {},
-) {
+async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 	clearProviderSecretCacheForTests()
 	const userId = input.userId ?? ownerId
 	const sqlite = new DatabaseSync(':memory:')
@@ -92,11 +85,8 @@ async function createHarness(
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
 	} as Env
-	if (input.flag !== false) {
-		seedUser(sqlite, 1, ownerId)
-		seedUser(sqlite, 2, 'user-guest')
-		await enableSecretProvidersForTests(env.APP_DB)
-	}
+	seedUser(sqlite, 1, ownerId)
+	seedUser(sqlite, 2, 'user-guest')
 	seedPackage(sqlite, 'pkg-consumer', 'deploy', userId)
 	if (input.bound !== false) {
 		seedPackage(sqlite, 'pkg-provider', 'op', userId)
@@ -235,28 +225,6 @@ test('revoke drops a package grant before the next resolve', async () => {
 		h.resolve({ authorityPackageId: 'pkg-consumer' }),
 	).rejects.toThrow(notGrantedMessage)
 	expect(h.invokeProvider).not.toHaveBeenCalled()
-})
-
-test('flag off or an unresolvable account treats provider placeholders as unsupported and never calls the provider', async () => {
-	const flagOff = await createHarness({ flag: false })
-	await expect(flagOff.resolve()).rejects.toThrow(
-		secretProvidersDisabledMessage,
-	)
-	expect(flagOff.invokeProvider).not.toHaveBeenCalled()
-
-	const ghost = await createHarness({ userId: 'ghost' })
-	const db = ghost.env.APP_DB
-	await expect(
-		isSecretProvidersEnabled({ db, userId: null, stableUserId: null }),
-	).resolves.toBe(false)
-	await expect(
-		isSecretProvidersEnabled({ db, stableUserId: 'missing-account' }),
-	).resolves.toBe(false)
-	await expect(
-		isSecretProvidersEnabled({ db, stableUserId: ownerId }),
-	).resolves.toBe(true)
-	await expect(ghost.resolve()).rejects.toThrow(secretProvidersDisabledMessage)
-	expect(ghost.invokeProvider).not.toHaveBeenCalled()
 })
 
 test('rebind to a different package drops grants and the provider cache', async () => {

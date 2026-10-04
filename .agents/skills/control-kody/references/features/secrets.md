@@ -7,9 +7,8 @@ User, session, and package secret rows. Host approval and package grants.
 `/account/secrets` → new `/account/secrets/new` → detail under
 `/account/secrets/{user|session|package}/…`. Package grant lane:
 `/account/secrets/approve`. Host approval: `/connect/secrets`. External
-providers: `/account/secret-providers` and `/account/secret-providers/approve`
-(hidden unless the `secret-providers` flag is on for the seeded user). Docs
-opt-in: `/docs/secret-providers` (POST `/docs/secret-providers/opt-in`).
+providers: `/account/secret-providers` and `/account/secret-providers/approve`.
+Docs: `/docs/secret-providers`.
 
 ## Drive it
 

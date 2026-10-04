@@ -32,12 +32,8 @@ import {
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
-import { renderSecretProvidersFlagCallout } from '#client/routes/secret-providers-flag-callout.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
-import {
-	packageShareGrantsFlagKey,
-	secretProvidersFlagKey,
-} from '#universal/feature-flags/registry.ts'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { extractDocWatchMarkdown } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import { userHasRole } from '#universal/permissions.ts'
@@ -323,13 +319,6 @@ export function DocDetailRoute(handle: Handle) {
 									session,
 									packageShareGrantsFlagKey,
 								),
-							})
-						: null}
-
-					{doc.slug === 'secret-providers'
-						? renderSecretProvidersFlagCallout({
-								loggedIn: Boolean(session),
-								enabled: isFeatureFlagEnabled(session, secretProvidersFlagKey),
 							})
 						: null}
 

@@ -230,9 +230,12 @@ test('account rail lists Connections and Repositories at the same level as the o
 	const items = accountNavItemsFor({
 		username: 'jane',
 		showShared: true,
-		showSecretProviders: false,
 	})
 	expect(items.map((item) => item.label)).toContain('Shared')
+	expect(items.map((item) => item.label)).toContain('Secret providers')
+	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
+		'/account/secret-providers',
+	)
 	expect(items.map((item) => item.label)).toContain('Experiments')
 	expect(items.find((item) => item.label === 'Experiments')?.href).toBe(
 		'/account/experiments',

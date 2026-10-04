@@ -82,12 +82,6 @@ export const featureFlagDefinitions = [
 			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default. Signed-in users can turn it on from /docs/package-sharing. No success metric: this is a rollout kill switch, not an experiment.',
 	},
 	{
-		key: 'secret-providers',
-		defaultEnabled: false,
-		description:
-			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default. Signed-in users can turn it on from /docs/secret-providers. No success metric: this is a rollout kill switch, not an experiment.',
-	},
-	{
 		key: 'jev-search-rerank',
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
@@ -136,9 +130,6 @@ export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
 
 export const packageShareGrantsFlagKey =
 	'package-share-grants' satisfies FeatureFlagKey
-
-export const secretProvidersFlagKey =
-	'secret-providers' satisfies FeatureFlagKey
 
 export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey

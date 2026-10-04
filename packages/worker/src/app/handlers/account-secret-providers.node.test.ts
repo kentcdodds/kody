@@ -8,7 +8,6 @@ import {
 } from '#app/auth-session.ts'
 import { createAccountSecretProvidersApiHandler } from '#app/handlers/account-secret-providers.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { enableSecretProvidersForTests } from '#mcp/secrets/secret-providers/flag.ts'
 import { grantSecretProviderToPackage } from '#mcp/secrets/secret-providers/service.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -118,7 +117,6 @@ test('secret providers API lists grants and revokes them on the website', async 
 			'pkg-provider',
 			'onePasswordServiceAccountToken',
 		)
-	await enableSecretProvidersForTests(db)
 	await grantSecretProviderToPackage({
 		env,
 		userId: ownerStableId,
@@ -184,21 +182,4 @@ test('secret providers API lists grants and revokes them on the website', async 
 		grants: Array<unknown>
 	}
 	expect(afterPayload.grants).toEqual([])
-})
-
-test('secret providers API is 404 when the flag is off', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
-	const db = createD1FromSqlite(sqlite)
-	await seedUser(sqlite, { id: 1, email: ownerEmail, username: 'one' })
-	const handler = createAccountSecretProvidersApiHandler(createAppEnv(db))
-	const cookie = await createAuthCookie(ownerSession, false)
-	const response = await runHandler(
-		handler,
-		new Request('http://example.com/account/secret-providers.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
-	expect(response.status).toBe(404)
 })

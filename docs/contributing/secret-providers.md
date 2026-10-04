@@ -5,21 +5,6 @@ secrets: placeholders at the secret-aware `fetch` boundary, never a
 `secret_get`. Provider logic lives in saved packages. Kody core stays
 provider-agnostic.
 
-## Feature flag
-
-The whole surface is behind the `secret-providers` admin flag (registry default
-**off**). Signed-in users can turn it on from
-[Custom secret providers](../guides/secret-providers.md). Operators can also
-enable it globally at `/admin/feature-flags`. Evaluation is fail-closed:
-unresolved accounts and evaluation errors stay off, even when the global flag is
-on. When the flag is off:
-
-- `{{secret/<provider>:<ref>}}` is unsupported (clear error, no provider call)
-- binding, grants, approval UX, and the account nav item are hidden
-- MCP `secretProvider*` capabilities are hidden and denied
-
-User-secret `{{secret:name}}` placeholders do not use this flag.
-
 ## Grammar
 
 `{{secret/<provider>:<ref>}}` splits on the **first** `:` after `secret/`. The

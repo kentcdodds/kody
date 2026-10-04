@@ -132,12 +132,6 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 			credentials: 'include',
 			body: JSON.stringify(body),
 		})
-		if (response.status === 404) {
-			status = 'error'
-			message = 'External secret providers are not enabled for this account.'
-			handle.update()
-			return
-		}
 		const result = await readJson<{ ok?: boolean; error?: string }>(response)
 		if (!response.ok || !result?.ok) {
 			status = 'error'

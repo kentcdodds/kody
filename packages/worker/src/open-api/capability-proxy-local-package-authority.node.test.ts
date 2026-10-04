@@ -105,7 +105,6 @@ function createContext(db: D1Database): ApiInvocationContext {
 		getFeatureFlags: async () => ({
 			'demo-indicator': false,
 			'package-share-grants': true,
-			'secret-providers': false,
 			'jev-search-rerank': false,
 			'execute-invoke': false,
 			'connection-profiles': false,

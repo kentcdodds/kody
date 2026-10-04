@@ -283,7 +283,6 @@ function createFeatureFlagsTestDb(
 const registryKeys = [
 	'demo-indicator',
 	'package-share-grants',
-	'secret-providers',
 	'jev-search-rerank',
 	'execute-invoke',
 	'connection-profiles',
@@ -551,7 +550,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(8)
+	expect(listed).toHaveLength(7)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',
@@ -560,7 +559,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	}
 	const registryExpectations: Array<[string, Record<string, unknown>]> = [
 		['package-share-grants', { successMetric: null }],
-		['secret-providers', { successMetric: null }],
 		[
 			'jev-search-rerank',
 			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },

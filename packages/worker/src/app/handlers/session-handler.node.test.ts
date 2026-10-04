@@ -98,7 +98,6 @@ test('session handler only renews remembered sessions after the renewal window',
 				featureFlags: {
 					'demo-indicator': false,
 					'package-share-grants': false,
-					'secret-providers': false,
 					'jev-search-rerank': false,
 					'execute-invoke': false,
 					'connection-profiles': false,

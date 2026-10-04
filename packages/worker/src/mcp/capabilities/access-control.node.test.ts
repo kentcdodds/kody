@@ -51,7 +51,6 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
 		'package-share-grants': false,
-		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
 		'connection-profiles': false,
