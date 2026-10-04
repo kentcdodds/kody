@@ -566,6 +566,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		agents: [],
 		mcpServerUrl: '',
+		connectionProfilesEnabled: false,
+		connectionProfiles: [],
+		connectionProfilePackageOptions: [],
 	})
 
 	// `/new` is its own page; the per-agent step shares the handler; unknown
