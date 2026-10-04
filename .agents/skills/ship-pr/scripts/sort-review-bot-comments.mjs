@@ -69,7 +69,12 @@ function loadPullReviewComments({ owner, repo, prNumber }) {
 	const comments = []
 	for (let page = 1; ; page += 1) {
 		const path = `repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100&page=${page}`
-		const raw = execFileSync('gh', ['api', path], { encoding: 'utf8' })
+		const raw = execFileSync('gh', ['api', path], {
+			encoding: 'utf8',
+			// A full page of 100 review comments with bodies can exceed Node's
+			// default 1 MiB maxBuffer and abort before any findings print.
+			maxBuffer: 16 * 1024 * 1024,
+		})
 		const pageItems = JSON.parse(raw)
 		if (!Array.isArray(pageItems)) {
 			throw new Error(`Unexpected GitHub comments payload for ${path}`)

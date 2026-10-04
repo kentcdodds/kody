@@ -126,20 +126,6 @@ export function classifyReviewBotComment(comment) {
 		},
 	]
 
-	for (const matcher of invalidMatchers) {
-		if (matcher.re.test(body)) {
-			return {
-				bot,
-				authorLogin: comment.user.login,
-				commentId: comment.id,
-				url: comment.html_url,
-				bodyPreview: preview,
-				verdict: 'invalid',
-				reason: matcher.reason,
-			}
-		}
-	}
-
 	const validMatchers = [
 		{
 			re: /\b(security|vulnerab|injection|xss|csrf|secret|credential|rce)\b/i,
@@ -155,17 +141,59 @@ export function classifyReviewBotComment(comment) {
 		},
 	]
 
+	/** @type {{ reason: string } | null} */
+	let invalidHit = null
+	for (const matcher of invalidMatchers) {
+		if (matcher.re.test(body)) {
+			invalidHit = { reason: matcher.reason }
+			break
+		}
+	}
+
+	/** @type {{ reason: string } | null} */
+	let validHit = null
 	for (const matcher of validMatchers) {
 		if (matcher.re.test(body)) {
-			return {
-				bot,
-				authorLogin: comment.user.login,
-				commentId: comment.id,
-				url: comment.html_url,
-				bodyPreview: preview,
-				verdict: 'valid',
-				reason: matcher.reason,
-			}
+			validHit = { reason: matcher.reason }
+			break
+		}
+	}
+
+	// Mixed signals stay unsure so incidental "nit"/"optional" wording cannot
+	// dismiss a real defect claim.
+	if (invalidHit && validHit) {
+		return {
+			bot,
+			authorLogin: comment.user.login,
+			commentId: comment.id,
+			url: comment.html_url,
+			bodyPreview: preview,
+			verdict: 'unsure',
+			reason: 'mixed invalid and valid signals - treat as valid',
+		}
+	}
+
+	if (invalidHit) {
+		return {
+			bot,
+			authorLogin: comment.user.login,
+			commentId: comment.id,
+			url: comment.html_url,
+			bodyPreview: preview,
+			verdict: 'invalid',
+			reason: invalidHit.reason,
+		}
+	}
+
+	if (validHit) {
+		return {
+			bot,
+			authorLogin: comment.user.login,
+			commentId: comment.id,
+			url: comment.html_url,
+			bodyPreview: preview,
+			verdict: 'valid',
+			reason: validHit.reason,
 		}
 	}
 

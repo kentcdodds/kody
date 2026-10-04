@@ -71,6 +71,16 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 	expect(detailsWrappedBug?.verdict).toBe('valid')
 	expect(isShipPrBlocker(detailsWrappedBug!)).toBe(true)
 
+	const mixedNitAndSecurity = classifyReviewBotComment({
+		id: 7,
+		user: { login: 'cursor[bot]' },
+		body: 'This is not a nit: the security bug exposes credentials.',
+		html_url: 'https://example.test/7',
+	})
+	expect(mixedNitAndSecurity).not.toBeNull()
+	expect(mixedNitAndSecurity?.verdict).toBe('unsure')
+	expect(isShipPrBlocker(mixedNitAndSecurity!)).toBe(true)
+
 	const unsure = classifyReviewBotComment({
 		id: 3,
 		user: { login: 'seer[bot]' },
