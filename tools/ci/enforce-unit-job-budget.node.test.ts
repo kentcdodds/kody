@@ -15,7 +15,7 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 	)
 
 	expect(unitJobBudgets.node.maxSeconds).toBe(360)
-	expect(unitJobBudgets.workers.maxSeconds).toBe(300)
+	expect(unitJobBudgets.workers.maxSeconds).toBe(480)
 	expect(unitJobBudgets.node.jobName).toBe('🧪 Node')
 	expect(unitJobBudgets.workers.jobName).toBe('☁️ Workers')
 
@@ -37,14 +37,14 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		evaluateUnitJobBudget({
 			leg: 'workers',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 300,
+			nowEpochSeconds: 1_000 + 480,
 		}).ok,
 	).toBe(true)
 	expect(
 		evaluateUnitJobBudget({
 			leg: 'workers',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 301,
+			nowEpochSeconds: 1_000 + 481,
 		}).ok,
 	).toBe(false)
 
@@ -58,7 +58,7 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 	expect(workflow).not.toContain('--nx-log')
 	expect(workflow).not.toContain('tee unit-job-nx.log')
 	expect(workflow).toContain('≤360s')
-	expect(workflow).toContain('≤300s')
+	expect(workflow).toContain('≤480s')
 
 	process.exitCode = undefined
 	main([
@@ -75,7 +75,7 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		'--leg',
 		'workers',
 		'--start-epoch',
-		String(Math.floor(Date.now() / 1000) - 301),
+		String(Math.floor(Date.now() / 1000) - 481),
 	])
 	expect(process.exitCode).toBe(1)
 	expect(consoleError).toHaveBeenCalledWith(

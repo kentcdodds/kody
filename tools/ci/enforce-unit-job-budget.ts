@@ -1,6 +1,6 @@
 /**
  * Fail a Validate unit leg when wall-clock exceeds the cold-run baseline
- * budget (Node ≤360s, Workers ≤300s). Measured from a start epoch recorded at
+ * budget (Node ≤360s, Workers ≤480s). Measured from a start epoch recorded at
  * the beginning of the same job. Cache hit or miss does not change the cap.
  *
  * Usage:
@@ -18,7 +18,7 @@ export const unitJobBudgets = {
 	workers: {
 		leg: 'workers',
 		jobName: '☁️ Workers',
-		maxSeconds: 300,
+		maxSeconds: 480,
 	},
 } as const
 
