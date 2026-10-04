@@ -65,12 +65,12 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		/--check requires a session cookie/,
 	)
 	expect(() =>
-		parseArgs(['--request', 'GET /account/values.json', '--skip-login']),
+		parseArgs(['--request', 'GET /account/secrets.json', '--skip-login']),
 	).toThrow(/--request requires a session cookie/)
 	expect(
 		parseArgs([
 			'--request',
-			'POST /account/values.json {"action":"save","name":"locale","value":"en-US"}',
+			'POST /account/secrets.json {"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}',
 			'--request',
 			'GET /admin 403',
 			'--cookie-file',
@@ -83,17 +83,23 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 				{
 					...plainSpec,
 					method: 'POST',
-					path: '/account/values.json',
-					body: { action: 'save', name: 'locale', value: 'en-US' },
+					path: '/account/secrets.json',
+					body: {
+						action: 'save',
+						scope: 'user',
+						name: 'previewSeed',
+						value: 'preview-seed-value',
+						allowedHosts: ['api.example.com'],
+					},
 				},
 				{ ...plainSpec, method: 'GET', path: '/admin', expectedStatus: 403 },
 			],
 		}),
 	)
-	expect(parseSessionRequest('GET /account/values.json')).toEqual({
+	expect(parseSessionRequest('GET /account/secrets.json')).toEqual({
 		...plainSpec,
 		method: 'GET',
-		path: '/account/values.json',
+		path: '/account/secrets.json',
 	})
 	expect(() => parseSessionRequest('FETCH /nope')).toThrow(/Invalid --request/)
 
@@ -221,18 +227,18 @@ test('preview manual test --request specs accept control-kody request --dump/--c
 	)
 	expect(
 		parseSessionRequest(
-			'POST /account/values.json 201 {"action":"save"} --contains selectedValueId',
+			'POST /account/secrets.json 201 {"action":"save"} --contains selectedSecretId',
 		),
 	).toEqual(
 		expect.objectContaining({
 			expectedStatus: 201,
 			body: { action: 'save' },
-			contains: ['selectedValueId'],
+			contains: ['selectedSecretId'],
 		}),
 	)
 	expect(
 		parseSessionRequest(
-			'POST /account/values.json {"value":"use --dump --contains"} --contains "a --dump b" --contains Kent\'s --dump',
+			'POST /account/secrets.json {"value":"use --dump --contains"} --contains "a --dump b" --contains Kent\'s --dump',
 		),
 	).toEqual(
 		expect.objectContaining({
@@ -291,7 +297,7 @@ test('preview manual test --request --dump/--contains assert the raw response bo
 			'--request',
 			'GET /pricing --dump --contains Worker compute',
 			'--request',
-			'GET /account/values.json --contains preview-locale',
+			'GET /account/secrets.json --contains previewSeed',
 			'--json',
 		],
 		createSilentDeps({ logs, files }),
@@ -350,9 +356,9 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 			'--cookie-file',
 			'.tmp/preview-cookie',
 			'--request',
-			'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}',
+			'POST /account/secrets.json {"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}',
 			'--request',
-			'GET /account/values.json',
+			'GET /account/secrets.json',
 			'--request',
 			'GET /admin 403',
 			'--check',
@@ -378,12 +384,13 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 		'GET /session',
 		'GET /account',
 		'cookie-file',
-		'POST /account/values.json (2xx)',
-		'GET /account/values.json (2xx)',
+		'POST /account/secrets.json (2xx)',
+		'GET /account/secrets.json (2xx)',
 		'GET /admin (403)',
 		'GET /account/secrets',
 	])
 	expect(result?.briefing).toContain(server.origin)
+	expect(result?.briefing).toContain('/account/secrets.json')
 })
 
 test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
@@ -734,13 +741,29 @@ async function createPreviewFixtureServer(commitSha = 'deployedsha') {
 		'GET /pricing': (_request, response) =>
 			html(response, 200, '<h1>Pricing</h1><p>Worker compute is metered.</p>'),
 		'GET /admin': (_request, response) => html(response, 403, 'forbidden'),
-		'POST /account/values.json': requireSession((_request, response) =>
-			json(response, 200, { ok: true, selectedValueId: 'preview-locale' }),
-		),
-		'GET /account/values.json': requireSession((_request, response) =>
+		'POST /account/secrets.json': requireSession((_request, response) =>
 			json(response, 200, {
 				ok: true,
-				values: [{ id: 'preview-locale', value: 'en-US' }],
+				selectedSecretId: 'user::::previewSeed',
+				secrets: [
+					{
+						id: 'user::::previewSeed',
+						name: 'previewSeed',
+						scope: 'user',
+					},
+				],
+			}),
+		),
+		'GET /account/secrets.json': requireSession((_request, response) =>
+			json(response, 200, {
+				ok: true,
+				secrets: [
+					{
+						id: 'user::::previewSeed',
+						name: 'previewSeed',
+						scope: 'user',
+					},
+				],
 			}),
 		),
 		'GET /account': accountPage,

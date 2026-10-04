@@ -42,7 +42,7 @@ const usageLines = [
 	'                      Spec: METHOD /path [status] [json-body]',
 	'                            [--dump] [--contains <text>]',
 	'                      Default success is any 2xx. Examples:',
-	'                      POST /account/values.json {"action":"save",...}',
+	'                      POST /account/secrets.json {"action":"save",...}',
 	'                      GET /pricing --dump --contains Worker compute',
 	'  --dump              Write the previous --request body to',
 	'                      .tmp/control-kody-body (-<n> when several dump)',
@@ -819,7 +819,7 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 		`Username: ${result.login.username}`,
 		'`/admin` is expected to 403 — preview does not seed an admin account.',
 		result.session.origin
-			? `Follow-up HTTP: npm run control-kody -- request GET /account/values.json --origin ${result.session.origin}`
+			? `Follow-up HTTP: npm run control-kody -- request GET /account/secrets.json --origin ${result.session.origin}`
 			: null,
 	].filter((line): line is string => line !== null)
 
@@ -842,9 +842,11 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 		'Logged-in testing (required for medium/high risk):',
 		'The seed account starts empty except the user row. Create the data this',
 		'PR needs through the same JSON APIs the UI uses, then assert them:',
-		'  npm run preview:manual-test -- --request \'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}\' --request \'GET /account/values.json\'',
+		'  npm run preview:manual-test -- --request \'POST /account/secrets.json {"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}\' --request \'GET /account/secrets.json\'',
 		'Follow-up HTML/JSON assertions use control-kody request, not cookie+curl:',
-		`  npm run control-kody -- request GET /account/values.json --origin ${result.session.origin ?? '<preview-url>'}`,
+		`  npm run control-kody -- request GET /account/secrets.json --origin ${result.session.origin ?? '<preview-url>'}`,
+		'Values are retired drain-only (POST delete). Prefer secrets, memories,',
+		'package storage, or the feature APIs this PR changes for seed data.',
 		'Stay on the preview origin. `/mcp` is 401 without OAuth by design.',
 		'',
 		'UI pass after data exists: open the preview URL (computerUse on Cloud',
