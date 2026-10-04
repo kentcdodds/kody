@@ -6,14 +6,17 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	allowedHistoricalDuplicateMigrationFilenames,
+	checkMigrationFilenameReferences,
 	checkMigrationFilenames,
 	checkMigrationLedger,
 	checkMigrationsDirectory,
+	collectMigrationFilenameReferences,
 	expectedMigrationBaselineSha256,
 	formatMigrationPrefix,
 	getMaxMigrationPrefix,
 	getNextMigrationPrefix,
 	hashMigrationContent,
+	isPlaceholderMigrationFilename,
 	parseMigrationFilename,
 	readMigrationLedger,
 	resolveTrustedMigrationBase,
@@ -392,6 +395,71 @@ test(
 		}
 	},
 )
+
+test('migrations:check flags docs and source references to missing migration filenames', () => {
+	expect(
+		isPlaceholderMigrationFilename('0074-platform-oauth-app-visibility.sql'),
+	).toBe(false)
+	expect(
+		collectMigrationFilenameReferences(
+			'See 0075-platform-oauth-app-visibility.sql and 0075-platform-oauth-app-visibility.sql again.',
+		),
+	).toEqual(['0075-platform-oauth-app-visibility.sql'])
+
+	const knownFilenames = new Set([
+		'0001-squashed-init.sql',
+		'0075-platform-oauth-app-visibility.sql',
+		'0001-jobs-init.sql',
+		'0001-audit-events.sql',
+	])
+	expect(
+		checkMigrationFilenameReferences({
+			knownFilenames,
+			files: [
+				{
+					path: 'docs/contributing/setup/migrations.md',
+					content:
+						'Use the next free prefix (for example, 0076-my-change.sql).',
+				},
+				{
+					path: 'docs/contributing/architecture/integrations.md',
+					content:
+						'Visibility lives in 0075-platform-oauth-app-visibility.sql.',
+				},
+				{
+					path: 'docs/contributing/architecture/data-storage.md',
+					content:
+						'Jobs schema is packages/jobs-worker/migrations/0001-jobs-init.sql.',
+				},
+			],
+		}),
+	).toEqual([])
+	expect(
+		checkMigrationFilenameReferences({
+			knownFilenames,
+			files: [
+				{
+					path: 'docs/contributing/decisions/0002-data-placement.md',
+					content:
+						'RunLog dropped D1 rows in 0112-drop-package-invocations.sql.',
+				},
+				{
+					path: 'docs/contributing/architecture/integrations.md',
+					content:
+						'Visibility lives in 0074-platform-oauth-app-visibility.sql.',
+				},
+				{
+					path: 'packages/worker/src/integrations/platform-apps.node.test.ts',
+					content:
+						"const visibilityMigration = '0074-platform-oauth-app-visibility.sql'",
+				},
+			],
+		}),
+	).toEqual([
+		'docs/contributing/architecture/integrations.md references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
+		'packages/worker/src/integrations/platform-apps.node.test.ts references migration "0074-platform-oauth-app-visibility.sql", which is not in packages/worker/migrations (or jobs/audit migration directories). After a renumber, update the reference to the current filename.',
+	])
+})
 
 test('checkMigrationFilenames rejects malformed names, ordinary duplicates, and non-allowlisted prefix reuse', () => {
 	const cases = [
