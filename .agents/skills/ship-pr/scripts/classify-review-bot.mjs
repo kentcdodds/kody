@@ -96,7 +96,13 @@ export function classifyReviewBotComment(comment) {
 	const bot = reviewBotKind(comment.user.login)
 	if (!bot) return null
 
+	// Devin (and similar) wrap guidance in <details>; classify the finding
+	// summary only so instructional words like "nit" in the docs do not
+	// dismiss a real defect.
 	const body = String(comment.body || '')
+		.replace(/<!--[\s\S]*?-->/g, ' ')
+		.replace(/<details[\s\S]*?<\/details>/gi, ' ')
+		.replace(/<[^>]+>/g, ' ')
 	const preview = truncate(body.replace(/\s+/g, ' ').trim(), 160)
 
 	const invalidMatchers = [
@@ -105,7 +111,9 @@ export function classifyReviewBotComment(comment) {
 			reason: 'comment self-identifies as false positive / not a bug',
 		},
 		{
-			re: /\b(nit|nitpick|optional|style[- ]only|cosmetic)\b/i,
+			// Require finding-level optionality. Bare "optional" matches technical
+			// wording ("optional parameter") and must not dismiss a real defect.
+			re: /\b(nit|nitpick|style[- ]only|cosmetic|(this\s+is\s+)?optional\s+(fix|change|suggestion|nit))\b/i,
 			reason: 'nit / optional / style-only signal',
 		},
 		{

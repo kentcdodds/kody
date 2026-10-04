@@ -34,6 +34,43 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 	expect(isShipPrBlocker(invalid!)).toBe(false)
 	expect(invalidReplyBody(invalid!)).toMatch(/in-repo review-bot sort/)
 
+	const optionalParameterBug = classifyReviewBotComment({
+		id: 4,
+		user: { login: 'cursor[bot]' },
+		body: 'Bug: the optional `timeout` parameter is ignored; requests never time out.',
+		html_url: 'https://example.test/4',
+	})
+	expect(optionalParameterBug).not.toBeNull()
+	expect(optionalParameterBug?.verdict).toBe('valid')
+	expect(isShipPrBlocker(optionalParameterBug!)).toBe(true)
+
+	const optionalFixFinding = classifyReviewBotComment({
+		id: 5,
+		user: { login: 'devin-ai-integration[bot]' },
+		body: 'This is an optional suggestion: rename for consistency.',
+		html_url: 'https://example.test/5',
+	})
+	expect(optionalFixFinding).not.toBeNull()
+	expect(optionalFixFinding?.verdict).toBe('invalid')
+	expect(isShipPrBlocker(optionalFixFinding!)).toBe(false)
+
+	const detailsWrappedBug = classifyReviewBotComment({
+		id: 6,
+		user: { login: 'devin-ai-integration[bot]' },
+		body: [
+			'Optional parameters hide real review findings',
+			'',
+			'When a bot reports a bug involving an optional parameter, classification drops it.',
+			'<details><summary>Learn more</summary>',
+			'Require explicit language that the finding itself is a nit or optional.',
+			'</details>',
+		].join('\n'),
+		html_url: 'https://example.test/6',
+	})
+	expect(detailsWrappedBug).not.toBeNull()
+	expect(detailsWrappedBug?.verdict).toBe('valid')
+	expect(isShipPrBlocker(detailsWrappedBug!)).toBe(true)
+
 	const unsure = classifyReviewBotComment({
 		id: 3,
 		user: { login: 'seer[bot]' },

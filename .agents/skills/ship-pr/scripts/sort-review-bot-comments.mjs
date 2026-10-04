@@ -21,6 +21,10 @@ import {
 
 const args = process.argv.slice(2)
 
+/** Marker used to detect an existing dismissal reply in the thread. */
+const invalidReplyMarker =
+	'Marked **invalid** for ship-pr by the in-repo review-bot sort'
+
 function readFlag(name) {
 	const index = args.indexOf(name)
 	if (index === -1) return null
@@ -49,10 +53,21 @@ function usage() {
 	process.exit(1)
 }
 
+/**
+ * @param {{ owner: string, repo: string, prNumber: number }} input
+ */
 function loadPullReviewComments({ owner, repo, prNumber }) {
-	/** @type {Array<{ id: number, user: { login: string }, body: string, html_url?: string }>} */
+	/**
+	 * @type {Array<{
+	 *   id: number
+	 *   user: { login: string }
+	 *   body: string
+	 *   html_url?: string
+	 *   in_reply_to_id?: number | null
+	 * }>}
+	 */
 	const comments = []
-	for (let page = 1; page <= 10; page += 1) {
+	for (let page = 1; ; page += 1) {
 		const path = `repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=100&page=${page}`
 		const raw = execFileSync('gh', ['api', path], { encoding: 'utf8' })
 		const pageItems = JSON.parse(raw)
@@ -66,6 +81,8 @@ function loadPullReviewComments({ owner, repo, prNumber }) {
 				user: { login: item.user.login },
 				body: String(item.body || ''),
 				html_url: item.html_url,
+				in_reply_to_id:
+					typeof item.in_reply_to_id === 'number' ? item.in_reply_to_id : null,
 			})
 		}
 		if (pageItems.length < 100) break
@@ -73,7 +90,22 @@ function loadPullReviewComments({ owner, repo, prNumber }) {
 	return comments
 }
 
-function replyToPullReviewComment({ owner, repo, commentId, body, dryRun }) {
+function alreadyHasInvalidReply(comments, commentId) {
+	return comments.some(
+		(comment) =>
+			comment.in_reply_to_id === commentId &&
+			comment.body.includes(invalidReplyMarker),
+	)
+}
+
+function replyToPullReviewComment({
+	owner,
+	repo,
+	prNumber,
+	commentId,
+	body,
+	dryRun,
+}) {
 	if (dryRun) {
 		return { ok: true, dryRun: true }
 	}
@@ -81,7 +113,7 @@ function replyToPullReviewComment({ owner, repo, commentId, body, dryRun }) {
 import githubRequest from 'kody:@kentcdodds/github/request'
 
 export default async function main(params) {
-	const path = \`/repos/\${params.owner}/\${params.repo}/pulls/comments/\${params.commentId}/replies\`
+	const path = \`/repos/\${params.owner}/\${params.repo}/pulls/\${params.prNumber}/comments/\${params.commentId}/replies\`
 	const result = await githubRequest({
 		account: 'bot',
 		path,
@@ -96,7 +128,7 @@ export default async function main(params) {
 	return { ok: true }
 }
 `.trim()
-	const paramsJson = JSON.stringify({ owner, repo, commentId, body })
+	const paramsJson = JSON.stringify({ owner, repo, prNumber, commentId, body })
 	execFileSync(
 		'npx',
 		[
@@ -129,11 +161,17 @@ const invalid = findings.filter((finding) => finding.verdict === 'invalid')
 const valid = findings.filter(isShipPrBlocker)
 
 let replied = 0
+let skippedAlreadyReplied = 0
 if (!skipReplies) {
 	for (const finding of invalid) {
+		if (alreadyHasInvalidReply(comments, finding.commentId)) {
+			skippedAlreadyReplied += 1
+			continue
+		}
 		const result = replyToPullReviewComment({
 			owner,
 			repo,
+			prNumber,
 			commentId: finding.commentId,
 			body: invalidReplyBody(finding),
 			dryRun: false,
@@ -152,6 +190,7 @@ const result = {
 	valid,
 	invalid,
 	replied,
+	skippedAlreadyReplied,
 	/** ship-pr should address these (valid + unsure). */
 	mustAddress: valid,
 }
