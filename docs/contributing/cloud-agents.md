@@ -104,20 +104,27 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
 Cloud Agent environment setup and local setup both run `npm install`. CI runs
 `npm ci`. A snapshot built before a lockfile bump still has the old
-`node_modules` after `git pull`; `npm run install:check` (prevalidate) and
-`control-kody doctor`'s `deps` check fail with `run npm ci` instead of
-downstream type/bundle errors. `npm install` keeps `package-lock.json` unchanged
-when every locked direct dependency satisfies the peer ranges its declared range
-can still reach, including optional peers. `npm run lockfile:check` (part of
-`npm run validate` and the CI static job) rejects a lockfile `npm install` would
-rewrite, such as an `@cloudflare/workers-types` pin older than wrangler's peer
-range.
+`node_modules` after `git pull`; `npm run install:check` (pre-commit when the
+staged diff is not docs-only, plus prevalidate) and `control-kody doctor`'s
+`deps` check fail with `run npm ci` instead of downstream type/bundle errors. Do
+not treat a cached typecheck as proof the install matches the lockfile — run
+`install:check` (or `npm ci`) first. `npm install` keeps `package-lock.json`
+unchanged when every locked direct dependency satisfies the peer ranges its
+declared range can still reach, including optional peers.
+`npm run lockfile:check` (part of `npm run validate` and the CI static job)
+rejects a lockfile `npm install` would rewrite, such as an
+`@cloudflare/workers-types` pin older than wrangler's peer range.
 
 ## GitHub CLI
 
-Cloud Agent `gh` can read issues, PRs, and checks. It cannot post PR
-review-thread replies (`403`). Reply with `kody:@kentcdodds/github/request`
-(kody-bot) or Cursor `ManagePullRequest` `post_comment` / `in_reply_to`. See
+Cloud Agent `gh` can read issues, PRs, and checks (`gh issue view`,
+`gh pr view`, `gh pr checks`). It cannot write GitHub issues or PR review-thread
+replies (`403` / GraphQL `Resource not accessible by integration`). That
+includes `gh issue comment`, `gh issue close`, `gh issue edit --add-label`, and
+review-thread replies.
+
+Write those with `kody:@kentcdodds/github/request` (kody-bot) or Cursor
+`ManagePullRequest` `post_comment` / `in_reply_to`. See
 [ship-pr](../../.agents/skills/ship-pr/SKILL.md).
 
 ## GitHub token expiry mid-run
@@ -142,9 +149,9 @@ When `git push` or `gh` fails with bad credentials:
    reviewer. If the token is still dead at the end of the run, park the PR and
    say so.
 
-Kody `@kentcdodds/github/request` (kody-bot) can still comment, label, and read
-when the Cloud Agent git token is stale. Use it for GitHub API writes that
-ship-pr already routes through kody-bot — not for pushing the branch.
+Kody `@kentcdodds/github/request` (kody-bot) can still comment, close, label,
+and read when the Cloud Agent git token is stale. Use it for GitHub API writes
+that ship-pr already routes through kody-bot — not for pushing the branch.
 
 ## Quick commands
 

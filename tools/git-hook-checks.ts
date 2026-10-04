@@ -4,10 +4,10 @@ import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
 /**
  * Husky pre-commit and pre-push gates.
  *
- * A docs-only diff skips typecheck, migrations:check, and test:push.
- * lint-staged still formats the commit. Any other path, including a comment
- * in a source file, keeps the full check for that hook. An unreadable diff
- * fails closed and runs the check.
+ * A docs-only diff skips install:check, typecheck, migrations:check, and
+ * test:push. lint-staged still formats the commit. Any other path, including
+ * a comment in a source file, keeps the full check for that hook. An
+ * unreadable diff fails closed and runs the check.
  *
  * Rename detection is off so a source file renamed to markdown still lists
  * the deleted path.
@@ -24,6 +24,7 @@ type GitCommandResult = {
 export type GitRunner = (args: ReadonlyArray<string>) => GitCommandResult
 
 export type GitHookCheckPlan = {
+	runInstallCheck: boolean
 	runTypecheck: boolean
 	runMigrationsCheck: boolean
 	runUnitTests: boolean
@@ -81,6 +82,7 @@ export function planGitHookChecks(input: {
 
 export function hookScripts(plan: GitHookCheckPlan) {
 	const scripts: Array<string> = []
+	if (plan.runInstallCheck) scripts.push('install:check')
 	if (plan.runTypecheck) scripts.push('typecheck')
 	if (plan.runMigrationsCheck) scripts.push('migrations:check')
 	if (plan.runUnitTests) scripts.push('test:push')
@@ -137,32 +139,36 @@ export async function runGitHookChecks(input: {
 function planPreCommit(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 	if (paths === null) {
 		return {
+			runInstallCheck: true,
 			runTypecheck: true,
 			runMigrationsCheck: true,
 			runUnitTests: false,
 			summary:
-				'pre-commit: running typecheck and migrations:check (could not list staged paths)',
+				'pre-commit: running install:check, typecheck, and migrations:check (could not list staged paths)',
 		}
 	}
 	if (paths.every(isDocsOnlyHookPath)) {
 		return {
+			runInstallCheck: false,
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: false,
-			summary: `pre-commit: skipping typecheck and migrations:check (${docsOnlySummary(paths)})`,
+			summary: `pre-commit: skipping install:check, typecheck, and migrations:check (${docsOnlySummary(paths)})`,
 		}
 	}
 	return {
+		runInstallCheck: true,
 		runTypecheck: true,
 		runMigrationsCheck: true,
 		runUnitTests: false,
-		summary: `pre-commit: running typecheck and migrations:check (${codePathSummary(paths)})`,
+		summary: `pre-commit: running install:check, typecheck, and migrations:check (${codePathSummary(paths)})`,
 	}
 }
 
 function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 	if (paths === null) {
 		return {
+			runInstallCheck: false,
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: true,
@@ -171,6 +177,7 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 	}
 	if (paths.every(isDocsOnlyHookPath)) {
 		return {
+			runInstallCheck: false,
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: false,
@@ -178,6 +185,7 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 		}
 	}
 	return {
+		runInstallCheck: false,
 		runTypecheck: false,
 		runMigrationsCheck: false,
 		runUnitTests: true,

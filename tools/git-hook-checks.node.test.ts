@@ -77,7 +77,7 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 		runMigrationsCheck: false,
 		runUnitTests: false,
 		summary:
-			'pre-commit: skipping typecheck and migrations:check (3 docs-only paths)',
+			'pre-commit: skipping install:check, typecheck, and migrations:check (3 docs-only paths)',
 	})
 	expect(
 		planGitHookChecks({ hook: 'pre-push', paths: codePaths }).summary,
@@ -86,14 +86,18 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 		['pre-commit' | 'pre-push', Array<string> | null, Array<string>]
 	> = [
 		['pre-push', docsPaths, []],
-		['pre-commit', codePaths, ['typecheck', 'migrations:check']],
+		[
+			'pre-commit',
+			codePaths,
+			['install:check', 'typecheck', 'migrations:check'],
+		],
 		[
 			'pre-push',
 			['packages/worker/migrations/0067-example.sql'],
 			['test:push'],
 		],
 		['pre-commit', [], []],
-		['pre-commit', null, ['typecheck', 'migrations:check']],
+		['pre-commit', null, ['install:check', 'typecheck', 'migrations:check']],
 		['pre-push', null, ['test:push']],
 	]
 	expect(
@@ -124,9 +128,18 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 				hook: 'pre-commit',
 				git: () => gitResult(0, 'packages/worker/src/app.ts\0'),
 			},
+			(script) => (script === 'install:check' ? 2 : 0),
+		),
+	).toEqual({ code: 2, scripts: ['install:check'] })
+	expect(
+		await runHook(
+			{
+				hook: 'pre-commit',
+				git: () => gitResult(0, 'packages/worker/src/app.ts\0'),
+			},
 			(script) => (script === 'typecheck' ? 2 : 0),
 		),
-	).toEqual({ code: 2, scripts: ['typecheck'] })
+	).toEqual({ code: 2, scripts: ['install:check', 'typecheck'] })
 	expect(
 		await runHook({
 			hook: 'pre-push',
@@ -268,6 +281,7 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 			join(root, 'package.json'),
 			JSON.stringify({
 				scripts: {
+					'install:check': 'exit 2',
 					typecheck: 'exit 3',
 					'migrations:check': 'exit 4',
 					'test:push': 'exit 5',
@@ -280,7 +294,7 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 		})
 		expect(preCommit.status).toBe(0)
 		expect(preCommit.stdout).toContain(
-			'pre-commit: skipping typecheck and migrations:check (1 docs-only path)',
+			'pre-commit: skipping install:check, typecheck, and migrations:check (1 docs-only path)',
 		)
 		git(['commit', '-m', 'docs'])
 		const docsCommit = git(['rev-parse', 'HEAD'])
@@ -326,6 +340,7 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 			'src/app.ts',
 		])
 		expect(plannedScripts('pre-commit', ['src/app.md', 'src/app.ts'])).toEqual([
+			'install:check',
 			'typecheck',
 			'migrations:check',
 		])
@@ -335,7 +350,7 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 		})
 		expect(renamedCommit.status).not.toBe(0)
 		expect(renamedCommit.stdout).toContain(
-			'pre-commit: running typecheck and migrations:check (src/app.ts)',
+			'pre-commit: running install:check, typecheck, and migrations:check (src/app.ts)',
 		)
 	} finally {
 		await rm(root, { recursive: true, force: true })

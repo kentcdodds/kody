@@ -8,11 +8,14 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `.github/workflows`) with `oxfmt` and applies `oxlint --fix` to staged
   JavaScript/TypeScript files. When the staged diff includes a path that is not
   docs-only, or when that diff cannot be listed, it also runs
-  `npm run typecheck` and `npm run migrations:check`. A docs-only diff skips
-  those two commands. Docs-only means every path is under `docs/`, ends in
-  `.md`, `.mdx`, or `.mdc`, or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE`
-  text file. A source file in the same commit, including a comment-only edit or
-  a source file renamed to markdown, runs both checks.
+  `npm run install:check`, `npm run typecheck`, and `npm run migrations:check`.
+  A docs-only diff skips those three commands. `install:check` runs first so a
+  snapshot whose `node_modules` lags `package-lock.json` fails with `run npm ci`
+  instead of a typecheck that can look green from a stale remote cache.
+  Docs-only means every path is under `docs/`, ends in `.md`, `.mdx`, or `.mdc`,
+  or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE` text file. A source file
+  in the same commit, including a comment-only edit or a source file renamed to
+  markdown, runs all three checks.
 - `git push` runs the Husky `pre-push` hook. It executes `npm run test:push`
   (`CI=1` `test:node` + `test:workers`) when any updated ref changes a path that
   is not docs-only, or when the pushed paths cannot be listed. A docs-only range
@@ -40,12 +43,12 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push
   gate also sets `CI=1` so worker count and Nx cache hashes match GitHub
   Actions.
-- Because the commit hook already enforces formatting, lint fixes, and
-  typechecking for commits that include code, agents do not need to run those
-  checks separately before every code commit unless they want earlier feedback
-  or are validating a larger change set before opening a PR. Docs-only commits
-  format staged markdown. Typecheck and the unit suites for those commits stay
-  on `npm run validate` and CI.
+- Because the commit hook already enforces formatting, lint fixes,
+  install:check, and typechecking for commits that include code, agents do not
+  need to run those checks separately before every code commit unless they want
+  earlier feedback or are validating a larger change set before opening a PR.
+  Docs-only commits format staged markdown. Typecheck, install:check, and the
+  unit suites for those commits stay on `npm run validate` and CI.
 - Push-time hooks intentionally stop short of `npm run validate`; Playwright
   E2E, MCP E2E, and repo-wide format checks remain explicit checks because they
   are heavier than the push gate.
