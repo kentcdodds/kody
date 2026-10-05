@@ -236,6 +236,44 @@ test('validateBarePackageImportDeclarations skips client externals for client en
 	expect(serverEntry.message).toMatch(/undeclared bare package\(s\): "lit"/)
 })
 
+test('validateBarePackageImportDeclarations allows unprefixed Node builtins without a declaration', () => {
+	const manifestJson = {
+		name: '@kody/node-builtins',
+		exports: { '.': './src/index.ts' },
+		kody: { id: 'node-builtins', description: 'Node builtins package' },
+	} as AuthoredPackageJson
+	const result = validateBarePackageImportDeclarations({
+		manifest: manifestJson,
+		sourceFiles: {
+			'package.json': JSON.stringify(manifestJson),
+			'src/index.ts':
+				'import path from "path"\nimport { Buffer } from "buffer"\nexport default async () => path.join("a", "b") + Buffer.byteLength("x")\n',
+		},
+		entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+	})
+	expect(result.ok).toBe(true)
+})
+
+test('validateBarePackageImportDeclarations fails closed when reachable source does not parse', () => {
+	const manifestJson = {
+		name: '@kody/unparseable',
+		exports: { '.': './src/index.ts' },
+		kody: { id: 'unparseable', description: 'Unparseable package' },
+	} as AuthoredPackageJson
+	const result = validateBarePackageImportDeclarations({
+		manifest: manifestJson,
+		sourceFiles: {
+			'package.json': JSON.stringify(manifestJson),
+			'src/index.ts': 'export default async () => {\n',
+		},
+		entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+	})
+	expect(result.ok).toBe(false)
+	expect(result.message).toMatch(
+		/could not be parsed for bare-import dependency checks.*"src\/index\.ts"/,
+	)
+})
+
 test('assertBundleHasNoUnresolvedBareImports throws UserCodeError only for undeclared packages', () => {
 	const modules = {
 		'bundle.js':

@@ -82,6 +82,52 @@ function formatQuotedList(values: ReadonlyArray<string>) {
 }
 
 /**
+ * Host Node builtins that Workers resolves under `nodejs_compat` without an
+ * npm install (unprefixed `path`, `fs/promises`, …). Prefixed `node:` imports
+ * are already excluded by `isBarePackageImportSpecifier`. This is a host
+ * runtime affordance, not a framework special case.
+ */
+const nodeBuiltinPackageNames = new Set([
+	'assert',
+	'async_hooks',
+	'buffer',
+	'child_process',
+	'crypto',
+	'diagnostics_channel',
+	'dns',
+	'events',
+	'fs',
+	'http',
+	'http2',
+	'https',
+	'inspector',
+	'module',
+	'net',
+	'os',
+	'path',
+	'perf_hooks',
+	'process',
+	'punycode',
+	'querystring',
+	'readline',
+	'stream',
+	'string_decoder',
+	'timers',
+	'tls',
+	'tty',
+	'url',
+	'util',
+	'v8',
+	'vm',
+	'worker_threads',
+	'zlib',
+])
+
+export function isNodeBuiltinBarePackageName(packageName: string) {
+	return nodeBuiltinPackageNames.has(packageName)
+}
+
+/**
  * Same rule as module-graph-client-bundle `isDeclaredClientExternal`: an
  * external covers itself and its subpaths (`preact` covers `preact/hooks`).
  * Kept local so this module does not import the client bundler (cycle risk).
@@ -114,7 +160,8 @@ function resolveBundlerLocalImportPath(input: {
  * Reachable authored sources for the undeclared-bare-import gate. Follows the
  * same literal edges `createWorker` resolves (`import` / `export … from`,
  * `import()`, and `require()` / `import = require()`), including helpers only
- * reached through relative `require('./helper')`.
+ * reached through relative `require('./helper')`. Unparseable sources are
+ * recorded so the gate can fail closed instead of skipping them.
  */
 function collectBundlerReachableSourceFilePaths(input: {
 	files: Record<string, string>
@@ -122,6 +169,7 @@ function collectBundlerReachableSourceFilePaths(input: {
 	rootPackage: ReturnType<typeof readRootPackage>
 }) {
 	const reachable = new Set<string>()
+	const unparseableFiles = new Set<string>()
 	const stack = [
 		resolveWorkspaceSourceFilePath({
 			files: input.files,
@@ -141,7 +189,10 @@ function collectBundlerReachableSourceFilePaths(input: {
 		if (source == null) continue
 		reachable.add(filePath)
 		const specifiers = collectBundlerResolvedSpecifiers(source)
-		if (specifiers == null) continue
+		if (specifiers == null) {
+			unparseableFiles.add(filePath)
+			continue
+		}
 		for (const specifier of specifiers) {
 			if (specifier.startsWith(packageSpecifierPrefix)) {
 				const parsed = parseKodyPackageSpecifier(specifier)
@@ -172,7 +223,12 @@ function collectBundlerReachableSourceFilePaths(input: {
 			}
 		}
 	}
-	return reachable
+	return {
+		reachable,
+		unparseableFiles: [...unparseableFiles].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	}
 }
 
 /**
@@ -180,13 +236,17 @@ function collectBundlerReachableSourceFilePaths(input: {
  * that are neither declared in package.json#dependencies nor present under
  * snapshot node_modules/. Client-entry targets also treat
  * kody.app.client.externals as resolved (left for the page import map).
+ * Node builtins and unparseable sources are handled by the validator.
  */
 export function collectUndeclaredBarePackageImports(input: {
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 	entryPoints: ReadonlyArray<PackageBundleImportTarget>
 	declaredDependencies?: ReadonlyArray<string>
-}): Array<UndeclaredBarePackageImport> {
+}): {
+	undeclared: Array<UndeclaredBarePackageImport>
+	unparseableFiles: Array<string>
+} {
 	const declaredDependencies =
 		input.declaredDependencies ??
 		parseDeclaredNpmDependencyNames(input.sourceFiles['package.json'] ?? null)
@@ -196,6 +256,7 @@ export function collectUndeclaredBarePackageImports(input: {
 		string,
 		{ entryPoints: Set<string>; specifiers: Set<string> }
 	>()
+	const unparseableFiles = new Set<string>()
 
 	for (const target of input.entryPoints) {
 		const entryPoint = normalizePackageWorkspacePath(target.path)
@@ -204,15 +265,22 @@ export function collectUndeclaredBarePackageImports(input: {
 			entryPoint,
 			rootPackage,
 		})
-		for (const filePath of reachable) {
+		for (const filePath of reachable.unparseableFiles) {
+			unparseableFiles.add(filePath)
+		}
+		for (const filePath of reachable.reachable) {
 			const source = input.sourceFiles[filePath]
 			if (source == null) continue
 			const specifiers = collectBundlerResolvedSpecifiers(source)
-			if (specifiers == null) continue
+			if (specifiers == null) {
+				unparseableFiles.add(filePath)
+				continue
+			}
 			for (const specifier of specifiers) {
 				if (!isBarePackageImportSpecifier(specifier)) continue
 				const packageName = getBarePackageNameFromSpecifier(specifier)
 				if (!packageName) continue
+				if (isNodeBuiltinBarePackageName(packageName)) continue
 				if (
 					isBarePackageResolvableFromPackageSource({
 						packageName,
@@ -239,17 +307,22 @@ export function collectUndeclaredBarePackageImports(input: {
 		}
 	}
 
-	return [...byPackage.entries()]
-		.map(([packageName, value]) => ({
-			packageName,
-			entryPoints: [...value.entryPoints].sort((left, right) =>
-				left.localeCompare(right),
-			),
-			specifiers: [...value.specifiers].sort((left, right) =>
-				left.localeCompare(right),
-			),
-		}))
-		.sort((left, right) => left.packageName.localeCompare(right.packageName))
+	return {
+		undeclared: [...byPackage.entries()]
+			.map(([packageName, value]) => ({
+				packageName,
+				entryPoints: [...value.entryPoints].sort((left, right) =>
+					left.localeCompare(right),
+				),
+				specifiers: [...value.specifiers].sort((left, right) =>
+					left.localeCompare(right),
+				),
+			}))
+			.sort((left, right) => left.packageName.localeCompare(right.packageName)),
+		unparseableFiles: [...unparseableFiles].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	}
 }
 
 export function formatUndeclaredBarePackageImportsMessage(
@@ -265,13 +338,29 @@ export function formatUndeclaredBarePackageImportsMessage(
 	)
 }
 
+function formatUnparseableBareImportFilesMessage(files: ReadonlyArray<string>) {
+	return (
+		`Package entry source could not be parsed for bare-import dependency checks (${formatQuotedList(files)}). ` +
+		'Fix the syntax so publish can verify declared dependencies before advancing published_commit.'
+	)
+}
+
 export function validateBarePackageImportDeclarations(input: {
 	manifest: AuthoredPackageJson
 	sourceFiles: Record<string, string>
 	entryPoints: ReadonlyArray<PackageBundleImportTarget>
 	declaredDependencies?: ReadonlyArray<string>
 }) {
-	const undeclared = collectUndeclaredBarePackageImports(input)
+	const { undeclared, unparseableFiles } =
+		collectUndeclaredBarePackageImports(input)
+	if (unparseableFiles.length > 0) {
+		return {
+			ok: false as const,
+			message: formatUnparseableBareImportFilesMessage(unparseableFiles),
+			undeclared,
+			unparseableFiles,
+		}
+	}
 	if (undeclared.length === 0) {
 		return {
 			ok: true as const,
@@ -331,6 +420,7 @@ export function isUndeclaredBarePackageImportFailure(input: {
 	if (unresolvedPackages.length === 0) return false
 	return unresolvedPackages.every(
 		(packageName) =>
+			!isNodeBuiltinBarePackageName(packageName) &&
 			!isBarePackageResolvableFromPackageSource({
 				packageName,
 				declaredDependencies,
