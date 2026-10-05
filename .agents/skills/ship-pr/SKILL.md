@@ -1,253 +1,82 @@
 ---
 name: ship-pr
 description: >
-  Babysit a PR: iterate with AI reviewers and CI until green, get it ready,
-  optionally squash-merge as Kody and watch the deploy, file leftover repo
-  papercuts through friction-log/file, then send a Discord summary. Medium risk
-  waits for AI reviewer(s) and addresses valid feedback. Use when a pull request
+  Babysit a PR to done with the @kentcdodds/ship-pr Kody package: tick the PR,
+  read the focused step, fix / reply / decide, and tick again until done (merge
+  or park, deploy, leftover friction, Discord summary). Use when a pull request
   needs to be shepherded to done.
 ---
 
 # Ship PR
 
-## Risk → merge authority
+The process lives in the Kody package `@kentcdodds/ship-pr` (runbook: its
+`AGENTS.md`, via `search({ entity: "package:@kentcdodds/ship-pr" })`). This
+skill only says how to drive it. Change behavior in the package, not here.
 
-Self-assess; user policy overrides.
+## Risk
 
-**Kent's standing policy (2026-08-08):** auto-ship (squash-merge + verify
-deploy) once AI reviewer feedback is addressed and CI is green, unless **high**
-risk. High risk still parks ready-for-review unless merge authority was granted
-explicitly.
+Self-assess `risk` and pass it on every tick; user policy overrides. Kent's
+standing policy (2026-08-08): auto-ship once AI feedback is handled and CI is
+green, unless high risk.
 
-- **Low** — green CI; nits ignorable; squash-merge when policy allows.
-- **Medium** — wait for AI reviewer(s); address **valid** feedback (ignore
-  insignificant nits / already-fixed / wrong); then merge when policy allows.
-- **High** — leave ready-for-review unless the user granted merge authority.
-
-## AI reviewers
-
-Prefer **Cursor Bugbot** (`Cursor Bugbot` check / `cursor[bot]` review
-comments). Never comment `bugbot run` or `cursor review` yourself, including via
-`gh` or GitHub request as kody-bot. Trigger with `kody:@kentcdodds/bugbot` using
-`{ prUrl }` or `{ owner, repo, prNumber }`. Do not pass a GitHub account.
-
-Cloud Agent `gh` cannot post PR review-thread replies (403). Use
-`kody:@kentcdodds/github/request` (default `bot` account) to `POST`
-`/repos/{owner}/{repo}/pulls/{pull_number}/comments/{comment_id}/replies`, or
-Cursor `ManagePullRequest` `post_comment` with `in_reply_to`. Do not stall
-ship-pr waiting on a `gh api` reply that will never post.
-
-```javascript
-import triggerBugbot from 'kody:@kentcdodds/bugbot'
-
-await triggerBugbot({ prUrl })
-```
-
-When `triggerBugbot` returns `code: 'github_account_mismatch'` (or
-`posted: false` with that code), **do not wait** for a Bugbot check or review —
-none will appear. Cursor requires the PR author to match the Cursor-linked
-GitHub account (`kentcdodds`). For medium risk, proceed with CI and other
-reviewers (for example CodeRabbit when available) without Bugbot. This is Cursor
-platform policy, not a package bug.
-
-**CodeRabbit:** if it is rate-limited, errored, or otherwise unavailable, **do
-not wait** on it for low/medium risk — proceed with CI and whatever Bugbot
-actually ran (skip waiting on Bugbot after `github_account_mismatch`). Only wait
-on CodeRabbit when the change is **high** risk (or the user explicitly asks).
-
-**Review-bot sort (Bugbot / Devin / Seer only):** before treating those bots'
-threads as merge blockers, run the in-repo helper:
-
-```bash
-node .agents/skills/ship-pr/scripts/sort-review-bot-comments.mjs --pr-url "$PR_URL"
-# dry-run (classify only, no replies):
-node .agents/skills/ship-pr/scripts/sort-review-bot-comments.mjs --pr-url "$PR_URL" --dry-run
-```
-
-For **those three bots**, address `mustAddress` / `valid` (includes **unsure**;
-never auto-dismiss unsure). A human or kody-bot reply that cites the fixing
-commit or an intentional wontfix drops that thread from `mustAddress`
-(`alreadyAddressed`). Invalid findings get a short kody-bot reply from the
-helper (via `kody:@kentcdodds/github/request`, prefer-local CLI) and are not
-blockers. `mustAddress` is **not** exhaustive for every reviewer - still inspect
-and address valid **CodeRabbit** (and other non-sorted) feedback separately when
-those reviews ran (same CodeRabbit wait rules as above). See
-[repo health](../../../docs/contributing/repo-health.md).
-
-When linking leftover issues in the PR body, write `Related to #N` or a plain
-link. Never write `does not close #N` — GitHub still treats `close #N` as a
-closing keyword.
+- **low** — green CI; AI review optional; bot nits ignorable.
+- **medium** — wait for Bugbot; handle valid feedback.
+- **high** — also wait for CodeRabbit / Devin; park ready-for-review unless the
+  user granted merge authority (pass `mergeAuthority: true`).
 
 ## Loop
 
-1. Mark ready — `kody:@kentcdodds/github/pr/set-review-status`
-   `{ prUrl, status: 'ready' }` (or owner/repo/prNumber).
-2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`). Ignore a
-   failure event whose SHA is not the current PR `headRefOid`
-   (`gh pr view --json headRefOid`). Checks for an abandoned commit are not a
-   red PR; wait on the new head.
-3. Fix failures; for **medium+**, wait on AI reviewer(s) (Bugbot first; see
-   above for CodeRabbit), run review-bot sort for Bugbot/Devin/Seer
-   (`mustAddress` - unsure counts as valid), and separately address valid
-   CodeRabbit (or other non-sorted) feedback when those reviews ran. While the
-   PR is open, also fix obvious in-scope low-risk repo friction you are already
-   touching, mention the fix, and let CI finish again before merging. Rebase
-   only when actually unmergeable. Immediately before merge, recheck tip-of-main
-   mergeability (`gh pr view --json mergeable,mergeStateStatus`). If GitHub
-   flipped the PR to CONFLICTING after green checks, fetch `origin/main`, rebase
-   once, push, and wait for CI again. Recheck mergeability after that recovery
-   CI succeeds and before merging. If it is still CONFLICTING after the single
-   rebase, stop and report the conflict — do not rebase again, and do not treat
-   “green then conflicting” as a surprise dead-end. For **medium+**, also run
-   `npm run control-kody -- preview` (or `npm run preview:manual-test`) as the
-   seeded user **with data for this change** (`control-kody request` /
-   `--request`; do not cat the cookie into curl or Python — see
-   [control-kody](../control-kody/SKILL.md) and
-   [preview-manual-test](../preview-manual-test/SKILL.md)). Admin-gated states
-   (suspension, outbound-email pause, account deletion) cannot be set on the
-   public preview seed; local admin plus Workers or unit tests count as
-   sufficient evidence. After merge,
-   `npm run control-kody -- health --origin https://kody.codes --sha <merge>`.
-   After a `main` merge, GitHub may show an all-skipped 🚀 Deploy (production)
-   run while ✅ Validate is still in progress (a cancelled prior Validate
-   `workflow_run` starts Deploy, and `sha-guard` requires success). Wait for
-   Validate success on the merge SHA, then watch the subsequent Deploy run. Do
-   not poll production `/health` against the previous SHA from a skipped Deploy.
-4. Green + (medium+: valid feedback cleared) → break.
-5. Push → repeat.
+Run exports with the local CLI
+([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)); never hosted
+MCP `execute`. The CLI rejects `--local` with `--invoke`, so use the
+static-import passthrough that tick's `exampleInvokes` already print:
 
-## Gates ≠ CI
-
-Blocked on soak / parity CHECK / calendar gate → **end the run** and schedule a
-wake (`execute` + `workflows.create({ runAt, idempotencyKey })` calling
-`createRun`). Don't sleep-poll or code-thrash an intentional time window.
-Leftovers that wait on that gate need a GitHub issue (`Cleanup:` title); see
-[cleanup-after-migrations](../cleanup-after-migrations/SKILL.md).
-
-Batch related expand steps into fewer PRs when risk posture allows.
-
-## Merge / deploy
-
-When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
-`{ prUrl, mergeMethod: 'squash' }`, watch deploy. Useful: `pr/get-checks`,
-`request`, `graphql` on the same package.
-
-## Leftover friction
-
-After the merge or park decision (or when ending the run), and before the
-Discord summary, scan the session for leftover out-of-scope papercuts this PR
-did not fix. Judge filing and in-scope fixes by the principles in the
-[friction log](../../../docs/contributing/friction-log.md): durable recurring
-pain with a clear owner; platform vs package routing; prefer one clear contract
-over aliases, compat layers, or owner-hardcoded special-cases. Do not push more
-commits onto a merged PR. In-scope fixes belong in the loop above, while the PR
-is open.
-
-File leftovers that meet the bar with `kody:@kentcdodds/friction-log/file` via
-prefer-local CLI execute when available
-([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). If `--local`
-cannot run, fix the environment so local works — Open API / MCP `api` cannot
-invoke this package export, and hosted MCP `execute` is banned. Always pass
-required `target: { host: 'github' | 'kody', repo: string }` plus `items` (one
-papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`,
-`cost`, and a short `preliminaryInvestigation` (what was already looked at).
-Pass `relevantFiles` only when paths look relevant; omit when none are known. Do
-not invent a root cause. Do not paste a full issue thread. Platform leftovers
-use `{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
-`host: 'kody'` (wakes Patch). Omit secrets. If nothing meets the bar, skip the
-call or pass empty `items`. Do not invent papercuts. Do not use
-`gh issue create` or a raw GitHub issue POST.
-
-Policy: [friction log](../../../docs/contributing/friction-log.md). Outside this
-pass: [file-friction](../file-friction/SKILL.md).
-
-```javascript
-import fileFriction from 'kody:@kentcdodds/friction-log/file'
-
-export default async function main() {
-	return fileFriction({
-		target: { host: 'github', repo: 'kentcdodds/kody' },
-		items: [
-			{
-				title: 'what hurt',
-				whatHappened: '...',
-				whatYouWanted: '...',
-				howToReproduce: '...',
-				cost: '...',
-				preliminaryInvestigation: 'what was already looked at',
-				relevantFiles: ['path/when/known.ts'],
-			},
-		],
-	})
-}
+```bash
+npx @kodycodes/cli execute --local \
+  --code 'import run from "kody:@kentcdodds/ship-pr/tick"; export default (p) => run(p)' \
+  --params '{"prUrl":"https://github.com/kentcdodds/kody/pull/123","risk":"medium","applySafeAutomations":true}'
 ```
 
-## Done → Discord
+1. **Tick.** `applySafeAutomations` marks the PR ready, triggers Bugbot as
+   kentcdodds (medium/high, once per head SHA), and replies "invalid" on sorted
+   invalid bot findings.
+2. **Read** `checklist`, `done`, `remaining`. Only the focus step carries
+   `details`; `exampleInvokes` are ready-to-run commands.
+3. **Decide.** You own the call on CI and AI feedback: fix + push and reply
+   `Fixed in <sha>: …` (`./reply-review`), reply with wontfix reasoning, or
+   record a 7-day `./decide` (`ignored | skipped | wontfix | accepted`, reason
+   required) for noise — a thread, a check, an AI reviewer you will not wait on,
+   or a step (`merge` skipped = park).
+4. **Wait** when `exit.status` is `waiting`: about `pollAfterSeconds`, or end
+   the turn. Do not tight-loop or code-thrash.
+5. **Tick again** until `exit.done`.
 
-Always summarize (merged or not) via `kody:@kentcdodds/discord/send-shipped-pr`.
-That export formats kind ship-pr, fetches Cursor token cost from the usage API,
-and includes the model you pass. Never invent a dollar figure or a model id.
-When the work deployed user-visible pages, put clickable links to those pages in
-`extras` (see below) so Kent can open the live result from Discord.
+When tick focuses `merge`, use `./merge` (squash, preflighted, pinned to the
+head SHA). When it focuses `friction`, file leftovers with
+`kody:@kentcdodds/friction-log/file` per the
+[friction log](../../../docs/contributing/friction-log.md), then decide step
+`friction`. When it focuses `report`, pass the Discord fields to
+`./send-summary`:
 
-**title (required):** a human headline of the change itself so the Discord post
-is glanceable. Example: `OpenAPI spec fetches now count against daily quota`. Do
-**not** use `ship owner/repo#N` as the title — repo, PR, and agent already
-appear as links.
+- `title` — human headline of the change (not `ship owner/repo#N`).
+- `difficulty` — `Easy | Medium | Hard` (not risk).
+- `agentId` —
+  `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/agent/id`,
+  or the `bc-` id from your launch URL.
+- `model` — `…/v1/meta-data/turn/model` on the same socket, or the launch
+  `model.id`. Missing → omit. Never infer.
+- `extras` — links to user-visible pages that actually deployed. Never invent
+  URLs.
 
-**difficulty (required):** `'Easy' | 'Medium' | 'Hard'`. Always pass it.
-Distinct from Risk (merge authority). Easy = small/localized; Medium = several
-files or real behavior change; Hard = architecture, migrations, subtle
-correctness, or wide blast radius. The Discord export renders this on its own
-line.
+## This repo
 
-**agentId (required):**
-
-- In a Cursor Cloud Agent VM, read it from the metadata socket:
-  `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/agent/id`
-- Otherwise pass the `bc-` id from the agent URL you were launched as
-  (`https://cursor.com/agents/{id}`).
-
-**model (deterministic — never infer):**
-
-- In a Cursor Cloud Agent VM, read the model that **served this turn** from the
-  metadata socket (not a guess from writing style):
-  `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/turn/model`
-  If you selected Auto, this is the concrete model that served, not `Auto`. See
-  https://cursor.com/docs/cloud-agent/metadata
-- Outside a managed VM, pass the `model.id` used at create/launch if you still
-  have that record.
-- If the key is missing (`404` / empty), omit `model` so the export posts
-  `Model pending` — do **not** invent one.
-
-**Deployed pages (when the work actually shipped UI/routes):**
-
-- If merge+deploy produced live pages people can click, put those URLs in
-  `extras` as Discord markdown links (one per line item). Prefer the specific
-  routes/pages that changed, not only the site root.
-- Skip this when nothing user-visible deployed (library-only, docs-only with no
-  hosted page, parked/blocked, or deploy not reached).
-- Do **not** invent URLs. Only include pages you verified or that the deploy
-  output / PR preview / production URL clearly maps to.
-
-```javascript
-import sendShippedPr from 'kody:@kentcdodds/discord/send-shipped-pr'
-
-export default async function main() {
-	return sendShippedPr({
-		agentId: 'bc-…', // metadata socket or launch URL
-		model: 'grok-4.6', // metadata turn/model (deterministic)
-		title: 'OpenAPI spec fetches now count against daily quota',
-		difficulty: 'Medium',
-		status: 'Shipped', // or Parked / Blocked
-		summary: 'One-screen what shipped and why it is done.',
-		prUrl: 'https://github.com/owner/repo/pull/123',
-		repo: 'owner/repo',
-		extras: [
-			'CI green',
-			'[Account](https://kody.codes/account)', // only when that page actually deployed
-			'[Connect](https://kody.codes/connect)',
-		],
-	})
-}
-```
+- Medium+: `npm run control-kody -- preview` (or `npm run preview:manual-test`)
+  as the seeded user with data for this change
+  ([control-kody](../control-kody/SKILL.md),
+  [preview-manual-test](../preview-manual-test/SKILL.md)). Admin-gated states:
+  local admin plus Workers or unit tests are sufficient evidence.
+- Gates ≠ CI: blocked on soak / parity / calendar gate → end the run and
+  schedule a wake (`workflows.create({ runAt, idempotencyKey })`). Leftovers get
+  a `Cleanup:` issue
+  ([cleanup-after-migrations](../cleanup-after-migrations/SKILL.md)).
+- PR bodies say `Related to #N`, never `does not close #N`.
