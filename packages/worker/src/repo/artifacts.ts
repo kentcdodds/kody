@@ -1020,8 +1020,12 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 	maxAttempts?: number
 	delayMs?: number
 }): Promise<ArtifactRepoReadyResult> {
-	const maxAttempts = input.maxAttempts ?? 5
-	const delayMs = input.delayMs ?? 50
+	// Cloudflare can return ALREADY_EXISTS from create while get still reports
+	// not_found (post-delete ghost reservation, or fork provision lag). Retry
+	// create when get stays absent so callers that need bootstrapAccess (community
+	// fork fallback) are not stuck with a permanent not_found conflict.
+	const maxAttempts = input.maxAttempts ?? 10
+	const delayMs = input.delayMs ?? 100
 	let lastStatus = 'not_found'
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 		const result = await input.binding.get(input.repoId)
@@ -1033,6 +1037,27 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 			throw new Error(
 				`Artifacts repo "${input.repoId}" is importing. Retry after ${result.retryAfter}s.`,
 			)
+		}
+		if (result.status === 'not_found') {
+			try {
+				const created = await input.binding.create(input.repoId, {
+					readOnly: false,
+				})
+				return {
+					recreated: true,
+					bootstrapAccess: {
+						defaultBranch: created.defaultBranch,
+						remote: created.remote,
+						token: created.token,
+						expiresAt: created.expiresAt,
+					},
+					repo: input.binding.repo(created.name),
+				}
+			} catch (error) {
+				if (!isArtifactRepoAlreadyExistsError(error)) {
+					throw error
+				}
+			}
 		}
 		if (attempt < maxAttempts) {
 			await waitForArtifactRepoCheck(delayMs)

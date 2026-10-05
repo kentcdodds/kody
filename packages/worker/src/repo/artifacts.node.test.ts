@@ -314,6 +314,43 @@ test('ensureArtifactRepoReady uses the create result, recovers from concurrent c
 	expect(conflictFetch).toHaveBeenCalledTimes(2)
 })
 
+test('ensureArtifactRepoReady retries create when conflict leaves get not_found', async () => {
+	let getRepoCount = 0
+	let createCount = 0
+	const fetchMock = mockFetch((method, url) => {
+		if (method === 'GET' && url.pathname.endsWith('/repos/repo-ghost')) {
+			getRepoCount += 1
+			return repoNotFound()
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			createCount += 1
+			if (createCount <= 2) {
+				return apiResponse(null, {
+					status: 409,
+					errors: [{ code: 10201, message: 'Create failed' }],
+				})
+			}
+			return apiResponse(createdRepo('repo-ghost'), {
+				status: 201,
+			})
+		}
+		return undefined
+	})
+	await expect(
+		ensureArtifactRepoReady(restEnv, 'repo-ghost'),
+	).resolves.toMatchObject({
+		recreated: true,
+		bootstrapAccess: {
+			defaultBranch: 'main',
+			remote: remoteFor('repo-ghost'),
+			token: 'art_v1_create?expires=1760000000',
+		},
+	})
+	expect(getRepoCount).toBeGreaterThanOrEqual(2)
+	expect(createCount).toBe(3)
+	expect(fetchMock).toHaveBeenCalled()
+})
+
 test('artifacts REST client error paths and missing source repos', async () => {
 	const missingRepoFetch = mockFetch((method, url) =>
 		method === 'GET' && url.pathname.endsWith('/repos/repo-1')
