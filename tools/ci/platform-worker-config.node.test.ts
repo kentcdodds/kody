@@ -153,7 +153,6 @@ function buildMainGeneratedConfig(envName: string) {
 			'FLAG_EXPOSURES',
 			'EMAIL_EVENTS',
 			'MCP_PROTOCOL_EVENTS',
-			'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 			'EXECUTE_INTERPRETABLE_EVENTS',
 			'MCP_SEARCH_EVENTS',
 			'ONBOARDING_FUNNEL_EVENTS',
@@ -233,18 +232,17 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		database_id: 'd1-app-id',
 	})
 	expect(
+		previewEnv?.analytics_engine_datasets?.find(
+			(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+		),
+	).toBeUndefined()
+	expect(
 		previewEnv?.analytics_engine_datasets?.filter((entry) =>
-			[
-				'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-				'EXECUTE_INTERPRETABLE_EVENTS',
-				'MCP_SEARCH_EVENTS',
-			].includes(String(entry.binding)),
+			['EXECUTE_INTERPRETABLE_EVENTS', 'MCP_SEARCH_EVENTS'].includes(
+				String(entry.binding),
+			),
 		),
 	).toEqual([
-		{
-			binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-			dataset: 'kody_package_invoke_specifier_events_pr',
-		},
 		{
 			binding: 'EXECUTE_INTERPRETABLE_EVENTS',
 			dataset: 'kody_execute_interpretable_events_pr',

@@ -306,10 +306,6 @@
 					"dataset": "kody_mcp_protocol_events",
 				},
 				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events",
-				},
-				{
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
 					"dataset": "kody_execute_interpretable_events",
 				},
@@ -501,10 +497,6 @@
 				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events_preview",
-				},
-				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events_preview",
 				},
 				{
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",

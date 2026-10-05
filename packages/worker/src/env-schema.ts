@@ -250,7 +250,6 @@ export const EnvSchema = object({
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
 	MCP_PROTOCOL_EVENTS: optionalAnalyticsEngineDatasetSchema,
-	PACKAGE_INVOKE_SPECIFIER_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	EXECUTE_INTERPRETABLE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	MCP_SEARCH_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	ONBOARDING_FUNNEL_EVENTS: optionalAnalyticsEngineDatasetSchema,

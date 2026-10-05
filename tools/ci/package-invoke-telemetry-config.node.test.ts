@@ -9,7 +9,7 @@ const workerConfigPaths = [
 	'packages/jobs-worker/wrangler.jsonc',
 ] as const
 
-test('origin and secondary workers bind package invoke telemetry in production and preview', async () => {
+test('origin and secondary workers do not bind package invoke telemetry', async () => {
 	for (const configPath of workerConfigPaths) {
 		const config = parseJsonc<{
 			env?: Record<
@@ -24,15 +24,11 @@ test('origin and secondary workers bind package invoke telemetry in production a
 		}>(await readFile(configPath, 'utf8'))
 		for (const envName of ['production', 'preview'] as const) {
 			const binding = config.env?.[envName]?.analytics_engine_datasets?.find(
-				(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+				(entry) =>
+					entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS' ||
+					entry.dataset?.includes('package_invoke_specifier'),
 			)
-			expect(binding?.binding, `${configPath} env.${envName}`).toBe(
-				'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-			)
-			expect(
-				binding?.dataset?.length ?? 0,
-				`${configPath} env.${envName} dataset`,
-			).toBeGreaterThan(0)
+			expect(binding, `${configPath} env.${envName}`).toBeUndefined()
 		}
 	}
 })

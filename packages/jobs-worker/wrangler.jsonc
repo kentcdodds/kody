@@ -70,12 +70,6 @@
 					"migrations_dir": "./migrations",
 				},
 			],
-			"analytics_engine_datasets": [
-				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events",
-				},
-			],
 			"services": [
 				{
 					"binding": "HOST",
@@ -119,12 +113,6 @@
 					"binding": "JOBS_DB",
 					"database_name": "kody-preview-jobs",
 					"migrations_dir": "./migrations",
-				},
-			],
-			"analytics_engine_datasets": [
-				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events_preview",
 				},
 			],
 			"services": [

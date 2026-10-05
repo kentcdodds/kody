@@ -15,7 +15,6 @@ interface __BaseEnv_Env {
 	FLAG_EXPOSURES: AnalyticsEngineDataset;
 	EMAIL_EVENTS: AnalyticsEngineDataset;
 	MCP_PROTOCOL_EVENTS: AnalyticsEngineDataset;
-	PACKAGE_INVOKE_SPECIFIER_EVENTS: AnalyticsEngineDataset;
 	EXECUTE_INTERPRETABLE_EVENTS: AnalyticsEngineDataset;
 	MCP_SEARCH_EVENTS: AnalyticsEngineDataset;
 	ONBOARDING_FUNNEL_EVENTS: AnalyticsEngineDataset;

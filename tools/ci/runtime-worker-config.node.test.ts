@@ -146,7 +146,6 @@ function buildMainGeneratedConfig(envName: string) {
 			'USAGE_EVENTS',
 			'FLAG_EXPOSURES',
 			'MCP_PROTOCOL_EVENTS',
-			'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 			'ONBOARDING_FUNNEL_EVENTS',
 		].map((binding) => ({
 			binding,
@@ -224,10 +223,7 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		previewEnv?.analytics_engine_datasets?.find(
 			(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 		),
-	).toEqual({
-		binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-		dataset: 'kody_package_invoke_specifier_events_pr',
-	})
+	).toBeUndefined()
 	expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 		binding: 'WEBHOOK_DISPATCH_QUEUE',
 		queue: 'kody-pr-7-webhook-dispatch',
