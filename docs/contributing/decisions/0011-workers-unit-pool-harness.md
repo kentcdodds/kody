@@ -32,10 +32,12 @@ Durable Objects from `globalSetup` or workers-unit `setupFiles`. Prefer
 required. Keep a shared Vitest `testTimeout` of 20s (and `CI=1` on `test:push` /
 validate’s test and e2e legs) so the pool’s per-file DO cold load does not fail
 the default budget. When `npm run validate` runs workers-unit beside the rest of
-the parallel gate (`KODY_VALIDATE_LOAD=1` on that leg only), raise
-`testTimeout`/`hookTimeout` to 40s and drop `maxWorkers` from 3 to 2 so
-load-induced stretch does not flake; do **not** loosen production worker startup
-CPU budgets for that contention.
+the parallel gate (`KODY_VALIDATE_LOAD=1` on that leg only),
+`vitest.workers.config.ts` raises workers-unit `testTimeout`/`hookTimeout` to
+40s and drops `maxWorkers` from 3 to 2 so load-induced stretch does not flake.
+The override stays on the workers project only (not `sharedProjectConfig`) so
+node-unit Nx caches stay keyed to the 20s default; do **not** loosen production
+worker startup CPU budgets for that contention.
 
 ## Consequences
 

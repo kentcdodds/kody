@@ -43,8 +43,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push
   gate also sets `CI=1` so worker count and Nx cache hashes match GitHub
   Actions. Full `npm run validate` sets `KODY_VALIDATE_LOAD=1` on the
-  `test:workers` leg so that suite gets a 40s timeout and `maxWorkers=2` under
-  the parallel gate without changing production startup CPU budgets.
+  `test:workers` leg so `vitest.workers.config.ts` gives that suite a 40s
+  timeout and `maxWorkers=2` under the parallel gate without changing production
+  startup CPU budgets or node-unit timeouts.
 - Because the commit hook already enforces formatting, lint fixes,
   install:check, and typechecking for commits that include code, agents do not
   need to run those checks separately before every code commit unless they want
