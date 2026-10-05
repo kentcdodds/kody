@@ -35,16 +35,21 @@ async function getWorkerDeclaredInputs(target: string) {
 	return projectNode.data.targets?.[target]?.inputs ?? []
 }
 
-function includesCiEnv(inputs: ReadonlyArray<unknown>) {
+function includesEnvInput(inputs: ReadonlyArray<unknown>, envName: string) {
+	const marker = `{env:${envName}}`
 	return inputs.some((input) => {
-		if (input === '{env:CI}') return true
+		if (input === marker) return true
 		return (
 			typeof input === 'object' &&
 			input !== null &&
 			'env' in input &&
-			(input as { env?: unknown }).env === 'CI'
+			(input as { env?: unknown }).env === envName
 		)
 	})
+}
+
+function includesCiEnv(inputs: ReadonlyArray<unknown>) {
+	return includesEnvInput(inputs, 'CI')
 }
 
 function hashMatchedInputs(
@@ -115,3 +120,8 @@ test.each(['test', 'test-node', 'test-workers', 'test-mcp', 'test-e2e'])(
 		expect(includesCiEnv(inputs)).toBe(true)
 	},
 )
+
+test('test-workers cache hash includes KODY_VALIDATE_LOAD for validate-load timeouts', async () => {
+	const inputs = await getWorkerDeclaredInputs('test-workers')
+	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
+})

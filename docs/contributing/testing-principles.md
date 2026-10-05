@@ -121,7 +121,10 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   - **Do not** stub away DOs in workers tests when binding fidelity is the
     point, and do not “fix” pool slowness with `--no-verify` or a shorter local
     `testTimeout`. Shared `testTimeout` is 20s so the pool’s ~10s first DO RPC
-    in a file does not fail the default budget.
+    in a file does not fail the default budget. Full `npm run validate` sets
+    `KODY_VALIDATE_LOAD=1` on `test:workers` (40s timeout, `maxWorkers=2`) so
+    parallel-gate contention does not flake those suites; that flag does not
+    loosen production startup CPU budgets.
   - Pool cold load is inherent today; suite wall clock will not match production
     RPC latency until the upstream pool improves.
 - Vitest is configured with `clearMocks` and `mockReset` globally

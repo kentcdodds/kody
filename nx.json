@@ -43,6 +43,7 @@
 				"default",
 				"^default",
 				{ "env": "CI" },
+				{ "env": "KODY_VALIDATE_LOAD" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
