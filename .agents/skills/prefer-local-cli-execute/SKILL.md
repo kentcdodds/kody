@@ -48,8 +48,12 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 Never paste a `kody_at_…` into chat. The bootstrap code is short-lived and
 one-shot; prefer running `cli_command` over retyping secrets.
 
-After bootstrap, CLI `whoami` / `search` (and similar) reuse the stored
-bootstrap token the same way `--local` does (cli ≥1.8.1).
+After bootstrap, CLI commands reuse the stored bootstrap token the same way
+`--local` does (cli ≥1.8.1). Default bootstrap scopes are `local-execute` and
+`account:read`
+([ADR 0056](../../../docs/contributing/decisions/0056-cli-credential-bootstrap.md)):
+`whoami` works; `search` needs `search:read` (use MCP `search`, or mint a token
+that includes that scope).
 
 ## Interactive humans: `kody login`
 
