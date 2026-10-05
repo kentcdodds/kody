@@ -729,12 +729,12 @@ export function ConnectOauthRoute(handle: Handle) {
 						clientSecretInput={clientSecretInput}
 						submitting={submitting}
 						onClientIdInput={(value) => {
+							// Draft only — the credential inputs are uncontrolled, so
+							// a re-render is not required to show what the user typed.
 							clientIdInput = value
-							update()
 						}}
 						onClientSecretInput={(value) => {
 							clientSecretInput = value
-							update()
 						}}
 						onRevealStoredClientSecret={() => {
 							revealStoredClientSecretField = true

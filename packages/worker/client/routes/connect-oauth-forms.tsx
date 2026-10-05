@@ -157,11 +157,19 @@ export function ConnectOauthCredentialsForm(
 				>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Client ID</span>
+						{/*
+						 * Uncontrolled: the DOM owns the typed value. Calling
+						 * handle.update() on every keystroke is unnecessary (nothing
+						 * else on this form re-derives from the draft) and cascades
+						 * into Remix's same-turn update guard when many input events
+						 * land before setTimeout(0) — autofill, paste, or rapid
+						 * sequential insert (KODY-8K / ConnectOauthRoute x51).
+						 */}
 						<input
 							name="oauthClientId"
 							required
 							{...passwordManagerIgnoreProps}
-							value={props.clientIdInput}
+							defaultValue={props.clientIdInput}
 							mix={[
 								on('input', (event) => {
 									props.onClientIdInput(event.currentTarget.value)
@@ -205,7 +213,7 @@ export function ConnectOauthCredentialsForm(
 									type="password"
 									required
 									{...passwordManagerIgnoreProps}
-									value={props.clientSecretInput}
+									defaultValue={props.clientSecretInput}
 									mix={[
 										on('input', (event) => {
 											props.onClientSecretInput(event.currentTarget.value)
