@@ -1198,6 +1198,45 @@ test('forkCommunityListing does not auto-pick past a real fork of the listing', 
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 })
 
+test('forkCommunityListing rejects a repeat default fork after an alternate leaf was used', async () => {
+	mockForkable()
+	const unrelatedSameLeaf = {
+		...validSavedPackage(),
+		id: 'package-unrelated',
+		userId: 'user-2',
+		name: '@jane/discord-gateway',
+		kodyId: 'discord-gateway',
+		sourceId: 'source-unrelated',
+	}
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { ref: string }) => {
+			if (input.ref === 'discord-gateway') return unrelatedSameLeaf
+			return null
+		},
+	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) => {
+			if (input.name === '@jane/discord-gateway') return unrelatedSameLeaf
+			return null
+		},
+	)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([
+		forkRecord({
+			targetKodyId: 'discord-gateway-2',
+			forkedSourceId: 'fork-source-alt',
+			forkedPackageId: 'package-fork-alt',
+		}),
+	])
+
+	await expect(fork()).rejects.toThrow(
+		'You already forked this listing as package name "discord-gateway-2". Resume the existing fork with source_id "fork-source-alt" (package_id "package-fork-alt") via repoOpenSession, or pass a different package name leaf to fork again.',
+	)
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+
+	const explicit = await fork({ kodyId: 'discord-gateway-3' })
+	expect(explicit.targetKodyId).toBe('discord-gateway-3')
+})
+
 test('forkCommunityListing cleans up entity source when snapshot sync fails', async () => {
 	mockForkable()
 	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(

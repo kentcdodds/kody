@@ -1474,6 +1474,22 @@ export async function prepareCommunityFork(
 		// default leaf. Auto-pick the next free leaf only for that default
 		// path; an explicit leaf still errors so callers keep control.
 		if (!explicitKodyId && !collidingFork) {
+			// Already forked this listing under another leaf (for example the
+			// previous default auto-picked leaf-2). Do not silently mint leaf-3;
+			// resume the existing fork or pass an explicit different leaf.
+			const existingAlternateFork =
+				existingForks.length > 0
+					? existingForks[existingForks.length - 1]
+					: null
+			if (existingAlternateFork) {
+				throw new CommunityActionError(
+					buildRepeatForkErrorMessage({
+						targetKodyId: existingAlternateFork.targetKodyId,
+						forkedSourceId: existingAlternateFork.forkedSourceId,
+						forkedPackageId: existingAlternateFork.forkedPackageId,
+					}),
+				)
+			}
 			const alternate = await resolveCommunityForkAlternateLeaf({
 				preferredLeaf: preferredKodyId,
 				reservedLeaves: new Set(existingForks.map((fork) => fork.targetKodyId)),
