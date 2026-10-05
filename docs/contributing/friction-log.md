@@ -104,11 +104,10 @@ the daily sweep never sees the issue.
 
 ## Daily sweep
 
-`@kentcdodds/friction-log` runs the daily job. Daily sweep eligibility is: open
-
-- `friction` + NOT `friction-skipped`. Eligibility does not scrape issue
-  comments. When any issues are eligible, the package may spawn one Cursor Cloud
-  Agent on `kentcdodds/kody` `main`.
+`@kentcdodds/friction-log` runs the daily job. Daily sweep eligibility is:
+open + `friction` + NOT `friction-skipped`. Eligibility does not scrape issue
+comments. When any issues are eligible, the package may spawn one Cursor Cloud
+Agent on `kentcdodds/kody` `main`.
 
 Daily agent instructions (outcomes, skip/unskip, record-outcome) come from the
 package when spawned (`agent-prompt` and package `AGENTS.md`). On skip, apply
