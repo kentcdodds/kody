@@ -13,6 +13,10 @@ import {
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#universal/document-head.ts'
+import {
+	passwordManagerPageIgnoreProps,
+	pathnameFromAppUrl,
+} from '#universal/password-manager-page-ignore.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
@@ -166,6 +170,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 		handle.props.stylesheetHref ?? buildStylesheetHref('dev')
 	const scrollRestorationInlineScript = getScrollRestorationInlineScript()
 	const preloadHeroImage = isHomeDocumentUrl(handle.props.url)
+	const passwordManagerPageIgnore = passwordManagerPageIgnoreProps(
+		pathnameFromAppUrl(handle.props.url),
+	)
 
 	return () => (
 		<html lang="en">
@@ -281,7 +288,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					<link rel="stylesheet" href={stylesheetHref} />
 				)}
 			</head>
-			<body>
+			<body {...passwordManagerPageIgnore}>
 				<HMR />
 				<div id="root">
 					<AppRoot
