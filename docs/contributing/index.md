@@ -32,9 +32,9 @@ style, tests, MCP capabilities, and runtime architecture.
   the same change, or open a GitHub issue)
 - [Planned breaking changes](./planned-breaking-changes.md) (leftovers that
   still work and will be removed later, including `kody_id` / `kody.id`)
-- [Friction log](./friction-log.md) (when/where to file and how to judge fixes;
-  one issue via `kody:@kentcdodds/friction-log/create`, ship-pr leftovers via
-  `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
+- [Friction log](./friction-log.md) (when/where/how-to-fix policy; package owns
+  create/file/daily at
+  [@kentcdodds/friction-log](https://kody.codes/@kentcdodds/friction-log))
 - [Repo health](./repo-health.md) (CI + in-repo budgets: AGENTS.md ratchet,
   Validate unit-job timing, ship-pr review-bot sort)
 - Prefer local CLI execute when Node ≥22 + CLI are available (MCP agents:
