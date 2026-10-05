@@ -230,6 +230,35 @@ test('control-kody parses commands, maps every required route, and drives a seed
 				limit: 5,
 			},
 		],
+		[
+			[
+				'browse',
+				'--origin',
+				preview,
+				'--path',
+				'/@user/pkg',
+				'--record',
+				'--headless',
+				'--close-after',
+				'0',
+			],
+			{
+				command: 'browse',
+				origin: preview,
+				path: '/@user/pkg',
+				record: true,
+				headed: false,
+				closeAfterMs: 0,
+			},
+		],
+		[
+			['browse', '/account/waiting', '--origin', preview],
+			{
+				command: 'browse',
+				origin: preview,
+				path: '/account/waiting',
+			},
+		],
 	]
 	for (const [argv, expected] of parsed) {
 		expect(parseControlArgs(argv)).toEqual(expect.objectContaining(expected))
@@ -244,6 +273,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			'search --query packageSave --limit 1.5',
 			/--limit must be a positive integer/,
 		],
+		['browse --close-after -1', /--close-after requires a value/],
+		['browse --path account', /must start with \//],
 		['nope', /Unknown command/],
 	]
 	for (const [argv, error] of parseErrors) {

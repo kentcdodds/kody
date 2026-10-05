@@ -41,6 +41,13 @@ import {
 	withLocalAppDbRemediation,
 } from './control-kody/local-app-db.ts'
 import {
+	defaultBrowsePath,
+	defaultBrowseVideoDir,
+	formatBrowseReport,
+	normalizeBrowsePath,
+	openBrowseSession,
+} from './control-kody/browse.ts'
+import {
 	defaultPlaywrightBrowsersJsonPath,
 	inspectPlaywrightBrowsers,
 	type PlaywrightBrowserCheck,
@@ -83,6 +90,7 @@ const usageLines = [
 	'  login           POST /auth and write a session cookie',
 	'  request         Authenticated HTTP as the current session',
 	'  preview         PR preview smoke (forwards flags to preview:manual-test)',
+	'  browse          Open headed Chromium already signed in (reuse seed cookie)',
 	'  health          GET /health and optionally assert commitSha',
 	'  map             List or print a Feature Map entry; --check for drift',
 	'  package-create  Create a stub saved package via MCP (preview data)',
@@ -96,6 +104,10 @@ const usageLines = [
 	"  --email <addr>       Session identity; does not reuse another user's cookie",
 	'  --dump               Write the raw response body to .tmp/control-kody-body',
 	'  --contains <text>    Fail unless the response body includes this text',
+	'  --path <path>        browse target path (default: /account)',
+	'  --record             browse: record Playwright video under .tmp/control-kody-browse',
+	'  --headless           browse: launch Chromium headless (default is headed)',
+	'  --close-after <ms>   browse: close after N ms (scripted smoke / tests)',
 	'  --package-name <s>   Required for package-create (leaf or @scope/leaf)',
 	'  --kody-id <slug>     Alias for --package-name',
 	'  --description <t>    Optional package-create stub description',
@@ -112,6 +124,11 @@ const usageLines = [
 	'A `--` separator is optional. Example: preview --pr 42 --check /account',
 	"--request specs take request's --dump/--contains at the end, e.g.",
 	"  preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'",
+	'',
+	'browse reuses the seed cookie from login/preview and injects it into',
+	'Playwright Chromium (same addCookies pattern as e2e/playwright-utils.ts).',
+	'Prefer MCP/API/control-kody execute for proof; browse only when UI is under',
+	'test. Example: browse --origin <preview> --path /@user/pkg --record',
 	'',
 	'request spec is METHOD /path [status] [json-body]. Separate arguments',
 	'are joined, so POST /path 400 \'{"action":"add"}\' sends the body.',
@@ -131,6 +148,7 @@ export type ControlKodyCommand =
 	| 'login'
 	| 'request'
 	| 'preview'
+	| 'browse'
 	| 'health'
 	| 'map'
 	| 'package-create'
@@ -156,6 +174,10 @@ export type ControlKodyOptions = {
 	dumpFile: string
 	contains: Array<string>
 	previewArgv: Array<string>
+	path: string
+	record: boolean
+	headed: boolean
+	closeAfterMs: number | null
 	kodyId: string | null
 	description: string | null
 	headAhead: boolean
@@ -217,6 +239,10 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		dumpFile: defaultDumpFile(),
 		contains: [],
 		previewArgv: [],
+		path: defaultBrowsePath,
+		record: false,
+		headed: true,
+		closeAfterMs: null,
 		kodyId: null,
 		description: null,
 		headAhead: false,
@@ -246,6 +272,7 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		'login',
 		'request',
 		'preview',
+		'browse',
 		'health',
 		'map',
 		'package-create',
@@ -289,6 +316,15 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		const positional: Array<string> = []
 		parseSharedFlags(rest, options, positional)
 		options.featureId = positional[0] ?? null
+		return options
+	}
+
+	if (options.command === 'browse') {
+		const positional: Array<string> = []
+		parseSharedFlags(rest, options, positional)
+		if (positional[0]) {
+			options.path = normalizeBrowsePath(positional[0])
+		}
 		return options
 	}
 
@@ -415,6 +451,32 @@ function parseSharedFlags(
 					throw new ControlKodyError('--limit must be a positive integer')
 				}
 				options.limit = parsed
+				index += 1
+				break
+			}
+			case '--path': {
+				options.path = normalizeBrowsePath(
+					requireValue(argv[index + 1], '--path'),
+				)
+				index += 1
+				break
+			}
+			case '--record': {
+				options.record = true
+				break
+			}
+			case '--headless': {
+				options.headed = false
+				break
+			}
+			case '--close-after': {
+				const raw = requireValue(argv[index + 1], '--close-after')
+				if (!/^(0|[1-9]\d*)$/.test(raw)) {
+					throw new ControlKodyError(
+						'--close-after must be a non-negative integer (ms)',
+					)
+				}
+				options.closeAfterMs = Number(raw)
 				index += 1
 				break
 			}
@@ -1074,6 +1136,34 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'preview': {
 			const result = await runPreviewManualTest(options.previewArgv)
 			return result.exitCode
+		}
+		case 'browse': {
+			const origin = await resolveOrigin(options)
+			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			let cookieHeader = readCookieFile(options.cookieFile, origin, email)
+			if (!cookieHeader) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+			}
+			if (!cookieHeader) {
+				throw new ControlKodyError(
+					'browse needs a session cookie. Run control-kody login or preview first.',
+				)
+			}
+			const report = await openBrowseSession({
+				origin,
+				path: options.path,
+				cookieHeader,
+				headed: options.headed,
+				record: options.record,
+				videoDir: options.record ? defaultBrowseVideoDir : null,
+				closeAfterMs: options.closeAfterMs,
+			})
+			if (options.json) printJson({ ...report, cookieFile: options.cookieFile })
+			else console.log(formatBrowseReport(report))
+			return 0
 		}
 		case 'health': {
 			const origin = await resolveOrigin(options)

@@ -15,6 +15,7 @@ npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview --pr 42 --check /account/waiting
+npm run control-kody -- browse --origin <preview> --path /@user-me/pkg [--record]
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
 npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages]
@@ -61,6 +62,19 @@ exists.
 `--check` work without a `--` separator. A `--request` spec accepts the same
 trailing `--dump` / `--contains <text>` flags as `request`, for example
 `preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
+
+`browse` reuses the seed cookie stored in `.tmp/control-kody-cookie` (from
+`login` or `preview`) and injects it into headed Playwright Chromium via
+`addCookies` (same pattern as `e2e/playwright-utils.ts`). It opens `--path`
+already signed in. Pass `--record` to write video under
+`.tmp/control-kody-browse` (needs Playwright ffmpeg:
+`npx playwright install ffmpeg` — small download; do not run
+`playwright install chromium` on Cloud Agents), `--headless` for environments
+without a display, and `--close-after <ms>` for scripted smoke. Prefer
+MCP/API/`execute` for proof; use `browse` only when UI is under test. Cursor
+`computerUse` drives its own browser and cannot attach to the CLI-opened
+Chromium — for computerUse, open `/login?redirectTo=<path>` with the public seed
+credentials instead of retyping a long package URL after landing on `/account`.
 
 `doctor` checks local APP_DB readiness. A failed local `login` (unmigrated or
 unseeded D1) prints:

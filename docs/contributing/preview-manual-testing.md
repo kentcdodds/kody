@@ -97,12 +97,17 @@ seeded remotely):
 
 The script signs in through `POST /auth` (Turnstile is off on preview). Sign in
 in a browser at `/login` with Email + Password and the **Sign in** button.
-`/admin` is expected to 403. Preview credentials are public, so the seed is
-intentionally non-admin. States that only an admin can set (account suspension,
-outbound-email pause, account deletion kickoff, fleet feature flags) cannot be
-reproduced on preview. For those paths, sufficient evidence is the local admin
-seed (`kody@example.com` / `ilikecode`) plus targeted Workers or unit tests —
-not a preview `/admin` session and not raw D1 writes.
+Prefer a deep link with `redirectTo` when UI login is still needed, for example
+`/login?redirectTo=%2F%40user-me%2Fyour-pkg`, so you land on the page under test
+instead of `/account`. Or skip typing entirely with
+`npm run control-kody -- browse --origin <preview> --path <path>` after the
+scripted session (reuses `.tmp/control-kody-cookie`). `/admin` is expected
+to 403. Preview credentials are public, so the seed is intentionally non-admin.
+States that only an admin can set (account suspension, outbound-email pause,
+account deletion kickoff, fleet feature flags) cannot be reproduced on preview.
+For those paths, sufficient evidence is the local admin seed (`kody@example.com`
+/ `ilikecode`) plus targeted Workers or unit tests — not a preview `/admin`
+session and not raw D1 writes.
 
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
@@ -143,13 +148,19 @@ denial path; see
 2. If you need a longer session, keep using `control-kody request` (or more
    `--request` flags) against the same origin. Do not `cat` the cookie into
    `curl` or Python.
-3. Open the preview URL (computerUse on Cloud Agents), sign in with the seed
-   credentials, and confirm the same data in the UI. Stay on the preview origin
-   (do not follow package-app handoff into production).
-4. Record what you saw in the PR.
+3. Prefer MCP/API/`control-kody` `execute` for proof. Open a browser only when
+   UI is under test.
+4. When UI is under test, open already signed in with
+   `npm run control-kody -- browse --origin <preview> --path <path>` (optional
+   `--record`). Cursor `computerUse` cannot drive that Playwright window — for
+   computerUse, open `/login?redirectTo=<path>` with the seed credentials and
+   stay on the preview origin (do not follow package-app handoff into
+   production).
+5. Record what you saw in the PR.
 
-Do not point Playwright at the preview. Local E2E (`npm run test:e2e:run`) boots
-its own worker against `.wrangler/state/e2e`.
+Do not point Playwright at the preview for the repo E2E suite. Local E2E
+(`npm run test:e2e:run`) boots its own worker against `.wrangler/state/e2e`.
+`control-kody browse` is the intentional headed exception for preview UI demos.
 
 ## If the script cannot find a preview
 

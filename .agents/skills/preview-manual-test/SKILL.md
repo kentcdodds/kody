@@ -59,10 +59,18 @@ This does not replace `npm run validate`.
 
 ## After the scripted session
 
-1. Open the printed URL. On Cloud Agents, use the `computerUse` subagent.
-2. Sign in at `/login` with the seed credentials. Button label is **Sign in**.
-3. Confirm the data you created and exercise the UI this PR changes. Stay on the
-   preview origin.
+Default: prove behavior via MCP/API/`control-kody` `request` / `execute`. Open a
+browser only when UI is under test.
+
+When UI is under test:
+
+1. Prefer `npm run control-kody -- browse --origin <preview> --path <path>` so
+   Chromium opens already signed in (reuses `.tmp/control-kody-cookie`).
+   Optional `--record` writes video under `.tmp/control-kody-browse`.
+2. Cursor `computerUse` cannot drive that Playwright window. For computerUse,
+   open `/login?redirectTo=<path>` (seed email `me@kentcdodds.com` / password
+   `ilikecode`, button **Sign in**) and stay on the preview origin.
+3. Confirm the data you created and exercise the UI this PR changes.
 4. Record what you saw on the PR.
 
 `GET /mcp` is 401 without OAuth; `/admin` is 403 (seed account is not admin).

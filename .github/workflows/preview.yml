@@ -799,9 +799,11 @@ jobs:
         with:
           script: |
             const marker = "<!-- kody-preview-url -->";
+            const previewUrl = process.env.PREVIEW_URL;
+            const loginDeepLink = `${previewUrl}/login?redirectTo=${encodeURIComponent("/account")}`;
             const bodyLines = [
               marker,
-              `🔎 Preview deployed: ${process.env.PREVIEW_URL}`,
+              `🔎 Preview deployed: ${previewUrl}`,
               "",
               `Worker: \`${process.env.WORKER_NAME}\``,
             ];
@@ -836,6 +838,21 @@ jobs:
               bodyLines.push("Mocks:");
               bodyLines.push(process.env.MOCK_SUMMARY.trim());
             }
+            bodyLines.push(
+              "",
+              "### Seed login (public preview fixture)",
+              "",
+              "- Email: `me@kentcdodds.com`",
+              "- Password: `ilikecode`",
+              "- Username: `user-me`",
+              "",
+              "Prefer MCP/API/`control-kody` execute for proof. Browser only when UI is under test.",
+              "",
+              `- Deep link (UI login still needed): [Sign in → /account](${loginDeepLink}) — change \`redirectTo\` to the path under test (for example \`/@user-me/your-pkg\`).`,
+              `- Already signed in (reuse CLI cookie): \`npm run control-kody -- browse --origin ${previewUrl} --path /account\``,
+              "",
+              "Do **not** post session cookies or tokens in PR comments.",
+            );
             const body = bodyLines.join("\n");
 
             const { owner, repo } = context.repo;
