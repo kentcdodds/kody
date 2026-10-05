@@ -28,30 +28,27 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: () => mockModule.renderAppPage(),
 }))
 
-test('prefilled /account/secrets/new redirects to focused /connect/secret-set', async () => {
+test('prefilled /account/secrets/new redirects; bare /new stays on the editor', async () => {
 	const env = {} as Env
-	const response = await createAccountSecretsHandler(env).handler(
+	const redirected = await createAccountSecretsHandler(env).handler(
 		new RequestContext(
 			new Request(
 				'https://example.com/account/secrets/new?name=exampleApiKey&allowedHosts=api.example.com',
 			),
 		),
 	)
-	expect(response.status).toBe(302)
-	expect(response.headers.get('location')).toBe(
+	expect(redirected.status).toBe(302)
+	expect(redirected.headers.get('location')).toBe(
 		'https://example.com/connect/secret-set?name=exampleApiKey&allowedHosts=api.example.com',
 	)
 	expect(mockModule.requireAuthenticatedPageUser).not.toHaveBeenCalled()
-})
 
-test('bare /account/secrets/new stays on the account secrets editor', async () => {
-	const env = {} as Env
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
 		mcpUser: { userId: 'user-1' },
 	})
-	const response = await createAccountSecretsHandler(env).handler(
+	const bare = await createAccountSecretsHandler(env).handler(
 		new RequestContext(new Request('https://example.com/account/secrets/new')),
 	)
-	expect(response.status).toBe(200)
+	expect(bare.status).toBe(200)
 	expect(mockModule.renderAppPage).toHaveBeenCalled()
 })

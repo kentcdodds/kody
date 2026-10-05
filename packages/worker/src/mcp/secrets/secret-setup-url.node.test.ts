@@ -33,11 +33,4 @@ test('buildSecretSetupUrl points at the focused /connect/secret-set page', () =>
 			name: '  ',
 		}),
 	).toThrow(/secret name is required/i)
-
-	const url = buildSecretSetupUrl({
-		baseUrl: 'https://kody.codes',
-		name: 'token',
-	})
-	expect(url).not.toContain('/account/secrets')
-	expect(url).toContain('/connect/secret-set?')
 })

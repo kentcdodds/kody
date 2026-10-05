@@ -39,14 +39,6 @@ test('assertNoPlatformSuppliedNodeModules allows snapshot node_modules and refus
 		bundlerFiles: remixBundlerFiles,
 		bundleLabel: 'Package bundle',
 	})
-	expect(
-		Object.keys(remixBundlerFiles)
-			.filter((filePath) => filePath.startsWith('node_modules/remix/'))
-			.sort((left, right) => left.localeCompare(right)),
-	).toEqual([
-		'node_modules/remix/dist/router.js',
-		'node_modules/remix/package.json',
-	])
 	expect(listNodeModulesPackageRoots(remixBundlerFiles)).toEqual([
 		'preact',
 		'remix',

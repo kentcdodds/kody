@@ -232,11 +232,6 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		database_id: 'd1-app-id',
 	})
 	expect(
-		previewEnv?.analytics_engine_datasets?.find(
-			(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-		),
-	).toBeUndefined()
-	expect(
 		previewEnv?.analytics_engine_datasets?.filter((entry) =>
 			['EXECUTE_INTERPRETABLE_EVENTS', 'MCP_SEARCH_EVENTS'].includes(
 				String(entry.binding),

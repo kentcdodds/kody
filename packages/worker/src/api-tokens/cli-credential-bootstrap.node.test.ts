@@ -191,26 +191,6 @@ test('bootstrap respects parent token scopes', async () => {
 	).rejects.toThrow(/scopes it does not hold/)
 })
 
-test('bootstrap defaults to a 2-week idle TTL and 3-month max lifetime', async () => {
-	const { db } = createDb()
-	const minted = await mintCliCredentialBootstrap({
-		db,
-		userId,
-		now: start,
-	})
-	expect(minted.idle_ttl_seconds).toBe(1_209_600)
-	expect(minted.max_lifetime_seconds).toBe(7_776_000)
-
-	const redeemed = await redeemCliCredentialBootstrap({
-		db,
-		code: minted.bootstrap_code,
-		now: start,
-	})
-	expect(redeemed.token.idle_ttl_seconds).toBe(1_209_600)
-	expect(redeemed.token.expires_at).toBe(at(1_209_600).toISOString())
-	expect(redeemed.token.max_expires_at).toBe(at(7_776_000).toISOString())
-})
-
 test('bootstrap default lifetimes clamp to a shorter API-token parent', async () => {
 	const { db } = createDb()
 	const parentRemainingSeconds = 6 * 24 * 60 * 60

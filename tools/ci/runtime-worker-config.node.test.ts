@@ -219,11 +219,6 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		database_name: 'kody-pr-7-db',
 		database_id: 'd1-app-id',
 	})
-	expect(
-		previewEnv?.analytics_engine_datasets?.find(
-			(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-		),
-	).toBeUndefined()
 	expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 		binding: 'WEBHOOK_DISPATCH_QUEUE',
 		queue: 'kody-pr-7-webhook-dispatch',

@@ -297,55 +297,42 @@ test('shouldFallbackFromForkedArtifactPersist matches exhausted Artifacts git de
 	).toBe(false)
 })
 
-test('resolveCommunityForkArtifactsGitFallbackTree keeps prepared files when dest HEAD matches', async () => {
+test('resolveCommunityForkArtifactsGitFallbackTree keeps prepared files when dest HEAD matches or is missing', async () => {
 	const { resolveCommunityForkArtifactsGitFallbackTree } =
 		await import('./artifact-repo-fork.ts')
+	const input = {
+		env,
+		destRepoId: 'package-dest',
+		originRepoId: 'package-origin',
+		preparedOriginCommit: 'commit-pin',
+		preparedFiles: { 'package.json': janeManifest },
+		expectedPackageScope: 'jane',
+		targetKodyId: 'discord',
+		listingName: '@kody/discord',
+		targetName: '@jane/discord',
+	}
+	const kept = {
+		originCommit: 'commit-pin',
+		files: { 'package.json': janeManifest },
+	}
+
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'commit-pin',
 	})
 	await expect(
-		resolveCommunityForkArtifactsGitFallbackTree({
-			env,
-			destRepoId: 'package-dest',
-			originRepoId: 'package-origin',
-			preparedOriginCommit: 'commit-pin',
-			preparedFiles: { 'package.json': janeManifest },
-			expectedPackageScope: 'jane',
-			targetKodyId: 'discord',
-			listingName: '@kody/discord',
-			targetName: '@jane/discord',
-		}),
-	).resolves.toEqual({
-		originCommit: 'commit-pin',
-		files: { 'package.json': janeManifest },
-	})
+		resolveCommunityForkArtifactsGitFallbackTree(input),
+	).resolves.toEqual(kept)
 	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
-})
 
-test('resolveCommunityForkArtifactsGitFallbackTree keeps prepared files when dest HEAD resolves to null', async () => {
-	const { resolveCommunityForkArtifactsGitFallbackTree } =
-		await import('./artifact-repo-fork.ts')
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: null,
 	})
 	await expect(
-		resolveCommunityForkArtifactsGitFallbackTree({
-			env,
-			destRepoId: 'package-dest',
-			originRepoId: 'package-origin',
-			preparedOriginCommit: 'commit-pin',
-			preparedFiles: { 'package.json': janeManifest },
-			expectedPackageScope: 'jane',
-			targetKodyId: 'discord',
-			listingName: '@kody/discord',
-			targetName: '@jane/discord',
-		}),
-	).resolves.toEqual({
-		originCommit: 'commit-pin',
-		files: { 'package.json': janeManifest },
-	})
+		resolveCommunityForkArtifactsGitFallbackTree(input),
+	).resolves.toEqual(kept)
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
 })
 
 test('resolveCommunityForkArtifactsGitFallbackTree returns null when dest HEAD lookup throws', async () => {

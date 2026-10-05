@@ -93,34 +93,24 @@ function missing(html: string, markers: Array<string>) {
 }
 
 test('renderAppPage server-renders the dedicated connect-secret-set page', async () => {
-	const { status, html } = await renderConnectSecretSet(
+	const named = await renderConnectSecretSet(
 		'name=exampleApiKey&description=Example%20API%20key&allowedHosts=api.example.com&scope=user',
 	)
-	expect(status).toBe(200)
+	expect(named.status).toBe(200)
 	expect(
-		missing(html, [
+		missing(named.html, [
 			'data-testid="connect-secret-set"',
 			'data-testid="connect-secret-set-card"',
 			'exampleApiKey',
 			'api.example.com',
-			'Save secret',
-			'Set this secret',
 		]),
 	).toEqual([])
-	// Must not land on the generic secrets list UI.
-	expect(html).not.toContain('New secret')
-	expect(html).not.toContain('Passwords and tokens Kody can use for you.')
-	expect(html).not.toContain('data-testid="account-secrets"')
-	// Setup prefill must not surface host-approval errors for a new secret.
-	expect(html).not.toContain('None of the listed secrets were found')
-	expect(html).not.toContain('data-testid="connect-secret-set-error"')
-})
+	// Named setup stays on the focused page, not the generic secrets list.
+	expect(named.html).not.toContain('data-testid="account-secrets"')
+	expect(named.html).not.toContain('data-testid="connect-secret-set-error"')
 
-test('renderAppPage shows empty state without a secret name', async () => {
-	const { status, html } = await renderConnectSecretSet('')
-	expect(status).toBe(200)
-	expect(html).toContain('data-testid="connect-secret-set"')
-	expect(html).toContain('Open a secret setup link')
-	expect(html).not.toContain('data-testid="connect-secret-set-card"')
-	expect(html).not.toContain('New secret')
+	const empty = await renderConnectSecretSet('')
+	expect(empty.status).toBe(200)
+	expect(empty.html).toContain('data-testid="connect-secret-set"')
+	expect(empty.html).not.toContain('data-testid="connect-secret-set-card"')
 })

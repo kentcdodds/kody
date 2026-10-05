@@ -137,6 +137,50 @@ test('resolveViewerListingInstalls requires a fork row; same-leaf alone is not i
 	expect(resolved.has('listing-discord')).toBe(false)
 	expect(resolved.has('listing-slack')).toBe(false)
 
+	const discordListing = {
+		id: 'listing-discord',
+		kodyId: 'discord',
+		pinnedCommit: 'pin-1',
+	}
+	const discordOwn = {
+		id: 'pkg-discord-own',
+		kodyId: 'discord',
+		name: '@burhan/discord',
+		sourceId: 'src-discord-own',
+	}
+	const discordForked = {
+		id: 'pkg-forked-discord',
+		kodyId: 'discord',
+		name: '@burhan/discord-from-community',
+		sourceId: 'src-forked-discord',
+	}
+	expect(
+		resolveViewerListingInstalls({
+			listings: [discordListing],
+			packageScope: 'burhan',
+			savedPackages: [discordOwn, discordForked],
+			forks: [
+				fork(
+					'listing-discord',
+					'discord',
+					discordForked.id,
+					discordForked.sourceId,
+					'2026-08-01T00:00:00.000Z',
+					'pin-1',
+				),
+			],
+		}).get('listing-discord'),
+	).toEqual({
+		status: 'installed',
+		targetName: discordForked.name,
+		sourceId: discordForked.sourceId,
+		packageId: discordForked.id,
+		listingAhead: false,
+		forkAhead: false,
+		originCommit: 'pin-1',
+		listingPinnedCommit: 'pin-1',
+	})
+
 	const githubCases: Array<{
 		name: string
 		pinnedCommit: string
@@ -222,55 +266,4 @@ test('resolveViewerListingInstalls requires a fork row; same-leaf alone is not i
 			}),
 		})
 	}
-})
-
-test('same-leaf package without fork is not installed; real fork of listing is', () => {
-	const listingId = 'listing-discord'
-	const listing = { id: listingId, kodyId: 'discord', pinnedCommit: 'pin-1' }
-	const sameLeafOwn = {
-		id: 'pkg-own-discord',
-		kodyId: 'discord',
-		name: '@jelias/discord',
-		sourceId: 'src-own-discord',
-	}
-	const forkedInstall = {
-		id: 'pkg-forked-discord',
-		kodyId: 'discord',
-		name: '@jelias/discord-from-community',
-		sourceId: 'src-forked-discord',
-	}
-
-	const withoutFork = resolveViewerListingInstalls({
-		listings: [listing],
-		packageScope: 'jelias',
-		savedPackages: [sameLeafOwn],
-		forks: [],
-	})
-	expect(withoutFork.has(listingId)).toBe(false)
-
-	const withFork = resolveViewerListingInstalls({
-		listings: [listing],
-		packageScope: 'jelias',
-		savedPackages: [sameLeafOwn, forkedInstall],
-		forks: [
-			fork(
-				listingId,
-				'discord',
-				forkedInstall.id,
-				forkedInstall.sourceId,
-				'2026-08-01T00:00:00.000Z',
-				'pin-1',
-			),
-		],
-	})
-	expect(withFork.get(listingId)).toEqual({
-		status: 'installed',
-		targetName: forkedInstall.name,
-		sourceId: forkedInstall.sourceId,
-		packageId: forkedInstall.id,
-		listingAhead: false,
-		forkAhead: false,
-		originCommit: 'pin-1',
-		listingPinnedCommit: 'pin-1',
-	})
 })

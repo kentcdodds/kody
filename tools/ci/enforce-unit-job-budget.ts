@@ -9,7 +9,7 @@
  */
 import { isExecutedDirectly } from '../node-runtime.ts'
 
-export const unitJobBudgets = {
+const unitJobBudgets = {
 	node: {
 		leg: 'node',
 		jobName: '🧪 Node',

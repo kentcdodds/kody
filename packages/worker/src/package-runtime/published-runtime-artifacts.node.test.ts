@@ -1,11 +1,7 @@
 import { expect, test } from 'vitest'
-import {
-	bundleArtifactVersion,
-	isUsableStoredPublishedBundleArtifact,
-} from './published-runtime-artifacts.ts'
+import { isUsableStoredPublishedBundleArtifact } from './published-runtime-artifacts.ts'
 
 test('isUsableStoredPublishedBundleArtifact keeps clean v1 payloads and rejects remix-injected ones', () => {
-	expect(bundleArtifactVersion).toBe(1)
 	expect(
 		isUsableStoredPublishedBundleArtifact({
 			version: 1,

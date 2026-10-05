@@ -2,24 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { RouteLoaderRedirect } from '#client/route-loader.ts'
 import { accountSecretsRouteLoader } from './account-secrets-shared.ts'
 
-test('account secrets loader redirects prefilled /new links to /connect/secret-set', async () => {
-	const fetchMock = vi.fn()
-	vi.stubGlobal('fetch', fetchMock)
-	const result = await accountSecretsRouteLoader(
-		new URL(
-			'https://example.com/account/secrets/new?name=exampleApiKey&allowedHosts=api.example.com',
-		),
-		new AbortController().signal,
-	)
-	expect(result).toBeInstanceOf(RouteLoaderRedirect)
-	expect((result as RouteLoaderRedirect).to).toBe(
-		'/connect/secret-set?name=exampleApiKey&allowedHosts=api.example.com',
-	)
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
-})
-
-test('account secrets loader keeps bare /new on the account editor path', async () => {
+test('account secrets loader redirects prefilled /new links and keeps bare /new on the editor', async () => {
 	const fetchMock = vi.fn(async () =>
 		Response.json({
 			ok: true,
@@ -33,11 +16,24 @@ test('account secrets loader keeps bare /new on the account editor path', async 
 		}),
 	)
 	vi.stubGlobal('fetch', fetchMock)
-	const result = await accountSecretsRouteLoader(
+
+	const redirected = await accountSecretsRouteLoader(
+		new URL(
+			'https://example.com/account/secrets/new?name=exampleApiKey&allowedHosts=api.example.com',
+		),
+		new AbortController().signal,
+	)
+	expect(redirected).toBeInstanceOf(RouteLoaderRedirect)
+	expect((redirected as RouteLoaderRedirect).to).toBe(
+		'/connect/secret-set?name=exampleApiKey&allowedHosts=api.example.com',
+	)
+	expect(fetchMock).not.toHaveBeenCalled()
+
+	const bare = await accountSecretsRouteLoader(
 		new URL('https://example.com/account/secrets/new'),
 		new AbortController().signal,
 	)
-	expect(result).toEqual({
+	expect(bare).toEqual({
 		accountSecrets: expect.objectContaining({ ok: true }),
 	})
 	expect(fetchMock).toHaveBeenCalled()

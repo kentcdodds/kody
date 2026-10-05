@@ -414,8 +414,8 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 	)
 })
 
-test('syncArtifactSourceSnapshot forwards requirePackageDocs false on bootstrap', async () => {
-	const bootstrap = setupSync(sourceRow(packageSource), {
+test('syncArtifactSourceSnapshot forwards bootstrap publish flags', async () => {
+	const docsExempt = setupSync(sourceRow(packageSource), {
 		bootstrapSource: bootstrapped('commit-bootstrap-docs'),
 	})
 	await expect(
@@ -425,13 +425,11 @@ test('syncArtifactSourceSnapshot forwards requirePackageDocs false on bootstrap'
 			files: { 'package.json': packageJson },
 		}),
 	).resolves.toBe('commit-bootstrap-docs')
-	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith(
+	expect(docsExempt.bootstrapSource).toHaveBeenCalledWith(
 		expect.objectContaining({ requirePackageDocs: false }),
 	)
-})
 
-test('syncArtifactSourceSnapshot forwards expectedPackageScope on bootstrap', async () => {
-	const bootstrap = setupSync(sourceRow(packageSource), {
+	const scoped = setupSync(sourceRow(packageSource), {
 		bootstrapSource: bootstrapped('commit-bootstrap-scope'),
 	})
 	await expect(
@@ -441,7 +439,7 @@ test('syncArtifactSourceSnapshot forwards expectedPackageScope on bootstrap', as
 			files: { 'package.json': packageJson },
 		}),
 	).resolves.toBe('commit-bootstrap-scope')
-	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith(
+	expect(scoped.bootstrapSource).toHaveBeenCalledWith(
 		expect.objectContaining({ expectedPackageScope: 'renamed-user' }),
 	)
 })

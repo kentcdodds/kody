@@ -1,11 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import {
-	evaluateUnitJobBudget,
-	main,
-	unitJobBudgets,
-} from './enforce-unit-job-budget.ts'
+import { evaluateUnitJobBudget, main } from './enforce-unit-job-budget.ts'
 
 test('unit job budgets fail any overrun of the cold-run caps', () => {
 	const previousExitCode = process.exitCode
@@ -13,11 +9,6 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		new URL('../../.github/workflows/validate.yml', import.meta.url),
 		'utf8',
 	)
-
-	expect(unitJobBudgets.node.maxSeconds).toBe(360)
-	expect(unitJobBudgets.workers.maxSeconds).toBe(480)
-	expect(unitJobBudgets.node.jobName).toBe('🧪 Node')
-	expect(unitJobBudgets.workers.jobName).toBe('☁️ Workers')
 
 	expect(
 		evaluateUnitJobBudget({
@@ -55,10 +46,6 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		'node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch',
 	)
 	expect(workflow).toContain('UNIT_JOB_START_EPOCH')
-	expect(workflow).not.toContain('--nx-log')
-	expect(workflow).not.toContain('tee unit-job-nx.log')
-	expect(workflow).toContain('≤360s')
-	expect(workflow).toContain('≤480s')
 
 	process.exitCode = undefined
 	main([

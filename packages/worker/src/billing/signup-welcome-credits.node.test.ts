@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	microUsdPerCent,
 	signupWelcomeCreditCents,
@@ -78,10 +78,6 @@ function walletBalance(sqlite: DatabaseSync, stableUserId: string) {
 		)?.balance ?? 0
 	)
 }
-
-afterEach(() => {
-	vi.restoreAllMocks()
-})
 
 test('failed creation-time grant keeps insert pending; login reconcile grants once without double-crediting', async () => {
 	const { sqlite, db } = createDb()
@@ -169,6 +165,7 @@ test('failed creation-time grant keeps insert pending; login reconcile grants on
 	expect(alreadyGranted.applied).toBe(false)
 	expect(ledgerCount(sqlite, stableUserId)).toBe(1)
 	expect(walletBalance(sqlite, stableUserId)).toBe(5_000_000)
+	consoleWarn.mockRestore()
 })
 
 test('reconcile does not grant when pending is unset (no pre-ship backfill)', async () => {
