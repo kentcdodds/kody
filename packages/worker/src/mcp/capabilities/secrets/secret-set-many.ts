@@ -62,10 +62,6 @@ const secretSetManyInputSchema = z
 		}
 	})
 
-const secretSetManyCapabilityInputJsonSchema = z.toJSONSchema(
-	secretSetManyInputSchema,
-) as Record<string, unknown>
-
 const secretSetManyOutputSchema = z.object({
 	ok: z.literal(true),
 	assertOnly: z.boolean(),
@@ -91,10 +87,10 @@ export const secretSetManyCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: secretSetManyCapabilityInputJsonSchema,
+		// Zod (not z.toJSONSchema): wrapper parse_input → McpCallerError (KODY-8T).
+		inputSchema: secretSetManyInputSchema,
 		outputSchema: secretSetManyOutputSchema,
-		async handler(args, ctx: CapabilityContext) {
-			const parsed = secretSetManyInputSchema.parse(args)
+		async handler(parsed, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const { storageContext } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,
