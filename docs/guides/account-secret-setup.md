@@ -14,8 +14,8 @@ secret value such as an API key or personal access token. That page has one job:
 set this secret. Secrets stay on the setup page; send the URL and wait until
 they confirm save.
 
-In-app "New secret" from `/account/secrets` still opens `/account/secrets/new`
-without query params. Prefill links that include `name` redirect to
+In-app "New secret" from `/account/secrets` opens `/account/secrets/new` without
+query params. Prefill links that include `name` redirect to
 `/connect/secret-set` so agent links do not land on the general secrets list.
 
 If the secret will power a downstream package or package app, open

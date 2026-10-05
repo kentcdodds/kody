@@ -39,6 +39,9 @@ Bearer on CapabilityProxy and package-graph routes.
 npx @kodycodes/cli auth bootstrap --code 'kody_bc_…'   # from cli_command
 ```
 
+Redeemed bootstrap tokens idle out after 2 weeks unused and expire after 3
+months.
+
 **Interactive humans** — `kody login` once per machine, then run `--local`
 without `KODY_API_TOKEN`.
 

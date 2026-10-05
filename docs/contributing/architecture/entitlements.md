@@ -338,8 +338,7 @@ creation as best-effort: person-account inserts set
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
 wallet loads call `reconcileSignupWelcomeCreditsIfPending`, which retries only
-when that flag is set (migration default 0, so pre-ship accounts are not
-backfilled). When Stripe later flips `stripe_credits_eligible` on,
+when that flag is set. When Stripe later flips `stripe_credits_eligible` on,
 `refreshStripePlanForUser` calls `forgiveCreditUsageBeforeUnlock` so Free-period
 usage above the Pro include is not charged against the welcome balance.
 

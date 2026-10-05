@@ -117,8 +117,7 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   a 2-week sliding idle TTL (`idle_ttl_seconds` 1209600) and a 3-month absolute
   lifetime (`max_lifetime_seconds` 7776000), not the shorter `tokenCreate`
   defaults above. CLI `whoami` / `GET /v1/tokens/current` surface sliding
-  `expires_at` (idle window), which is why a short idle TTL looked like a
-  15-minute credential.
+  `expires_at` (the idle window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.
