@@ -1096,6 +1096,80 @@ test('account secrets API loads selected secret values and deletes the selected 
 	)
 })
 
+test('account secrets save returns the new secret after a successful write', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([makeSecret('newApiKey')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'fresh-secret',
+	} as never)
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			name: 'newApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			description: 'API key',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::newApiKey',
+			name: 'newApiKey',
+			value: 'fresh-secret',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'newApiKey',
+			value: 'fresh-secret',
+			scope: 'user',
+		}),
+	)
+})
+
+test('account secrets save stays ok when metadata reload fails after write', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockRejectedValueOnce(new Error('metadata reload failed'))
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			name: 'newApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			description: 'API key',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::newApiKey',
+			name: 'newApiKey',
+			value: 'fresh-secret',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalled()
+})
+
 test('oauth_exchange maps provider failures and forwards exchange styles', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)

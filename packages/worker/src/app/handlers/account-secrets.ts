@@ -31,6 +31,7 @@ import {
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -1295,16 +1296,6 @@ async function handleSaveAction(input: {
 				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
 		}
-
-		const payload = await loadAccountSecretsData({
-			request: input.request,
-			env: input.env,
-			user: input.user,
-			packageOptions,
-			savedPackages,
-			selectedSecretId: nextId,
-		})
-		return jsonResponse(payload)
 	} catch (error) {
 		return jsonResponse(
 			{
@@ -1314,6 +1305,77 @@ async function handleSaveAction(input: {
 			},
 			400,
 		)
+	}
+
+	try {
+		const payload = await loadAccountSecretsData({
+			request: input.request,
+			env: input.env,
+			user: input.user,
+			packageOptions,
+			savedPackages,
+			selectedSecretId: nextId,
+		})
+		return jsonResponse(payload)
+	} catch {
+		// Write already succeeded. Do not report ok:false — a create retry with
+		// currentId null would 409 on the same name.
+		const now = new Date().toISOString()
+		const selectedSecret = {
+			id: nextId,
+			name,
+			scope,
+			description,
+			packageId: packageId ?? null,
+			packageTitle:
+				packageId == null
+					? null
+					: (packageOptions.find((option) => option.id === packageId)?.title ??
+						null),
+			allowedHosts,
+			allowedPackages,
+			createdAt: currentSecret?.createdAt ?? now,
+			updatedAt: now,
+			expiresAt:
+				expiresAt === undefined
+					? (currentSecret?.expiresAt ?? null)
+					: expiresAt,
+			ttlMs: currentSecret?.ttlMs ?? null,
+			value,
+		}
+		const fallback: AccountSecretsLoaderData = {
+			ok: true,
+			email: input.user.email,
+			packageOptions,
+			packages: savedPackages.map((entry) => ({
+				id: entry.id,
+				kodyId: entry.kodyId,
+				name: entry.name,
+			})),
+			secrets: [
+				...secrets.filter(
+					(secret) => secret.id !== currentId && secret.id !== nextId,
+				),
+				{
+					id: selectedSecret.id,
+					name: selectedSecret.name,
+					scope: selectedSecret.scope,
+					description: selectedSecret.description,
+					packageId: selectedSecret.packageId,
+					packageTitle: selectedSecret.packageTitle,
+					allowedHosts: selectedSecret.allowedHosts,
+					allowedPackages: selectedSecret.allowedPackages,
+					createdAt: selectedSecret.createdAt,
+					updatedAt: selectedSecret.updatedAt,
+					expiresAt: selectedSecret.expiresAt,
+					ttlMs: selectedSecret.ttlMs,
+				},
+			],
+			selectedSecret,
+			approval: null,
+			approvalError: null,
+		}
+		return jsonResponse(fallback)
 	}
 }
 
