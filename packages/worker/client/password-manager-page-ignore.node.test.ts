@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { passwordManagerPageIgnoreAttribute } from '#universal/password-manager-page-ignore.ts'
 import { syncPasswordManagerPageIgnore } from './password-manager-page-ignore.ts'
 
-test('sync adds the ignore on account pages and removes it on login', () => {
+test('sync adds the ignore off login and signup and removes it there', () => {
 	const attributes = new Map<string, string>()
 	const body = {
 		setAttribute(name: string, value: string) {
@@ -16,10 +16,16 @@ test('sync adds the ignore on account pages and removes it on login', () => {
 	globalThis.document = { body } as unknown as Document
 
 	try {
-		syncPasswordManagerPageIgnore('/account')
+		syncPasswordManagerPageIgnore('/admin/users')
 		expect(attributes.has(passwordManagerPageIgnoreAttribute)).toBe(true)
 
 		syncPasswordManagerPageIgnore('/login')
+		expect(attributes.has(passwordManagerPageIgnoreAttribute)).toBe(false)
+
+		syncPasswordManagerPageIgnore('/account')
+		expect(attributes.has(passwordManagerPageIgnoreAttribute)).toBe(true)
+
+		syncPasswordManagerPageIgnore('/signup')
 		expect(attributes.has(passwordManagerPageIgnoreAttribute)).toBe(false)
 	} finally {
 		globalThis.document = previous

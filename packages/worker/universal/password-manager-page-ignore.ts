@@ -1,4 +1,3 @@
-import { createMatcher } from 'remix/route-pattern/match'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -10,32 +9,18 @@ import { routes } from '#universal/routes.ts'
  */
 export const passwordManagerPageIgnoreAttribute = 'data-1p-ignore'
 
-const accountPrefix = routePattern(routes.account)
-const adminPrefix = routePattern(routes.admin)
-
 /**
- * Signed-in pages that render `AccountManagementShell` but do not live under
- * `/account` or `/admin`.
+ * The only documents where 1Password may offer to fill or save. Every other
+ * pathname, including account, admin, and client navigations, opts out.
  */
-const extraShellMatchers = [
-	createMatcher(routePattern(routes.pendingVerification)),
-	createMatcher(routePattern(routes.communityPackageApprovePublish)),
-	createMatcher(routePattern(routes.communityPackageApproveChanges)),
-]
+const passwordManagerFillablePathnames = new Set<string>([
+	routePattern(routes.login),
+	routePattern(routes.signup),
+])
 
-function isWithinPrefix(pathname: string, prefix: string) {
-	return pathname === prefix || pathname.startsWith(`${prefix}/`)
-}
-
-/**
- * True for signed-in account-shell documents. Login, signup, password reset,
- * 2FA, and OAuth authorize stay fillable.
- */
+/** True except on the login and signup documents. */
 export function shouldIgnorePasswordManagerPage(pathname: string) {
-	if (isWithinPrefix(pathname, accountPrefix)) return true
-	if (isWithinPrefix(pathname, adminPrefix)) return true
-	const url = new URL(pathname, 'http://localhost')
-	return extraShellMatchers.some((matcher) => matcher.match(url) != null)
+	return !passwordManagerFillablePathnames.has(pathname)
 }
 
 export function pathnameFromAppUrl(url: string | undefined) {
@@ -47,7 +32,7 @@ export function pathnameFromAppUrl(url: string | undefined) {
 	}
 }
 
-/** Props for `<body>` on an account-shell document. Empty on auth pages. */
+/** Props for `<body>`. Empty on login and signup. */
 export function passwordManagerPageIgnoreProps(pathname: string) {
 	if (!shouldIgnorePasswordManagerPage(pathname)) return {}
 	return { [passwordManagerPageIgnoreAttribute]: true as const }
