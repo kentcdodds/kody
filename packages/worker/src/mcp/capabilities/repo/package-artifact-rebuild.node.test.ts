@@ -433,3 +433,39 @@ test('undeclared bare-import rebuild failures rehydrate as UserCodeError; declar
 		return true
 	})
 })
+
+test('mixed caller and platform rebuild failures keep a platform cause for Sentry', async () => {
+	const { isUserCodeError, UserCodeError } =
+		await import('#worker/user-code-error.ts')
+	const callerMessage =
+		'Saved package module "src/a.ts" bundle still contains unresolved bare package imports after bundling (bundle.js: "remix/data-schema").'
+	const platformMessage = 'KV PUT failed: 500 Internal Server Error'
+	const run = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: 'mixed failures',
+		results: input.targets.map((target, index) =>
+			index === 0
+				? {
+						ok: false,
+						message: callerMessage,
+						callerFailure: true,
+						target,
+					}
+				: {
+						ok: false,
+						message: platformMessage,
+						target,
+					},
+		),
+	}))
+	setup({ targets: sampleTargets.slice(0, 2), run })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(Error)
+		expect(error).not.toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(false)
+		expect((error as Error).cause).toBeInstanceOf(Error)
+		expect((error as Error).cause).not.toBeInstanceOf(UserCodeError)
+		expect(String((error as Error).cause)).toContain(platformMessage)
+		return true
+	})
+})

@@ -130,6 +130,29 @@ test('undeclared bare package imports fail the dependencies check even when bund
 	expect(mockModule.buildKodyImportableModuleBundle).not.toHaveBeenCalled()
 })
 
+test('undeclared bare imports reached only through relative require still fail deferred checks', async () => {
+	const files = packageFiles(manifest('require-helper-remix'), {
+		'src/index.ts':
+			'const helper = require("./helper.ts")\nexport default async () => helper.run()\n',
+		'src/helper.ts':
+			'import { Schema } from "remix/data-schema"\nexport function run() { return Schema }\n',
+	})
+	const result = await runChecks(files, {
+		deferBundleCheckToRebuild: true,
+		env: {} as Env,
+		baseUrl: 'https://kody.dev',
+		userId: 'user-123',
+	})
+	expect(result.ok).toBe(false)
+	const dependencies = result.results.find(
+		(entry) => entry.kind === 'dependencies',
+	)
+	expect(dependencies?.ok).toBe(false)
+	expect(dependencies?.message).toMatch(
+		/undeclared bare package\(s\): "remix".*src\/index\.ts/,
+	)
+})
+
 test('declared bare package imports pass the dependencies check', async () => {
 	const files = packageFiles(
 		manifest('declared-remix', {}, { dependencies: { remix: '3.0.0' } }),

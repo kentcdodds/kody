@@ -143,7 +143,11 @@ function throwRebuildFailure(input: {
 	if (callerOnly) {
 		throw new UserCodeError(message, { cause: causes[0] })
 	}
-	throw new Error(message, { cause: causes[0] })
+	// Prefer a platform cause so a mixed wave (caller + platform) still
+	// reaches Sentry via isUserCodeError / beforeSend. Attaching a
+	// UserCodeError cause would drop the whole rebuild failure.
+	const platformCause = causes.find((cause) => !isUserCodeError(cause))
+	throw new Error(message, { cause: platformCause ?? causes[0] })
 }
 
 function rebuildFailureFromTargetResult(input: {

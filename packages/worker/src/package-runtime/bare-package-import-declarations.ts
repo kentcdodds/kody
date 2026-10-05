@@ -1,6 +1,7 @@
 import {
 	getPackageAppClientExternals,
 	normalizePackageWorkspacePath,
+	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
@@ -10,9 +11,16 @@ import {
 	isBarePackageImportSpecifier,
 } from './import-specifiers.ts'
 import {
-	collectReachableSourceFilePaths,
-	readRootPackage,
-} from './module-graph-workspace.ts'
+	dirname,
+	joinPath,
+	resolveWorkspaceSourceFilePath,
+} from './module-graph-paths.ts'
+import { readRootPackage } from './module-graph-workspace.ts'
+import {
+	packageSpecifierPrefix,
+	parseKodyPackageSpecifier,
+} from './package-import-resolution.ts'
+import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 
 export type PackageBundleImportTarget = {
 	path: string
@@ -88,6 +96,85 @@ function isCoveredByDeclaredExternal(
 	)
 }
 
+function resolveBundlerLocalImportPath(input: {
+	files: Record<string, string>
+	fromPath: string
+	specifier: string
+}) {
+	if (!input.specifier.startsWith('./') && !input.specifier.startsWith('../')) {
+		return null
+	}
+	return resolveWorkspaceSourceFilePath({
+		files: input.files,
+		path: joinPath(dirname(input.fromPath), input.specifier),
+	})
+}
+
+/**
+ * Reachable authored sources for the undeclared-bare-import gate. Follows the
+ * same literal edges `createWorker` resolves (`import` / `export … from`,
+ * `import()`, and `require()` / `import = require()`), including helpers only
+ * reached through relative `require('./helper')`.
+ */
+function collectBundlerReachableSourceFilePaths(input: {
+	files: Record<string, string>
+	entryPoint: string
+	rootPackage: ReturnType<typeof readRootPackage>
+}) {
+	const reachable = new Set<string>()
+	const stack = [
+		resolveWorkspaceSourceFilePath({
+			files: input.files,
+			path: input.entryPoint,
+		}) ?? normalizePackageWorkspacePath(input.entryPoint),
+	]
+	while (stack.length > 0) {
+		const filePath = stack.pop()
+		if (
+			!filePath ||
+			reachable.has(filePath) ||
+			isTypeDeclarationFilePath(filePath)
+		) {
+			continue
+		}
+		const source = input.files[filePath]
+		if (source == null) continue
+		reachable.add(filePath)
+		const specifiers = collectBundlerResolvedSpecifiers(source)
+		if (specifiers == null) continue
+		for (const specifier of specifiers) {
+			if (specifier.startsWith(packageSpecifierPrefix)) {
+				const parsed = parseKodyPackageSpecifier(specifier)
+				if (
+					input.rootPackage &&
+					parsed.packageName === input.rootPackage.manifest.name
+				) {
+					const exportPath = resolvePackageExportPath({
+						manifest: input.rootPackage.manifest,
+						exportName: parsed.exportName,
+					})
+					stack.push(
+						resolveWorkspaceSourceFilePath({
+							files: input.files,
+							path: exportPath,
+						}) ?? exportPath,
+					)
+				}
+				continue
+			}
+			const localPath = resolveBundlerLocalImportPath({
+				files: input.files,
+				fromPath: filePath,
+				specifier,
+			})
+			if (localPath && !reachable.has(localPath)) {
+				stack.push(localPath)
+			}
+		}
+	}
+	return reachable
+}
+
 /**
  * Walk each publishable entry's reachable graph and collect bare package names
  * that are neither declared in package.json#dependencies nor present under
@@ -112,7 +199,7 @@ export function collectUndeclaredBarePackageImports(input: {
 
 	for (const target of input.entryPoints) {
 		const entryPoint = normalizePackageWorkspacePath(target.path)
-		const reachable = collectReachableSourceFilePaths({
+		const reachable = collectBundlerReachableSourceFilePaths({
 			files: input.sourceFiles,
 			entryPoint,
 			rootPackage,
