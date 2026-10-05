@@ -274,6 +274,35 @@ test('validateBarePackageImportDeclarations fails closed when reachable source d
 	)
 })
 
+test('validateBarePackageImportDeclarations does not throw on malformed dynamic kody imports', () => {
+	const manifestJson = {
+		name: '@kody/dynamic-kody',
+		exports: { '.': './src/index.ts' },
+		kody: { id: 'dynamic-kody', description: 'Dynamic kody import package' },
+	} as AuthoredPackageJson
+	expect(() =>
+		validateBarePackageImportDeclarations({
+			manifest: manifestJson,
+			sourceFiles: {
+				'package.json': JSON.stringify(manifestJson),
+				'src/index.ts':
+					'export default async () => await import("kody:@not-a-valid")\n',
+			},
+			entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+		}),
+	).not.toThrow()
+	const missingExport = validateBarePackageImportDeclarations({
+		manifest: manifestJson,
+		sourceFiles: {
+			'package.json': JSON.stringify(manifestJson),
+			'src/index.ts':
+				'export default async () => await import("kody:@kody/dynamic-kody/missing")\n',
+		},
+		entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+	})
+	expect(missingExport.ok).toBe(true)
+})
+
 test('assertBundleHasNoUnresolvedBareImports throws UserCodeError only for undeclared packages', () => {
 	const modules = {
 		'bundle.js':

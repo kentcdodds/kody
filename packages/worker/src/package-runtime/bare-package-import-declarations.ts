@@ -195,21 +195,28 @@ function collectBundlerReachableSourceFilePaths(input: {
 		}
 		for (const specifier of specifiers) {
 			if (specifier.startsWith(packageSpecifierPrefix)) {
-				const parsed = parseKodyPackageSpecifier(specifier)
-				if (
-					input.rootPackage &&
-					parsed.packageName === input.rootPackage.manifest.name
-				) {
-					const exportPath = resolvePackageExportPath({
-						manifest: input.rootPackage.manifest,
-						exportName: parsed.exportName,
-					})
-					stack.push(
-						resolveWorkspaceSourceFilePath({
-							files: input.files,
-							path: exportPath,
-						}) ?? exportPath,
-					)
+				// Dynamic import()/require() of kody:@ can be malformed or name a
+				// missing self-export. Do not abort the dependencies gate — other
+				// check phases surface those caller errors.
+				try {
+					const parsed = parseKodyPackageSpecifier(specifier)
+					if (
+						input.rootPackage &&
+						parsed.packageName === input.rootPackage.manifest.name
+					) {
+						const exportPath = resolvePackageExportPath({
+							manifest: input.rootPackage.manifest,
+							exportName: parsed.exportName,
+						})
+						stack.push(
+							resolveWorkspaceSourceFilePath({
+								files: input.files,
+								path: exportPath,
+							}) ?? exportPath,
+						)
+					}
+				} catch {
+					// skip unresolvable self-package edges
 				}
 				continue
 			}
