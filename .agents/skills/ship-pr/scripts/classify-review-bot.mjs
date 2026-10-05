@@ -34,8 +34,44 @@ export const reviewBotLogins = [
  *   user: { login: string }
  *   body: string
  *   html_url?: string
+ *   in_reply_to_id?: number | null
  * }} ClassifiableComment
  */
+
+/**
+ * Human / kody-bot reply that cites a fixing commit or an intentional wontfix.
+ * Review-bot authors never count — they must not dismiss their own finding.
+ *
+ * @param {unknown} text
+ */
+export function isAddressingReviewReplyBody(text) {
+	const body = String(text ?? '')
+	return (
+		/\b(wont\s*fix|won't fix|will not fix)\b/i.test(body) ||
+		/\b(?:fixed|addressed|landed)\s+(?:in|by|with)\b/i.test(body) ||
+		/\b[0-9a-f]{7,40}\b/i.test(body)
+	)
+}
+
+/**
+ * @param {ClassifiableComment} comment
+ */
+export function isAddressingReviewReply(comment) {
+	if (reviewBotKind(comment.user?.login)) return false
+	return isAddressingReviewReplyBody(comment.body)
+}
+
+/**
+ * @param {{ commentId: number }} finding
+ * @param {Array<ClassifiableComment>} comments
+ */
+export function findingHasAddressingReply(finding, comments) {
+	return comments.some(
+		(comment) =>
+			comment.in_reply_to_id === finding.commentId &&
+			isAddressingReviewReply(comment),
+	)
+}
 
 /**
  * @param {unknown} text

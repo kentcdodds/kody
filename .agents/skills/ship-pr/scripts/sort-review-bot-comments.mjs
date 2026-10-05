@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process'
 import {
 	classifyReviewBotComments,
+	findingHasAddressingReply,
 	invalidReplyBody,
 	isShipPrBlocker,
 } from './classify-review-bot.mjs'
@@ -165,6 +166,12 @@ const topLevelComments = comments.filter((comment) => !comment.in_reply_to_id)
 const findings = classifyReviewBotComments(topLevelComments)
 const invalid = findings.filter((finding) => finding.verdict === 'invalid')
 const valid = findings.filter(isShipPrBlocker)
+const alreadyAddressed = valid.filter((finding) =>
+	findingHasAddressingReply(finding, comments),
+)
+const mustAddress = valid.filter(
+	(finding) => !findingHasAddressingReply(finding, comments),
+)
 
 let replied = 0
 let skippedAlreadyReplied = 0
@@ -185,6 +192,7 @@ if (!skipReplies) {
 		if (result.ok) replied += 1
 	}
 }
+skippedAlreadyReplied += alreadyAddressed.length
 
 const result = {
 	ok: true,
@@ -197,8 +205,9 @@ const result = {
 	invalid,
 	replied,
 	skippedAlreadyReplied,
-	/** ship-pr should address these (valid + unsure). */
-	mustAddress: valid,
+	alreadyAddressed,
+	/** ship-pr should address these (valid + unsure, not yet replied). */
+	mustAddress,
 }
 
 console.log(JSON.stringify(result, null, 2))

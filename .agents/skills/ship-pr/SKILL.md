@@ -65,12 +65,18 @@ node .agents/skills/ship-pr/scripts/sort-review-bot-comments.mjs --pr-url "$PR_U
 ```
 
 For **those three bots**, address `mustAddress` / `valid` (includes **unsure**;
-never auto-dismiss unsure). Invalid findings get a short kody-bot reply from the
+never auto-dismiss unsure). A human or kody-bot reply that cites the fixing
+commit or an intentional wontfix drops that thread from `mustAddress`
+(`alreadyAddressed`). Invalid findings get a short kody-bot reply from the
 helper (via `kody:@kentcdodds/github/request`, prefer-local CLI) and are not
 blockers. `mustAddress` is **not** exhaustive for every reviewer - still inspect
 and address valid **CodeRabbit** (and other non-sorted) feedback separately when
 those reviews ran (same CodeRabbit wait rules as above). See
 [repo health](../../../docs/contributing/repo-health.md).
+
+When linking leftover issues in the PR body, write `Related to #N` or a plain
+link. Never write `does not close #N` — GitHub still treats `close #N` as a
+closing keyword.
 
 ## Loop
 
