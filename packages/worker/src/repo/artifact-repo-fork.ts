@@ -230,7 +230,8 @@ export function shouldFallbackFromForkedArtifactPersist(error: unknown) {
  * Storage fork copies origin HEAD. `preparedFiles` may still be the listing
  * pin when no KV snapshot exists for HEAD. Prefer reading the copied dest HEAD
  * tree from origin before deleting the broken dest; refuse to publish a stale
- * prepared tree when dest HEAD is ahead of the prepared commit.
+ * prepared tree when dest HEAD is ahead of the prepared commit, and abort when
+ * dest HEAD cannot be resolved.
  */
 export async function resolveCommunityForkArtifactsGitFallbackTree(input: {
 	env: Env
@@ -251,7 +252,9 @@ export async function resolveCommunityForkArtifactsGitFallbackTree(input: {
 		)
 		destHeadCommit = destHead.commit
 	} catch {
-		destHeadCommit = null
+		// Cannot tell whether preparedFiles match the copied dest HEAD. Abort
+		// rather than risk publishing a stale listing-pin tree.
+		return null
 	}
 
 	if (!destHeadCommit || destHeadCommit === input.preparedOriginCommit) {

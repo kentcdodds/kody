@@ -323,6 +323,53 @@ test('resolveCommunityForkArtifactsGitFallbackTree keeps prepared files when des
 	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
 })
 
+test('resolveCommunityForkArtifactsGitFallbackTree keeps prepared files when dest HEAD resolves to null', async () => {
+	const { resolveCommunityForkArtifactsGitFallbackTree } =
+		await import('./artifact-repo-fork.ts')
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: null,
+	})
+	await expect(
+		resolveCommunityForkArtifactsGitFallbackTree({
+			env,
+			destRepoId: 'package-dest',
+			originRepoId: 'package-origin',
+			preparedOriginCommit: 'commit-pin',
+			preparedFiles: { 'package.json': janeManifest },
+			expectedPackageScope: 'jane',
+			targetKodyId: 'discord',
+			listingName: '@kody/discord',
+			targetName: '@jane/discord',
+		}),
+	).resolves.toEqual({
+		originCommit: 'commit-pin',
+		files: { 'package.json': janeManifest },
+	})
+})
+
+test('resolveCommunityForkArtifactsGitFallbackTree returns null when dest HEAD lookup throws', async () => {
+	const { resolveCommunityForkArtifactsGitFallbackTree } =
+		await import('./artifact-repo-fork.ts')
+	mockModule.resolveArtifactSourceHead.mockRejectedValue(
+		new Error('Artifacts listServerRefs failed: HTTP Error: 500'),
+	)
+	await expect(
+		resolveCommunityForkArtifactsGitFallbackTree({
+			env,
+			destRepoId: 'package-dest',
+			originRepoId: 'package-origin',
+			preparedOriginCommit: 'commit-pin',
+			preparedFiles: { 'package.json': janeManifest },
+			expectedPackageScope: 'jane',
+			targetKodyId: 'discord',
+			listingName: '@kody/discord',
+			targetName: '@jane/discord',
+		}),
+	).resolves.toBeNull()
+	expect(mockModule.readArtifactTreeAtCommit).not.toHaveBeenCalled()
+})
+
 test('resolveCommunityForkArtifactsGitFallbackTree rewrites origin HEAD when dest is ahead of the prepared pin', async () => {
 	const { resolveCommunityForkArtifactsGitFallbackTree } =
 		await import('./artifact-repo-fork.ts')
