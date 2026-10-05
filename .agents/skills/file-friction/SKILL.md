@@ -28,9 +28,13 @@ execute when available
 ([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). If `--local`
 cannot run, fix the environment so local works — Open API / MCP `api` cannot
 invoke this package export, and hosted MCP `execute` is banned. Pass `target` +
-`items`, one papercut each. Omit secrets. If there is nothing that meets the
-bar, skip the call. A single issue can use
-`kody:@kentcdodds/friction-log/create` (same `target` contract).
+`items`, one papercut each. Include `whatHappened`, `whatYouWanted`,
+`howToReproduce`, `cost`, and a short `preliminaryInvestigation` (what was
+already looked at). Pass `relevantFiles` only when paths look relevant; omit
+when none are known. Do not invent a root cause. Do not paste a full issue
+thread. Omit secrets. If there is nothing that meets the bar, skip the call. A
+single issue can use `kody:@kentcdodds/friction-log/create` (same `target`
+contract).
 
 ```javascript
 import fileFriction from 'kody:@kentcdodds/friction-log/file'
@@ -45,6 +49,8 @@ export default async function main() {
 				whatYouWanted: '...',
 				howToReproduce: '...',
 				cost: '...',
+				preliminaryInvestigation: 'what was already looked at',
+				relevantFiles: ['path/when/known.ts'],
 			},
 		],
 	})

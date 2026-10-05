@@ -143,9 +143,11 @@ prefer-local CLI execute when available
 cannot run, fix the environment so local works — Open API / MCP `api` cannot
 invoke this package export, and hosted MCP `execute` is banned. Always pass
 required `target: { host: 'github' | 'kody', repo: string }` plus `items` (one
-papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`, and
-`cost` when known. Platform leftovers use
-`{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
+papercut each). Include `whatHappened`, `whatYouWanted`, `howToReproduce`,
+`cost`, and a short `preliminaryInvestigation` (what was already looked at).
+Pass `relevantFiles` only when paths look relevant; omit when none are known. Do
+not invent a root cause. Do not paste a full issue thread. Platform leftovers
+use `{ host: 'github', repo: 'kentcdodds/kody' }`. Package-owned leftovers use
 `host: 'kody'` (wakes Patch). Omit secrets. If nothing meets the bar, skip the
 call or pass empty `items`. Do not invent papercuts. Do not use
 `gh issue create` or a raw GitHub issue POST.
@@ -166,6 +168,8 @@ export default async function main() {
 				whatYouWanted: '...',
 				howToReproduce: '...',
 				cost: '...',
+				preliminaryInvestigation: 'what was already looked at',
+				relevantFiles: ['path/when/known.ts'],
 			},
 		],
 	})

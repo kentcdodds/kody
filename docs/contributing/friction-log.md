@@ -129,6 +129,8 @@ export default async function main() {
 		whatYouWanted: '...',
 		howToReproduce: '...',
 		cost: '...',
+		preliminaryInvestigation: 'what was already looked at',
+		relevantFiles: ['path/when/known.ts'],
 	})
 }
 ```
@@ -146,6 +148,8 @@ export default async function main() {
 				whatYouWanted: '...',
 				howToReproduce: '...',
 				cost: '...',
+				preliminaryInvestigation: 'what was already looked at',
+				relevantFiles: ['path/when/known.ts'],
 			},
 		],
 	})
@@ -167,6 +171,7 @@ export default async function main() {
 				whatYouWanted: '...',
 				howToReproduce: '...',
 				cost: '...',
+				preliminaryInvestigation: 'what was already looked at',
 			},
 		],
 	})
@@ -179,7 +184,13 @@ export default async function main() {
 Write one issue per papercut (`./file` still opens one github issue — or one
 Patch wake — per `items` entry). Include what you were doing, the unexpected
 cost, the workaround, and enough reproduction to investigate without the
-original session. Omit secrets, tokens, and unrelated private content.
+original session. Also include a short **preliminary investigation**: what was
+already looked at, and `relevantFiles` when any paths look relevant. Do not
+invent a root cause. Do not require a file list when none is known. Keep that
+section short, not a second copy of a full issue thread. Structured `create` /
+`file` soft-skip when `preliminaryInvestigation` is missing (unless you pass a
+raw `body` that already carries the section). Omit secrets, tokens, and
+unrelated private content.
 
 ## Daily investigation
 
