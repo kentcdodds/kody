@@ -84,17 +84,31 @@ function formatQuotedList(values: ReadonlyArray<string>) {
 /**
  * Host Node builtins that Workers resolves under `nodejs_compat` without an
  * npm install (unprefixed `path`, `fs/promises`, …). Prefixed `node:` imports
- * are already excluded by `isBarePackageImportSpecifier`. This is a host
- * runtime affordance, not a framework special case.
+ * are already excluded by `isBarePackageImportSpecifier`. Package names are
+ * the unscoped root (`fs` covers `fs/promises`). This is a host runtime
+ * affordance, not a framework special case.
  */
 const nodeBuiltinPackageNames = new Set([
+	'_http_agent',
+	'_http_client',
+	'_http_common',
+	'_http_incoming',
+	'_http_outgoing',
+	'_http_server',
+	'_tls_common',
+	'_tls_wrap',
 	'assert',
 	'async_hooks',
 	'buffer',
 	'child_process',
+	'cluster',
+	'console',
+	'constants',
 	'crypto',
+	'dgram',
 	'diagnostics_channel',
 	'dns',
+	'domain',
 	'events',
 	'fs',
 	'http',
@@ -110,21 +124,36 @@ const nodeBuiltinPackageNames = new Set([
 	'punycode',
 	'querystring',
 	'readline',
+	'repl',
 	'stream',
 	'string_decoder',
+	'sys',
 	'timers',
 	'tls',
+	'trace_events',
 	'tty',
 	'url',
 	'util',
 	'v8',
 	'vm',
+	'wasi',
 	'worker_threads',
 	'zlib',
 ])
 
 export function isNodeBuiltinBarePackageName(packageName: string) {
 	return nodeBuiltinPackageNames.has(packageName)
+}
+
+/**
+ * Authored sources Babel can parse for import edges. Bundler-supported
+ * non-JS leaves (JSON, CSS, wasm, …) are reachable but not parsed here.
+ */
+function isBundlerParsedModuleSourcePath(filePath: string) {
+	return (
+		/\.(?:[cm]?[jt]sx?)$/i.test(filePath) &&
+		!isTypeDeclarationFilePath(filePath)
+	)
 }
 
 /**
@@ -188,6 +217,9 @@ function collectBundlerReachableSourceFilePaths(input: {
 		const source = input.files[filePath]
 		if (source == null) continue
 		reachable.add(filePath)
+		if (!isBundlerParsedModuleSourcePath(filePath)) {
+			continue
+		}
 		const specifiers = collectBundlerResolvedSpecifiers(source)
 		if (specifiers == null) {
 			unparseableFiles.add(filePath)
@@ -276,6 +308,7 @@ export function collectUndeclaredBarePackageImports(input: {
 			unparseableFiles.add(filePath)
 		}
 		for (const filePath of reachable.reachable) {
+			if (!isBundlerParsedModuleSourcePath(filePath)) continue
 			const source = input.sourceFiles[filePath]
 			if (source == null) continue
 			const specifiers = collectBundlerResolvedSpecifiers(source)

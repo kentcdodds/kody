@@ -247,7 +247,26 @@ test('validateBarePackageImportDeclarations allows unprefixed Node builtins with
 		sourceFiles: {
 			'package.json': JSON.stringify(manifestJson),
 			'src/index.ts':
-				'import path from "path"\nimport { Buffer } from "buffer"\nexport default async () => path.join("a", "b") + Buffer.byteLength("x")\n',
+				'import path from "path"\nimport { Buffer } from "buffer"\nimport { Console } from "console"\nexport default async () => path.join("a", "b") + Buffer.byteLength("x") + String(Console)\n',
+		},
+		entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
+	})
+	expect(result.ok).toBe(true)
+})
+
+test('validateBarePackageImportDeclarations allows reachable JSON leaves without parsing them as modules', () => {
+	const manifestJson = {
+		name: '@kody/json-leaf',
+		exports: { '.': './src/index.ts' },
+		kody: { id: 'json-leaf', description: 'JSON leaf package' },
+	} as AuthoredPackageJson
+	const result = validateBarePackageImportDeclarations({
+		manifest: manifestJson,
+		sourceFiles: {
+			'package.json': JSON.stringify(manifestJson),
+			'src/index.ts':
+				'import data from "./data.json"\nexport default async () => data\n',
+			'src/data.json': '{"ok":true}',
 		},
 		entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
 	})
