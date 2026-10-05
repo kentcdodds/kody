@@ -133,12 +133,17 @@ and attribution described above, never unrelated content.
 
 Open and triaged feedback remains until an admin resolves or dismisses it, or
 the submitting account is deleted. Resolved and dismissed feedback is removed
-365 days after its last update. The submitting user's account export includes
-the submission and status but redacts internal reviewer identity, notes, and
-timestamps. Account deletion removes any remaining submissions. Kody rechecks a
-queued submission immediately before invoking discovered admin subscribers, so
-deletion cancels delivery when it wins that race; it cannot recall a copy that
-was already posted.
+365 days after its last update. To check status later (including triaged, when
+no outcome email is sent), call `metaPlatformFeedbackGet` with the returned
+`feedback_id`, or `metaPlatformFeedbackList` for the signed-in user's
+submissions. Those reads return the same submitter-visible fields as account
+export (id, category, summary, details on get, status, created_at, updated_at)
+and never expose reviewer identity or admin notes. The submitting user's account
+export includes the submission and status but redacts internal reviewer
+identity, notes, and timestamps. Account deletion removes any remaining
+submissions. Kody rechecks a queued submission immediately before invoking
+discovered admin subscribers, so deletion cancels delivery when it wins that
+race; it cannot recall a copy that was already posted.
 
 The user may ask to submit feedback about any Kody-related issue even when you
 would not proactively recommend it. Use category `other` when no more specific

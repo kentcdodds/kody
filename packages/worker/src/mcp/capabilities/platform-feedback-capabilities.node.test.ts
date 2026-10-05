@@ -19,11 +19,15 @@ import { adminPlatformFeedbackGetCapability } from './admin/admin-platform-feedb
 import { adminPlatformFeedbackListCapability } from './admin/admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin/admin-platform-feedback-update.ts'
 import { platformFeedbackContentWarning } from './admin/platform-feedback-shared.ts'
+import { metaPlatformFeedbackGetCapability } from './meta/meta-platform-feedback-get.ts'
+import { metaPlatformFeedbackListCapability } from './meta/meta-platform-feedback-list.ts'
 import { metaPlatformFeedbackSubmitCapability } from './meta/meta-platform-feedback-submit.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getPlatformFeedbackForAdmin: vi.fn(),
+	getPlatformFeedbackForSubmitter: vi.fn(),
 	listPlatformFeedbackForAdmin: vi.fn(),
+	listPlatformFeedbackForSubmitter: vi.fn(),
 	queueSend: vi.fn(),
 	sendPlatformFeedbackOutcomeEmail: vi.fn(),
 	submitPlatformFeedback: vi.fn(),
@@ -61,8 +65,12 @@ vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
 		...actual,
 		getPlatformFeedbackForAdmin: (...args: Array<unknown>) =>
 			mockModule.getPlatformFeedbackForAdmin(...args),
+		getPlatformFeedbackForSubmitter: (...args: Array<unknown>) =>
+			mockModule.getPlatformFeedbackForSubmitter(...args),
 		listPlatformFeedbackForAdmin: (...args: Array<unknown>) =>
 			mockModule.listPlatformFeedbackForAdmin(...args),
+		listPlatformFeedbackForSubmitter: (...args: Array<unknown>) =>
+			mockModule.listPlatformFeedbackForSubmitter(...args),
 		submitPlatformFeedback: (...args: Array<unknown>) =>
 			mockModule.submitPlatformFeedback(...args),
 		updatePlatformFeedbackForAdmin: (...args: Array<unknown>) =>
@@ -213,6 +221,18 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		status: 'open',
 		created_at: '2026-07-19T00:00:00.000Z',
 	})
+	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
+		'metaPlatformFeedbackGet',
+	)
+	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
+		'metaPlatformFeedbackList',
+	)
+	expect(metaPlatformFeedbackGetCapability.keywords).toContain(
+		'status of my feedback',
+	)
+	expect(metaPlatformFeedbackListCapability.keywords).toContain(
+		'status of my feedback',
+	)
 
 	consoleError.mockImplementation(() => {})
 	mockModule.queueSend.mockRejectedValueOnce(new Error('Queue unavailable'))
@@ -488,4 +508,98 @@ test('admin platform feedback resolve and dismiss email the submitter without fa
 			error: expect.any(Error),
 		},
 	)
+})
+
+test('meta platform feedback get and list scope to the signed-in submitter and redact reviewer fields', async () => {
+	const owned = {
+		id: 'feedback-1',
+		category: 'friction' as const,
+		summary: 'Setup is confusing',
+		details: 'The setup flow does not explain the next action.',
+		status: 'resolved' as const,
+		createdAt: '2026-07-19T00:00:00.000Z',
+		updatedAt: '2026-07-19T02:00:00.000Z',
+	}
+	mockModule.getPlatformFeedbackForSubmitter.mockResolvedValueOnce(owned)
+	mockModule.getPlatformFeedbackForSubmitter.mockResolvedValueOnce(null)
+	mockModule.listPlatformFeedbackForSubmitter.mockResolvedValue({
+		total: 1,
+		page: 1,
+		pageSize: 20,
+		items: [
+			{
+				id: owned.id,
+				category: owned.category,
+				summary: owned.summary,
+				status: owned.status,
+				createdAt: owned.createdAt,
+				updatedAt: owned.updatedAt,
+			},
+		],
+	})
+
+	const context = createCapabilityContext({ userId: 'user-1' })
+	const got = await metaPlatformFeedbackGetCapability.handler(
+		{ feedback_id: 'feedback-1' },
+		context,
+	)
+	expect(mockModule.getPlatformFeedbackForSubmitter).toHaveBeenCalledWith({
+		db: expect.anything(),
+		feedbackId: 'feedback-1',
+		submitterUserId: 'user-1',
+	})
+	expect(got).toEqual({
+		id: 'feedback-1',
+		category: 'friction',
+		summary: 'Setup is confusing',
+		details: 'The setup flow does not explain the next action.',
+		status: 'resolved',
+		created_at: '2026-07-19T00:00:00.000Z',
+		updated_at: '2026-07-19T02:00:00.000Z',
+	})
+	expect(got).not.toHaveProperty('reviewed_by_user_id')
+	expect(got).not.toHaveProperty('reviewed_at')
+	expect(got).not.toHaveProperty('admin_note')
+
+	const notOwned = await metaPlatformFeedbackGetCapability.handler(
+		{ feedback_id: 'feedback-other' },
+		context,
+	)
+	expect(notOwned).toBeNull()
+	expect(mockModule.getPlatformFeedbackForSubmitter).toHaveBeenLastCalledWith({
+		db: expect.anything(),
+		feedbackId: 'feedback-other',
+		submitterUserId: 'user-1',
+	})
+
+	const listed = await metaPlatformFeedbackListCapability.handler(
+		{ status: 'resolved' },
+		context,
+	)
+	expect(mockModule.listPlatformFeedbackForSubmitter).toHaveBeenCalledWith({
+		db: expect.anything(),
+		submitterUserId: 'user-1',
+		page: undefined,
+		pageSize: undefined,
+		status: 'resolved',
+	})
+	expect(listed).toEqual({
+		total: 1,
+		page: 1,
+		page_size: 20,
+		feedback: [
+			{
+				id: 'feedback-1',
+				category: 'friction',
+				summary: 'Setup is confusing',
+				status: 'resolved',
+				created_at: '2026-07-19T00:00:00.000Z',
+				updated_at: '2026-07-19T02:00:00.000Z',
+			},
+		],
+	})
+	expect(listed.feedback[0]).not.toHaveProperty('details')
+	expect(listed.feedback[0]).not.toHaveProperty('admin_note')
+	expect(listed.feedback[0]).not.toHaveProperty('reviewed_by_user_id')
+	expect(listed.feedback[0]).not.toHaveProperty('reviewed_at')
 })

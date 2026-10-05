@@ -128,6 +128,8 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/account/waiting', 'waitingSummary'],
 		['GET', '/v1/account/export', 'accountExportManifest'],
 		['GET', '/v1/account/export/{section}', 'accountExportSection'],
+		['GET', '/v1/account/feedback', 'metaPlatformFeedbackList'],
+		['GET', '/v1/account/feedback/{feedback_id}', 'metaPlatformFeedbackGet'],
 		['POST', '/v1/account/feedback', 'metaPlatformFeedbackSubmit'],
 	]),
 	...capabilityRoutes('search', [

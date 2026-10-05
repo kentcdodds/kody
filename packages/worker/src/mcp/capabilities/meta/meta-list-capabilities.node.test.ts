@@ -51,6 +51,21 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 			(capability) => capability.name === 'metaListCapabilities',
 		),
 	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackGet',
+		),
+	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackList',
+		),
+	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackSubmit',
+		),
+	).toBe(true)
 
 	const packagesOnly = await metaListCapabilitiesCapability.handler(
 		{

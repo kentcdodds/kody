@@ -8,7 +8,9 @@ import {
 } from './repo.ts'
 import {
 	getPlatformFeedbackForAdmin,
+	getPlatformFeedbackForSubmitter,
 	listPlatformFeedbackForAdmin,
+	listPlatformFeedbackForSubmitter,
 	submitPlatformFeedback,
 	updatePlatformFeedbackForAdmin,
 } from './service.ts'
@@ -365,4 +367,87 @@ test('platform feedback accepts the cancellation category', async () => {
 			.prepare(`SELECT category FROM platform_feedback WHERE id = ?`)
 			.get(submitted.id),
 	).toEqual({ category: 'cancellation' })
+})
+
+test('submitter get and list are owner-scoped and omit reviewer fields', async () => {
+	const { db } = createPlatformFeedbackDb()
+	const owned = await submit(db, 'user-a', {
+		summary: 'Owned feedback',
+		details: 'Owned details for status checks.',
+	})
+	const other = await submit(db, 'user-b', {
+		summary: 'Other user feedback',
+		details: 'Should not be readable by user-a.',
+	})
+	await review(db, owned.id, 'admin-a', 'resolve', 'Internal note')
+	await review(db, other.id, 'admin-a', 'triage', 'Other note')
+
+	const got = await getPlatformFeedbackForSubmitter({
+		db,
+		feedbackId: owned.id,
+		submitterUserId: 'user-a',
+	})
+	expect(got).toEqual({
+		id: owned.id,
+		category: 'friction',
+		summary: 'Owned feedback',
+		details: 'Owned details for status checks.',
+		status: 'resolved',
+		createdAt: owned.createdAt,
+		updatedAt: expect.any(String),
+	})
+	expect(got).not.toHaveProperty('reviewedByUserId')
+	expect(got).not.toHaveProperty('reviewedAt')
+	expect(got).not.toHaveProperty('adminNote')
+	expect(got).not.toHaveProperty('submitterUserId')
+
+	expect(
+		await getPlatformFeedbackForSubmitter({
+			db,
+			feedbackId: other.id,
+			submitterUserId: 'user-a',
+		}),
+	).toBeNull()
+	expect(
+		await getPlatformFeedbackForSubmitter({
+			db,
+			feedbackId: 'missing-feedback',
+			submitterUserId: 'user-a',
+		}),
+	).toBeNull()
+
+	const listed = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+	})
+	expect(listed).toMatchObject({ total: 1, page: 1, pageSize: 20 })
+	expect(listed.items).toEqual([
+		{
+			id: owned.id,
+			category: 'friction',
+			summary: 'Owned feedback',
+			status: 'resolved',
+			createdAt: owned.createdAt,
+			updatedAt: expect.any(String),
+		},
+	])
+	expect(listed.items[0]).not.toHaveProperty('details')
+	expect(listed.items[0]).not.toHaveProperty('adminNote')
+	expect(listed.items[0]).not.toHaveProperty('reviewedByUserId')
+	expect(listed.items.map((item) => item.id)).not.toContain(other.id)
+
+	const openOnly = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+		status: 'open',
+	})
+	expect(openOnly).toMatchObject({ total: 0, page: 1, items: [] })
+
+	const resolvedOnly = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+		status: 'resolved',
+	})
+	expect(resolvedOnly.total).toBe(1)
+	expect(resolvedOnly.items[0]?.id).toBe(owned.id)
 })
