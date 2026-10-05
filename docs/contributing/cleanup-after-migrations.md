@@ -75,8 +75,10 @@ Commands, queries, or deploy evidence that prove the drop is safe.
 PR that added the leftover.
 ```
 
-Link the issue from the introducing PR description. If a runbook exists, link
-both ways. When the cleanup later lands, close the issue.
+Link the issue from the introducing PR description with `Related to #N` or a
+plain link. Never write `does not close #N` — GitHub still treats `close #N` as
+a closing keyword even after "does not". If a runbook exists, link both ways.
+When the cleanup later lands, close the issue.
 
 Create with `gh issue create` from a repo checkout, or
 `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues`.
