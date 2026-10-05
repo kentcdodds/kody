@@ -37,11 +37,14 @@ npx @kodycodes/cli execute --local \
   --params '{"prUrl":"https://github.com/kentcdodds/kody/pull/123","risk":"medium","applySafeAutomations":true}'
 ```
 
-1. **Tick.** `applySafeAutomations` marks the PR ready, triggers Bugbot as
-   kentcdodds (medium/high, once per head SHA), and replies "invalid" on sorted
-   invalid bot findings.
-2. **Read** `checklist`, `done`, `remaining`. Only the focus step carries
-   `details`; `exampleInvokes` are ready-to-run commands.
+1. **Tick.** First tick is full (`checklist` + focus details). Re-tick
+   `exampleInvokes` pass `brief: true` (compact: no checklist/prose). Pass
+   `applySafeAutomations` to mark ready, trigger Bugbot as kentcdodds
+   (medium/high, once per head SHA), and reply "invalid" on sorted invalid bot
+   findings.
+2. **Read** `checklist` (full ticks only), `done`, `remaining`, and
+   `exit.reportStatus` (`Pending` until `Shipped` / `Parked` / `Blocked`). Only
+   the focus step carries `details`; `exampleInvokes` are ready-to-run commands.
 3. **Decide.** You own the call on CI and AI feedback: fix + push and reply
    `Fixed in <sha>: …` (`./reply-review`), reply with wontfix reasoning, or
    record a 7-day `./decide` (`ignored | skipped | wontfix | accepted`, reason
@@ -49,14 +52,15 @@ npx @kodycodes/cli execute --local \
    or a step (`merge` skipped = park).
 4. **Wait** when `exit.status` is `waiting`: about `pollAfterSeconds`, or end
    the turn. Do not tight-loop or code-thrash.
-5. **Tick again** until `exit.done`.
+5. **Tick again** (prefer the printed re-tick with `brief: true`) until
+   `exit.done`.
 
 When tick focuses `merge`, use `./merge` (squash, preflighted, pinned to the
-head SHA). When it focuses `friction`, file leftovers with
-`kody:@kentcdodds/friction-log/file` per the
-[friction log](../../../docs/contributing/friction-log.md), then decide step
-`friction`. When it focuses `report`, pass the Discord fields to
-`./send-summary`:
+head SHA). When it focuses `friction`, file leftovers per
+[file-friction](../file-friction/SKILL.md) /
+`kody:@kentcdodds/friction-log/file`, then decide step `friction`. When it
+focuses `report`, pass the Discord fields to `./send-summary` (`status` defaults
+from the PR: merged → Shipped, else Parked):
 
 - `title` — human headline of the change (not `ship owner/repo#N`).
 - `difficulty` — `Easy | Medium | Hard` (not risk).
