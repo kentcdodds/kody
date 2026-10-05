@@ -403,9 +403,9 @@ function buildSavedPackageRefQuery(input: {
 	}
 	return {
 		where: `saved_packages.user_id = ?
-				AND (saved_packages.id = ? OR ${savedPackageSlugSql} = ?)`,
-		orderBy: `CASE WHEN saved_packages.id = ? THEN 0 ELSE 1 END`,
-		values: [input.userId, ref, slug, ref],
+				AND (saved_packages.id IN (?, ?) OR ${savedPackageSlugSql} = ?)`,
+		orderBy: `CASE WHEN saved_packages.id IN (?, ?) THEN 0 ELSE 1 END`,
+		values: [input.userId, ref, slug, slug, ref, slug],
 	}
 }
 

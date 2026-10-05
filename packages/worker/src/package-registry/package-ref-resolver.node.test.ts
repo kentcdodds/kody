@@ -115,9 +115,9 @@ test('a UUID match wins over a package whose slug spells the same string', async
 		userId: ownerId,
 		name: `@owner/${notesId}`,
 	})
-	await expect(idOf(db, { userId: ownerId, ref: notesId })).resolves.toBe(
-		notesId,
-	)
+	for (const ref of [notesId, notesId.toUpperCase()]) {
+		await expect(idOf(db, { userId: ownerId, ref })).resolves.toBe(notesId)
+	}
 	await expect(
 		idOf(db, { userId: ownerId, ref: notesId, match: 'slug' }),
 	).resolves.toBe('uuid-slug')
