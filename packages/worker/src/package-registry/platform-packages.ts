@@ -1,8 +1,4 @@
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-	listSavedPackagesByUserId,
-} from './repo.ts'
+import { resolveSavedPackageRef, listSavedPackagesByUserId } from './repo.ts'
 import { type SavedPackageRecord } from './types.ts'
 
 type PlatformAccountRef = {
@@ -73,15 +69,10 @@ export async function findPlatformPackageByRef(
 ): Promise<PlatformPackageByRef | null> {
 	const accounts = await listPlatformAccounts(db)
 	for (const account of accounts) {
-		const record =
-			(await getSavedPackageById(db, {
-				userId: account.stableUserId,
-				packageId: input.idOrKodyId,
-			})) ??
-			(await getSavedPackageByKodyId(db, {
-				userId: account.stableUserId,
-				kodyId: input.idOrKodyId,
-			}))
+		const record = await resolveSavedPackageRef(db, {
+			userId: account.stableUserId,
+			ref: input.idOrKodyId,
+		})
 		if (record && !record.hidden && !record.isPrivate) {
 			return {
 				record,

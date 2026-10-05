@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 		body: { result: { ok: true } },
 	})),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	getInternalEmailMessageById: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: mocks.getSavedPackageById,
-	getSavedPackageByKodyId: mocks.getSavedPackageByKodyId,
+	resolveSavedPackageRef: mocks.resolveSavedPackageRef,
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
@@ -127,7 +127,7 @@ function dispatch(
 }
 
 function mockDeclaredSubscription(topic = inboundEmailReceiptTopic) {
-	mocks.getSavedPackageByKodyId.mockResolvedValue(savedPackage)
+	mocks.resolveSavedPackageRef.mockResolvedValue(savedPackage)
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@user/demo',
@@ -300,8 +300,9 @@ test('packageSubscriptionDispatch resolves delegated package scope like packageG
 		ctx.callerContext.user,
 		'kody',
 	)
-	expect(mocks.getSavedPackageByKodyId).toHaveBeenCalledWith(ctx.env.APP_DB, {
+	expect(mocks.resolveSavedPackageRef).toHaveBeenCalledWith(ctx.env.APP_DB, {
 		userId: 'platform-user',
-		kodyId: 'demo',
+		ref: 'demo',
+		match: 'slug',
 	})
 })

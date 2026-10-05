@@ -44,7 +44,7 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		insertCommunityReport: vi.fn(),
 		getCommunityReportById: vi.fn(),
 		readCommunitySnapshot: vi.fn(),
-		getSavedPackageByKodyId: vi.fn(),
+		resolveSavedPackageRef: vi.fn(),
 		getSavedPackageByName: vi.fn(),
 		updateSavedPackage: vi.fn(),
 		ensureEntitySource: vi.fn(),
@@ -66,7 +66,7 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		deleteUserScopedArtifactRepo: vi.fn(async () => false),
 		insertCommunityFork: vi.fn(),
 		deleteCommunityForksForPackage: vi.fn(async () => 0),
-		deletePackageKodyIdRedirects: vi.fn(async () => undefined),
+		deletePackageSlugRedirects: vi.fn(async () => undefined),
 		invalidateCommunityPublicCache: vi.fn(),
 		deleteCommunityListing: vi.fn(),
 		deleteCommunityRatingsByListingId: vi.fn(),
@@ -97,7 +97,7 @@ vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () =>
 	pickMocks(
 		'getSavedPackageById',
-		'getSavedPackageByKodyId',
+		'resolveSavedPackageRef',
 		'getSavedPackageByName',
 		'updateSavedPackage',
 	),
@@ -167,7 +167,7 @@ vi.mock('./repo.ts', async (importOriginal) => {
 })
 vi.mock('./package-url.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof PackageUrl>()),
-	...pickMocks('deletePackageKodyIdRedirects'),
+	...pickMocks('deletePackageSlugRedirects'),
 }))
 vi.mock('#app/data-cache.ts', () => pickMocks('invalidateCommunityPublicCache'))
 vi.mock('./snapshot.ts', () =>
@@ -385,7 +385,7 @@ function mockForkable(
 		createdAt: '2026-07-01T00:00:00.000Z',
 		files,
 	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(null)
 	mockModule.getSavedPackageByName.mockResolvedValue(null)
 	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
 	mockModule.ensureEntitySource.mockResolvedValue({
@@ -1139,7 +1139,7 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 			sourceId: 'fork-source-1',
 		},
 	)
-	expect(mockModule.deletePackageKodyIdRedirects).toHaveBeenCalledWith({
+	expect(mockModule.deletePackageSlugRedirects).toHaveBeenCalledWith({
 		db: expect.anything(),
 		userId: 'user-2',
 		packageId: expect.any(String),
@@ -1170,7 +1170,7 @@ test('forkCommunityListing removes the community_forks row when persist fails af
 			sourceId: 'fork-source-1',
 		},
 	)
-	expect(mockModule.deletePackageKodyIdRedirects).toHaveBeenCalledWith({
+	expect(mockModule.deletePackageSlugRedirects).toHaveBeenCalledWith({
 		db: expect.anything(),
 		userId: 'user-2',
 		packageId: expect.any(String),
@@ -1498,9 +1498,9 @@ test('inspectCommunityForkAdoption reports adoption state without writing and re
 	await expect(inspect('@other/discord-gateway-fork')).rejects.toSatisfy(
 		isActionError('does not match the acting owner "@jane"'),
 	)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(forkedSavedPackage())
+	mockModule.resolveSavedPackageRef.mockResolvedValue(forkedSavedPackage())
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(forkRecord())
 	await expect(inspect('discord-gateway-fork')).resolves.toEqual({
 		packageId: 'package-fork-1',

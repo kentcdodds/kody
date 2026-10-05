@@ -20,7 +20,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
@@ -289,9 +289,10 @@ async function resolveOwnedSavedPackage(input: {
 					packageId: input.packageId,
 				})
 			}
-			return await getSavedPackageByKodyId(input.db, {
+			return await resolveSavedPackageRef(input.db, {
 				userId: input.userId,
-				kodyId: requestedKodyId ?? '',
+				ref: requestedKodyId ?? '',
+				match: 'slug',
 			})
 		},
 	})

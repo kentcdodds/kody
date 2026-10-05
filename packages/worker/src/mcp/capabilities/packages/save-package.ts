@@ -33,7 +33,7 @@ import {
 import { injectDefaultPrivateField } from '#worker/package-registry/package-private.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 	getSavedPackageByName,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
@@ -238,14 +238,16 @@ export const savePackageCapability = defineDomainCapability(
 							userId: owner.ownerUserId,
 							packageId: args.package_id,
 						})
-					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
+					: await resolveSavedPackageRef(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: lookupManifest.kody.id,
+							ref: lookupManifest.kody.id,
+							match: 'slug',
 						})
 			if (!existing && args.package_id !== undefined) {
-				const byKodyId = await getSavedPackageByKodyId(ctx.env.APP_DB, {
+				const byKodyId = await resolveSavedPackageRef(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,
-					kodyId: lookupManifest.kody.id,
+					ref: lookupManifest.kody.id,
+					match: 'slug',
 				})
 				if (byKodyId) {
 					throw new McpCallerError(

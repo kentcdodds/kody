@@ -5,7 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	listPackageInvocationTokensByPackageId: vi.fn(),
 	getPackageInvocationTokenById: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 }))
 
@@ -19,8 +19,8 @@ vi.mock('#worker/package-invocations/repo.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
@@ -65,7 +65,7 @@ test('package invocation token capabilities return package-scoped metadata witho
 	mockModule.listPackageInvocationTokensByPackageId.mockReset()
 	mockModule.getPackageInvocationTokenById.mockReset()
 	mockModule.getSavedPackageById.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
+	mockModule.resolveSavedPackageRef.mockReset()
 	mockModule.resolvePackageOwnerContext.mockReset()
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
 		ownerUserId: 'user-1',
@@ -159,7 +159,7 @@ test('package invocation token capabilities return package-scoped metadata witho
 	})
 
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'discord-gateway',
 	})
@@ -167,12 +167,12 @@ test('package invocation token capabilities return package-scoped metadata witho
 		{ package_id: 'discord-gateway' },
 		context,
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', kodyId: 'discord-gateway' },
+		{ userId: 'user-1', ref: 'discord-gateway', match: 'slug' },
 	)
 
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(null)
 	await expect(
 		packageInvocationTokenListCapability.handler(
 			{ package_id: 'missing' },
@@ -181,7 +181,7 @@ test('package invocation token capabilities return package-scoped metadata witho
 	).rejects.toThrow(/not found/i)
 
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'package-1',
 		kodyId: 'discord-gateway',
 	})
@@ -189,9 +189,9 @@ test('package invocation token capabilities return package-scoped metadata witho
 		{ package_id: '@user/discord-gateway' },
 		context,
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenLastCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenLastCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', kodyId: 'discord-gateway' },
+		{ userId: 'user-1', ref: 'discord-gateway', match: 'slug' },
 	)
 
 	await expect(

@@ -10,7 +10,7 @@ import { normalizePackageNameInput } from '#worker/package-registry/package-name
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import {
 	packageInvocationTokenMetadataSchema,
@@ -33,9 +33,10 @@ async function resolveSavedPackageByName(
 	} catch (error) {
 		throw new McpCallerError(getErrorMessage(error), { cause: error })
 	}
-	return await getSavedPackageByKodyId(env.APP_DB, {
+	return await resolveSavedPackageRef(env.APP_DB, {
 		userId: owner.ownerUserId,
-		kodyId,
+		ref: kodyId,
+		match: 'slug',
 	})
 }
 

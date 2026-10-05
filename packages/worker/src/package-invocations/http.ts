@@ -11,7 +11,7 @@ import {
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { waitUntilFromExecutionContext } from './common.ts'
 import {
 	getActivePackageInvocationTokenForPackage,
@@ -267,9 +267,11 @@ export async function handlePackageInvocationApiRequest(
 		})
 		return notFoundResponse()
 	}
-	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+	const savedPackage = await resolveSavedPackageRef(env.APP_DB, {
 		userId: routeUser.mcpUserId,
-		kodyId: route.kodyId,
+		ref: route.kodyId,
+		match: 'slug',
+		followRedirects: true,
 	})
 	if (!savedPackage) {
 		logPackageInvocationAudit(ctx, {
@@ -391,7 +393,7 @@ export async function handlePackageInvocationApiRequest(
 			}),
 			token: tokenScope,
 			request: {
-				packageIdOrKodyId: route.kodyId,
+				packageIdOrKodyId: savedPackage.id,
 				exportName: route.exportName,
 				params: body.params,
 				idempotencyKey: body.idempotencyKey,

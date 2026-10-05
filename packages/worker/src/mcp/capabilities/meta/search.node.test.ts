@@ -47,7 +47,7 @@ const mockModule = vi.hoisted(() => ({
 		}),
 	),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	listSavedPackagesByUserId: vi.fn<
 		typeof packageRepo.listSavedPackagesByUserId
 	>(async () => []),
@@ -105,12 +105,12 @@ vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	listSavedPackagesByUserId: (
 		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
 	) => mockModule.listSavedPackagesByUserId(...args),
@@ -253,7 +253,7 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		.mockResolvedValueOnce(createSavedPackage())
 		.mockResolvedValueOnce(createSavedPackage(true))
 		.mockResolvedValueOnce(createSavedPackage(true))
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackage())
+	mockModule.resolveSavedPackageRef.mockResolvedValueOnce(createSavedPackage())
 	const context = createContext({ userId: 'user-1', username: 'user' })
 
 	const byAccountUrl = await searchCapability.handler(
@@ -348,11 +348,12 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			packageId,
 		},
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
 		{},
 		{
 			userId: 'user-1',
-			kodyId: 'daily-notes',
+			ref: 'daily-notes',
+			match: 'slug',
 		},
 	)
 	expect(mockModule.getCapabilityRegistryForContext).toHaveBeenCalledTimes(1)

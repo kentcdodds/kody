@@ -8,7 +8,7 @@ export const packageInvocationsRepoMockModule = (() => {
 	const loadPackageManifestBySourceId = vi.fn()
 	return {
 		getSavedPackageById: vi.fn(),
-		getSavedPackageByKodyId: vi.fn(),
+		resolveSavedPackageRef: vi.fn(),
 		getSavedPackageByName: vi.fn(),
 		listSavedPackagesByUserId: vi.fn(),
 		loadPackageManifestBySourceId,
@@ -484,7 +484,7 @@ export function createToken(
 
 export function seedPackageResolution() {
 	packageInvocationsRepoMockModule.getSavedPackageById.mockResolvedValue(null)
-	packageInvocationsRepoMockModule.getSavedPackageByKodyId.mockResolvedValue({
+	packageInvocationsRepoMockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'pkg-1',
 		userId: 'user-123',
 		name: '@kentcdodds/discord-gateway',
@@ -825,11 +825,11 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 		],
 	])
 	packageInvocationsRepoMockModule.getSavedPackageById.mockResolvedValue(null)
-	packageInvocationsRepoMockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: unknown, input: { userId: string; kodyId: string }) => {
+	packageInvocationsRepoMockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { userId: string; ref: string }) => {
 			expect(input.userId).toBe('user-123')
-			if (input.kodyId === gateway.kodyId) return gateway
-			if (input.kodyId === subscriber.kodyId) return subscriber
+			if (input.ref === gateway.kodyId) return gateway
+			if (input.ref === subscriber.kodyId) return subscriber
 			return null
 		},
 	)

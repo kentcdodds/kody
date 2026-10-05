@@ -10,10 +10,7 @@ import {
 	toJoinedIntegrationConfig,
 } from '#worker/integrations/service.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
-import {
-	getSavedPackageWithCommunityProvenanceById,
-	getSavedPackageWithCommunityProvenanceByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRefWithCommunityProvenance } from '#worker/package-registry/repo.ts'
 import { findPlatformPackageByRef } from '#worker/package-registry/platform-packages.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 
@@ -125,15 +122,13 @@ export async function resolveEntityDetail(input: {
 
 	if (ref.type === 'package') {
 		const env = input.agent.getEnv()
-		const loadedOwnRecord =
-			(await getSavedPackageWithCommunityProvenanceById(env.APP_DB, {
+		const loadedOwnRecord = await resolveSavedPackageRefWithCommunityProvenance(
+			env.APP_DB,
+			{
 				userId: input.userId,
-				packageId: ref.id,
-			})) ??
-			(await getSavedPackageWithCommunityProvenanceByKodyId(env.APP_DB, {
-				userId: input.userId,
-				kodyId: ref.id,
-			}))
+				ref: ref.id,
+			},
+		)
 		const [ownRecord] = loadedOwnRecord
 			? await applySavedPackageForkListingAncestry({
 					env,

@@ -63,7 +63,7 @@ const mockModule = vi.hoisted(() => ({
 		}),
 	),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	listSavedPackagesByUserId: vi.fn<
 		typeof PackageRepo.listSavedPackagesByUserId
 	>(async () => []),
@@ -122,12 +122,18 @@ vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: async (
+		db: unknown,
+		input: { userId: string; ref: string },
+	) =>
+		(await mockModule.getSavedPackageById(db, {
+			userId: input.userId,
+			packageId: input.ref,
+		})) ?? (await mockModule.resolveSavedPackageRef(db, input)),
 	listSavedPackagesByUserId: (
 		...args: Parameters<typeof PackageRepo.listSavedPackagesByUserId>
 	) => mockModule.listSavedPackagesByUserId(...args),
@@ -677,7 +683,7 @@ test('search tool treats exact package identity as authoritative and still resol
 		{},
 		{ userId: 'user-1', packageId: exactPackageId },
 	)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 })
 
 test('search tool batches entity detail with per-ref isolation and preserves single-entity shape', async () => {

@@ -3,11 +3,11 @@ import { expect, test } from 'vitest'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import {
-	deletePackageKodyIdRedirects,
-	releasePackageKodyIdRedirect,
+	deletePackageSlugRedirects,
+	releasePackageSlugRedirect,
 	resolveCommunityPackageUrl,
 	resolvePackagePageUrl,
-	retirePackageKodyId,
+	retirePackageSlug,
 	retireUsername,
 } from './package-url.ts'
 
@@ -99,19 +99,42 @@ function resolvePage(username: string, kodyId: string) {
 	return resolvePackagePageUrl({ db: env.APP_DB, username, kodyId })
 }
 
-function retireKodyId(
+function retireSlug(
 	owner: Owner,
 	packageId: string,
-	oldKodyId: string,
-	newKodyId: string,
+	oldSlug: string,
+	newSlug: string,
 ) {
-	return retirePackageKodyId({
+	return retirePackageSlug({
 		db: env.APP_DB,
 		userId: owner.userId,
 		packageId,
-		oldKodyId,
-		newKodyId,
+		oldSlug,
+		newSlug,
 	})
+}
+
+/** A local rename moves the name leaf (and the derived `kody_id` copy). */
+async function renamePackage(packageId: string, slug: string) {
+	await runSql(
+		`UPDATE saved_packages SET name = ?, kody_id = ? WHERE id = ?`,
+		`@owner/${slug}`,
+		slug,
+		packageId,
+	)
+}
+
+async function countRedirects(packageId: string) {
+	const counts: Record<string, number> = {}
+	for (const table of ['package_slug_redirects', 'package_kody_id_redirects']) {
+		const row = await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM ${table} WHERE package_id = ?`,
+		)
+			.bind(packageId)
+			.first<{ count: number }>()
+		counts[table] = row?.count ?? 0
+	}
+	return counts
 }
 
 test('canonical pairs resolve, miss, delist, and case-correct to the listing', async () => {
@@ -193,15 +216,12 @@ test('retired usernames redirect through rename chains until a reclaim wins', as
 
 test('retired kody ids follow the package, die when unpublished, and clear on claim or delete', async () => {
 	const pkg = await createPublishedPackage()
-	await runSql(
-		`UPDATE saved_packages SET kody_id = 'devin-two' WHERE id = ?`,
-		pkg.packageId,
-	)
+	await renamePackage(pkg.packageId, 'devin-two')
 	await runSql(
 		`UPDATE community_listings SET kody_id = 'devin-two' WHERE id = ?`,
 		pkg.listingId,
 	)
-	await retireKodyId(pkg, pkg.packageId, pkg.kodyId, 'devin-two')
+	await retireSlug(pkg, pkg.packageId, pkg.kodyId, 'devin-two')
 	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
 		kind: 'redirect',
 		listingId: pkg.listingId,
@@ -210,47 +230,37 @@ test('retired kody ids follow the package, die when unpublished, and clear on cl
 	})
 
 	const deadEnd = await createPublishedPackage('dead-end')
-	await runSql(
-		`UPDATE saved_packages SET kody_id = 'dead-end-two' WHERE id = ?`,
-		deadEnd.packageId,
-	)
+	await renamePackage(deadEnd.packageId, 'dead-end-two')
 	await runSql(`DELETE FROM community_listings WHERE id = ?`, deadEnd.listingId)
-	await retireKodyId(deadEnd, deadEnd.packageId, deadEnd.kodyId, 'dead-end-two')
+	await retireSlug(deadEnd, deadEnd.packageId, deadEnd.kodyId, 'dead-end-two')
 	await expect(resolve(deadEnd.username, deadEnd.kodyId)).resolves.toBeNull()
 
 	const released = await createPublishedPackage('release-me')
-	await retireKodyId(
-		released,
-		released.packageId,
-		'release-old',
-		released.kodyId,
-	)
-	await deletePackageKodyIdRedirects({
+	await retireSlug(released, released.packageId, 'release-old', released.kodyId)
+	await deletePackageSlugRedirects({
 		db: env.APP_DB,
 		userId: released.userId,
 		packageId: released.packageId,
 	})
-	const remaining = await env.APP_DB.prepare(
-		`SELECT COUNT(*) AS count FROM package_kody_id_redirects WHERE package_id = ?`,
-	)
-		.bind(released.packageId)
-		.first<{ count: number }>()
-	expect(remaining?.count).toBe(0)
+	await expect(countRedirects(released.packageId)).resolves.toEqual({
+		package_slug_redirects: 0,
+		package_kody_id_redirects: 0,
+	})
 
 	const claim = await createPublishedPackage('claim-me')
 	// An earlier package of the same owner moved off `claim-old`, then a new
 	// package takes the freed id: the old forwarding row has to go, or the new
 	// package's own URL would send visitors to its predecessor.
-	await retireKodyId(
+	await retireSlug(
 		claim,
 		`pkg-other-${uniqueSuffix()}`,
 		'claim-old',
 		'claim-new',
 	)
-	await releasePackageKodyIdRedirect({
+	await releasePackageSlugRedirect({
 		db: env.APP_DB,
 		userId: claim.userId,
-		kodyId: 'claim-old',
+		slug: 'claim-old',
 	})
 	await expect(resolve(claim.username, 'claim-old')).resolves.toBeNull()
 })
@@ -293,11 +303,8 @@ test('package page URL resolves unpublished saved packages and listed ones', asy
 
 test('package page URL attaches the saved package when listing kody id lags a rename', async () => {
 	const pkg = await createPublishedPackage('listing-lag')
-	await runSql(
-		`UPDATE saved_packages SET kody_id = 'listing-lag-two' WHERE id = ?`,
-		pkg.packageId,
-	)
-	await retireKodyId(pkg, pkg.packageId, pkg.kodyId, 'listing-lag-two')
+	await renamePackage(pkg.packageId, 'listing-lag-two')
+	await retireSlug(pkg, pkg.packageId, pkg.kodyId, 'listing-lag-two')
 
 	const listingFields = {
 		username: pkg.username,
@@ -321,5 +328,78 @@ test('package page URL attaches the saved package when listing kody id lags a re
 		kodyId: pkg.kodyId,
 		listingId: pkg.listingId,
 		listingKodyId: pkg.kodyId,
+	})
+})
+
+test('slug redirects dual-write both tables and read the legacy table as fallback', async () => {
+	const pkg = await createPublishedPackage('dual-write')
+	await renamePackage(pkg.packageId, 'dual-write-two')
+	await runSql(
+		`UPDATE community_listings SET kody_id = 'dual-write-two' WHERE id = ?`,
+		pkg.listingId,
+	)
+	await retireSlug(pkg, pkg.packageId, pkg.kodyId, 'dual-write-two')
+	await expect(countRedirects(pkg.packageId)).resolves.toEqual({
+		package_slug_redirects: 1,
+		package_kody_id_redirects: 1,
+	})
+
+	// Rows retired before `package_slug_redirects` existed still resolve.
+	await runSql(
+		`DELETE FROM package_slug_redirects WHERE package_id = ?`,
+		pkg.packageId,
+	)
+	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
+		kind: 'redirect',
+		listingId: pkg.listingId,
+		username: pkg.username,
+		kodyId: 'dual-write-two',
+	})
+
+	await releasePackageSlugRedirect({
+		db: env.APP_DB,
+		userId: pkg.userId,
+		slug: pkg.kodyId,
+	})
+	await expect(countRedirects(pkg.packageId)).resolves.toEqual({
+		package_slug_redirects: 0,
+		package_kody_id_redirects: 0,
+	})
+	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toBeNull()
+})
+
+test('public listing URL finds the listing by package id after a local rename', async () => {
+	const pkg = await createPublishedPackage('by-package')
+	await renamePackage(pkg.packageId, 'by-package-two')
+	await retireSlug(pkg, pkg.packageId, pkg.kodyId, 'by-package-two')
+
+	// The listing slug stays the public pair until republish, and the new
+	// local slug reaches it through the package instead of 404ing.
+	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
+		kind: 'listing',
+		listingId: pkg.listingId,
+		username: pkg.username,
+		kodyId: pkg.kodyId,
+	})
+	await expect(resolve(pkg.username, 'by-package-two')).resolves.toEqual({
+		kind: 'redirect',
+		listingId: pkg.listingId,
+		username: pkg.username,
+		kodyId: pkg.kodyId,
+	})
+
+	// A new package that takes the retired slug does not inherit the listing
+	// pair: the listing's own slug still resolves to the listing.
+	await releasePackageSlugRedirect({
+		db: env.APP_DB,
+		userId: pkg.userId,
+		slug: pkg.kodyId,
+	})
+	await insertPackage(pkg, pkg.kodyId)
+	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
+		kind: 'listing',
+		listingId: pkg.listingId,
+		username: pkg.username,
+		kodyId: pkg.kodyId,
 	})
 })

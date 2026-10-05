@@ -31,6 +31,7 @@ async function createEnv(
 		}
 		touchChanges?: number
 		touchError?: Error
+		retiredSlugs?: Array<string>
 	} = {},
 ) {
 	const tokenUserId = await createStableUserIdFromEmail('me@example.com')
@@ -94,11 +95,27 @@ async function createEnv(
 											: null
 									) as T | null
 								}
-								if (query.includes('FROM saved_packages')) {
-									const kodyId = String(params[0] ?? '')
-									const userId = String(params[1] ?? '')
+								if (query.includes('FROM package_slug_redirects')) {
 									return (
-										kodyId === savedPackage.kody_id &&
+										params[0] === savedPackage.user_id &&
+										options.retiredSlugs?.includes(String(params[1]))
+											? { package_id: savedPackage.id }
+											: null
+									) as T | null
+								}
+								if (query.includes('saved_packages.id = ?')) {
+									return (
+										params[0] === savedPackage.user_id &&
+										params[1] === savedPackage.id
+											? savedPackage
+											: null
+									) as T | null
+								}
+								if (query.includes('FROM saved_packages')) {
+									const userId = String(params[0] ?? '')
+									const slug = String(params[1] ?? '')
+									return (
+										savedPackage.name.endsWith(`/${slug}`) &&
 										userId === savedPackage.user_id
 											? savedPackage
 											: null
@@ -329,7 +346,7 @@ test('package invocation API validates requests and invokes exports with scoped 
 			exportNames: ['./dispatch-message-created'],
 		},
 		request: {
-			packageIdOrKodyId: 'discord-gateway',
+			packageIdOrKodyId: 'pkg-discord-gateway',
 			exportName: 'dispatch-message-created',
 			params: { content: 'hi' },
 			idempotencyKey: 'evt-1',
@@ -390,4 +407,35 @@ test('package invocation maps a lease acquisition race to account_deleting', asy
 				'Account deletion is in progress; user-owned writes are disabled.',
 		},
 	})
+})
+
+test('package invocation follows a slug redirect after a package rename', async () => {
+	invocationMockModule.invokePackageExport.mockResolvedValue({
+		status: 200,
+		body: { ok: true, result: { handled: true } },
+	})
+	const retiredRoute =
+		'https://example.com/@my-user/api/package-invocations/old-gateway/dispatch-message-created'
+
+	const missing = await post({
+		url: retiredRoute,
+		token: 'private-token-123',
+		body: { params: { content: 'hi' }, idempotencyKey: 'evt-rename' },
+	})
+	expect(missing.status).toBe(404)
+
+	const redirected = await post({
+		url: retiredRoute,
+		token: 'private-token-123',
+		body: { params: { content: 'hi' }, idempotencyKey: 'evt-rename' },
+		envOptions: { retiredSlugs: ['old-gateway'] },
+	})
+	expect(redirected.status).toBe(200)
+	expect(invocationMockModule.invokePackageExport).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			request: expect.objectContaining({
+				packageIdOrKodyId: 'pkg-discord-gateway',
+			}),
+		}),
+	)
 })

@@ -682,7 +682,10 @@ const packageStorageId = `package:${encodeURIComponent(uuidPackageId)}`
 const facetStorageId = `${uuidPackageId}:facet:main`
 const jobStorageId = `job:package-job:${uuidPackageId}:event-runner`
 const otherJobStorageId = `job:package-job:${otherPackageId}:nightly`
-const bucket = (storageId: string, userId = 'user-1') => ({ userId, storageId })
+const bucket = (storageId: string, userId = 'user-1') => ({
+	userId,
+	storageId,
+})
 
 test('deleteSavedPackageProjection clears package-owned storage buckets and inventory rows', async () => {
 	setupDefaultMocks()
@@ -904,8 +907,11 @@ function createEntitlementsDatabase(input: {
 								}
 								return { meta: { changes: before - storageBuckets.length } }
 							}
-							// Deleting a package releases the `kody.id`s it retired.
-							if (query.includes('DELETE FROM package_kody_id_redirects')) {
+							// Deleting a package releases the slugs it retired.
+							if (
+								query.includes('DELETE FROM package_slug_redirects') ||
+								query.includes('DELETE FROM package_kody_id_redirects')
+							) {
 								return { meta: { changes: 0 } }
 							}
 							if (query.includes('DELETE FROM package_invocation_tokens')) {

@@ -8,7 +8,7 @@ import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 export const moduleGraphMockModule = {
 	createWorker: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
 	getPlatformAccountByUsername: vi.fn<
 		typeof scopeGrantsModule.getPlatformAccountByUsername

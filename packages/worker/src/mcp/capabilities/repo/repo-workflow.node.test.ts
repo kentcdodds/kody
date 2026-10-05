@@ -9,7 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	repoSessionRpc: vi.fn(),
 }))
 
@@ -29,8 +29,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -111,7 +111,7 @@ function sessionInfo(overrides: Record<string, unknown> = {}) {
 }
 
 function stubPackageLookup(sourceOverrides: Record<string, unknown> = {}) {
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce({
+	mockModule.resolveSavedPackageRef.mockResolvedValueOnce({
 		id: 'package-1',
 		userId: 'user-1',
 		name: '@kody/triage-github-pr',

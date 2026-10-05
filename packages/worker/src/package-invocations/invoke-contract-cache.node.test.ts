@@ -15,7 +15,7 @@ import {
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
 	getPlatformAccountByUsername: vi.fn(),
 	isPlatformAccountStableUserId: vi.fn(),
@@ -31,8 +31,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
 }))
@@ -80,7 +80,7 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
  */
 const contractCheckLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
-	['saved package by kody id (D1)', mockModule.getSavedPackageByKodyId],
+	['saved package by kody id (D1)', mockModule.resolveSavedPackageRef],
 	['saved package by name (D1)', mockModule.getSavedPackageByName],
 	[
 		'platform account by username (D1)',
@@ -199,9 +199,9 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 			: null
 	}
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: unknown, input: { userId: string; kodyId: string }) =>
-			byKodyId(input.userId, input.kodyId),
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { userId: string; ref: string }) =>
+			byKodyId(input.userId, input.ref),
 	)
 	mockModule.getSavedPackageByName.mockImplementation(
 		async (_db: unknown, input: { userId: string; name: string }) => {
@@ -750,33 +750,21 @@ test('an artifact from a different commit is served but never retained', async (
 	expect(load).toHaveBeenCalledTimes(2)
 })
 
-test('resolveSavedPackage looks up id and kody id in one round trip and prefers the id match', async () => {
-	const byIdRecord = { id: 'pkg-by-id', kodyId: 'other' }
-	const byKodyIdRecord = { id: 'pkg-by-kody-id', kodyId: 'shared-key' }
-	const resolve = (userId: string) =>
+test('resolveSavedPackage resolves id or slug through one package ref lookup', async () => {
+	const record = { id: 'pkg-by-ref', kodyId: 'shared-key' }
+	mockModule.resolveSavedPackageRef.mockResolvedValue(record)
+
+	await expect(
 		resolveSavedPackage({
 			db: {} as D1Database,
-			userId,
+			userId: 'user-resolve-ref',
 			packageIdOrKodyId: 'shared-key',
-		})
-	let releaseById!: () => void
-	const byIdGate = new Promise<void>((resolveGate) => {
-		releaseById = resolveGate
-	})
-	mockModule.getSavedPackageById.mockImplementation(async () => {
-		await byIdGate
-		return byIdRecord
-	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(byKodyIdRecord)
-
-	const resolving = resolve('user-resolve-parallel')
-	await vi.waitFor(() => {
-		expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
-	})
-	releaseById()
-	expect(await resolving).toBe(byIdRecord)
-
-	mockModule.getSavedPackageById.mockResolvedValue(byIdRecord)
-	mockModule.getSavedPackageByKodyId.mockRejectedValue(new Error('d1 blip'))
-	await expect(resolve('user-resolve-kody-blip')).resolves.toBe(byIdRecord)
+		}),
+	).resolves.toEqual(record)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(1)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
+		expect.anything(),
+		{ userId: 'user-resolve-ref', ref: 'shared-key' },
+	)
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 })

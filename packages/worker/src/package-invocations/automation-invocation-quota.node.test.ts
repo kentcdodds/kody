@@ -49,8 +49,8 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		repoMockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		repoMockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		repoMockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		repoMockModule.getSavedPackageByName(...args),
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>

@@ -1,9 +1,10 @@
 import { routes } from '#universal/routes.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import {
 	kodyPackageIdPattern,
@@ -13,7 +14,6 @@ import {
 	getCommunityListingByOwnerAndKodyId,
 	getCommunityListingByOwnerAndPackage,
 } from './repo.ts'
-import { type CommunityListingRecord } from './types.ts'
 
 /**
  * Canonical public URL of a published package: `/@owner/kody-id`. Both halves
@@ -63,12 +63,43 @@ export type PackagePageUrlTarget =
 // following a cycle forever.
 const maxUsernameRedirectHops = 4
 
-function normalizeKodyId(value: string) {
+function normalizeSlug(value: string) {
 	return value.trim().toLowerCase()
 }
 
 /**
- * Resolve `/@username/kodyId` to the listing it addresses, or to the canonical
+ * The package a URL slug addresses: the live owner of the slug, or the package
+ * that retired it. `retired` means the slug now redirects elsewhere.
+ */
+async function findSavedPackageForSlug(input: {
+	db: D1Database
+	ownerUserId: string
+	slug: string
+}): Promise<{ savedPackage: SavedPackageRecord; retired: boolean } | null> {
+	const savedPackage = await resolveSavedPackageRef(input.db, {
+		userId: input.ownerUserId,
+		ref: input.slug,
+		match: 'slug',
+		followRedirects: true,
+	})
+	if (!savedPackage) return null
+	return {
+		savedPackage,
+		retired: getPackageNameLeaf(savedPackage.name) !== input.slug,
+	}
+}
+
+async function getActiveListingForPackage(input: {
+	db: D1Database
+	ownerUserId: string
+	packageId: string
+}) {
+	const listing = await getCommunityListingByOwnerAndPackage(input.db, input)
+	return listing?.status === 'active' ? listing : null
+}
+
+/**
+ * Resolve `/@username/slug` to the listing it addresses, or to the canonical
  * pair a moved package now lives at. Returns null when nothing owns the pair,
  * which the caller renders as a 404 — never as a redirect, so a retired pair
  * cannot be used to bounce visitors at an unrelated package.
@@ -79,14 +110,14 @@ export async function resolveCommunityPackageUrl(input: {
 	kodyId: string
 }): Promise<CommunityPackageUrlTarget | null> {
 	const requestedUsername = input.username.trim()
-	const requestedKodyId = input.kodyId.trim()
+	const requestedSlug = input.kodyId.trim()
 	let username = normalizeUsername(requestedUsername)
-	const kodyId = normalizeKodyId(requestedKodyId)
-	if (!username || !kodyPackageIdPattern.test(kodyId)) return null
+	const slug = normalizeSlug(requestedSlug)
+	if (!username || !kodyPackageIdPattern.test(slug)) return null
 
 	// A pair that differs only in spelling still moves the visitor, so the
 	// canonical form is served from one URL instead of several.
-	let moved = username !== requestedUsername || kodyId !== requestedKodyId
+	let moved = username !== requestedUsername || slug !== requestedSlug
 
 	for (let hop = 0; hop <= maxUsernameRedirectHops; hop++) {
 		const identity = await findPublicUserIdentityByUsername({
@@ -94,43 +125,33 @@ export async function resolveCommunityPackageUrl(input: {
 			username,
 		})
 		if (identity) {
-			const listing = await getCommunityListingByOwnerAndKodyId(input.db, {
-				ownerUserId: identity.mcpUserId,
-				kodyId,
-			})
-			if (listing) {
-				return moved
-					? {
-							kind: 'redirect',
-							listingId: listing.id,
-							username: identity.username,
-							kodyId,
-						}
-					: {
-							kind: 'listing',
-							listingId: listing.id,
-							username: identity.username,
-							kodyId,
-						}
-			}
-			const currentKodyId = await findCurrentKodyIdForRetiredKodyId({
+			const found = await findSavedPackageForSlug({
 				db: input.db,
-				userId: identity.mcpUserId,
-				oldKodyId: kodyId,
+				ownerUserId: identity.mcpUserId,
+				slug,
 			})
-			if (currentKodyId == null || currentKodyId === kodyId) return null
-			// The package still exists under a new id; only send visitors there
-			// when that pair actually has a listing.
-			const currentListing = await getCommunityListingByOwnerAndKodyId(
-				input.db,
-				{ ownerUserId: identity.mcpUserId, kodyId: currentKodyId },
-			)
-			if (!currentListing) return null
+			// The listing's own `kody_id` is the fallback for a pair no package
+			// slug or redirect reaches (it lags a local rename until republish).
+			const listing =
+				(found
+					? await getActiveListingForPackage({
+							db: input.db,
+							ownerUserId: identity.mcpUserId,
+							packageId: found.savedPackage.id,
+						})
+					: null) ??
+				(await getCommunityListingByOwnerAndKodyId(input.db, {
+					ownerUserId: identity.mcpUserId,
+					kodyId: slug,
+				}))
+			if (!listing) return null
+			// The listing pair stays the public URL until republish, so a moved
+			// package lands on the listing slug, not its unpublished local one.
 			return {
-				kind: 'redirect',
-				listingId: currentListing.id,
+				kind: moved || listing.kodyId !== slug ? 'redirect' : 'listing',
+				listingId: listing.id,
 				username: identity.username,
-				kodyId: currentKodyId,
+				kodyId: listing.kodyId,
 			}
 		}
 
@@ -149,7 +170,7 @@ export async function resolveCommunityPackageUrl(input: {
 }
 
 /**
- * Resolve `/@username/kodyId` to a saved package and optional community
+ * Resolve `/@username/slug` to a saved package and optional community
  * listing. Used by the canonical package page so owners can open unpublished
  * packages at the same URL visitors use for listings.
  */
@@ -159,12 +180,12 @@ export async function resolvePackagePageUrl(input: {
 	kodyId: string
 }): Promise<PackagePageUrlTarget | null> {
 	const requestedUsername = input.username.trim()
-	const requestedKodyId = input.kodyId.trim()
+	const requestedSlug = input.kodyId.trim()
 	let username = normalizeUsername(requestedUsername)
-	const kodyId = normalizeKodyId(requestedKodyId)
-	if (!username || !kodyPackageIdPattern.test(kodyId)) return null
+	const slug = normalizeSlug(requestedSlug)
+	if (!username || !kodyPackageIdPattern.test(slug)) return null
 
-	let moved = username !== requestedUsername || kodyId !== requestedKodyId
+	let moved = username !== requestedUsername || slug !== requestedSlug
 
 	for (let hop = 0; hop <= maxUsernameRedirectHops; hop++) {
 		const identity = await findPublicUserIdentityByUsername({
@@ -172,82 +193,78 @@ export async function resolvePackagePageUrl(input: {
 			username,
 		})
 		if (identity) {
-			const [listing, savedPackage] = await Promise.all([
-				getCommunityListingByOwnerAndKodyId(input.db, {
-					ownerUserId: identity.mcpUserId,
-					kodyId,
-				}),
-				getSavedPackageByKodyId(input.db, {
-					userId: identity.mcpUserId,
-					kodyId,
-				}),
-			])
-			if (listing || savedPackage) {
-				const resolved = await resolveListingAndSavedPackage({
-					db: input.db,
-					ownerUserId: identity.mcpUserId,
-					listing,
-					savedPackage,
+			const ownerUserId = identity.mcpUserId
+			const found = await findSavedPackageForSlug({
+				db: input.db,
+				ownerUserId,
+				slug,
+			})
+			let savedPackage = found && !found.retired ? found.savedPackage : null
+			// Listing `kody_id` only moves on republish, so a slug can still
+			// address a listing whose package has a new local slug.
+			const listing =
+				(savedPackage
+					? await getActiveListingForPackage({
+							db: input.db,
+							ownerUserId,
+							packageId: savedPackage.id,
+						})
+					: null) ??
+				(await getCommunityListingByOwnerAndKodyId(input.db, {
+					ownerUserId,
+					kodyId: slug,
+				}))
+			if (!savedPackage && listing) {
+				savedPackage = await getSavedPackageById(input.db, {
+					userId: ownerUserId,
+					packageId: listing.packageId,
 				})
-				// Public pair is the listing id until republish. The saved
-				// package's local kody.id can move first and must not become
-				// the shared redirect target.
-				const publicKodyId =
-					resolved.listingKodyId ?? resolved.savedPackage?.kodyId ?? kodyId
-				const servedKodyId =
-					resolved.listingKodyId === kodyId
-						? resolved.listingKodyId
-						: (resolved.savedPackage?.kodyId ?? publicKodyId)
+			}
+			if (listing || savedPackage) {
+				const listingKodyId = listing?.kodyId ?? null
+				const savedSlug = savedPackage
+					? getPackageNameLeaf(savedPackage.name)
+					: null
+				// Public pair is the listing slug until republish. The saved
+				// package's local slug can move first and must not become the
+				// shared redirect target.
+				const publicSlug = listingKodyId ?? savedSlug ?? slug
+				const servedSlug =
+					listingKodyId === slug ? listingKodyId : (savedSlug ?? publicSlug)
 				return moved
 					? {
 							kind: 'redirect',
 							username: identity.username,
-							kodyId: publicKodyId,
-							userId: identity.mcpUserId,
-							listingId: resolved.listingId,
-							listingKodyId: resolved.listingKodyId,
+							kodyId: publicSlug,
+							userId: ownerUserId,
+							listingId: listing?.id ?? null,
+							listingKodyId,
 						}
 					: {
 							kind: 'package',
 							username: identity.username,
-							kodyId: servedKodyId,
-							userId: identity.mcpUserId,
-							savedPackage: resolved.savedPackage,
-							listingId: resolved.listingId,
-							listingKodyId: resolved.listingKodyId,
+							kodyId: servedSlug,
+							userId: ownerUserId,
+							savedPackage,
+							listingId: listing?.id ?? null,
+							listingKodyId,
 						}
 			}
 
-			const currentKodyId = await findCurrentKodyIdForRetiredKodyId({
+			if (!found) return null
+			const currentListing = await getActiveListingForPackage({
 				db: input.db,
-				userId: identity.mcpUserId,
-				oldKodyId: kodyId,
-			})
-			if (currentKodyId == null || currentKodyId === kodyId) return null
-			const [currentListing, currentSaved] = await Promise.all([
-				getCommunityListingByOwnerAndKodyId(input.db, {
-					ownerUserId: identity.mcpUserId,
-					kodyId: currentKodyId,
-				}),
-				getSavedPackageByKodyId(input.db, {
-					userId: identity.mcpUserId,
-					kodyId: currentKodyId,
-				}),
-			])
-			if (!currentListing && !currentSaved) return null
-			const resolved = await resolveListingAndSavedPackage({
-				db: input.db,
-				ownerUserId: identity.mcpUserId,
-				listing: currentListing,
-				savedPackage: currentSaved,
+				ownerUserId,
+				packageId: found.savedPackage.id,
 			})
 			return {
 				kind: 'redirect',
 				username: identity.username,
-				kodyId: resolved.listingKodyId ?? currentKodyId,
-				userId: identity.mcpUserId,
-				listingId: resolved.listingId,
-				listingKodyId: resolved.listingKodyId,
+				kodyId:
+					currentListing?.kodyId ?? getPackageNameLeaf(found.savedPackage.name),
+				userId: ownerUserId,
+				listingId: currentListing?.id ?? null,
+				listingKodyId: currentListing?.kodyId ?? null,
 			}
 		}
 
@@ -260,43 +277,6 @@ export async function resolvePackagePageUrl(input: {
 		moved = true
 	}
 	return null
-}
-
-/**
- * Listing `kody_id` only moves on republish, so a local rename can leave the
- * listing on the old id while `saved_packages` already has the new one. Fill
- * whichever side the kody-id lookup missed so owners still get package
- * details and visitors still see an active listing.
- */
-async function resolveListingAndSavedPackage(input: {
-	db: D1Database
-	ownerUserId: string
-	listing: CommunityListingRecord | null
-	savedPackage: SavedPackageRecord | null
-}) {
-	let listing = input.listing
-	let savedPackage = input.savedPackage
-	if (!listing && savedPackage) {
-		const packageListing = await getCommunityListingByOwnerAndPackage(
-			input.db,
-			{
-				ownerUserId: input.ownerUserId,
-				packageId: savedPackage.id,
-			},
-		)
-		listing = packageListing?.status === 'active' ? packageListing : null
-	}
-	if (!savedPackage && listing) {
-		savedPackage = await getSavedPackageById(input.db, {
-			userId: input.ownerUserId,
-			packageId: listing.packageId,
-		})
-	}
-	return {
-		listingId: listing?.id ?? null,
-		listingKodyId: listing?.kodyId ?? null,
-		savedPackage,
-	}
 }
 
 async function findCurrentUsernameForRetiredUsername(input: {
@@ -314,27 +294,6 @@ async function findCurrentUsernameForRetiredUsername(input: {
 		.first<{ username: string | null }>()
 	const username = row?.username?.trim()
 	return username ? username : null
-}
-
-async function findCurrentKodyIdForRetiredKodyId(input: {
-	db: D1Database
-	userId: string
-	oldKodyId: string
-}): Promise<string | null> {
-	const row = await input.db
-		.prepare(
-			`SELECT saved_packages.kody_id AS kody_id
-			FROM package_kody_id_redirects
-			JOIN saved_packages
-				ON saved_packages.id = package_kody_id_redirects.package_id
-				AND saved_packages.user_id = package_kody_id_redirects.user_id
-			WHERE package_kody_id_redirects.user_id = ?
-				AND package_kody_id_redirects.old_kody_id = ?`,
-		)
-		.bind(input.userId, input.oldKodyId)
-		.first<{ kody_id: string | null }>()
-	const kodyId = row?.kody_id?.trim()
-	return kodyId ? kodyId : null
 }
 
 /**
@@ -367,75 +326,81 @@ export async function retireUsername(input: {
 	])
 }
 
+// Every redirect write goes to both tables until `package_kody_id_redirects`
+// is dropped (#1909 phase 4); reads try `package_slug_redirects` first.
+const packageSlugRedirectTables = [
+	{ table: 'package_slug_redirects', slugColumn: 'old_slug' },
+	{ table: 'package_kody_id_redirects', slugColumn: 'old_kody_id' },
+] as const
+
 /**
- * Claim an id for a package: any retirement row pointing away from it was left
- * by a package that no longer owns the name, and letting it stand would forward
- * the new package's own URL to an unrelated one.
+ * Claim a slug for a package: any retirement row pointing away from it was
+ * left by a package that no longer owns the name, and letting it stand would
+ * forward the new package's own URL to an unrelated one.
  */
-export async function releasePackageKodyIdRedirect(input: {
+export async function releasePackageSlugRedirect(input: {
 	db: D1Database
 	userId: string
-	kodyId: string
+	slug: string
 }) {
-	const kodyId = normalizeKodyId(input.kodyId)
-	if (!kodyId) return
-	await input.db
-		.prepare(
-			`DELETE FROM package_kody_id_redirects
-			WHERE user_id = ? AND old_kody_id = ?`,
-		)
-		.bind(input.userId, kodyId)
-		.run()
+	const slug = normalizeSlug(input.slug)
+	if (!slug) return
+	await input.db.batch(
+		packageSlugRedirectTables.map(({ table, slugColumn }) =>
+			input.db
+				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND ${slugColumn} = ?`)
+				.bind(input.userId, slug),
+		),
+	)
 }
 
 /**
- * Retire the `kody.id` a package just moved away from, so links shared under
- * the old id follow the package to its new one.
+ * Retire the slug a package just moved away from, so links shared under the
+ * old slug follow the package to its new one.
  */
-export async function retirePackageKodyId(input: {
+export async function retirePackageSlug(input: {
 	db: D1Database
 	userId: string
 	packageId: string
-	oldKodyId: string
-	newKodyId: string
+	oldSlug: string
+	newSlug: string
 }) {
-	const oldKodyId = normalizeKodyId(input.oldKodyId)
-	const newKodyId = normalizeKodyId(input.newKodyId)
-	if (!oldKodyId || oldKodyId === newKodyId) return
-	await input.db.batch([
-		input.db
-			.prepare(
-				`DELETE FROM package_kody_id_redirects
-				WHERE user_id = ? AND old_kody_id = ?`,
-			)
-			.bind(input.userId, newKodyId),
-		input.db
-			.prepare(
-				`INSERT INTO package_kody_id_redirects (user_id, old_kody_id, package_id)
-				VALUES (?, ?, ?)
-				ON CONFLICT (user_id, old_kody_id) DO UPDATE SET
-					package_id = excluded.package_id,
-					created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-			)
-			.bind(input.userId, oldKodyId, input.packageId),
-	])
+	const oldSlug = normalizeSlug(input.oldSlug)
+	const newSlug = normalizeSlug(input.newSlug)
+	if (!oldSlug || oldSlug === newSlug) return
+	await input.db.batch(
+		packageSlugRedirectTables.flatMap(({ table, slugColumn }) => [
+			input.db
+				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND ${slugColumn} = ?`)
+				.bind(input.userId, newSlug),
+			input.db
+				.prepare(
+					`INSERT INTO ${table} (user_id, ${slugColumn}, package_id)
+					VALUES (?, ?, ?)
+					ON CONFLICT (user_id, ${slugColumn}) DO UPDATE SET
+						package_id = excluded.package_id,
+						created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
+				)
+				.bind(input.userId, oldSlug, input.packageId),
+		]),
+	)
 }
 
 /**
- * Deleting a package releases every id it retired: the ids no longer lead
+ * Deleting a package releases every slug it retired: the slugs no longer lead
  * anywhere, and keeping them would let a later package inherit another
  * package's redirect history.
  */
-export async function deletePackageKodyIdRedirects(input: {
+export async function deletePackageSlugRedirects(input: {
 	db: D1Database
 	userId: string
 	packageId: string
 }) {
-	await input.db
-		.prepare(
-			`DELETE FROM package_kody_id_redirects
-			WHERE user_id = ? AND package_id = ?`,
-		)
-		.bind(input.userId, input.packageId)
-		.run()
+	await input.db.batch(
+		packageSlugRedirectTables.map(({ table }) =>
+			input.db
+				.prepare(`DELETE FROM ${table} WHERE user_id = ? AND package_id = ?`)
+				.bind(input.userId, input.packageId),
+		),
+	)
 }

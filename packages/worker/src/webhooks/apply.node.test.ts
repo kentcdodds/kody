@@ -66,7 +66,7 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({

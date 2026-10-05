@@ -13,7 +13,7 @@ import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.t
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	handleWebhookSubscriptionChallenge,
@@ -353,9 +353,11 @@ export async function handleWebhookIngressRequest(
 	})
 	if (!routeUser) return notFoundResponse()
 
-	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+	const savedPackage = await resolveSavedPackageRef(env.APP_DB, {
 		userId: routeUser.mcpUserId,
-		kodyId: route.packageKodyId,
+		ref: route.packageKodyId,
+		match: 'slug',
+		followRedirects: true,
 	})
 	if (!savedPackage) return notFoundResponse()
 

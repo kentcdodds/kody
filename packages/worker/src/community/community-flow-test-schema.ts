@@ -127,6 +127,15 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_package_kody_id_redirects_package_id
 			ON package_kody_id_redirects(package_id)`,
+		`CREATE TABLE IF NOT EXISTS package_slug_redirects (
+			user_id TEXT NOT NULL,
+			old_slug TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_slug)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_package_slug_redirects_package_id
+			ON package_slug_redirects(package_id)`,
 		`CREATE TABLE IF NOT EXISTS community_forks (
 			id TEXT PRIMARY KEY NOT NULL,
 			listing_id TEXT NOT NULL,

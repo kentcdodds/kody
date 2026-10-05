@@ -1,7 +1,4 @@
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageManifestForSource,
 	loadPackageSourceBySourceId,
@@ -54,20 +51,11 @@ export async function resolveSavedPackage(input: {
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
 		packageIdOrKodyId: input.packageIdOrKodyId,
-		load: async () => {
-			const byKodyId = getSavedPackageByKodyId(input.db, {
+		load: async () =>
+			await resolveSavedPackageRef(input.db, {
 				userId: input.userId,
-				kodyId: input.packageIdOrKodyId,
-			})
-			// Only surfaces when the id lookup misses and awaits it below.
-			byKodyId.catch(() => {})
-			return (
-				(await getSavedPackageById(input.db, {
-					userId: input.userId,
-					packageId: input.packageIdOrKodyId,
-				})) ?? (await byKodyId)
-			)
-		},
+				ref: input.packageIdOrKodyId,
+			}),
 	})
 }
 

@@ -21,10 +21,7 @@ import {
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
@@ -897,15 +894,10 @@ async function resolveWorkflowPayload(input: {
 			'workflows.create requires packageId when exportName is used outside package runtime context.',
 		)
 	}
-	const savedPackage =
-		(await getSavedPackageById(input.env.APP_DB, {
-			userId: input.userId,
-			packageId: packageIdOrKodyId,
-		})) ??
-		(await getSavedPackageByKodyId(input.env.APP_DB, {
-			userId: input.userId,
-			kodyId: packageIdOrKodyId,
-		}))
+	const savedPackage = await resolveSavedPackageRef(input.env.APP_DB, {
+		userId: input.userId,
+		ref: packageIdOrKodyId,
+	})
 	if (!savedPackage) {
 		throw new Error(
 			`Package "${packageIdOrKodyId}" was not found or is not owned by the current user.`,

@@ -5,7 +5,7 @@ import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	markEntitySourcePendingExternalReconcile: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
@@ -27,8 +27,8 @@ vi.mock('#worker/repo/isomorphic-git-lazy.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
@@ -140,7 +140,7 @@ function mockPackageSource(sourceUserId = 'user-1') {
 		sourceId: 'source-1',
 	}
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(savedPackage)
 	mockModule.getEntitySourceByIdForUser.mockImplementation(
 		async (_db: unknown, input: { id: string; userId: string }) => {
 			if (input.userId !== sourceUserId) return null
@@ -183,7 +183,7 @@ function stubCreatedPackage(
 	ownerUserId = 'user-1',
 	name = '@kentcdodds/unleashed-wifi',
 ) {
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValueOnce(null)
 	mockModule.createStubSavedPackage.mockImplementation(async () => {
 		mockPackageSource(ownerUserId)
 		return { packageId: 'package-1', kodyId: 'unleashed-wifi', name }
@@ -365,10 +365,10 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 		kody_id: '  unleashed-wifi  ',
 		create: true,
 	})
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
-		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
+		expect.objectContaining({ ref: 'unleashed-wifi' }),
 	)
 	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
 		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
@@ -402,10 +402,10 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 		expect.anything(),
 		expect.objectContaining({
 			userId: 'platform-owner',
-			kodyId: 'unleashed-wifi',
+			ref: 'unleashed-wifi',
 		}),
 	]
-	expect(mockModule.getSavedPackageByKodyId.mock.calls).toEqual([
+	expect(mockModule.resolveSavedPackageRef.mock.calls).toEqual([
 		ownerLookup,
 		ownerLookup,
 	])

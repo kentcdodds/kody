@@ -21,7 +21,7 @@ vi.mock('#worker/runtime-worker-service.ts', () => ({
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
@@ -58,8 +58,8 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -85,7 +85,7 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 
 const serveLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
-	['saved package by kody id (D1)', mockModule.getSavedPackageByKodyId],
+	['saved package by kody id (D1)', mockModule.resolveSavedPackageRef],
 	['entity source row (D1)', mockModule.getEntitySourceById],
 	['published manifest snapshot (KV)', mockModule.loadPublishedEntityManifest],
 ] as const
@@ -157,10 +157,10 @@ function createFixture(options: FixtureOptions = {}) {
 function seedFixture(options?: FixtureOptions) {
 	const fixture = createFixture(options)
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: unknown, input: { userId: string; kodyId: string }) =>
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { userId: string; ref: string }) =>
 			input.userId === fixture.savedPackage.userId &&
-			input.kodyId === fixture.savedPackage.kodyId
+			input.ref === fixture.savedPackage.kodyId
 				? fixture.savedPackage
 				: null,
 	)
@@ -287,7 +287,7 @@ test('a warm package-app serve performs zero D1/KV loads before dispatch', async
 	const cold = await serveHelloWorld()
 	expect(cold.status).toBe(200)
 	expect(await cold.text()).toBe('ok')
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalledTimes(1)

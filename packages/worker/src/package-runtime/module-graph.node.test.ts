@@ -25,8 +25,8 @@ vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
 }))
@@ -754,7 +754,7 @@ test('statically imported saved package sources get stamped with their own packa
 		createBundleResult('stamped-dependency'),
 	)
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(null)
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		...createLoadedPackageSource(),

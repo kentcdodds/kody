@@ -2,18 +2,18 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 const { parsePackageSearchIdentity, resolvePackageIdentitySearch } =
@@ -184,7 +184,7 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 		.mockResolvedValueOnce(hidden)
 		.mockResolvedValueOnce(hidden)
 		.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId
+	mockModule.resolveSavedPackageRef
 		.mockResolvedValueOnce(createSavedPackage())
 		.mockResolvedValueOnce(null)
 
@@ -230,7 +230,7 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 		).resolves.toEqual(noMatch)
 	}
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(2)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(2)
 })
 
 test('package identity match includes listingAhead only when the fork is behind', async () => {

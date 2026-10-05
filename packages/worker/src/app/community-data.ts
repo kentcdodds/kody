@@ -44,7 +44,7 @@ import { resolveListingPinAncestry } from '#worker/community/fork-listing-relati
 import { resolveViewerListingInstalls } from '#worker/community/viewer-install.ts'
 import {
 	listSavedPackagesByIds,
-	listSavedPackagesByKodyIds,
+	listSavedPackagesBySlugs,
 } from '#worker/package-registry/repo.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -511,16 +511,16 @@ async function loadViewerListingInstalls(input: {
 	}
 	try {
 		const listingIds = input.listings.map((listing) => listing.id)
-		const kodyIds = input.listings.map((listing) => listing.kodyId)
+		const slugs = input.listings.map((listing) => listing.kodyId)
 		const [packageScope, forks, savedByKody] = await Promise.all([
 			getMcpUserPackageScope(input.env.APP_DB, input.user),
 			listCommunityForksByListingIdsAndUser(input.env.APP_DB, {
 				listingIds,
 				userId: input.user.userId,
 			}),
-			listSavedPackagesByKodyIds(input.env.APP_DB, {
+			listSavedPackagesBySlugs(input.env.APP_DB, {
 				userId: input.user.userId,
-				kodyIds,
+				slugs,
 			}),
 		])
 		const missingPackageIds = [

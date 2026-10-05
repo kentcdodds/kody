@@ -17,7 +17,7 @@ const mockModule = vi.hoisted(() => ({
 		async () => 0,
 	),
 	getEntitySourceByIdForUser: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	repoSessionRpc: vi.fn(),
 }))
 
@@ -35,8 +35,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -143,7 +143,7 @@ async function setup({
 	const userId = await createStableUserIdFromEmail(email)
 	mockModule.countActiveRepoSessions.mockResolvedValue(activeSessions ?? 0)
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(
+	mockModule.resolveSavedPackageRef.mockResolvedValue(
 		createSavedPackageRow(userId),
 	)
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(
@@ -323,9 +323,9 @@ test('repoOpenSession opens a package by scoped @owner/leaf the same as the name
 		name: '@kody/triage-github-pr',
 	})
 	expect(leaf.resolved_target).toEqual(scoped.resolved_target)
-	expect(mockModule.getSavedPackageByKodyId.mock.calls).toEqual([
-		[expect.anything(), { userId, kodyId: 'triage-github-pr' }],
-		[expect.anything(), { userId, kodyId: 'triage-github-pr' }],
+	expect(mockModule.resolveSavedPackageRef.mock.calls).toEqual([
+		[expect.anything(), { userId, ref: 'triage-github-pr', match: 'slug' }],
+		[expect.anything(), { userId, ref: 'triage-github-pr', match: 'slug' }],
 	])
 })
 

@@ -40,7 +40,7 @@ import {
 } from '#worker/community/repo.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
-	getSavedPackageWithCommunityProvenanceByKodyId,
+	resolveSavedPackageRefWithCommunityProvenance,
 	listSavedPackageCommunityProvenanceByIds,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
@@ -375,9 +375,10 @@ export async function loadAccountPackageDetail(input: {
 	kodyId?: string
 }): Promise<AccountPackageDetail | null> {
 	const record = input.kodyId
-		? await getSavedPackageWithCommunityProvenanceByKodyId(input.env.APP_DB, {
+		? await resolveSavedPackageRefWithCommunityProvenance(input.env.APP_DB, {
 				userId: input.userId,
-				kodyId: input.kodyId,
+				ref: input.kodyId,
+				match: 'slug',
 			})
 		: input.packageId
 			? await getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {

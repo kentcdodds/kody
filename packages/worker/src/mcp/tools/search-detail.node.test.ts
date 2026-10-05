@@ -7,7 +7,7 @@ import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getValue: vi.fn(),
 	getJoinedIntegration: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
@@ -30,12 +30,12 @@ vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -321,7 +321,7 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 })
 
 test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', async () => {
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		packageId: 'pkg-1',
 		kodyId: 'demo',
 		name: '@user/demo',
@@ -351,7 +351,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 })
 
 test('resolveEntityDetail passes package export fragments and hidden known-id packages', async () => {
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'pkg-hidden',
 		packageId: 'pkg-hidden',
 		kodyId: 'home-controls',

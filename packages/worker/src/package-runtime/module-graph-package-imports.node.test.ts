@@ -21,8 +21,8 @@ vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
 }))
@@ -183,7 +183,7 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 	mockModule.getSavedPackageByName.mockResolvedValue(
 		createSavedPackageRecord(examplePackage),
 	)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(null)
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
 		createLoadedPackageSource(),
 	)
@@ -197,7 +197,7 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 		{},
 		{ userId: 'user-1', name: '@kentcdodds/example-package' },
 	)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 	const rootEntry = bundlerFiles()['.__kody_root__/index.js']
 	expect(rootEntry).toContain('__kody_virtual__/imports/')
 	expect(rootEntry).not.toContain(

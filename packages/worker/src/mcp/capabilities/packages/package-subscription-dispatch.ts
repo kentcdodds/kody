@@ -36,7 +36,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
@@ -240,9 +240,10 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 							userId: owner.ownerUserId,
 							packageId: args.package_id,
 						})
-					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
+					: await resolveSavedPackageRef(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: requestedKodyId ?? '',
+							ref: requestedKodyId ?? '',
+							match: 'slug',
 						})
 			if (!savedPackage) {
 				const missingId = args.package_id ?? args.kody_id

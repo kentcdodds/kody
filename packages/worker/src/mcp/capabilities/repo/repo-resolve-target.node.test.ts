@@ -5,7 +5,7 @@ import { mismatchedPackageScopeMessage } from '#worker/package-registry/package-
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -16,8 +16,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 const { resolveRepoSourceReference } = await import('./repo-resolve-target.ts')
@@ -103,9 +103,9 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 	resetMocks()
 	const savedPackage = createSavedPackageRow()
 	const source = createPackageSourceRow()
-	mockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: D1Database, input: { kodyId: string }) =>
-			input.kodyId === 'travel-map' ? savedPackage : null,
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: D1Database, input: { ref: string }) =>
+			input.ref === 'travel-map' ? savedPackage : null,
 	)
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(source)
 
@@ -127,9 +127,9 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 	})
 	expect(leaf.resolvedTarget).toEqual(scoped.resolvedTarget)
 	expect(scoped.source).toEqual(source)
-	expect(mockModule.getSavedPackageByKodyId.mock.calls).toEqual([
-		[expect.anything(), { userId: 'user-1', kodyId: 'travel-map' }],
-		[expect.anything(), { userId: 'user-1', kodyId: 'travel-map' }],
+	expect(mockModule.resolveSavedPackageRef.mock.calls).toEqual([
+		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
+		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
 	])
 
 	await expectCallerError(
@@ -139,9 +139,9 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 		),
 		'Saved package "@kentcdodds/does-not-exist" was not found.',
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenLastCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenLastCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', kodyId: 'does-not-exist' },
+		{ userId: 'user-1', ref: 'does-not-exist', match: 'slug' },
 	)
 
 	await expectCallerError(
@@ -155,5 +155,5 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 			ownerScope: 'kentcdodds',
 		}),
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(3)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(3)
 })

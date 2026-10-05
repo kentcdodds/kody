@@ -11,9 +11,9 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
-	listSavedPackagesByKodyIds: vi.fn(),
+	listSavedPackagesBySlugs: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 }))
 
@@ -53,12 +53,12 @@ vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByKodyIds: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByKodyIds(...args),
+	listSavedPackagesBySlugs: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesBySlugs(...args),
 	listSavedPackagesByIds: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByIds(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/package-registry/user-scope.ts', () => ({
@@ -126,7 +126,7 @@ async function renderDetail({
 		viewer && { roles: [], ...viewer },
 	)
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue(forks)
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue(savedPackagesByKodyId)
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue(savedPackagesByKodyId)
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 	mockModule.getMcpUserPackageScope.mockResolvedValue(
 		viewer?.mcpUser.username ?? 'viewer',

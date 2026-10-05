@@ -7,7 +7,7 @@ const mockModule = vi.hoisted(() => ({
 	resolveArtifactSourceHead: vi.fn(),
 	readArtifactFileAtCommit: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	insertSavedPackage: vi.fn(),
 	assertWithinEntitlement: vi.fn(),
 	repoSessionRpc: vi.fn(),
@@ -36,8 +36,8 @@ vi.mock('#worker/repo/artifact-file.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	insertSavedPackage: (...args: Array<unknown>) =>
 		mockModule.insertSavedPackage(...args),
 }))
@@ -137,7 +137,7 @@ function setup({
 		),
 	)
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.resolveSavedPackageRef.mockResolvedValue(null)
 	mockModule.insertSavedPackage.mockResolvedValue(undefined)
 	mockModule.assertWithinEntitlement.mockResolvedValue(undefined)
 	mockModule.updateEntitySource.mockResolvedValue(true)

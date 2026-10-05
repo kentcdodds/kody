@@ -323,6 +323,10 @@
 		{
 			"filename": "0080-signup-welcome-credits-pending.sql",
 			"sha256": "b52fd72db87e6083dd27114bea2bd16386affcefb1958a3dc6cf445e3e661515"
+		},
+		{
+			"filename": "0081-package-slug-redirects.sql",
+			"sha256": "fa0c471687d9cdbfe15b9afbd2c4a015f7855ff3df4c0b70adae162eb7e36cc7"
 		}
 	]
 }

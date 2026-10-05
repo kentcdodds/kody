@@ -252,7 +252,7 @@ Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
 `CommunityForkResourceLimitError` (honest UI/MCP copy; fork count does not
 increment). Records `community_forks` — **without** inserting `saved_packages`.
 Failed persist cleanup deletes the dest Artifacts repo, the inert entity source,
-any `package_kody_id_redirects` for the allocated package id, and the matching
+any slug redirects for the allocated package id, and the matching
 `community_forks` row so a leftover metadata row cannot inflate `fork_count` or
 block a retry.
 
@@ -336,9 +336,10 @@ Client routes: `packages/worker/client/routes/community*`
   unfiltered browse page (`?category=` filters to one category). Empty
   categories omit their chip; an empty catalog hides the facet and sort row.
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
-  plus the listing slug (JSON companion:
-  `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
-  `package_kody_id_redirects` map prior owner usernames and package slugs to a
+  plus the package slug (the saved package by name leaf, then its listing by
+  `package_id`; JSON companion: `/profiles/:username/packages/:kodyId.json`).
+  The listing slug stays the public pair until republish. `username_redirects`
+  and `package_slug_redirects` map prior owner usernames and package slugs to a
   redirect at that URL
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
   (default-branch name from git, SHA, or another branch). `HEAD` and leftover

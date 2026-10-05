@@ -5,9 +5,9 @@ import * as Sentry from '@sentry/cloudflare'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
-	deletePackageKodyIdRedirects,
-	releasePackageKodyIdRedirect,
-	retirePackageKodyId,
+	deletePackageSlugRedirects,
+	releasePackageSlugRedirect,
+	retirePackageSlug,
 } from '#worker/community/package-url.ts'
 import {
 	deleteCommunityForksForPackage,
@@ -16,6 +16,7 @@ import {
 import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
+import { getPackageNameLeaf } from './package-name.ts'
 import {
 	deleteSavedPackage,
 	getSavedPackageById,
@@ -295,16 +296,16 @@ export async function refreshSavedPackageProjection(input: {
 					sourceId: row.source_id,
 					hasApp: row.has_app === 1,
 				})
-				// `kody.id` is the second half of the package's canonical URL, so
-				// editing it in the manifest moves that URL. Retire the old id here
-				// rather than in the community layer: the id belongs to the package
-				// whether or not it is published.
-				await retirePackageKodyId({
+				// The name leaf is the second half of the package's canonical URL,
+				// so renaming the package moves that URL. Retire the old slug here
+				// rather than in the community layer: the slug belongs to the
+				// package whether or not it is published.
+				await retirePackageSlug({
 					db: input.env.APP_DB,
 					userId: input.userId,
 					packageId: input.packageId,
-					oldKodyId: existing.kodyId,
-					newKodyId: row.kody_id,
+					oldSlug: getPackageNameLeaf(existing.name),
+					newSlug: getPackageNameLeaf(row.name),
 				})
 			} else {
 				await assertWithinEntitlement({
@@ -333,12 +334,12 @@ export async function refreshSavedPackageProjection(input: {
 						email: input.userEmail,
 					})
 				}
-				// A brand new package claims its id outright, so an earlier package's
-				// retirement row must not keep forwarding it elsewhere.
-				await releasePackageKodyIdRedirect({
+				// A brand new package claims its slug outright, so an earlier
+				// package's retirement row must not keep forwarding it elsewhere.
+				await releasePackageSlugRedirect({
 					db: input.env.APP_DB,
 					userId: input.userId,
-					kodyId: row.kody_id,
+					slug: getPackageNameLeaf(row.name),
 				})
 			}
 			const refreshedAt = new Date().toISOString()
@@ -669,10 +670,10 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
-			// Retired `kody.id`s only mean something while the package they point
-			// at exists; leaving them behind would hand a later package another
+			// Retired slugs only mean something while the package they point at
+			// exists; leaving them behind would hand a later package another
 			// package's redirect history.
-			await deletePackageKodyIdRedirects({
+			await deletePackageSlugRedirects({
 				db: input.env.APP_DB,
 				userId: input.userId,
 				packageId: input.packageId,

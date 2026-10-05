@@ -18,6 +18,7 @@ import {
 	hashWebhookUrlSecret,
 } from './crypto.ts'
 import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
+import { retirePackageSlug } from '#worker/community/package-url.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 import { webhookRateLimitConfig } from './types.ts'
 
@@ -142,6 +143,22 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	for (const [table, slugColumn] of [
+		['package_slug_redirects', 'old_slug'],
+		['package_kody_id_redirects', 'old_kody_id'],
+	] as const) {
+		await db
+			.prepare(
+				`CREATE TABLE IF NOT EXISTS ${table} (
+					user_id TEXT NOT NULL,
+					${slugColumn} TEXT NOT NULL,
+					package_id TEXT NOT NULL,
+					created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+					PRIMARY KEY (user_id, ${slugColumn})
+				)`,
+			)
+			.run()
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS webhook_endpoints (
@@ -206,7 +223,13 @@ async function mintWebhook(input: {
 
 async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	await ensureSchema(env.APP_DB)
-	for (const table of ['webhook_endpoints', 'saved_packages', 'users']) {
+	for (const table of [
+		'webhook_endpoints',
+		'saved_packages',
+		'users',
+		'package_slug_redirects',
+		'package_kody_id_redirects',
+	]) {
 		await env.APP_DB.prepare(`DELETE FROM ${table}`).run()
 	}
 	const userId = await createStableUserIdFromEmail('alice@example.com')
@@ -315,6 +338,7 @@ function sign(
 async function sendWebhook(
 	webhookName: string,
 	init: {
+		packageSlug?: string
 		method?: 'GET' | 'POST'
 		query?: string
 		urlSecret?: string
@@ -326,7 +350,7 @@ async function sendWebhook(
 	const ctx = createExecutionContext()
 	const response = await handleWebhookIngressRequest(
 		new Request(
-			`https://test.kody.dev/@alice/webhooks/sentry-bridge/${webhookName}/${init.urlSecret ?? urlSecret}${init.query ? `?${init.query}` : ''}`,
+			`https://test.kody.dev/@alice/webhooks/${init.packageSlug ?? 'sentry-bridge'}/${webhookName}/${init.urlSecret ?? urlSecret}${init.query ? `?${init.query}` : ''}`,
 			method === 'GET'
 				? { method }
 				: {
@@ -468,6 +492,31 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	expect(await statusOf('sentry')).toBe(404)
 })
 
+test('webhook ingress follows a package slug redirect after a rename', async () => {
+	const userId = await setupOwnerWithWebhooks(['sentry'])
+	declareWebhook({ name: 'sentry' })
+	await env.APP_DB.prepare(
+		`UPDATE saved_packages
+		SET name = '@alice/error-bridge', kody_id = 'error-bridge'
+		WHERE id = 'pkg-1'`,
+	).run()
+
+	expect(await statusOf('sentry')).toBe(404)
+	await retirePackageSlug({
+		db: env.APP_DB,
+		userId,
+		packageId: 'pkg-1',
+		oldSlug: 'sentry-bridge',
+		newSlug: 'error-bridge',
+	})
+
+	expect(await statusOf('sentry')).toBe(202)
+	expect(await statusOf('sentry', { packageSlug: 'error-bridge' })).toBe(202)
+	expect(enqueued(0).params.webhook.packageKodyId).toBe('error-bridge')
+	expect(await statusOf('sentry', { urlSecret: 'wrong' })).toBe(404)
+	expect(await statusOf('sentry', { packageSlug: 'never-existed' })).toBe(404)
+})
+
 test('webhook delivery records real startedAt duration and explicit delivered outcome with handler result', async () => {
 	const userId = await setupOwnerWithWebhooks(['sync-hook'])
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
@@ -531,7 +580,10 @@ test('webhook delivery records explicit rejected and failed outcomes', async () 
 	).toBe(502)
 	const failed = await findOutcome('failed')
 	expect(failed?.status).toBe('error')
-	expect(failed?.metadata).toMatchObject({ outcome: 'failed', httpStatus: 502 })
+	expect(failed?.metadata).toMatchObject({
+		outcome: 'failed',
+		httpStatus: 502,
+	})
 })
 
 test('webhook ingress rejects suspended owners before any dispatch', async () => {

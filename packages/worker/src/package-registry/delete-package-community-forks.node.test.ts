@@ -141,6 +141,13 @@ function createDeleteForkDb() {
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, old_kody_id)
 		);
+		CREATE TABLE package_slug_redirects (
+			user_id TEXT NOT NULL,
+			old_slug TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_slug)
+		);
 		CREATE TABLE package_invocation_tokens (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,

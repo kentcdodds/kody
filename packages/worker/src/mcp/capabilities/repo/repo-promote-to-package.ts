@@ -10,7 +10,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
@@ -111,9 +111,10 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			} catch (error) {
 				throw new McpCallerError(getErrorMessage(error), { cause: error })
 			}
-			const kodyIdCollision = await getSavedPackageByKodyId(ctx.env.APP_DB, {
+			const kodyIdCollision = await resolveSavedPackageRef(ctx.env.APP_DB, {
 				userId: user.userId,
-				kodyId: manifest.kody.id,
+				ref: manifest.kody.id,
+				match: 'slug',
 			})
 			if (kodyIdCollision) {
 				throw new McpCallerError(

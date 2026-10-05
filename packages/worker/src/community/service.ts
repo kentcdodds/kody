@@ -23,7 +23,7 @@ import {
 import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 	getSavedPackageByName,
 	updateSavedPackage,
 } from '#worker/package-registry/repo.ts'
@@ -77,7 +77,7 @@ import {
 } from './listing-published-dispatch-queue-producer.ts'
 import { type CommunityListingPublishedProjection } from './listing-published-subscription-event.ts'
 import {
-	deletePackageKodyIdRedirects,
+	deletePackageSlugRedirects,
 	getCommunityPackageHref,
 } from './package-url.ts'
 import {
@@ -424,14 +424,14 @@ async function cleanupFailedCommunityFork(input: {
 			}),
 		)
 	})
-	await deletePackageKodyIdRedirects({
+	await deletePackageSlugRedirects({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		packageId: input.packageId,
 	}).catch((error) => {
 		console.warn(
 			JSON.stringify({
-				message: 'community fork kody id redirect cleanup failed',
+				message: 'community fork slug redirect cleanup failed',
 				userId: input.userId,
 				packageId: input.packageId,
 				sourceId: input.sourceId,
@@ -1463,9 +1463,10 @@ export async function prepareCommunityFork(
 		throw new CommunityActionError(getErrorMessage(error))
 	}
 	const [existingByKody, existingByName, existingForks] = await Promise.all([
-		getSavedPackageByKodyId(input.env.APP_DB, {
+		resolveSavedPackageRef(input.env.APP_DB, {
 			userId: input.userId,
-			kodyId: targetKodyId,
+			ref: targetKodyId,
+			match: 'slug',
 		}),
 		getSavedPackageByName(input.env.APP_DB, {
 			userId: input.userId,
@@ -1870,9 +1871,10 @@ async function resolveCommunityForkForAdoption(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 				})
-			: await getSavedPackageByKodyId(input.env.APP_DB, {
+			: await resolveSavedPackageRef(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: await resolveOwnedCommunityPackageNameLeaf({
+					match: 'slug',
+					ref: await resolveOwnedCommunityPackageNameLeaf({
 						db: input.env.APP_DB,
 						userId: input.userId,
 						value: input.kodyId ?? '',
@@ -2025,9 +2027,10 @@ export async function absorbCommunityForkUpstream(input: {
 					userId: input.userId,
 					packageId: input.packageId,
 				})
-			: await getSavedPackageByKodyId(input.env.APP_DB, {
+			: await resolveSavedPackageRef(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: await resolveOwnedCommunityPackageNameLeaf({
+					match: 'slug',
+					ref: await resolveOwnedCommunityPackageNameLeaf({
 						db: input.env.APP_DB,
 						userId: input.userId,
 						value: input.kodyId ?? '',

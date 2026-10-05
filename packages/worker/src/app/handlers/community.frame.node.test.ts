@@ -9,7 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	searchCommunityListings: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
-	listSavedPackagesByKodyIds: vi.fn(),
+	listSavedPackagesBySlugs: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 }))
@@ -36,8 +36,8 @@ vi.mock('#worker/community/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByKodyIds: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByKodyIds(...args),
+	listSavedPackagesBySlugs: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesBySlugs(...args),
 	listSavedPackagesByIds: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByIds(...args),
 }))
@@ -128,7 +128,7 @@ test('community page handler returns bare listings frame HTML for target header'
 	})
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([
 		{
 			id: 'pkg-github',
 			kodyId: 'github-triage',

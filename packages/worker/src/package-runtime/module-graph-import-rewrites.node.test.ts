@@ -24,8 +24,8 @@ vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
 }))
@@ -422,7 +422,7 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 		{},
 		{ userId: 'user-1', name: '@example-package/follow-up-on-pr-agent' },
 	)
-	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 })
 
 test('buildKodyModuleBundle rejects ad-hoc execute and person-package imports of platform scopes', async () => {
