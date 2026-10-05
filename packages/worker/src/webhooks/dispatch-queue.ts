@@ -23,6 +23,7 @@ const retryableInvocationErrorCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
 	'invocation_in_progress',
+	'artifact_preparation_failed',
 ])
 
 function resolveWebhookDispatchInvocation(

@@ -23,6 +23,7 @@ import {
 	isKodyRuntimeModulePath,
 	parsePackageRuntimeModulePathPackageId,
 } from './runtime-source-modules.ts'
+import { publishedRuntimeBundleMissingMessage } from './published-source-dependencies.ts'
 import { collectStaticKodyPackageImportsFromFiles } from './static-kody-imports.ts'
 
 /** Host module name the CLI registers in local workerd (`localWorkerModuleNames.runtime`). */
@@ -384,7 +385,7 @@ function mapPrepareFailure(
 	const importList = imports.join(', ')
 	// Missing published runtime bundle: consumer cannot republish an upstream
 	// package. Honest next step matches Open API internal_error copy.
-	if (/no published runtime bundle artifact is available yet/i.test(message)) {
+	if (message.includes(publishedRuntimeBundleMissingMessage)) {
 		return new LocalExecutePackageGraphError(
 			'package_import_unpublished',
 			`Saved package import(s) for local execute are missing a published runtime bundle (${importList}). Retry later or report it if it persists.`,

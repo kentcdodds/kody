@@ -550,7 +550,8 @@ test('invokePackageExport stores terminal failures for execution errors and miss
 	expect(runMock).not.toHaveBeenCalled()
 })
 
-test('invokePackageExport asks for republish when a published artifact is missing for npm-backed source', async () => {
+test('invokePackageExport treats a missing npm-backed runtime bundle as retryable artifact prep', async () => {
+	clearInvokeContractCachesForTests()
 	const db = createDatabase()
 	seedPackageResolution()
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
@@ -579,26 +580,18 @@ test('invokePackageExport asks for republish when a published artifact is missin
 		dispatchRequest('evt-republish-needed', { source: 'discord-gateway' }),
 	)
 
-	expect(response.status).toBe(500)
+	expect(response.status).toBe(503)
 	expect(response.body).toMatchObject({
 		ok: false,
 		error: {
-			code: 'invocation_failed',
-			message: expect.stringContaining(
-				'no published runtime bundle artifact is available yet',
-			),
+			code: 'artifact_preparation_failed',
+			message:
+				'Package artifact preparation failed before execution. Please retry.',
 		},
 	})
 	expect(
 		repoMockModule.typecheckPackageEntrypointsFromSourceFiles,
-	).toHaveBeenCalledWith({
-		sourceFiles: expect.objectContaining({
-			'package.json': expect.any(String),
-			'src/dispatch-message-created.ts': expect.any(String),
-		}),
-		entryPoints: [{ path: 'src/dispatch-message-created.ts' }],
-		emittedEventTopics: [],
-	})
+	).not.toHaveBeenCalled()
 	expect(repoMockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
 	expect(runMock).not.toHaveBeenCalled()
 })

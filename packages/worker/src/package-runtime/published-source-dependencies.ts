@@ -1,5 +1,8 @@
 const packageManifestPath = 'package.json'
 
+export const publishedRuntimeBundleMissingMessage =
+	'no published runtime bundle artifact is available yet'
+
 function getDeclaredPackageDependencies(sourceFiles: Record<string, string>) {
 	const packageJson = sourceFiles[packageManifestPath]
 	if (!packageJson) return []
@@ -25,22 +28,37 @@ function getMissingInstalledDependencies(input: {
 	)
 }
 
+export function listMissingPublishedSourceInstalledDependencies(
+	sourceFiles: Record<string, string>,
+) {
+	const dependencies = getDeclaredPackageDependencies(sourceFiles)
+	if (dependencies.length === 0) return []
+	return getMissingInstalledDependencies({
+		sourceFiles,
+		dependencies,
+	})
+}
+
+export function isPublishedRuntimeBundleMissingError(error: unknown) {
+	return (
+		error instanceof Error &&
+		error.message.includes(publishedRuntimeBundleMissingMessage)
+	)
+}
+
 export function assertPublishedSourceCanRebuildWithoutInstallingDeps(input: {
 	sourceFiles: Record<string, string>
 	bundleLabel: string
 }) {
-	const dependencies = getDeclaredPackageDependencies(input.sourceFiles)
-	if (dependencies.length === 0) return
-	const missingDependencies = getMissingInstalledDependencies({
-		sourceFiles: input.sourceFiles,
-		dependencies,
-	})
+	const missingDependencies = listMissingPublishedSourceInstalledDependencies(
+		input.sourceFiles,
+	)
 	if (missingDependencies.length === 0) return
 	throw new Error(
 		`${input.bundleLabel} declares npm dependencies (${missingDependencies
 			.map((dependency) => `"${dependency}"`)
 			.join(
 				', ',
-			)}) but no published runtime bundle artifact is available yet. Republish the package so Kody can install dependencies and persist a fresh runtime bundle artifact.`,
+			)}) but ${publishedRuntimeBundleMissingMessage}. Republish the package so Kody can install dependencies and persist a fresh runtime bundle artifact.`,
 	)
 }

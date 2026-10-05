@@ -169,11 +169,16 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 			status: 500,
 			body: { ok: false, error: { code: 'idempotency_persistence_failed' } },
 		})
+		.mockResolvedValueOnce({
+			status: 503,
+			body: { ok: false, error: { code: 'artifact_preparation_failed' } },
+		})
 		.mockResolvedValue(handledResponse)
 	mocks.recordWebhookDelivery
 		.mockResolvedValueOnce(undefined)
 		.mockRejectedValueOnce(new Error('RunLog unavailable'))
 	const retry = createQueueMessage('retry', createMessage())
+	const artifactRetry = createQueueMessage('artifact-retry', createMessage())
 	const terminal = createQueueMessage('terminal', createMessage())
 	const persistenceFailure = createQueueMessage(
 		'persistence-failure',
@@ -182,13 +187,15 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 	const invalid = createQueueMessage('invalid', { endpoint: null })
 
 	await handleWebhookDispatchQueue(
-		createBatch([retry, terminal, persistenceFailure, invalid]),
+		createBatch([retry, artifactRetry, terminal, persistenceFailure, invalid]),
 		{} as Env,
 	)
 
 	expect(
-		[retry, terminal, persistenceFailure, invalid].map(queueOutcome),
-	).toEqual([retried, acked, retried, acked])
+		[retry, artifactRetry, terminal, persistenceFailure, invalid].map(
+			queueOutcome,
+		),
+	).toEqual([retried, retried, acked, retried, acked])
 	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(2)
 })
 

@@ -608,6 +608,59 @@ test('ensureModuleArtifact rebuilds when the identity artifact is stale or its r
 	}
 })
 
+test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a republish rebuild is still in flight', async () => {
+	const fixture = createFixture({
+		userId: 'user-npm-window',
+		publishedCommit: 'commit-new',
+		suffix: 'npm-window',
+	})
+	const previousArtifact = {
+		...fixture.artifact,
+		publishedCommit: 'commit-old',
+	}
+	const npmFiles = {
+		'package.json': JSON.stringify({
+			name: fixture.savedPackage.name,
+			exports: {
+				'./get-issue-state': './src/get-issue-state.ts',
+			},
+			dependencies: {
+				react: '^19.0.0',
+			},
+			kody: {
+				id: fixture.savedPackage.kodyId,
+				description: 'Sentry triage helpers',
+			},
+		}),
+		'src/get-issue-state.ts':
+			'export default async function main() { return "new" }',
+	}
+	mockModuleArtifactRebuild(fixture, npmFiles)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: npmFiles['package.json'],
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { publishedCommit: 'commit-old' },
+		artifact: previousArtifact,
+	})
+
+	const served = await ensureModuleArtifact({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		savedPackage: fixture.savedPackage,
+		selector: { kind: 'export', exportName: 'get-issue-state' },
+		userId: fixture.savedPackage.userId,
+	})
+
+	expect(served.artifact.publishedCommit).toBe('commit-old')
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
+	expect(
+		mockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).not.toHaveBeenCalled()
+})
+
 test('an artifact from a different commit is served but never retained', async () => {
 	const load = vi.fn(async () => ({
 		artifact: { publishedCommit: 'commit-old' } as never,
