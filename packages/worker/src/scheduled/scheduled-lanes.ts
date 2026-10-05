@@ -72,10 +72,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'repo_session_index_backfill':
-			// Inactive no-op; name stays in the union so in-flight queue
-			// messages parse without failing lane dispatch.
-			return
 		case 'reconcile_inbound_deliveries':
 			return sweepStaleInboundDeliveries({
 				env: input.env,
@@ -169,9 +165,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'compute_overage_billing':
-			// Inactive no-op; overage invoicing is retired (#2617).
-			return
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
 				env: input.env,

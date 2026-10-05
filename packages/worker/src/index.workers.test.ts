@@ -155,7 +155,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 	for (const lane of [
 		'reconcile_artifacts_pushes',
 		'repo_session_cleanup',
-		'repo_session_index_backfill',
 		'reconcile_inbound_deliveries',
 		'system_email_retention',
 		'storage_bucket_estimate_backfill',

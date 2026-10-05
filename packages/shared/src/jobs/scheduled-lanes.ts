@@ -8,8 +8,6 @@
 export const scheduledLaneNames = [
 	'reconcile_artifacts_pushes',
 	'repo_session_cleanup',
-	// Inactive no-op; name stays in the union so in-flight queue messages parse.
-	'repo_session_index_backfill',
 	'reconcile_inbound_deliveries',
 	'system_email_retention',
 	'storage_bucket_estimate_backfill',
@@ -20,10 +18,6 @@ export const scheduledLaneNames = [
 	'unverified_account_purge',
 	'usage_aggregation',
 	'durable_object_duration_attribution',
-	// Inactive no-op (overage invoicing is retired; credits debit inside
-	// usage_aggregation). Name stays in the union so in-flight queue
-	// messages parse.
-	'compute_overage_billing',
 	'auth_denial_alert',
 	'email_delivery_alert',
 	'email_verification_stall_alert',
