@@ -145,8 +145,10 @@ Rules:
   forward-only attribution in metadata: `entry` (`invoke` | `code`), optional
   `invoke` specifier when entry is invoke, and `workerId` (the stable LOADER id
   unique_worker_days already meters) once the module graph is minted. Package
-  columns (`package_id`, `published_commit`, …) stay first-class. No historical
-  backfill.
+  columns (`package_id`, `published_commit`, …) stay first-class.
+  `published_commit` is the bundle that executed, which can trail
+  `entity_sources.published_commit` for a short npm-backed republish window. No
+  historical backfill.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
   row instead of starting a second attempt. Lookups are scoped by

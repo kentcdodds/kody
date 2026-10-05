@@ -226,7 +226,8 @@ export async function runSavedPackageModuleOnce(
 			// not know the published commit yet; enrich it for the terminal write.
 			externalHandle.context = {
 				...externalHandle.context,
-				publishedCommit: repoSource?.published_commit ?? null,
+				publishedCommit:
+					artifact.publishedCommit ?? repoSource?.published_commit ?? null,
 			}
 		}
 		const runRecord: RunRecordContext | null = externalHandle
@@ -237,7 +238,8 @@ export async function runSavedPackageModuleOnce(
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
 						sourceId: input.savedPackage.sourceId,
-						publishedCommit: repoSource?.published_commit ?? null,
+						publishedCommit:
+							artifact.publishedCommit ?? repoSource?.published_commit ?? null,
 						surface: runtimeSurface,
 						name: resolveInvocationRuntimeName({
 							surface: runtimeSurface,

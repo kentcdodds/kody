@@ -145,9 +145,12 @@ user-scoped KV key when the body was spilled). Queue retries reuse that exact
 idempotency key. Request-mode caller `Idempotency-Key` messages set
 `callerIdempotency` so the consumer hashes the JSON body (same as sync).
 Unique-key ack claims omit that flag and hash the `{ webhook, request }`
-envelope. Transient ledger lookup/terminal-persistence failures and
-still-in-progress replays are retried; terminal package errors are recorded and
-acknowledged. A missing spilled body is a terminal failure
+envelope. Transient ledger lookup/terminal-persistence failures,
+still-in-progress replays, and `artifact_preparation_failed` (npm bundle not
+ready yet) are retried. On the last consumer attempt (`max_retries`,
+currently 10) those retries record `invocation_retry_exhausted` and ack instead
+of falling through to the dead-letter queue. Terminal package errors are
+recorded and acknowledged. A missing spilled body is a terminal failure
 (`ack_queue_payload_missing`). The package export sandbox retains its normal
 ~90s budget, so genuinely longer package work ends as an explicit timeout rather
 than an unknown interrupted outcome.

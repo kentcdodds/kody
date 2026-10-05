@@ -609,11 +609,17 @@ test('ensureModuleArtifact rebuilds when the identity artifact is stale or its r
 })
 
 test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a republish rebuild is still in flight', async () => {
-	const fixture = createFixture({
-		userId: 'user-npm-window',
-		publishedCommit: 'commit-new',
-		suffix: 'npm-window',
-	})
+	const fixture = {
+		...createFixture({
+			userId: 'user-npm-window',
+			publishedCommit: 'commit-new',
+			suffix: 'npm-window',
+		}),
+	}
+	fixture.source = {
+		...fixture.source,
+		updated_at: new Date().toISOString(),
+	}
 	const previousArtifact = {
 		...fixture.artifact,
 		publishedCommit: 'commit-old',
@@ -635,6 +641,9 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 		'src/get-issue-state.ts':
 			'export default async function main() { return "new" }',
 	}
+	mockModule.persistPublishedBundleArtifact.mockClear()
+	mockModule.buildKodyModuleBundle.mockClear()
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockClear()
 	mockModuleArtifactRebuild(fixture, npmFiles)
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source: fixture.source,
@@ -659,6 +668,57 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 	expect(
 		mockModule.typecheckPackageEntrypointsFromSourceFiles,
 	).not.toHaveBeenCalled()
+})
+
+test('ensureModuleArtifact stops serving a previous npm-backed bundle after the rebuild window', async () => {
+	const fixture = createFixture({
+		userId: 'user-npm-expired',
+		publishedCommit: 'commit-new',
+		suffix: 'npm-expired',
+	})
+	const npmFiles = {
+		'package.json': JSON.stringify({
+			name: fixture.savedPackage.name,
+			exports: {
+				'./get-issue-state': './src/get-issue-state.ts',
+			},
+			dependencies: {
+				react: '^19.0.0',
+			},
+			kody: {
+				id: fixture.savedPackage.kodyId,
+				description: 'Sentry triage helpers',
+			},
+		}),
+		'src/get-issue-state.ts':
+			'export default async function main() { return "new" }',
+	}
+	mockModule.persistPublishedBundleArtifact.mockClear()
+	mockModule.buildKodyModuleBundle.mockClear()
+	mockModuleArtifactRebuild(fixture, npmFiles)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: npmFiles['package.json'],
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { publishedCommit: 'commit-old' },
+		artifact: {
+			...fixture.artifact,
+			publishedCommit: 'commit-old',
+		},
+	})
+
+	await expect(
+		ensureModuleArtifact({
+			env: createEnv(),
+			baseUrl: 'https://kody.dev',
+			savedPackage: fixture.savedPackage,
+			selector: { kind: 'export', exportName: 'get-issue-state' },
+			userId: fixture.savedPackage.userId,
+		}),
+	).rejects.toThrow('no published runtime bundle artifact is available yet')
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
 })
 
 test('an artifact from a different commit is served but never retained', async () => {

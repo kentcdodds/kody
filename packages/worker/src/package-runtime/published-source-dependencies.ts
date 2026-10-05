@@ -3,6 +3,21 @@ const packageManifestPath = 'package.json'
 export const publishedRuntimeBundleMissingMessage =
 	'no published runtime bundle artifact is available yet'
 
+/** How long invoke may serve the previous npm bundle after published_commit flips. */
+export const publishedNpmBundleRebuildWindowMs = 2 * 60 * 1000
+
+export function isPublishedSourceWithinNpmBundleRebuildWindow(input: {
+	updatedAt: string | null | undefined
+	nowMs?: number
+}) {
+	const updatedAtMs = Date.parse(input.updatedAt ?? '')
+	if (!Number.isFinite(updatedAtMs)) return false
+	return (
+		(input.nowMs ?? Date.now()) - updatedAtMs <=
+		publishedNpmBundleRebuildWindowMs
+	)
+}
+
 function getDeclaredPackageDependencies(sourceFiles: Record<string, string>) {
 	const packageJson = sourceFiles[packageManifestPath]
 	if (!packageJson) return []

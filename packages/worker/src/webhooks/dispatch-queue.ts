@@ -19,6 +19,8 @@ import {
 import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 
 const webhookDispatchRetryDelaySeconds = 30
+/** Matches `kody-webhook-dispatch` consumer `max_retries` in wrangler.jsonc. */
+export const webhookDispatchMaxRetries = 10
 const retryableInvocationErrorCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
@@ -174,6 +176,34 @@ export async function handleWebhookDispatchQueue(
 			}
 			const outcome = await processWebhookDispatch(hydrated, env)
 			if (outcome === 'retry') {
+				if (queueMessage.attempts >= webhookDispatchMaxRetries) {
+					await recordWebhookDelivery({
+						env,
+						endpoint: message.endpoint,
+						kodyId: message.packageKodyId,
+						outcome: 'failed',
+						httpStatus: 502,
+						error: 'invocation_retry_exhausted',
+						payloadBytes: message.payloadBytes,
+						invocationId: message.deliveryId,
+						startedAt: message.receivedAt,
+						requirePersistence: true,
+					})
+					queueMessage.ack()
+					if (message.payloadKvKey) {
+						await deleteWebhookDispatchPayload({
+							kv: env.BUNDLE_ARTIFACTS_KV,
+							key: message.payloadKvKey,
+						}).catch((error) => {
+							console.error('webhook-dispatch-payload-delete-failed', {
+								queueMessageId: queueMessage.id,
+								endpointId: message.endpoint.id,
+								error,
+							})
+						})
+					}
+					continue
+				}
 				queueMessage.retry({ delaySeconds: webhookDispatchRetryDelaySeconds })
 			} else {
 				queueMessage.ack()

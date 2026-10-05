@@ -3,6 +3,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	handleWebhookDispatchQueue,
 	processWebhookDispatch,
+	webhookDispatchMaxRetries,
 } from './dispatch-queue.ts'
 import {
 	createWebhookDispatchQueueMessage,
@@ -197,6 +198,28 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 		),
 	).toEqual([retried, retried, acked, retried, acked])
 	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(2)
+})
+
+test('queue records a terminal failure when retryable artifact prep is exhausted', async () => {
+	mocks.dispatchWebhookInvocation.mockResolvedValue({
+		status: 503,
+		body: { ok: false, error: { code: 'artifact_preparation_failed' } },
+	})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+	const exhausted = createQueueMessage('exhausted', createMessage())
+	exhausted.attempts = webhookDispatchMaxRetries
+
+	await handleWebhookDispatchQueue(createBatch([exhausted]), {} as Env)
+
+	expect(queueOutcome(exhausted)).toEqual(acked)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: 'failed',
+			httpStatus: 502,
+			error: 'invocation_retry_exhausted',
+			invocationId: 'delivery-1',
+		}),
+	)
 })
 
 test('webhook queue parser rejects malformed isolation and delivery fields', () => {

@@ -21,6 +21,7 @@ import {
 import {
 	assertPublishedSourceCanRebuildWithoutInstallingDeps,
 	isPublishedRuntimeBundleMissingError,
+	isPublishedSourceWithinNpmBundleRebuildWindow,
 	listMissingPublishedSourceInstalledDependencies,
 } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -213,12 +214,19 @@ async function ensureModuleArtifactUncached(input: {
 	// External publish flips `published_commit` before the per-target rebuild
 	// finishes. Invoke-contract-cache already serves a cross-commit identity
 	// hit without retaining it; do the same here when source cannot rebuild
-	// (npm deps live only in the published runtime bundle).
+	// (npm deps live only in the published runtime bundle), and only while
+	// `source.updated_at` is still inside the rebuild window. After that the
+	// missing-bundle error is retryable so a failed rebuild stays visible.
 	if (
 		listMissingPublishedSourceInstalledDependencies(packageSource.files)
 			.length > 0
 	) {
-		if (loaded?.artifact) {
+		if (
+			loaded?.artifact &&
+			isPublishedSourceWithinNpmBundleRebuildWindow({
+				updatedAt: packageSource.source.updated_at,
+			})
+		) {
 			return {
 				artifact: loaded.artifact,
 				source: packageSource.source,
