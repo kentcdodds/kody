@@ -1321,6 +1321,8 @@ async function handleSaveAction(input: {
 		// Write already succeeded. Do not report ok:false — a create retry with
 		// currentId null would 409 on the same name.
 		const now = new Date().toISOString()
+		const nextExpiresAt =
+			expiresAt === undefined ? (currentSecret?.expiresAt ?? null) : expiresAt
 		const selectedSecret = {
 			id: nextId,
 			name,
@@ -1334,13 +1336,16 @@ async function handleSaveAction(input: {
 						null),
 			allowedHosts,
 			allowedPackages,
-			createdAt: currentSecret?.createdAt ?? now,
+			createdAt:
+				currentSecret && currentSecret.id === nextId
+					? currentSecret.createdAt
+					: now,
 			updatedAt: now,
-			expiresAt:
+			expiresAt: nextExpiresAt,
+			ttlMs:
 				expiresAt === undefined
-					? (currentSecret?.expiresAt ?? null)
-					: expiresAt,
-			ttlMs: currentSecret?.ttlMs ?? null,
+					? (currentSecret?.ttlMs ?? null)
+					: remainingSecretTtlMs(nextExpiresAt),
 			value,
 		}
 		const fallback: AccountSecretsLoaderData = {
@@ -1483,4 +1488,10 @@ function readPackageIdForScope(input: {
 	)
 		? packageId
 		: null
+}
+
+function remainingSecretTtlMs(expiresAt: string | null) {
+	if (expiresAt == null) return null
+	const remaining = Date.parse(expiresAt) - Date.now()
+	return Number.isFinite(remaining) ? Math.max(0, remaining) : null
 }

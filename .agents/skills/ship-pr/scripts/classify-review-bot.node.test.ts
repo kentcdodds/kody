@@ -154,6 +154,38 @@ test('review-bot sort maps Bugbot, Devin, and Seer; unsure stays a blocker', () 
 		}),
 	).toBe(false)
 	expect(
+		isAddressingReviewReply({
+			id: 25,
+			user: { login: 'kody-bot' },
+			body: 'Fixed in a follow-up.',
+			in_reply_to_id: 1,
+		}),
+	).toBe(false)
+	expect(
+		isAddressingReviewReply({
+			id: 26,
+			user: { login: 'kody-bot' },
+			body: 'abcdef1',
+			in_reply_to_id: 1,
+		}),
+	).toBe(false)
+	expect(
+		isAddressingReviewReply({
+			id: 27,
+			user: { login: 'kody-bot' },
+			body: 'This is not fixed in abcdef1.',
+			in_reply_to_id: 1,
+		}),
+	).toBe(false)
+	expect(
+		isAddressingReviewReply({
+			id: 28,
+			user: { login: 'dependabot[bot]' },
+			body: 'Fixed in abcdef1.',
+			in_reply_to_id: 1,
+		}),
+	).toBe(false)
+	expect(
 		findingHasAddressingReply({ commentId: 1 }, [
 			{
 				id: 1,
