@@ -22,6 +22,11 @@ const incidentalRuntimeWarnings = [
 	'activation-run-record-failed',
 	'artifacts-push-subscription-ensure-failed',
 	'kody-first-capability-dispatch-slow',
+	// Fire-and-forget estimate refresh after packageStorage / StorageRunner
+	// writes. The dedicated storage-buckets suite asserts the message; other
+	// workers-unit files that touch storage should not flake when a refresh
+	// fails in the isolate.
+	'storage-bucket-estimate-refresh-failed',
 ]
 
 export function silenceIncidentalRuntimeWarnings(
