@@ -47,7 +47,9 @@ export const reviewBotLogins = [
 export function isAddressingReviewReplyBody(text) {
 	const body = String(text ?? '')
 	if (
-		/\b(?:not|n't|never)\s+(?:been\s+)?(?:fixed|addressed|landed)\b/i.test(body)
+		/(?:n't|\bnot\b|\bnever\b)\s+(?:been\s+)?(?:fixed|addressed|landed)\b/i.test(
+			body,
+		)
 	) {
 		return false
 	}

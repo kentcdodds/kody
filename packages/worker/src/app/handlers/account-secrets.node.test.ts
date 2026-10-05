@@ -1170,20 +1170,34 @@ test('account secrets save stays ok when metadata reload fails after write', asy
 	expect(mockModule.saveSecret).toHaveBeenCalled()
 })
 
-test('account secrets save fallback uses new createdAt and ttl when the id or expiry changes', async () => {
+test('account secrets save fallback uses the saved record metadata', async () => {
 	const existing = makeSecret('oldApiKey', {
 		ttlMs: 60_000,
 		expiresAt: '2026-10-06T00:00:00.000Z',
 	})
+	const savedAt = '2026-10-05T12:00:00.000Z'
+	const expiresAt = new Date(
+		Date.now() + 30 * 24 * 60 * 60 * 1000,
+	).toISOString()
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
 	mockModule.listSecrets
 		.mockResolvedValueOnce([existing])
 		.mockRejectedValueOnce(new Error('metadata reload failed'))
+	mockModule.saveSecret.mockResolvedValueOnce({
+		name: 'renamedApiKey',
+		scope: 'user',
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: savedAt,
+		updatedAt: savedAt,
+		expiresAt,
+		ttlMs: 2_592_000_000,
+	} as never)
 
 	const call = createHandler()
-	const expiresAt = '2026-12-01T00:00:00.000Z'
-	const before = Date.now()
 	const response = await call(
 		postRequest({
 			action: 'save',
@@ -1196,27 +1210,17 @@ test('account secrets save fallback uses new createdAt and ttl when the id or ex
 			allowedPackages: [],
 		}),
 	)
-	const after = Date.now()
 
 	expect(response.status).toBe(200)
-	const payload = (await response.json()) as {
-		ok: boolean
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
 		selectedSecret: {
-			id: string
-			createdAt: string
-			expiresAt: string
-			ttlMs: number | null
-		}
-	}
-	expect(payload.ok).toBe(true)
-	expect(payload.selectedSecret.id).toBe('user::::renamedApiKey')
-	expect(payload.selectedSecret.expiresAt).toBe(expiresAt)
-	expect(payload.selectedSecret.createdAt).not.toBe(epoch)
-	const createdAtMs = Date.parse(payload.selectedSecret.createdAt)
-	expect(createdAtMs).toBeGreaterThanOrEqual(before)
-	expect(createdAtMs).toBeLessThanOrEqual(after)
-	expect(payload.selectedSecret.ttlMs).not.toBe(60_000)
-	expect(payload.selectedSecret.ttlMs).toBeGreaterThan(0)
+			id: 'user::::renamedApiKey',
+			createdAt: savedAt,
+			expiresAt,
+			ttlMs: 2_592_000_000,
+		},
+	})
 })
 
 test('oauth_exchange maps provider failures and forwards exchange styles', async () => {
