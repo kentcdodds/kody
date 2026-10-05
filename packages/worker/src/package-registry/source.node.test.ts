@@ -61,6 +61,7 @@ function createPublishedSourcePayload(sourceId: string, commit: string) {
 	return {
 		source: createPackageSourceRow(sourceId, commit),
 		files: packageFiles,
+		snapshotCreatedAt: '2026-04-20T00:05:00.000Z',
 	}
 }
 
@@ -95,6 +96,7 @@ test('loadPackageSourceBySourceId caches published sources', async () => {
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 	expect(first).toStrictEqual(second)
 	expect(first.files).toEqual(packageFiles)
+	expect(first.snapshotCreatedAt).toBe('2026-04-20T00:05:00.000Z')
 })
 
 test('loadPackageSourceBySourceId shares in-flight loads', async () => {

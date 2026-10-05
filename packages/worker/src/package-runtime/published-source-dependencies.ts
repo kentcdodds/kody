@@ -7,13 +7,13 @@ export const publishedRuntimeBundleMissingMessage =
 export const publishedNpmBundleRebuildWindowMs = 2 * 60 * 1000
 
 export function isPublishedSourceWithinNpmBundleRebuildWindow(input: {
-	updatedAt: string | null | undefined
+	publishedAt: string | null | undefined
 	nowMs?: number
 }) {
-	const updatedAtMs = Date.parse(input.updatedAt ?? '')
-	if (!Number.isFinite(updatedAtMs)) return false
+	const publishedAtMs = Date.parse(input.publishedAt ?? '')
+	if (!Number.isFinite(publishedAtMs)) return false
 	return (
-		(input.nowMs ?? Date.now()) - updatedAtMs <=
+		(input.nowMs ?? Date.now()) - publishedAtMs <=
 		publishedNpmBundleRebuildWindowMs
 	)
 }

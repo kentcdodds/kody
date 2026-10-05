@@ -133,4 +133,29 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 	expect(source.files).toMatchObject({
 		'index.js': 'export const value = "ok"',
 	})
+	expect(source.snapshotCreatedAt).toBeNull()
+})
+
+test('loadPublishedEntitySource exposes stored snapshot createdAt as the publish clock', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'repo-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files: {
+			'package.json': manifestJson(),
+			'index.js': 'export const value = "ok"',
+		},
+		createdAt: '2026-04-20T00:05:00.000Z',
+	})
+
+	const source = await loadPublishedEntitySource(loadInput)
+
+	expect(source.snapshotCreatedAt).toBe('2026-04-20T00:05:00.000Z')
+	expect(mockModule.persistPublishedSourceSnapshot).not.toHaveBeenCalled()
 })

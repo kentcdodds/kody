@@ -19,6 +19,8 @@ export type LoadedPackageSource = {
 	source: EntitySourceRow
 	manifest: AuthoredPackageJson
 	files: Record<string, string>
+	/** KV snapshot `createdAt` when finalize wrote this commit; null on artifact backfill. */
+	snapshotCreatedAt?: string | null
 }
 
 export type LoadedPackageManifest = {
@@ -52,11 +54,13 @@ function finalizeLoadedSource(input: {
 	source: EntitySourceRow
 	manifest: AuthoredPackageJson
 	files: Record<string, string>
+	snapshotCreatedAt?: string | null
 }) {
 	return Object.freeze({
 		source: deepFreeze({ ...input.source }),
 		manifest: deepFreeze(structuredClone(input.manifest)),
 		files: freezeFiles(input.files),
+		snapshotCreatedAt: input.snapshotCreatedAt ?? null,
 	}) as LoadedPackageSource
 }
 
@@ -252,6 +256,7 @@ async function loadPackageSourceUncached(input: {
 			}),
 		}),
 		files: published.files,
+		snapshotCreatedAt: published.snapshotCreatedAt,
 	})
 }
 

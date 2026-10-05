@@ -295,11 +295,13 @@ function publishedCommitOf(
 function mockModuleArtifactRebuild(
 	fixture: Fixture,
 	files: Record<string, string>,
+	snapshotCreatedAt?: string | null,
 ) {
 	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
 	mockModule.loadPublishedEntitySource.mockResolvedValue({
 		source: fixture.source,
 		files,
+		snapshotCreatedAt: snapshotCreatedAt ?? null,
 	})
 	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
 		ok: true,
@@ -618,7 +620,7 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 	}
 	fixture.source = {
 		...fixture.source,
-		updated_at: new Date().toISOString(),
+		updated_at: '2026-07-01T00:00:00.000Z',
 	}
 	const previousArtifact = {
 		...fixture.artifact,
@@ -644,7 +646,7 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 	mockModule.persistPublishedBundleArtifact.mockClear()
 	mockModule.buildKodyModuleBundle.mockClear()
 	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockClear()
-	mockModuleArtifactRebuild(fixture, npmFiles)
+	mockModuleArtifactRebuild(fixture, npmFiles, new Date().toISOString())
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source: fixture.source,
 		content: npmFiles['package.json'],
@@ -676,6 +678,10 @@ test('ensureModuleArtifact stops serving a previous npm-backed bundle after the 
 		publishedCommit: 'commit-new',
 		suffix: 'npm-expired',
 	})
+	fixture.source = {
+		...fixture.source,
+		updated_at: new Date().toISOString(),
+	}
 	const npmFiles = {
 		'package.json': JSON.stringify({
 			name: fixture.savedPackage.name,
@@ -695,7 +701,7 @@ test('ensureModuleArtifact stops serving a previous npm-backed bundle after the 
 	}
 	mockModule.persistPublishedBundleArtifact.mockClear()
 	mockModule.buildKodyModuleBundle.mockClear()
-	mockModuleArtifactRebuild(fixture, npmFiles)
+	mockModuleArtifactRebuild(fixture, npmFiles, '2026-07-01T00:00:00.000Z')
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source: fixture.source,
 		content: npmFiles['package.json'],

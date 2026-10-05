@@ -215,7 +215,9 @@ async function ensureModuleArtifactUncached(input: {
 	// finishes. Invoke-contract-cache already serves a cross-commit identity
 	// hit without retaining it; do the same here when source cannot rebuild
 	// (npm deps live only in the published runtime bundle), and only while
-	// `source.updated_at` is still inside the rebuild window. After that the
+	// the published snapshot `createdAt` (the finalize clock) is still inside
+	// the rebuild window. `entity_sources.updated_at` is the wrong clock: any
+	// later row write would reopen stale serving. After the window the
 	// missing-bundle error is retryable so a failed rebuild stays visible.
 	if (
 		listMissingPublishedSourceInstalledDependencies(packageSource.files)
@@ -224,7 +226,7 @@ async function ensureModuleArtifactUncached(input: {
 		if (
 			loaded?.artifact &&
 			isPublishedSourceWithinNpmBundleRebuildWindow({
-				updatedAt: packageSource.source.updated_at,
+				publishedAt: packageSource.snapshotCreatedAt,
 			})
 		) {
 			return {
