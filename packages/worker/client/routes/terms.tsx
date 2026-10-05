@@ -145,11 +145,11 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Content and packages</h2>
 				<p mix={css(descriptionCss)}>
-					You retain rights to content you create. Community listings you
-					publish are visible to other users under the community rules. Hosted
-					package apps run author-supplied code; review packages before
-					installing or adopting them. Do not publish secrets or other
-					people&apos;s private data.
+					You retain rights to content you create. Public packages you publish
+					are visible to other users under the community rules. Hosted package
+					apps run author-supplied code; review packages before installing or
+					adopting them. Do not publish secrets or other people&apos;s private
+					data.
 				</p>
 			</section>
 

@@ -46,7 +46,7 @@ const resourceDescriptions: Record<ApiTokenResource, string> = {
 	'mcp-servers': 'connected MCP servers',
 	runs: 'execution run history',
 	storage: 'durable storage export and query',
-	community: 'community listings, ratings, and profile',
+	community: 'public packages, ratings, and profile',
 	tokens: 'API tokens',
 }
 

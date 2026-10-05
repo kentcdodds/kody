@@ -198,7 +198,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			'communityRate',
 			'community',
 			'CommunityActionError',
-			new CommunityActionError('Fork this community listing before rating it.'),
+			new CommunityActionError('Fork this public package before rating it.'),
 		),
 		// Missing package scope grant (KODY-CLOUDFLARE-5N).
 		handlerFailure(

@@ -2256,7 +2256,7 @@ export async function resolveCommunityReport(input: {
 			})
 			if (!deleted) {
 				console.error(
-					`Community listing "${report.listingId}" was already deleted during report resolution.`,
+					`Catalog entry "${report.listingId}" was already deleted during report resolution.`,
 				)
 			} else {
 				if (listing) {

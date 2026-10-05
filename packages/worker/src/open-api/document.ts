@@ -93,7 +93,7 @@ const tagDescriptions: Record<ApiOperation['tag'], string> = {
 	'mcp-servers': 'User-added MCP servers.',
 	runs: 'Execution run history and triage.',
 	storage: 'Durable storage export and SQL query.',
-	community: 'Community package listings and profile.',
+	community: 'Public packages in the community catalog, and profile.',
 	tokens: 'Scoped, short-lived API tokens.',
 	'capability-proxy':
 		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires the `local-execute` scope and a scoped API token or CLI `kody login` MCP OAuth bearer.',

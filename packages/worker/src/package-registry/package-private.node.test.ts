@@ -22,7 +22,7 @@ test('package private parsing gates community publish and visibility confirmatio
 	).toThrow(CommunityActionError)
 	expect(() =>
 		assertPackageNotPrivateForCommunityPublish('{"private":true}'),
-	).toThrow('community listings cannot publish packages')
+	).toThrow('cannot be published as a public package')
 	expect(() =>
 		assertPackageNotPrivateForCommunityPublish('{"private":false}'),
 	).not.toThrow()

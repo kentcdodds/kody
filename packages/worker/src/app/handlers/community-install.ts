@@ -57,7 +57,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			})
 			if (!listing) {
 				return jsonResponse(
-					{ ok: false, error: 'Community listing not found.' },
+					{ ok: false, error: 'Catalog entry not found.' },
 					404,
 				)
 			}

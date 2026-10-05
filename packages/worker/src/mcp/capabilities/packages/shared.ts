@@ -49,7 +49,7 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.string()
 			.nullable()
 			.describe(
-				'Community listing id this package was forked from, or null for a self-authored package.',
+				'Catalog entry id this package was forked from, or null for a self-authored package.',
 			),
 		listing_current: z
 			.boolean()

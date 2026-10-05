@@ -74,7 +74,7 @@ export function AccountPackageForkAdoption(
 
 	return () => {
 		const { communityFork } = handle.props
-		const upstream = communityFork.listingName ?? 'a community listing'
+		const upstream = communityFork.listingName ?? 'a public package'
 
 		return (
 			<section

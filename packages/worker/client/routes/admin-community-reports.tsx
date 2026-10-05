@@ -231,7 +231,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Community reports"
-					description="Review open reports and moderate community listings."
+					description="Review open reports and moderate public packages."
 					currentHref={currentHref}
 				/>
 

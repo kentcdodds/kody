@@ -71,7 +71,7 @@ test('settings loader follows a rename to settings, not the README', async () =>
 test('settings loader 404s for listed packages the viewer does not own', async () => {
 	await expect(
 		load('/@owner/demo/settings', listedPublic, 200),
-	).rejects.toThrow('Community listing not found.')
+	).rejects.toThrow('Catalog entry not found.')
 	await expect(load('/@owner/demo', listedPublic, 200)).resolves.toMatchObject({
 		communityDetailShell: {
 			ok: true,
@@ -96,7 +96,7 @@ test('listing loader hides Agent docs unless the payload confirms AGENTS.md', as
 test('listing and settings loaders treat a missing package as a not-found shell', async () => {
 	for (const pathname of ['/@bad/bad-404', '/@bad/bad-404/settings']) {
 		await expect(
-			load(pathname, { ok: false, error: 'Community listing not found.' }, 404),
+			load(pathname, { ok: false, error: 'Catalog entry not found.' }, 404),
 		).resolves.toEqual({ communityDetailShell: { ok: false, notFound: true } })
 	}
 })

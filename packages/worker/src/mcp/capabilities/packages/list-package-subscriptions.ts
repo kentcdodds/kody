@@ -50,6 +50,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			'community.activity.recorded',
 			'community activity recorded',
 			'community.listing.published',
+			'public package published',
 			'community listing published',
 			'community.fork.upstream_updated',
 			'fork upstream updated',

@@ -39,7 +39,7 @@ function pluralize(count: number, singular: string, plural: string) {
 function formatProfileStats(input: ProfileOgImageInput): string {
 	return [
 		pluralize(input.publicPackageCount, 'public package', 'public packages'),
-		pluralize(input.listingCount, 'community listing', 'community listings'),
+		pluralize(input.listingCount, 'catalog entry', 'catalog entries'),
 	].join(' · ')
 }
 
