@@ -391,3 +391,45 @@ test('does not retry non-transient rebuild failures', async () => {
 		1,
 	)
 })
+
+test('undeclared bare-import rebuild failures rehydrate as UserCodeError; declared stay platform Errors', async () => {
+	const { isUserCodeError, UserCodeError } =
+		await import('#worker/user-code-error.ts')
+	const undeclaredMessage =
+		'Saved package module "src/a.ts" bundle still contains unresolved bare package imports after bundling (bundle.js: "remix/data-schema"). Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.'
+
+	const callerRun = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: undeclaredMessage,
+		results: input.targets.map((target) => ({
+			ok: false,
+			message: undeclaredMessage,
+			callerFailure: true,
+			target,
+		})),
+	}))
+	setup({ targets: [sampleTargets[0]!], run: callerRun })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(true)
+		expect(String(error)).toMatch(/unresolved bare package imports/)
+		return true
+	})
+
+	const platformRun = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: undeclaredMessage,
+		results: input.targets.map((target) => ({
+			ok: false,
+			message: undeclaredMessage,
+			target,
+		})),
+	}))
+	setup({ targets: [sampleTargets[0]!], run: platformRun })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(Error)
+		expect(error).not.toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(false)
+		return true
+	})
+})

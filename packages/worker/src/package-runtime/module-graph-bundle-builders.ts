@@ -243,6 +243,7 @@ export async function buildKodyModuleBundle(input: {
 				input.bundleContext === 'ad-hoc-execute'
 					? 'Ad hoc execute module bundle'
 					: `Saved package module "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+			sourceFiles: input.sourceFiles,
 			...(input.bundleContext === 'ad-hoc-execute'
 				? {
 						resolutionHint:
@@ -334,6 +335,7 @@ export async function buildKodyImportableModuleBundle(input: {
 	assertBundleHasNoUnresolvedBareImports({
 		modules,
 		bundleLabel: `Saved package import "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+		sourceFiles: input.sourceFiles,
 	})
 	return {
 		mainModule: bundle.mainModule,
@@ -400,6 +402,7 @@ export async function buildKodyAppBundle(input: {
 		assertBundleHasNoUnresolvedBareImports({
 			modules,
 			bundleLabel: `Saved package app "${normalizePackageWorkspacePath(input.entryPoint)}" bundle`,
+			sourceFiles: input.sourceFiles,
 		})
 		return {
 			mainModule: bundle.mainModule,

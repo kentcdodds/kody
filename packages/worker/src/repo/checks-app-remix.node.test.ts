@@ -138,7 +138,13 @@ test('runRepoChecks rejects kody.app.runtime as a removed option', async () => {
 test('runRepoChecks bundles a router app and a fetch handler without a runtime field', async () => {
 	const remixResult = await runChecks(
 		new Map([
-			['package.json', createManifest({ app: { entry: './app/router.ts' } })],
+			[
+				'package.json',
+				createManifest({
+					app: { entry: './app/router.ts' },
+					dependencies: { remix: '3.0.0' },
+				}),
+			],
 			...remixAppFiles,
 		]),
 	)
@@ -195,7 +201,10 @@ test('runRepoChecks treats remix and @remix-run/* as ordinary npm dependencies',
 	)
 })
 
-test('runRepoChecks treats a types-only remix devDependency as no npm dependency at all', async () => {
+test('runRepoChecks fails when remix is only a types-only devDependency', async () => {
+	// Publish installs dependencies only; a types-only remix in
+	// devDependencies never reaches the bundle snapshot, so a runtime import
+	// of remix must fail the dependencies check (not silently publish).
 	const result = await runChecks(
 		new Map([
 			[
@@ -208,17 +217,13 @@ test('runRepoChecks treats a types-only remix devDependency as no npm dependency
 			...remixAppFiles,
 		]),
 	)
-	expect(result.ok).toBe(true)
+	expect(result.ok).toBe(false)
 	const dependencies = result.results.find(
 		(entry) => entry.kind === 'dependencies',
 	)
-	expect(dependencies?.ok).toBe(true)
+	expect(dependencies?.ok).toBe(false)
 	expect(dependencies?.message).toContain(
 		'package.json declares no npm dependencies.',
 	)
-	// Publish installs dependencies only; a types-only remix in
-	// devDependencies never reaches the bundle snapshot.
-	expect(mockModule.buildKodyAppBundle).toHaveBeenCalledWith(
-		expect.objectContaining({ entryPoint: 'app/router.ts' }),
-	)
+	expect(dependencies?.message).toMatch(/undeclared bare package\(s\): "remix"/)
 })

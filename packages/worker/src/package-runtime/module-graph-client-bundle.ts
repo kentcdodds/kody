@@ -5,6 +5,7 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { importWorkerBundler } from '#worker/worker-bundler-modules.ts'
+import { throwUnresolvedBarePackageImportsError } from './bare-package-import-declarations.ts'
 import {
 	collectLiteralImportNodes,
 	isBarePackageImportSpecifier,
@@ -210,6 +211,7 @@ function assertBrowserBundleHasNoUnresolvedImports(input: {
 	modules: WorkerLoaderModules
 	bundleLabel: string
 	externals: ReadonlyArray<string>
+	sourceFiles: Record<string, string>
 }) {
 	const serverOnly = new Set<string>()
 	const unresolved = new Set<string>()
@@ -233,11 +235,17 @@ function assertBrowserBundleHasNoUnresolvedImports(input: {
 		)
 	}
 	if (unresolved.size > 0) {
-		throw new Error(
-			`${input.bundleLabel} still contains unresolved bare package imports after bundling (${formatSpecifierList(
+		const unresolvedSpecifiers = [...unresolved].sort((left, right) =>
+			left.localeCompare(right),
+		)
+		throwUnresolvedBarePackageImportsError({
+			message: `${input.bundleLabel} still contains unresolved bare package imports after bundling (${formatSpecifierList(
 				unresolved,
 			)}). Declare the dependency in package.json so publish can install and inline it, list it under kody.app.client.externals and resolve it with an import map on the page, or import it from a full https:// URL the browser can load.`,
-		)
+			unresolvedSpecifiers,
+			sourceFiles: input.sourceFiles,
+			clientExternals: input.externals,
+		})
 	}
 }
 
@@ -311,7 +319,12 @@ export async function buildKodyAppClientBundle(input: {
 		)
 	}
 	const modules: WorkerLoaderModules = { [bundle.mainModule]: source }
-	assertBrowserBundleHasNoUnresolvedImports({ modules, bundleLabel, externals })
+	assertBrowserBundleHasNoUnresolvedImports({
+		modules,
+		bundleLabel,
+		externals,
+		sourceFiles: input.sourceFiles,
+	})
 	const hash = (await sha256Base64Url(source)).slice(0, clientModuleHashLength)
 	const mainModule = buildPackageAppClientModuleName(hash)
 	return {

@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { isUserCodeError } from '#worker/user-code-error.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import {
@@ -2776,6 +2777,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					results.push({
 						ok: false,
 						message: getErrorMessage(error),
+						...(isUserCodeError(error) ? { callerFailure: true } : {}),
 						target,
 					})
 				}

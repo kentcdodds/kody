@@ -43,6 +43,7 @@ import {
 	collectDeprecatedInvocationUsage,
 	formatRemovedInvocationUsageFailure,
 } from '#worker/package-runtime/deprecated-invocation-usage.ts'
+import { validateBarePackageImportDeclarations } from '#worker/package-runtime/bare-package-import-declarations.ts'
 import {
 	collectStaticKodyPackageImportsFromFiles,
 	isTypeDeclarationFilePath,
@@ -1667,19 +1668,26 @@ export async function runRepoChecks(input: {
 			}
 		}
 	}
+	const bundleTargets = collectPackageBundleTargets(manifest)
+	const barePackageImportCheck = validateBarePackageImportDeclarations({
+		manifest,
+		sourceFiles,
+		entryPoints: bundleTargets,
+		declaredDependencies: declaredNpmDependencies,
+	})
 	results.push({
 		kind: 'dependencies',
-		ok: staticKodyDependencyOk,
+		ok: staticKodyDependencyOk && barePackageImportCheck.ok,
 		message: [
 			formatNpmDependencyCheckMessage({
 				packageJsonMissing: packageJson == null,
 				dependencies: declaredNpmDependencies,
 			}),
 			staticKodyDependencyMessage,
+			barePackageImportCheck.message,
 		].join(' '),
 	})
 
-	const bundleTargets = collectPackageBundleTargets(manifest)
 	const packageTypecheckTargets = collectPackageTypecheckTargets(manifest)
 	const typecheckTargets =
 		snapshot.read(repoChecksSyntheticTsconfigPath) == null
