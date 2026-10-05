@@ -833,11 +833,6 @@ jobs:
             if (process.env.OAUTH_KV_TITLE?.trim()) {
               bodyLines.push(`KV: \`${process.env.OAUTH_KV_TITLE.trim()}\``);
             }
-            if (process.env.MOCK_SUMMARY?.trim()) {
-              bodyLines.push("");
-              bodyLines.push("Mocks:");
-              bodyLines.push(process.env.MOCK_SUMMARY.trim());
-            }
             bodyLines.push(
               "",
               "### Seed login (public preview fixture)",
@@ -853,6 +848,11 @@ jobs:
               "",
               "Do **not** post session cookies or tokens in PR comments.",
             );
+            if (process.env.MOCK_SUMMARY?.trim()) {
+              bodyLines.push("");
+              bodyLines.push("Mocks:");
+              bodyLines.push(process.env.MOCK_SUMMARY.trim());
+            }
             const body = bodyLines.join("\n");
 
             const { owner, repo } = context.repo;

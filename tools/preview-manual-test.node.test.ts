@@ -118,6 +118,19 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		mocks: [mock],
 	})
 	expect(
+		parsePreviewComment(
+			[
+				sampleComment,
+				'',
+				'### Seed login (public preview fixture)',
+				'',
+				'- Email: `me@kentcdodds.com`',
+				'- Password: `ilikecode`',
+				'- Already signed in: `npm run control-kody -- browse`',
+			].join('\n'),
+		)?.mocks,
+	).toEqual([mock])
+	expect(
 		parsePreviewComment(sampleCommentWithUrl('http://127.0.0.1:9')),
 	).toEqual({
 		previewUrl: 'http://127.0.0.1:9',
@@ -373,7 +386,10 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 	expect(result?.smoke?.ok).toBe(true)
 	expect(result?.smoke?.sessionEmail).toBe(previewSeedEmail)
 	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
-	expect(files.get('.tmp/preview-cookie')).toBe('kody_session=test-cookie\n')
+	const writtenCookie = files.get('.tmp/preview-cookie') ?? ''
+	expect(writtenCookie).toContain('# origin=')
+	expect(writtenCookie).toContain(`# email=${previewSeedEmail}`)
+	expect(writtenCookie).toContain('kody_session=test-cookie')
 	expect(logs.join('\n')).not.toContain('kody_session=test-cookie')
 	expect(logs.join('\n')).toContain('"cookieHeader": "present"')
 	expect(result?.smoke?.checks.map((check) => check.name)).toEqual([

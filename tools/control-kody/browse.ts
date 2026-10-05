@@ -84,8 +84,13 @@ export function normalizeBrowsePath(browsePath: string) {
 			'browse --path must be a same-origin path (for example /account), not a full URL. Pass --origin separately.',
 		)
 	}
-	if (!trimmed.startsWith('/')) {
-		throw new Error('browse --path must start with /')
+	if (!trimmed.startsWith('/') || trimmed.startsWith('//')) {
+		throw new Error(
+			'browse --path must be a same-origin path starting with a single /',
+		)
+	}
+	if (trimmed.includes('\\')) {
+		throw new Error('browse --path must not contain backslashes')
 	}
 	return trimmed
 }
@@ -93,7 +98,13 @@ export function normalizeBrowsePath(browsePath: string) {
 export function browseTargetUrl(origin: string, browsePath: string) {
 	const base = normalizeCookieOrigin(origin)
 	const normalizedPath = normalizeBrowsePath(browsePath)
-	return new URL(normalizedPath, `${base}/`).toString()
+	const target = new URL(normalizedPath, `${base}/`)
+	if (target.origin !== new URL(base).origin) {
+		throw new Error(
+			`browse --path must stay on the --origin host (resolved ${target.origin})`,
+		)
+	}
+	return target.toString()
 }
 
 export function formatBrowseReport(report: BrowseSessionReport) {
@@ -106,8 +117,8 @@ export function formatBrowseReport(report: BrowseSessionReport) {
 
 /**
  * Launch headed (default) Playwright Chromium, inject the seed session cookie,
- * and open the target path already signed in. Waits until the browser closes
- * unless `closeAfterMs` is set.
+ * and open the target path already signed in. Waits until the page or browser
+ * closes unless `closeAfterMs` is set.
  */
 export async function openBrowseSession(
 	input: BrowseSessionInput,
@@ -149,6 +160,17 @@ export async function openBrowseSession(
 		)
 		await context.addCookies(cookies)
 		const page = await context.newPage()
+		const sessionClosed =
+			input.closeAfterMs == null
+				? new Promise<void>((resolve) => {
+						if (!browser.isConnected()) {
+							resolve()
+							return
+						}
+						browser.on('disconnected', () => resolve())
+						page.on('close', () => resolve())
+					})
+				: null
 		await page.goto(url, { waitUntil: 'domcontentloaded' })
 
 		const report: BrowseSessionReport = {
@@ -172,9 +194,10 @@ export async function openBrowseSession(
 			return report
 		}
 
-		await new Promise<void>((resolve) => {
-			browser.on('disconnected', () => resolve())
-		})
+		await sessionClosed
+		await context.close().catch(() => {})
+		context = null
+		await browser.close().catch(() => {})
 		return report
 	} catch (error) {
 		await context?.close().catch(() => {})

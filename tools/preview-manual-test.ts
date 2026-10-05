@@ -10,6 +10,7 @@ import {
 	formatContainsFailure,
 	missingContainsNeedles,
 } from './control-kody/request-proof.ts'
+import { formatCookieFile } from './control-kody/session-cookie.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 const execFileAsync = promisify(execFile)
@@ -521,6 +522,7 @@ export function parsePreviewComment(body: string): ParsedPreviewComment | null {
 	if (mocksSection) {
 		for (const line of mocksSection.split('\n')) {
 			const trimmed = line.trim()
+			if (/^#{1,6}\s/.test(trimmed)) break
 			if (trimmed.startsWith('- ')) mocks.push(trimmed.slice(2).trim())
 		}
 	}
@@ -1555,7 +1557,14 @@ async function runSmokeChecks(
 
 			if (options.cookieFile) {
 				try {
-					await deps.writeFile(options.cookieFile, `${cookieHeader}\n`)
+					await deps.writeFile(
+						options.cookieFile,
+						formatCookieFile(
+							origin,
+							cookieHeader,
+							sessionEmail ?? previewSeedEmail,
+						),
+					)
 					checks.push({
 						name: 'cookie-file',
 						ok: true,

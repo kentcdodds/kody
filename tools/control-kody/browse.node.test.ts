@@ -53,19 +53,28 @@ test('playwrightCookiesFromHeader uses insecure cookies for localhost', () => {
 	])
 })
 
-test('normalizeBrowsePath rejects full URLs and requires a leading slash', () => {
+test('normalizeBrowsePath rejects full URLs, protocol-relative paths, and backslashes', () => {
 	expect(normalizeBrowsePath('')).toBe(defaultBrowsePath)
 	expect(normalizeBrowsePath('  /account/packages  ')).toBe('/account/packages')
-	expect(() => normalizeBrowsePath('account')).toThrow(/must start with \//)
+	expect(() => normalizeBrowsePath('account')).toThrow(/same-origin path/)
 	expect(() =>
 		normalizeBrowsePath('https://kody-pr-9.example/account'),
 	).toThrow(/same-origin path/)
+	expect(() => normalizeBrowsePath('//attacker.example/account')).toThrow(
+		/same-origin path/,
+	)
+	expect(() => normalizeBrowsePath('/\\attacker.example')).toThrow(
+		/backslashes/,
+	)
 })
 
-test('browseTargetUrl joins origin and path', () => {
+test('browseTargetUrl joins origin and path and refuses host escape', () => {
 	expect(browseTargetUrl('https://kody-pr-9.example/', '/@user/pkg')).toBe(
 		'https://kody-pr-9.example/@user/pkg',
 	)
+	expect(() =>
+		browseTargetUrl('https://kody-pr-9.example/', '//attacker.example/x'),
+	).toThrow(/same-origin path/)
 })
 
 test('openBrowseSession injects cookies and opens the target path', async () => {
@@ -76,6 +85,7 @@ test('openBrowseSession injects cookies and opens the target path', async () => 
 		goto: async (url: string) => {
 			gotoCalls.push(url)
 		},
+		on: (_event: string, _listener: () => void) => {},
 	}
 	const context = {
 		addCookies: async (cookies: Array<unknown>) => {

@@ -274,7 +274,8 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			/--limit must be a positive integer/,
 		],
 		['browse --close-after -1', /--close-after requires a value/],
-		['browse --path account', /must start with \//],
+		['browse --path account', /same-origin path/],
+		['browse --path //evil.example', /same-origin path/],
 		['nope', /Unknown command/],
 	]
 	for (const [argv, error] of parseErrors) {

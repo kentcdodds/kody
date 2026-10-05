@@ -1135,6 +1135,21 @@ async function runCommand(options: ControlKodyOptions) {
 		}
 		case 'preview': {
 			const result = await runPreviewManualTest(options.previewArgv)
+			const session = result.result?.session
+			if (result.exitCode === 0 && session?.cookieHeader && session.origin) {
+				const email =
+					result.result?.login.email ??
+					credentialsForOrigin(session.origin).email
+				await writeCookieFile(
+					options.cookieFile,
+					session.cookieHeader,
+					session.origin,
+					email,
+				)
+				if (!options.json) {
+					console.log(`cookie-file ${options.cookieFile}`)
+				}
+			}
 			return result.exitCode
 		}
 		case 'browse': {
@@ -1143,6 +1158,38 @@ async function runCommand(options: ControlKodyOptions) {
 			const email = options.email ?? defaults.email
 			let cookieHeader = readCookieFile(options.cookieFile, origin, email)
 			if (!cookieHeader) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+			}
+			if (!cookieHeader) {
+				throw new ControlKodyError(
+					'browse needs a session cookie. Run control-kody login or preview first.',
+				)
+			}
+			// Refresh expired sessions the same way request does, before opening
+			// a headed browser that would otherwise land on /login.
+			const probe = await requestAsSession({
+				origin,
+				spec: {
+					method: 'GET',
+					path: '/account',
+					expectedStatus: null,
+					body: null,
+					dump: false,
+					contains: [],
+				},
+				cookieHeader,
+			})
+			if (
+				shouldRefreshSession({
+					skipLogin: false,
+					status: probe.status,
+					path: '/account',
+					rawBody: probe.rawBody,
+					method: 'GET',
+				})
+			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
 				if (!loggedIn.ok) return 1
 				cookieHeader = loggedIn.cookieHeader
