@@ -4,6 +4,7 @@ import {
 	runRepoChecks,
 	type RepoCheckResult,
 } from '#worker/repo/checks.ts'
+import { rethrowCommunityForkFailure } from './fork-resource-limit.ts'
 import {
 	persistPreparedCommunityFork,
 	prepareCommunityFork,
@@ -173,25 +174,39 @@ export async function installCommunityListing(input: {
 	if (persistSettled.status === 'rejected') {
 		throw persistSettled.reason
 	}
-	if (checksSettled.status === 'rejected') {
-		throw checksSettled.reason
-	}
 	const fork = persistSettled.value
+	const failureContext = {
+		listingId: input.listingId,
+		packageId: fork.packageId,
+	}
+	if (checksSettled.status === 'rejected') {
+		rethrowCommunityForkFailure(checksSettled.reason, {
+			...failureContext,
+			step: 'install_checks',
+		})
+	}
 	// Overlapped checks used the prepared pin snapshot. When Artifacts dest
 	// clone fallback syncs a newer dest-HEAD tree, re-check that tree before
 	// projecting so install does not publish different contents than the fork.
 	let checks = checksSettled.value
 	if (fork.files !== prepared.files) {
-		checks = await runRepoChecks({
-			workspace: createSnapshotFilesWorkspace(fork.files),
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			expectedPackageScope: input.expectedPackageScope,
-			requirePackageDocs: false,
-		})
+		try {
+			checks = await runRepoChecks({
+				workspace: createSnapshotFilesWorkspace(fork.files),
+				manifestPath: 'package.json',
+				sourceRoot: '/',
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				expectedPackageScope: input.expectedPackageScope,
+				requirePackageDocs: false,
+			})
+		} catch (error) {
+			rethrowCommunityForkFailure(error, {
+				...failureContext,
+				step: 'install_recheck',
+			})
+		}
 	}
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,
@@ -229,16 +244,23 @@ export async function installCommunityListing(input: {
 		message: 'Publishing and indexing — almost ready to invoke…',
 	})
 	const projectionStartedAt = Date.now()
-	await refreshSavedPackageProjection({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		userEmail: input.userEmail,
-		packageId: fork.packageId,
-		sourceId: fork.sourceId,
-		sourceFiles: fork.files,
-		waitUntil: input.waitUntil,
-	})
+	try {
+		await refreshSavedPackageProjection({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			userEmail: input.userEmail,
+			packageId: fork.packageId,
+			sourceId: fork.sourceId,
+			sourceFiles: fork.files,
+			waitUntil: input.waitUntil,
+		})
+	} catch (error) {
+		rethrowCommunityForkFailure(error, {
+			...failureContext,
+			step: 'install_projection',
+		})
+	}
 	logInstallPhaseTiming({
 		phase: 'install-projection',
 		durationMs: Date.now() - projectionStartedAt,

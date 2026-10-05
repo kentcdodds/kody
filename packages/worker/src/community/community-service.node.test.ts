@@ -1105,13 +1105,18 @@ test('forkCommunityListing rejects a repeat fork without a new kody_id and allow
 
 test('forkCommunityListing cleans up entity source when snapshot sync fails', async () => {
 	mockForkable()
-	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(
-		new Error('sync failed'),
-	)
+	const syncError = new Error('sync failed')
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(syncError)
 	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
 
-	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toThrow(
-		'sync failed',
+	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toMatchObject({
+		name: 'CommunityForkStepError',
+		step: 'sync_snapshot',
+		cause: syncError,
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('"message":"community-fork-failed"'),
 	)
 
 	expect(consoleWarn).toHaveBeenCalledWith(
@@ -1156,10 +1161,13 @@ test('forkCommunityListing removes the community_forks row when persist fails af
 	mockModule.deleteCommunityForksForPackage.mockResolvedValue(1)
 	mockModule.deleteUserScopedArtifactRepo.mockResolvedValueOnce(true)
 	consoleWarn.mockImplementation(() => {})
+	consoleError.mockImplementation(() => {})
 
-	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toThrow(
-		'cache invalidate failed',
-	)
+	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toMatchObject({
+		name: 'CommunityForkStepError',
+		step: 'fork_row',
+		cause: expect.objectContaining({ message: 'cache invalidate failed' }),
+	})
 
 	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
 	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
@@ -1335,7 +1343,7 @@ test('forkCommunityListing does not insert a fork when fallback snapshot sync re
 	consoleError.mockImplementation(() => {})
 
 	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toThrow(
-		/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
+		/^The package source could not be read after retries\. Failed step: fallback_sync \(git_clone\); upstream status: HTTP 500\. Report id: /,
 	)
 
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()

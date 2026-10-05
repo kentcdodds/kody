@@ -11,6 +11,7 @@ import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
 } from '#worker/account/deletion-state.ts'
+import { CommunityForkStepError } from '#worker/community/fork-failure.ts'
 import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
@@ -121,7 +122,8 @@ export function notFound(message: string) {
  * 500 with a generic message so internals never leak. Exhausted Artifacts
  * git unavailability is 503 `internal_error` with a report id and upstream
  * status class in the message/details (closed OpenAPI code enum — no new
- * public code).
+ * public code). Community fork failures keep the same codes and add the
+ * failing step to the message and details.
  */
 export function toApiError(error: unknown): ApiError {
 	if (error instanceof ApiError) return error
@@ -161,6 +163,18 @@ export function toApiError(error: unknown): ApiError {
 		return /\bnot found\b/i.test(message)
 			? notFound(message)
 			: invalidRequest(message)
+	}
+	const forkStepError = getErrorCauseChain(error).find(
+		(entry) => entry instanceof CommunityForkStepError,
+	)
+	if (forkStepError instanceof CommunityForkStepError) {
+		return new ApiError({
+			status: forkStepError.apiStatus,
+			code: 'internal_error',
+			message: forkStepError.message,
+			details: forkStepError.toApiDetails(),
+			cause: error,
+		})
 	}
 	if (
 		error instanceof ArtifactsGitUnavailableError ||

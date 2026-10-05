@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import { CommunityForkStepError } from '#worker/community/fork-failure.ts'
+import { tagArtifactsFailure } from '#worker/repo/artifacts-failure-tag.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createCommunityInstallApiPostHandler } from './community-install.ts'
@@ -196,6 +198,24 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		},
 	})
 	expect(consoleError).toHaveBeenCalled()
+
+	const stepError = new CommunityForkStepError({
+		step: 'fallback_ensure_source',
+		cause: tagArtifactsFailure(
+			new Error(
+				'Artifacts repo "package-x" is not_found after create conflict.',
+			),
+			{ operation: 'get_after_create' },
+		),
+	})
+	mockModule.installCommunityListing.mockRejectedValue(stepError)
+	expect(await post()).toEqual({
+		status: 500,
+		payload: {
+			ok: false,
+			error: `Internal error while forking. Failed step: fallback_ensure_source (get_after_create); upstream status: repo not found. Report id: ${stepError.reportId}.`,
+		},
+	})
 
 	const artifactsClone = Object.assign(
 		new Error('HTTP Error: 500 Internal Server Error'),

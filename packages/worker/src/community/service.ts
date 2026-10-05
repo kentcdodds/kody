@@ -134,6 +134,7 @@ import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
+import { type CommunityForkFailedStep } from './fork-failure.ts'
 import { rethrowCommunityForkFailure } from './fork-resource-limit.ts'
 import {
 	deleteCommunitySnapshot,
@@ -1365,6 +1366,19 @@ function logCommunityPhaseTiming(input: {
 export async function prepareCommunityFork(
 	input: PrepareCommunityForkInput,
 ): Promise<PreparedCommunityFork> {
+	try {
+		return await readAndRewriteCommunityFork(input)
+	} catch (error) {
+		rethrowCommunityForkFailure(error, {
+			step: 'prepare',
+			listingId: input.listingId,
+		})
+	}
+}
+
+async function readAndRewriteCommunityFork(
+	input: PrepareCommunityForkInput,
+): Promise<PreparedCommunityFork> {
 	// Ban check, listing row, and pinned KV snapshot are independent reads —
 	// overlapping them shaves fork preflight latency before the Artifacts
 	// bootstrap (the dominant cost) begins.
@@ -1551,6 +1565,10 @@ export async function persistPreparedCommunityFork(
 		entityKind: 'package',
 		entityId: prepared.packageId,
 	})
+	const failureContext = {
+		listingId: prepared.listingId,
+		packageId: prepared.packageId,
+	}
 	let copiedAtStorageLayer = false
 	const originRepoId = prepared.originRepoId
 	if (originRepoId) {
@@ -1565,7 +1583,10 @@ export async function persistPreparedCommunityFork(
 			copiedAtStorageLayer = true
 		} catch (error) {
 			if (!shouldFallbackFromArtifactFork(error)) {
-				rethrowCommunityForkFailure(error)
+				rethrowCommunityForkFailure(error, {
+					...failureContext,
+					step: 'artifacts_fork',
+				})
 			}
 		}
 	}
@@ -1588,8 +1609,14 @@ export async function persistPreparedCommunityFork(
 				repoName: destRepoId,
 			})
 		}
-		rethrowCommunityForkFailure(error)
+		rethrowCommunityForkFailure(error, {
+			...failureContext,
+			step: 'ensure_source',
+		})
 	}
+	let step: CommunityForkFailedStep = copiedAtStorageLayer
+		? 'persist_forked_contents'
+		: 'sync_snapshot'
 	try {
 		let originCommit = prepared.originCommit
 		let syncedFiles = prepared.files
@@ -1618,6 +1645,7 @@ export async function persistPreparedCommunityFork(
 				if (!shouldFallbackFromForkedArtifactPersist(error)) {
 					throw error
 				}
+				step = 'fallback_tree'
 				const fallbackTree = await resolveCommunityForkArtifactsGitFallbackTree(
 					{
 						env: prepared.env,
@@ -1634,6 +1662,7 @@ export async function persistPreparedCommunityFork(
 				if (!fallbackTree) {
 					throw error
 				}
+				step = 'fallback_delete'
 				const destDeleted = await deleteUserScopedArtifactRepo({
 					env: prepared.env,
 					userId: prepared.userId,
@@ -1655,6 +1684,7 @@ export async function persistPreparedCommunityFork(
 					}),
 				)
 				copiedAtStorageLayer = false
+				step = 'fallback_ensure_source'
 				ensuredSource = await ensureEntitySource({
 					db: prepared.env.APP_DB,
 					env: prepared.env,
@@ -1669,6 +1699,7 @@ export async function persistPreparedCommunityFork(
 				}
 				originCommit = fallbackTree.originCommit
 				syncedFiles = fallbackTree.files
+				step = 'fallback_sync'
 				const snapshotCommit = await syncArtifactSourceSnapshot({
 					env: prepared.env,
 					baseUrl: prepared.baseUrl,
@@ -1699,6 +1730,7 @@ export async function persistPreparedCommunityFork(
 		}
 
 		const forkId = crypto.randomUUID()
+		step = 'fork_row'
 		await pushServerTiming(serverTiming, 'fork-row', async () => {
 			await insertCommunityFork(prepared.env.APP_DB, {
 				id: forkId,
@@ -1747,7 +1779,7 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			packageId: prepared.packageId,
 		})
-		rethrowCommunityForkFailure(error)
+		rethrowCommunityForkFailure(error, { ...failureContext, step })
 	}
 }
 

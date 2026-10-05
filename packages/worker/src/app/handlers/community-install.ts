@@ -157,9 +157,9 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					)
 					return jsonResponse({ ok: false, error: mapped.message }, 503)
 				}
-				// Same Open API remap as communityFork: Artifacts git transients
-				// become 503 with a retry next step; other unknowns keep the
-				// generic internal message that says retry or report.
+				// Same Open API remap as communityFork: fork/install failures name
+				// the failing step, upstream class, and report id (503 for Artifacts
+				// git transients, else 500); other unknowns keep the generic message.
 				const apiError = toApiError(error)
 				console.error('Community install failed:', error)
 				return jsonResponse(

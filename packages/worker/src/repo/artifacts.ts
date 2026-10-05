@@ -4,6 +4,10 @@ import {
 	CloudflareRestClient,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
+import {
+	runTaggedArtifactsOperation,
+	tagArtifactsFailure,
+} from './artifacts-failure-tag.ts'
 import { createArtifactsGitHttp } from './artifacts-git-http.ts'
 import {
 	runArtifactsGitWithRetry,
@@ -736,9 +740,9 @@ export async function requestArtifactsEnvelope<T>(
 					messages: [],
 				} satisfies ArtifactApiEnvelope<T>
 			}
-			throw new Error(
-				message,
-				primaryError ? { cause: primaryError } : undefined,
+			throw tagArtifactsFailure(
+				new Error(message, primaryError ? { cause: primaryError } : undefined),
+				{ httpStatus: response.status },
 			)
 		}
 		return envelope
@@ -1028,14 +1032,19 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 	const delayMs = input.delayMs ?? 100
 	let lastStatus = 'not_found'
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-		const result = await input.binding.get(input.repoId)
+		const result = await runTaggedArtifactsOperation('get_after_create', () =>
+			input.binding.get(input.repoId),
+		)
 		if (result.status === 'ready') {
 			return { recreated: false, repo: result.repo }
 		}
 		lastStatus = result.status
 		if (result.status === 'importing') {
-			throw new Error(
-				`Artifacts repo "${input.repoId}" is importing. Retry after ${result.retryAfter}s.`,
+			throw tagArtifactsFailure(
+				new Error(
+					`Artifacts repo "${input.repoId}" is importing. Retry after ${result.retryAfter}s.`,
+				),
+				{ operation: 'get_after_create' },
 			)
 		}
 		if (result.status === 'not_found') {
@@ -1055,7 +1064,9 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 				}
 			} catch (error) {
 				if (!isArtifactRepoAlreadyExistsError(error)) {
-					throw error
+					throw tagArtifactsFailure(error, {
+						operation: 'create_after_conflict',
+					})
 				}
 			}
 		}
@@ -1063,8 +1074,11 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 			await waitForArtifactRepoCheck(delayMs)
 		}
 	}
-	throw new Error(
-		`Artifacts repo "${input.repoId}" is ${lastStatus} after create conflict.`,
+	throw tagArtifactsFailure(
+		new Error(
+			`Artifacts repo "${input.repoId}" is ${lastStatus} after create conflict.`,
+		),
+		{ operation: 'get_after_create' },
 	)
 }
 
@@ -1073,13 +1087,18 @@ export async function ensureArtifactRepoReady(
 	repoId: string,
 	binding: ArtifactNamespaceBinding = getArtifactsBinding(env),
 ): Promise<ArtifactRepoReadyResult> {
-	const existing = await binding.get(repoId)
+	const existing = await runTaggedArtifactsOperation('repo_get', () =>
+		binding.get(repoId),
+	)
 	if (existing.status === 'ready') {
 		return { recreated: false, repo: existing.repo }
 	}
 	if (existing.status === 'importing') {
-		throw new Error(
-			`Artifacts repo "${repoId}" is importing. Retry after ${existing.retryAfter}s.`,
+		throw tagArtifactsFailure(
+			new Error(
+				`Artifacts repo "${repoId}" is importing. Retry after ${existing.retryAfter}s.`,
+			),
+			{ operation: 'repo_get' },
 		)
 	}
 	let created: Awaited<ReturnType<ArtifactNamespaceBinding['create']>>
@@ -1092,7 +1111,7 @@ export async function ensureArtifactRepoReady(
 				repoId,
 			})
 		}
-		throw error
+		throw tagArtifactsFailure(error, { operation: 'repo_create' })
 	}
 	const bootstrapAccess = {
 		defaultBranch: created.defaultBranch,

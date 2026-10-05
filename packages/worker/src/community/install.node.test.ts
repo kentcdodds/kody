@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	prepareCommunityFork: vi.fn(),
@@ -191,10 +192,20 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	await expect(install()).rejects.toThrow('banned from community participation')
 
 	mockCleanInstall()
-	mockModule.refreshSavedPackageProjection.mockRejectedValue(
-		new Error('saved_packages entitlement exceeded'),
+	consoleError.mockImplementation(() => {})
+	const projectionError = new Error('projection write failed')
+	mockModule.refreshSavedPackageProjection.mockRejectedValue(projectionError)
+	await expect(install()).rejects.toMatchObject({
+		name: 'CommunityForkStepError',
+		step: 'install_projection',
+		cause: projectionError,
+		message: expect.stringMatching(
+			/Failed step: install_projection; upstream status: unclassified\. Report id: /,
+		),
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('"step":"install_projection"'),
 	)
-	await expect(install()).rejects.toThrow('saved_packages entitlement exceeded')
 })
 
 test('install overlaps Artifacts persist with publish checks', async () => {
@@ -227,17 +238,19 @@ test('install overlaps Artifacts persist with publish checks', async () => {
 		persistFinished = true
 		return forkResult()
 	})
-	mockModule.runRepoChecks.mockRejectedValue(
-		new Error('isolated check isolate reset'),
-	)
+	consoleError.mockImplementation(() => {})
+	const checksError = new Error('isolated check isolate reset')
+	mockModule.runRepoChecks.mockRejectedValue(checksError)
 	mockModule.refreshSavedPackageProjection.mockClear()
 	const checksThrowPromise = install()
 	await waitFor(() => persistStarted)
 	expect(persistFinished).toBe(false)
 	checksFailPersistGate.resolve()
-	await expect(checksThrowPromise).rejects.toThrow(
-		'isolated check isolate reset',
-	)
+	await expect(checksThrowPromise).rejects.toMatchObject({
+		name: 'CommunityForkStepError',
+		step: 'install_checks',
+		cause: checksError,
+	})
 	expect(persistFinished).toBe(true)
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
 
