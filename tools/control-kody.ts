@@ -1158,7 +1158,7 @@ async function runCommand(options: ControlKodyOptions) {
 				cookieHeader,
 				headed: options.headed,
 				record: options.record,
-				videoDir: options.record ? defaultBrowseVideoDir : null,
+				videoDir: options.record ? defaultBrowseVideoDir : undefined,
 				closeAfterMs: options.closeAfterMs,
 			})
 			if (options.json) printJson({ ...report, cookieFile: options.cookieFile })
