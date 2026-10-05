@@ -330,6 +330,8 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 							},
 						}
 					},
+					batch: async (statements: Array<unknown>) =>
+						statements.map(() => ({ meta: { changes: 1 } })),
 				},
 				BUNDLE_ARTIFACTS_KV: {
 					get: async (_key: string, type?: 'text' | 'json') => {
