@@ -1343,7 +1343,7 @@ test('forkCommunityListing does not insert a fork when fallback snapshot sync re
 	consoleError.mockImplementation(() => {})
 
 	await expect(fork({ kodyId: 'my-discord-gateway' })).rejects.toThrow(
-		/^The package source could not be read after retries\. Failed step: fallback_sync \(git_clone\); upstream status: HTTP 500\. Report id: /,
+		/^The package source could not be read after retries\. Failed step: persist_forked_contents \(git_clone\); fallback stopped at fallback_sync; upstream status: HTTP 500\. Report id: /,
 	)
 
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()

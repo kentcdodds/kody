@@ -90,6 +90,34 @@ test('tags on an inner cause survive outer wrapping', () => {
 	})
 })
 
+test('fork failure logs redact remotes, Artifacts tokens, and Kody credentials', () => {
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		const cause = new Error(
+			'clone https://x:art_v1_secret@acct.example/git/repo.git?token=art_v1_q failed; token art_v1_abc?expires=1 leaked',
+		)
+		const stepError = toCommunityForkStepError(cause, {
+			step: 'persist_forked_contents',
+			fallbackStoppedAt: 'fallback_delete',
+		})
+		expect(stepError.message).toContain(
+			'Failed step: persist_forked_contents; fallback stopped at fallback_delete;',
+		)
+		expect(stepError.toApiDetails()).toMatchObject({
+			failed_step: 'persist_forked_contents',
+			fallback_stopped_at: 'fallback_delete',
+		})
+		const logged = String(errorSpy.mock.calls[0]?.[0])
+		expect(logged).not.toContain('art_v1_secret')
+		expect(logged).not.toContain('art_v1_q')
+		expect(logged).not.toContain('art_v1_abc')
+		expect(logged).toContain('https://acct.example/git/repo.git')
+		expect(logged).toContain('"fallbackStoppedAt":"fallback_delete"')
+	} finally {
+		errorSpy.mockRestore()
+	}
+})
+
 test('toApiError keeps internal_error and adds step details for fork failures', () => {
 	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 	try {

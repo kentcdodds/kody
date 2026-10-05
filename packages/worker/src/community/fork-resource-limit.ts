@@ -11,6 +11,7 @@ import {
 import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
+	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { artifactsBindingErrorCode } from '#worker/repo/artifacts.ts'
 import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
@@ -49,12 +50,15 @@ export function isCommunityForkResourceLimitCause(error: unknown) {
 	)
 }
 
+// Mirrors the caller-facing branches of Open API `toApiError` so wrapping
+// never turns a 400/404/409/429 into `internal_error`.
 function isCommunityForkCallerFacingError(error: unknown) {
 	if (
 		error instanceof CommunityActionError ||
 		error instanceof AccountDeletionInProgressError ||
 		error instanceof AccountWriteLeaseLostError ||
-		isMcpCallerError(error)
+		isMcpCallerError(error) ||
+		isJobIntervalFloorError(error)
 	) {
 		return true
 	}

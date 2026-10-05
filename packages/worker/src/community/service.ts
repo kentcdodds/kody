@@ -1617,6 +1617,7 @@ export async function persistPreparedCommunityFork(
 	let step: CommunityForkFailedStep = copiedAtStorageLayer
 		? 'persist_forked_contents'
 		: 'sync_snapshot'
+	let fallbackStoppedAt: CommunityForkFailedStep | undefined
 	try {
 		let originCommit = prepared.originCommit
 		let syncedFiles = prepared.files
@@ -1645,6 +1646,11 @@ export async function persistPreparedCommunityFork(
 				if (!shouldFallbackFromForkedArtifactPersist(error)) {
 					throw error
 				}
+				function stopFallback(): never {
+					fallbackStoppedAt = step
+					step = 'persist_forked_contents'
+					throw error
+				}
 				step = 'fallback_tree'
 				const fallbackTree = await resolveCommunityForkArtifactsGitFallbackTree(
 					{
@@ -1660,7 +1666,7 @@ export async function persistPreparedCommunityFork(
 					},
 				)
 				if (!fallbackTree) {
-					throw error
+					stopFallback()
 				}
 				step = 'fallback_delete'
 				const destDeleted = await deleteUserScopedArtifactRepo({
@@ -1670,7 +1676,7 @@ export async function persistPreparedCommunityFork(
 					waitUntilAbsent: true,
 				})
 				if (!destDeleted) {
-					throw error
+					stopFallback()
 				}
 				console.info(
 					JSON.stringify({
@@ -1695,7 +1701,7 @@ export async function persistPreparedCommunityFork(
 					serverTiming,
 				})
 				if (!ensuredSource.bootstrapAccess) {
-					throw error
+					stopFallback()
 				}
 				originCommit = fallbackTree.originCommit
 				syncedFiles = fallbackTree.files
@@ -1711,7 +1717,7 @@ export async function persistPreparedCommunityFork(
 					runPublishChecks: false,
 				})
 				if (snapshotCommit == null) {
-					throw error
+					stopFallback()
 				}
 			}
 		} else {
@@ -1779,7 +1785,11 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			packageId: prepared.packageId,
 		})
-		rethrowCommunityForkFailure(error, { ...failureContext, step })
+		rethrowCommunityForkFailure(error, {
+			...failureContext,
+			step,
+			fallbackStoppedAt,
+		})
 	}
 }
 

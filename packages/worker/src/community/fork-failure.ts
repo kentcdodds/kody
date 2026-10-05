@@ -1,3 +1,4 @@
+import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import {
 	getErrorCauseChain,
 	getErrorMessage,
@@ -47,6 +48,11 @@ export type CommunityForkUpstreamStatusClass =
 
 export type CommunityForkFailureContext = {
 	step: CommunityForkFailedStep
+	/**
+	 * Set when the dest-clone fallback gave up and rethrew the original
+	 * `step` error; names the fallback phase that could not continue.
+	 */
+	fallbackStoppedAt?: CommunityForkFailedStep
 	listingId?: string
 	packageId?: string
 }
@@ -184,6 +190,7 @@ export function communityForkUpstreamStatusLabel(input: {
 export class CommunityForkStepError extends Error {
 	readonly reportId: string
 	readonly step: CommunityForkFailedStep
+	readonly fallbackStoppedAt: CommunityForkFailedStep | null
 	readonly operation: ArtifactsFailedOperation | null
 	readonly statusClass: CommunityForkUpstreamStatusClass
 	readonly httpStatus: number | null
@@ -191,6 +198,7 @@ export class CommunityForkStepError extends Error {
 
 	constructor(input: {
 		step: CommunityForkFailedStep
+		fallbackStoppedAt?: CommunityForkFailedStep
 		cause: unknown
 		reportId?: string
 	}) {
@@ -203,13 +211,17 @@ export class CommunityForkStepError extends Error {
 		const stepLabel = classified.operation
 			? `${input.step} (${classified.operation})`
 			: input.step
+		const fallbackLabel = input.fallbackStoppedAt
+			? `; fallback stopped at ${input.fallbackStoppedAt}`
+			: ''
 		super(
-			`${lead} Failed step: ${stepLabel}; upstream status: ${communityForkUpstreamStatusLabel(classified)}. Report id: ${reportId}.`,
+			`${lead} Failed step: ${stepLabel}${fallbackLabel}; upstream status: ${communityForkUpstreamStatusLabel(classified)}. Report id: ${reportId}.`,
 			{ cause: input.cause },
 		)
 		this.name = 'CommunityForkStepError'
 		this.reportId = reportId
 		this.step = input.step
+		this.fallbackStoppedAt = input.fallbackStoppedAt ?? null
 		this.operation = classified.operation
 		this.statusClass = classified.statusClass
 		this.httpStatus = classified.httpStatus
@@ -224,11 +236,36 @@ export class CommunityForkStepError extends Error {
 		return {
 			report_id: this.reportId,
 			failed_step: this.step,
+			...(this.fallbackStoppedAt
+				? { fallback_stopped_at: this.fallbackStoppedAt }
+				: {}),
 			...(this.operation ? { artifacts_operation: this.operation } : {}),
 			upstream_status_class: this.statusClass,
 			...(this.httpStatus != null ? { upstream_status: this.httpStatus } : {}),
 		}
 	}
+}
+
+function redactUrlCredentials(value: string) {
+	return value.replace(/\bhttps?:\/\/[^\s"'<>]+/gi, (match) => {
+		try {
+			const url = new URL(match)
+			url.username = ''
+			url.password = ''
+			url.search = ''
+			url.hash = ''
+			return url.toString()
+		} catch {
+			return '[unparseable-url]'
+		}
+	})
+}
+
+export function redactCommunityForkLogMessage(message: string) {
+	return redactKodyCredentials(redactUrlCredentials(message)).replace(
+		/\bart_v1_[^\s"'<>]+/g,
+		'art_v1_[redacted]',
+	)
 }
 
 export function toCommunityForkStepError(
@@ -238,6 +275,7 @@ export function toCommunityForkStepError(
 	if (error instanceof CommunityForkStepError) return error
 	const stepError = new CommunityForkStepError({
 		step: context.step,
+		fallbackStoppedAt: context.fallbackStoppedAt,
 		cause: error,
 	})
 	console.error(
@@ -245,6 +283,7 @@ export function toCommunityForkStepError(
 			message: 'community-fork-failed',
 			reportId: stepError.reportId,
 			step: stepError.step,
+			fallbackStoppedAt: stepError.fallbackStoppedAt,
 			operation: stepError.operation,
 			statusClass: stepError.statusClass,
 			httpStatus: stepError.httpStatus,
@@ -252,7 +291,9 @@ export function toCommunityForkStepError(
 			packageId: context.packageId,
 			causes: getErrorCauseChain(error)
 				.slice(0, 4)
-				.map((entry) => getErrorMessage(entry).slice(0, 500)),
+				.map((entry) =>
+					redactCommunityForkLogMessage(getErrorMessage(entry)).slice(0, 500),
+				),
 		}),
 	)
 	return stepError

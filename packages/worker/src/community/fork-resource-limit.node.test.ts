@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
+import { JobIntervalFloorError } from '#worker/entitlements/errors.ts'
+import { toApiError } from '#worker/open-api/errors.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import { CommunityActionError } from './errors.ts'
 import {
@@ -66,10 +69,18 @@ test('rethrowCommunityForkFailure wraps resource limits without leaking isolate 
 test('rethrowCommunityForkFailure passes caller-facing errors through unchanged', () => {
 	const actionError = new CommunityActionError('listing changed')
 	expect(captureRethrow(actionError, 'prepare')).toBe(actionError)
-	const callerError = new Error('outer', {
-		cause: new McpCallerError('bad input'),
-	})
-	expect(captureRethrow(callerError, 'prepare')).toBe(callerError)
+	const callerFacing = [
+		new Error('outer', { cause: new McpCallerError('bad input') }),
+		new JobIntervalFloorError({
+			plan: 'free',
+			minIntervalMs: 3_600_000,
+		} as ConstructorParameters<typeof JobIntervalFloorError>[0]),
+		new AccountDeletionInProgressError(),
+	]
+	for (const error of callerFacing) {
+		expect(captureRethrow(error, 'install_projection')).toBe(error)
+		expect(toApiError(error).code).not.toBe('internal_error')
+	}
 })
 
 test('rethrowCommunityForkFailure tags unknown failures with step and report id', () => {
