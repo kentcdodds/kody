@@ -89,6 +89,29 @@ async function findSavedPackageForSlug(input: {
 	}
 }
 
+/**
+ * The active listing published at a URL slug, plus the package the slug
+ * addresses. A listing keeps its slug until republish, even after another
+ * package takes that local slug, so the slug's package is dropped rather than
+ * paired with a listing it does not belong to.
+ */
+async function findListingAndSavedPackageForSlug(input: {
+	db: D1Database
+	ownerUserId: string
+	slug: string
+}) {
+	const [listingAtSlug, found] = await Promise.all([
+		getCommunityListingByOwnerAndKodyId(input.db, {
+			ownerUserId: input.ownerUserId,
+			kodyId: input.slug,
+		}),
+		findSavedPackageForSlug(input),
+	])
+	const belongsToListing =
+		!listingAtSlug || found?.savedPackage.id === listingAtSlug.packageId
+	return { listingAtSlug, found: belongsToListing ? found : null }
+}
+
 async function getActiveListingForPackage(input: {
 	db: D1Database
 	ownerUserId: string
@@ -125,25 +148,20 @@ export async function resolveCommunityPackageUrl(input: {
 			username,
 		})
 		if (identity) {
-			const found = await findSavedPackageForSlug({
+			const { listingAtSlug, found } = await findListingAndSavedPackageForSlug({
 				db: input.db,
 				ownerUserId: identity.mcpUserId,
 				slug,
 			})
-			// The listing's own `kody_id` is the fallback for a pair no package
-			// slug or redirect reaches (it lags a local rename until republish).
 			const listing =
+				listingAtSlug ??
 				(found
 					? await getActiveListingForPackage({
 							db: input.db,
 							ownerUserId: identity.mcpUserId,
 							packageId: found.savedPackage.id,
 						})
-					: null) ??
-				(await getCommunityListingByOwnerAndKodyId(input.db, {
-					ownerUserId: identity.mcpUserId,
-					kodyId: slug,
-				}))
+					: null)
 			if (!listing) return null
 			// The listing pair stays the public URL until republish, so a moved
 			// package lands on the listing slug, not its unpublished local one.
@@ -194,7 +212,7 @@ export async function resolvePackagePageUrl(input: {
 		})
 		if (identity) {
 			const ownerUserId = identity.mcpUserId
-			const found = await findSavedPackageForSlug({
+			const { listingAtSlug, found } = await findListingAndSavedPackageForSlug({
 				db: input.db,
 				ownerUserId,
 				slug,
@@ -203,17 +221,14 @@ export async function resolvePackagePageUrl(input: {
 			// Listing `kody_id` only moves on republish, so a slug can still
 			// address a listing whose package has a new local slug.
 			const listing =
+				listingAtSlug ??
 				(savedPackage
 					? await getActiveListingForPackage({
 							db: input.db,
 							ownerUserId,
 							packageId: savedPackage.id,
 						})
-					: null) ??
-				(await getCommunityListingByOwnerAndKodyId(input.db, {
-					ownerUserId,
-					kodyId: slug,
-				}))
+					: null)
 			if (!savedPackage && listing) {
 				savedPackage = await getSavedPackageById(input.db, {
 					userId: ownerUserId,

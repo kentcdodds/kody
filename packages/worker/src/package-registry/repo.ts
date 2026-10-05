@@ -384,12 +384,13 @@ function buildSavedPackageRefQuery(input: {
 }): SavedPackageRefQuery | null {
 	const ref = input.ref.trim()
 	if (!ref) return null
+	const slug = ref.toLowerCase()
 	if (input.match === 'slug') {
-		if (!kodyPackageIdPattern.test(ref)) return null
+		if (!kodyPackageIdPattern.test(slug)) return null
 		return {
 			where: `saved_packages.user_id = ? AND ${savedPackageSlugSql} = ?`,
 			orderBy: 'saved_packages.id',
-			values: [input.userId, ref],
+			values: [input.userId, slug],
 		}
 	}
 	if (ref.startsWith('@')) {
@@ -397,14 +398,14 @@ function buildSavedPackageRefQuery(input: {
 		return {
 			where: 'saved_packages.user_id = ? AND saved_packages.name = ?',
 			orderBy: 'saved_packages.id',
-			values: [input.userId, ref.toLowerCase()],
+			values: [input.userId, slug],
 		}
 	}
 	return {
 		where: `saved_packages.user_id = ?
 				AND (saved_packages.id = ? OR ${savedPackageSlugSql} = ?)`,
 		orderBy: `CASE WHEN saved_packages.id = ? THEN 0 ELSE 1 END`,
-		values: [input.userId, ref, ref, ref],
+		values: [input.userId, ref, slug, ref],
 	}
 }
 

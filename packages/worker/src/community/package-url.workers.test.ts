@@ -402,4 +402,13 @@ test('public listing URL finds the listing by package id after a local rename', 
 		username: pkg.username,
 		kodyId: pkg.kodyId,
 	})
+	// The package page pairs that listing with its own package, never with
+	// the package that reclaimed the slug.
+	await expect(resolvePage(pkg.username, pkg.kodyId)).resolves.toMatchObject({
+		kind: 'package',
+		kodyId: pkg.kodyId,
+		listingId: pkg.listingId,
+		listingKodyId: pkg.kodyId,
+		savedPackage: { id: pkg.packageId },
+	})
 })

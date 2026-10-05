@@ -63,6 +63,7 @@ test('resolveSavedPackageRef accepts a leaf, @scope/leaf, or package UUID for on
 	const refs: Array<[ref: string, expected: string | null]> = [
 		['notes', notesId],
 		['  notes  ', notesId],
+		['Notes', notesId],
 		['@owner/notes', notesId],
 		['@Owner/notes', notesId],
 		[notesId, notesId],
@@ -81,9 +82,11 @@ test('resolveSavedPackageRef accepts a leaf, @scope/leaf, or package UUID for on
 	}
 
 	// `match: 'slug'` is for URL path segments: only the name leaf matches.
-	await expect(
-		idOf(db, { userId: ownerId, ref: 'notes', match: 'slug' }),
-	).resolves.toBe(notesId)
+	for (const ref of ['notes', 'NOTES']) {
+		await expect(
+			idOf(db, { userId: ownerId, ref, match: 'slug' }),
+		).resolves.toBe(notesId)
+	}
 	for (const ref of [notesId, '@owner/notes']) {
 		await expect(
 			idOf(db, { userId: ownerId, ref, match: 'slug' }),
