@@ -720,6 +720,10 @@ export function ConnectOauthRoute(handle: Handle) {
 					: null}
 				{currentStep === 'setup' ? (
 					<ConnectOauthCredentialsForm
+						// Remount when the connect location changes so uncontrolled
+						// defaultValue fields pick up applySetupState drafts (SPA
+						// provider hops otherwise keep the previous DOM values).
+						key={resolvedHref ?? currentConfig.providerKey}
 						config={currentConfig}
 						existingIntegrationConfig={existingIntegrationConfig}
 						hasStoredClientId={hasStoredClientId}
