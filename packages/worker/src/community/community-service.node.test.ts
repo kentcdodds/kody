@@ -1103,6 +1103,101 @@ test('forkCommunityListing rejects a repeat fork without a new kody_id and allow
 	)
 })
 
+test('forkCommunityListing auto-picks a free leaf when an unrelated same-leaf package exists', async () => {
+	mockForkable()
+	const unrelatedSameLeaf = {
+		...validSavedPackage(),
+		id: 'package-unrelated',
+		userId: 'user-2',
+		name: '@jane/discord-gateway',
+		kodyId: 'discord-gateway',
+		sourceId: 'source-unrelated',
+	}
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { ref: string }) => {
+			if (input.ref === 'discord-gateway') return unrelatedSameLeaf
+			return null
+		},
+	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) => {
+			if (input.name === '@jane/discord-gateway') return unrelatedSameLeaf
+			return null
+		},
+	)
+
+	const result = await fork()
+
+	expect(result.targetKodyId).toBe('discord-gateway-2')
+	expect(result.targetName).toBe('@jane/discord-gateway-2')
+	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ target_kody_id: 'discord-gateway-2' }),
+	)
+})
+
+test('forkCommunityListing skips taken alternates and still rejects an explicit colliding leaf', async () => {
+	mockForkable()
+	const taken = new Map([
+		[
+			'discord-gateway',
+			{
+				...validSavedPackage(),
+				id: 'package-unrelated',
+				userId: 'user-2',
+				name: '@jane/discord-gateway',
+				kodyId: 'discord-gateway',
+			},
+		],
+		[
+			'discord-gateway-2',
+			{
+				...validSavedPackage(),
+				id: 'package-alt',
+				userId: 'user-2',
+				name: '@jane/discord-gateway-2',
+				kodyId: 'discord-gateway-2',
+			},
+		],
+	])
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { ref: string }) =>
+			taken.get(input.ref) ?? null,
+	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { name: string }) => {
+			const leaf = input.name.split('/')[1]
+			return leaf ? (taken.get(leaf) ?? null) : null
+		},
+	)
+
+	const result = await fork()
+	expect(result.targetKodyId).toBe('discord-gateway-3')
+
+	await expect(fork({ kodyId: 'discord-gateway' })).rejects.toThrow(
+		'You already have a saved package named "discord-gateway". Pass a different package name leaf to fork this listing.',
+	)
+})
+
+test('forkCommunityListing does not auto-pick past a real fork of the listing', async () => {
+	mockForkable()
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([
+		forkRecord({ targetKodyId: 'discord-gateway' }),
+	])
+	const publishedFork = {
+		...forkedSavedPackage(),
+		kodyId: 'discord-gateway',
+		name: '@jane/discord-gateway',
+	}
+	mockModule.resolveSavedPackageRef.mockResolvedValue(publishedFork)
+	mockModule.getSavedPackageByName.mockResolvedValue(publishedFork)
+
+	await expect(fork()).rejects.toThrow(
+		'You already have a saved package named "discord-gateway". Pass a different package name leaf to fork this listing.',
+	)
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+})
+
 test('forkCommunityListing cleans up entity source when snapshot sync fails', async () => {
 	mockForkable()
 	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(

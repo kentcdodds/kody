@@ -129,6 +129,7 @@ import {
 	deleteCommunityActivityEventsByListingId,
 	insertCommunityActivityEvent,
 } from './profile-repo.ts'
+import { resolveCommunityForkAlternateLeaf } from './allocate-fork-leaf.ts'
 import {
 	collectChangedForkFiles,
 	rewritePackageManifestForFork,
@@ -1443,7 +1444,75 @@ export async function prepareCommunityFork(
 		throw new Error('Catalog entry snapshot is missing package.json.')
 	}
 
-	const targetKodyId = input.kodyId?.trim() || listing.kodyId
+	const explicitKodyId = input.kodyId?.trim() || undefined
+	const preferredKodyId = explicitKodyId || listing.kodyId
+	const packageScope = input.expectedPackageScope.replace(/^@/, '')
+	const scopedName = (leaf: string) => `@${packageScope}/${leaf}`
+	const [existingByKody, existingByName, existingForks] = await Promise.all([
+		resolveSavedPackageRef(input.env.APP_DB, {
+			userId: input.userId,
+			ref: preferredKodyId,
+			match: 'slug',
+		}),
+		getSavedPackageByName(input.env.APP_DB, {
+			userId: input.userId,
+			name: scopedName(preferredKodyId),
+		}),
+		listCommunityForksByListingAndUser(input.env.APP_DB, {
+			listingId: input.listingId,
+			userId: input.userId,
+		}),
+	])
+	const collidingFork = existingForks.find(
+		(fork) => fork.targetKodyId === preferredKodyId,
+	)
+	let targetKodyId = preferredKodyId
+	if (existingByKody || existingByName) {
+		// A fork row for this listing at the preferred leaf is a repeat fork
+		// (Installed / adaptation_required). An unrelated same-leaf package —
+		// no fork linkage — used to make one-click Install/Fork fail on the
+		// default leaf. Auto-pick the next free leaf only for that default
+		// path; an explicit leaf still errors so callers keep control.
+		if (!explicitKodyId && !collidingFork) {
+			const alternate = await resolveCommunityForkAlternateLeaf({
+				preferredLeaf: preferredKodyId,
+				reservedLeaves: new Set(existingForks.map((fork) => fork.targetKodyId)),
+				isLeafTaken: async (leaf) => {
+					const [byKody, byName] = await Promise.all([
+						resolveSavedPackageRef(input.env.APP_DB, {
+							userId: input.userId,
+							ref: leaf,
+							match: 'slug',
+						}),
+						getSavedPackageByName(input.env.APP_DB, {
+							userId: input.userId,
+							name: scopedName(leaf),
+						}),
+					])
+					return Boolean(byKody || byName)
+				},
+			})
+			if (!alternate) {
+				throw new CommunityActionError(
+					`You already have a saved package named "${preferredKodyId}". Pass a different package name leaf to fork this listing.`,
+				)
+			}
+			targetKodyId = alternate
+		} else {
+			throw new CommunityActionError(
+				`You already have a saved package named "${preferredKodyId}". Pass a different package name leaf to fork this listing.`,
+			)
+		}
+	} else if (collidingFork) {
+		throw new CommunityActionError(
+			buildRepeatForkErrorMessage({
+				targetKodyId: preferredKodyId,
+				forkedSourceId: collidingFork.forkedSourceId,
+				forkedPackageId: collidingFork.forkedPackageId,
+			}),
+		)
+	}
+
 	let rewrittenManifest: ReturnType<typeof rewritePackageManifestForFork>
 	try {
 		rewrittenManifest = rewritePackageManifestForFork({
@@ -1462,36 +1531,16 @@ export async function prepareCommunityFork(
 	} catch (error) {
 		throw new CommunityActionError(getErrorMessage(error))
 	}
-	const [existingByKody, existingByName, existingForks] = await Promise.all([
-		resolveSavedPackageRef(input.env.APP_DB, {
-			userId: input.userId,
-			ref: targetKodyId,
-			match: 'slug',
-		}),
-		getSavedPackageByName(input.env.APP_DB, {
-			userId: input.userId,
-			name: rewrittenManifest.targetName,
-		}),
-		listCommunityForksByListingAndUser(input.env.APP_DB, {
-			listingId: input.listingId,
-			userId: input.userId,
-		}),
-	])
-	if (existingByKody || existingByName) {
-		throw new CommunityActionError(
-			`You already have a saved package named "${targetKodyId}". Pass a different package name leaf to fork this listing.`,
-		)
-	}
 
-	const collidingFork = existingForks.find(
+	const collidingForkAtTarget = existingForks.find(
 		(fork) => fork.targetKodyId === targetKodyId,
 	)
-	if (collidingFork) {
+	if (collidingForkAtTarget) {
 		throw new CommunityActionError(
 			buildRepeatForkErrorMessage({
 				targetKodyId,
-				forkedSourceId: collidingFork.forkedSourceId,
-				forkedPackageId: collidingFork.forkedPackageId,
+				forkedSourceId: collidingForkAtTarget.forkedSourceId,
+				forkedPackageId: collidingForkAtTarget.forkedPackageId,
 			}),
 		)
 	}
