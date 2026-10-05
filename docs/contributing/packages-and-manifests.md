@@ -73,6 +73,12 @@ Important behavior:
   and publish-time artifact rebuilds.
 - Published bundle artifacts are what package exports, jobs, subscriptions,
   retrievers, and apps execute at runtime.
+- External publish flips `published_commit` before the per-target npm bundle
+  rebuild finishes. While that rebuild is in flight, invoke may serve the
+  previous npm-backed bundle for two minutes, keyed to the published source
+  snapshot `createdAt` from finalize (not `entity_sources.updated_at`, which
+  also moves on indexed_commit and reconcile writes). After the window, missing
+  bundles fail as retryable `artifact_preparation_failed`.
 - If a package declares a dependency that the bundler cannot resolve or bundle,
   repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
