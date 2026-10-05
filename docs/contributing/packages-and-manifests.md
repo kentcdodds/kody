@@ -278,8 +278,10 @@ A package app is a hosted Worker entry running in the package-app isolate:
   remount the Request when the route contract includes `appBasePath`, and pass
   explicit `clientEntry` ids (`kody:app#Name`). A handler that borrows
   `remix/headers` or `remix/html-template` needs none of that
-- Frameworks are ordinary package dependencies. The platform does not vendor or
-  mount Remix (or TanStack, Preact, or any other library) into package bundles
+- Frameworks are ordinary package dependencies. The platform does not vendor,
+  mount, inject, sniff, or stamp version metadata for Remix (or TanStack,
+  Preact, or any other library) onto package bundles; the dirty check for
+  artifact reuse is file-content-only
   ([decision 0057](./decisions/0057-no-framework-platform-affordance.md)).
   Bundling asserts that every `node_modules/` path in the bundler file set
   already exists in the package snapshot (`assertNoPlatformSuppliedNodeModules`)
