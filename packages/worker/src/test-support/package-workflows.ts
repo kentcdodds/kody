@@ -415,11 +415,13 @@ export function createWorkflowRunsDatabase(options?: {
 							}
 							if (query.includes('FROM saved_packages')) {
 								if (!savedPackage) return null
-								const userMatches = savedPackage['user_id'] === params[1]
-								const idMatches =
-									savedPackage['id'] === params[0] ||
-									savedPackage['kody_id'] === params[0]
-								return userMatches && idMatches ? savedPackage : null
+								const userMatches = savedPackage['user_id'] === params[0]
+								const ref = String(params[1])
+								const name = String(savedPackage['name'])
+								const refMatches =
+									savedPackage['id'] === ref ||
+									name.slice(name.indexOf('/') + 1) === ref
+								return userMatches && refMatches ? savedPackage : null
 							}
 							return null
 						},

@@ -117,6 +117,17 @@ function createDatabase(
 										.length,
 								}
 							}
+							if (
+								query.includes('FROM saved_packages') &&
+								query.includes('substr(saved_packages.name')
+							) {
+								return find(
+									savedPackages,
+									(row) =>
+										row['user_id'] === first &&
+										String(row['name']).endsWith(`/${String(second)}`),
+								)
+							}
 							if (query.includes('FROM saved_packages') && lookupColumn) {
 								return find(
 									savedPackages,
@@ -371,7 +382,7 @@ test('packageSave does not gate updates to an existing package at the limit', as
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 })
 
-test('packageSave maps id mismatch, legacy name collision, and UNIQUE insert races to caller errors', async () => {
+test('packageSave maps id mismatch, rename name collision, and UNIQUE insert races to caller errors', async () => {
 	const privateCreate = {
 		confirm_destructive_overwrite: false,
 		confirm_private_visibility_change: false,
@@ -416,14 +427,17 @@ test('packageSave maps id mismatch, legacy name collision, and UNIQUE insert rac
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
-	const sharedName = '@collision/new-kody'
-	const legacy = await setup({
-		email: 'legacy@example.com',
+	const sharedName = '@collision/taken'
+	const rename = await setup({
+		email: 'rename@example.com',
 		username: 'collision',
 		savedPackages: (userId) => [
-			// Legacy row: name leaf no longer matches kody_id, so kody_id
-			// lookup misses while (user_id, name) still conflicts.
-			savedPackageRow(userId, 'legacy-package-id', 'legacy-other', {
+			savedPackageRow(userId, 'renaming-package-id', 'renaming', {
+				name: '@collision/renaming',
+				hidden: 0,
+				is_private: 1,
+			}),
+			savedPackageRow(userId, 'taken-package-id', 'taken', {
 				name: sharedName,
 				hidden: 0,
 				is_private: 1,
@@ -431,14 +445,15 @@ test('packageSave maps id mismatch, legacy name collision, and UNIQUE insert rac
 		],
 	})
 	await expectCallerError(
-		legacy.save({
+		rename.save({
 			...privateCreate,
-			files: buildPackageFiles('new-kody', { name: sharedName, private: true }),
+			package_id: 'renaming-package-id',
+			files: buildPackageFiles('taken', { name: sharedName, private: true }),
 		}),
 		buildSavedPackageNameCollisionMessage({
 			name: sharedName,
-			existingKodyId: 'legacy-other',
-			existingPackageId: 'legacy-package-id',
+			existingKodyId: 'taken',
+			existingPackageId: 'taken-package-id',
 		}),
 	)
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
