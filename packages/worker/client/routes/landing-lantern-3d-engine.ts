@@ -210,12 +210,17 @@ export function startLanternEngine(options: {
 				growVelocity[id] = 0
 			}
 		}
-		bodies = stepLanternOrbs(bodies, dt, {
-			time,
-			amplitude: motion ? (narrow.matches ? 0.62 : 1) : 0,
-			spin,
-			hold,
-		})
+		// Without motion only a held orb leaves home, so reduced motion
+		// turned on mid-toss sends every orb straight back.
+		bodies =
+			motion || hold
+				? stepLanternOrbs(bodies, dt, {
+						time,
+						amplitude: motion ? (narrow.matches ? 0.62 : 1) : 0,
+						spin,
+						hold,
+					})
+				: createLanternOrbBodies()
 		write('--yaw', `${pose.yaw}rad`)
 		write('--pitch', `${pose.pitch}rad`)
 		const flame = motion ? flicker(time) : 0
