@@ -10,96 +10,55 @@ description:
   system review, or PR recap.
 ---
 
-# System recap (visual plan / visual recap)
+# System recap
 
-Produce a high-altitude, visual review aid in the PR description. GitHub renders
-the block (including mermaid), and the PR is the storage. The marker-delimited
-block is machine-readable, so follow the format exactly.
+When a change is non-trivial (a plan, a PR create or update, or a request for a
+visual recap), put one marker-delimited block in the PR description. GitHub
+renders it. It does not replace reading the diff.
 
-The recap is informational and non-blocking. It supplements the PR description
-and normal code review. It never replaces reading the diff.
+## When
 
-Read this core, classify the rollup, then open **one** risk reference. Open the
-block format once when you write the block. Leave the other risk files unread.
+Run the classifier. Roll up to the highest of `adds`, then `extends`, then
+`composes`. You still choose `composes` vs `extends` from the diff. `adds` is a
+new map entry.
 
-## Modes
+| Rollup     | Risk   | Also                                                                                                |
+| ---------- | ------ | --------------------------------------------------------------------------------------------------- |
+| `composes` | low    | Wiring and call sites only.                                                                         |
+| `extends`  | medium | [preview-manual-test](../preview-manual-test/SKILL.md) as the seeded user with data for this change |
+| `adds`     | high   | Update `primitives.yaml`, `npm run primitives:check`, and the same preview                          |
 
-- **Plan mode** (before or while implementing): describe the intended change
-  against the current system. If no PR exists yet, put the block in the plan
-  document or message. Move it into the PR description once the PR exists.
-- **Recap mode** (PR creation and every meaningful update): describe what the
-  diff actually does. Replaces a plan-mode block if one exists.
+Update `primitives.yaml` when this PR adds, removes, or materially reshapes a
+primitive (new `id`, renamed meaning, or ownership roots that must change). Do
+not edit `summary` for ordinary feature work. Call out a touched invariant from
+that map at every risk.
 
-## Source of truth
+Plan mode uses `**Mode:** plan` before a PR exists. Recap mode replaces that
+block from `git diff <base>...HEAD`.
 
-1. **Recap mode reads the diff, not memory.** Generate the recap from
-   `git diff <base>...HEAD` (plus `git diff --stat`) against the PR base branch.
-   Session context may explain intent, but every claim about what changed must
-   be checkable against the diff.
-2. **Classification uses the primitives taxonomy.** Read
-   [`docs/contributing/architecture/primitives.yaml`](../../../docs/contributing/architecture/primitives.yaml)
-   for stable `id` / `name` / `group` values. Prefer the classifier script over
-   hand-matching paths:
-
-   ```bash
-   node .agents/skills/visual-recap/scripts/classify-primitives.mjs --base <base> --head HEAD
-   # or: git diff --name-only <base>...HEAD | node .agents/skills/visual-recap/scripts/classify-primitives.mjs --stdin --json
-   ```
-
-3. **The taxonomy is not a feature changelog.** Update `primitives.yaml` only
-   when this PR adds, removes, or materially reshapes a primitive (new `id`,
-   renamed meaning, or ownership roots that must change). Do not edit `summary`
-   for ordinary feature work. Put behavioral detail in the linked architecture
-   docs under `docs:`. Run `npm run primitives:check` after map edits.
-
-## Risk
-
-Classify each touched primitive, then roll up to the highest severity (`adds` >
-`extends` > `composes`):
-
-| Classification | Meaning                                                    | Risk   | Read                                           |
-| -------------- | ---------------------------------------------------------- | ------ | ---------------------------------------------- |
-| `composes`     | Uses existing primitives as-is; wiring and call sites only | Low    | [references/low.md](./references/low.md)       |
-| `extends`      | Changes a primitive's behavior, shape, or contract         | Medium | [references/medium.md](./references/medium.md) |
-| `adds`         | Introduces a new primitive (must update primitives.yaml)   | High   | [references/high.md](./references/high.md)     |
-
-A change touching invariants from `primitives.yaml` (for example per-user
-isolation) is called out explicitly regardless of classification.
-
-The classifier reports which primitives' `code` roots the diff touches. You
-still decide `composes` vs `extends` from the diff (and `adds` when you create a
-new map entry). Follow that one risk reference. Medium and high include the
-preview pass. Low does not.
-
-## Write the block
-
-Template, diagram rules, plan-mode fields, and examples (read once):
+The block shape is one example:
 [references/block-format.md](./references/block-format.md).
 
-1. Resolve base/head (`gh pr view <n> --json baseRefName,headRefName`). Plan
-   mode does not require Base/Head commits.
-2. Classify paths (command above; add `--json` for structured output).
-3. Read the full diff for anything you did not author this session. Decide
-   composes/extends/adds per matched primitive, and note important unmatched
-   paths if they introduce a new surface.
-4. Author the block from the format reference and the one risk reference. Use
-   map `name` for participant and node labels. Pull behavioral detail from
-   architecture docs and the diff, not by rewriting map summaries.
-5. Upsert it into the PR description.
+## Command
 
-   ```bash
-   node .agents/skills/visual-recap/scripts/upsert-recap-block.mjs <pr-number> <block-file>
-   ```
+```bash
+node .agents/skills/visual-recap/scripts/classify-primitives.mjs --base <base> --head HEAD --json
+node .agents/skills/visual-recap/scripts/upsert-recap-block.mjs <pr-number> <block-file>
+```
 
-   The script rejects mermaid GitHub cannot parse, then replaces the content
-   between the markers, or appends the block to the end of the description on
-   first run. It never touches text outside the markers.
+The upsert script checks mermaid, then replaces the marker block or appends it.
+It does not edit text outside the markers. Re-run both commands after a
+significant push.
 
-   **Cloud Agents:** `gh pr edit` fails with
-   `Resource not accessible by integration (updatePullRequest)`. Do not treat
-   that as a reason to skip the recap. Run the script anyway so mermaid is
-   checked. When it prints the merged PR body, apply that body with Cursor
-   **ManagePullRequest**. Do not have Kody, a Kody workflow, or Kody's GitHub
-   integration edit the PR.
+## Failure
 
-6. Re-run steps 2-5 after pushing significant new commits to the PR.
+- The mermaid check exits non-zero. Fix the diagram. Do not put `;` in sequence
+  notes or messages. `npm run mermaid:check` uses the same parser.
+- The block file must start with `<!-- system-recap:start -->` and end with
+  `<!-- system-recap:end -->`.
+- `gh pr edit` fails with
+  `Resource not accessible by integration (updatePullRequest)`. The script still
+  prints the merged body. Apply that body with Cursor ManagePullRequest. Do not
+  have Kody edit the PR.
+- A health check or login smoke is not the medium or high preview. Do not cat
+  the session cookie into curl or Python.

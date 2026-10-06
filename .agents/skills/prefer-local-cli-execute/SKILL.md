@@ -12,45 +12,40 @@ description: >
 
 # Prefer local CLI execute
 
-For one-off modules, authenticated smoke tests, and composition, prefer
-`npx @kodycodes/cli execute --local` when **Node ≥22** and `@kodycodes/cli` are
-available. Do **not** use hosted MCP `execute`.
-
-This skill and [Local CLI execute](https://kody.codes/docs/local-execute)
-(`search({ entity: "guide:local_execute" })` or
+When Node is 22 or newer and `@kodycodes/cli` is available, run one-off modules
+with local execute. Do not use hosted MCP `execute`. This skill and
+[Local CLI execute](https://kody.codes/docs/local-execute)
+(`guide:local_execute`,
 [docs/guides/local-execute.md](../../../docs/guides/local-execute.md)) are the
-source of truth for that rule. Open API fallback:
-[Open API](https://kody.codes/docs/open-api) (`guide:open_api`).
+source of truth. Open API fallback: [Open API](https://kody.codes/docs/open-api)
+(`guide:open_api`).
 
-Command shapes, scopes, package-graph, and failures:
-[references/troubleshooting.md](./references/troubleshooting.md).
+## Command
 
-## Rules
+Agents already on MCP: call `cliCredentialBootstrap` (MCP `api`), then run the
+returned `cli_command`. Humans who can finish browser OAuth:
+`npx @kodycodes/cli login` once. CI with no MCP session and no interactive
+login: set `KODY_API_TOKEN` in the environment. Never paste a `kody_at_…` into
+chat.
 
-1. **Agents already on MCP.** Call `cliCredentialBootstrap` (MCP `api` /
-   `kody.cliCredentialBootstrap`), then run the returned `cli_command`. Do not
-   run interactive `kody login` and do not call `tokenCreate`. Bootstrap returns
-   a one-shot `kody_bc_…` code plus `cli_command`, never a `kody_at_…`. Never
-   paste a `kody_at_…` into chat.
-2. **Interactive humans.** When a human can complete browser OAuth on the
-   machine, `npx @kodycodes/cli login` once, then `execute --local`.
-3. **CI / headless without an MCP session and without interactive login.** Use a
-   scoped `KODY_API_TOKEN` (`tokenCreate` or a pre-provisioned environment
-   secret). Write the value only into the environment. Never paste the token
-   into chat.
-4. **Credential priority.** `--token` / `KODY_API_TOKEN` (scoped `kody_at_…`)
-   when set, else the stored API token from `auth bootstrap` / env, else stored
-   CLI MCP OAuth from `kody login`, else a clear "login, bootstrap, or provide a
-   token" error.
-5. **Saved packages.** Keep `--local` and write the usual static `kody:@…`
-   import. There is no author-facing `packages.invoke`. Do not drop `--local`
-   merely because the module imports `kody:@…`.
-6. **Fallback.** If `--local` cannot run (no Node ≥22, CLI missing, flags or
-   scopes missing, or the host cannot run a local workerd), use Open API / MCP
-   `api` for the needed operations, or fix the environment so local works.
-   Hosted MCP `execute` is banned for agents that can use local CLI or Open API.
+```bash
+npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
+```
 
-Layer choice (MCP overlay vs package docs vs memories):
-[Where agent guidance lives](https://kody.codes/docs/agent-guidance)
-(`guide:agent_guidance`). Cloud Agent VM notes:
-[docs/contributing/cloud-agents.md](../../../docs/contributing/cloud-agents.md).
+Saved packages keep `--local` and a static `kody:@…` import.
+
+- There is no author-facing `packages.invoke`.
+
+## Failure
+
+- Node is below 22, the CLI is missing, or the host cannot run workerd. Use Open
+  API / MCP `api`, or fix the environment. Hosted MCP `execute` stays banned.
+- The bootstrap code is rejected. Call `cliCredentialBootstrap` again. Do not
+  switch to `kody login` or `tokenCreate` while an MCP session exists.
+- `search` is forbidden. Default bootstrap scopes are `local-execute` and
+  `account:read`
+  ([ADR 0056](../../../docs/contributing/decisions/0056-cli-credential-bootstrap.md)).
+  `whoami` works. Use MCP `search`, or a token with `search:read`.
+- The module imports `kody:@…`. Keep `--local`.
+- The CLI asks for a login, a bootstrap, or a token. Priority is `--token` /
+  `KODY_API_TOKEN`, then the stored bootstrap token, then `kody login`.
