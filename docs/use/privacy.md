@@ -49,8 +49,9 @@ referral cookie (`kody_ref`) set by `/signup?ref=<username>` share links, and
 the package-app session cookie on `kody.run` (`__Host-kody_pkg_session` on
 HTTPS, `kody_pkg_session` on HTTP). Short-lived cookies support two-factor
 verification, passkey challenges, and OAuth login. Analytics (Fathom) is
-cookieless. The browser uses sessionStorage for first-touch signup attribution
-and scroll restoration, not tracking cookies.
+cookieless. The browser uses sessionStorage for first-touch signup attribution,
+scroll restoration, and remembering until the tab closes that the homepage
+lantern stays 2D on this device, not tracking cookies.
 
 Account export includes your profile columns and activity you authored. The
 browser download is a bounded metadata manifest; use its `accountExportSection`
