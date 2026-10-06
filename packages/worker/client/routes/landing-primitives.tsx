@@ -57,21 +57,20 @@ function leaderFollow() {
 			// Looked up per draw: the 3D lantern replaces the still's art.
 			const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
 			if (lanternArt) {
-				// Lines run faint inside the glass and come up to full strength
-				// as they leave it (see the mask in styles.css).
+				// Over the still, lines run faint inside the glass and come up to
+				// full strength as they leave it (see the mask in styles.css).
+				// Over the 3D globe, a casing clipped to the glass carries them.
 				const art = lanternArt.getBoundingClientRect()
-				svg.style.setProperty(
-					'--glass-x',
-					`${art.left - origin.left + art.width * landingLanternGlass.x}px`,
-				)
-				svg.style.setProperty(
-					'--glass-y',
-					`${art.top - origin.top + art.height * landingLanternGlass.y}px`,
-				)
-				svg.style.setProperty(
-					'--glass-r',
-					`${art.width * landingLanternGlass.r}px`,
-				)
+				const x = art.left - origin.left + art.width * landingLanternGlass.x
+				const y = art.top - origin.top + art.height * landingLanternGlass.y
+				const r = art.width * landingLanternGlass.r
+				svg.style.setProperty('--glass-x', `${x}px`)
+				svg.style.setProperty('--glass-y', `${y}px`)
+				svg.style.setProperty('--glass-r', `${r}px`)
+				const glass = svg.querySelector('.landing-leader-glass')
+				glass?.setAttribute('cx', x.toFixed(1))
+				glass?.setAttribute('cy', y.toFixed(1))
+				glass?.setAttribute('r', r.toFixed(1))
 			}
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
@@ -119,7 +118,7 @@ function leaderFollow() {
 	})
 }
 
-function renderLeaders(activeId: LandingPrimitiveId | null) {
+function renderLeaders(activeId: LandingPrimitiveId | null, glassId: string) {
 	return (
 		<svg
 			class="landing-primitives-leaders"
@@ -127,6 +126,11 @@ function renderLeaders(activeId: LandingPrimitiveId | null) {
 			focusable={false}
 			preserveAspectRatio="none"
 		>
+			<defs>
+				<clipPath id={glassId}>
+					<circle class="landing-leader-glass" />
+				</clipPath>
+			</defs>
 			{landingPrimitiveIds.map((id) => (
 				<g
 					key={id}
@@ -135,6 +139,11 @@ function renderLeaders(activeId: LandingPrimitiveId | null) {
 					data-open={activeId === id ? '' : undefined}
 					style={{ '--primitive-color': landingPrimitiveColorVar(id) }}
 				>
+					<path
+						class="landing-leader-casing"
+						fill="none"
+						clip-path={`url(#${glassId})`}
+					/>
 					<path class="landing-leader-halo" fill="none" />
 					<path class="landing-leader-base" fill="none" />
 					<path class="landing-leader-flow" fill="none" />
@@ -216,7 +225,7 @@ export function LandingPrimitives(handle: Handle) {
 					onDismiss={dismiss}
 					onResume={clearDismissed}
 				/>
-				{renderLeaders(openId)}
+				{renderLeaders(openId, `${handle.id}-glass`)}
 				<ul class="landing-primitives-words" aria-label="The six primitives">
 					{landingHomePrimitives.map((primitive) => (
 						<li key={primitive.id} class="landing-primitive-item">

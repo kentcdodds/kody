@@ -1393,6 +1393,48 @@ html.is-settled {
 	opacity: 0.2;
 }
 
+/* The 3D globe glows behind the lines, so a fade inside the glass would
+   lose them. There a dark casing, clipped to the glass, carries each line
+   from its orb to its word, and resting lines stay strong enough to tie
+   every word to its orb. */
+.landing-leader-casing {
+	display: none;
+}
+
+.landing-primitives-stage:has([data-lantern-3d][data-ready])
+	.landing-primitives-leaders {
+	mask-image: none;
+	-webkit-mask-image: none;
+}
+
+.landing-primitives-stage:has([data-lantern-3d][data-ready])
+	.landing-leader-casing {
+	display: inline;
+	stroke: oklch(0.3 0.08 45);
+	stroke-width: 4.5;
+	opacity: 0.5;
+}
+
+.landing-primitives-stage:has([data-lantern-3d][data-ready])
+	.landing-leader[data-open]
+	.landing-leader-casing {
+	stroke-width: 6;
+	opacity: 0.6;
+}
+
+.landing-primitives-stage:has([data-lantern-3d][data-ready])
+	.landing-leader:not([data-open])
+	.landing-leader-base {
+	stroke-width: 1.4;
+	opacity: 0.55;
+}
+
+.landing-primitives[data-active]
+	.landing-primitives-stage:has([data-lantern-3d][data-ready])
+	.landing-leader:not([data-open]) {
+	opacity: 0.35;
+}
+
 .landing-primitives-lead {
 	margin: 0 auto;
 	max-width: 30rem;

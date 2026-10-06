@@ -65,8 +65,8 @@ function percent(fraction: number) {
 	return `${Math.round(fraction * 10_000) / 100}%`
 }
 
-/** Where the leader overlay should think the 2D glass is, so the lines
- *  fade inside the 3D globe instead (see `leaderFollow`). */
+/** Where the leader overlay should think the 2D glass is, so it finds the
+ *  3D globe instead (see `leaderFollow`). */
 const glassBox = (() => {
 	const aspect = landingLanternImage.height / landingLanternImage.width
 	const basis = lanternViewBasis()
@@ -299,6 +299,7 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 				{phase !== 'still' ? (
 					<figure
 						class="landing-lantern"
+						data-lantern-3d=""
 						data-ready={ready ? '' : undefined}
 						inert={ready ? undefined : true}
 						mix={[figureCss, stage]}
