@@ -411,6 +411,58 @@ test('websocket upgrade responses skip Server-Timing and keep the paired socket'
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
+test('package-app host permanent-308s a retired slug to the current leaf', async () => {
+	const fixture = createFixture({ kodyId: 'new-app' })
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				userId: string
+				ref: string
+				match?: string
+				followRedirects?: boolean
+			},
+		) => {
+			if (input.userId !== fixture.savedPackage.userId) return null
+			if (input.ref === 'new-app') return fixture.savedPackage
+			if (input.ref === 'old-app' && input.followRedirects) {
+				return fixture.savedPackage
+			}
+			return null
+		},
+	)
+
+	const redirected = await serveHelloWorld({
+		kodyId: 'old-app',
+		restPath: '/dashboard',
+	})
+	expect(redirected.status).toBe(308)
+	expect(redirected.headers.get('Location')).toBe(
+		'/@kentcdodds/packages/new-app/dashboard',
+	)
+	expect(redirected.headers.get('Cache-Control')).toBe('public, max-age=3600')
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
+
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					return new Response('ok')
+				},
+			}),
+		},
+	})
+	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: fixture.manifestContent,
+	})
+	const current = await serveHelloWorld({ kodyId: 'new-app' })
+	expect(current.status).toBe(200)
+	expect(await current.text()).toBe('ok')
+})
+
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {
 	seedClientAndAssets()
 

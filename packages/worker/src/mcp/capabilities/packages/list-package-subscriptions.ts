@@ -7,7 +7,8 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 
 const packageSubscriptionSchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	kody_id: z.string().describe('Package name leaf (same value as `slug`).'),
+	slug: z.string().describe('Package name leaf (same value as `kody_id`).'),
 	name: z.string(),
 	topic: z.string(),
 	handler: z.string(),
@@ -137,6 +138,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 					subscriptions.push({
 						package_id: savedPackage.id,
 						kody_id: savedPackage.kodyId,
+						slug: savedPackage.kodyId,
 						name: savedPackage.name,
 						topic,
 						handler: definition.handler,

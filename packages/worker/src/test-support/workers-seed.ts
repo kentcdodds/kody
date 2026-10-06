@@ -50,6 +50,20 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS package_kody_id_redirects (
+			user_id TEXT NOT NULL,
+			old_kody_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_kody_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS package_slug_redirects (
+			user_id TEXT NOT NULL,
+			old_slug TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_slug)
+		)`,
 		`CREATE TABLE IF NOT EXISTS entity_sources (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,

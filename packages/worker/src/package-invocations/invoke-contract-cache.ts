@@ -63,7 +63,22 @@ function createArtifactCache() {
 	})
 }
 
+/**
+ * Package-app host slug lookup: the URL path segment may be a retired slug.
+ * Cached under a distinct key prefix from live-only {@link resolveSavedPackage}
+ * so following redirects never teaches invocation paths to serve at an old path.
+ */
+export type PackageAppSlugLookup = {
+	savedPackage: SavedPackageRecord
+	/**
+	 * True when the URL slug is retired and the package now lives at a different
+	 * leaf. Callers must 308 to the current leaf instead of serving.
+	 */
+	retired: boolean
+}
+
 const savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
+const packageAppSlugCache = createFreshnessCache<PackageAppSlugLookup | null>()
 const sourceRowCache = createFreshnessCache<EntitySourceRow>()
 const platformAccountFlagCache = createFreshnessCache<boolean>()
 const moduleArtifactCache = createArtifactCache()
@@ -92,6 +107,10 @@ function savedPackageCacheKey(input: {
 		input.userId,
 		input.packageIdOrKodyId,
 	])
+}
+
+function packageAppSlugCacheKey(input: { userId: string; slug: string }) {
+	return JSON.stringify(['saved-package-app-slug', input.userId, input.slug])
 }
 
 function savedPackageCacheKeyMatchesLookup(
@@ -135,6 +154,30 @@ export async function resolveSavedPackageWithFreshnessCache(input: {
 				return null
 			}
 			return deepFreeze(record)
+		},
+	})
+}
+
+/**
+ * Freshness-cached package-app host lookup. Follows slug redirects but marks
+ * `retired` so the host can 308 to the canonical path instead of serving at
+ * the old URL (cookies, caches, and storage stay on one origin/path).
+ */
+export async function resolvePackageAppSlugWithFreshnessCache(input: {
+	userId: string
+	slug: string
+	load: () => Promise<PackageAppSlugLookup | null>
+}): Promise<PackageAppSlugLookup | null> {
+	const cacheKey = packageAppSlugCacheKey(input)
+	return await packageAppSlugCache.getOrCreate({
+		cacheKey,
+		create: async () => {
+			const lookup = await input.load()
+			if (!lookup) {
+				packageAppSlugCache.delete(cacheKey)
+				return null
+			}
+			return deepFreeze(lookup)
 		},
 	})
 }
@@ -222,6 +265,13 @@ export function invalidateInvokeContractFreshness(input: {
 		} else {
 			savedPackageCache.delete(
 				savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
+			)
+			// Slug keys may be the current or previous leaf; evict both shapes.
+			packageAppSlugCache.delete(
+				packageAppSlugCacheKey({
+					userId: input.userId,
+					slug: packageIdOrKodyId,
+				}),
 			)
 		}
 	}

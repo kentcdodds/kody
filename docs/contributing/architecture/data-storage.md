@@ -1190,7 +1190,9 @@ script owns no Durable Object classes.
   stable user id and read only through role-gated platform aggregates)
 - `MCP_PROTOCOL_EVENTS` (Analytics Engine dataset, production/preview only; one
   point per authenticated `/mcp` request recording which protocol lane served it
-  — legacy sessionful vs stateless 2026-07-28 — for legacy-lane retirement; see
+  — legacy sessionful vs stateless 2026-07-28 — for legacy-lane retirement, plus
+  blob8 package-identity param class (`kody_id` / `package_id` / `name` / `both`
+  / `none`) on `tools/call` for the public MCP `kody_id` alias gate; see
   `packages/worker/src/mcp/protocol-metrics.ts`)
 - `EXECUTE_INTERPRETABLE_EVENTS` (Analytics Engine dataset, production/preview
   only; one point per MCP execute-tool module classifying whether it is

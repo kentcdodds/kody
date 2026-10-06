@@ -262,6 +262,7 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 	expect(writeResult).toMatchObject({
 		package_id: 'package-1',
 		kody_id: 'unleashed-wifi',
+		slug: 'unleashed-wifi',
 		created: false,
 		remote,
 		scope: 'write',

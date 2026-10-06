@@ -2,6 +2,7 @@ import { html } from 'remix/html-template'
 import { createHtmlResponse } from 'remix/response/html'
 import {
 	buildPackageAppPath,
+	buildPackageAppSubdomainPath,
 	buildPackageAppSubdomainUrl,
 	buildPackagePagePath,
 } from '@kody-internal/shared/public-urls.ts'
@@ -41,6 +42,8 @@ import {
 	pushServerTiming,
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
+import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
+import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**
@@ -89,12 +92,13 @@ function withoutHandoffToken(url: URL) {
 
 function redirectResponse(input: {
 	location: string
-	status: 302 | 307
+	status: 302 | 307 | 308
 	setCookie?: string
+	cacheControl?: string
 }) {
 	const headers = new Headers({
 		Location: input.location,
-		'Cache-Control': 'no-store',
+		'Cache-Control': input.cacheControl ?? 'no-store',
 	})
 	if (input.setCookie) headers.append('Set-Cookie', input.setCookie)
 	return new Response(null, { status: input.status, headers })
@@ -232,6 +236,44 @@ function createPackageAppSessionRequiredResponse(input: {
 }
 
 /**
+ * When a package-app URL still uses a retired slug, permanent-308 to the
+ * current leaf so handoff tokens and the served app stay on one canonical path.
+ * Returns null when the slug is live or unknown (caller continues as today).
+ */
+async function redirectRetiredPackageAppSlug(input: {
+	env: Env
+	url: URL
+	packagePath: PackageAppPath
+	/**
+	 * Build the Location path for the current leaf. App-origin handoff uses the
+	 * path mount; subdomain serve uses the subdomain mount.
+	 */
+	buildLocation: (currentSlug: string) => string
+}): Promise<Response | null> {
+	const identity = await findPublicUserIdentityByUsername({
+		db: input.env.APP_DB,
+		username: input.packagePath.username,
+	})
+	if (!identity) return null
+	const lookup = await resolveSavedPackageForPackageAppSlug({
+		db: input.env.APP_DB,
+		userId: identity.mcpUserId,
+		slug: input.packagePath.kodyId,
+	})
+	if (!lookup?.retired) return null
+	const target = new URL(
+		input.buildLocation(lookup.savedPackage.kodyId),
+		input.url,
+	)
+	target.search = withoutHandoffToken(input.url).search
+	return redirectResponse({
+		location: `${target.pathname}${target.search}`,
+		status: 308,
+		cacheControl: 'public, max-age=3600',
+	})
+}
+
+/**
  * Mint a handoff token for the signed-in owner and send them to their
  * package-app subdomain. The app origin never executes package code once
  * `PACKAGE_APP_BASE_URL` is configured.
@@ -244,6 +286,21 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	packageAppOrigin: string
 }) {
 	const { request, env, url, packagePath, packageAppOrigin } = input
+
+	// Resolve retired slugs before minting a handoff bound to the URL slug.
+	const retiredRedirect = await redirectRetiredPackageAppSlug({
+		env,
+		url,
+		packagePath,
+		buildLocation: (currentSlug) =>
+			buildPackageAppPath({
+				username: packagePath.username,
+				kodyId: currentSlug,
+				restPath: packagePath.restPath === '/' ? null : packagePath.restPath,
+			}),
+	})
+	if (retiredRedirect) return retiredRedirect
+
 	const target = buildSubdomainTarget({ packageAppOrigin, packagePath, url })
 
 	// A non-safe method reaching the app origin is not part of the normal flow
@@ -349,6 +406,18 @@ async function handleUserSubdomainRequest(input: {
 		}
 		return createUnmatchedPackageAppPathResponse()
 	}
+
+	const retiredRedirect = await redirectRetiredPackageAppSlug({
+		env,
+		url,
+		packagePath,
+		buildLocation: (currentSlug) =>
+			buildPackageAppSubdomainPath({
+				kodyId: currentSlug,
+				restPath: packagePath.restPath === '/' ? null : packagePath.restPath,
+			}),
+	})
+	if (retiredRedirect) return retiredRedirect
 
 	// Sibling package-app subdomains are same-site, so until the package-app
 	// domain is on the Public Suffix List a `SameSite=Lax` session cookie still

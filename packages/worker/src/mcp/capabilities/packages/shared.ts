@@ -21,7 +21,16 @@ export const packageFileSchema = z.object({
 
 export const packageSummarySchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	kody_id: z
+		.string()
+		.describe(
+			'Package name leaf (same value as `slug`). Kept as a compatibility alias; prefer `slug` or `name`.',
+		),
+	slug: z
+		.string()
+		.describe(
+			'Package name leaf (the path segment after the scope). Same value as `kody_id`.',
+		),
 	name: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
@@ -98,7 +107,12 @@ export const packageSummaryWithCommunityProvenanceSchema =
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),
-		kody_id: z.string().describe('Package name leaf that needs approvals.'),
+		kody_id: z
+			.string()
+			.describe(
+				'Package name leaf that needs approvals (same value as `slug`).',
+			),
+		slug: z.string().describe('Package name leaf that needs approvals.'),
 		secrets: z
 			.array(
 				z.object({
@@ -125,6 +139,7 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 	return {
 		package_id: savedPackage.id,
 		kody_id: savedPackage.kodyId,
+		slug: savedPackage.kodyId,
 		name: savedPackage.name,
 		description: savedPackage.description,
 		tags: savedPackage.tags,

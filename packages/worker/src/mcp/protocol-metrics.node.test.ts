@@ -37,6 +37,7 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 		protocolVersion: '2025-06-18',
 		clientName: 'claude-ai',
 		clientVersion: '0.1.0',
+		packageIdentityParam: '',
 	})
 	// The request body stays readable for the lane that serves it.
 	expect(await initializeRequest.text()).toContain('initialize')
@@ -59,6 +60,7 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 		protocolVersion: '2025-03-26',
 		clientName: '',
 		clientVersion: '',
+		packageIdentityParam: 'none',
 	})
 
 	const modern = await classifyMcpProtocolRequest(
@@ -93,8 +95,79 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 		protocolVersion: '2026-07-28',
 		clientName: 'modern-client',
 		clientVersion: '2.0.0',
+		packageIdentityParam: 'none',
 	})
 	expect(modern.parsedBody).toMatchObject({ method: 'tools/call' })
+
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 4,
+					method: 'tools/call',
+					params: {
+						name: 'packageGet',
+						arguments: { kody_id: 'notes' },
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'kody_id' })
+
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 5,
+					method: 'tools/call',
+					params: {
+						name: 'packageGet',
+						arguments: { package_id: 'pkg-1' },
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'package_id' })
+
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 6,
+					method: 'tools/call',
+					params: {
+						name: 'repoResolve',
+						arguments: {
+							target: { kody_id: 'notes', package_id: 'pkg-1' },
+						},
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'both' })
+
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 7,
+					method: 'tools/call',
+					params: {
+						name: 'packageGet',
+						arguments: { name: '@kentcdodds/notes' },
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'name' })
 
 	expect(
 		await classifyMcpProtocolRequest(
@@ -109,10 +182,15 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 		lane: 'legacy',
 		method: 'http:GET',
 		protocolVersion: '2025-06-18',
+		packageIdentityParam: '',
 	})
 	expect(
 		await classifyMcpProtocolRequest(new Request(mcpUrl, { method: 'DELETE' })),
-	).toMatchObject({ lane: 'legacy', method: 'http:DELETE' })
+	).toMatchObject({
+		lane: 'legacy',
+		method: 'http:DELETE',
+		packageIdentityParam: '',
+	})
 
 	const invalid = await classifyMcpProtocolRequest(
 		new Request(mcpUrl, {
@@ -123,6 +201,7 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 	)
 	expect(invalid.lane).toBe('legacy')
 	expect(invalid.method).toBe('unknown')
+	expect(invalid.packageIdentityParam).toBe('')
 	expect(invalid.parsedBody).toBeUndefined()
 })
 
@@ -132,6 +211,7 @@ const modernListEvent = {
 	protocolVersion: '2026-07-28',
 	clientName: '',
 	clientVersion: '',
+	packageIdentityParam: '' as const,
 } as const
 
 test('recordMcpProtocolEvent writes a data point, no-ops without binding, and swallows sink errors', () => {
@@ -147,6 +227,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 		protocolVersion: '2025-06-18',
 		clientName: 'claude-ai',
 		clientVersion: '0.1.0',
+		packageIdentityParam: 'kody_id',
 		userId: 'user-1',
 		requestHost: 'kody.codes',
 	})
@@ -160,6 +241,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 			'0.1.0',
 			'user-1',
 			'kody.codes',
+			'kody_id',
 		],
 		doubles: [1],
 	})

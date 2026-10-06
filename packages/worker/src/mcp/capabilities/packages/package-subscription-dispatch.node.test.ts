@@ -174,6 +174,7 @@ test('packageSubscriptionDispatch sends synthetic params envelopes to one packag
 	expect(result).toMatchObject({
 		package_id: 'pkg-1',
 		kody_id: 'demo',
+		slug: 'demo',
 		topic: 'repo.pushed',
 		source: 'synthetic',
 		synthetic: true,

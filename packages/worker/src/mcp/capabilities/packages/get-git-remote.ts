@@ -65,7 +65,8 @@ const getGitRemoteInputSchema = z.object({
 const outputSchema = z.toJSONSchema(
 	z.object({
 		package_id: z.string(),
-		kody_id: z.string(),
+		kody_id: z.string().describe('Package name leaf (same value as `slug`).'),
+		slug: z.string().describe('Package name leaf (same value as `kody_id`).'),
 		created: z
 			.boolean()
 			.describe(
@@ -204,6 +205,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			return {
 				package_id: packageId,
 				kody_id: kodyId,
+				slug: kodyId,
 				created,
 				remote: sourceHead.remote,
 				authenticated_remote: buildAuthenticatedArtifactsRemote({

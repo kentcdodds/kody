@@ -483,6 +483,7 @@ export const savePackageCapability = defineDomainCapability(
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
+				slug: saved.kodyId,
 				name: saved.name,
 				description: saved.description,
 				tags: saved.tags,

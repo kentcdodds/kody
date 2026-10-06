@@ -1,4 +1,5 @@
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	loadPackageManifestForSource,
 	loadPackageSourceBySourceId,
@@ -38,8 +39,10 @@ import {
 import {
 	loadModuleArtifactWithCommitCache,
 	loadSourceRowWithFreshnessCache,
+	resolvePackageAppSlugWithFreshnessCache,
 	resolveSavedPackageWithFreshnessCache,
 	type CachedInvokeModuleArtifact,
+	type PackageAppSlugLookup,
 } from './invoke-contract-cache.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 
@@ -56,6 +59,35 @@ export async function resolveSavedPackage(input: {
 				userId: input.userId,
 				ref: input.packageIdOrKodyId,
 			}),
+	})
+}
+
+/**
+ * Package-app host resolution: follow slug redirects and report whether the
+ * URL slug is retired so the host can permanent-308 to the canonical path.
+ * Live-only {@link resolveSavedPackage} stays redirect-blind for invoke paths.
+ */
+export async function resolveSavedPackageForPackageAppSlug(input: {
+	db: D1Database
+	userId: string
+	slug: string
+}): Promise<PackageAppSlugLookup | null> {
+	return await resolvePackageAppSlugWithFreshnessCache({
+		userId: input.userId,
+		slug: input.slug,
+		load: async () => {
+			const savedPackage = await resolveSavedPackageRef(input.db, {
+				userId: input.userId,
+				ref: input.slug,
+				match: 'slug',
+				followRedirects: true,
+			})
+			if (!savedPackage) return null
+			return {
+				savedPackage,
+				retired: getPackageNameLeaf(savedPackage.name) !== input.slug,
+			}
+		},
 	})
 }
 

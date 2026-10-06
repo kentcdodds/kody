@@ -491,6 +491,7 @@ export async function handleMcpRequest({
 		protocolVersion: classification.protocolVersion,
 		clientName: classification.clientName,
 		clientVersion: classification.clientVersion,
+		packageIdentityParam: classification.packageIdentityParam,
 		userId: mcpUser.userId,
 		requestHost: (() => {
 			try {

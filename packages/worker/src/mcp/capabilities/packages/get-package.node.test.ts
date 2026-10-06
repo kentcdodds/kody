@@ -149,6 +149,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 	expect(owned).toMatchObject({
 		package_id: 'package-1',
 		kody_id: 'discord-gateway',
+		slug: 'discord-gateway',
 		name: '@kentcdodds/discord-gateway',
 		description: 'Discord helpers',
 		tags: ['discord'],

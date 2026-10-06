@@ -8,12 +8,13 @@ import {
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
+import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	loadInvokeManifestBySourceId,
-	resolveSavedPackage,
+	resolveSavedPackageForPackageAppSlug,
 } from '#worker/package-invocations/module-artifacts.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
@@ -459,21 +460,57 @@ export async function servePackageAppRequest(input: {
 			serverTiming,
 		)
 	}
-	// Same freshness-tier cache as keyless host export invoke: warm serve must
-	// not pay a D1 round trip for the saved-package or entity-source row.
-	const savedPackage = await pushServerTiming(
+	// Same freshness-tier cache family as keyless host export invoke, but a
+	// distinct key that may follow slug redirects. A retired slug never serves
+	// the app: permanent 308 to the current leaf so cookies/caches/storage stay
+	// on one canonical path (webhooks/invocations still follow internally).
+	const slugLookup = await pushServerTiming(
 		serverTiming,
 		'resolveSavedPackage',
 		() =>
-			resolveSavedPackage({
+			resolveSavedPackageForPackageAppSlug({
 				db: env.APP_DB,
 				userId: owner.userId,
-				packageIdOrKodyId: kodyId,
+				slug: kodyId,
 			}),
 	)
-	if (!savedPackage || !savedPackage.hasApp) {
+	if (!slugLookup || !slugLookup.savedPackage.hasApp) {
 		return attachPackageAppServerTiming(
 			new Response(buildPackageAppNotFoundMessage(), { status: 404 }),
+			serverTiming,
+		)
+	}
+	const savedPackage = slugLookup.savedPackage
+	if (slugLookup.retired) {
+		const locationPath =
+			packagePath.mount === 'user-subdomain'
+				? buildPackageAppSubdomainPath({
+						kodyId: savedPackage.kodyId,
+						restPath:
+							forwardedPackageRestPath === '/'
+								? null
+								: forwardedPackageRestPath,
+					})
+				: buildPackageAppPath({
+						username: packagePath.username,
+						kodyId: savedPackage.kodyId,
+						restPath:
+							forwardedPackageRestPath === '/'
+								? null
+								: forwardedPackageRestPath,
+					})
+		const location = new URL(locationPath, requestUrl)
+		// Drop a handoff minted for the retired slug — consume would reject it.
+		location.search = requestUrl.search
+		location.searchParams.delete(packageAppHandoffQueryParam)
+		return attachPackageAppServerTiming(
+			new Response(null, {
+				status: 308,
+				headers: {
+					Location: `${location.pathname}${location.search}`,
+					'Cache-Control': 'public, max-age=3600',
+				},
+			}),
 			serverTiming,
 		)
 	}

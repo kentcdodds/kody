@@ -91,6 +91,7 @@ test('packageUpdate hides and unhides a user-scoped package and returns persiste
 		package: {
 			package_id: 'pkg-1',
 			kody_id: 'notes',
+			slug: 'notes',
 			name: '@user/notes',
 			hidden: true,
 			visibility: 'public',
@@ -102,6 +103,7 @@ test('packageUpdate hides and unhides a user-scoped package and returns persiste
 		package: {
 			package_id: 'pkg-1',
 			kody_id: 'notes',
+			slug: 'notes',
 			hidden: false,
 			visibility: 'public',
 		},

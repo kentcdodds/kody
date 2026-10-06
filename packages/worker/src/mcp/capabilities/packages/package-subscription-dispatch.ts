@@ -197,7 +197,8 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			}),
 		outputSchema: z.object({
 			package_id: z.string(),
-			kody_id: z.string(),
+			kody_id: z.string().describe('Package name leaf (same value as `slug`).'),
+			slug: z.string().describe('Package name leaf (same value as `kody_id`).'),
 			topic: z.string(),
 			idempotency_key: z.string(),
 			source: z.literal('synthetic'),
@@ -339,6 +340,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			return {
 				package_id: savedPackage.id,
 				kody_id: savedPackage.kodyId,
+				slug: savedPackage.kodyId,
 				topic,
 				idempotency_key: idempotencyKey,
 				source: 'synthetic' as const,

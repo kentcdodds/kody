@@ -15,6 +15,7 @@ export type PendingPackageSecretApproval = {
 export type PendingPackageSecretApprovalsSummary = {
 	package_id: string
 	kody_id: string
+	slug: string
 	secrets: Array<PendingPackageSecretApproval>
 	bulk_approval_url: string | null
 }
@@ -64,6 +65,7 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 	return {
 		package_id: input.packageId,
 		kody_id: input.kodyId,
+		slug: input.kodyId,
 		secrets,
 		bulk_approval_url: buildSecretPackageBulkApprovalUrlIfNeeded({
 			baseUrl: input.baseUrl,
