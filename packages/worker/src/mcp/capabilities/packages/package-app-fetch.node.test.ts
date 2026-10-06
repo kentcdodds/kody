@@ -2,6 +2,7 @@ import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as AppBaseUrl from '#worker/app-base-url.ts'
+import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -245,6 +246,12 @@ test('packageAppFetch rejects invalid callers, paths, and missing packages', asy
 		'Promote plain repo before package lookup',
 	)
 
+	// Earlier tests in this file warm the freshness cache for demo-app /
+	// package-1 with hasApp true. Invalidate before asserting the no-app path.
+	invalidateInvokeContractFreshness({
+		userId: 'user-1',
+		packageIdOrKodyIds: ['package-1', 'demo-app', '@kody/demo-app'],
+	})
 	mockModule.resolveSavedPackageRef.mockResolvedValue(
 		savedPackage({ hasApp: false }),
 	)
