@@ -16,7 +16,7 @@ validate gate count re-counted from `package.json` on 2026-10-06).
 | Duplicated lines (jscpd, min 70 tokens, non-test source) | 1.96% |
 | Runtime dependencies of the main worker package          | 28    |
 | Decision records in `docs/contributing/decisions/`       | 45    |
-| Checks in the `npm run validate` gate                    | 35    |
+| Checks in the `npm run validate` gate                    | 34    |
 
 ## Enforcement, not promises
 
