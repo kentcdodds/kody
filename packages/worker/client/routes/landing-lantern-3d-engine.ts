@@ -10,7 +10,6 @@ import {
 	holdLanternOrbit,
 	lanternFlickVelocity,
 	lanternOrbRadius,
-	lanternPitchLimit,
 	lanternPose,
 	lanternViewBasis,
 	localToWorld,
@@ -48,7 +47,7 @@ import {
  */
 
 /** The canvas box, as fractions of the figure (same aspect ratio). It
- *  overhangs the lantern so a tilt and the halo are never clipped. */
+ *  overhangs the lantern so the halo is never clipped. */
 export const lanternView = { left: -0.061, top: -0.083, size: 1.122 } as const
 
 /** The globe's glow in landing-lantern-3d.gss; a tap flares both. */
@@ -60,7 +59,6 @@ const dragSlopPx = 8
 const followDelayMs = 220
 /** A drag across the whole lantern is half a turn. */
 const yawPerWidth = Math.PI
-const pitchPerHeight = Math.PI / 4
 const maxSpin = 9
 const flickWindowMs = 90
 /** A lit orb's size springs past its target and back, like jelly. */
@@ -79,8 +77,8 @@ export type LanternEngine = {
 	/** Turn toward an orb opened elsewhere (the word list), after a beat,
 	 *  so sweeping across the words does not whip the lantern about. */
 	follow(id: LandingPrimitiveId | null): void
-	/** Arrow keys: turn and tilt by these angles, in radians. */
-	nudge(yaw: number, pitch: number): void
+	/** Arrow keys: turn by this angle, in radians. */
+	nudge(yaw: number): void
 	/** Orbs are moving under a still pointer, so hover is not intent. */
 	busy(): boolean
 }
@@ -94,7 +92,6 @@ type Gesture =
 			downAt: number
 			moved: boolean
 			baseYaw: number
-			basePitch: number
 			samples: Array<{ yaw: number; t: number }>
 	  }
 	| {
@@ -241,7 +238,6 @@ export function startLanternEngine(options: {
 					})
 				: createLanternOrbBodies()
 		write('--yaw', `${pose.yaw}rad`)
-		write('--pitch', `${pose.pitch}rad`)
 		const flame = motion ? flicker(time) : 0
 		write('--core', mixHex(flameCore, '#ffffff', flare * 0.7 + flame * 0.16))
 		write('--amber', mixHex(flameAmber, '#ffe3a1', flare * 0.85 + flame * 0.1))
@@ -253,7 +249,7 @@ export function startLanternEngine(options: {
 		const depths: Array<{ id: LandingPrimitiveId; depth: number }> = []
 		for (const body of bodies) {
 			body.scale = grow[body.id]
-			const world = localToWorld(body.position, pose.yaw, pose.pitch)
+			const world = localToWorld(body.position, pose.yaw)
 			write(`--${body.id}-x`, world.x)
 			write(`--${body.id}-y`, world.y)
 			write(`--${body.id}-z`, world.z)
@@ -384,13 +380,7 @@ export function startLanternEngine(options: {
 			}
 			capture(button, event.pointerId)
 		} else {
-			gesture = {
-				...base,
-				kind: 'orbit',
-				baseYaw: 0,
-				basePitch: 0,
-				samples: [],
-			}
+			gesture = { ...base, kind: 'orbit', baseYaw: 0, samples: [] }
 			capture(figure, event.pointerId)
 		}
 	}
@@ -404,14 +394,12 @@ export function startLanternEngine(options: {
 		document.documentElement.style.cursor = 'grabbing'
 		if (current.kind === 'orbit') {
 			current.baseYaw = orbit.yaw
-			current.basePitch = orbit.pitch
 			current.samples.push({ yaw: orbit.yaw, t: current.downAt })
 			return
 		}
 		const body = bodyOf(current.id)
 		if (!body) return
-		const pose = poseNow()
-		current.grab = localToWorld(body.position, pose.yaw, pose.pitch)
+		current.grab = localToWorld(body.position, poseNow().yaw)
 		current.depth = projectLanternPoint(basis, current.grab, viewSize()).depth
 		current.samples.push({ position: { ...body.position }, t: current.downAt })
 		current.button.dataset.grabbed = ''
@@ -433,13 +421,7 @@ export function startLanternEngine(options: {
 		const now = performance.now()
 		if (current.kind === 'orbit') {
 			const yaw = current.baseYaw + (dx / Math.max(width, 1)) * yawPerWidth
-			const raw =
-				current.basePitch - (dy / Math.max(height, 1)) * pitchPerHeight
-			orbit = {
-				...orbit,
-				yaw,
-				pitch: lanternPitchLimit * Math.tanh(raw / lanternPitchLimit),
-			}
+			orbit = { ...orbit, yaw }
 			current.samples.push({ yaw, t: now })
 			if (current.samples.length > 12) current.samples.shift()
 		} else {
@@ -450,15 +432,13 @@ export function startLanternEngine(options: {
 				current.depth,
 				viewSize().height,
 			)
-			const pose = poseNow()
 			const position = worldToLocal(
 				{
 					x: current.grab.x + delta.x,
 					y: current.grab.y + delta.y,
 					z: current.grab.z + delta.z,
 				},
-				pose.yaw,
-				pose.pitch,
+				poseNow().yaw,
 			)
 			current.samples.push({ position, t: now })
 			if (current.samples.length > 12) current.samples.shift()
@@ -585,18 +565,10 @@ export function startLanternEngine(options: {
 				turnTo(id)
 			}, followDelayMs)
 		},
-		nudge(yaw, pitch) {
+		nudge(yaw) {
 			if (gesture !== null) return
-			const pose = poseNow()
-			const held = holdLanternOrbit(orbit, time)
-			orbit = {
-				...held,
-				yawTarget: (orbit.yawTarget ?? pose.yaw) + yaw,
-				pitchRest: Math.max(
-					-lanternPitchLimit,
-					Math.min(lanternPitchLimit, held.pitchRest + pitch),
-				),
-			}
+			const from = orbit.yawTarget ?? poseNow().yaw
+			orbit = { ...holdLanternOrbit(orbit, time), yawTarget: from + yaw }
 			wake()
 		},
 		busy() {

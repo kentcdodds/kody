@@ -1,6 +1,6 @@
 /* Kody's lantern in 3D: a dark cap and base around a glowing globe, six
    primitive orbs, and a swirl of motes. landing-lantern-3d-engine.ts
-   drives the orbit (--yaw, --pitch), every orb's position, size, and glow,
+   drives the orbit (--yaw), every orb's position, size, and glow,
    and the page and flame colors, so the scene itself only animates the
    motes.
 
@@ -10,7 +10,6 @@
    glyph textures stay readable from every side. */
 
 @property --yaw { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
-@property --pitch { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @property --page { syntax: "<color>"; inherits: false; initial-value: #e6e8ea; }
 @property --core { syntax: "<color>"; inherits: false; initial-value: #fff1c2; }
 @property --amber { syntax: "<color>"; inherits: false; initial-value: #ffb733; }
@@ -89,7 +88,6 @@ scene {
 }
 
 #body {
-  rotate-x: var(--pitch);
   rotate-y: var(--yaw);
 }
 

@@ -41,8 +41,9 @@ import {
  * like marbles in a jar. Drag an orb to toss it. Tap the glass to flare
  * the light. Hover, focus, or the word list lights an orb and dims the
  * rest; keyboard focus and the word list turn the lantern to show that
- * orb, and arrow keys on an orb turn and tilt it. Reduced motion drops
- * the sway, drift, inertia, and turns; the motes hold still.
+ * orb, and the left and right arrow keys on an orb turn it. Reduced
+ * motion drops the sway, drift, inertia, and turns; the motes hold
+ * still.
  */
 
 type Phase = 'still' | 'mounting' | 'fading' | 'live'
@@ -59,7 +60,6 @@ type MountScene = (
 
 const fadeMs = 600
 const nudgeYaw = Math.PI / 4
-const nudgePitch = (5 * Math.PI) / 180
 
 function percent(fraction: number) {
 	return `${Math.round(fraction * 10_000) / 100}%`
@@ -274,9 +274,9 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 							return
 						}
 						const turn = arrowTurn(event.key)
-						if (!turn || !engine) return
+						if (turn === null || !engine) return
 						event.preventDefault()
-						engine.nudge(turn.yaw, turn.pitch)
+						engine.nudge(turn)
 					}),
 				]}
 			/>
@@ -333,18 +333,9 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 }
 
 function arrowTurn(key: string) {
-	switch (key) {
-		case 'ArrowLeft':
-			return { yaw: -nudgeYaw, pitch: 0 }
-		case 'ArrowRight':
-			return { yaw: nudgeYaw, pitch: 0 }
-		case 'ArrowUp':
-			return { yaw: 0, pitch: nudgePitch }
-		case 'ArrowDown':
-			return { yaw: 0, pitch: -nudgePitch }
-		default:
-			return null
-	}
+	if (key === 'ArrowLeft') return -nudgeYaw
+	if (key === 'ArrowRight') return nudgeYaw
+	return null
 }
 
 /** One grid cell: during the crossfade the 3D figure sits over the still. */

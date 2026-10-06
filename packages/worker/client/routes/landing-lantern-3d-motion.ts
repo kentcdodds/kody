@@ -10,13 +10,16 @@ import {
  * frame-rate checks behind the warm-up and the adaptive resolution.
  *
  * Orbs live in the lantern's own frame (`local`), so they turn with it.
- * `localToWorld` applies the same rotation the scene gives `#body`
- * (`rotate-x: --pitch`, then `rotate-y: --yaw`), so an orb set from it
- * sits exactly where it would if it were part of the body. Idle orbs drift
- * like a lava lamp toward slow wander targets. A grabbed orb follows the
- * pointer and a flick tosses it: it coasts, bounces off the glass and the
- * other orbs, then settles back into the drift. Spinning the lantern lets
- * the orbs lag behind and fling outward, like marbles in a turning jar.
+ * `localToWorld` applies the same turn the scene gives `#body`
+ * (`rotate-y: --yaw`), so an orb set from it sits exactly where it would
+ * if it were part of the body. Idle orbs drift like a lava lamp toward
+ * slow wander targets. A grabbed orb follows the pointer and a flick
+ * tosses it: it coasts, bounces off the glass and the other orbs, then
+ * settles back into the drift. Spinning the lantern lets the orbs lag
+ * behind and fling outward, like marbles in a turning jar.
+ *
+ * The lantern only turns about its axis: a tilt shuffles the orbs' order
+ * down the screen, and the leader lines to the words cross.
  */
 
 export type Vec3 = { x: number; y: number; z: number }
@@ -158,26 +161,14 @@ export function screenDeltaToWorld(
 	)
 }
 
-/** `#body` space to world space: undo the scene's rotate-y, then rotate-x. */
-export function localToWorld(point: Vec3, yaw: number, pitch: number): Vec3 {
-	const cy = Math.cos(yaw)
-	const sy = Math.sin(yaw)
-	const cp = Math.cos(pitch)
-	const sp = Math.sin(pitch)
-	const x = cy * point.x + sy * point.z
-	const z1 = -sy * point.x + cy * point.z
-	return { x, y: cp * point.y + sp * z1, z: -sp * point.y + cp * z1 }
+/** The lantern's frame to world space: the scene's `rotate-y: --yaw`. */
+export function localToWorld(point: Vec3, yaw: number): Vec3 {
+	return rotateAboutY(point, -yaw)
 }
 
-/** World space to `#body` space, as the scene's map() does it. */
-export function worldToLocal(point: Vec3, yaw: number, pitch: number): Vec3 {
-	const cy = Math.cos(yaw)
-	const sy = Math.sin(yaw)
-	const cp = Math.cos(pitch)
-	const sp = Math.sin(pitch)
-	const y = cp * point.y - sp * point.z
-	const z1 = sp * point.y + cp * point.z
-	return { x: cy * point.x - sy * z1, y, z: sy * point.x + cy * z1 }
+/** World space to the lantern's frame. */
+export function worldToLocal(point: Vec3, yaw: number): Vec3 {
+	return rotateAboutY(point, yaw)
 }
 
 /** The yaw that brings a local point around to face the camera. */
@@ -194,37 +185,21 @@ export type LanternOrbit = {
 	/** Turntable angle the user set, radians, unbounded. */
 	yaw: number
 	yawVelocity: number
-	pitch: number
-	pitchVelocity: number
-	/** Pitch the lantern settles back to. */
-	pitchRest: number
 	/** A keyboard or focus turn in progress, radians. */
 	yawTarget: number | null
 	/** 0 while the user holds the lantern, easing back to 1 after. */
 	sway: number
 }
 
-export const lanternPitchLimit = 9 * degrees
 const swayYaw = 13 * degrees
-const swayPitch = 1.6 * degrees
 const swayRate = 0.32
 const spinFriction = 1.6
-const pitchSpring = 30
-const pitchDamping = 9
 const turnSpring = 40
 const turnDamping = 12
 const swayReturnSeconds = 3.5
 
 export function createLanternOrbit(): LanternOrbit {
-	return {
-		yaw: 0,
-		yawVelocity: 0,
-		pitch: 0,
-		pitchVelocity: 0,
-		pitchRest: 0,
-		yawTarget: null,
-		sway: 1,
-	}
+	return { yaw: 0, yawVelocity: 0, yawTarget: null, sway: 1 }
 }
 
 /** Advance the orbit one frame. Does not mutate `orbit`. */
@@ -245,8 +220,6 @@ export function stepLanternOrbit(
 			yaw: next.yawTarget ?? next.yaw,
 			yawVelocity: 0,
 			yawTarget: null,
-			pitch: next.pitchRest,
-			pitchVelocity: 0,
 			sway: 0,
 		}
 	}
@@ -264,10 +237,6 @@ export function stepLanternOrbit(
 		if (Math.abs(next.yawVelocity) < 0.004) next.yawVelocity = 0
 	}
 	next.yaw += next.yawVelocity * dt
-	const pitchOffset = next.pitchRest - next.pitch
-	next.pitchVelocity +=
-		(pitchOffset * pitchSpring - next.pitchVelocity * pitchDamping) * dt
-	next.pitch += next.pitchVelocity * dt
 	next.sway = Math.min(1, next.sway + dt / swayReturnSeconds)
 	return next
 }
@@ -279,15 +248,7 @@ export function holdLanternOrbit(
 	time: number,
 ): LanternOrbit {
 	const pose = lanternPose(orbit, time)
-	return {
-		...orbit,
-		yaw: pose.yaw,
-		pitch: pose.pitch,
-		yawVelocity: 0,
-		pitchVelocity: 0,
-		yawTarget: null,
-		sway: 0,
-	}
+	return { ...orbit, yaw: pose.yaw, yawVelocity: 0, yawTarget: null, sway: 0 }
 }
 
 /** Turn so a local point faces the camera, from wherever the sway left it. */
@@ -302,17 +263,9 @@ export function turnLanternTo(
 
 /** The pose the scene draws: the user's orbit plus the idle sway. */
 export function lanternPose(orbit: LanternOrbit, time: number) {
-	const ease = orbit.sway * orbit.sway * (3 - 2 * orbit.sway)
 	return {
-		yaw: orbit.yaw + Math.sin(time * swayRate) * swayYaw * ease,
-		pitch: clampPitch(
-			orbit.pitch + Math.sin(time * swayRate * 1.37 + 1.1) * swayPitch * ease,
-		),
+		yaw: orbit.yaw + Math.sin(time * swayRate) * swayYaw * smooth(orbit.sway),
 	}
-}
-
-function clampPitch(pitch: number) {
-	return Math.min(lanternPitchLimit, Math.max(-lanternPitchLimit, pitch))
 }
 
 export type LanternOrbBody = {
@@ -835,6 +788,11 @@ function rotateAboutY(point: Vec3, angle: number): Vec3 {
 
 function clampDt(dtSeconds: number) {
 	return Math.min(Math.max(dtSeconds, 0), 1 / 30)
+}
+
+/** Smoothstep on 0 to 1. */
+function smooth(t: number) {
+	return t * t * (3 - 2 * t)
 }
 
 function add(a: Vec3, b: Vec3): Vec3 {

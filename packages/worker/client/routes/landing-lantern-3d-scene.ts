@@ -21,8 +21,8 @@ export async function preloadLanternTextures() {
 
 /**
  * Mount the scene on `canvas`. GSS's own camera controls stay off: the
- * component turns the lantern through `--yaw` and `--pitch`, and the page
- * keeps the wheel. `onLost` fires once if the GPU context goes away.
+ * component turns the lantern through `--yaw`, and the page keeps the
+ * wheel. `onLost` fires once if the GPU context goes away.
  */
 export async function mountLanternScene(
 	canvas: HTMLCanvasElement,

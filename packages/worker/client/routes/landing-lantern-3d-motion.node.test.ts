@@ -8,7 +8,6 @@ import {
 	lanternFlickVelocity,
 	lanternGlobeRadius,
 	lanternOrbRadius,
-	lanternPitchLimit,
 	lanternPose,
 	lanternViewBasis,
 	localToWorld,
@@ -177,23 +176,18 @@ test('the lantern frame turns the front toward the drag and round trips', () => 
 	// its front swings right, then round to the back (farther away).
 	const quarter = projectLanternPoint(
 		basis,
-		localToWorld(front, Math.PI / 4, 0),
+		localToWorld(front, Math.PI / 4),
 		size,
 	)
 	expect(quarter.x).toBeGreaterThan(centre.x)
 	expect(quarter.depth).toBeGreaterThan(centre.depth)
-	// Tilting up brings the front up.
-	const tilted = projectLanternPoint(
-		basis,
-		localToWorld(front, 0, lanternPitchLimit),
-		size,
-	)
-	expect(tilted.y).toBeLessThan(centre.y)
 
+	// A turn about the axis keeps every height.
 	const point = { x: 0.31, y: -0.2, z: 0.44 }
-	const world = localToWorld(point, 2.4, -0.12)
+	const world = localToWorld(point, 2.4)
+	expect(world.y).toBe(point.y)
 	expect(length(world)).toBeCloseTo(length(point), 9)
-	const back = worldToLocal(world, 2.4, -0.12)
+	const back = worldToLocal(world, 2.4)
 	expect(back.x).toBeCloseTo(point.x, 9)
 	expect(back.y).toBeCloseTo(point.y, 9)
 	expect(back.z).toBeCloseTo(point.z, 9)
@@ -204,23 +198,20 @@ test('the orbit sways at rest, freezes when held, coasts, and turns to an orb', 
 	const swaying = lanternPose(rest, 2)
 	expect(Math.abs(swaying.yaw)).toBeGreaterThan(0.05)
 	expect(Math.abs(swaying.yaw)).toBeLessThan(Math.PI / 12)
-	expect(Math.abs(swaying.pitch)).toBeLessThanOrEqual(lanternPitchLimit)
 
 	// Grabbing keeps the pose the sway was showing, and the sway stops.
 	const held = holdLanternOrbit(rest, 2)
 	expect(lanternPose(held, 2).yaw).toBeCloseTo(swaying.yaw, 9)
-	expect(lanternPose(held, 2).pitch).toBeCloseTo(swaying.pitch, 9)
 	expect(lanternPose(held, 7).yaw).toBeCloseTo(swaying.yaw, 9)
 	const stillHeld = stepLanternOrbit(held, frame, { held: true, motion: true })
 	expect(stillHeld.yaw).toBe(held.yaw)
 
-	// A flick coasts, slows, and stops; the tilt springs back.
-	const flicked = { ...held, yawVelocity: 6, pitch: lanternPitchLimit }
+	// A flick coasts, slows, and stops.
+	const flicked = { ...held, yawVelocity: 6 }
 	const second = runOrbit(flicked, 1)
 	expect(second.yaw).toBeGreaterThan(flicked.yaw + 1)
 	expect(second.yawVelocity).toBeGreaterThan(0)
 	expect(second.yawVelocity).toBeLessThan(6)
-	expect(Math.abs(second.pitch)).toBeLessThan(lanternPitchLimit * 0.05)
 	const stopped = runOrbit(second, 10)
 	expect(stopped.yawVelocity).toBe(0)
 	expect(runOrbit(stopped, 1).yaw).toBe(stopped.yaw)
@@ -236,7 +227,7 @@ test('the orbit sways at rest, freezes when held, coasts, and turns to an orb', 
 	)
 	const turned = runOrbit(turning, 3)
 	expect(turned.yawTarget).toBeNull()
-	const facing = localToWorld(secrets.position, turned.yaw, 0)
+	const facing = localToWorld(secrets.position, turned.yaw)
 	expect(facing.x).toBeCloseTo(0, 2)
 	expect(facing.z).toBeGreaterThan(0)
 
@@ -281,13 +272,13 @@ test('orbs drift inside the glass without touching and rest at home when still',
 
 	// The lantern turning drags the orbs round, but they lag behind it.
 	const spin = 0.15
-	const before = localToWorld(bodies[0]!.position, 0, 0)
+	const before = localToWorld(bodies[0]!.position, 0)
 	const spun = stepLanternOrbs(bodies, frame, {
 		time: 30,
 		amplitude: 1,
 		spin,
 	})
-	const after = localToWorld(spun[0]!.position, spin, 0)
+	const after = localToWorld(spun[0]!.position, spin)
 	const turned = Math.atan2(after.x, after.z) - Math.atan2(before.x, before.z)
 	expect(turned).toBeGreaterThan(0)
 	expect(turned).toBeLessThan(spin)
