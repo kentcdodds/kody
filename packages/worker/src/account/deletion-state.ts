@@ -202,6 +202,9 @@ export async function markAccountDeleting(input: {
 	if (!stableUserId || !deletingAt) {
 		throw new Error('Account could not be marked for deletion.')
 	}
+	// Invalidate before the UserMeter RPC so same-isolate package-app serve
+	// cannot keep using the pre-fence cached row for the duration of that call.
+	invalidatePackageAppOwnerCache({ stableUserId })
 	try {
 		const env = requireUserMeterEnv(input.env)
 		const marked = await runUserMeterRpc({
@@ -209,7 +212,6 @@ export async function markAccountDeleting(input: {
 			stableUserId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
-		invalidatePackageAppOwnerCache({ stableUserId })
 		return {
 			leaseCount: marked.leaseCount,
 			created,
@@ -225,6 +227,7 @@ export async function markAccountDeleting(input: {
 				)
 				.bind(now, input.dbUserId, now)
 				.run()
+			invalidatePackageAppOwnerCache({ stableUserId })
 		}
 		throw error
 	}

@@ -56,16 +56,25 @@ export function invalidatePackageAppOwnerCache(input: {
 	packageAppOwnerRowCache.delete(input.stableUserId)
 }
 
+/**
+ * Best-effort invalidation when only the numeric D1 user id is known.
+ * Never throws: write paths that call this (purge claim, signup rollback)
+ * must not fail because of a cache SELECT.
+ */
 export async function invalidatePackageAppOwnerCacheForDbUserId(
 	db: D1Database,
 	dbUserId: number,
 ) {
-	const row = await db
-		.prepare(`SELECT stable_user_id FROM users WHERE id = ?`)
-		.bind(dbUserId)
-		.first<{ stable_user_id: string }>()
-	if (row?.stable_user_id) {
-		invalidatePackageAppOwnerCache({ stableUserId: row.stable_user_id })
+	try {
+		const row = await db
+			.prepare(`SELECT stable_user_id FROM users WHERE id = ?`)
+			.bind(dbUserId)
+			.first<{ stable_user_id: string }>()
+		if (row?.stable_user_id) {
+			invalidatePackageAppOwnerCache({ stableUserId: row.stable_user_id })
+		}
+	} catch (error) {
+		console.warn('package-app-owner-cache-invalidate-failed', error)
 	}
 }
 

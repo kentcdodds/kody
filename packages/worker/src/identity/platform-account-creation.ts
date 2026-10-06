@@ -163,9 +163,11 @@ export async function createPlatformAccount(input: {
 
 async function deleteUserBestEffort(db: D1Database, userId: number) {
 	try {
-		await invalidatePackageAppOwnerCacheForDbUserId(db, userId)
 		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
 	} catch (error) {
 		console.error('Failed to roll back platform account user:', error)
+		return
 	}
+	// Invalidate after DELETE so a failed SELECT cannot block rollback.
+	await invalidatePackageAppOwnerCacheForDbUserId(db, userId)
 }

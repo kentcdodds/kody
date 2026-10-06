@@ -128,6 +128,11 @@ export async function applyPasswordChange(
 		})
 	}
 
+	// Invalidate immediately after the stamp so same-isolate package-app
+	// sessions issued before password_changed_at fail closed even if a later
+	// revoke or factor sweep returns stamped:true with ok:false.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
+
 	// Stamp, then revoke again so a grant created in that window is still
 	// collected.
 	const afterStampFailure = await revoke()
@@ -163,8 +168,6 @@ export async function applyPasswordChange(
 	await input.db.deleteMany(passwordResetsTable, {
 		where: { user_id: input.userId },
 	})
-
-	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 
 	return { ok: true, changedAtMs, cleared }
 }
