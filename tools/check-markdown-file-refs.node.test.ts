@@ -95,6 +95,34 @@ test('generated wrangler files, local env files, placeholders, and absence claim
 	])
 })
 
+test('bare relative links resolve against the markdown file and fences are examples', () => {
+	const bare = issuesIn({
+		relativePath: 'docs/contributing/guide.md',
+		content: 'See [details](missing.md) and [setup](setup/checks.md).',
+		files: [],
+		directories: ['docs/contributing', 'docs/contributing/setup'],
+	})
+	expect(bare.map((issue) => issue.reference).sort()).toEqual([
+		'docs/contributing/missing.md',
+		'docs/contributing/setup/checks.md',
+	])
+
+	const fenced = issuesIn({
+		content: ['```sh', `echo \`${jobsRepo}\``, '```', ''].join('\n'),
+		files: [],
+		directories: ['packages/worker/src/jobs'],
+	})
+	expect(fenced).toEqual([])
+
+	expect(
+		issuesIn({
+			content: 'See [home](/docs/missing.md) and [cdn](//cdn.example/a.png).',
+			files: [],
+			directories: ['docs'],
+		}),
+	).toEqual([])
+})
+
 test('a relative link to a missing file fails and an existing one passes', () => {
 	const missing = issuesIn({
 		relativePath: 'docs/contributing/index.md',

@@ -6,7 +6,8 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * Markdown file-reference check.
  *
  * Inline code that names a repo file, and relative markdown links, must point
- * at a file in the tree. A code path is checked only when its parent directory
+ * at a file in the tree. Fenced examples are not scanned. A code path is
+ * checked only when its parent directory
  * exists, so an example tree that was never added (such as
  * `packages/mock-servers/acme/src/worker.ts`) is not a stale citation. A path
  * whose parent is in the repo but whose file is not (a rename or a move) fails.
@@ -102,10 +103,9 @@ export function collectMarkdownFileReferences(input: {
 			inFence = !inFence
 			continue
 		}
+		if (inFence) continue
 		collectCodeReferences(markdownFile, index + 1, line, references)
-		if (!inFence) {
-			collectLinkReferences(markdownFile, index + 1, line, references)
-		}
+		collectLinkReferences(markdownFile, index + 1, line, references)
 	}
 	return references
 }
@@ -202,7 +202,9 @@ function collectLinkReferences(
 	for (const match of withoutCode.matchAll(/!?\[[^\]]*\]\(([^)\s]+)\)/g)) {
 		const token = match[1]
 		if (!token) continue
-		const repoPath = repoPathForToken(markdownFile, normalizeLinkToken(token))
+		const repoPath = repoPathForToken(markdownFile, normalizeLinkToken(token), {
+			bareRelative: true,
+		})
 		if (!repoPath) continue
 		references.push({
 			file: markdownFile,
@@ -236,23 +238,32 @@ function normalizeLinkToken(token: string) {
 	if (!normalized || /\s/.test(normalized)) return null
 	if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return null
 	if (normalized.startsWith('#')) return null
+	// Site-root and protocol-relative URLs are not repo files.
+	if (normalized.startsWith('/')) return null
 	normalized = normalized.replace(/[?#].*$/, '')
 	if (!normalized || normalized.endsWith('/')) return null
 	if (!/\.[A-Za-z0-9]{1,10}$/.test(normalized)) return null
 	return normalized
 }
 
-function repoPathForToken(markdownFile: string, token: string | null) {
+function repoPathForToken(
+	markdownFile: string,
+	token: string | null,
+	options: { bareRelative?: boolean } = {},
+) {
 	if (!token) return null
 	const normalized = token.replaceAll('\\', '/')
+	const markdownDir = path.posix.dirname(markdownFile)
 	let repoPath: string
 	if (normalized.startsWith('./') || normalized.startsWith('../')) {
-		const markdownDir = path.posix.dirname(markdownFile)
 		repoPath = path.posix.normalize(path.posix.join(markdownDir, normalized))
 	} else if (
 		markdownFileReferenceRoots.some((prefix) => normalized.startsWith(prefix))
 	) {
 		repoPath = path.posix.normalize(normalized)
+	} else if (options.bareRelative) {
+		// Markdown resolves `checks.md` and `setup/checks.md` against the file.
+		repoPath = path.posix.normalize(path.posix.join(markdownDir, normalized))
 	} else {
 		return null
 	}
