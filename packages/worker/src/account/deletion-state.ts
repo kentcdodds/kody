@@ -6,6 +6,7 @@ import {
 	type UserMeterEnv,
 	type UserMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 
 export class AccountDeletionInProgressError extends Error {
@@ -208,6 +209,7 @@ export async function markAccountDeleting(input: {
 			stableUserId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
+		invalidatePackageAppOwnerCache({ stableUserId })
 		return {
 			leaseCount: marked.leaseCount,
 			created,
@@ -289,6 +291,7 @@ export async function abortAccountDeleting(input: {
 					: undefined,
 			),
 	})
+	invalidatePackageAppOwnerCache({ stableUserId })
 }
 
 /**

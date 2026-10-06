@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { readPagination } from '#worker/query-params.ts'
@@ -435,6 +436,8 @@ export async function updateAdminUserSuspension(
 		.prepare(`UPDATE users SET suspended_at = ?, updated_at = ? WHERE id = ?`)
 		.bind(input.suspended ? now : null, now, existing.id)
 		.run()
+
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 
 	return loadAdminUserByTarget(db, { stableUserId: input.stableUserId })
 }

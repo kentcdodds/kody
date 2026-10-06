@@ -25,6 +25,7 @@ import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { upgradePasswordHashIfNeeded } from '#worker/password-upgrade.ts'
 import { resolvePlanWrite } from '#universal/plans.ts'
@@ -398,6 +399,16 @@ export function createAuthHandler(env: Env) {
 					)
 				}
 
+				const signupUser = record
+				async function removeFailedSignupUser() {
+					invalidatePackageAppOwnerCache({
+						stableUserId: signupUser.stableUserId,
+					})
+					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+						.bind(signupUser.id)
+						.run()
+				}
+
 				// INSERT OR IGNORE affects zero rows when the seeded `user` role is
 				// missing (partial migration). Fail loudly rather than creating an
 				// account with no roles or permissions.
@@ -416,9 +427,7 @@ export function createAuthHandler(env: Env) {
 					// otherwise the email/username would be stuck as "already
 					// registered" on an account that has no roles.
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (error) {
 						console.error(
 							'Failed to remove user row after role assignment failure:',
@@ -449,9 +458,7 @@ export function createAuthHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to claim signup email:', error)
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (deleteError) {
 						console.error(
 							'Failed to remove user row after email claim failure:',
@@ -485,9 +492,7 @@ export function createAuthHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to create email verification at signup:', error)
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (deleteError) {
 						console.error(
 							'Failed to remove user row after verification setup failure:',

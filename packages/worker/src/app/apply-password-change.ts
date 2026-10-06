@@ -9,6 +9,7 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
 	type ClearedAccountFactors,
@@ -162,6 +163,8 @@ export async function applyPasswordChange(
 	await input.db.deleteMany(passwordResetsTable, {
 		where: { user_id: input.userId },
 	})
+
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 
 	return { ok: true, changedAtMs, cleared }
 }

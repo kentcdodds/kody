@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
@@ -162,6 +163,7 @@ export async function createPlatformAccount(input: {
 
 async function deleteUserBestEffort(db: D1Database, userId: number) {
 	try {
+		await invalidatePackageAppOwnerCacheForDbUserId(db, userId)
 		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
 	} catch (error) {
 		console.error('Failed to roll back platform account user:', error)

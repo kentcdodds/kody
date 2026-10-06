@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
@@ -264,6 +265,7 @@ async function claimUnverifiedAccountForPurge(input: {
 			.run(),
 	)
 	if ((createdResult.meta.changes ?? 0) === 1) {
+		await invalidatePackageAppOwnerCacheForDbUserId(input.db, input.dbUserId)
 		return { claimed: true, created: true, deletingAt }
 	}
 	const restampedResult = await runD1WithRetry(() =>
@@ -279,6 +281,7 @@ async function claimUnverifiedAccountForPurge(input: {
 			.run(),
 	)
 	if ((restampedResult.meta.changes ?? 0) === 1) {
+		await invalidatePackageAppOwnerCacheForDbUserId(input.db, input.dbUserId)
 		return { claimed: true, created: false, deletingAt }
 	}
 	return { claimed: false }

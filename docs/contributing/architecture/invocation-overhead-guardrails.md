@@ -69,6 +69,13 @@ caches come in two tiers with different correctness arguments (see
 - **Registry source lists** — enabled MCP-server refs, per-user TTL **30 s**
   with eager invalidation on mutation, matching the existing MCP hub snapshot
   bounds.
+- **Package-app owner row** — per-`stableUserId` user snapshot for
+  `resolvePackageAppOwnerByStableUserId`, TTL **15 s** (same clock as invoke
+  freshness). Each request still re-applies suspend, deletion-fence, and
+  password-change checks against the cached row; account-state and identity
+  writes invalidate eagerly (admin suspend/unsuspend, deletion fence, password
+  stamp, username/email change, user hard-delete). Cache misses (unknown user)
+  are never retained.
 
 Rules for touching these paths: publish and rebuild flows must keep using the
 uncached row/manifest loaders (`loadPackageManifestBySourceId`,

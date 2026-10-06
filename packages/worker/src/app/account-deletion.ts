@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	type OAuthGrantHelpers,
@@ -1438,6 +1439,7 @@ async function deleteUserScopedRowsAndUser(input: {
 		}
 	}
 	deletedRowCounts.users = results.at(-1)?.meta.changes ?? 0
+	invalidatePackageAppOwnerCache({ stableUserId: input.mcpUserId })
 	return { deletedRowCounts, updatedRowCounts }
 }
 

@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
@@ -246,6 +247,8 @@ export async function verifyEmailChangeToken(input: {
 		userId: record.user_id,
 		newEmail,
 	})
+
+	invalidatePackageAppOwnerCache({ stableUserId })
 
 	return {
 		ok: true,

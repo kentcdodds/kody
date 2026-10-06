@@ -85,6 +85,7 @@ import {
 	maybeSyncDiscordGuildRolesForUser,
 } from '#worker/discord/guild-role.ts'
 import { applyPasswordChange } from '#app/apply-password-change.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { clearedFactorsAuditReason } from '#app/clear-account-factors.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
@@ -773,6 +774,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			}
 
 			async function rollbackNewUser(userId: number) {
+				invalidatePackageAppOwnerCache({ stableUserId })
 				try {
 					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 						.bind(userId)

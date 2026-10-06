@@ -8,6 +8,7 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
@@ -202,6 +203,9 @@ export function createAccountProfileApiHandler(env: Env) {
 							username: previousUsername,
 							updated_at: utcSqliteTimestamp(),
 						})
+						invalidatePackageAppOwnerCache({
+							stableUserId: packageUserId,
+						})
 					} catch (rollbackError) {
 						console.error(
 							JSON.stringify({
@@ -273,6 +277,8 @@ export function createAccountProfileApiHandler(env: Env) {
 					ip: requestIp,
 					path: url.pathname,
 				})
+
+				invalidatePackageAppOwnerCache({ stableUserId: packageUserId })
 
 				const packageCount = packageUpdate.updatedPackages.length
 				const packageSummary =

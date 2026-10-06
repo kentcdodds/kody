@@ -6,6 +6,7 @@ import {
 	handlePackageAppRequest,
 } from '#app/handlers/package-app.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import {
 	buildPackageAppNotFoundMessage,
 	buildUnmatchedPackageAppOriginPathMessage,
@@ -210,6 +211,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 
 	// 4. The package-app session is re-checked against the account on every
 	// request, so suspension and password changes revoke package-app access too.
+	const ownerStableUserId = await createStableUserIdFromEmail(ownerEmail)
 	for (const [column, value] of [
 		['suspended_at', new Date().toISOString()],
 		['password_changed_at', new Date(Date.now() + 1000).toISOString()],
@@ -217,6 +219,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		await env.APP_DB.prepare(`UPDATE users SET ${column} = ? WHERE email = ?`)
 			.bind(value, ownerEmail)
 			.run()
+		invalidatePackageAppOwnerCache({ stableUserId: ownerStableUserId })
 		const revoked = await workerFetch(cleanLocation, withPackageSession())
 		expect({ column, status: revoked.status }).toEqual({ column, status: 403 })
 		await env.APP_DB.prepare(
@@ -224,6 +227,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 		)
 			.bind(ownerEmail)
 			.run()
+		invalidatePackageAppOwnerCache({ stableUserId: ownerStableUserId })
 	}
 
 	// 5. Replaying the consumed token is refused, and so is any request without a
@@ -329,6 +333,9 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 
 test('package apps stay inline on the app origin when no package-app origin is configured', async () => {
 	configureOrigins({ packageAppBaseUrl: undefined, runtime: 'preview' })
+	invalidatePackageAppOwnerCache({
+		stableUserId: await createStableUserIdFromEmail(ownerEmail),
+	})
 	const sessionCookie = await seedOwnerSessionCookie()
 
 	const response = await workerFetch(
