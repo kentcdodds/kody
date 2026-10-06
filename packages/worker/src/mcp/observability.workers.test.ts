@@ -8,12 +8,26 @@ import {
 	errorFields,
 	logMcpEvent,
 } from '#mcp/observability.ts'
+import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import {
+	ensurePackageSubscriptionTestSchema,
+	seedAccount,
+} from '#worker/test-support/workers-seed.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+}))
+
+const packageServiceMockModule = vi.hoisted(() => ({
+	refreshSavedPackageProjection: vi.fn(),
+}))
+
+const pendingSecretsMockModule = vi.hoisted(() => ({
+	buildPendingPackageSecretApprovalsSummary: vi.fn(),
+	formatPendingPackageSecretApprovalsGuidance: vi.fn(),
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -26,9 +40,24 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		repoMockModule.syncArtifactSourceSnapshot(...args),
 }))
 
+vi.mock('#worker/package-registry/service.ts', () => ({
+	refreshSavedPackageProjection: (...args: Array<unknown>) =>
+		packageServiceMockModule.refreshSavedPackageProjection(...args),
+}))
+
+vi.mock('#mcp/secrets/pending-package-secret-approvals.ts', () => ({
+	buildPendingPackageSecretApprovalsSummary: (...args: Array<unknown>) =>
+		pendingSecretsMockModule.buildPendingPackageSecretApprovalsSummary(...args),
+	formatPendingPackageSecretApprovalsGuidance: (...args: Array<unknown>) =>
+		pendingSecretsMockModule.formatPendingPackageSecretApprovalsGuidance(
+			...args,
+		),
+}))
+
 function createTestEnv(overrides: Record<string, unknown> = {}) {
 	return {
 		USER_METER: env.USER_METER,
+		APP_DB: env.APP_DB,
 		...overrides,
 	} as unknown as Env
 }
@@ -64,6 +93,62 @@ const observedIndexSource =
 	'export default async function main() { return { ok: true } }\n'
 const observedAppSource =
 	'export default { async fetch() { return new Response("ok") } }\n'
+
+async function seedObservedPackageUser() {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensurePackageSubscriptionTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM entity_sources WHERE user_id = ?`)
+		.bind('user-1')
+		.run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages WHERE user_id = ?`)
+		.bind('user-1')
+		.run()
+	await env.APP_DB.prepare(`DELETE FROM users WHERE stable_user_id = ?`)
+		.bind('user-1')
+		.run()
+	await seedAccount({
+		db: env.APP_DB,
+		email: 'user@example.com',
+		username: 'user',
+		stableUserId: 'user-1',
+		plan: 'max',
+	})
+	const now = '2026-04-13T00:00:00.000Z'
+	await env.APP_DB.prepare(
+		`INSERT INTO saved_packages (
+			id, user_id, name, kody_id, description, tags_json, search_text,
+			source_id, has_app, hidden, is_private, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, '[]', NULL, ?, 1, 0, 1, ?, ?)`,
+	)
+		.bind(
+			'package-1',
+			'user-1',
+			'@user/observed-package',
+			'observed-package',
+			'Observation test package.',
+			'package-package-1',
+			now,
+			now,
+		)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO entity_sources (
+			id, user_id, entity_kind, entity_id, repo_id, published_commit,
+			indexed_commit, manifest_path, source_root, created_at, updated_at
+		) VALUES (?, ?, 'package', ?, ?, ?, ?, 'package.json', '/', ?, ?)`,
+	)
+		.bind(
+			'package-package-1',
+			'user-1',
+			'package-1',
+			'package-package-1',
+			'published-commit-1',
+			'published-commit-1',
+			now,
+			now,
+		)
+		.run()
+}
 
 test('observability helpers normalize errors and emit resilient mcp-event logs', () => {
 	expect(errorFields(new TypeError('bad'))).toEqual({
@@ -148,6 +233,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	// The worker bundler emits an incidental experimental warning during the
 	// successful save's artifact rebuild.
 	silenceIncidentalRuntimeWarnings()
+	await seedObservedPackageUser()
 	const packageSave = (await getStaticRegistry()).capabilityMap['packageSave']
 	if (!packageSave) throw new Error('Expected packageSave capability')
 	const handler = packageSave.handler
@@ -182,19 +268,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 		},
 	})
 	const signedInContext = {
-		env: createTestEnv({
-			APP_DB: {
-				prepare() {
-					return {
-						bind() {
-							return {
-								first: async () => ({ username: 'user' }),
-							}
-						},
-					}
-				},
-			},
-		}),
+		env: createTestEnv(),
 		callerContext: userCallerContext,
 	}
 
@@ -268,6 +342,30 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	repoMockModule.syncArtifactSourceSnapshot.mockResolvedValue(
 		'published-commit-1',
 	)
+	pendingSecretsMockModule.buildPendingPackageSecretApprovalsSummary.mockResolvedValue(
+		null,
+	)
+	pendingSecretsMockModule.formatPendingPackageSecretApprovalsGuidance.mockReturnValue(
+		'',
+	)
+	packageServiceMockModule.refreshSavedPackageProjection.mockResolvedValue({
+		record: {
+			id: 'package-1',
+			userId: 'user-1',
+			name: '@user/observed-package',
+			kodyId: 'observed-package',
+			description: 'Observation test package.',
+			tags: [],
+			searchText: null,
+			sourceId: 'package-package-1',
+			hasApp: true,
+			hidden: false,
+			isPrivate: true,
+			lockedAt: null,
+			createdAt: '2026-04-13T00:00:00.000Z',
+			updatedAt: '2026-04-13T00:00:00.000Z',
+		},
+	})
 	const bundleArtifactsKvStore = new Map<string, string>()
 	const result = await handler(
 		{
@@ -280,59 +378,6 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 		},
 		{
 			env: createTestEnv({
-				APP_DB: {
-					prepare(query: string) {
-						return {
-							bind() {
-								return {
-									first: async () =>
-										query.includes('SELECT id, user_id') &&
-										query.includes('FROM saved_packages')
-											? {
-													id: 'package-1',
-													user_id: 'user-1',
-													name: '@user/observed-package',
-													kody_id: 'observed-package',
-													description: 'Observation test package.',
-													tags_json: '[]',
-													search_text: null,
-													source_id: 'package-package-1',
-													has_app: 1,
-													created_at: '2026-04-13T00:00:00.000Z',
-													updated_at: '2026-04-13T00:00:00.000Z',
-												}
-											: query.includes('FROM users')
-												? {
-														username: 'user',
-													}
-												: query.includes('SELECT * FROM entity_sources')
-													? {
-															id: 'package-package-1',
-															user_id: 'user-1',
-															entity_kind: 'package',
-															entity_id: 'package-1',
-															repo_id: 'package-package-1',
-															published_commit: 'published-commit-1',
-															indexed_commit: 'published-commit-1',
-															manifest_path: 'package.json',
-															source_root: '/',
-															created_at: '2026-04-13T00:00:00.000Z',
-															updated_at: '2026-04-13T00:00:00.000Z',
-														}
-													: null,
-									all: async () => ({
-										results: [],
-									}),
-									run: async () => ({
-										meta: { changes: 1 },
-									}),
-								}
-							},
-						}
-					},
-					batch: async (statements: Array<unknown>) =>
-						statements.map(() => ({ meta: { changes: 1 } })),
-				},
 				BUNDLE_ARTIFACTS_KV: {
 					get: async (_key: string, type?: 'text' | 'json') => {
 						if (type === 'json') {

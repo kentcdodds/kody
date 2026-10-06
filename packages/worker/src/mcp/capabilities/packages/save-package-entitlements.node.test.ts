@@ -1,5 +1,7 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-policy.ts'
+import type * as packageRegistryRepoModule from '#worker/package-registry/repo.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
@@ -7,6 +9,10 @@ import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
 import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+
+const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
 const mockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -16,6 +22,10 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceByEntity: vi.fn(),
 	deleteEntitySource: vi.fn(),
 	loadPriorPackageManifestContent: vi.fn(),
+	insertSavedPackage: vi.fn(),
+	realInsertSavedPackage: null as
+		| null
+		| typeof packageRegistryRepoModule.insertSavedPackage,
 }))
 
 vi.mock('#worker/repo/source-service.ts', () => ({
@@ -55,6 +65,16 @@ vi.mock('#worker/repo/source-safety-policy.ts', async (importOriginal) => {
 	}
 })
 
+vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof packageRegistryRepoModule>()
+	mockModule.realInsertSavedPackage = actual.insertSavedPackage
+	return {
+		...actual,
+		insertSavedPackage: (...args: Array<unknown>) =>
+			mockModule.insertSavedPackage(...args),
+	}
+})
+
 const {
 	buildSavedPackageIdMismatchMessage,
 	buildSavedPackageNameCollisionMessage,
@@ -63,117 +83,72 @@ const {
 
 type Row = Record<string, unknown>
 const now = '2026-04-18T00:00:00.000Z'
-const savedPackageInsertColumns = [
-	'id',
-	'user_id',
-	'name',
-	'kody_id',
-	'description',
-	'tags_json',
-	'search_text',
-	'source_id',
-	'has_app',
-	'hidden',
-	'is_private',
-	'created_at',
-	'updated_at',
-]
 
 function createDatabase(
 	users: Array<Row>,
 	savedPackages: Array<Row>,
 	{ failInsertWithUniqueName = false } = {},
 ) {
-	const find = (rows: Array<Row>, predicate: (row: Row) => boolean) =>
-		structuredClone(rows.find(predicate) ?? null)
-	return {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					const [first, second] = params
-					const lookupColumn =
-						/WHERE (id|kody_id|name) = \? AND user_id = \?/.exec(query)?.[1]
-					return {
-						async first() {
-							if (query.includes('SELECT plan, stripe_plan')) {
-								return find(
-									users,
-									(row) =>
-										row['email'] === first && row['stable_user_id'] === second,
-								)
-							}
-							if (
-								query.includes('SELECT username') &&
-								query.includes('FROM users') &&
-								query.includes('stable_user_id')
-							) {
-								return find(users, (row) => row['stable_user_id'] === first)
-							}
-							if (
-								query.includes('SELECT COUNT(*) AS count FROM saved_packages')
-							) {
-								return {
-									count: savedPackages.filter((row) => row['user_id'] === first)
-										.length,
-								}
-							}
-							if (
-								query.includes('FROM saved_packages') &&
-								query.includes('substr(saved_packages.name')
-							) {
-								return find(
-									savedPackages,
-									(row) =>
-										row['user_id'] === first &&
-										String(row['name']).endsWith(`/${String(second)}`),
-								)
-							}
-							if (query.includes('FROM saved_packages') && lookupColumn) {
-								return find(
-									savedPackages,
-									(row) =>
-										row[lookupColumn] === first && row['user_id'] === second,
-								)
-							}
-							throw new Error(`Unsupported first query: ${query}`)
-						},
-						async all() {
-							if (
-								query.includes('FROM saved_packages') &&
-								query.includes('WHERE user_id = ?')
-							) {
-								return {
-									results: structuredClone(
-										savedPackages.filter((row) => row['user_id'] === first),
-									),
-								}
-							}
-							throw new Error(`Unsupported all query: ${query}`)
-						},
-						async run() {
-							if (!query.includes('INSERT INTO saved_packages')) {
-								throw new Error(`Unsupported run query: ${query}`)
-							}
-							if (failInsertWithUniqueName) {
-								throw new Error(
-									'D1_ERROR: UNIQUE constraint failed: saved_packages.user_id, saved_packages.name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)',
-								)
-							}
-							savedPackages.push(
-								Object.fromEntries(
-									savedPackageInsertColumns.map((column, index) => [
-										column,
-										params[index],
-									]),
-								),
-							)
-							return { meta: { changes: 1 } }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const db = createD1FromSqlite(sqlite)
+	for (const user of users) {
+		sqlite
+			.prepare(
+				`INSERT INTO users (
+					username, email, password_hash, email_verified_at, plan, stable_user_id
+				) VALUES (?, ?, 'x', ?, ?, ?)`,
+			)
+			.run(
+				String(user['username']),
+				String(user['email']),
+				now,
+				String(user['plan'] ?? 'free'),
+				String(user['stable_user_id']),
+			)
+	}
+	for (const row of savedPackages) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, tags_json, search_text,
+					source_id, has_app, hidden, is_private, locked_at, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				String(row['id']),
+				String(row['user_id']),
+				String(row['name']),
+				String(row['kody_id']),
+				String(row['description'] ?? ''),
+				String(row['tags_json'] ?? '[]'),
+				row['search_text'] == null ? null : String(row['search_text']),
+				String(row['source_id']),
+				Number(row['has_app'] ?? 0),
+				Number(row['hidden'] ?? 0),
+				Number(row['is_private'] ?? 1),
+				row['locked_at'] == null ? null : String(row['locked_at']),
+				String(row['created_at'] ?? now),
+				String(row['updated_at'] ?? now),
+			)
+	}
+	const realInsert = mockModule.realInsertSavedPackage
+	if (!realInsert) {
+		throw new Error('Expected real insertSavedPackage from importOriginal.')
+	}
+	mockModule.insertSavedPackage.mockImplementation(async (...args) => {
+		if (failInsertWithUniqueName) {
+			throw new Error(
+				'D1_ERROR: UNIQUE constraint failed: saved_packages.user_id, saved_packages.name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)',
+			)
+		}
+		return await realInsert(
+			...(args as Parameters<
+				typeof packageRegistryRepoModule.insertSavedPackage
+			>),
+		)
+	})
+	return { db, sqlite }
 }
 
 function savedPackageRow(
@@ -259,7 +234,18 @@ async function setup({
 	savedPackages?: (userId: string) => Array<Row>
 	failInsertWithUniqueName?: boolean
 } = {}) {
-	for (const mock of Object.values(mockModule)) mock.mockReset()
+	for (const mock of [
+		mockModule.ensureEntitySource,
+		mockModule.syncArtifactSourceSnapshot,
+		mockModule.refreshSavedPackageProjection,
+		mockModule.upsertSavedPackageVector,
+		mockModule.getEntitySourceByEntity,
+		mockModule.deleteEntitySource,
+		mockModule.loadPriorPackageManifestContent,
+		mockModule.insertSavedPackage,
+	]) {
+		mock.mockReset()
+	}
 	mockModule.ensureEntitySource.mockImplementation(async (input) => ({
 		...sourceRow(input),
 		bootstrapAccess: null,
@@ -293,10 +279,10 @@ async function setup({
 	mockModule.loadPriorPackageManifestContent.mockResolvedValue(null)
 
 	const userId = await createStableUserIdFromEmail(email)
-	const rows = savedPackages(userId)
-	const db = createDatabase(
+	const seedRows = savedPackages(userId)
+	const { db, sqlite } = createDatabase(
 		[{ email, plan, username, stable_user_id: userId }],
-		rows,
+		seedRows,
 		{ failInsertWithUniqueName },
 	)
 	const ctx = {
@@ -308,7 +294,13 @@ async function setup({
 	}
 	const save = (args: Record<string, unknown>) =>
 		savePackageCapability.handler(args, ctx)
-	return { userId, rows, save }
+	const latestPackage = () =>
+		sqlite
+			.prepare(
+				`SELECT * FROM saved_packages WHERE user_id = ? ORDER BY rowid DESC LIMIT 1`,
+			)
+			.get(userId) as Row | null
+	return { userId, save, latestPackage }
 }
 
 const rejection = (promise: Promise<unknown>) =>
@@ -495,7 +487,7 @@ test('packageSave keeps new packages private unless an explicit private:false is
 		confirm_private_visibility_change: true,
 	})
 	expect(readSyncedPackageJson()['private']).toBe(true)
-	expect(omitted.rows.at(-1)?.['is_private']).toBe(1)
+	expect(omitted.latestPackage()?.['is_private']).toBe(1)
 
 	// Leftover private:false stays in the manifest but not catalog visibility.
 	const leftover = await setup(visibilityUser)
@@ -507,7 +499,7 @@ test('packageSave keeps new packages private unless an explicit private:false is
 		confirm_private_visibility_change: true,
 	})
 	expect(readSyncedPackageJson()['private']).toBe(false)
-	expect(leftover.rows.at(-1)?.['is_private']).toBe(1)
+	expect(leftover.latestPackage()?.['is_private']).toBe(1)
 
 	const unconfirmed = await setup(visibilityUser)
 	await expect(
