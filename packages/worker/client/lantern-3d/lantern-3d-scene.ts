@@ -151,6 +151,12 @@ const tiltPerHeight = 1.4
  *  stays under the pointer that opened it. */
 const lureDepth = 0.5
 
+/** The dark theme lifts the primitive colors so words read on a dark page.
+ *  The orbs glow in the same amber glass either way, and their white glyphs
+ *  need the deeper tones: scaling linear RGB by this scales OKLab lightness
+ *  by about 0.86, back near the light theme's. */
+const darkOrbDepth = 0.63
+
 type OrbEffects = {
 	lit: number
 	dim: number
@@ -347,6 +353,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		for (const orb of model.orbs) {
 			const rgb = parseCssColor(palette.color(orb.id))
 			const color = rgb ? new Color(...rgb) : new Color(1, 0.6, 0.2)
+			if (palette.dark) color.multiplyScalar(darkOrbDepth)
 			colors.set(orb.id, color)
 			paintLanternOrb(orb, color)
 		}
