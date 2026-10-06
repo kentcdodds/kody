@@ -18,9 +18,9 @@ in focused docs, and do not restate the same policy across files.
 
 ## Related
 
-- [Harness engineering](../contributing/harness-engineering.md) — promote
+- [Harness engineering](../contributing/harness-engineering.md): promote
   repeated advice into checkers
-- [Documentation principles](../contributing/documentation.md) — how we write
-  and garden docs
-- [Repo health](../contributing/repo-health.md) — CI budgets including
+- [Documentation principles](../contributing/documentation.md): how we write and
+  garden docs
+- [Repo health](../contributing/repo-health.md): CI budgets including
   `agents-md`
