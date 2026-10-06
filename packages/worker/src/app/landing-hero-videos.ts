@@ -28,25 +28,13 @@ export function buildLandingHeroVideosCacheKey(playlistId: string) {
 	return `${landingHeroVideosCacheKeyPrefix}${playlistId}`
 }
 
-function isVitestRuntime() {
-	const runtimeProcess = (
-		globalThis as { process?: { env?: Record<string, unknown> } }
-	).process
-	return Boolean(runtimeProcess?.env?.VITEST)
-}
-
-function shouldFetchYoutubePlaylist(fetchImpl?: YoutubeFetch) {
-	return Boolean(fetchImpl) || !isVitestRuntime()
-}
-
 /**
  * Source playlist videos in playlist order. KV-backed SWR so `/` stays
  * fast when YouTube is slow. Homepage presentation (playlist order,
  * leftover title cleanup) happens at the page boundary via
  * `presentLandingHeroVideos`; this loader stays unfiltered so the
  * youtube-watch allowlist can reuse the cache.
- * Unit tests stay offline unless a fetch impl is passed. Missing key /
- * failed YouTube fail open to `[]`.
+ * Missing key / failed YouTube fail open to `[]`.
  */
 export async function loadLandingHeroVideos(input: {
 	env: Env
@@ -54,7 +42,6 @@ export async function loadLandingHeroVideos(input: {
 	playlistId?: string
 }): Promise<Array<LandingHeroVideo>> {
 	const playlistId = input.playlistId ?? landingHeroSourcePlaylistId
-	if (!shouldFetchYoutubePlaylist(input.fetchImpl)) return []
 	// workerd's `fetch` is not a bound function; assigning it and calling
 	// `fetchImpl(...)` throws Illegal invocation.
 	const fetchImpl = input.fetchImpl ?? fetch.bind(globalThis)

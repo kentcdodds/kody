@@ -105,8 +105,6 @@ test('loadLandingHeroVideos falls back to Innertube when the Data API fails', as
 })
 
 test('loadLandingHeroVideos fails open offline or on YouTube errors and does not cache the failure', async () => {
-	await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
-
 	consoleWarn.mockImplementation(() => {})
 	await expect(
 		loadLandingHeroVideos({
