@@ -20,14 +20,14 @@ of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 
 `npm run docs:check-temporal` checks durable documentation and docs-like MCP
 instructions for common rollout phrases. `npm run docs:check-decisions` rejects
-duplicate decision-record numbers.
-`npm run docs:check-file-refs` fails when markdown points at a repo file that is
-not in the tree (generated `wrangler-*.generated.json` files and local `.env`
-files are ignored). `npm run skills-lock:check` fails when `skills-lock.json`
-does not match the committed skill folders, including a `ship-pr` edit that did
-not refresh `computedHash`. `npm run docs:check-no-hosted-execute` rejects
-guidance that sends agents to the hosted execute tool when local CLI or Open API
-can run. The rule lives in [Local CLI execute](../guides/local-execute.md) and
+duplicate decision-record numbers. `npm run docs:check-file-refs` fails when
+markdown points at a repo file that is not in the tree (generated
+`wrangler-*.generated.json` files and local `.env` files are ignored).
+`npm run skills-lock:check` fails when `skills-lock.json` does not match the
+committed skill folders, including a `ship-pr` edit that did not refresh
+`computedHash`. `npm run docs:check-no-hosted-execute` rejects guidance that
+sends agents to the hosted execute tool when local CLI or Open API can run. The
+rule lives in [Local CLI execute](../guides/local-execute.md) and
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
 Negations stay allowed. `npm run mermaid:check` parses fenced mermaid in docs
 and agent skills (and `--stdin` recap blocks) so GitHub's "Unable to render rich
