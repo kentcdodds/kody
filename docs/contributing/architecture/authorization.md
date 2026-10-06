@@ -139,9 +139,10 @@ async handler({ request }) {
 Roles and permissions load **fresh per request** in `readAuthenticatedAppUser`
 (`packages/worker/src/app/authenticated-user.ts`). They are not stored in the
 session cookie, so revocation takes effect immediately. If the roles query fails
-transiently, the lookup fails closed: the user stays authenticated with empty
-roles and permissions until the query recovers (the MCP context lookup behaves
-the same way).
+transiently, the browser lookup fails closed: the user stays authenticated with
+empty roles and permissions until the query recovers (`loadUserAndRoles` in
+`packages/worker/src/app/request-auth-cache.ts`). MCP context throws on that D1
+error, so the request stops. See [MCP context](#mcp-context).
 
 ### Where guards are used
 
@@ -225,10 +226,14 @@ grant props — they would go stale on revocation.
 Instead, `packages/worker/src/mcp-auth.ts` calls
 `buildMcpUserContextFromGrantProps`
 (`packages/worker/src/mcp-auth-user-context.ts`) when building
-`McpCallerContext`: look up the `users` row by the grant's email, then call
-`getUserRolesAndPermissions`. The shared schema in `packages/shared/src/chat.ts`
-(`mcpUserContextSchema`) includes optional `roles` and `permissions` arrays on
-the user object.
+`McpCallerContext`. Account identity and RBAC resolve through the grant's stable
+user id (`grantProps.userId`, queried as `WHERE stable_user_id = ?`).
+`getUserRolesAndPermissions` then loads roles for that row's integer `users.id`.
+Grant email, username, and display name fill profile fields only after that row
+resolves. A missing `userId` or a deleting account returns null. A D1 error
+throws, so the request does not continue on stale grant metadata. The shared
+schema in `packages/shared/src/chat.ts` (`mcpUserContextSchema`) includes
+optional `roles` and `permissions` arrays on the user object.
 
 For capability guards, use `requireMcpUserWithPermission` in
 `packages/worker/src/mcp/capabilities/meta/require-permission.ts`:
