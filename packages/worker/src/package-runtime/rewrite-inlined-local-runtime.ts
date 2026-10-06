@@ -360,6 +360,10 @@ export function readRemovableSharedRuntimeExportAliases(
  * text no longer contains that identifier (unusual inlining shapes). Collect
  * numbered shared-export names from retained source that are not already
  * top-level author bindings.
+ *
+ * Skip names that appear only as bare `typeof name` probes — those are
+ * intentional unbound checks and must keep returning `"undefined"` rather
+ * than gaining a shim binding.
  */
 export function readRetainedSharedRuntimeExportAliases(
 	retainedSource: string,
@@ -371,13 +375,34 @@ export function readRetainedSharedRuntimeExportAliases(
 		const pattern = new RegExp(`\\b(${canonical}\\d+)\\b`, 'g')
 		for (const match of retainedSource.matchAll(pattern)) {
 			const name = match[1]
+			const index = match.index ?? 0
 			if (!name || seen.has(name) || authorBindings.has(name)) continue
+			if (isOnlyBareTypeofProbe(retainedSource, name)) continue
 			seen.add(name)
-			aliases.push({ canonical, name, index: match.index ?? 0 })
+			aliases.push({ canonical, name, index })
 		}
 	}
 	aliases.sort((left, right) => left.index - right.index)
 	return aliases.map(({ canonical, name }) => ({ canonical, name }))
+}
+
+/**
+ * `typeof undeclared` is defined to return `"undefined"`. Binding that name
+ * to the shim would flip feature probes. `typeof name?.prop` still throws if
+ * `name` is undeclared, so those uses still need an alias.
+ */
+function isOnlyBareTypeofProbe(source: string, name: string) {
+	const pattern = new RegExp(`\\b${name}\\b`, 'g')
+	const matches = [...source.matchAll(pattern)]
+	if (matches.length === 0) return true
+	return matches.every((match) => {
+		const index = match.index ?? 0
+		const before = source.slice(Math.max(0, index - 8), index)
+		if (!/\btypeof\s+$/.test(before)) return false
+		const after = source.slice(index + name.length, index + name.length + 2)
+		// Bare probe: typeof name / typeof name === … — not typeof name?.x
+		return !/^[?.([]/.test(after)
+	})
 }
 
 /**
