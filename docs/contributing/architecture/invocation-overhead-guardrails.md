@@ -38,7 +38,11 @@ per call, not about what user code does inside the call.
   `ok` should not pay tens of milliseconds of platform overhead on a warm
   isolate. The serve path shares the invoke freshness/commit caches, and must
   not await the run-record begin RPC before user `fetch`. Finish already upserts
-  a complete row, so a dropped `running` insert is harmless.
+  a complete row, so a dropped `running` insert is harmless. Hosted serve and
+  package-app origin host setup emit request-scoped `Server-Timing` phases
+  (`owner`, `resolveSavedPackage`, `manifest`, `assertWithinComputeInclude`,
+  `appLoader`, `entrypoint`) via the same helper pages use, so warm overhead can
+  be attributed per phase without a separate benchmark harness.
 
 ## Per-isolate caches and their staleness bounds
 

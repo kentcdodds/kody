@@ -35,6 +35,11 @@ import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-sess
 import { isWebSocketUpgradeRequest } from '#worker/package-runtime/websocket-upgrade.ts'
 import { wantsJson } from '#worker/utils.ts'
 import {
+	applyServerTimingHeader,
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
+import {
 	getRuntimeWorkerService,
 	hasLocalPackageAppRuntimeBridge,
 	packageAppRuntimeForwardUnavailableMessage,
@@ -373,6 +378,24 @@ function createPackageAppErrorResponse(input: {
 }
 
 /**
+ * Attach request-scoped Server-Timing phases collected on the package-app
+ * serve path. Clones headers so author responses stay immutable-safe.
+ */
+function attachPackageAppServerTiming(
+	response: Response,
+	serverTiming: Array<ServerTimingEntry>,
+) {
+	if (serverTiming.length === 0) return response
+	const headers = new Headers(response.headers)
+	applyServerTimingHeader(headers, serverTiming)
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	})
+}
+
+/**
  * Serve a hosted package app for an already-authenticated owner.
  *
  * The owner is resolved by the caller because the package-app origin uses its
@@ -385,6 +408,11 @@ export async function servePackageAppRequest(input: {
 	owner: PackageAppServeOwner
 	packagePath: PackageAppPath
 	dispatch?: PackageAppTrustedDispatch
+	/**
+	 * Optional bag started by host setup (owner lookup). Serve appends its own
+	 * phases and writes the combined `Server-Timing` header on the response.
+	 */
+	serverTiming?: Array<ServerTimingEntry>
 }) {
 	// Slim origin (production-worker / preview) does not export
 	// PackageAppRuntimeBridge (ADR 0034). HTTP package-app routes are already
@@ -413,35 +441,53 @@ export async function servePackageAppRequest(input: {
 	}
 
 	const { request, env, owner, packagePath, dispatch } = input
+	const serverTiming = input.serverTiming ?? []
 	const requestUrl = new URL(request.url)
 	const { kodyId } = packagePath
 	const packageRealtimeRestPath = packagePath.restPath
 	const forwardedPackageRestPath = packagePath.restPath
 	if (owner.username !== packagePath.username) {
-		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
+		return attachPackageAppServerTiming(
+			new Response(buildPackageAppNotFoundMessage(), { status: 404 }),
+			serverTiming,
+		)
 	}
 	// Same freshness-tier cache as keyless host export invoke: warm serve must
 	// not pay a D1 round trip for the saved-package or entity-source row.
-	const savedPackage = await resolveSavedPackage({
-		db: env.APP_DB,
-		userId: owner.userId,
-		packageIdOrKodyId: kodyId,
-	})
+	const savedPackage = await pushServerTiming(
+		serverTiming,
+		'resolveSavedPackage',
+		() =>
+			resolveSavedPackage({
+				db: env.APP_DB,
+				userId: owner.userId,
+				packageIdOrKodyId: kodyId,
+			}),
+	)
 	if (!savedPackage || !savedPackage.hasApp) {
-		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
+		return attachPackageAppServerTiming(
+			new Response(buildPackageAppNotFoundMessage(), { status: 404 }),
+			serverTiming,
+		)
 	}
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
-			return await packageRealtimeSessionRpc({
-				env,
-				userId: owner.userId,
-				packageId: savedPackage.id,
-				kodyId: savedPackage.kodyId,
-				sourceId: savedPackage.sourceId,
-				baseUrl,
-			}).connect(createPackageCodeRequest(request), packageRealtimePath.facet)
+			return attachPackageAppServerTiming(
+				await packageRealtimeSessionRpc({
+					env,
+					userId: owner.userId,
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					sourceId: savedPackage.sourceId,
+					baseUrl,
+				}).connect(
+					createPackageCodeRequest(request),
+					packageRealtimePath.facet,
+				),
+				serverTiming,
+			)
 		} catch (error) {
 			console.error('Package realtime handler failed:', error)
 			reportPackageAppFailure({
@@ -455,14 +501,17 @@ export async function servePackageAppRequest(input: {
 				forwardedPath: forwardedPackageRestPath,
 				realtimePath: packageRealtimeRestPath,
 			})
-			return createPackageAppErrorResponse({
-				request,
-				kind: 'realtime-connect',
-				kodyId: savedPackage.kodyId,
-				packageName: savedPackage.name,
-				synthetic: dispatch?.synthetic === true,
-				cause: getErrorMessage(error),
-			})
+			return attachPackageAppServerTiming(
+				createPackageAppErrorResponse({
+					request,
+					kind: 'realtime-connect',
+					kodyId: savedPackage.kodyId,
+					packageName: savedPackage.name,
+					synthetic: dispatch?.synthetic === true,
+					cause: getErrorMessage(error),
+				}),
+				serverTiming,
+			)
 		}
 	}
 
@@ -492,29 +541,37 @@ export async function servePackageAppRequest(input: {
 						kodyId: savedPackage.kodyId,
 					})
 		try {
-			const packageManifest = await loadInvokeManifestBySourceId({
-				env,
-				userId: owner.userId,
-				sourceId: savedPackage.sourceId,
-			})
-			return await servePackageAppAssetRequest({
-				request,
-				env,
-				userId: owner.userId,
-				manifest: packageManifest.manifest,
-				savedPackage: {
-					id: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					sourceId: savedPackage.sourceId,
-					publishedCommit: packageManifest.source.published_commit,
-					manifestPath: packageManifest.source.manifest_path,
-					sourceRoot: packageManifest.source.source_root,
-				},
-				loadSourceFiles,
-				relativePath: assetRelativePath,
-				appBasePath,
-				hostedUrl: `${requestUrl.origin}${appBasePath}`,
-			})
+			const packageManifest = await pushServerTiming(
+				serverTiming,
+				'manifest',
+				() =>
+					loadInvokeManifestBySourceId({
+						env,
+						userId: owner.userId,
+						sourceId: savedPackage.sourceId,
+					}),
+			)
+			return attachPackageAppServerTiming(
+				await servePackageAppAssetRequest({
+					request,
+					env,
+					userId: owner.userId,
+					manifest: packageManifest.manifest,
+					savedPackage: {
+						id: savedPackage.id,
+						kodyId: savedPackage.kodyId,
+						sourceId: savedPackage.sourceId,
+						publishedCommit: packageManifest.source.published_commit,
+						manifestPath: packageManifest.source.manifest_path,
+						sourceRoot: packageManifest.source.source_root,
+					},
+					loadSourceFiles,
+					relativePath: assetRelativePath,
+					appBasePath,
+					hostedUrl: `${requestUrl.origin}${appBasePath}`,
+				}),
+				serverTiming,
+			)
 		} catch (error) {
 			console.error('Package app asset handler failed:', error)
 			reportPackageAppFailure({
@@ -528,14 +585,17 @@ export async function servePackageAppRequest(input: {
 				forwardedPath: forwardedPackageRestPath,
 				realtimePath: packageRealtimeRestPath,
 			})
-			return createPackageAppErrorResponse({
-				request,
-				kind: 'host-setup',
-				kodyId: savedPackage.kodyId,
-				packageName: savedPackage.name,
-				synthetic: dispatch?.synthetic === true,
-				cause: getErrorMessage(error),
-			})
+			return attachPackageAppServerTiming(
+				createPackageAppErrorResponse({
+					request,
+					kind: 'host-setup',
+					kodyId: savedPackage.kodyId,
+					packageName: savedPackage.name,
+					synthetic: dispatch?.synthetic === true,
+					cause: getErrorMessage(error),
+				}),
+				serverTiming,
+			)
 		}
 	}
 
@@ -543,11 +603,13 @@ export async function servePackageAppRequest(input: {
 	let entrypoint: { fetch(request: Request): Promise<Response> }
 	try {
 		const [packageManifest, callerContext] = await Promise.all([
-			loadInvokeManifestBySourceId({
-				env,
-				userId: owner.userId,
-				sourceId: savedPackage.sourceId,
-			}),
+			pushServerTiming(serverTiming, 'manifest', () =>
+				loadInvokeManifestBySourceId({
+					env,
+					userId: owner.userId,
+					sourceId: savedPackage.sourceId,
+				}),
+			),
 			createPackageAppCallerContext({
 				baseUrl,
 				user: {
@@ -576,6 +638,7 @@ export async function servePackageAppRequest(input: {
 			source: packageManifest.source,
 			manifest: packageManifest.manifest,
 			loadSourceFiles,
+			serverTiming,
 			runtime: {
 				callerContext,
 				servingUsername: packagePath.username,
@@ -592,14 +655,17 @@ export async function servePackageAppRequest(input: {
 		)
 	} catch (error) {
 		if (isComputeOverageLimitError(error)) {
-			return createPackageAppErrorResponse({
-				request,
-				kind: 'include-used-up',
-				kodyId: savedPackage.kodyId,
-				packageName: savedPackage.name,
-				synthetic: dispatch?.synthetic === true,
-				cause: error.message,
-			})
+			return attachPackageAppServerTiming(
+				createPackageAppErrorResponse({
+					request,
+					kind: 'include-used-up',
+					kodyId: savedPackage.kodyId,
+					packageName: savedPackage.name,
+					synthetic: dispatch?.synthetic === true,
+					cause: error.message,
+				}),
+				serverTiming,
+			)
 		}
 		console.error('Package app handler failed:', error)
 		reportPackageAppFailure({
@@ -613,26 +679,35 @@ export async function servePackageAppRequest(input: {
 			forwardedPath: forwardedPackageRestPath,
 			realtimePath: packageRealtimeRestPath,
 		})
-		return createPackageAppErrorResponse({
-			request,
-			kind: 'host-setup',
-			kodyId: savedPackage.kodyId,
-			packageName: savedPackage.name,
-			synthetic: dispatch?.synthetic === true,
-			cause: getErrorMessage(error),
-		})
+		return attachPackageAppServerTiming(
+			createPackageAppErrorResponse({
+				request,
+				kind: 'host-setup',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+				synthetic: dispatch?.synthetic === true,
+				cause: getErrorMessage(error),
+			}),
+			serverTiming,
+		)
 	}
 
 	try {
-		return await entrypoint.fetch(forwardedRequest)
+		const response = await pushServerTiming(serverTiming, 'entrypoint', () =>
+			entrypoint.fetch(forwardedRequest),
+		)
+		return attachPackageAppServerTiming(response, serverTiming)
 	} catch (error) {
 		console.error('Package app entrypoint failed:', error)
-		return createPackageAppErrorResponse({
-			request,
-			kind: 'package-entrypoint',
-			kodyId: savedPackage.kodyId,
-			packageName: savedPackage.name,
-		})
+		return attachPackageAppServerTiming(
+			createPackageAppErrorResponse({
+				request,
+				kind: 'package-entrypoint',
+				kodyId: savedPackage.kodyId,
+				packageName: savedPackage.name,
+			}),
+			serverTiming,
+		)
 	}
 }
 

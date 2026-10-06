@@ -37,6 +37,10 @@ import {
 	servePackageAppRequest,
 } from '#app/handlers/package-app.ts'
 import { buildUnmatchedPackageAppOriginPathMessage } from '#worker/package-runtime/package-app-synthetic.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**
@@ -402,12 +406,15 @@ async function handleUserSubdomainRequest(input: {
 	}
 
 	const parsedSession = await readPackageAppSession({ request, env })
+	const serverTiming: Array<ServerTimingEntry> = []
 	const owner = parsedSession
-		? await resolvePackageAppOwnerByStableUserId({
-				env,
-				stableUserId: parsedSession.session.stableUserId,
-				issuedAt: parsedSession.issuedAt,
-			})
+		? await pushServerTiming(serverTiming, 'owner', () =>
+				resolvePackageAppOwnerByStableUserId({
+					env,
+					stableUserId: parsedSession.session.stableUserId,
+					issuedAt: parsedSession.issuedAt,
+				}),
+			)
 		: null
 
 	if (!owner) {
@@ -429,6 +436,7 @@ async function handleUserSubdomainRequest(input: {
 		env,
 		owner,
 		packagePath,
+		serverTiming,
 	})
 }
 

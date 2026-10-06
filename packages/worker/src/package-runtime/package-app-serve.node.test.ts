@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ComputeOverageLimitError } from '#worker/entitlements/errors.ts'
+import { parseServerTimingHeader } from '#worker/server-timing.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
 // Existing serve tests exercise the local construction path (index/platform/
@@ -305,6 +306,72 @@ test('a warm package-app serve performs zero D1/KV loads before dispatch', async
 		'published manifest snapshot (KV)': 0,
 	})
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalledTimes(1)
+})
+
+test('hello-world serve emits Server-Timing phases and forwards the bag into buildPackageAppWorker', async () => {
+	seedFixture()
+	mockModule.buildPackageAppWorker.mockImplementation(
+		async (input: {
+			serverTiming?: Array<{ name: string; durationMs: number }>
+		}) => {
+			input.serverTiming?.push(
+				{ name: 'assertWithinComputeInclude', durationMs: 1 },
+				{ name: 'appLoader', durationMs: 2 },
+			)
+			return {
+				entrypointName: 'PackageAppWorker',
+				stub: {
+					getEntrypoint: () => ({
+						async fetch() {
+							return new Response('ok')
+						},
+					}),
+				},
+			}
+		},
+	)
+
+	const serverTiming: Array<{ name: string; durationMs: number }> = [
+		{ name: 'owner', durationMs: 3 },
+	]
+	const response = await servePackageAppRequest({
+		request: new Request('https://example.com/@kentcdodds/packages/perf-app'),
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as Env,
+		owner: {
+			userId: 'user-1',
+			username: 'kentcdodds',
+			email: 'kent@example.com',
+			displayName: 'Kent',
+		},
+		packagePath: {
+			username: 'kentcdodds',
+			kodyId: 'perf-app',
+			restPath: '/',
+			mount: 'username-path',
+		},
+		serverTiming,
+	})
+
+	expect(response.status).toBe(200)
+	expect(await response.text()).toBe('ok')
+	expect(mockModule.buildPackageAppWorker).toHaveBeenCalledWith(
+		expect.objectContaining({ serverTiming }),
+	)
+	expect(
+		parseServerTimingHeader(response.headers.get('Server-Timing')).map(
+			(entry) => entry.name,
+		),
+	).toEqual([
+		'owner',
+		'resolveSavedPackage',
+		'manifest',
+		'assertWithinComputeInclude',
+		'appLoader',
+		'entrypoint',
+	])
 })
 
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {

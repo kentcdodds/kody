@@ -47,6 +47,10 @@ import {
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageSqlWriteBytes,
 } from '#worker/entitlements/service.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import {
@@ -1954,69 +1958,83 @@ export async function buildPackageAppWorker(input: {
 	 * path. Defaults to the invocation `waitUntil` from `cloudflare:workers`.
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * Optional Server-Timing bag from `servePackageAppRequest`. Records
+	 * `assertWithinComputeInclude` and `appLoader` (options cache +
+	 * `APP_LOADER.get` / `load`).
+	 */
+	serverTiming?: Array<ServerTimingEntry>
 }) {
 	// Apps run package code and read package storage without a daily counter,
 	// so they take the include → credits → stop gate directly.
-	await assertWithinComputeInclude({
-		db: input.env.APP_DB,
-		userId: input.userId,
-	})
-	const publicContext = buildPackageAppPublicContext(input)
-	const cacheKey = createPackageAppWorkerCacheKey({
-		userId: input.userId,
-		packageId: input.savedPackage.id,
-		kodyId: input.savedPackage.kodyId,
-		sourceId: input.savedPackage.sourceId,
-		publishedCommit: input.savedPackage.publishedCommit,
-		baseUrl: input.baseUrl,
-		...publicContext,
-		callerEmail: input.runtime.callerContext.user?.email ?? '',
-		callerDisplayName:
-			input.runtime.callerContext.user?.displayName ??
-			`package:${input.savedPackage.id}`,
-	})
-	const surface = input.surface ?? 'app_fetch'
-	if (!cacheKey) {
+	await pushServerTiming(
+		input.serverTiming,
+		'assertWithinComputeInclude',
+		async () => {
+			await assertWithinComputeInclude({
+				db: input.env.APP_DB,
+				userId: input.userId,
+			})
+		},
+	)
+	return await pushServerTiming(input.serverTiming, 'appLoader', async () => {
+		const publicContext = buildPackageAppPublicContext(input)
+		const cacheKey = createPackageAppWorkerCacheKey({
+			userId: input.userId,
+			packageId: input.savedPackage.id,
+			kodyId: input.savedPackage.kodyId,
+			sourceId: input.savedPackage.sourceId,
+			publishedCommit: input.savedPackage.publishedCommit,
+			baseUrl: input.baseUrl,
+			...publicContext,
+			callerEmail: input.runtime.callerContext.user?.email ?? '',
+			callerDisplayName:
+				input.runtime.callerContext.user?.displayName ??
+				`package:${input.savedPackage.id}`,
+		})
+		const surface = input.surface ?? 'app_fetch'
+		if (!cacheKey) {
+			return {
+				stub: input.env.APP_LOADER.load(
+					await buildPackageAppWorkerOptionsUncached(input),
+				),
+				entrypointName: packageAppEntrypointName,
+			}
+		}
+		const build = await packageAppWorkerOptionsCache.getOrCreate({
+			cacheKey,
+			create: async () => {
+				const workerOptions = await buildPackageAppWorkerOptionsUncached(input)
+				return {
+					workerId: await createPackageAppWorkerId({ cacheKey, workerOptions }),
+					workerOptions,
+				}
+			},
+		})
+		// Acquire the request-bound stub before claiming the day. A failed
+		// `APP_LOADER.get()` must not persist a (day, workerId) that a retry
+		// would then skip without a `dynamic_worker_day` event.
+		const stub = build.workerId
+			? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
+			: input.env.APP_LOADER.load(build.workerOptions)
+		if (build.workerId) {
+			schedulePackageAppUniqueWorkerDay({
+				env: input.env,
+				userId: input.userId,
+				workerId: build.workerId,
+				surface,
+				packageId: input.savedPackage.id,
+				waitUntil: input.waitUntil,
+			})
+		}
 		return {
-			stub: input.env.APP_LOADER.load(
-				await buildPackageAppWorkerOptionsUncached(input),
-			),
+			// Stubs are request-bound, so acquire a fresh one per request. The stable
+			// worker id (derived from user + package + commit + caller identity) lets
+			// the loader reuse a warm isolate instead of compiling a new worker.
+			stub,
 			entrypointName: packageAppEntrypointName,
 		}
-	}
-	const build = await packageAppWorkerOptionsCache.getOrCreate({
-		cacheKey,
-		create: async () => {
-			const workerOptions = await buildPackageAppWorkerOptionsUncached(input)
-			return {
-				workerId: await createPackageAppWorkerId({ cacheKey, workerOptions }),
-				workerOptions,
-			}
-		},
 	})
-	// Acquire the request-bound stub before claiming the day. A failed
-	// `APP_LOADER.get()` must not persist a (day, workerId) that a retry
-	// would then skip without a `dynamic_worker_day` event.
-	const stub = build.workerId
-		? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
-		: input.env.APP_LOADER.load(build.workerOptions)
-	if (build.workerId) {
-		schedulePackageAppUniqueWorkerDay({
-			env: input.env,
-			userId: input.userId,
-			workerId: build.workerId,
-			surface,
-			packageId: input.savedPackage.id,
-			waitUntil: input.waitUntil,
-		})
-	}
-	return {
-		// Stubs are request-bound, so acquire a fresh one per request. The stable
-		// worker id (derived from user + package + commit + caller identity) lets
-		// the loader reuse a warm isolate instead of compiling a new worker.
-		stub,
-		entrypointName: packageAppEntrypointName,
-	}
 }
 
 function schedulePackageAppUniqueWorkerDay(input: {
