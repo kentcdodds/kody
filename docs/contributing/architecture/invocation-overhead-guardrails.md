@@ -68,7 +68,9 @@ caches come in two tiers with different correctness arguments (see
   bounds isolate memory.
 - **Registry source lists** — enabled MCP-server refs, per-user TTL **30 s**
   with eager invalidation on mutation, matching the existing MCP hub snapshot
-  bounds.
+  bounds. Package-app fetch and realtime entrypoints do not call
+  `listMcpServerNames` until author code first touches `kody.mcp`, so
+  hello-world and non-MCP apps pay nothing for that list.
 - **Package-app owner row** — per-`stableUserId` user snapshot for
   `resolvePackageAppOwnerByStableUserId`, TTL **15 s** (same clock as invoke
   freshness). Each request still re-applies suspend, deletion-fence, and
