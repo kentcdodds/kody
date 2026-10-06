@@ -23,12 +23,6 @@ const retiredPackageAppRuntimeMessage =
 after the Remix platform-mount removal: stored stamps with `remixVersion` fail
 closed in `isUsableStoredPublishedBundleArtifact`.
 
-Motivating leftover, not this page's checked example: `packages.invoke` docs and
-checker leftovers ([#2975](https://github.com/kentcdodds/kody/issues/2975)) are
-owned by
-[Remove packages.invoke completely](https://cursor.com/agents/bc-026e6a59-87a9-55f1-b70d-1b11df3f4ecb).
-Link that PR here once it lands. Do not open a second removal track.
-
 ## Related
 
 - [Delete what is off the common path](./delete-off-the-common-path.md)
