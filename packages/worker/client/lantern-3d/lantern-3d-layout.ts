@@ -61,29 +61,24 @@ export const lanternCavity = {
 	bottom: lanternShape.baseTop,
 } as const
 
-/** Depth toward the camera at rest, so the six read as a cluster in the
- *  globe rather than a flat ring. */
-const orbDepth = {
-	memory: -0.22,
-	secrets: 0.2,
-	packages: -0.06,
-	triggers: 0.34,
-	integrations: 0.12,
-	apps: -0.14,
-} as const satisfies Record<LandingPrimitiveId, number>
-
-export type LanternOrbRest = {
+/**
+ * Where each orb rests, in the lantern's own frame: x to the right, y up,
+ * and z toward you while the lantern faces you. The heights step down in
+ * the order the words are listed, so each leader runs to its own word
+ * without crossing another. Side to side and front to back they alternate,
+ * so none overlap face-on or after a half turn, and turning the lantern
+ * shows how deep the globe is.
+ */
+export const lanternOrbHomes: ReadonlyArray<{
 	id: LandingPrimitiveId
-	/** Centre on the still, in world units on the frame plane. */
 	x: number
 	y: number
-	/** How far toward the camera the orb sits from that plane. */
-	depth: number
-}
-
-export const lanternOrbRests: ReadonlyArray<LanternOrbRest> =
-	landingLanternOrbs.map((orb) => ({
-		id: orb.id,
-		...stillToWorld(orb.x / 100, orb.y / 100),
-		depth: orbDepth[orb.id],
-	}))
+	z: number
+}> = [
+	{ id: 'memory', x: -0.2, y: 0.55, z: -0.2 },
+	{ id: 'secrets', x: 0.56, y: 0.323, z: 0.12 },
+	{ id: 'packages', x: -0.58, y: 0.096, z: 0.26 },
+	{ id: 'triggers', x: 0.54, y: -0.131, z: -0.3 },
+	{ id: 'integrations', x: -0.5, y: -0.358, z: -0.12 },
+	{ id: 'apps', x: 0.26, y: -0.585, z: 0.22 },
+]

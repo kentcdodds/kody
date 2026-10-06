@@ -4,12 +4,15 @@ import { lanternCavity, lanternOrbRadius } from './lantern-3d-layout.ts'
 /**
  * Motion inside the 3D lantern, in world units (see lantern-3d-layout.ts).
  *
- * The orbs are the 2D lava lamp in three dimensions: each eases toward a
- * slow wander around its rest, syrup damps it, and contact only cancels
- * the closing speed. The globe also holds a fluid that the lantern's spin
- * drags along. Spin the lantern and the fluid catches up, carries the orbs
- * and sparkles round, then lets the orbs drift home once it slows. A held
- * orb follows the pointer, and a flick coasts and bounces like the 2D toss.
+ * The orbs float in a fluid that turns with the lantern, and their
+ * positions are in the fluid's own frame: the lantern upright, turned by
+ * the fluid's angle. The fluid trails a turn, sloshes a little past, and
+ * comes to rest where the lantern does, so a slow drag carries the orbs
+ * round like things set in the glass, and a flick leaves them behind for
+ * a moment before they catch up. In that frame each orb eases toward a
+ * small wander around its home, syrup damps it, and contact only cancels
+ * the closing speed. A held orb follows the pointer, and a flick coasts and
+ * bounces like the 2D toss.
  *
  * The lantern turns with inertia, settles face-on, tips back upright, and
  * its handle swings on a loose spring.
@@ -25,7 +28,7 @@ type LanternOrb3d = Vec3 & {
 	home: Vec3
 	phase: number
 	radius: number
-	/** A toss, a knock, or the fluid is carrying this orb. */
+	/** A toss or a knock is carrying this orb. */
 	coasting: boolean
 }
 
@@ -37,11 +40,14 @@ export type LanternOrbHold3d = Vec3 & {
 }
 
 export type LanternContents = {
+	/** In the fluid's frame. */
 	orbs: Array<LanternOrb3d>
-	/** Fluid angular velocity about the lantern axis, radians per second. */
+	/** Fluid turn rate about the lantern axis, radians per second. */
 	swirl: number
-	/** Fluid angle, radians. The sparkles ride it. */
+	/** Fluid turn about the lantern axis, radians. The sparkles ride it. */
 	swirlAngle: number
+	/** The lantern turn the fluid last followed, radians. */
+	yaw: number
 }
 
 export type LanternContentsStep = {
@@ -49,12 +55,16 @@ export type LanternContentsStep = {
 	time: number
 	/** 1 for the full wander, 0 to hold every orb at rest. */
 	amplitude: number
-	/** Lantern spin, radians per second. */
-	spin: number
-	/** Lantern tilt about x, radians. Tips the cap and base with it. */
+	/** The lantern's turn about its own axis, radians. The fluid follows. */
+	yaw: number
+	/** Lantern tilt about x, radians. The fluid tips with the glass. */
 	tilt: number
+	/** Turn the fluid with the lantern at once, with no trail or slosh. */
+	rigid?: boolean
+	/** Where the pointer holds an orb, in the lantern's parent frame. */
 	hold?: LanternOrbHold3d | null
-	/** Draws one orb to a point: the open primitive comes forward. */
+	/** Draws one orb to a point in the parent frame: the open primitive
+	 *  comes forward. */
 	lure?: (Vec3 & { id: LandingPrimitiveId }) | null
 }
 
@@ -63,17 +73,12 @@ export type LanternPointerSample3d = Vec3 & {
 	t: number
 }
 
-/** How far a wander target sits from the orb's rest, across and up. */
-const roam = 0.2
-
-/** How far the wander reaches toward and away from the camera. */
-const depthRoam = 0.24
+/** How far a wander target sits from home: across, up, and in depth.
+ *  Small enough that the heights never trade places on their own. */
+const roam = { x: 0.08, y: 0.02, z: 0.1 } as const
 
 /** Wander angular speed, radians per second. */
 const wanderRate = 0.34
-
-/** Shared swirl so the cluster drifts into its neighbours. */
-const swirlRate = 0.1
 
 /** Pull toward the wander target, per second squared. */
 const spring = 1.15
@@ -84,8 +89,8 @@ const damping = 2.6
 /** Float speed cap near the target. */
 const floatSpeed = 0.1
 
-/** Extra float speed per unit of distance to the target, so an orb the
- *  fluid carried round comes home in a couple of seconds. */
+/** Extra float speed per unit of distance to the target, so a tossed orb
+ *  comes home in a couple of seconds. */
 const homeward = 0.9
 
 /** The open orb's approach: quick and critically damped. */
@@ -110,14 +115,11 @@ const flickWindowMs = 90
 /** Gap between an orb's rim and the glass. */
 const wallSkin = 0.017
 
-/** How fast the fluid catches the lantern's spin, per second. */
-const fluidCoupling = 1.6
-
-/** How hard the fluid drags a carried orb, per second. */
-const fluidDrag = 2.4
-
-/** Fluid speed that lifts the orbs off their wander, radians per second. */
-const fluidCarry = 0.55
+/** The fluid's pull toward the lantern's turn rate, per second, and toward
+ *  its angle, per second squared. Together they trail a spin, slosh a
+ *  little past, and settle exactly where the lantern stops. */
+const fluidCoupling = 3.2
+const fluidSpring = 7
 
 const phases: Record<LandingPrimitiveId, number> = {
 	memory: 0.5,
@@ -129,11 +131,11 @@ const phases: Record<LandingPrimitiveId, number> = {
 }
 
 export function createLanternContents(
-	rests: ReadonlyArray<Vec3 & { id: LandingPrimitiveId }>,
+	homes: ReadonlyArray<Vec3 & { id: LandingPrimitiveId }>,
 ): LanternContents {
 	return {
-		orbs: rests.map((rest) => {
-			const home = clampToCavity(rest, lanternOrbRadius, 0)
+		orbs: homes.map((rest) => {
+			const home = clampToCavity(rest, lanternOrbRadius)
 			return {
 				id: rest.id,
 				...home,
@@ -148,6 +150,7 @@ export function createLanternContents(
 		}),
 		swirl: 0,
 		swirlAngle: 0,
+		yaw: 0,
 	}
 }
 
@@ -159,51 +162,79 @@ export function stepLanternContents(
 ): LanternContents {
 	const dt = Math.min(Math.max(dtSeconds, 0), 1 / 30)
 	const amplitude = Math.min(Math.max(options.amplitude, 0), 1)
-	const hold = options.hold ?? null
-	const lure = options.lure ?? null
+	const fluid = turnFluid(contents, options.yaw, dt, options.rigid === true)
+	const hold = options.hold
+		? holdInFluid(options.hold, fluid.swirlAngle, options.tilt)
+		: null
+	const lure = options.lure
+		? {
+				id: options.lure.id,
+				...lanternRootToFluid(options.lure, fluid.swirlAngle, options.tilt),
+			}
+		: null
 	const heldId = hold?.id ?? null
-	const swirl =
-		options.spin +
-		(contents.swirl - options.spin) * Math.exp(-fluidCoupling * dt)
-	const carried = Math.abs(swirl) > fluidCarry
 	const orbs = contents.orbs.map((orb) => ({ ...orb }))
 	for (const orb of orbs) {
 		if (hold && orb.id === hold.id) {
-			placeHeld(orb, hold, options.tilt)
+			placeHeld(orb, hold)
 			continue
 		}
-		if (carried) orb.coasting = true
 		if (orb.coasting) {
-			integrateCoast(orb, dt, swirl)
+			integrateCoast(orb, dt)
 			continue
 		}
 		if (lure && orb.id === lure.id) {
-			const target = clampToCavity(lure, orb.radius, options.tilt)
+			const target = clampToCavity(lure, orb.radius)
 			approach(orb, target, dt, lureSpring, lureDamping, coastMaxSpeed)
 			continue
 		}
-		const target = wanderTarget(orb, options.time, amplitude, options.tilt)
+		const target = wanderTarget(orb, options.time, amplitude)
 		const cap = floatSpeed + distance(orb, target) * homeward
 		approach(orb, target, dt, spring, damping, cap)
 	}
 	for (let pass = 0; pass < 4; pass++) {
 		separateOrbs(orbs, heldId)
-		containOrbs(orbs, heldId, options.tilt)
+		containOrbs(orbs, heldId)
 		if (hold) {
 			const held = orbs.find((orb) => orb.id === hold.id)
-			if (held) placeHeld(held, hold, options.tilt)
+			if (held) placeHeld(held, hold)
 		}
 	}
 	// The last snap can sit the held orb back on a neighbour. Shove that
 	// neighbour out without giving the pointer up.
 	separateOrbs(orbs, heldId)
-	containOrbs(orbs, heldId, options.tilt)
+	containOrbs(orbs, heldId)
 	for (const orb of orbs) {
-		if (orb.id === heldId || !orb.coasting || carried) continue
+		if (orb.id === heldId || !orb.coasting) continue
 		if (speedOf(orb) >= coastSettleSpeed) continue
 		orb.coasting = false
 	}
-	return { orbs, swirl, swirlAngle: contents.swirlAngle + swirl * dt }
+	return { orbs, ...fluid }
+}
+
+/**
+ * From the fluid's frame to the lantern's parent frame: turned by the
+ * fluid's angle about the lantern axis, then tipped by the tilt, the order
+ * three.js applies the lantern's own rotation in.
+ */
+export function lanternFluidToRoot(point: Vec3, angle: number, tilt: number) {
+	const c = Math.cos(angle)
+	const s = Math.sin(angle)
+	const x = point.x * c + point.z * s
+	const z = -point.x * s + point.z * c
+	const ct = Math.cos(tilt)
+	const st = Math.sin(tilt)
+	return { x, y: point.y * ct - z * st, z: point.y * st + z * ct }
+}
+
+export function lanternRootToFluid(point: Vec3, angle: number, tilt: number) {
+	const ct = Math.cos(tilt)
+	const st = Math.sin(tilt)
+	const y = point.y * ct + point.z * st
+	const z = -point.y * st + point.z * ct
+	const c = Math.cos(angle)
+	const s = Math.sin(angle)
+	return { x: point.x * c - z * s, y, z: point.x * s + z * c }
 }
 
 /**
@@ -241,8 +272,9 @@ export function lanternFlickVelocity(
 	}
 }
 
-/** Keep a centre inside the glass and clear of the cap and base. */
-export function clampToCavity(point: Vec3, radius: number, tilt: number) {
+/** Keep a centre, in the fluid's frame, inside the glass and clear of the
+ *  cap and base. */
+export function clampToCavity(point: Vec3, radius: number) {
 	const limit = lanternCavity.radius - radius - wallSkin
 	let { x, y, z } = point
 	const reach = Math.hypot(x, y, z)
@@ -252,29 +284,48 @@ export function clampToCavity(point: Vec3, radius: number, tilt: number) {
 		y *= scale
 		z *= scale
 	}
-	const up = lanternUp(tilt)
 	const band = bandFor(radius)
-	const height = y * up.y + z * up.z
-	const over =
-		height > band.top
-			? height - band.top
-			: height < band.bottom
-				? height - band.bottom
-				: 0
-	return { x, y: y - over * up.y, z: z - over * up.z }
+	return { x, y: Math.min(Math.max(y, band.bottom), band.top), z }
 }
 
-function integrateCoast(orb: LanternOrb3d, dt: number, swirl: number) {
+function turnFluid(
+	contents: LanternContents,
+	yaw: number,
+	dt: number,
+	rigid: boolean,
+) {
+	if (rigid) return { swirl: 0, swirlAngle: yaw, yaw }
+	if (dt === 0) {
+		return { swirl: contents.swirl, swirlAngle: contents.swirlAngle, yaw }
+	}
+	const rate = (yaw - contents.yaw) / dt
+	const swirl =
+		contents.swirl +
+		(fluidCoupling * (rate - contents.swirl) +
+			fluidSpring * (yaw - contents.swirlAngle)) *
+			dt
+	return { swirl, swirlAngle: contents.swirlAngle + swirl * dt, yaw }
+}
+
+function holdInFluid(
+	hold: LanternOrbHold3d,
+	angle: number,
+	tilt: number,
+): LanternOrbHold3d {
+	const at = lanternRootToFluid(hold, angle, tilt)
+	const velocity = lanternRootToFluid(
+		{ x: hold.vx, y: hold.vy, z: hold.vz },
+		angle,
+		tilt,
+	)
+	return { id: hold.id, ...at, vx: velocity.x, vy: velocity.y, vz: velocity.z }
+}
+
+function integrateCoast(orb: LanternOrb3d, dt: number) {
 	const decay = Math.exp(-coastDamping * dt)
 	orb.vx *= decay
 	orb.vy *= decay
 	orb.vz *= decay
-	if (swirl !== 0) {
-		// The fluid turns about y, so it moves at swirl × (z, 0, -x).
-		const drag = 1 - Math.exp(-fluidDrag * dt)
-		orb.vx += (swirl * orb.z - orb.vx) * drag
-		orb.vz += (-swirl * orb.x - orb.vz) * drag
-	}
 	capSpeed(orb, coastMaxSpeed)
 	orb.x += orb.vx * dt
 	orb.y += orb.vy * dt
@@ -299,36 +350,22 @@ function approach(
 	orb.z += orb.vz * dt
 }
 
-function wanderTarget(
-	orb: LanternOrb3d,
-	time: number,
-	amplitude: number,
-	tilt: number,
-) {
-	const reach = roam * amplitude
+function wanderTarget(orb: LanternOrb3d, time: number, amplitude: number) {
 	const angle = time * wanderRate + orb.phase
-	const swirl = time * swirlRate
 	return clampToCavity(
 		{
-			x:
-				orb.home.x +
-				Math.cos(angle) * reach +
-				Math.cos(swirl + orb.phase) * 0.056 * amplitude,
-			y:
-				orb.home.y +
-				Math.sin(angle * 0.76 + 0.7) * reach * 0.9 +
-				Math.sin(swirl) * 0.043 * amplitude,
+			x: orb.home.x + Math.cos(angle) * roam.x * amplitude,
+			y: orb.home.y + Math.sin(angle * 0.76 + 0.7) * roam.y * amplitude,
 			z:
 				orb.home.z +
-				Math.sin(angle * 0.58 + orb.phase * 1.7) * depthRoam * amplitude,
+				Math.sin(angle * 0.58 + orb.phase * 1.7) * roam.z * amplitude,
 		},
 		orb.radius,
-		tilt,
 	)
 }
 
-function placeHeld(orb: LanternOrb3d, hold: LanternOrbHold3d, tilt: number) {
-	const clamped = clampToCavity(hold, orb.radius, tilt)
+function placeHeld(orb: LanternOrb3d, hold: LanternOrbHold3d) {
+	const clamped = clampToCavity(hold, orb.radius)
 	orb.x = clamped.x
 	orb.y = clamped.y
 	orb.z = clamped.z
@@ -337,11 +374,6 @@ function placeHeld(orb: LanternOrb3d, hold: LanternOrbHold3d, tilt: number) {
 	orb.vz = hold.vz
 	capSpeed(orb, coastMaxSpeed)
 	orb.coasting = true
-}
-
-/** The lantern's own up axis in world space after the tilt about x. */
-function lanternUp(tilt: number) {
-	return { y: Math.cos(tilt), z: Math.sin(tilt) }
 }
 
 /** Centre heights an orb may reach between the cap and the base. */
@@ -425,12 +457,7 @@ function shove(
 	kick(orb)
 }
 
-function containOrbs(
-	orbs: Array<LanternOrb3d>,
-	heldId: string | null,
-	tilt: number,
-) {
-	const up = lanternUp(tilt)
+function containOrbs(orbs: Array<LanternOrb3d>, heldId: string | null) {
 	for (const orb of orbs) {
 		if (orb.id === heldId) continue
 		const limit = lanternCavity.radius - orb.radius - wallSkin
@@ -445,13 +472,12 @@ function containOrbs(
 			bounce(orb, nx, ny, nz)
 		}
 		const band = bandFor(orb.radius)
-		const height = orb.y * up.y + orb.z * up.z
-		if (height > band.top) {
-			move(orb, 0, up.y, up.z, band.top - height)
-			bounce(orb, 0, up.y, up.z)
-		} else if (height < band.bottom) {
-			move(orb, 0, up.y, up.z, band.bottom - height)
-			bounce(orb, 0, -up.y, -up.z)
+		if (orb.y > band.top) {
+			orb.y = band.top
+			bounce(orb, 0, 1, 0)
+		} else if (orb.y < band.bottom) {
+			orb.y = band.bottom
+			bounce(orb, 0, -1, 0)
 		}
 	}
 }

@@ -405,8 +405,9 @@ const pointFragmentDisc = /* glsl */ `
 	float halo = pow(1.0 - reach, 3.0) * 0.55;
 `
 
-/** Sparkles inside the glass. They ride the fluid's swirl angle; the big
- *  ones flare into four-point stars like the still. */
+/** Sparkles inside the glass. They turn with the fluid, as the orbs do, and
+ *  drift a little on their own; the big ones flare into four-point stars
+ *  like the still. */
 export function createSparkleMaterial() {
 	return new ShaderMaterial({
 		uniforms: {
@@ -424,8 +425,7 @@ export function createSparkleMaterial() {
 
 			void main() {
 				vec3 p = position;
-				float radius = length(p.xz);
-				float angle = uSwirl * (1.15 - 0.35 * radius) + uTime * (0.03 + aSeed * 0.04);
+				float angle = uSwirl + uTime * (0.03 + aSeed * 0.04);
 				float s = sin(angle);
 				float c = cos(angle);
 				p.xz = mat2(c, -s, s, c) * p.xz;

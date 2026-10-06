@@ -1,14 +1,16 @@
 import { expect, test } from 'vitest'
 import {
 	lanternCavity,
+	lanternOrbHomes,
 	lanternOrbRadius,
-	lanternOrbRests,
 } from './lantern-3d-layout.ts'
 import {
 	createLanternContents,
 	createLanternSpin,
 	dragLanternSpin,
 	lanternFlickVelocity,
+	lanternFluidToRoot,
+	lanternRootToFluid,
 	lanternTiltLimit,
 	stepLanternContents,
 	stepLanternSpin,
@@ -18,32 +20,21 @@ import {
 
 const frame = 1 / 60
 
-function restingContents() {
-	return createLanternContents(
-		lanternOrbRests.map((rest) => ({
-			id: rest.id,
-			x: rest.x,
-			y: rest.y,
-			z: rest.depth,
-		})),
-	)
-}
+const still = { amplitude: 0, yaw: 0, tilt: 0 } as const
 
 function run(
 	start: LanternContents,
 	seconds: number,
 	options: Omit<LanternContentsStep, 'time'>,
 	startTime = 0,
-	each?: (contents: LanternContents) => void,
+	each?: (contents: LanternContents, time: number) => void,
 ) {
 	let contents = start
 	const frames = Math.round(seconds / frame)
 	for (let index = 0; index < frames; index++) {
-		contents = stepLanternContents(contents, frame, {
-			...options,
-			time: startTime + index * frame,
-		})
-		each?.(contents)
+		const time = startTime + index * frame
+		contents = stepLanternContents(contents, frame, { ...options, time })
+		each?.(contents, time)
 	}
 	return contents
 }
@@ -73,8 +64,20 @@ function awayFromHome(contents: LanternContents) {
 	)
 }
 
-test('orbs wander around their rests inside the glass and rest when motion stops', () => {
-	const start = restingContents()
+/** Smallest gap between two orbs' discs seen face-on. */
+function faceOnClearance(contents: LanternContents) {
+	let least = Infinity
+	for (const [index, a] of contents.orbs.entries()) {
+		for (const b of contents.orbs.slice(index + 1)) {
+			const gap = Math.hypot(a.x - b.x, a.y - b.y) - a.radius - b.radius
+			least = Math.min(least, gap)
+		}
+	}
+	return least
+}
+
+test('orbs rest in word order, top to bottom, with none overlapping face-on', () => {
+	const start = createLanternContents(lanternOrbHomes)
 	expect(start.orbs.map((orb) => orb.id)).toEqual([
 		'memory',
 		'secrets',
@@ -83,65 +86,96 @@ test('orbs wander around their rests inside the glass and rest when motion stops
 		'integrations',
 		'apps',
 	])
+	const heights = start.orbs.map((orb) => orb.y)
+	expect(heights).toEqual([...heights].sort((a, b) => b - a))
+	expect(faceOnClearance(start)).toBeGreaterThan(0.05)
+	// Real depth: some sit in front of the axis and some behind it.
+	const depths = start.orbs.map((orb) => orb.z)
+	expect(Math.max(...depths) - Math.min(...depths)).toBeGreaterThan(0.45)
 	expectInsideAndApart(start)
+})
 
+test('the wander keeps every orb near home, in order, and apart', () => {
 	let furthest = 0
 	const wandered = run(
-		start,
-		20,
-		{ amplitude: 1, spin: 0, tilt: 0 },
+		createLanternContents(lanternOrbHomes),
+		30,
+		{ ...still, amplitude: 1 },
 		0,
 		(contents) => {
 			expectInsideAndApart(contents)
+			expect(faceOnClearance(contents)).toBeGreaterThan(0)
+			const heights = contents.orbs.map((orb) => orb.y)
+			expect(heights).toEqual([...heights].sort((a, b) => b - a))
 			furthest = Math.max(furthest, awayFromHome(contents))
 		},
 	)
-	expect(furthest).toBeGreaterThan(0.1)
-	expect(furthest).toBeLessThan(0.6)
+	expect(furthest).toBeGreaterThan(0.04)
+	expect(furthest).toBeLessThan(0.2)
 	expect(wandered.swirl).toBe(0)
 
-	const rested = run(wandered, 12, { amplitude: 0, spin: 0, tilt: 0 })
+	const rested = run(wandered, 12, still)
 	expect(awayFromHome(rested)).toBeLessThan(0.02)
 	expect(rested.orbs.every((orb) => !orb.coasting)).toBe(true)
 })
 
-test('spinning the lantern swirls the orbs round, then they drift home', () => {
-	const start = restingContents()
-	const spun = run(
-		start,
-		1.5,
-		{ amplitude: 0, spin: 6, tilt: 0 },
-		0,
-		(contents) => expectInsideAndApart(contents),
-	)
-	expect(spun.swirl).toBeGreaterThan(4)
-	expect(spun.swirlAngle).toBeGreaterThan(2)
-	expect(spun.orbs.every((orb) => orb.coasting)).toBe(true)
-	expect(awayFromHome(spun)).toBeGreaterThan(0.4)
-	// The fluid turns the same way as the lantern: +y spin moves the front to +x.
-	const front = start.orbs.find((orb) => orb.id === 'triggers')!
-	const carried = run(start, 0.25, { amplitude: 0, spin: 6, tilt: 0 })
-	const after = carried.orbs.find((orb) => orb.id === 'triggers')!
-	expect(after.x - front.x).toBeGreaterThan(0)
+test('the fluid trails a turn, sloshes past, and settles where the lantern stops', () => {
+	let contents = createLanternContents(lanternOrbHomes)
+	let trailed = 0
+	let time = 0
+	// A flick: the lantern turns fast, slows, and stops a half turn round.
+	for (let index = 0; index < 60 * 1.5; index++) {
+		const yaw = Math.PI * (1 - Math.exp(-3 * time))
+		contents = stepLanternContents(contents, frame, { ...still, yaw, time })
+		trailed = Math.max(trailed, yaw - contents.swirlAngle)
+		time += frame
+	}
+	expect(trailed).toBeGreaterThan(0.4)
+	let overshot = 0
+	contents = run(contents, 6, { ...still, yaw: Math.PI }, time, (next) => {
+		overshot = Math.max(overshot, next.swirlAngle - Math.PI)
+		expectInsideAndApart(next)
+	})
+	expect(overshot).toBeGreaterThan(0.005)
+	expect(Math.abs(contents.swirlAngle - Math.PI)).toBeLessThan(0.002)
+	expect(Math.abs(contents.swirl)).toBeLessThan(0.01)
+	// Carried rigidly, the orbs never left home in the fluid's frame.
+	expect(awayFromHome(contents)).toBeLessThan(0.01)
 
-	const settled = run(
-		spun,
-		10,
-		{ amplitude: 0, spin: 0, tilt: 0 },
-		1.5,
-		(contents) => expectInsideAndApart(contents),
+	// Without the trail, the fluid turns with the lantern at once.
+	const rigid = stepLanternContents(contents, 0, {
+		...still,
+		yaw: Math.PI / 4,
+		rigid: true,
+		time,
+	})
+	expect(rigid.swirlAngle).toBe(Math.PI / 4)
+	expect(rigid.swirl).toBe(0)
+})
+
+test('turning the fluid moves the front of the globe to the right', () => {
+	const front = { x: 0, y: 0, z: 0.5 }
+	const turned = lanternFluidToRoot(front, 0.3, 0)
+	expect(turned.x).toBeGreaterThan(0.1)
+	// A positive tilt tips the top toward the camera.
+	const top = lanternFluidToRoot({ x: 0, y: 0.5, z: 0 }, 0, 0.3)
+	expect(top.z).toBeGreaterThan(0.1)
+
+	const point = { x: 0.31, y: -0.42, z: 0.18 }
+	const back = lanternRootToFluid(
+		lanternFluidToRoot(point, 2.1, -0.27),
+		2.1,
+		-0.27,
 	)
-	expect(Math.abs(settled.swirl)).toBeLessThan(0.01)
-	expect(settled.orbs.every((orb) => !orb.coasting)).toBe(true)
-	expect(awayFromHome(settled)).toBeLessThan(0.05)
+	expect(back.x).toBeCloseTo(point.x, 9)
+	expect(back.y).toBeCloseTo(point.y, 9)
+	expect(back.z).toBeCloseTo(point.z, 9)
 })
 
 test('a held orb follows the pointer, a flick bounces off the glass, and it settles home', () => {
-	const start = restingContents()
+	const start = createLanternContents(lanternOrbHomes)
 	const held = run(start, 0.5, {
-		amplitude: 0,
-		spin: 0,
-		tilt: 0,
+		...still,
 		hold: { id: 'apps', x: 0, y: -0.2, z: 0.1, vx: 0, vy: 0, vz: 0 },
 	})
 	const apps = held.orbs.find((orb) => orb.id === 'apps')!
@@ -150,40 +184,51 @@ test('a held orb follows the pointer, a flick bounces off the glass, and it sett
 
 	// A pointer far past the glass pins the orb on the inside of the wall.
 	const pinned = run(held, 0.1, {
-		amplitude: 0,
-		spin: 0,
-		tilt: 0,
+		...still,
 		hold: { id: 'apps', x: 5, y: 0, z: 0, vx: 0, vy: 0, vz: 0 },
 	})
 	const atWall = pinned.orbs.find((orb) => orb.id === 'apps')!
 	expect(atWall.x + atWall.radius).toBeCloseTo(lanternCavity.radius - 0.017, 6)
 
 	const tossed = stepLanternContents(held, frame, {
+		...still,
 		time: 0,
-		amplitude: 0,
-		spin: 0,
-		tilt: 0,
 		hold: { id: 'apps', x: 0, y: -0.2, z: 0.1, vx: 4, vy: 0, vz: 0 },
 	})
 	let bounced = false
-	const settled = run(
-		tossed,
-		8,
-		{ amplitude: 0, spin: 0, tilt: 0 },
-		0,
-		(contents) => {
-			expectInsideAndApart(contents)
-			const orb = contents.orbs.find((entry) => entry.id === 'apps')!
-			if (orb.vx < -0.5) bounced = true
-		},
-	)
+	const settled = run(tossed, 12, still, 0, (contents) => {
+		expectInsideAndApart(contents)
+		const orb = contents.orbs.find((entry) => entry.id === 'apps')!
+		if (orb.vx < -0.5) bounced = true
+	})
 	expect(bounced).toBe(true)
 	expect(settled.orbs.every((orb) => !orb.coasting)).toBe(true)
 	expect(awayFromHome(settled)).toBeLessThan(0.05)
 })
 
+test('a hold on a turned lantern lands where the pointer is', () => {
+	const turned = run(createLanternContents(lanternOrbHomes), 0.1, {
+		...still,
+		yaw: 1.2,
+		rigid: true,
+	})
+	const pointer = { x: 0.2, y: 0.1, z: 0.3 }
+	const held = stepLanternContents(turned, frame, {
+		...still,
+		yaw: 1.2,
+		rigid: true,
+		time: 0,
+		hold: { id: 'secrets', ...pointer, vx: 0, vy: 0, vz: 0 },
+	})
+	const secrets = held.orbs.find((orb) => orb.id === 'secrets')!
+	const shown = lanternFluidToRoot(secrets, held.swirlAngle, 0)
+	expect(shown.x).toBeCloseTo(pointer.x, 6)
+	expect(shown.y).toBeCloseTo(pointer.y, 6)
+	expect(shown.z).toBeCloseTo(pointer.z, 6)
+})
+
 test('the open orb comes forward to the lure and goes back when released', () => {
-	const start = restingContents()
+	const start = createLanternContents(lanternOrbHomes)
 	const memory = start.orbs.find((orb) => orb.id === 'memory')!
 	const lure = {
 		id: 'memory' as const,
@@ -191,31 +236,29 @@ test('the open orb comes forward to the lure and goes back when released', () =>
 		y: memory.y,
 		z: memory.z + 0.4,
 	}
-	const forward = run(start, 1.2, { amplitude: 0, spin: 0, tilt: 0, lure })
+	const forward = run(start, 1.2, { ...still, lure })
 	const lured = forward.orbs.find((orb) => orb.id === 'memory')!
 	expect(
 		Math.hypot(lured.x - lure.x, lured.y - lure.y, lured.z - lure.z),
 	).toBeLessThan(0.03)
 	expectInsideAndApart(forward)
 
-	const back = run(forward, 8, { amplitude: 0, spin: 0, tilt: 0 })
+	const back = run(forward, 8, still)
 	expect(awayFromHome(back)).toBeLessThan(0.02)
 })
 
-test('tilting the lantern tips the cap and base band the orbs stay under', () => {
+test('the fluid tips with the glass, so the cap stays over a held orb', () => {
 	const tilt = lanternTiltLimit.max
-	const tilted = run(restingContents(), 2, {
-		amplitude: 0,
-		spin: 0,
+	const tilted = run(createLanternContents(lanternOrbHomes), 2, {
+		...still,
 		tilt,
 		hold: { id: 'memory', x: 0, y: 2, z: 0, vx: 0, vy: 0, vz: 0 },
 	})
 	const memory = tilted.orbs.find((orb) => orb.id === 'memory')!
-	const height = memory.y * Math.cos(tilt) + memory.z * Math.sin(tilt)
+	expect(memory.y + lanternOrbRadius).toBeCloseTo(lanternCavity.top - 0.017, 6)
+	const shown = lanternFluidToRoot(memory, tilted.swirlAngle, tilt)
+	const height = shown.y * Math.cos(tilt) + shown.z * Math.sin(tilt)
 	expect(height + lanternOrbRadius).toBeCloseTo(lanternCavity.top - 0.017, 6)
-	// The tipped cap pushes along its own normal, so the orb slides back
-	// as well as down.
-	expect(memory.z).toBeLessThan(-0.03)
 })
 
 test('flick velocity reads only the last 90ms of a drag', () => {

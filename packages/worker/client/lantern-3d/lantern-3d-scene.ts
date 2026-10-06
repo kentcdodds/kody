@@ -23,13 +23,12 @@ import {
 import { parseCssColor } from './lantern-3d-color.ts'
 import {
 	lanternCavity,
+	lanternOrbHomes,
 	lanternOrbRadius,
-	lanternOrbRests,
 	lanternStill,
 } from './lantern-3d-layout.ts'
 import {
 	createLanternModel,
-	lanternViewPitch,
 	paintLanternOrb,
 	type LanternOrbView,
 	type LanternStep,
@@ -40,7 +39,9 @@ import {
 	createLanternSpin,
 	dragLanternSpin,
 	lanternFlickVelocity,
+	lanternFluidToRoot,
 	lanternMaxSpin,
+	lanternRootToFluid,
 	lanternTiltLimit,
 	stepLanternContents,
 	stepLanternSpin,
@@ -199,10 +200,7 @@ export async function createLanternScene(
 		}
 	})
 
-	const rests = lanternOrbRests.map((rest) =>
-		unpitch({ id: rest.id, x: rest.x, y: rest.y, z: rest.depth }),
-	)
-	let contents: LanternContents = createLanternContents(rests)
+	let contents: LanternContents = createLanternContents(lanternOrbHomes)
 	let spin = createLanternSpin()
 	let motion = options.motion
 	let viewport = options.viewport
@@ -277,19 +275,6 @@ export async function createLanternScene(
 	let last = performance.now()
 	let lastFrameAt: number | null = null
 
-	function unpitch(rest: Vec3 & { id: LandingPrimitiveId }) {
-		// Root tips the scene toward the viewer. Undo that so each orb
-		// still lands on its place in the still.
-		const c = Math.cos(lanternViewPitch)
-		const s = Math.sin(lanternViewPitch)
-		return {
-			id: rest.id,
-			x: rest.x,
-			y: rest.y * c + rest.z * s,
-			z: -rest.y * s + rest.z * c,
-		}
-	}
-
 	function wanderAmount() {
 		return motion.reduced ? 0 : motion.wander
 	}
@@ -361,6 +346,19 @@ export async function createLanternScene(
 		return contents.orbs.find((orb) => orb.id === id) ?? null
 	}
 
+	/** The lantern's idle sway, radians. The fluid sways with it. */
+	function sway() {
+		return motion.reduced ? 0 : Math.sin(time * 0.31) * 0.07
+	}
+
+	/** An orb's centre in root space: the fluid's frame turned and tipped
+	 *  the way the glass is. */
+	function orbRoot(id: LandingPrimitiveId): Vec3 | null {
+		const orb = orbState(id)
+		if (!orb) return null
+		return lanternFluidToRoot(orb, contents.swirlAngle, displayTilt())
+	}
+
 	function lure() {
 		if (!activeId || !lureAt || hold || motion.reduced) return null
 		return { id: activeId, ...lureAt }
@@ -370,13 +368,13 @@ export async function createLanternScene(
 	 *  glass. Moving along the view ray keeps it under the pointer, so a
 	 *  hover cannot pull the orb out from under itself and close again. */
 	function lureToward(id: LandingPrimitiveId): Vec3 | null {
-		const orb = orbState(id)
+		const orb = orbRoot(id)
 		if (!orb) return null
 		model.root.updateMatrixWorld()
 		rootInverse.copy(model.root.matrixWorld).invert()
 		axis.copy(camera.position).applyMatrix4(rootInverse)
 		axis.set(axis.x - orb.x, axis.y - orb.y, axis.z - orb.z).normalize()
-		const limit = lanternCavity.radius - orb.radius - 0.03
+		const limit = lanternCavity.radius - lanternOrbRadius - 0.03
 		const along = orb.x * axis.x + orb.y * axis.y + orb.z * axis.z
 		const room =
 			along * along - (orb.x ** 2 + orb.y ** 2 + orb.z ** 2) + limit ** 2
@@ -405,6 +403,8 @@ export async function createLanternScene(
 
 	function placeOrbs(points: ReadonlyArray<LanternPoint>) {
 		if (frameBox.width === 0) return
+		const angle = contents.swirlAngle
+		const tilt = displayTilt()
 		contents = {
 			...contents,
 			orbs: contents.orbs.map((orb) => {
@@ -413,12 +413,12 @@ export async function createLanternScene(
 				const at = rootPoint(
 					frameBox.left + point.x,
 					frameBox.top + point.y,
-					orb.home.z,
+					lanternFluidToRoot(orb.home, angle, tilt).z,
 				)
 				if (!at) return orb
 				return {
 					...orb,
-					...clampToCavity(at, orb.radius, 0),
+					...clampToCavity(lanternRootToFluid(at, angle, tilt), orb.radius),
 					vx: 0,
 					vy: 0,
 					vz: 0,
@@ -446,7 +446,6 @@ export async function createLanternScene(
 		look.yaw += (lookTarget.yaw - look.yaw) * ease
 		look.tilt += (lookTarget.tilt - look.tilt) * ease
 
-		const tilt = displayTilt()
 		const before = contents.orbs.map((orb) => ({
 			id: orb.id,
 			vx: orb.vx,
@@ -457,8 +456,9 @@ export async function createLanternScene(
 		contents = stepLanternContents(contents, animate || hold ? dt : 0, {
 			time,
 			amplitude: wanderAmount(),
-			spin: animate ? spin.yawVelocity : 0,
-			tilt,
+			yaw: spin.yaw + sway(),
+			tilt: displayTilt(),
+			rigid: !animate,
 			hold: hold?.pose ?? null,
 			lure: lure(),
 		})
@@ -485,12 +485,13 @@ export async function createLanternScene(
 			const speed = Math.hypot(previous.vx, previous.vy, previous.vz)
 			if (speed < 1.3) continue
 			const orb = orbState(previous.id)
-			if (!orb) continue
+			const at = orbRoot(previous.id)
+			if (!orb || !at) continue
 			const turn =
 				previous.vx * orb.vx + previous.vy * orb.vy + previous.vz * orb.vz
 			if (turn > 0) continue
 			model.burst.emit(
-				new Vector3(orb.x, orb.y, orb.z),
+				new Vector3(at.x, at.y, at.z),
 				colors.get(orb.id) ?? new Color(1, 0.7, 0.3),
 				{ count: 10, speed: 0.55, time },
 			)
@@ -519,9 +520,8 @@ export async function createLanternScene(
 		const animate = !motion.reduced
 		const settle = animate ? 1 - Math.exp(-10 * dt) : 1
 		model.root.position.y = animate ? Math.sin(time * 0.8) * 0.018 : 0
-		const sway = animate ? Math.sin(time * 0.31) * 0.07 : 0
 		const tilt = displayTilt()
-		model.lantern.rotation.set(tilt, spin.yaw + look.yaw + sway, 0)
+		model.lantern.rotation.set(tilt, spin.yaw + look.yaw + sway(), 0)
 		model.fluid.rotation.x = tilt
 		model.handle.rotation.x =
 			spin.swing + (animate ? Math.sin(time * 0.9 + 0.4) * 0.03 : 0)
@@ -548,9 +548,10 @@ export async function createLanternScene(
 		animate: boolean,
 	) {
 		const state = orbState(view.id)
+		const at = orbRoot(view.id)
 		const fx = effects.get(view.id)
-		if (!state || !fx) return
-		view.group.position.set(state.x, state.y, state.z)
+		if (!state || !at || !fx) return
+		view.group.position.set(at.x, at.y, at.z)
 
 		if (animate) {
 			const speed = Math.hypot(state.vx, state.vy)
@@ -728,7 +729,7 @@ export async function createLanternScene(
 			const calmed = next.reduced && !motion.reduced
 			motion = next
 			if (calmed) {
-				contents = createLanternContents(rests)
+				contents = createLanternContents(lanternOrbHomes)
 				spin = createLanternSpin()
 			}
 			wake()
@@ -743,23 +744,15 @@ export async function createLanternScene(
 		},
 		celebrate(id) {
 			const fx = effects.get(id)
-			const orb = orbState(id)
-			if (!fx || !orb || motion.reduced) return
+			const at = orbRoot(id)
+			if (!fx || !at || motion.reduced) return
 			fx.spunAt = time
 			fx.pop = 1
 			model.burst.emit(
-				new Vector3(orb.x, orb.y, orb.z),
+				new Vector3(at.x, at.y, at.z),
 				colors.get(id) ?? new Color(1, 1, 1),
 				{ count: 30, speed: 0.75, time },
 			)
-			contents = {
-				...contents,
-				orbs: contents.orbs.map((entry) =>
-					entry.id === id
-						? { ...entry, vy: entry.vy + 0.55, coasting: true }
-						: entry,
-				),
-			}
 			wake()
 		},
 		nudge() {
@@ -838,7 +831,7 @@ export async function createLanternScene(
 			wake()
 		},
 		grabOrb(id, x, y, t) {
-			const orb = orbState(id)
+			const orb = orbRoot(id)
 			if (!orb) return
 			const at = rootPoint(x, y, orb.z)
 			if (!at) return
@@ -876,23 +869,36 @@ export async function createLanternScene(
 			const { id, pose, samples } = hold
 			hold = null
 			if (motion.reduced) {
-				contents = createLanternContents(rests)
+				contents = {
+					...createLanternContents(lanternOrbHomes),
+					swirlAngle: contents.swirlAngle,
+					yaw: contents.yaw,
+				}
 			} else if (pose) {
-				const velocity = flick
+				const flung = flick
 					? lanternFlickVelocity(samples, t)
 					: { vx: 0, vy: 0, vz: 0 }
-				const tossed = Math.hypot(velocity.vx, velocity.vy, velocity.vz) > 0
+				const tossed = Math.hypot(flung.vx, flung.vy, flung.vz) > 0
+				const angle = contents.swirlAngle
 				const tilt = displayTilt()
+				const velocity = lanternRootToFluid(
+					{ x: flung.vx, y: flung.vy, z: flung.vz },
+					angle,
+					tilt,
+				)
 				contents = {
 					...contents,
 					orbs: contents.orbs.map((orb) => {
 						if (orb.id !== id) return orb
 						return {
 							...orb,
-							...clampToCavity(pose, orb.radius, tilt),
-							vx: velocity.vx,
-							vy: velocity.vy,
-							vz: velocity.vz,
+							...clampToCavity(
+								lanternRootToFluid(pose, angle, tilt),
+								orb.radius,
+							),
+							vx: velocity.x,
+							vy: velocity.y,
+							vz: velocity.z,
 							coasting: tossed,
 						}
 					}),
