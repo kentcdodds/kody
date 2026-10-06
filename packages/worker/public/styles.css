@@ -1640,7 +1640,7 @@ html.is-settled {
    does, so the words beside it stay clickable. The orb buttons are
    invisible and follow the orbs; the scene draws their lit state. */
 @media (min-width: 801px) {
-	.landing-primitives-stage:has(> .landing-lantern-3d) {
+	.landing-primitives-stage:has(.landing-lantern-3d) {
 		grid-template-columns: minmax(14rem, 22rem) minmax(0, 15rem);
 	}
 }
@@ -1652,14 +1652,14 @@ html.is-settled {
 }
 
 .landing-lantern-3d-poster,
-.landing-lantern-3d > .landing-lantern-3d-scene {
+.landing-lantern-3d .landing-lantern-3d-scene {
 	position: absolute;
 	inset: 0;
 	width: 100%;
 	margin: 0;
 }
 
-.landing-lantern-3d-poster > .landing-lantern {
+.landing-lantern-3d-poster .landing-lantern {
 	width: 100%;
 	margin: 0;
 }
