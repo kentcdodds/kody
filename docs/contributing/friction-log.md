@@ -67,8 +67,9 @@ For builders, the daily sweep, and in-scope ship-pr fixes:
   still need a product or ops decision.
 - If a proposed fix invents a second way to do the same thing, reject it and fix
   the contract instead (or revert).
-- Keep skills thin: durable behavior lives in packages; skills are when/where
-  pointers plus a prefer-local invoke, not a second API dump.
+- Keep skills and contributing stubs thin; durable API and daily behavior live
+  in the package
+  ([Keep agent context lean](../principles/lean-agent-context.md)).
 
 ## Labels
 

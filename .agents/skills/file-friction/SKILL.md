@@ -11,7 +11,9 @@ description: >
 Policy (when to file, ownership, how to judge fixes):
 [docs/contributing/friction-log.md](../../../docs/contributing/friction-log.md).
 API, qualify, and examples live in
-[@kentcdodds/friction-log](https://kody.codes/@kentcdodds/friction-log).
+[@kentcdodds/friction-log](https://kody.codes/@kentcdodds/friction-log). Keep
+this skill thin
+([Keep agent context lean](../../../docs/principles/lean-agent-context.md)).
 
 **File** durable, recurring pain with a clear owner and a reproducible contract
 gap. **Skip** one-off agent confusion, session-only nits, and noise that will
