@@ -6,8 +6,11 @@ import {
 	createLanternResolution,
 	createLanternWarmup,
 	holdLanternOrbit,
+	kodyGaze,
 	lanternFlickVelocity,
 	lanternGlobeRadius,
+	lanternIdleDelay,
+	lanternIdleMoment,
 	lanternOrbRadius,
 	lanternPose,
 	lanternViewBasis,
@@ -663,4 +666,87 @@ test('the warm-up shows a scene that keeps up and keeps the still otherwise', ()
 		if (step.verdict !== 'wait') verdicts.push(step.verdict)
 	}
 	expect(verdicts).toEqual(['show'])
+})
+
+test('Kody counts his marbles after ten quiet seconds, then only now and then', () => {
+	expect(lanternIdleMoment(0)).toBeNull()
+	expect(lanternIdleMoment(lanternIdleDelay - 0.05)).toBeNull()
+	const start = lanternIdleMoment(lanternIdleDelay)!
+	expect(start.gaze).toBe(0)
+	expect(Object.values(start.pop).every((pop) => pop === 0)).toBe(true)
+
+	// Each marble pops once, in the order of the word list, with his eyes on it.
+	const peaks = landingPrimitiveIds.map((id) => {
+		let peak = { t: 0, pop: 0 }
+		for (let t = 0; t < 4; t += 0.01) {
+			const pop = lanternIdleMoment(lanternIdleDelay + t)?.pop[id] ?? 0
+			if (pop > peak.pop) peak = { t, pop }
+		}
+		return peak
+	})
+	peaks.forEach((peak, index) => {
+		expect(peak.pop).toBeGreaterThan(0.99)
+		if (index > 0) expect(peak.t).toBeGreaterThan(peaks[index - 1]!.t)
+		const moment = lanternIdleMoment(lanternIdleDelay + peak.t)!
+		expect(moment.gaze).toBeGreaterThan(0.9)
+		expect(moment.focus).toBeGreaterThanOrEqual(index - 0.01)
+		expect(moment.focus).toBeLessThan(index + 0.5)
+	})
+
+	// Then a nod as the flame flares, and everything is back at rest
+	// before the moment ends.
+	const last = peaks.at(-1)!.t
+	const after = (
+		pick: (moment: NonNullable<ReturnType<typeof lanternIdleMoment>>) => number,
+	) => {
+		let best = { t: 0, value: 0 }
+		for (let t = last; t < 4; t += 0.01) {
+			const moment = lanternIdleMoment(lanternIdleDelay + t)
+			const value = moment ? pick(moment) : 0
+			if (value > best.value) best = { t, value }
+		}
+		return best
+	}
+	expect(after((moment) => moment.bow).value).toBeGreaterThan(0.99)
+	expect(after((moment) => moment.flare).value).toBeGreaterThan(0.99)
+	const ending = lanternIdleMoment(lanternIdleDelay + 3.79)!
+	expect(ending.gaze).toBe(0)
+	expect(ending.bow).toBe(0)
+	expect(ending.flare).toBe(0)
+	expect(Object.values(ending.pop).every((pop) => pop === 0)).toBe(true)
+	expect(lanternIdleMoment(lanternIdleDelay + 3.85)).toBeNull()
+
+	// The page stays calm for a long while, then he counts again.
+	for (let t = 4; t < 40; t += 0.25) {
+		expect(lanternIdleMoment(lanternIdleDelay + t)).toBeNull()
+	}
+	expect(lanternIdleMoment(lanternIdleDelay + 40.7)?.pop.memory).toBeCloseTo(
+		1,
+		6,
+	)
+})
+
+test('Kody turns to look at a marble but never turns his back', () => {
+	const lookLimit = (32 * Math.PI) / 180
+	const nodLimit = (20 * Math.PI) / 180
+	// Right and up are positive, as rotate-y and rotate-x turn #kody in GSS.
+	const right = kodyGaze({ x: 0.4, y: -0.14, z: 0.3 })
+	expect(right.look).toBeGreaterThan(0.3)
+	expect(right.nod).toBeCloseTo(0, 9)
+	const above = kodyGaze({ x: 0, y: 0.3, z: 0.3 })
+	expect(above.look).toBeCloseTo(0, 9)
+	expect(above.nod).toBeGreaterThan(0.3)
+	expect(kodyGaze({ x: 0, y: -0.5, z: 0.4 }).nod).toBeLessThan(0)
+
+	// Behind him, he glances over his shoulder instead.
+	const behind = kodyGaze({ x: -0.5, y: 0.45, z: -0.45 })
+	expect(behind.look).toBeLessThan(0)
+	for (const body of [
+		{ position: { x: -0.5, y: 0.45, z: -0.45 } },
+		...createLanternOrbBodies(),
+	]) {
+		const gaze = kodyGaze(body.position)
+		expect(Math.abs(gaze.look)).toBeLessThanOrEqual(lookLimit)
+		expect(Math.abs(gaze.nod)).toBeLessThanOrEqual(nodLimit)
+	}
 })

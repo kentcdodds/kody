@@ -1,8 +1,9 @@
 /* Kody's lantern in 3D: brass hardware around a glass globe, Kody with a
    candle flame on his head, six primitive marbles, and eddies of sparks.
    landing-lantern-3d-engine.ts drives the turn (--yaw), every orb's
-   position, size, and glow, and the page and flame colors, so the scene
-   itself only animates the flame's flicker, the sparks, and Kody's blink.
+   position, size, and glow, the page and flame colors, and Kody's idle
+   moment (--look, --nod), so the scene itself only animates the flame's
+   flicker, the sparks, and Kody's blink.
 
    The globe's glow is the scene background: a radial glow centered on the
    flame, so it stays put while the lantern turns. The cap and the base are
@@ -20,6 +21,8 @@
 @property --halo { syntax: "<color>"; inherits: false; initial-value: #f6dcb8; }
 @property --sparkle { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --flame { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --look { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --nod { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 
 @property --memory-x { syntax: "<number>"; inherits: false; initial-value: -0.38; }
 @property --memory-y { syntax: "<number>"; inherits: false; initial-value: 0.475; }
@@ -219,7 +222,7 @@ scene {
 #glints { filter: bloom(1.3, 18px); }
 
 /* Kody, a grey koala, faces the camera whichever way the lantern turns. */
-#kody { translate: 0 -0.14 0.04; }
+#kody { translate: 0 -0.14 0.04; rotate-y: var(--look); rotate-x: var(--nod); }
 #head, .ear { color: #6c6f7c; material: jelly(0.9); }
 #head { radius: 0.13; }
 .ear { radius: 0.07; translate: calc(sibling-index() * 0.25 - 0.375) 0.085 -0.02; }

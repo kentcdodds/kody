@@ -6,8 +6,9 @@ import {
 /**
  * Motion for the 3D lantern (landing-lantern-3d.gss). Pure math, no DOM:
  * the camera projection that keeps the HTML orb buttons on the painted
- * orbs, the turntable orbit, the orbs floating inside the globe, and the
- * frame-rate checks behind the warm-up and the adaptive resolution.
+ * orbs, the turntable orbit, the orbs floating inside the globe, Kody's
+ * idle moment, and the frame-rate checks behind the warm-up and the
+ * adaptive resolution.
  *
  * Orbs live in the lantern's own frame (`local`), so they turn with it.
  * `localToWorld` applies the same turn the scene gives the bail
@@ -51,6 +52,9 @@ const cavity = { radius: 0.86, top: 0.66, bottom: -0.64 } as const
  *  lantern's axis. He never turns, but on the axis the same capsule holds
  *  in the lantern's frame at every turn. */
 const kody = { bottom: -0.26, top: 0.32, radius: 0.2 } as const
+
+/** Kody's head, which his gaze turns about. */
+const kodyHead = { x: 0, y: -0.14, z: 0.04 } as const
 
 /** Top to bottom in the order of the word list, in a ring round Kody. The
  *  orbs to the left of him sit over his flame or under his chin, so the
@@ -595,6 +599,83 @@ function bounce(body: LanternOrbBody, normal: Vec3): Vec3 {
 	return sub(body.velocity, scaleVec(normal, outward * keep))
 }
 
+/** Seconds the lantern sits untouched before Kody's idle moment, and
+ *  between moments after that. */
+export const lanternIdleDelay = 10
+const idleRepeat = 40
+const idleLength = 3.8
+/** When the first orb pops, seconds into the moment, then each next. */
+const idleFirstPop = 0.7
+const idlePopStep = 0.36
+const idlePopHalf = 0.3
+const idleFlareAt = 3.05
+const idleBowAt = 3.1
+
+export type LanternIdleMoment = {
+	/** How far Kody's gaze is on the orbs, 0 to 1. */
+	gaze: number
+	/** The orb he looks at, as a place down the spiral: 0 is the first
+	 *  word's orb, 5 the last's, 2.5 halfway between the third and fourth. */
+	focus: number
+	/** Each orb's pop, 0 to 1. */
+	pop: Record<LandingPrimitiveId, number>
+	/** The flame's flare once he is done, 0 to 1. */
+	flare: number
+	/** His satisfied nod at the end, 0 to 1. */
+	bow: number
+}
+
+/**
+ * Kody's idle moment `restSeconds` into a rest, or null between moments.
+ * Left alone a while, he counts his marbles: his gaze runs down the spiral
+ * as each orb pops in turn, then he nods and the flame flares. It comes
+ * once after `lanternIdleDelay`, then rarely, so the page stays calm.
+ */
+export function lanternIdleMoment(
+	restSeconds: number,
+): LanternIdleMoment | null {
+	if (restSeconds < lanternIdleDelay) return null
+	const t = (restSeconds - lanternIdleDelay) % idleRepeat
+	if (t >= idleLength) return null
+	const last = landingPrimitiveIds.length - 1
+	const pop = Object.fromEntries(
+		landingPrimitiveIds.map((id, index) => [
+			id,
+			bump(t, idleFirstPop + index * idlePopStep, idlePopHalf),
+		]),
+	) as Record<LandingPrimitiveId, number>
+	return {
+		gaze:
+			smooth(clamp(t / 0.6, 0, 1)) *
+			(1 - smooth(clamp((t - (idleLength - 1)) / 0.8, 0, 1))),
+		// A beat ahead of each pop: eyes lead.
+		focus: clamp((t - idleFirstPop + 0.12) / idlePopStep, 0, last),
+		pop,
+		flare: bump(t, idleFlareAt, 0.6),
+		bow: bump(t, idleBowAt, 0.24),
+	}
+}
+
+const gazeLookLimit = 32 * degrees
+const gazeNodLimit = 20 * degrees
+
+/** The look (`rotate-y`, right is positive) and nod (`rotate-x`, up is
+ *  positive) that point Kody's face at a world point. He cannot look
+ *  behind himself: a point behind him gets a glance to that side. */
+export function kodyGaze(target: Vec3) {
+	const dx = target.x - kodyHead.x
+	const dy = target.y - kodyHead.y
+	const ahead = Math.max(target.z - kodyHead.z, 0) + 0.3
+	return {
+		look: clamp(Math.atan2(dx, ahead), -gazeLookLimit, gazeLookLimit),
+		nod: clamp(
+			Math.atan2(dy, Math.hypot(dx, ahead)),
+			-gazeNodLimit,
+			gazeNodLimit,
+		),
+	}
+}
+
 /**
  * Warm-up: before the crossfade, the scene has to show it keeps up. Past
  * the first frames (shader warm-up), it gets a short window at full
@@ -832,9 +913,19 @@ function clampDt(dtSeconds: number) {
 	return Math.min(Math.max(dtSeconds, 0), 1 / 30)
 }
 
+function clamp(value: number, min: number, max: number) {
+	return Math.min(max, Math.max(min, value))
+}
+
 /** Smoothstep on 0 to 1. */
 function smooth(t: number) {
 	return t * t * (3 - 2 * t)
+}
+
+/** A smooth hill: 1 at `centre`, 0 from `half` away on either side. */
+function bump(t: number, centre: number, half: number) {
+	const offset = Math.abs(t - centre) / half
+	return offset >= 1 ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * offset)
 }
 
 function add(a: Vec3, b: Vec3): Vec3 {
