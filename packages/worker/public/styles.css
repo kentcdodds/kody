@@ -1766,6 +1766,65 @@ html.is-settled {
 	outline-offset: 3px;
 }
 
+/* While the 3D lantern is live its words follow the orbs: each dot and
+   word take the row their orb's height ranks, and the list centres on the
+   glass (`lantern-3d-leaders.ts` writes both). Only the dot and the word
+   move, so the panel stays under the list and an emptied row cannot catch
+   the pointer. The lines break around the orbs they pass, so they only
+   fade a little inside the glass, and they run darker on a light page. */
+.landing-primitives[data-leaders='3d'] .landing-primitives-words {
+	translate: 0 var(--labels-drop, 0px);
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitive {
+	pointer-events: none;
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitive-dot,
+.landing-primitives[data-leaders='3d'] .landing-primitive-word {
+	translate: 0 var(--label-shift, 0px);
+	pointer-events: auto;
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitives-leaders {
+	mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.8) 70%,
+		black 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.8) 70%,
+		black 100%
+	);
+}
+
+.landing-primitives[data-leaders='3d'] .landing-leader-base {
+	stroke: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+	stroke-width: 1.6;
+	opacity: 0.72;
+}
+
+.landing-primitives[data-leaders='3d']
+	.landing-leader[data-open]
+	.landing-leader-base {
+	stroke-width: 2.2;
+	opacity: 1;
+}
+
+.landing-leader-end {
+	fill: var(--primitive-color);
+	stroke: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+	stroke-width: 1.5;
+	transition: opacity 0.2s ease;
+}
+
+.landing-leader-end[data-hidden] {
+	opacity: 0;
+}
+
 @keyframes landing-lantern-3d-in {
 	from {
 		opacity: 0;
@@ -1788,6 +1847,24 @@ html.is-settled {
 
 	.landing-lantern-3d-spin:hover svg {
 		rotate: 180deg;
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitives-words {
+		transition: translate 0.6s var(--ease-out);
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitive-dot {
+		transition:
+			box-shadow 0.2s ease,
+			opacity 0.2s ease,
+			translate 0.45s var(--ease-out);
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitive-word {
+		transition:
+			color 0.2s ease,
+			text-decoration-color 0.2s ease,
+			translate 0.45s var(--ease-out);
 	}
 }
 

@@ -19,6 +19,7 @@ import {
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
 import { LandingLantern3d } from '#client/lantern-3d/landing-lantern-3d.tsx'
+import { createLanternLeaders } from '#client/lantern-3d/lantern-3d-leaders.ts'
 import { hoverPointer } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
@@ -46,11 +47,15 @@ function leaderFollow() {
 	return ref((node: Element, signal: AbortSignal) => {
 		const svg = node.querySelector<SVGSVGElement>('.landing-primitives-leaders')
 		const stage = node.querySelector<HTMLElement>('.landing-primitives-stage')
-		if (!svg || !stage) return
+		if (!svg || !stage || !(node instanceof HTMLElement)) return
 		const words = node.querySelector<HTMLElement>('.landing-primitives-words')
+		const tracked = createLanternLeaders(node, svg)
 
 		const draw = () => {
-			if (getComputedStyle(svg).display === 'none') return
+			if (getComputedStyle(svg).display === 'none') {
+				tracked.reset()
+				return
+			}
 			const origin = stage.getBoundingClientRect()
 			if (origin.width === 0) return
 			svg.setAttribute('viewBox', `0 0 ${origin.width} ${origin.height}`)
@@ -73,6 +78,13 @@ function leaderFollow() {
 					`${art.width * landingLanternGlass.r}px`,
 				)
 			}
+			// The live 3D lantern turns its orbs, so its words follow them.
+			if (node.querySelector('.landing-lantern-3d[data-stage="live"]')) {
+				tracked.draw(origin)
+				svg.dataset.ready = ''
+				return
+			}
+			tracked.reset()
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
 				const dot = node.querySelector<HTMLElement>(`[data-dot="${id}"]`)
