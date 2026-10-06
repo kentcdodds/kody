@@ -381,6 +381,7 @@ test('rewrite rebinds esbuild __esm package-runtime inits and storage names', ()
 	// `var packageStorage5;` + assignment inside init_<hex>(). Stripping that
 	// section without re-emitting the init and renamed storage binding leaves
 	// retained author modules with ReferenceError under local workerd.
+	// Esbuild also renames colliding factory helpers (`…Storage` → `…Storage2`).
 	const initName =
 		'init_d646661662d346238642d613236612d616461393339323234303331'
 	const source = `import { kody, createAuthenticatedFetch, email } from "./dep-runtime.js";
@@ -390,7 +391,8 @@ function __kodyOptionalRuntimeFunctionExport(exportName) {
   return () => {};
 }
 function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
-function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
+function __kodyCreatePackageBoundStorage2(id) { return () => ({ id }); }
+function __kodyCreatePackageBoundSecrets2(id) { return { get: async () => "", has: async () => false }; }
 var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
 var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
 var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
@@ -400,8 +402,8 @@ var packageStorage5;
 var packageSecrets5;
 var ${initName} = __esm({
   "virtual:.__kody_virtual__/package-runtime/${packageId}.js"() {
-    packageStorage5 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
-    packageSecrets5 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+    packageStorage5 = __kodyCreatePackageBoundStorage2(${JSON.stringify(packageId)});
+    packageSecrets5 = __kodyCreatePackageBoundSecrets2(${JSON.stringify(packageId)});
   }
 });
 

@@ -178,15 +178,16 @@ const packageBoundFactoryPatterns: ReadonlyArray<{
 	kind: PackageBoundBindingKind
 	rhs: RegExp
 }> = [
-	{ kind: 'packageStorage', rhs: /__kodyCreatePackageBoundStorage\s*\(/ },
-	{ kind: 'packageSecrets', rhs: /__kodyCreatePackageBoundSecrets\s*\(/ },
+	// Esbuild renames colliding inlined factories (`…Storage` → `…Storage2`).
+	{ kind: 'packageStorage', rhs: /__kodyCreatePackageBoundStorage\d*\s*\(/ },
+	{ kind: 'packageSecrets', rhs: /__kodyCreatePackageBoundSecrets\d*\s*\(/ },
 	{
 		kind: 'createAuthenticatedFetch',
-		rhs: /__kodyCreatePackageBoundAuthenticatedFetch\s*\(/,
+		rhs: /__kodyCreatePackageBoundAuthenticatedFetch\d*\s*\(/,
 	},
 	{
 		kind: 'oauthClientCredentials',
-		rhs: /__kodyCreatePackageBoundOauthClientCredentials\s*\(/,
+		rhs: /__kodyCreatePackageBoundOauthClientCredentials\d*\s*\(/,
 	},
 ]
 
