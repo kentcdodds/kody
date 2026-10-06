@@ -446,6 +446,15 @@ test('warm platform contract checks perform zero D1/KV loads until invalidation 
 		packageName: '@kody/sentry-triage',
 	})
 	seedFixtures({ 'platform-owner': platformFixture })
+	invalidateInvokeContractFreshness({
+		userId: 'platform-owner',
+		packageIdOrKodyIds: [
+			platformFixture.savedPackage.id,
+			platformFixture.savedPackage.kodyId,
+			`kody:${platformFixture.savedPackage.name}`,
+		],
+		sourceId: platformFixture.source.id,
+	})
 	const check = () =>
 		runContractCheck({
 			userId: 'platform-owner',

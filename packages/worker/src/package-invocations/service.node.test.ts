@@ -764,6 +764,28 @@ test('invokePackageSubscription uses the normal capability registry with package
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockRejectedValueOnce(
 		new Error('KV timeout'),
 	)
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: {
+			id: 'artifact-subscription-1',
+			publishedCommit: 'commit-transient',
+		},
+		artifact: {
+			version: 1,
+			kind: 'module',
+			artifactName: 'subscription:email.message.received',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-transient',
+			entryPoint: 'src/email-message-received.ts',
+			mainModule: 'dist/subscription.js',
+			modules: {
+				'dist/subscription.js':
+					'export default async function run(){ return { ok: true } }',
+			},
+			dependencies: [],
+			packageContext,
+			createdAt: '2026-04-27T00:00:00.000Z',
+		},
+	})
 	expect(await deliver('message-transient')).toMatchObject({
 		status: 503,
 		body: { error: { code: 'artifact_preparation_failed' } },
