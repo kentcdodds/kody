@@ -11,7 +11,9 @@ import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
  *
  * pre-push also runs skills-lock:check when the push changes skills-lock.json
  * or a path under .agents/skills/, and when the pushed paths cannot be listed.
- * Skill files are markdown, so a skill-only push does not run test:push.
+ * Markdown skill files are docs-only, so they do not run test:push.
+ * skills-lock.json alone does not either. Executable files under
+ * .agents/skills/ still run test:push.
  *
  * Rename detection is off so a source file renamed to markdown still lists
  * the deleted path.
@@ -187,15 +189,10 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 		}
 	}
 	const skillsLock = paths.some(isSkillsLockHookPath)
-	// skills-lock.json is not markdown, but a push of only the lock and skill
-	// files has no application code. test:push still runs when a real source
-	// path is in the same push.
-	if (
-		paths.every(
-			(filePath) =>
-				isDocsOnlyHookPath(filePath) || isSkillsLockHookPath(filePath),
-		)
-	) {
+	// skills-lock.json is not markdown. Markdown under .agents/skills/ is
+	// already docs-only. Executable skill scripts (.mjs, tests) are not, so
+	// they still run test:push.
+	if (paths.every(skipsPrePushUnitTests)) {
 		if (skillsLock) {
 			return {
 				runInstallCheck: false,
@@ -232,6 +229,13 @@ export function isSkillsLockHookPath(filePath: string) {
 	return (
 		normalized === 'skills-lock.json' ||
 		normalized.startsWith('.agents/skills/')
+	)
+}
+
+function skipsPrePushUnitTests(filePath: string) {
+	return (
+		isDocsOnlyHookPath(filePath) ||
+		normalizeHookPath(filePath) === 'skills-lock.json'
 	)
 }
 
