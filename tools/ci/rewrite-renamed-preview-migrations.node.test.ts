@@ -86,6 +86,26 @@ test('planRenamedMigrationRewrites skips when git history is gone (no content-bl
 	])
 })
 
+test('planRenamedMigrationRewrites skips matching slug when replacement adds SQL and history is gone', () => {
+	// Same kebab slug, additional statements — without recoverable content we
+	// must not rewrite, or preview would treat the new SQL as already applied.
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
+		currentFiles: [
+			digest(
+				'0075-platform-oauth-app-visibility.sql',
+				'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\nALTER TABLE oauth_apps ADD COLUMN visibility_set_at INTEGER;\n',
+			),
+		],
+		resolveHistoricalContent: () => null,
+	})
+
+	expect(plan.rewrites).toEqual([])
+	expect(plan.skipped).toHaveLength(1)
+	expect(plan.skipped[0]?.name).toBe('0074-platform-oauth-app-visibility.sql')
+	expect(plan.skipped[0]?.reason).toMatch(/use reset-d1/)
+})
+
 test('planRenamedMigrationRewrites skips when content changed or history cannot match', () => {
 	const plan = planRenamedMigrationRewrites({
 		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
