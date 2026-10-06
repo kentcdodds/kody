@@ -708,7 +708,7 @@ Jobs use two Durable Object roles across workers:
   jobs, and dedicated storage inspection capabilities
 
 Each `JobManager` alarm processes at most `maxDueJobsPerAlarm` due jobs
-(`packages/worker/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
+(`packages/shared/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
 jobs remain after a run, the post-run alarm resync arms a near-immediate
 follow-up alarm so large backlogs drain across multiple short invocations
 instead of one Durable Object wake.
@@ -1367,7 +1367,7 @@ on write unless a migration backfills existing rows.
 - `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`, and
   `jobs.repo_check_policy_json`
   (`packages/jobs-worker/migrations/0001-jobs-init.sql`,
-  `packages/worker/src/jobs/repo.ts`) rely on parser and normalizer
+  `packages/shared/src/jobs/repo.ts`) rely on parser and normalizer
   compatibility. Package jobs persist both `storageContext.appId` for value
   scope and `storageContext.packageId` for package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`

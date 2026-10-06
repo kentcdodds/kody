@@ -181,6 +181,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run docs:check-no-packages-invoke
 
+      - name: 📚 Docs (file refs)
+        if: ${{ !cancelled() }}
+        run: npm run docs:check-file-refs
+
+      - name: 🧷 Skills lock
+        if: ${{ !cancelled() }}
+        run: npm run skills-lock:check
+
       - name: 🧜 Mermaid
         if: ${{ !cancelled() }}
         run: npm run mermaid:check

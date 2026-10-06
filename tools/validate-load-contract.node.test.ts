@@ -42,6 +42,15 @@ test('validate runs worker-startup-time:check only after the parallel phase', ()
 	expect(concurrentPortion).toContain('worker-startup-bundles:check')
 })
 
+test('validate runs skills-lock and markdown file-ref checks in the parallel phase', () => {
+	const validate = readValidateScript()
+	const { legs, serialTail } = concurrentValidateLegs(validate)
+	expect(legs).toContain('npm run skills-lock:check')
+	expect(legs).toContain('npm run docs:check-file-refs')
+	expect(serialTail).not.toContain('skills-lock:check')
+	expect(serialTail).not.toContain('docs:check-file-refs')
+})
+
 test('validate sets KODY_VALIDATE_LOAD=1 on the test-workers leg only', () => {
 	const validate = readValidateScript()
 	const { legs, serialTail } = concurrentValidateLegs(validate)

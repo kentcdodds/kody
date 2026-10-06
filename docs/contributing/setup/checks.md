@@ -19,13 +19,17 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `git push` runs the Husky `pre-push` hook. It executes `npm run test:push`
   (`CI=1` `test:node` + `test:workers`) when any updated ref changes a path that
   is not docs-only, or when the pushed paths cannot be listed. A docs-only range
-  skips the suites. Deleting a remote branch skips them. An update diffs the
-  remote tip against the local tip, so a later docs-only push does not retest
-  commits already on the remote. A new branch diffs against the merge base of
-  `origin/HEAD`, `origin/main`, or `main` (never the branch being created).
-  Those suites are the same Nx targets the CI Node / Workers jobs run, so a
-  remote-cache hit is possible after a push that runs them. Bundled guides and
-  other markdown are docs-only, so the local suites skip them.
+  skips the suites. A push that changes `skills-lock.json` or any path under
+  `.agents/skills/` also runs `npm run skills-lock:check`, including when the
+  range is otherwise docs-only (skill files are markdown, so they do not run
+  `test:push` on their own). An unreadable push path list runs that check too.
+  Deleting a remote branch skips the suites and the skills-lock check. An update
+  diffs the remote tip against the local tip, so a later docs-only push does not
+  retest commits already on the remote. A new branch diffs against the merge
+  base of `origin/HEAD`, `origin/main`, or `main` (never the branch being
+  created). Those suites are the same Nx targets the CI Node / Workers jobs run,
+  so a remote-cache hit is possible after a push that runs them. Bundled guides
+  and other markdown are docs-only, so the local suites skip them.
   `npm run validate` and CI run those suites for every pull request. Playwright
   E2E stays in `npm run validate` and the CI E2E job. The push hook stops short
   of that suite because Playwright E2E is heavier than the unit gate, and a
@@ -67,7 +71,8 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `worker-startup-bundles:check`, `primitives:check`, `migrations:check`,
   `deploy-guardrails:check`, `workflows:check`,
   `origin-production-exports:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `docs:check-no-packages-invoke`, `mermaid:check`,
+  `docs:check-decisions`, `docs:check-no-packages-invoke`,
+  `docs:check-file-refs`, `skills-lock:check`, `mermaid:check`,
   `slop-ratchet:check`, `knip`, `audit:prod`, `lockfile:check`, and
   `overrides:check` in parallel, reporting every failure (sibling checks are not
   aborted on the first failure, including when one of the docs or mermaid checks
@@ -98,6 +103,19 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `npm install` rewrites `package-lock.json` for that drift (including an
   optional peer). The check keeps a Cloud Agent environment install from leaving
   a dirty lockfile on a fresh checkout.
+- `npm run skills-lock:check` (`tools/check-skills-lock.ts`) fails when
+  `skills-lock.json` drifts from the committed skill folders it records.
+  `ship-pr` must stay a repo-owned local skill (so `skills update` does not
+  reinstall it from kentcdodds/kcd-skills) and its `computedHash` must match the
+  folder hash. Edit the skill and refresh `computedHash`, or the check fails.
+- `npm run docs:check-file-refs` (`tools/check-markdown-file-refs.ts`) fails
+  when markdown cites a repo file that is not in the tree. Inline code paths
+  under `packages/`, `docs/`, `tools/`, `e2e/`, `.agents/`, or `.github/` are
+  checked when their parent directory exists, and relative links are checked
+  always. Generated Wrangler configs (`wrangler-*.generated.json` and anything
+  under `.wrangler/`) and local `.env` files are ignored. A path the same line
+  names as absent is ignored. Example trees whose parent directory is not in the
+  repo are ignored.
 - `npm run overrides:check` fails when a root `package.json` override is not
   documented in [dependency overrides](../dependency-overrides.md), when that
   doc keeps a section for a removed override, or when `package.json` repeats a

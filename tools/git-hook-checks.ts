@@ -9,6 +9,10 @@ import { resolveNpmCommand, isExecutedDirectly } from './node-runtime.ts'
  * a comment in a source file, keeps the full check for that hook. An
  * unreadable diff fails closed and runs the check.
  *
+ * pre-push also runs skills-lock:check when the push changes skills-lock.json
+ * or a path under .agents/skills/, and when the pushed paths cannot be listed.
+ * Skill files are markdown, so a skill-only push does not run test:push.
+ *
  * Rename detection is off so a source file renamed to markdown still lists
  * the deleted path.
  */
@@ -28,6 +32,7 @@ export type GitHookCheckPlan = {
 	runTypecheck: boolean
 	runMigrationsCheck: boolean
 	runUnitTests: boolean
+	runSkillsLockCheck: boolean
 	summary: string
 }
 
@@ -85,6 +90,7 @@ export function hookScripts(plan: GitHookCheckPlan) {
 	if (plan.runInstallCheck) scripts.push('install:check')
 	if (plan.runTypecheck) scripts.push('typecheck')
 	if (plan.runMigrationsCheck) scripts.push('migrations:check')
+	if (plan.runSkillsLockCheck) scripts.push('skills-lock:check')
 	if (plan.runUnitTests) scripts.push('test:push')
 	return scripts
 }
@@ -143,6 +149,7 @@ function planPreCommit(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 			runTypecheck: true,
 			runMigrationsCheck: true,
 			runUnitTests: false,
+			runSkillsLockCheck: false,
 			summary:
 				'pre-commit: running install:check, typecheck, and migrations:check (could not list staged paths)',
 		}
@@ -153,6 +160,7 @@ function planPreCommit(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: false,
+			runSkillsLockCheck: false,
 			summary: `pre-commit: skipping install:check, typecheck, and migrations:check (${docsOnlySummary(paths)})`,
 		}
 	}
@@ -161,6 +169,7 @@ function planPreCommit(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 		runTypecheck: true,
 		runMigrationsCheck: true,
 		runUnitTests: false,
+		runSkillsLockCheck: false,
 		summary: `pre-commit: running install:check, typecheck, and migrations:check (${codePathSummary(paths)})`,
 	}
 }
@@ -172,15 +181,29 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: true,
-			summary: 'pre-push: running test:push (could not list pushed paths)',
+			runSkillsLockCheck: true,
+			summary:
+				'pre-push: running test:push and skills-lock:check (could not list pushed paths)',
 		}
 	}
+	const skillsLock = paths.some(isSkillsLockHookPath)
 	if (paths.every(isDocsOnlyHookPath)) {
+		if (skillsLock) {
+			return {
+				runInstallCheck: false,
+				runTypecheck: false,
+				runMigrationsCheck: false,
+				runUnitTests: false,
+				runSkillsLockCheck: true,
+				summary: `pre-push: running skills-lock:check (${skillsLockPathSummary(paths)})`,
+			}
+		}
 		return {
 			runInstallCheck: false,
 			runTypecheck: false,
 			runMigrationsCheck: false,
 			runUnitTests: false,
+			runSkillsLockCheck: false,
 			summary: `pre-push: skipping test:push (${docsOnlySummary(paths)})`,
 		}
 	}
@@ -189,8 +212,24 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 		runTypecheck: false,
 		runMigrationsCheck: false,
 		runUnitTests: true,
-		summary: `pre-push: running test:push (${codePathSummary(paths)})`,
+		runSkillsLockCheck: skillsLock,
+		summary: skillsLock
+			? `pre-push: running skills-lock:check and test:push (${codePathSummary(paths)})`
+			: `pre-push: running test:push (${codePathSummary(paths)})`,
 	}
+}
+
+export function isSkillsLockHookPath(filePath: string) {
+	const normalized = normalizeHookPath(filePath)
+	return (
+		normalized === 'skills-lock.json' ||
+		normalized.startsWith('.agents/skills/')
+	)
+}
+
+function skillsLockPathSummary(paths: ReadonlyArray<string>) {
+	const skillPaths = paths.filter(isSkillsLockHookPath).sort()
+	return skillPaths[0] ?? 'skills-lock.json'
 }
 
 function docsOnlySummary(paths: ReadonlyArray<string>) {

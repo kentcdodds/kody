@@ -453,7 +453,7 @@ for when each flavor is appropriate.
 
 Registry invariants (duplicate capability names, domain/capability mismatches,
 duplicate domain registration) are covered in
-`packages/worker/src/mcp/capabilities/build-capability-registry.workers.test.ts`.
+`packages/worker/src/mcp/capabilities/build-capability-registry.node.test.ts`.
 
 Use filename suffixes to choose the Vitest project:
 
