@@ -17,7 +17,8 @@ function readModuleSource(
 
 const directKodyMcpPattern =
 	/\bkody\s*\.\s*mcp\b|\bkody\s*\[\s*['"]mcp['"]\s*\]/
-const staticImportFromPattern = /\bfrom\s+['"]([^'"]+)['"]/g
+const runtimeImportSpecifierPattern =
+	/(?:\bfrom\s+|\brequire\s*\(\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]/g
 const mcpAccessPattern = /\.\s*mcp\b|\[\s*['"]mcp['"]\s*\]/
 
 /**
@@ -44,7 +45,7 @@ function isKodyRuntimeImportSpecifier(specifier: string): boolean {
 }
 
 function sourceImportsKodyRuntime(source: string): boolean {
-	for (const match of source.matchAll(staticImportFromPattern)) {
+	for (const match of source.matchAll(runtimeImportSpecifierPattern)) {
 		const specifier = match[1]
 		if (specifier != null && isKodyRuntimeImportSpecifier(specifier)) {
 			return true
@@ -61,7 +62,8 @@ function sourceImportsKodyRuntime(source: string): boolean {
  *
  * Also treats `import { kody as api } from 'kody:runtime'` plus `api.mcp`
  * as a hit (including after the bundler rewrites the specifier to a virtual
- * runtime path): the direct `kody.mcp` regex misses renamed bindings.
+ * runtime path, and for `require()` / dynamic `import()`): the direct
+ * `kody.mcp` regex misses renamed bindings.
  */
 export function modulesReferenceKodyMcp(modules: WorkerLoaderModules): boolean {
 	return Object.values(modules).some((module) => {

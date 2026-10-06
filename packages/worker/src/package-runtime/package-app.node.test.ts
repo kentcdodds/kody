@@ -295,6 +295,18 @@ test('modulesReferenceKodyMcp detects authored kody.mcp access', async () => {
 				'import { kody as api } from "../.__kody_virtual__/public-runtime.js"\nexport default { async fetch() { return new Response("ok") } }',
 		}),
 	).toBe(false)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.cjs':
+				'const { kody: api } = require("../.__kody_virtual__/public-runtime.js")\nmodule.exports = { async fetch() { const { home } = api.mcp; return home } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'export default { async fetch() { const { kody: api } = await import("../.__kody_virtual__/public-runtime.js"); return api.mcp.home.ping({}) } }',
+		}),
+	).toBe(true)
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
