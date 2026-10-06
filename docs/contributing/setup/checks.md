@@ -20,21 +20,21 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   (`CI=1` `test:node` + `test:workers`) when any updated ref changes a path that
   is not docs-only, or when the pushed paths cannot be listed. A docs-only range
   skips the suites. A push that changes `skills-lock.json` or any path under
-  `.agents/skills/` also runs `npm run skills-lock:check`, including when the
-  range is otherwise docs-only (skill files are markdown, so they do not run
-  `test:push` on their own). An unreadable push path list runs that check too.
-  Deleting a remote branch skips the suites and the skills-lock check. An update
-  diffs the remote tip against the local tip, so a later docs-only push does not
-  retest commits already on the remote. A new branch diffs against the merge
-  base of `origin/HEAD`, `origin/main`, or `main` (never the branch being
-  created). Those suites are the same Nx targets the CI Node / Workers jobs run,
-  so a remote-cache hit is possible after a push that runs them. Bundled guides
-  and other markdown are docs-only, so the local suites skip them.
-  `npm run validate` and CI run those suites for every pull request. Playwright
-  E2E stays in `npm run validate` and the CI E2E job. The push hook stops short
-  of that suite because Playwright E2E is heavier than the unit gate, and a
-  failed e2e leg skips the unit gate when the push is retried with
-  `--no-verify`. Bundler artifacts live under
+  `.agents/skills/` also runs `npm run skills-lock:check`. Those paths count
+  with docs for this hook: a push of only the lock, skill files, and other docs
+  skips `test:push`. A source file in the same push still runs it. An unreadable
+  push path list runs the skills-lock check too. Deleting a remote branch skips
+  the suites and the skills-lock check. An update diffs the remote tip against
+  the local tip, so a later docs-only push does not retest commits already on
+  the remote. A new branch diffs against the merge base of `origin/HEAD`,
+  `origin/main`, or `main` (never the branch being created). Those suites are
+  the same Nx targets the CI Node / Workers jobs run, so a remote-cache hit is
+  possible after a push that runs them. Bundled guides and other markdown are
+  docs-only, so the local suites skip them. `npm run validate` and CI run those
+  suites for every pull request. Playwright E2E stays in `npm run validate` and
+  the CI E2E job. The push hook stops short of that suite because Playwright E2E
+  is heavier than the unit gate, and a failed e2e leg skips the unit gate when
+  the push is retried with `--no-verify`. Bundler artifacts live under
   `src/node_modules/.kody-generated/`. Local origin development uses Vite;
   `wrangler-env.ts` still wraps D1/types and sibling worker deploys. Playwright
   sets `CLOUDFLARE_ENV=test` so Vite skips platform/runtime auxiliary workers.

@@ -171,6 +171,12 @@ test('docs-only hook paths skip expensive checks and any code path keeps them', 
 	expect(
 		plannedScripts('pre-push', [
 			'.agents/skills/ship-pr/SKILL.md',
+			'skills-lock.json',
+		]),
+	).toEqual(['skills-lock:check'])
+	expect(
+		plannedScripts('pre-push', [
+			'.agents/skills/ship-pr/SKILL.md',
 			'packages/worker/src/app.ts',
 		]),
 	).toEqual(['skills-lock:check', 'test:push'])

@@ -187,7 +187,15 @@ function planPrePush(paths: ReadonlyArray<string> | null): GitHookCheckPlan {
 		}
 	}
 	const skillsLock = paths.some(isSkillsLockHookPath)
-	if (paths.every(isDocsOnlyHookPath)) {
+	// skills-lock.json is not markdown, but a push of only the lock and skill
+	// files has no application code. test:push still runs when a real source
+	// path is in the same push.
+	if (
+		paths.every(
+			(filePath) =>
+				isDocsOnlyHookPath(filePath) || isSkillsLockHookPath(filePath),
+		)
+	) {
 		if (skillsLock) {
 			return {
 				runInstallCheck: false,

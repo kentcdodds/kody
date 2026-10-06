@@ -40,8 +40,13 @@ const skippedDirectories = new Set([
 	'.tmp',
 ])
 
-const fencePattern = /^( {0,3})(`{3,}|~{3,})/
+const fenceLinePattern = /^( {0,3})(`{3,}|~{3,})(.*)$/
 const absenceClaimPattern = /\b(?:no|not|without|missing|nonexistent)\s+$/i
+
+type OpenFence = {
+	char: string
+	length: number
+}
 const placeholderPattern = /NNNN|XXXX|kebab-name|\.\.\./
 const generatedWranglerConfigPattern = /(^|\/)wrangler-[^/]*\.generated\.json$/
 
@@ -95,15 +100,19 @@ export function collectMarkdownFileReferences(input: {
 	const markdownFile = input.relativePath.replaceAll('\\', '/')
 	const references: Array<MarkdownFileReference> = []
 	const lines = input.content.split('\n')
-	let inFence = false
+	let openFence: OpenFence | null = null
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = lines[index]?.replace(/\r$/, '') ?? ''
-		const fence = fencePattern.exec(line)
-		if (fence) {
-			inFence = !inFence
+		const fence = fenceTransition(line, openFence)
+		if (fence === 'open') {
+			openFence = fenceMarker(line)
 			continue
 		}
-		if (inFence) continue
+		if (fence === 'close') {
+			openFence = null
+			continue
+		}
+		if (openFence) continue
 		collectCodeReferences(markdownFile, index + 1, line, references)
 		collectLinkReferences(markdownFile, index + 1, line, references)
 	}
@@ -144,6 +153,38 @@ export async function checkMarkdownFileRefs(
 		},
 	})
 	return { ok: issues.length === 0, issues }
+}
+
+function fenceMarker(line: string): OpenFence | null {
+	const match = fenceLinePattern.exec(line)
+	const marker = match?.[2]
+	if (!marker) return null
+	const char = marker[0]
+	if (!char) return null
+	return { char, length: marker.length }
+}
+
+/**
+ * CommonMark: a closer uses the same character and is at least as long as the
+ * opener, with no info string. A shorter ``` inside a ```` fence stays inside.
+ */
+function fenceTransition(
+	line: string,
+	openFence: OpenFence | null,
+): 'open' | 'close' | null {
+	const match = fenceLinePattern.exec(line)
+	const marker = match?.[2]
+	if (!marker) return null
+	const char = marker[0]
+	if (char !== '`' && char !== '~') return null
+	const rest = match?.[3] ?? ''
+	if (!openFence) {
+		if (char === '`' && rest.includes('`')) return null
+		return 'open'
+	}
+	if (char !== openFence.char || marker.length < openFence.length) return null
+	if (rest.trim() !== '') return null
+	return 'close'
 }
 
 function shouldReportMissing(

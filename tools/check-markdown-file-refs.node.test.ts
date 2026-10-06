@@ -114,6 +114,20 @@ test('bare relative links resolve against the markdown file and fences are examp
 	})
 	expect(fenced).toEqual([])
 
+	const nestedFence = issuesIn({
+		content: [
+			'````md',
+			'```sh',
+			`echo \`${jobsRepo}\``,
+			'```',
+			'````',
+			'',
+		].join('\n'),
+		files: [],
+		directories: ['packages/worker/src/jobs'],
+	})
+	expect(nestedFence).toEqual([])
+
 	expect(
 		issuesIn({
 			content: 'See [home](/docs/missing.md) and [cdn](//cdn.example/a.png).',
