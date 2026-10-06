@@ -8,11 +8,13 @@ import lanternScene from './landing-lantern-3d.gss'
  */
 
 /** Fetch and decode the orb glyphs, so they are in the image cache when
- *  the scene asks for them and the orbs never show up blank. */
+ *  the scene asks for them and the orbs never show up blank. GSS loads
+ *  textures as anonymous CORS images, and the cache is keyed by CORS mode. */
 export async function preloadLanternTextures() {
 	await Promise.all(
 		lanternScene.textures.map(async (src) => {
 			const image = new Image()
+			image.crossOrigin = 'anonymous'
 			image.src = src
 			await image.decode()
 		}),
