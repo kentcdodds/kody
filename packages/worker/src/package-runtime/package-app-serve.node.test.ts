@@ -382,7 +382,7 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 	])
 })
 
-test('websocket upgrade responses keep the paired socket when Server-Timing is attached', async () => {
+test('websocket upgrade responses skip Server-Timing and keep the paired socket', async () => {
 	seedFixture()
 	const client = { kind: 'client-socket' } as unknown as WebSocket
 	// Node's Response rejects status 101; Workers still pair via `webSocket`.
@@ -405,11 +405,9 @@ test('websocket upgrade responses keep the paired socket when Server-Timing is a
 
 	expect(response.webSocket).toBe(client)
 	expect(response).toBe(upgradeResponse)
-	expect(
-		parseServerTimingHeader(response.headers.get('Server-Timing')).map(
-			(entry) => entry.name,
-		),
-	).toEqual(['resolveSavedPackage'])
+	// DO upgrade responses have immutable headers; attaching timing would throw
+	// or force an unsafe rebuild. Skip Server-Timing on websocket upgrades.
+	expect(response.headers.get('Server-Timing')).toBeNull()
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
