@@ -175,6 +175,19 @@ export default async function main(input) {
 		const ws = openWebSocket(wsUrl, cookie)
 		try {
 			await ws.opened
+			// #region agent log
+			scoopAgentDebugLogs()
+			appendFileSync(
+				'/opt/cursor/logs/debug.log',
+				`${JSON.stringify({
+					hypothesisId: 'B',
+					location: 'package-app-realtime.mcp-e2e.test.ts:opened',
+					message: 'websocket open succeeded in test',
+					data: { runId: 'post-fix', wsUrl },
+					timestamp: Date.now(),
+				})}\n`,
+			)
+			// #endregion
 		} catch (error) {
 			// #region agent log
 			scoopAgentDebugLogs()
@@ -185,6 +198,7 @@ export default async function main(input) {
 					location: 'package-app-realtime.mcp-e2e.test.ts:opened',
 					message: 'websocket open failed in test',
 					data: {
+						runId: 'post-fix',
 						error: error instanceof Error ? error.message : String(error),
 						wsUrl,
 					},
@@ -194,9 +208,6 @@ export default async function main(input) {
 			// #endregion
 			throw error
 		}
-		// #region agent log
-		scoopAgentDebugLogs()
-		// #endregion
 		expect(await ws.nextMessage()).toEqual({
 			type: 'connected',
 			facet: 'main',

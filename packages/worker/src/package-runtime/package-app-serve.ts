@@ -432,9 +432,12 @@ function agentDebugLog(
 
 /**
  * Attach request-scoped Server-Timing phases collected on the package-app
- * serve path. Clones headers so author responses stay immutable-safe. WebSocket
- * upgrade responses must keep their paired `webSocket` (status 101); rebuilding
- * them with `new Response` drops the socket and the browser never opens.
+ * serve path. Clones headers so author responses stay immutable-safe.
+ *
+ * WebSocket upgrades (status 101 with a paired `webSocket`) are returned as-is:
+ * Durable Object upgrade responses have immutable headers, so in-place
+ * `Server-Timing` throws; rebuilding without `webSocket` rejects status 101;
+ * browsers do not expose upgrade response headers to page JS the way fetch does.
  */
 function attachPackageAppServerTiming(
 	response: Response,
@@ -443,6 +446,7 @@ function attachPackageAppServerTiming(
 	// #region agent log
 	const ws = response.webSocket
 	agentDebugLog('A', 'package-app-serve.ts:attach:entry', 'attach entry', {
+		runId: 'post-fix',
 		status: response.status,
 		statusText: response.statusText,
 		serverTimingLength: serverTiming.length,
@@ -458,37 +462,29 @@ function attachPackageAppServerTiming(
 			'D',
 			'package-app-serve.ts:attach:empty',
 			'early return empty timing',
-			{ status: response.status, hasWebSocket: Boolean(ws) },
+			{
+				runId: 'post-fix',
+				status: response.status,
+				hasWebSocket: Boolean(ws),
+			},
 		)
 		// #endregion
 		return response
 	}
-	if (response.webSocket) {
+	// Skip timing on WebSocket upgrades — see function doc.
+	if (response.webSocket || response.status === 101) {
 		// #region agent log
-		let headerMutateOk = false
-		let headerMutateError: string | null = null
-		try {
-			applyServerTimingHeader(response.headers, serverTiming)
-			headerMutateOk = true
-		} catch (error) {
-			headerMutateError =
-				error instanceof Error
-					? `${error.name}: ${error.message}`
-					: String(error)
-		}
 		agentDebugLog(
 			'B',
-			'package-app-serve.ts:attach:ws-inplace',
-			'websocket branch header mutate',
+			'package-app-serve.ts:attach:ws-skip',
+			'skipping Server-Timing on websocket upgrade',
 			{
+				runId: 'post-fix',
 				status: response.status,
-				headerMutateOk,
-				headerMutateError,
-				hasServerTimingAfter: response.headers.has('Server-Timing'),
+				hasWebSocket: Boolean(ws),
 				returnedSameResponse: true,
 			},
 		)
-		if (headerMutateError) throw new Error(headerMutateError)
 		// #endregion
 		return response
 	}
@@ -496,8 +492,9 @@ function attachPackageAppServerTiming(
 	agentDebugLog(
 		'A',
 		'package-app-serve.ts:attach:rebuild',
-		'rebuilding Response without webSocket',
+		'rebuilding HTTP Response with Server-Timing',
 		{
+			runId: 'post-fix',
 			status: response.status,
 			serverTimingLength: serverTiming.length,
 			bodyNull: response.body === null,
@@ -517,6 +514,7 @@ function attachPackageAppServerTiming(
 		'package-app-serve.ts:attach:rebuilt',
 		'rebuilt response inspect',
 		{
+			runId: 'post-fix',
 			status: rebuilt.status,
 			hasWebSocketAfterRebuild: Boolean(rebuilt.webSocket),
 			hasServerTiming: rebuilt.headers.has('Server-Timing'),
@@ -611,6 +609,7 @@ export async function servePackageAppRequest(input: {
 				'package-app-serve.ts:realtime:before-connect',
 				'realtime upgrade path before connect',
 				{
+					runId: 'post-fix',
 					facet: packageRealtimePath.facet,
 					restPath: packageRealtimeRestPath,
 					serverTimingLength: serverTiming.length,
@@ -632,6 +631,7 @@ export async function servePackageAppRequest(input: {
 				'package-app-serve.ts:realtime:after-connect',
 				'connect response before attach',
 				{
+					runId: 'post-fix',
 					status: connectResponse.status,
 					hasWebSocket: Boolean(connectResponse.webSocket),
 					webSocketType:
@@ -652,6 +652,7 @@ export async function servePackageAppRequest(input: {
 				'package-app-serve.ts:realtime:after-attach',
 				'response after attach',
 				{
+					runId: 'post-fix',
 					status: attached.status,
 					hasWebSocket: Boolean(attached.webSocket),
 					sameRef: attached === connectResponse,
@@ -667,6 +668,7 @@ export async function servePackageAppRequest(input: {
 				'package-app-serve.ts:realtime:catch',
 				'realtime path threw',
 				{
+					runId: 'post-fix',
 					error:
 						error instanceof Error
 							? `${error.name}: ${error.message}`
