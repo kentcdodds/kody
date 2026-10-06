@@ -50,6 +50,14 @@ function isStaleInvocation(updatedAt: string, now: Date) {
 	return Date.parse(updatedAt) <= now.getTime() - packageInvocationStaleAfterMs
 }
 
+function readInvocationErrorCode(body: unknown): string | null {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+	const error = (body as Record<string, unknown>)['error']
+	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
+	const code = (error as Record<string, unknown>)['code']
+	return typeof code === 'string' ? code : null
+}
+
 function toResolvableLedgerRecord(
 	record: PackageInvocationLedgerRecord,
 ): ResolvableInvocationRecord {
@@ -408,12 +416,35 @@ export async function invokeSavedPackageModule(input: {
 		case 'pre-execution-denied': {
 			// Nothing ran: free the key so a later retry (quota reset, limit
 			// bump, or artifact prepare) is not stuck replaying this response.
+			// Finish the claimed run as an error with logs (do not delete it)
+			// so Activity keeps pre-execution evidence instead of a vanished
+			// zero-log attempt.
+			const releaseReason =
+				outcome.kind === 'artifact-unavailable'
+					? 'Package artifact preparation failed before execution.'
+					: 'Package invocation denied before execution.'
+			const releaseErrorCode = readInvocationErrorCode(outcome.response.body)
 			const release = await releasePackageInvocationRecord({
 				env: input.env,
 				userId: input.actor.userId,
 				invocationId: claimed.invocationId,
 				claimUpdatedAt: claimed.claimUpdatedAt,
 				handle: claimed.handle,
+				error: {
+					name: releaseErrorCode ?? outcome.kind,
+					message: releaseReason,
+				},
+				logs: [
+					startedLog,
+					{
+						level: 'error',
+						message: releaseReason,
+						fields: {
+							kind: outcome.kind,
+							...(releaseErrorCode ? { code: releaseErrorCode } : {}),
+						},
+					},
+				],
 			})
 			if (!release.released) {
 				const current = release.record

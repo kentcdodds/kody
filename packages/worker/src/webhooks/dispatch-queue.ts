@@ -1,5 +1,8 @@
+import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/infrastructure-codes.ts'
 import {
+	buildWebhookDispatchFailureLogs,
 	dispatchWebhookInvocation,
+	readWebhookInvocationError,
 	readWebhookInvocationResult,
 	recordWebhookDelivery,
 } from './delivery.ts'
@@ -21,12 +24,6 @@ import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 const webhookDispatchRetryDelaySeconds = 30
 /** Matches `kody-webhook-dispatch` consumer `max_retries` in wrangler.jsonc. */
 export const webhookDispatchMaxRetries = 10
-const retryableInvocationErrorCodes = new Set([
-	'idempotency_lookup_failed',
-	'idempotency_persistence_failed',
-	'invocation_in_progress',
-	'artifact_preparation_failed',
-])
 
 function resolveWebhookDispatchInvocation(
 	message: WebhookDispatchQueueMessage,
@@ -61,18 +58,20 @@ function resolveWebhookDispatchInvocation(
 	}
 }
 
-function readInvocationErrorCode(body: unknown): string | null {
-	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
-	const error = (body as Record<string, unknown>)['error']
-	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
-	const code = (error as Record<string, unknown>)['code']
-	return typeof code === 'string' ? code : null
+function asInvocationResponseBody(body: unknown): Record<string, unknown> {
+	if (body && typeof body === 'object' && !Array.isArray(body)) {
+		return body as Record<string, unknown>
+	}
+	return {}
 }
 
 export async function processWebhookDispatch(
 	message: WebhookDispatchQueueMessage,
 	env: Env,
+	options?: { attempts?: number },
 ): Promise<'terminal' | 'retry'> {
+	const dispatchStartedAt = new Date().toISOString()
+	const attempts = options?.attempts ?? 0
 	const resolved = resolveWebhookDispatchInvocation(message)
 	if (!resolved.ok) {
 		await recordWebhookDelivery({
@@ -84,7 +83,14 @@ export async function processWebhookDispatch(
 			error: resolved.code,
 			payloadBytes: message.payloadBytes,
 			invocationId: message.deliveryId,
-			startedAt: message.receivedAt,
+			startedAt: dispatchStartedAt,
+			receivedAt: message.receivedAt,
+			logs: [
+				{
+					level: 'error',
+					message: `Webhook dispatch rejected before invoke: ${resolved.code}`,
+				},
+			],
 			requirePersistence: true,
 		})
 		return 'terminal'
@@ -103,10 +109,40 @@ export async function processWebhookDispatch(
 			? { idempotencyHashParams: resolved.idempotencyHashParams }
 			: {}),
 	})
-	const errorCode = readInvocationErrorCode(response.body)
-	if (errorCode && retryableInvocationErrorCodes.has(errorCode)) return 'retry'
+	const retryableCode = readPreExecutionPackageInvocationInfrastructureCode({
+		status: response.status,
+		body: asInvocationResponseBody(response.body),
+	})
+	if (retryableCode) {
+		if (attempts >= webhookDispatchMaxRetries) {
+			const invocationError = readWebhookInvocationError(response.body)
+			await recordWebhookDelivery({
+				env,
+				endpoint: message.endpoint,
+				kodyId: message.packageKodyId,
+				outcome: 'failed',
+				httpStatus: 502,
+				error: 'invocation_retry_exhausted',
+				payloadBytes: message.payloadBytes,
+				invocationId: message.deliveryId,
+				startedAt: dispatchStartedAt,
+				receivedAt: message.receivedAt,
+				invocationErrorCode: invocationError.code ?? retryableCode,
+				logs: buildWebhookDispatchFailureLogs({
+					httpStatus: response.status,
+					body: response.body,
+					exhausted: true,
+					attempts,
+				}),
+				requirePersistence: true,
+			})
+			return 'terminal'
+		}
+		return 'retry'
+	}
 
 	const ok = response.status >= 200 && response.status < 300
+	const invocationError = readWebhookInvocationError(response.body)
 	await recordWebhookDelivery({
 		env,
 		endpoint: message.endpoint,
@@ -117,7 +153,17 @@ export async function processWebhookDispatch(
 		payloadBytes: message.payloadBytes,
 		invocationId: message.deliveryId,
 		result: readWebhookInvocationResult(response.body),
-		startedAt: message.receivedAt,
+		startedAt: dispatchStartedAt,
+		receivedAt: message.receivedAt,
+		...(ok
+			? {}
+			: {
+					invocationErrorCode: invocationError.code,
+					logs: buildWebhookDispatchFailureLogs({
+						httpStatus: response.status,
+						body: response.body,
+					}),
+				}),
 		requirePersistence: true,
 	})
 	return 'terminal'
@@ -147,6 +193,7 @@ export async function handleWebhookDispatchQueue(
 					endpointId: message.endpoint.id,
 					deliveryId: message.deliveryId,
 				})
+				const missingStartedAt = new Date().toISOString()
 				try {
 					await recordWebhookDelivery({
 						env,
@@ -157,7 +204,15 @@ export async function handleWebhookDispatchQueue(
 						error: 'ack_queue_payload_missing',
 						payloadBytes: message.payloadBytes,
 						invocationId: message.deliveryId,
-						startedAt: message.receivedAt,
+						startedAt: missingStartedAt,
+						receivedAt: message.receivedAt,
+						logs: [
+							{
+								level: 'error',
+								message:
+									'Ack-queue spilled webhook body was missing from ephemeral storage.',
+							},
+						],
 						requirePersistence: true,
 					})
 				} catch (error) {
@@ -174,36 +229,10 @@ export async function handleWebhookDispatchQueue(
 				queueMessage.ack()
 				continue
 			}
-			const outcome = await processWebhookDispatch(hydrated, env)
+			const outcome = await processWebhookDispatch(hydrated, env, {
+				attempts: queueMessage.attempts,
+			})
 			if (outcome === 'retry') {
-				if (queueMessage.attempts >= webhookDispatchMaxRetries) {
-					await recordWebhookDelivery({
-						env,
-						endpoint: message.endpoint,
-						kodyId: message.packageKodyId,
-						outcome: 'failed',
-						httpStatus: 502,
-						error: 'invocation_retry_exhausted',
-						payloadBytes: message.payloadBytes,
-						invocationId: message.deliveryId,
-						startedAt: message.receivedAt,
-						requirePersistence: true,
-					})
-					queueMessage.ack()
-					if (message.payloadKvKey) {
-						await deleteWebhookDispatchPayload({
-							kv: env.BUNDLE_ARTIFACTS_KV,
-							key: message.payloadKvKey,
-						}).catch((error) => {
-							console.error('webhook-dispatch-payload-delete-failed', {
-								queueMessageId: queueMessage.id,
-								endpointId: message.endpoint.id,
-								error,
-							})
-						})
-					}
-					continue
-				}
 				queueMessage.retry({ delaySeconds: webhookDispatchRetryDelaySeconds })
 			} else {
 				queueMessage.ack()

@@ -20,16 +20,16 @@ const mocks = vi.hoisted(() => ({
 	recordWebhookDelivery: vi.fn(),
 }))
 
-vi.mock('./delivery.ts', () => ({
-	dispatchWebhookInvocation: (...args: Array<unknown>) =>
-		mocks.dispatchWebhookInvocation(...args),
-	readWebhookInvocationResult: (body: unknown) =>
-		body && typeof body === 'object'
-			? (body as Record<string, unknown>)['result']
-			: undefined,
-	recordWebhookDelivery: (...args: Array<unknown>) =>
-		mocks.recordWebhookDelivery(...args),
-}))
+vi.mock('./delivery.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./delivery.ts')>()
+	return {
+		...actual,
+		dispatchWebhookInvocation: (...args: Array<unknown>) =>
+			mocks.dispatchWebhookInvocation(...args),
+		recordWebhookDelivery: (...args: Array<unknown>) =>
+			mocks.recordWebhookDelivery(...args),
+	}
+})
 
 function createMessage(): WebhookDispatchQueueMessage {
 	return {
@@ -203,7 +203,13 @@ test('queue retries incomplete terminal persistence and acks terminal outcomes',
 test('queue records a terminal failure when retryable artifact prep is exhausted', async () => {
 	mocks.dispatchWebhookInvocation.mockResolvedValue({
 		status: 503,
-		body: { ok: false, error: { code: 'artifact_preparation_failed' } },
+		body: {
+			ok: false,
+			error: {
+				code: 'artifact_preparation_failed',
+				message: 'Package artifact preparation failed before execution.',
+			},
+		},
 	})
 	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
 	const exhausted = createQueueMessage('exhausted', createMessage())
@@ -218,8 +224,76 @@ test('queue records a terminal failure when retryable artifact prep is exhausted
 			httpStatus: 502,
 			error: 'invocation_retry_exhausted',
 			invocationId: 'delivery-1',
+			invocationErrorCode: 'artifact_preparation_failed',
+			receivedAt: '2026-08-08T12:00:00.000Z',
+			logs: expect.arrayContaining([
+				expect.objectContaining({
+					level: 'error',
+					message: expect.stringMatching(/gave up after/i),
+				}),
+				expect.objectContaining({
+					level: 'error',
+					message: 'Invocation error code: artifact_preparation_failed',
+				}),
+			]),
 		}),
 	)
+})
+
+test('queue retries pre-execution conflict codes and records failed invokes with logs', async () => {
+	mocks.dispatchWebhookInvocation
+		.mockResolvedValueOnce({
+			status: 500,
+			body: {
+				ok: false,
+				error: {
+					code: 'idempotency_conflict_unresolved',
+					message: 'Package invocation disappeared while polling.',
+				},
+			},
+		})
+		.mockResolvedValueOnce({
+			status: 500,
+			body: {
+				ok: false,
+				error: {
+					code: 'invocation_failed',
+					message: 'Sandbox blew up before user code.',
+				},
+			},
+		})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+	const conflict = createQueueMessage('conflict', createMessage())
+	const failed = createQueueMessage('failed', createMessage())
+
+	await handleWebhookDispatchQueue(createBatch([conflict, failed]), {} as Env)
+
+	expect([conflict, failed].map(queueOutcome)).toEqual([retried, acked])
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledTimes(1)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: 'failed',
+			httpStatus: 502,
+			error: 'invocation_status_500',
+			invocationErrorCode: 'invocation_failed',
+			receivedAt: '2026-08-08T12:00:00.000Z',
+			logs: expect.arrayContaining([
+				expect.objectContaining({
+					level: 'error',
+					message: 'Webhook export invocation failed with HTTP 500.',
+				}),
+				expect.objectContaining({
+					level: 'error',
+					message: 'Invocation error code: invocation_failed',
+				}),
+			]),
+		}),
+	)
+	const recorded = mocks.recordWebhookDelivery.mock.calls[0]?.[0] as {
+		startedAt: string
+		receivedAt: string
+	}
+	expect(recorded.startedAt).not.toBe(recorded.receivedAt)
 })
 
 test('webhook queue parser rejects malformed isolation and delivery fields', () => {

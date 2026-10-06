@@ -817,7 +817,9 @@ export async function finishPackageInvocationRecord(input: {
 
 /**
  * Release a claim whose execution never started. Deletes the still-`in_progress`
- * ledger row and the attempt's `running` run row.
+ * ledger row so retries are not poisoned, and finishes the attempt's `running`
+ * run as an error with diagnostic logs (so Activity keeps pre-execution
+ * evidence instead of a vanished zero-log attempt).
  */
 export async function releasePackageInvocationRecord(input: {
 	env: Env
@@ -825,17 +827,40 @@ export async function releasePackageInvocationRecord(input: {
 	invocationId: string
 	claimUpdatedAt: string
 	handle: RunRecordHandle | null
+	logs?: Array<RunRecordLogInput>
+	error?: unknown
 }): Promise<{
 	released: boolean
 	record: PackageInvocationLedgerRecord | null
 }> {
+	const handle = input.handle
+	let run: RunLogRowInput | null = null
+	if (handle) {
+		const finishedAt = new Date().toISOString()
+		const durationMs = Math.max(
+			0,
+			Date.parse(finishedAt) - Date.parse(handle.startedAt),
+		)
+		const { errorName, errorMessage } = getErrorFields(input.error)
+		run = buildRunRow({
+			handle,
+			status: 'error',
+			finishedAt,
+			durationMs,
+			errorName,
+			errorMessage,
+			updatedAt: finishedAt,
+		})
+	}
 	return await runLogRpc({
 		env: input.env,
 		userId: input.userId,
 	}).releasePackageInvocation({
 		invocationId: input.invocationId,
 		claimUpdatedAt: input.claimUpdatedAt,
-		runId: input.handle?.id ?? null,
+		runId: handle?.id ?? null,
+		run,
+		logs: run ? normalizeLogs(input.logs) : [],
 	})
 }
 

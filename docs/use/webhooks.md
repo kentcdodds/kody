@@ -265,7 +265,10 @@ package settings.
   export runs in the background. Bodies use the same **1 MB** cap as sync;
   oversized queue messages spill to ephemeral storage until the consumer runs. A
   temporary queue failure returns **503** so the provider can retry without Kody
-  claiming acceptance.
+  claiming acceptance. Activity duration for ack deliveries measures queue
+  consumer + export time (ingress receive time is kept as metadata). Failed
+  deliveries keep diagnostic logs — including when the export never reached user
+  code.
 - `sync`: waits for the export JSON result (**502** on failure).
 
 Background delivery retries keep the same idempotency key, so a transient

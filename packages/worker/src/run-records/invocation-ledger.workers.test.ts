@@ -330,7 +330,7 @@ test('stale in-progress claims are reclaimed atomically; mismatched hashes are n
 	expect((await getLedger(userId, 'evt-stale'))?.status).toBe('failed')
 })
 
-test('release deletes the in-progress claim and its running row so retries are clean', async () => {
+test('release frees the in-progress claim and finishes the running row as error so retries keep evidence', async () => {
 	const userId = uniqueUserId('release')
 	const claimed = await claim(userId, 'evt-release')
 
@@ -340,10 +340,29 @@ test('release deletes the in-progress claim and its running row so retries are c
 		invocationId: claimed.invocationId,
 		claimUpdatedAt: claimed.claimUpdatedAt,
 		handle: claimed.handle,
+		error: {
+			name: 'artifact_preparation_failed',
+			message: 'Package artifact preparation failed before execution.',
+		},
+		logs: [
+			'package invocation started: ./handler',
+			{
+				level: 'error',
+				message: 'Package artifact preparation failed before execution.',
+			},
+		],
 	})
 	expect(released).toMatchObject({ released: true, record: null })
 	expect(await getLedger(userId, 'evt-release')).toBeNull()
-	expect(await getRun(userId, claimed.handle!.id)).toBeNull()
+	const finishedRun = await getRun(userId, claimed.handle!.id)
+	expect(finishedRun?.run).toMatchObject({
+		status: 'error',
+		errorName: 'artifact_preparation_failed',
+	})
+	expect(finishedRun?.run.logCount).toBeGreaterThan(0)
+	expect(
+		finishedRun?.logs.some((log) => /artifact preparation/i.test(log.message)),
+	).toBe(true)
 
 	// A stale release token cannot delete a newer claim; the caller gets the
 	// current owner back instead.

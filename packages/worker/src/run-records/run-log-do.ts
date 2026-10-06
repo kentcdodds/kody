@@ -2536,12 +2536,16 @@ class RunLogBase extends DurableObject<Env> {
 	/**
 	 * Release a claim whose execution never started so retries are not
 	 * poisoned. Deletes the still-`in_progress` ledger row (fenced on
-	 * `claimUpdatedAt`) and the attempt's still-`running` run row.
+	 * `claimUpdatedAt`). The attempt's still-`running` run row is finished as
+	 * an error with diagnostic logs (not deleted) so Activity keeps evidence
+	 * of pre-execution failures.
 	 */
 	async releasePackageInvocation(input: {
 		invocationId: string
 		claimUpdatedAt: string
 		runId: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
 	}): Promise<{
 		released: boolean
 		/** Current row when the fence failed, so the caller can resolve it. */
@@ -2560,7 +2564,36 @@ class RunLogBase extends DurableObject<Env> {
 				input.invocationId,
 			)
 		}
-		if (input.runId) {
+		// Finish this attempt's run even when the ledger fence failed — the
+		// attempt still happened and must not stay `running` or vanish.
+		const releasedRun = input.run
+		if (releasedRun) {
+			const previousStatus = this.getRunStatus(releasedRun.id)
+			if (previousStatus === 'running' || previousStatus == null) {
+				const existed = previousStatus != null
+				this.transactionSyncWithMetaCache(() => {
+					this.clearSystemPlatformInterruptTriageBeforeErrorFinish(
+						releasedRun,
+					)
+					this.upsertRun(releasedRun, 'replace')
+					this.replaceLogs(releasedRun.id, input.logs)
+					if (!existed) {
+						this.adjustRunCount(1)
+					}
+					this.recordTerminalRunSideEffects({
+						previousStatus,
+						run: releasedRun,
+					})
+				})
+				this.retentionIdleConfirmed = false
+				this.invalidateReadMemos()
+				this.resetRetentionEmptyBackoff()
+				this.maybeEnforceRetention()
+				await this.ensureRetentionAlarm()
+			}
+		} else if (input.runId) {
+			// Callers without a built terminal row still must not leave a
+			// running attempt (legacy / fence-only release).
 			await this.deleteRunIfRunning({ runId: input.runId })
 		}
 		if (released) {
@@ -4004,6 +4037,8 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		invocationId: string
 		claimUpdatedAt: string
 		runId: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
 	}) => Promise<{
 		released: boolean
 		record: PackageInvocationLedgerRecord | null

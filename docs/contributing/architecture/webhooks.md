@@ -138,6 +138,14 @@ Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
     missing declaration) record a `webhook` surface run record (no payload
     body). See [Run records](./run-records.md). URL-secret mismatches, pre-auth
     rate limits, and subscription challenges still write no delivery history.
+    Ack delivery `startedAt` is the queue-consumer dispatch start (not ingress
+    `receivedAt`); ingress time is retained under metadata `receivedAt` so
+    Activity duration measures export/dispatch work, not provider→queue lag.
+    Failed ack deliveries attach diagnostic logs and the underlying invocation
+    error code (`metadata.invocationErrorCode`). Pre-execution claim releases
+    finish the companion `export` run as an error with logs instead of deleting
+    it, so a failed delivery is never a silent `log_count: 0` with no export
+    row.
 
 Ack messages carry the accepted delivery id, idempotency key, scoped endpoint
 identity, export name, and already-authenticated payload (inline `body`, or a
@@ -146,11 +154,13 @@ idempotency key. Request-mode caller `Idempotency-Key` messages set
 `callerIdempotency` so the consumer hashes the JSON body (same as sync).
 Unique-key ack claims omit that flag and hash the `{ webhook, request }`
 envelope. Transient ledger lookup/terminal-persistence failures,
-still-in-progress replays, and `artifact_preparation_failed` (npm bundle not
-ready yet) are retried. On the last consumer attempt (`max_retries`,
-currently 10) those retries record `invocation_retry_exhausted` and ack instead
-of falling through to the dead-letter queue. Terminal package errors are
-recorded and acknowledged. A missing spilled body is a terminal failure
+still-in-progress replays, and other pre-execution infrastructure codes
+(`idempotency_conflict_unresolved`, `artifact_preparation_failed`, … — see
+`readPreExecutionPackageInvocationInfrastructureCode`) are retried. On the last
+consumer attempt (`max_retries`, currently 10) those retries record
+`invocation_retry_exhausted` (with diagnostic logs) and ack instead of falling
+through to the dead-letter queue. Terminal package errors are recorded with logs
+and acknowledged. A missing spilled body is a terminal failure
 (`ack_queue_payload_missing`). The package export sandbox retains its normal
 ~90s budget, so genuinely longer package work ends as an explicit timeout rather
 than an unknown interrupted outcome.
