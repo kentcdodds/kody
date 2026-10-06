@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { appendFileSync, readFileSync, existsSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
@@ -10,6 +11,23 @@ import {
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 
 const kodyId = 'app-realtime-smoke'
+
+// #region agent log
+function scoopAgentDebugLogs() {
+	const sinks = [
+		'/tmp/agent-debug-package-app.ndjson',
+		'.tmp/agent-debug-package-app.ndjson',
+	]
+	for (const sink of sinks) {
+		if (!existsSync(sink)) continue
+		try {
+			appendFileSync('/opt/cursor/logs/debug.log', readFileSync(sink, 'utf8'))
+		} catch {
+			// ignore scoop failures
+		}
+	}
+}
+// #endregion
 
 type ExecuteStructured = {
 	result?: unknown
@@ -155,7 +173,30 @@ export default async function main(input) {
 		const cookie = await createAppSessionCookie(server.origin, database.user)
 		const wsUrl = `${server.origin.replace(/^http/, 'ws')}/@${username}/packages/${kodyId}/ws`
 		const ws = openWebSocket(wsUrl, cookie)
-		await ws.opened
+		try {
+			await ws.opened
+		} catch (error) {
+			// #region agent log
+			scoopAgentDebugLogs()
+			appendFileSync(
+				'/opt/cursor/logs/debug.log',
+				`${JSON.stringify({
+					hypothesisId: 'E',
+					location: 'package-app-realtime.mcp-e2e.test.ts:opened',
+					message: 'websocket open failed in test',
+					data: {
+						error: error instanceof Error ? error.message : String(error),
+						wsUrl,
+					},
+					timestamp: Date.now(),
+				})}\n`,
+			)
+			// #endregion
+			throw error
+		}
+		// #region agent log
+		scoopAgentDebugLogs()
+		// #endregion
 		expect(await ws.nextMessage()).toEqual({
 			type: 'connected',
 			facet: 'main',

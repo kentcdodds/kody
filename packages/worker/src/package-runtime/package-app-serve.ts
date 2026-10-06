@@ -393,18 +393,37 @@ function agentDebugLog(
 		timestamp: Date.now(),
 	}
 	const line = `${JSON.stringify(payload)}\n`
-	console.warn('__AGENT_DEBUG__', line.trimEnd())
 	try {
 		const proc = (
 			globalThis as unknown as {
-				process?: { getBuiltinModule?: (name: string) => unknown }
+				process?: {
+					getBuiltinModule?: (name: string) => unknown
+				}
 			}
 		).process
 		const fs = proc?.getBuiltinModule?.('node:fs') as
-			| { appendFileSync?: (path: string, data: string) => void }
+			| {
+					appendFileSync?: (path: string, data: string) => void
+					mkdirSync?: (path: string, opts?: { recursive?: boolean }) => void
+			  }
 			| undefined
-		fs?.appendFileSync?.('/opt/cursor/logs/debug.log', line)
-		fs?.appendFileSync?.('/tmp/agent-debug-package-app.ndjson', line)
+		try {
+			fs?.mkdirSync?.('.tmp', { recursive: true })
+		} catch {
+			// ignore
+		}
+		const paths = [
+			'/opt/cursor/logs/debug.log',
+			'/tmp/agent-debug-package-app.ndjson',
+			'.tmp/agent-debug-package-app.ndjson',
+		]
+		for (const path of paths) {
+			try {
+				fs?.appendFileSync?.(path, line)
+			} catch {
+				// try next sink
+			}
+		}
 	} catch {
 		// Best-effort debug sink; workerd may lack host fs.
 	}
