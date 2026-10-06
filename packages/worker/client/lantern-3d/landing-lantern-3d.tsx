@@ -94,6 +94,9 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 		const host = figure
 		const surface = canvas
 		if (!host || !surface || handle.signal.aborted) return
+		// Vite folds this to `true` in the server build, which then drops the
+		// scene chunk from the Worker. Only a browser ever starts the scene.
+		if (import.meta.env.SSR) return
 		try {
 			// Dynamic import is intentional so three.js and the scene stay out
 			// of the homepage chunk (sanctioned exception to the
