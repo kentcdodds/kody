@@ -33,6 +33,11 @@ export const entitlementWarningThreshold = 0.8
  * account usage page. `ladder` must be the account's stored
  * `users.entitlement_ladder` so legacy Standard/Pro is scored against
  * `legacyPlanLimits`, matching `consumeDailyEntitlement`.
+ *
+ * Pass {@link inboundReceive} when the account may have a temporary Pro
+ * overlay: inbound mail enforces `email_receives_per_day` against the base
+ * (manual + Stripe) plan, never the gift overlay, so fleet / admin pressure
+ * must score that one resource the same way.
  */
 export async function readAdminEntitlementConsumption(input: {
 	env: Env
@@ -41,6 +46,15 @@ export async function readAdminEntitlementConsumption(input: {
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
 	now: Date
+	/**
+	 * Base-plan entitlement for `email_receives_per_day` when it differs from
+	 * the effective plan (gift / referral overlays).
+	 */
+	inboundReceive?: {
+		plan: PlanName
+		ladder: EntitlementLadder
+		creditWallet: CreditWalletState
+	}
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
 		adminEntitlementResources.map(async (resource) => {
@@ -51,11 +65,19 @@ export async function readAdminEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
+			const limitEntitlement =
+				resource === 'email_receives_per_day' && input.inboundReceive
+					? input.inboundReceive
+					: {
+							plan: input.plan,
+							ladder: input.ladder,
+							creditWallet: input.creditWallet,
+						}
 			const limit = resolvePlanLimit(
-				input.plan,
+				limitEntitlement.plan,
 				resource,
-				input.ladder,
-				input.creditWallet,
+				limitEntitlement.ladder,
+				limitEntitlement.creditWallet,
 			)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {

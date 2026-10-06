@@ -52,3 +52,36 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 	expect(legacyOutbound?.overEightyPercent).toBe(false)
 	expect(legacyOutbound?.limit ?? 0).toBeGreaterThan(publicOutbound?.limit ?? 0)
 })
+
+test('readAdminEntitlementConsumption scores inbound receives against an optional base plan', async () => {
+	readCurrentEntitlementResourceUsage.mockImplementation(async (input) => {
+		return input.resource === 'email_receives_per_day' ? 10 : 0
+	})
+	const env = { APP_DB: {} } as Env
+	const now = new Date('2026-07-08T12:00:00.000Z')
+	const consumption = await readAdminEntitlementConsumption({
+		env,
+		usageUserId: 'gifted',
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'none',
+		now,
+		inboundReceive: {
+			plan: 'free',
+			ladder: 'public',
+			creditWallet: 'none',
+		},
+	})
+	const receives = consumption.find(
+		(item) => item.resource === 'email_receives_per_day',
+	)
+	const packages = consumption.find(
+		(item) => item.resource === 'saved_packages',
+	)
+	expect(receives).toMatchObject({
+		current: 10,
+		limit: 10,
+		overEightyPercent: true,
+	})
+	expect(packages?.limit).toBe(200)
+})

@@ -16,6 +16,7 @@ import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
+	resolveBaseUserEntitlement,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -188,13 +189,20 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const { plan, ladder, creditWallet } =
-				await resolveUserEntitlementFromRow({
+			const [effective, base] = await Promise.all([
+				resolveUserEntitlementFromRow({
 					db: input.env.APP_DB,
 					stableUserId: user.stable_user_id,
 					row: user,
 					now: input.now,
-				})
+				}),
+				resolveBaseUserEntitlement({
+					db: input.env.APP_DB,
+					stableUserId: user.stable_user_id,
+					row: user,
+				}),
+			])
+			const { plan, ladder, creditWallet } = effective
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
@@ -202,6 +210,11 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 				ladder,
 				creditWallet,
 				now: input.now,
+				inboundReceive: {
+					plan: base.plan,
+					ladder: base.ladder,
+					creditWallet: base.creditWallet,
+				},
 			})
 			snapshots.push({
 				stableUserId: user.stable_user_id,
@@ -477,12 +490,19 @@ async function buildEntitlementPressurePanel(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const entitlement = await resolveUserEntitlementFromRow({
-				db: input.env.APP_DB,
-				stableUserId: user.stable_user_id,
-				row: user,
-				now: input.now,
-			})
+			const [entitlement, base] = await Promise.all([
+				resolveUserEntitlementFromRow({
+					db: input.env.APP_DB,
+					stableUserId: user.stable_user_id,
+					row: user,
+					now: input.now,
+				}),
+				resolveBaseUserEntitlement({
+					db: input.env.APP_DB,
+					stableUserId: user.stable_user_id,
+					row: user,
+				}),
+			])
 			const plan = toAdminPlanName(entitlement.plan)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
@@ -491,6 +511,11 @@ async function buildEntitlementPressurePanel(input: {
 				ladder: entitlement.ladder,
 				creditWallet: entitlement.creditWallet,
 				now: input.now,
+				inboundReceive: {
+					plan: base.plan,
+					ladder: base.ladder,
+					creditWallet: base.creditWallet,
+				},
 			})
 			const pressuredResources = consumption
 				.filter((item) => item.overEightyPercent && item.percentOfLimit != null)

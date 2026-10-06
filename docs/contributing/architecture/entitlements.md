@@ -513,14 +513,16 @@ instead of one RPC per resource:
   / referral Pro overlays) via `resolveUserEntitlementFromRow`, and selects
   `users.entitlement_ladder` so legacy Standard/Pro is scored against
   `legacyPlanLimits` (the same table enforcement uses). Gifted Pro therefore
-  does not page Free-cap crossings while the overlay is active. The lane emits
-  one `fleet.entitlement.crossed` event per 80% or 100% crossing (and per first
-  over-threshold runtime-duration month, unique Dynamic Worker cost month, or
-  three-of-seven execute-cap train) to admin-owned packages. Staying over the
-  same threshold does not emit again; dropping below and climbing back is a new
-  instance. KV prefix `fleet-entitlement-crossing:v1` stores
-  `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock limits,
-  appends the UTC day for `*_per_day` counters, uses
+  does not page Free-cap crossings while the overlay is active, except
+  `email_receives_per_day`, which inbound mail still enforces against the base
+  plan — the sweep scores that one resource via `resolveBaseUserEntitlement`.
+  The lane emits one `fleet.entitlement.crossed` event per 80% or 100% crossing
+  (and per first over-threshold runtime-duration month, unique Dynamic Worker
+  cost month, or three-of-seven execute-cap train) to admin-owned packages.
+  Staying over the same threshold does not emit again; dropping below and
+  climbing back is a new instance. KV prefix `fleet-entitlement-crossing:v1`
+  stores `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock
+  limits, appends the UTC day for `*_per_day` counters, uses
   `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal,
   `{prefix}:{userId}:dynamic_worker_cost:{month}` for the unique-worker cost
   signal, and `{prefix}:{userId}:repeated_entitlement:{resource}` for the

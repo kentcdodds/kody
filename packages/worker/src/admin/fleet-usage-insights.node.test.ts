@@ -167,6 +167,7 @@ function consumptionCalls() {
 			usageUserId: input.usageUserId,
 			plan: input.plan,
 			ladder: input.ladder,
+			inboundReceivePlan: input.inboundReceive?.plan ?? null,
 		}),
 	)
 }
@@ -348,9 +349,24 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 	])
 	expect(consumptionCalls()).toEqual(
 		expect.arrayContaining([
-			{ usageUserId: 'user-a', plan: 'free', ladder: 'public' },
-			{ usageUserId: 'user-b', plan: 'pro', ladder: 'public' },
-			{ usageUserId: 'user-admin', plan: 'max', ladder: 'public' },
+			{
+				usageUserId: 'user-a',
+				plan: 'free',
+				ladder: 'public',
+				inboundReceivePlan: 'free',
+			},
+			{
+				usageUserId: 'user-b',
+				plan: 'pro',
+				ladder: 'public',
+				inboundReceivePlan: 'pro',
+			},
+			{
+				usageUserId: 'user-admin',
+				plan: 'max',
+				ladder: 'public',
+				inboundReceivePlan: 'max',
+			},
 		]),
 	)
 })
@@ -389,8 +405,18 @@ test('fleet entitlement pressure scores legacy Standard against the legacy outbo
 	])
 	expect(consumptionCalls()).toEqual(
 		expect.arrayContaining([
-			{ usageUserId: 'grant', plan: 'standard', ladder: 'legacy' },
-			{ usageUserId: 'pat', plan: 'standard', ladder: 'public' },
+			{
+				usageUserId: 'grant',
+				plan: 'standard',
+				ladder: 'legacy',
+				inboundReceivePlan: 'standard',
+			},
+			{
+				usageUserId: 'pat',
+				plan: 'standard',
+				ladder: 'public',
+				inboundReceivePlan: 'standard',
+			},
 		]),
 	)
 	const outboundSnapshot = (limit: number, overEightyPercent: boolean) => [
@@ -444,16 +470,28 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 	const packagesOverFree = 15
 	const freePackageLimit = 10
 	const publicProPackageLimit = 200
+	const receivesAtFreeCap = 10
+	const freeReceiveLimit = 10
+	const publicProReceiveLimit = 2_000
 	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
 		async (input) => {
-			const limit =
+			const packageLimit =
 				input.plan === 'free' ? freePackageLimit : publicProPackageLimit
+			const receivePlan = input.inboundReceive?.plan ?? input.plan
+			const receiveLimit =
+				receivePlan === 'free' ? freeReceiveLimit : publicProReceiveLimit
 			return [
 				consumption(
 					'saved_packages',
 					'saved packages',
 					packagesOverFree,
-					limit,
+					packageLimit,
+				),
+				consumption(
+					'email_receives_per_day',
+					'email receives / day',
+					receivesAtFreeCap,
+					receiveLimit,
 				),
 			]
 		},
@@ -482,10 +520,30 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 
 	expect(consumptionCalls()).toEqual(
 		expect.arrayContaining([
-			{ usageUserId: 'gifted', plan: 'pro', ladder: 'public' },
-			{ usageUserId: 'base-free', plan: 'free', ladder: 'public' },
-			{ usageUserId: 'expired-gift', plan: 'free', ladder: 'public' },
-			{ usageUserId: 'referral-gift', plan: 'pro', ladder: 'public' },
+			{
+				usageUserId: 'gifted',
+				plan: 'pro',
+				ladder: 'public',
+				inboundReceivePlan: 'free',
+			},
+			{
+				usageUserId: 'base-free',
+				plan: 'free',
+				ladder: 'public',
+				inboundReceivePlan: 'free',
+			},
+			{
+				usageUserId: 'expired-gift',
+				plan: 'free',
+				ladder: 'public',
+				inboundReceivePlan: 'free',
+			},
+			{
+				usageUserId: 'referral-gift',
+				plan: 'pro',
+				ladder: 'public',
+				inboundReceivePlan: 'free',
+			},
 		]),
 	)
 
@@ -494,51 +552,63 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 			expect.objectContaining({
 				stableUserId: 'gifted',
 				plan: 'pro',
-				entitlements: [
+				entitlements: expect.arrayContaining([
 					expect.objectContaining({
 						resource: 'saved_packages',
 						current: packagesOverFree,
 						limit: publicProPackageLimit,
 						overEightyPercent: false,
 					}),
-				],
+					expect.objectContaining({
+						resource: 'email_receives_per_day',
+						current: receivesAtFreeCap,
+						limit: freeReceiveLimit,
+						overEightyPercent: true,
+					}),
+				]),
 			}),
 			expect.objectContaining({
 				stableUserId: 'base-free',
 				plan: 'free',
-				entitlements: [
+				entitlements: expect.arrayContaining([
 					expect.objectContaining({
 						resource: 'saved_packages',
 						current: packagesOverFree,
 						limit: freePackageLimit,
 						overEightyPercent: true,
 					}),
-				],
+				]),
 			}),
 			expect.objectContaining({
 				stableUserId: 'expired-gift',
 				plan: 'free',
-				entitlements: [
+				entitlements: expect.arrayContaining([
 					expect.objectContaining({
 						limit: freePackageLimit,
 						overEightyPercent: true,
 					}),
-				],
+				]),
 			}),
 			expect.objectContaining({
 				stableUserId: 'referral-gift',
 				plan: 'pro',
-				entitlements: [
+				entitlements: expect.arrayContaining([
 					expect.objectContaining({
+						resource: 'saved_packages',
 						limit: publicProPackageLimit,
 						overEightyPercent: false,
 					}),
-				],
+					expect.objectContaining({
+						resource: 'email_receives_per_day',
+						limit: freeReceiveLimit,
+						overEightyPercent: true,
+					}),
+				]),
 			}),
 		]),
 	)
 
-	const freePressure = {
+	const freePackagePressure = {
 		kind: 'entitlement' as const,
 		resource: 'saved_packages',
 		label: 'saved packages',
@@ -546,19 +616,51 @@ test('fleet entitlement pressure scores temporary Pro gift overlays, not Free ca
 		limit: freePackageLimit,
 		percentOfLimit: packagesOverFree / freePackageLimit,
 	}
+	const freeReceivePressure = {
+		kind: 'entitlement' as const,
+		resource: 'email_receives_per_day',
+		label: 'email receives / day',
+		current: receivesAtFreeCap,
+		limit: freeReceiveLimit,
+		percentOfLimit: receivesAtFreeCap / freeReceiveLimit,
+	}
 	expect(issues).toEqual(
 		expect.arrayContaining([
-			{ ...freePressure, stableUserId: 'base-free', username: 'freefolk' },
-			{ ...freePressure, stableUserId: 'expired-gift', username: 'pastgift' },
+			{
+				...freePackagePressure,
+				stableUserId: 'base-free',
+				username: 'freefolk',
+			},
+			{
+				...freePackagePressure,
+				stableUserId: 'expired-gift',
+				username: 'pastgift',
+			},
+			{
+				...freeReceivePressure,
+				stableUserId: 'gifted',
+				username: 'continuumpraxis',
+			},
+			{
+				...freeReceivePressure,
+				stableUserId: 'referral-gift',
+				username: 'referred',
+			},
 		]),
 	)
 	expect(issues).not.toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({ stableUserId: 'gifted' }),
-			expect.objectContaining({ stableUserId: 'referral-gift' }),
+			expect.objectContaining({
+				stableUserId: 'gifted',
+				resource: 'saved_packages',
+			}),
+			expect.objectContaining({
+				stableUserId: 'referral-gift',
+				resource: 'saved_packages',
+			}),
 		]),
 	)
 	expect(
 		insights.entitlementPressure.map((row) => row.stableUserId).sort(),
-	).toEqual(['base-free', 'expired-gift'])
+	).toEqual(['base-free', 'expired-gift', 'gifted', 'referral-gift'])
 })
