@@ -7,6 +7,7 @@ import {
 	parseReferralCode,
 	referralSharePath,
 	resolveEffectivePlanWithStandardOverlays,
+	resolveAdminPlanOverlay,
 	unixSecondsToIso,
 } from './referral-program.ts'
 
@@ -99,4 +100,74 @@ test('referral codes, share links, stacking, overlays, and fraud email collapse'
 	)
 	expect(unixSecondsToIso(1_788_782_400)).toBe('2026-09-07T12:00:00.000Z')
 	expect(unixSecondsToIso('nope')).toBeNull()
+})
+
+test('resolveAdminPlanOverlay exposes expiry columns and which overlay wins', () => {
+	const gift = '2026-09-15T00:00:00.000Z'
+	const referral = '2026-09-20T00:00:00.000Z'
+	expect(
+		resolveAdminPlanOverlay({
+			manualPlan: 'free',
+			stripePlan: null,
+			secondAgentGiftExpiresAt: gift,
+			referralCreditExpiresAt: null,
+			now,
+		}),
+	).toEqual({
+		secondAgentGiftExpiresAt: gift,
+		referralCreditExpiresAt: null,
+		overlayExpiresAt: gift,
+		isProOverlay: true,
+		overlayType: 'second_agent_gift',
+	})
+	expect(
+		resolveAdminPlanOverlay({
+			manualPlan: 'free',
+			stripePlan: null,
+			secondAgentGiftExpiresAt: gift,
+			referralCreditExpiresAt: referral,
+			now,
+		}),
+	).toEqual({
+		secondAgentGiftExpiresAt: gift,
+		referralCreditExpiresAt: referral,
+		overlayExpiresAt: referral,
+		isProOverlay: true,
+		overlayType: 'referral_credit',
+	})
+	expect(
+		resolveAdminPlanOverlay({
+			manualPlan: 'free',
+			stripePlan: null,
+			secondAgentGiftExpiresAt: gift,
+			referralCreditExpiresAt: gift,
+			now,
+		}).overlayType,
+	).toBe('second_agent_gift')
+	expect(
+		resolveAdminPlanOverlay({
+			manualPlan: 'free',
+			stripePlan: 'pro',
+			secondAgentGiftExpiresAt: gift,
+			referralCreditExpiresAt: referral,
+			now,
+		}),
+	).toMatchObject({
+		isProOverlay: false,
+		overlayType: null,
+		overlayExpiresAt: referral,
+	})
+	expect(
+		resolveAdminPlanOverlay({
+			manualPlan: 'free',
+			stripePlan: null,
+			secondAgentGiftExpiresAt: '2026-08-01T00:00:00.000Z',
+			referralCreditExpiresAt: null,
+			now,
+		}),
+	).toMatchObject({
+		isProOverlay: false,
+		overlayType: null,
+		overlayExpiresAt: '2026-08-01T00:00:00.000Z',
+	})
 })

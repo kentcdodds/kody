@@ -170,9 +170,10 @@ export async function readCreditWalletBalanceMicroUsd(
 
 /**
  * Entitlement from the manual grant and Stripe only, without gift or
- * referral overlays (inbound email and admin sweeps score the base plan).
- * It resolves the plan itself so an overlay plan can never be paired with
- * Stripe-only eligibility. Overlay-aware callers use
+ * referral overlays (inbound email scores the base plan so gifted Pro
+ * cannot inflate receive caps). It resolves the plan itself so an overlay
+ * plan can never be paired with Stripe-only eligibility. Overlay-aware
+ * callers (live gating, user warnings, fleet entitlement sweeps) use
  * {@link resolveUserEntitlementFromRow}.
  */
 export async function resolveBaseUserEntitlement(input: {

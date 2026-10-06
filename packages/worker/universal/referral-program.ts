@@ -9,6 +9,7 @@ import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import {
 	isSecondAgentStandardGiftActive,
 	resolveEffectivePlanWithSecondAgentGift,
+	resolvePlanOverlay,
 } from '#universal/second-agent-standard-gift.ts'
 import { type PlanName } from '#universal/plans.ts'
 
@@ -140,6 +141,72 @@ export function resolveEffectivePlanWithStandardOverlays(
 		overlayExpiresAt,
 		now,
 	)
+}
+
+/**
+ * Which temporary Pro overlay currently raises Free, for admin list/get.
+ * `overlayExpiresAt` is the later of the two column values (or null). When
+ * both overlays are still active, the later expiry wins; equal timestamps
+ * prefer `second_agent_gift`. `overlayType` is null unless
+ * {@link resolvePlanOverlay} reports `isProOverlay`.
+ */
+export type AdminPlanOverlayType = 'second_agent_gift' | 'referral_credit'
+
+export function resolveAdminPlanOverlay(input: {
+	manualPlan: PlanName
+	stripePlan: string | null
+	secondAgentGiftExpiresAt: string | null | undefined
+	referralCreditExpiresAt: string | null | undefined
+	now?: Date
+}): {
+	secondAgentGiftExpiresAt: string | null
+	referralCreditExpiresAt: string | null
+	overlayExpiresAt: string | null
+	isProOverlay: boolean
+	overlayType: AdminPlanOverlayType | null
+} {
+	const now = input.now ?? new Date()
+	const secondAgentGiftExpiresAt =
+		input.secondAgentGiftExpiresAt?.trim() || null
+	const referralCreditExpiresAt = input.referralCreditExpiresAt?.trim() || null
+	const overlayExpiresAt = laterIsoTimestamp(
+		secondAgentGiftExpiresAt,
+		referralCreditExpiresAt,
+	)
+	const { isProOverlay } = resolvePlanOverlay(
+		input.manualPlan,
+		input.stripePlan,
+		overlayExpiresAt,
+		now,
+	)
+	let overlayType: AdminPlanOverlayType | null = null
+	if (isProOverlay) {
+		const giftActive = isSecondAgentStandardGiftActive(
+			secondAgentGiftExpiresAt,
+			now,
+		)
+		const referralActive = isReferralStandardCreditActive(
+			referralCreditExpiresAt,
+			now,
+		)
+		if (giftActive && referralActive) {
+			const giftMs = Date.parse(secondAgentGiftExpiresAt!)
+			const referralMs = Date.parse(referralCreditExpiresAt!)
+			overlayType =
+				referralMs > giftMs ? 'referral_credit' : 'second_agent_gift'
+		} else if (giftActive) {
+			overlayType = 'second_agent_gift'
+		} else if (referralActive) {
+			overlayType = 'referral_credit'
+		}
+	}
+	return {
+		secondAgentGiftExpiresAt,
+		referralCreditExpiresAt,
+		overlayExpiresAt,
+		isProOverlay,
+		overlayType,
+	}
 }
 
 /**

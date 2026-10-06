@@ -23,6 +23,10 @@ type ActiveUserRow = {
 	plan: string
 	stripe_plan: string | null
 	entitlement_ladder: string | null
+	stripe_credits_eligible?: number | null
+	admin_credits_eligible?: number | null
+	second_agent_standard_gift_expires_at?: string | null
+	referral_standard_credit_expires_at?: string | null
 	event_count: number
 }
 
@@ -131,6 +135,10 @@ function activeUser(
 		plan,
 		stripe_plan: null,
 		entitlement_ladder: 'public',
+		stripe_credits_eligible: 0,
+		admin_credits_eligible: 0,
+		second_agent_standard_gift_expires_at: null,
+		referral_standard_credit_expires_at: null,
 		event_count,
 		...overrides,
 	}
@@ -430,4 +438,127 @@ test('fleet entitlement pressure scores legacy Standard against the legacy outbo
 			pressuredResources: [patPressure],
 		},
 	])
+})
+
+test('fleet entitlement pressure scores temporary Pro gift overlays, not Free caps', async () => {
+	const packagesOverFree = 15
+	const freePackageLimit = 10
+	const publicProPackageLimit = 200
+	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
+		async (input) => {
+			const limit =
+				input.plan === 'free' ? freePackageLimit : publicProPackageLimit
+			return [
+				consumption(
+					'saved_packages',
+					'saved packages',
+					packagesOverFree,
+					limit,
+				),
+			]
+		},
+	)
+	const giftExpiresAt = '2026-07-20T00:00:00.000Z'
+	const db = createFleetDb({
+		activeUsers: [
+			activeUser('gifted', 'continuumpraxis', 'free', 90, {
+				second_agent_standard_gift_expires_at: giftExpiresAt,
+			}),
+			activeUser('base-free', 'freefolk', 'free', 80),
+			activeUser('expired-gift', 'pastgift', 'free', 70, {
+				second_agent_standard_gift_expires_at: '2026-07-01T00:00:00.000Z',
+			}),
+			activeUser('referral-gift', 'referred', 'free', 60, {
+				referral_standard_credit_expires_at: giftExpiresAt,
+			}),
+		],
+	})
+	const env = { APP_DB: db } as Env
+	const [snapshots, issues, insights] = await Promise.all([
+		loadFleetEntitlementCrossingSnapshots({ db, env, now }),
+		detectFleetUsagePressure({ db, env, now }),
+		loadFleetUsageInsights({ db, env, now }),
+	])
+
+	expect(consumptionCalls()).toEqual(
+		expect.arrayContaining([
+			{ usageUserId: 'gifted', plan: 'pro', ladder: 'public' },
+			{ usageUserId: 'base-free', plan: 'free', ladder: 'public' },
+			{ usageUserId: 'expired-gift', plan: 'free', ladder: 'public' },
+			{ usageUserId: 'referral-gift', plan: 'pro', ladder: 'public' },
+		]),
+	)
+
+	expect(snapshots).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				stableUserId: 'gifted',
+				plan: 'pro',
+				entitlements: [
+					expect.objectContaining({
+						resource: 'saved_packages',
+						current: packagesOverFree,
+						limit: publicProPackageLimit,
+						overEightyPercent: false,
+					}),
+				],
+			}),
+			expect.objectContaining({
+				stableUserId: 'base-free',
+				plan: 'free',
+				entitlements: [
+					expect.objectContaining({
+						resource: 'saved_packages',
+						current: packagesOverFree,
+						limit: freePackageLimit,
+						overEightyPercent: true,
+					}),
+				],
+			}),
+			expect.objectContaining({
+				stableUserId: 'expired-gift',
+				plan: 'free',
+				entitlements: [
+					expect.objectContaining({
+						limit: freePackageLimit,
+						overEightyPercent: true,
+					}),
+				],
+			}),
+			expect.objectContaining({
+				stableUserId: 'referral-gift',
+				plan: 'pro',
+				entitlements: [
+					expect.objectContaining({
+						limit: publicProPackageLimit,
+						overEightyPercent: false,
+					}),
+				],
+			}),
+		]),
+	)
+
+	const freePressure = {
+		kind: 'entitlement' as const,
+		resource: 'saved_packages',
+		label: 'saved packages',
+		current: packagesOverFree,
+		limit: freePackageLimit,
+		percentOfLimit: packagesOverFree / freePackageLimit,
+	}
+	expect(issues).toEqual(
+		expect.arrayContaining([
+			{ ...freePressure, stableUserId: 'base-free', username: 'freefolk' },
+			{ ...freePressure, stableUserId: 'expired-gift', username: 'pastgift' },
+		]),
+	)
+	expect(issues).not.toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ stableUserId: 'gifted' }),
+			expect.objectContaining({ stableUserId: 'referral-gift' }),
+		]),
+	)
+	expect(
+		insights.entitlementPressure.map((row) => row.stableUserId).sort(),
+	).toEqual(['base-free', 'expired-gift'])
 })

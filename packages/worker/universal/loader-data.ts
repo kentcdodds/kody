@@ -337,6 +337,26 @@ export type AdminUserListItem = {
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
+	/** Raw `users.second_agent_standard_gift_expires_at`, or null. */
+	secondAgentGiftExpiresAt: string | null
+	/** Raw `users.referral_standard_credit_expires_at`, or null. */
+	referralCreditExpiresAt: string | null
+	/**
+	 * Later of the two overlay expiry columns (or null). Same value
+	 * `resolveEffectivePlanWithSecondAgentGift` / gating use for the overlay.
+	 */
+	overlayExpiresAt: string | null
+	/**
+	 * True while a temporary Pro overlay currently raises Free. False for
+	 * paid/manual plans even when expiry columns are still set.
+	 */
+	isProOverlay: boolean
+	/**
+	 * Which overlay is classifying the current Pro raise.
+	 * When both are active, the later expiry wins; equal timestamps prefer
+	 * `second_agent_gift`. Null unless `isProOverlay`.
+	 */
+	overlayType: 'second_agent_gift' | 'referral_credit' | null
 	/** `legacy` keeps pre-cut Standard/Pro ceilings while paid access stays continuous. */
 	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean

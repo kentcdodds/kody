@@ -16,7 +16,10 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
+import {
+	resolveAdminPlanOverlay,
+	type AdminPlanOverlayType,
+} from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import {
 	chunkArray,
@@ -60,6 +63,11 @@ export const adminUserListItemFieldNames = [
 	'manualPlan',
 	'stripePlan',
 	'effectivePlan',
+	'secondAgentGiftExpiresAt',
+	'referralCreditExpiresAt',
+	'overlayExpiresAt',
+	'isProOverlay',
+	'overlayType',
 	'entitlementLadder',
 	'stripeCustomerLinked',
 	'suspended_at',
@@ -97,6 +105,11 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	manualPlan: PlanName
 	stripePlan: PlanName | null
 	effectivePlan: PlanName
+	secondAgentGiftExpiresAt: string | null
+	referralCreditExpiresAt: string | null
+	overlayExpiresAt: string | null
+	isProOverlay: boolean
+	overlayType: AdminPlanOverlayType | null
 	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
@@ -537,6 +550,12 @@ function toAdminUserListItem(
 ): AdminUserListItem {
 	const manualPlan = parseStoredPlanName(row.plan)
 	const stripePlan = parseStripePlanName(row.stripe_plan)
+	const overlay = resolveAdminPlanOverlay({
+		manualPlan,
+		stripePlan: row.stripe_plan,
+		secondAgentGiftExpiresAt: row.second_agent_standard_gift_expires_at,
+		referralCreditExpiresAt: row.referral_standard_credit_expires_at,
+	})
 	return {
 		stableUserId: row.stable_user_id,
 		username: row.username,
@@ -549,11 +568,13 @@ function toAdminUserListItem(
 		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
 			manualPlan,
 			row.stripe_plan,
-			laterIsoTimestamp(
-				row.second_agent_standard_gift_expires_at,
-				row.referral_standard_credit_expires_at,
-			),
+			overlay.overlayExpiresAt,
 		),
+		secondAgentGiftExpiresAt: overlay.secondAgentGiftExpiresAt,
+		referralCreditExpiresAt: overlay.referralCreditExpiresAt,
+		overlayExpiresAt: overlay.overlayExpiresAt,
+		isProOverlay: overlay.isProOverlay,
+		overlayType: overlay.overlayType,
 		entitlementLadder: parseEntitlementLadder(row.entitlement_ladder),
 		stripeCustomerLinked: Boolean(row.stripe_customer_id),
 		suspended_at: row.suspended_at,

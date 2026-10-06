@@ -78,6 +78,8 @@ type UserRow = {
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
 	email_verification_delivery_class?: string | null
+	second_agent_standard_gift_expires_at?: string | null
+	referral_standard_credit_expires_at?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -261,6 +263,11 @@ test('admin users list payload exposes only account metadata fields', async () =
 			manualPlan: 'pro',
 			stripePlan: null,
 			effectivePlan: 'pro',
+			secondAgentGiftExpiresAt: null,
+			referralCreditExpiresAt: null,
+			overlayExpiresAt: null,
+			isProOverlay: false,
+			overlayType: null,
 			stripeCustomerLinked: false,
 		}),
 		expect.objectContaining({
@@ -271,9 +278,50 @@ test('admin users list payload exposes only account metadata fields', async () =
 			manualPlan: 'free',
 			stripePlan: 'standard',
 			effectivePlan: 'standard',
+			secondAgentGiftExpiresAt: null,
+			referralCreditExpiresAt: null,
+			overlayExpiresAt: null,
+			isProOverlay: false,
+			overlayType: null,
 			stripeCustomerLinked: true,
 		}),
 	])
+})
+
+test('admin users list exposes temporary Pro gift overlay fields for Package filters', async () => {
+	const giftExpiresAt = '2099-01-10T00:00:00.000Z'
+	const referralExpiresAt = '2099-01-20T00:00:00.000Z'
+	const { list } = setupAdminUsers(
+		[
+			makeUser(1, 'admin-user', { email: 'admin@example.com' }),
+			makeUser(2, 'continuumpraxis', {
+				email: 'continuum@example.com',
+				plan: 'free',
+				second_agent_standard_gift_expires_at: giftExpiresAt,
+				referral_standard_credit_expires_at: referralExpiresAt,
+			}),
+		],
+		[
+			[1, 'admin'],
+			[2, 'user'],
+		],
+	)
+
+	const payload = await list()
+	expect(payload.users).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				username: 'continuumpraxis',
+				plan: 'free',
+				effectivePlan: 'pro',
+				secondAgentGiftExpiresAt: giftExpiresAt,
+				referralCreditExpiresAt: referralExpiresAt,
+				overlayExpiresAt: referralExpiresAt,
+				isProOverlay: true,
+				overlayType: 'referral_credit',
+			}),
+		]),
+	)
 })
 
 test('admin users list applies selected, q, role, and pagination filters', async () => {
