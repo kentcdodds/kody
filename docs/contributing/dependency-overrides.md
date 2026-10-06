@@ -185,6 +185,20 @@ strips unused `compile` / `fromJSONSchema` / `deepPartial` barrel exports for
 the startup budget. Keep this pin aligned with the Worker Zod range and refresh
 the patch when bumping.
 
+### `sharp` → `>=0.35.5 <1.0.0`
+
+Keeps the transitive `sharp` copies (via `wrangler` / `miniflare` /
+`@cloudflare/vite-plugin`) at or above the current advisory floor. Upstream
+still declares ranges that allow vulnerable releases below `0.35.5`, so this
+override cannot be removed yet.
+
+The floor is `0.35.5` for:
+
+- [GHSA-wq5f-xc86-pv6w](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) /
+  CVE-2026-96889: librsvg dependency vulnerability (`<0.35.5`)
+
+The upper bound `<1.0.0` keeps the override within the same major version.
+
 ## Development overrides
 
 These packages are only reached through dev tooling, so `audit:prod` does not
