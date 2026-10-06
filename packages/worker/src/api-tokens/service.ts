@@ -503,6 +503,11 @@ export async function mintApiToken(input: {
 	if (parent) {
 		maxExpiresAtMs = Math.min(maxExpiresAtMs, Date.parse(parent.maxExpiresAt))
 	}
+	if (maxExpiresAtMs <= now.getTime()) {
+		throw new McpCallerError(
+			'The resulting API token would already be expired (absolute max expiry is not in the future).',
+		)
+	}
 	const maxExpiresAt = new Date(maxExpiresAtMs).toISOString()
 
 	await pruneInactiveApiTokens({ db: input.db, userId: input.userId, now })

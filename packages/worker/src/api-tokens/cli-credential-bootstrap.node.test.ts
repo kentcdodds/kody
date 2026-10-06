@@ -149,6 +149,34 @@ test('bootstrap redeem rejects a lifetime longer than the code authorized', asyn
 	).rejects.toThrow(/cannot exceed the bootstrap code's authorized/)
 })
 
+test('bootstrap redeem rejects when the authorized absolute window already ended', async () => {
+	const { db, sqlite } = createDb()
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		idleTtlSeconds: 60,
+		maxLifetimeSeconds: 60,
+		redeemTtlSeconds: 600,
+		now: start,
+	})
+	await expect(
+		redeemCliCredentialBootstrap({
+			db,
+			code: minted.bootstrap_code,
+			idleTtlSeconds: 60,
+			maxLifetimeSeconds: 60,
+			now: at(61),
+		}),
+	).rejects.toThrow(/authorized token lifetime window has already ended/)
+	expect(
+		sqlite
+			.prepare(
+				'SELECT consumed_at FROM cli_credential_bootstrap_codes WHERE user_id = ?',
+			)
+			.get(userId),
+	).toMatchObject({ consumed_at: null })
+})
+
 test('bootstrap redeem accepts explicit idle and max lifetime values', async () => {
 	const { db } = createDb()
 	const minted = await mintCliCredentialBootstrap({

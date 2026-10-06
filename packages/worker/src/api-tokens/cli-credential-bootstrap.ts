@@ -393,6 +393,16 @@ export async function redeemCliCredentialBootstrap(input: {
 			`Redeem lifetime cannot exceed the bootstrap code's authorized idle_ttl_seconds (${row.idle_ttl_seconds}) and max_lifetime_seconds (${row.max_lifetime_seconds}). Call cliCredentialBootstrap again with a longer lifetime if needed.`,
 		)
 	}
+	// Absolute expiry is anchored to code created_at + authorized max. Reject
+	// before burning when that window has already ended so a late redeem does
+	// not consume the code and hand back an already-expired token.
+	const authorizedMaxExpiresAtMs =
+		Date.parse(row.created_at) + row.max_lifetime_seconds * 1000
+	if (authorizedMaxExpiresAtMs <= now.getTime()) {
+		throw new McpCallerError(
+			`The bootstrap code's authorized token lifetime window has already ended. Call cliCredentialBootstrap again.`,
+		)
+	}
 
 	const burnAndMint = async () => {
 		const user = await input.db
@@ -453,9 +463,7 @@ export async function redeemCliCredentialBootstrap(input: {
 			// code was minted (parent clamps live in stored max_lifetime_seconds).
 			parent: {
 				scopes,
-				maxExpiresAt: new Date(
-					Date.parse(row.created_at) + row.max_lifetime_seconds * 1000,
-				).toISOString(),
+				maxExpiresAt: new Date(authorizedMaxExpiresAtMs).toISOString(),
 			},
 			now,
 		})

@@ -99,6 +99,9 @@ other `mintApiToken` caller). It does not special-case by token name or
 authenticated by an API token (`excludeTokenId`). MCP session and code-only
 redeem have no caller token to protect. Redeem lifetime cannot exceed the
 idle/max stored on the bootstrap code at mint (parent clamps stay enforced).
+Redeem also rejects (without burning the code) when the authorized absolute
+window (`created_at + max_lifetime_seconds`) has already ended, so a late redeem
+never returns an already-expired token.
 
 Do **not** add OAuth device flow. Do **not** accept bootstrap codes as general
 Open API Bearers. Do **not** scavenge host MCP tokens from disk. Do **not** keep
