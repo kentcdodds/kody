@@ -442,7 +442,9 @@ export async function main() {
 	expect(result.source).toContain(
 		`var packageSecrets5 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
 	)
-	expect(result.source).toContain('var packageContext6 = packageContext;')
+	expect(result.source).toContain(
+		'var packageContext6 = __kodyShimPackageContext;',
+	)
 	expect(result.source).toContain(`var ${initName} = () => {};`)
 	expect(result.source).toContain(`${initName}();`)
 	expect(result.source).not.toContain('__kodyOptionalRuntimeFunctionExport')
@@ -464,7 +466,49 @@ export async function main() {
 	}
 	expect(
 		shimImportBodies.some((body) =>
-			/(^|[\s,])packageContext([\s,]|$)/.test(body),
+			/packageContext\s+as\s+__kodyShimPackageContext/.test(body),
 		),
 	).toBe(true)
+})
+
+test('rewrite aliases packageContextN to shim even when author binds packageContext', () => {
+	// Nested retained modules may declare a local `packageContext` that is not
+	// the shared ALS export. Renamed inlined copies must still bind to the
+	// CapabilityProxy shim, not that author local.
+	const source = `const packageContext = { hostedUrl: "author" };
+
+// virtual:.__kody_virtual__/runtime.js
+function __kodyCreateRuntimeRecordExport(exportName) {
+  return { exportName, hostedUrl: "runtime" };
+}
+function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
+function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
+var packageContext6 = __kodyCreateRuntimeRecordExport("packageContext");
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+var runtime_default = { packageContext: packageContext6, packageStorage: packageStorage2 };
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
+
+// virtual:.__kody_root__/src/status.ts
+export function main() {
+  return typeof packageContext6?.hostedUrl === "string" ? packageContext6.hostedUrl : null;
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/demo/.__published_bundle__/2e2f737461747573/bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toContain(
+		'var packageContext6 = __kodyShimPackageContext;',
+	)
+	expect(result.source).toContain(
+		'const packageContext = { hostedUrl: "author" };',
+	)
+	expect(result.source).toMatch(
+		/packageContext\s+as\s+__kodyShimPackageContext/,
+	)
+	expect(result.source).not.toContain('var packageContext6 = packageContext;')
 })

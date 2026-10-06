@@ -630,6 +630,23 @@ function collectShimImportSpecifiers(
 	return specifiers
 }
 
+/**
+ * Private local name for a shim import used only to feed renamed shared-export
+ * aliases (`packageContext6 = __kodyShimPackageContext`). Avoids binding the
+ * renamed export to a colliding author `packageContext` when the bare
+ * canonical import is skipped.
+ */
+function pickCollisionFreeShimLocalName(
+	canonical: SharedRuntimeExportCanonical,
+	authorBindings: ReadonlySet<string>,
+) {
+	const preferred = `__kodyShim${canonical.charAt(0).toUpperCase()}${canonical.slice(1)}`
+	if (!authorBindings.has(preferred)) return preferred
+	let suffix = 2
+	while (authorBindings.has(`${preferred}${suffix}`)) suffix += 1
+	return `${preferred}${suffix}`
+}
+
 function formatShimImportBlock(
 	relativeShimSpecifier: string,
 	specifiers: ReadonlyArray<string>,
@@ -709,14 +726,31 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	const packageBoundEmittedNames = new Set(
 		input.packageBoundBindings.map((binding) => binding.name),
 	)
-	const sharedAliasBlock = (input.sharedRuntimeExportAliases ?? [])
-		.filter(
-			(alias) =>
-				!input.authorBindings.has(alias.name) &&
-				!packageBoundEmittedNames.has(alias.name),
+	const activeSharedAliases = (input.sharedRuntimeExportAliases ?? []).filter(
+		(alias) =>
+			!input.authorBindings.has(alias.name) &&
+			!packageBoundEmittedNames.has(alias.name),
+	)
+	const sharedShimLocals = new Map<SharedRuntimeExportCanonical, string>()
+	for (const alias of activeSharedAliases) {
+		if (sharedShimLocals.has(alias.canonical)) continue
+		sharedShimLocals.set(
+			alias.canonical,
+			pickCollisionFreeShimLocalName(alias.canonical, input.authorBindings),
 		)
-		.map((alias) => `var ${alias.name} = ${alias.canonical};`)
+	}
+	const sharedAliasBlock = activeSharedAliases
+		.map((alias) => {
+			const local = sharedShimLocals.get(alias.canonical)
+			return local ? `var ${alias.name} = ${local};` : ''
+		})
+		.filter(Boolean)
 		.join('\n')
+	const sharedShimImportBindings: Array<ShimImportBinding> = [
+		...sharedShimLocals.entries(),
+	].map(([canonical, local]) =>
+		local === canonical ? canonical : { name: canonical, as: local },
+	)
 	const facadeBlock = [...facadeLines, ...initStubLines]
 		.filter(Boolean)
 		.join('\n')
@@ -833,6 +867,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 					'workflows',
 					'packages',
 					'events',
+					...sharedShimImportBindings,
 					...(needsPackageBoundFactories || emitFetchBinding
 						? (['__kodySecretRef'] as const)
 						: []),
@@ -911,6 +946,7 @@ ${facadeBlock}
 				'workflows',
 				'packages',
 				'events',
+				...sharedShimImportBindings,
 			],
 			input.authorBindings,
 		),
