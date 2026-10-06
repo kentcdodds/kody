@@ -473,6 +473,11 @@ export async function refreshSavedPackageProjection(input: {
 			}
 			// Same-isolate invoke paths must observe this refresh immediately;
 			// other isolates converge within the freshness-cache TTL.
+			const retiredPackageAppSlugs = await listPackageSlugRedirects({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: input.packageId,
+			})
 			invalidateInvokeContractFreshness({
 				userId: input.userId,
 				packageIdOrKodyIds: [
@@ -487,10 +492,13 @@ export async function refreshSavedPackageProjection(input: {
 						: []),
 				],
 				// Package-app slug cache is keyed by name leaf, not package id /
-				// kody:@ refs — pass current and previous leaves explicitly.
+				// kody:@ refs. Include every retired redirect leaf (multi-hop
+				// renames) so a warm isolate cannot keep serving an older path
+				// after an intermediate slug is reclaimed.
 				packageAppSlugs: [
 					getPackageNameLeaf(savedPackage.name),
 					...(existing ? [getPackageNameLeaf(existing.name)] : []),
+					...retiredPackageAppSlugs,
 				],
 				sourceId: input.sourceId,
 			})
