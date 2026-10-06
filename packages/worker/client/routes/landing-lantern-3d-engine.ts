@@ -84,6 +84,7 @@ type Gesture =
 			pointerId: number
 			originX: number
 			originY: number
+			downAt: number
 			moved: boolean
 			baseYaw: number
 			basePitch: number
@@ -96,6 +97,7 @@ type Gesture =
 			button: HTMLElement
 			originX: number
 			originY: number
+			downAt: number
 			moved: boolean
 			grab: Vec3
 			depth: number
@@ -309,6 +311,7 @@ export function startLanternEngine(options: {
 			pointerId: event.pointerId,
 			originX: event.clientX,
 			originY: event.clientY,
+			downAt: performance.now(),
 			moved: false,
 		}
 		if (button && id && figure.contains(button) && bodyOf(id)) {
@@ -334,16 +337,17 @@ export function startLanternEngine(options: {
 		}
 	}
 
+	/** The drag is measured from where the pointer went down, and the first
+	 *  sample is that moment, so a flick of one or two moves still spins. */
 	const beginDrag = (current: Gesture, event: PointerEvent) => {
 		current.moved = true
-		current.originX = event.clientX
-		current.originY = event.clientY
 		orbit = holdLanternOrbit(orbit, time)
 		figure.dataset.grabbing = ''
 		document.documentElement.style.cursor = 'grabbing'
 		if (current.kind === 'orbit') {
 			current.baseYaw = orbit.yaw
 			current.basePitch = orbit.pitch
+			current.samples.push({ yaw: orbit.yaw, t: current.downAt })
 			return
 		}
 		const body = bodyOf(current.id)
@@ -351,6 +355,7 @@ export function startLanternEngine(options: {
 		const pose = poseNow()
 		current.grab = localToWorld(body.position, pose.yaw, pose.pitch)
 		current.depth = projectLanternPoint(basis, current.grab, viewSize()).depth
+		current.samples.push({ position: { ...body.position }, t: current.downAt })
 		current.button.dataset.grabbed = ''
 		// A touch drag focuses the orb and would leave the bottom sheet
 		// open after the toss. A tap still focuses and toggles.
@@ -365,7 +370,6 @@ export function startLanternEngine(options: {
 		if (!current.moved) {
 			if (Math.hypot(dx, dy) < dragSlopPx) return
 			beginDrag(current, event)
-			return
 		}
 		if (event.cancelable) event.preventDefault()
 		const now = performance.now()
