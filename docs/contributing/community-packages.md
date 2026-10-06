@@ -216,18 +216,19 @@ source.
 
 Core logic: `packages/worker/src/community/`
 
-| Module               | Role                                                                |
-| -------------------- | ------------------------------------------------------------------- |
-| `service.ts`         | Publish, unpublish, search, fork, rate, report, admin resolution    |
-| `profile-service.ts` | Profiles, profile activity, public package lists                    |
-| `profile-repo.ts`    | D1 for profiles, activity events, and public package lists          |
-| `install.ts`         | One-click install: fork + publish checks + projection publish       |
-| `repo.ts`            | D1 queries                                                          |
-| `activity-*`         | Admin activity feed and durable admin subscription dispatch         |
-| `snapshot.ts`        | KV snapshot I/O                                                     |
-| `fork-scan.ts`       | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
-| `og-image.ts`        | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
-| `types.ts`           | Shared record types                                                 |
+| Module                  | Role                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| `service.ts`            | Publish, unpublish, search, fork, rate, report, admin resolution                  |
+| `allocate-fork-leaf.ts` | Next free `leaf-N` when the default listing leaf is taken by an unrelated package |
+| `profile-service.ts`    | Profiles, profile activity, public package lists                                  |
+| `profile-repo.ts`       | D1 for profiles, activity events, and public package lists                        |
+| `install.ts`            | One-click install: fork + publish checks + projection publish                     |
+| `repo.ts`               | D1 queries                                                                        |
+| `activity-*`            | Admin activity feed and durable admin subscription dispatch                       |
+| `snapshot.ts`           | KV snapshot I/O                                                                   |
+| `fork-scan.ts`          | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan               |
+| `og-image.ts`           | Community listing 1200×630 PNG on the shared `#worker/og` pipeline                |
+| `types.ts`              | Shared record types                                                               |
 
 `publishCommunityListing` has no MIT, logo, Intent, or personal-content gates.
 Visibility is separate from package publish checks, which require non-empty root
@@ -240,12 +241,17 @@ SHA-keyed source snapshot.
 
 `forkCommunityListing` reads the KV snapshot for rewrite/scan (Worker), then
 copies the origin Artifacts repo with `POST .../repos/{source}/fork` so the tree
-never enters a RepoSession isolate as `Record<path, string>` edits. Persist
-stamps dest `published_commit` to dest HEAD (the default-branch tip the fork
-copied) and records that SHA on `community_forks.origin_commit`. When dest HEAD
-matches the listing pin used in prepare, only rewritten files (`package.json`
-and self-reference text) are applied. When dest HEAD is ahead of that pin,
-persist re-derives the `package.json` rewrite from dest HEAD instead of applying
+never enters a RepoSession isolate as `Record<path, string>` edits. When the
+caller omits an explicit leaf and the listing leaf is already taken by an
+unrelated saved package (no `community_forks` row for this listing at that
+leaf), it picks the next free `leaf-N` (`allocate-fork-leaf.ts`). An explicit
+leaf errors if that name is taken. A repeat fork of the same listing errors with
+the existing fork instead of allocating another leaf. Persist stamps dest
+`published_commit` to dest HEAD (the default-branch tip the fork copied) and
+records that SHA on `community_forks.origin_commit`. When dest HEAD matches the
+listing pin used in prepare, only rewritten files (`package.json` and
+self-reference text) are applied. When dest HEAD is ahead of that pin, persist
+re-derives the `package.json` rewrite from dest HEAD instead of applying
 pin-relative edits that would revert later origin commits. When the origin
 Artifacts repo is missing, persist falls back to the full-tree snapshot sync.
 Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as

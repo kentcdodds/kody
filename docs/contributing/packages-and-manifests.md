@@ -82,6 +82,11 @@ Important behavior:
 - If a package declares a dependency that the bundler cannot resolve or bundle,
   repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
+- Undeclared bare package imports on entry points fail the dependencies check
+  before `published_commit` advances, including when check-time esbuild is
+  deferred. Add them to `package.json#dependencies` or vendor
+  `node_modules/<name>` in the snapshot. Unparseable entry source fails the same
+  way so publish cannot skip the check.
 - An isolate memory or CPU reset during bundle validation is the same class of
   failure: the npm graph does not fit a Worker isolate. The check message points
   at `search({ entity: "guide:heavy_work_offload" })`.

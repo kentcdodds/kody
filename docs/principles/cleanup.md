@@ -11,17 +11,16 @@ One-way doors (data drops, auth changes, token purges) still follow
 
 ## Example
 
-Package apps used to configure a runtime mode. That lane is gone. Publish still
-rejects the old field so it cannot come back:
+Publish rejects a configured package-app runtime mode so that field cannot come
+back:
 
 ```ts
 const retiredPackageAppRuntimeMessage =
 	'kody.app.runtime was removed; every package app is a fetch handler and receives the mount-stripped path. There is no configured runtime mode.'
 ```
 
-(`packages/worker/src/package-registry/manifest.ts`.) The same shape applies
-after the Remix platform-mount removal: stored stamps with `remixVersion` fail
-closed in `isUsableStoredPublishedBundleArtifact`.
+(`packages/worker/src/package-registry/manifest.ts`.) Stored stamps with
+`remixVersion` fail closed in `isUsableStoredPublishedBundleArtifact`.
 
 ## Related
 
