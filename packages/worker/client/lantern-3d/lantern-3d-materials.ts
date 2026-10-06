@@ -209,9 +209,10 @@ export function createGlassFloorMaterial(radius: number) {
  * The outside of the glass, added over the glow: a crisp bright edge with
  * a warm band inside it where the light inside catches the thick of the
  * wall, and the studio's lights in reflection (tall softboxes behind each
- * shoulder that wrap the sides, a small four-pane window up and to the
- * left, a softbox overhead). They are worked out from the reflected ray,
- * so they stay put while the globe turns, as they would on real glass.
+ * shoulder that wrap the sides, a small soft one up and to the left, one
+ * overhead). They are worked out from the reflected ray, so they stay put
+ * while the globe turns, as they would on real glass. The small one has no
+ * window panes: on the glass they read as a logo or as the apps glyph.
  * Face-on the glass reflects little, so the orbs behind it stay clear.
  * One cheap shader, so the software path draws it too.
  */
@@ -252,14 +253,12 @@ export function createGlassShellMaterial() {
 				float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
 
 				vec2 q;
-				float window = panel(ray, normalize(vec3(-0.5, 0.45, 0.74)), vec2(0.17, 0.13), 0.12, q);
-				vec2 bars = smoothstep(0.05, 0.1, abs(q));
-				window *= bars.x * bars.y;
+				float glint = panel(ray, normalize(vec3(-0.5, 0.45, 0.74)), vec2(0.17, 0.13), 0.35, q);
 				float left = panel(ray, normalize(vec3(-0.86, 0.22, -0.46)), vec2(0.16, 0.9), 0.45, q);
 				float right = panel(ray, normalize(vec3(0.94, 0.16, -0.3)), vec2(0.07, 0.8), 0.4, q);
 				float overhead = panel(ray, normalize(vec3(0.0, 1.0, 0.2)), vec2(0.6, 0.4), 0.5, q);
 				vec3 studio = vec3(1.0, 0.97, 0.92)
-					* (window * 4.0 + left * 9.0 + right * 8.0 + overhead * 2.0);
+					* (glint * 3.0 + left * 9.0 + right * 8.0 + overhead * 2.0);
 
 				float edge = pow(1.0 - facing, 7.0);
 				float band = pow(1.0 - facing, 2.4);
