@@ -1,7 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
 	assignDiscordMemberRole,
 	getDiscordMemberRoleConfig,
@@ -35,43 +37,51 @@ const botOnlyEnv = {
 }
 
 const discordUserId = '333333333333333333'
+const discordApi = 'https://discord.com/api/v10'
 
-function jsonResponse(status: number, body: unknown = {}) {
-	return new Response(JSON.stringify(body), {
-		status,
-		headers: { 'Content-Type': 'application/json' },
-	})
-}
-
-const respond = (status: number) => async () => jsonResponse(status)
-const noContent = async () => new Response(null, { status: 204 })
-
-const memberUrl = `https://discord.com/api/v10/guilds/${configuredEnv.DISCORD_GUILD_ID}/members/${discordUserId}`
+const memberUrl = `${discordApi}/guilds/${configuredEnv.DISCORD_GUILD_ID}/members/${discordUserId}`
 const roleUrl = (roleId: string) => `${memberUrl}/roles/${roleId}`
 const memberRole = roleUrl(configuredEnv.DISCORD_MEMBER_ROLE_ID)
 const standardRole = roleUrl(configuredEnv.DISCORD_STANDARD_ROLE_ID)
 const proRole = roleUrl(configuredEnv.DISCORD_PRO_ROLE_ID)
+const memberByUserUrl = `${discordApi}/guilds/${configuredEnv.DISCORD_GUILD_ID}/members/:userId`
+const roleByIdUrl = `${memberUrl}/roles/:roleId`
 
 type Call = { url: string; method: string; authorization: string }
 
-function recordingFetch(
-	handler: (url: string, init?: RequestInit) => Promise<Response> | Response,
-) {
-	const calls: Array<Call> = []
-	async function fetchImpl(input: RequestInfo | URL, init?: RequestInit) {
-		const url = String(input)
-		calls.push({
-			url,
-			method: init?.method ?? 'GET',
-			authorization: new Headers(init?.headers).get('Authorization') ?? '',
-		})
-		return handler(url, init)
-	}
-	return { calls, fetchImpl }
+type RecordedHttpRequest = {
+	url: string
+	method: string
+	headers: { get(name: string): string | null }
+}
+
+function recordCall(request: RecordedHttpRequest, calls: Array<Call>) {
+	calls.push({
+		url: request.url,
+		method: request.method,
+		authorization: request.headers.get('Authorization') ?? '',
+	})
+}
+
+function jsonResponse(status: number, body: object = {}) {
+	return HttpResponse.json(body, { status })
 }
 
 const routes = (calls: Array<Call>) =>
 	calls.map(({ url, method }) => ({ url, method }))
+
+function noContentHandlers(calls: Array<Call>) {
+	return [
+		http.put(roleByIdUrl, ({ request }) => {
+			recordCall(request, calls)
+			return new HttpResponse(null, { status: 204 })
+		}),
+		http.delete(roleByIdUrl, ({ request }) => {
+			recordCall(request, calls)
+			return new HttpResponse(null, { status: 204 })
+		}),
+	]
+}
 
 test('role sync stays off until bot token, guild id, and at least one role id are set', () => {
 	expect(isDiscordSnowflake('12345')).toBe(true)
@@ -96,12 +106,14 @@ test('role sync stays off until bot token, guild id, and at least one role id ar
 test('guild join uses the ephemeral access token once and classifies outcomes', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const bodies: Array<unknown> = []
-	const { calls, fetchImpl } = recordingFetch((url, init) => {
-		bodies.push(init?.body ? JSON.parse(String(init.body)) : null)
-		return url === memberUrl && init?.method === 'PUT'
-			? new Response(null, { status: 201 })
-			: jsonResponse(500)
-	})
+	const calls: Array<Call> = []
+	using msw = createMswNodeServer([
+		http.put(memberUrl, async ({ request }) => {
+			recordCall(request, calls)
+			bodies.push(await request.clone().json())
+			return new HttpResponse(null, { status: 201 })
+		}),
+	])
 	const join = (
 		overrides: Partial<Parameters<typeof maybeJoinOfficialDiscordGuild>[0]>,
 	) =>
@@ -109,7 +121,6 @@ test('guild join uses the ephemeral access token once and classifies outcomes', 
 			env: configuredEnv,
 			discordUserId,
 			accessToken: 'discord-access-token',
-			fetchImpl,
 			...overrides,
 		})
 
@@ -121,36 +132,44 @@ test('guild join uses the ephemeral access token once and classifies outcomes', 
 	])
 	expect(bodies).toEqual([{ access_token: 'discord-access-token' }])
 
-	const cases = [
-		[
-			{ accessToken: '   ' },
-			{ status: 'skipped', reason: 'missing-access-token' },
-		],
-		[
-			{ accessToken: null },
-			{ status: 'skipped', reason: 'missing-access-token' },
-		],
-		[{ env: {} }, { status: 'skipped', reason: 'not-configured' }],
-		[
-			{ discordUserId: 'mock-discord-user-1' },
-			{ status: 'skipped', reason: 'invalid-user-id' },
-		],
-		[{ fetchImpl: noContent }, { status: 'already-member' }],
-		[{ fetchImpl: respond(403) }, { status: 'forbidden' }],
-		[
-			{ fetchImpl: respond(500) },
-			{ status: 'error', message: 'Discord guild join failed (500).' },
-		],
-	] as const
-	expect(
-		await Promise.all(cases.map(([overrides]) => join(overrides))),
-	).toEqual(cases.map(([, expected]) => expected))
+	expect(await join({ accessToken: '   ' })).toEqual({
+		status: 'skipped',
+		reason: 'missing-access-token',
+	})
+	expect(await join({ accessToken: null })).toEqual({
+		status: 'skipped',
+		reason: 'missing-access-token',
+	})
+	expect(await join({ env: {} })).toEqual({
+		status: 'skipped',
+		reason: 'not-configured',
+	})
+	expect(await join({ discordUserId: 'mock-discord-user-1' })).toEqual({
+		status: 'skipped',
+		reason: 'invalid-user-id',
+	})
+
+	msw.use(http.put(memberUrl, () => new HttpResponse(null, { status: 204 })))
+	expect(await join({})).toEqual({ status: 'already-member' })
+
+	msw.use(http.put(memberUrl, () => jsonResponse(403)))
+	expect(await join({})).toEqual({ status: 'forbidden' })
+
+	msw.use(http.put(memberUrl, () => jsonResponse(500)))
+	expect(await join({})).toEqual({
+		status: 'error',
+		message: 'Discord guild join failed (500).',
+	})
 })
 
 test('official guild membership lookup classifies member, absent, and fail-open', async () => {
-	const { calls, fetchImpl } = recordingFetch(() =>
-		jsonResponse(200, { user: { id: discordUserId } }),
-	)
+	const calls: Array<Call> = []
+	using msw = createMswNodeServer([
+		http.get(memberUrl, ({ request }) => {
+			recordCall(request, calls)
+			return jsonResponse(200, { user: { id: discordUserId } })
+		}),
+	])
 	const lookup = (
 		overrides: Partial<
 			Parameters<typeof readOfficialDiscordGuildMembership>[0]
@@ -159,31 +178,28 @@ test('official guild membership lookup classifies member, absent, and fail-open'
 		readOfficialDiscordGuildMembership({
 			env: configuredEnv,
 			discordUserId,
-			fetchImpl,
 			...overrides,
 		})
 	expect(await lookup()).toEqual({ status: 'member' })
 	expect(calls).toEqual([
 		{ url: memberUrl, method: 'GET', authorization: 'Bot bot-token-test' },
 	])
-	const cases = [
-		[{ fetchImpl: respond(404) }, { status: 'not-in-guild' }],
-		[{ env: {} }, { status: 'skipped', reason: 'not-configured' }],
-		[
-			{ discordUserId: 'mock-discord-user-1' },
-			{ status: 'skipped', reason: 'invalid-user-id' },
-		],
-		[
-			{ fetchImpl: respond(500) },
-			{
-				status: 'error',
-				message: 'Discord guild membership lookup failed (500).',
-			},
-		],
-	] as const
-	expect(
-		await Promise.all(cases.map(([overrides]) => lookup(overrides))),
-	).toEqual(cases.map(([, expected]) => expected))
+
+	msw.use(http.get(memberUrl, () => jsonResponse(404)))
+	expect(await lookup()).toEqual({ status: 'not-in-guild' })
+	expect(await lookup({ env: {} })).toEqual({
+		status: 'skipped',
+		reason: 'not-configured',
+	})
+	expect(await lookup({ discordUserId: 'mock-discord-user-1' })).toEqual({
+		status: 'skipped',
+		reason: 'invalid-user-id',
+	})
+	msw.use(http.get(memberUrl, () => jsonResponse(500)))
+	expect(await lookup()).toEqual({
+		status: 'error',
+		message: 'Discord guild membership lookup failed (500).',
+	})
 
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
@@ -202,67 +218,73 @@ test('official guild membership lookup classifies member, absent, and fail-open'
 			)
 			.bind(11, providerId)
 			.run()
-	const forUser = (
-		userFetch: typeof fetchImpl,
-		env: Record<string, unknown> = configuredEnv,
-	) =>
+	const forUser = (env: Record<string, unknown> = configuredEnv) =>
 		readOfficialDiscordMembershipForUser({
 			env: { ...env, APP_DB: db },
 			userId: 11,
-			fetchImpl: userFetch,
 		})
-	expect(await forUser(fetchImpl)).toBe(false)
+
+	msw.resetHandlers()
+	expect(await forUser()).toBe(false)
 
 	await linkDiscord(discordUserId)
-	expect(await forUser(fetchImpl)).toBe(true)
-	expect(await forUser(respond(404))).toBe(false)
-	expect(await forUser(fetchImpl, {})).toBeNull()
-	expect(
-		await forUser(async () => {
-			throw new Error('discord down')
-		}),
-	).toBeNull()
+	expect(await forUser()).toBe(true)
+	msw.use(http.get(memberUrl, () => jsonResponse(404)))
+	expect(await forUser()).toBe(false)
+	expect(await forUser({})).toBeNull()
+	msw.use(http.get(memberUrl, () => HttpResponse.error()))
+	expect(await forUser()).toBeNull()
 
 	// Any linked Discord account in the guild counts; any lookup error with no
 	// member found fails open (null).
 	const secondDiscordUserId = '555555555555555555'
 	await linkDiscord(secondDiscordUserId)
-	const multi = recordingFetch((url) =>
-		url.includes(secondDiscordUserId)
-			? jsonResponse(200, { user: { id: secondDiscordUserId } })
-			: jsonResponse(404),
+	const multiCalls: Array<Call> = []
+	msw.use(
+		http.get(memberByUserUrl, ({ request, params }) => {
+			recordCall(request, multiCalls)
+			return String(params.userId) === secondDiscordUserId
+				? jsonResponse(200, { user: { id: secondDiscordUserId } })
+				: jsonResponse(404)
+		}),
 	)
-	expect(await forUser(multi.fetchImpl)).toBe(true)
-	expect(multi.calls.some(({ url }) => url.includes(discordUserId))).toBe(true)
-	expect(multi.calls.some(({ url }) => url.includes(secondDiscordUserId))).toBe(
+	expect(await forUser()).toBe(true)
+	expect(multiCalls.some(({ url }) => url.includes(discordUserId))).toBe(true)
+	expect(multiCalls.some(({ url }) => url.includes(secondDiscordUserId))).toBe(
 		true,
 	)
-	expect(await forUser(respond(404))).toBe(false)
-	expect(
-		await forUser(async (input) =>
-			jsonResponse(String(input).includes(secondDiscordUserId) ? 500 : 404),
+	msw.use(http.get(memberByUserUrl, () => jsonResponse(404)))
+	expect(await forUser()).toBe(false)
+	msw.use(
+		http.get(memberByUserUrl, ({ params }) =>
+			jsonResponse(String(params.userId) === secondDiscordUserId ? 500 : 404),
 		),
-	).toBeNull()
+	)
+	expect(await forUser()).toBeNull()
 })
 
 test('assign and remove call the Discord member-role routes and classify outcomes', async () => {
-	const { calls, fetchImpl } = recordingFetch((url, init) =>
-		url === memberRole && (init?.method === 'PUT' || init?.method === 'DELETE')
-			? new Response(null, { status: 204 })
-			: jsonResponse(500),
-	)
+	const calls: Array<Call> = []
+	using msw = createMswNodeServer([
+		http.put(memberRole, ({ request }) => {
+			recordCall(request, calls)
+			return new HttpResponse(null, { status: 204 })
+		}),
+		http.delete(memberRole, ({ request }) => {
+			recordCall(request, calls)
+			return new HttpResponse(null, { status: 204 })
+		}),
+	])
 	expect(
 		await assignDiscordMemberRole({
 			env: configuredEnv,
 			discordUserId,
-			fetchImpl,
 		}),
 	).toEqual({ status: 'assigned' })
 	expect(
 		await removeDiscordMemberRole({
 			env: configuredEnv,
 			discordUserId,
-			fetchImpl,
 		}),
 	).toEqual({ status: 'removed' })
 	expect(calls).toEqual([
@@ -270,31 +292,43 @@ test('assign and remove call the Discord member-role routes and classify outcome
 		{ url: memberRole, method: 'DELETE', authorization: 'Bot bot-token-test' },
 	])
 
-	const cases = [
-		[{ env: {} }, { status: 'skipped', reason: 'not-configured' }],
-		[
-			{ discordUserId: 'mock-discord-user-1' },
-			{ status: 'skipped', reason: 'invalid-user-id' },
-		],
-		[{ fetchImpl: respond(404) }, { status: 'not-in-guild' }],
-		[{ fetchImpl: respond(403) }, { status: 'forbidden' }],
-		[
-			{ fetchImpl: respond(500) },
-			{ status: 'error', message: 'Discord member-role PUT failed (500).' },
-		],
-	] as const
 	expect(
-		await Promise.all(
-			cases.map(([overrides]) =>
-				assignDiscordMemberRole({
-					env: configuredEnv,
-					discordUserId,
-					fetchImpl,
-					...overrides,
-				}),
-			),
-		),
-	).toEqual(cases.map(([, expected]) => expected))
+		await assignDiscordMemberRole({
+			env: {},
+			discordUserId,
+		}),
+	).toEqual({ status: 'skipped', reason: 'not-configured' })
+	expect(
+		await assignDiscordMemberRole({
+			env: configuredEnv,
+			discordUserId: 'mock-discord-user-1',
+		}),
+	).toEqual({ status: 'skipped', reason: 'invalid-user-id' })
+
+	msw.use(http.put(memberRole, () => jsonResponse(404)))
+	expect(
+		await assignDiscordMemberRole({
+			env: configuredEnv,
+			discordUserId,
+		}),
+	).toEqual({ status: 'not-in-guild' })
+	msw.use(http.put(memberRole, () => jsonResponse(403)))
+	expect(
+		await assignDiscordMemberRole({
+			env: configuredEnv,
+			discordUserId,
+		}),
+	).toEqual({ status: 'forbidden' })
+	msw.use(http.put(memberRole, () => jsonResponse(500)))
+	expect(
+		await assignDiscordMemberRole({
+			env: configuredEnv,
+			discordUserId,
+		}),
+	).toEqual({
+		status: 'error',
+		message: 'Discord member-role PUT failed (500).',
+	})
 })
 
 test('plan role sync assigns the subscribed plan and removes the other', async () => {
@@ -321,16 +355,19 @@ test('plan role sync assigns the subscribed plan and removes the other', async (
 			],
 		],
 	] as const) {
-		const { calls, fetchImpl } = recordingFetch(noContent)
+		const calls: Array<Call> = []
+		using _server = createMswNodeServer(noContentHandlers(calls))
 		expect(
 			await syncDiscordPlanRoles({
 				env: configuredEnv,
 				discordUserId,
 				stripePlan,
-				fetchImpl,
 			}),
 		).toEqual({ status: 'assigned' })
 		expect(routes(calls)).toEqual(expectedRoutes)
+		expect(
+			calls.every((call) => call.authorization === 'Bot bot-token-test'),
+		).toBe(true)
 	}
 
 	expect(
@@ -341,7 +378,6 @@ test('plan role sync assigns the subscribed plan and removes the other', async (
 			},
 			discordUserId,
 			stripePlan: 'pro',
-			fetchImpl: noContent,
 		}),
 	).toEqual({ status: 'skipped', reason: 'not-configured' })
 
@@ -365,36 +401,39 @@ test('plan role sync assigns the subscribed plan and removes the other', async (
 
 test('maybe helpers swallow Discord failures instead of throwing', async () => {
 	consoleWarn.mockImplementation(() => {})
+	using msw = createMswNodeServer()
+	msw.use(
+		http.put(roleByIdUrl, () => HttpResponse.error()),
+		http.delete(roleByIdUrl, () => HttpResponse.error()),
+	)
 	expect(
 		await maybeAssignDiscordMemberRole({
 			env: configuredEnv,
 			discordUserId,
-			fetchImpl: async () => {
-				throw new Error('network down')
-			},
 		}),
-	).toEqual({ status: 'error', message: 'network down' })
+	).toMatchObject({ status: 'error', message: expect.any(String) })
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
+	msw.use(http.delete(memberRole, () => jsonResponse(403)))
 	expect(
 		await maybeRemoveDiscordMemberRole({
 			env: configuredEnv,
 			discordUserId,
-			fetchImpl: respond(403),
 		}),
 	).toEqual({ status: 'forbidden' })
 	expect(consoleWarn).toHaveBeenCalledTimes(2)
 
+	msw.use(
+		http.put(roleByIdUrl, () => HttpResponse.error()),
+		http.delete(roleByIdUrl, () => HttpResponse.error()),
+	)
 	expect(
 		await maybeSyncDiscordPlanRoles({
 			env: configuredEnv,
 			discordUserId,
 			stripePlan: 'pro',
-			fetchImpl: async () => {
-				throw new Error('plan role down')
-			},
 		}),
-	).toEqual({ status: 'error', message: 'plan role down' })
+	).toMatchObject({ status: 'error', message: expect.any(String) })
 	expect(consoleWarn).toHaveBeenCalledTimes(3)
 })
 
@@ -415,12 +454,12 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 		VALUES (7, 'discord', '${discordUserId}');
 	`)
 	const env = { ...configuredEnv, APP_DB: createD1FromSqlite(sqlite) }
-	const { calls, fetchImpl } = recordingFetch(noContent)
+	const calls: Array<Call> = []
+	using _server = createMswNodeServer(noContentHandlers(calls))
 
 	const synced = await maybeSyncDiscordGuildRolesForUser({
 		env,
 		userId: 7,
-		fetchImpl,
 	})
 	expect('member' in synced && synced.member).toEqual({ status: 'assigned' })
 	expect('plan' in synced && synced.plan).toEqual({ status: 'assigned' })
@@ -436,21 +475,24 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 			{ url: proRole, method: 'DELETE' },
 		]),
 	)
-
-	calls.length = 0
 	expect(
-		await maybeSyncDiscordGuildRolesForUser({ env, userId: 99, fetchImpl }),
-	).toEqual({ status: 'skipped', reason: 'no-discord-connection' })
-	expect(calls).toEqual([])
+		calls.every((call) => call.authorization === 'Bot bot-token-test'),
+	).toBe(true)
+
+	const afterSync = calls.length
+	expect(await maybeSyncDiscordGuildRolesForUser({ env, userId: 99 })).toEqual({
+		status: 'skipped',
+		reason: 'no-discord-connection',
+	})
+	expect(calls).toHaveLength(afterSync)
 
 	const removed = await maybeRemoveDiscordGuildRoles({
 		env,
 		discordUserId,
-		fetchImpl,
 	})
 	expect(removed.member).toEqual({ status: 'removed' })
 	expect(removed.plan).toEqual({ status: 'assigned' })
-	expect(routes(calls)).toEqual(
+	expect(routes(calls.slice(afterSync))).toEqual(
 		expect.arrayContaining([
 			{ url: memberRole, method: 'DELETE' },
 			{ url: standardRole, method: 'DELETE' },

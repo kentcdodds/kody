@@ -52,7 +52,6 @@ export async function deriveWaitingItems(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
-	fetchImpl?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WaitingItem>> {
 	const signals = await collectWaitingSignals(input)
@@ -102,7 +101,6 @@ export async function collectWaitingSignals(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
-	fetchImpl?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WaitingSignals> {
 	const now = input.now ?? new Date()
@@ -151,7 +149,6 @@ export async function collectWaitingSignals(input: {
 		readOfficialDiscordMembershipForUser({
 			env,
 			userId: user.userId,
-			fetchImpl: input.fetchImpl,
 		}),
 	])
 
