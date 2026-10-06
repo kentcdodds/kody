@@ -178,6 +178,11 @@ export function createAccountProfileApiHandler(env: Env) {
 					throw error
 				}
 
+				// Invalidate immediately after the claim so same-isolate package-app
+				// serve sees the new username even if later package/community work
+				// fails; rollback below invalidates again after restoring.
+				invalidatePackageAppOwnerCache({ stableUserId: packageUserId })
+
 				const claimed = await db.findOne(usersTable, {
 					where: { id: user.userId },
 				})
@@ -277,8 +282,6 @@ export function createAccountProfileApiHandler(env: Env) {
 					ip: requestIp,
 					path: url.pathname,
 				})
-
-				invalidatePackageAppOwnerCache({ stableUserId: packageUserId })
 
 				const packageCount = packageUpdate.updatedPackages.length
 				const packageSummary =

@@ -218,6 +218,10 @@ export async function verifyEmailChangeToken(input: {
 		throw error
 	}
 
+	// Invalidate immediately after the email write so same-isolate package-app
+	// serve cannot keep the old email while later cleanup claims may fail.
+	invalidatePackageAppOwnerCache({ stableUserId })
+
 	await input.db
 		.prepare(`DELETE FROM pending_email_changes WHERE user_id = ?`)
 		.bind(record.user_id)
@@ -247,8 +251,6 @@ export async function verifyEmailChangeToken(input: {
 		userId: record.user_id,
 		newEmail,
 	})
-
-	invalidatePackageAppOwnerCache({ stableUserId })
 
 	return {
 		ok: true,
