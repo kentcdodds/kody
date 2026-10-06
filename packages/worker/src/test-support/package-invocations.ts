@@ -320,6 +320,7 @@ export function createFakeRunLog(
 				ledgerRows.splice(index, 1)
 				released = true
 			}
+			let runFinished = false
 			if (input.run) {
 				const runId = String(input.run['id'])
 				const previous = runRows.get(runId)
@@ -330,6 +331,7 @@ export function createFakeRunLog(
 				if (previousStatus === 'running' || previousStatus == null) {
 					runRows.set(runId, clone(input.run))
 					runLogs.set(runId, input.logs.map(logMessage))
+					runFinished = true
 				}
 			} else if (input.runId) {
 				const run = runRows.get(input.runId)
@@ -340,6 +342,7 @@ export function createFakeRunLog(
 			return {
 				released,
 				record: released || !row ? null : clone(row),
+				runFinished,
 			}
 		},
 		async getJobRunObservability(input: { jobId: string }) {

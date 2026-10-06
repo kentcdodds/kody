@@ -115,13 +115,7 @@ export function buildWebhookDispatchFailureLogs(input: {
 			message: `Invocation error code: ${invocationError.code}`,
 			fields: {
 				code: invocationError.code,
-				...(invocationError.message ? { detail: invocationError.message } : {}),
 			},
-		})
-	} else if (invocationError.message) {
-		logs.push({
-			level: 'error',
-			message: invocationError.message,
 		})
 	}
 	return logs

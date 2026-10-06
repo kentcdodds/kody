@@ -2550,6 +2550,8 @@ class RunLogBase extends DurableObject<Env> {
 		released: boolean
 		/** Current row when the fence failed, so the caller can resolve it. */
 		record: PackageInvocationLedgerRecord | null
+		/** True when this RPC finished the attempt's run as an error. */
+		runFinished: boolean
 	}> {
 		// Same explicit read-then-write fence as finishPackageInvocation: DO
 		// execution is serialized, so this is atomic within the RPC.
@@ -2566,6 +2568,7 @@ class RunLogBase extends DurableObject<Env> {
 		}
 		// Finish this attempt's run even when the ledger fence failed — the
 		// attempt still happened and must not stay `running` or vanish.
+		let runFinished = false
 		const releasedRun = input.run
 		if (releasedRun) {
 			const previousStatus = this.getRunStatus(releasedRun.id)
@@ -2583,6 +2586,7 @@ class RunLogBase extends DurableObject<Env> {
 						run: releasedRun,
 					})
 				})
+				runFinished = true
 				this.retentionIdleConfirmed = false
 				this.invalidateReadMemos()
 				this.resetRetentionEmptyBackoff()
@@ -2595,9 +2599,9 @@ class RunLogBase extends DurableObject<Env> {
 			await this.deleteRunIfRunning({ runId: input.runId })
 		}
 		if (released) {
-			return { released: true, record: null }
+			return { released: true, record: null, runFinished }
 		}
-		return { released: false, record: current }
+		return { released: false, record: current, runFinished }
 	}
 
 	/**
@@ -4040,6 +4044,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 	}) => Promise<{
 		released: boolean
 		record: PackageInvocationLedgerRecord | null
+		runFinished: boolean
 	}>
 	upsertWorkflowProjection: (
 		input: WorkflowProjectionUpsertInput,

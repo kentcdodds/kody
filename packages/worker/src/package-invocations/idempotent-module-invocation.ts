@@ -445,6 +445,7 @@ export async function invokeSavedPackageModule(input: {
 						},
 					},
 				],
+				waitUntil: input.waitUntil,
 			})
 			if (!release.released) {
 				const current = release.record

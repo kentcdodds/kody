@@ -40,7 +40,7 @@ test('webhook failure helpers surface invocation codes for Activity logs', () =>
 		{
 			level: 'error',
 			message: 'Invocation error code: invocation_failed',
-			fields: { code: 'invocation_failed', detail: 'boom' },
+			fields: { code: 'invocation_failed' },
 		},
 	])
 

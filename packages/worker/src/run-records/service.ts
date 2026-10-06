@@ -829,6 +829,7 @@ export async function releasePackageInvocationRecord(input: {
 	handle: RunRecordHandle | null
 	logs?: Array<RunRecordLogInput>
 	error?: unknown
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	released: boolean
 	record: PackageInvocationLedgerRecord | null
@@ -852,7 +853,7 @@ export async function releasePackageInvocationRecord(input: {
 			updatedAt: finishedAt,
 		})
 	}
-	return await runLogRpc({
+	const released = await runLogRpc({
 		env: input.env,
 		userId: input.userId,
 	}).releasePackageInvocation({
@@ -862,6 +863,24 @@ export async function releasePackageInvocationRecord(input: {
 		run,
 		logs: run ? normalizeLogs(input.logs) : [],
 	})
+	if (handle && run && released.runFinished) {
+		const sideEffects = dispatchTerminalRunRecordSideEffects({
+			env: input.env,
+			handle,
+			persistedRun: run,
+			status: 'error',
+			waitUntil: input.waitUntil,
+		})
+		if (input.waitUntil) {
+			input.waitUntil(sideEffects)
+		} else {
+			await sideEffects
+		}
+	}
+	return {
+		released: released.released,
+		record: released.record,
+	}
 }
 
 /**
