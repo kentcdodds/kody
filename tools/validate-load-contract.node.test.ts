@@ -45,6 +45,8 @@ test('validate runs worker-startup-time:check only after the parallel phase', ()
 test('validate sets KODY_VALIDATE_LOAD=1 on the test-workers leg only', () => {
 	const validate = readValidateScript()
 	const { legs, serialTail } = concurrentValidateLegs(validate)
+	// Whole-script once: catches `KODY_VALIDATE_LOAD=1 concurrently …` inheritance.
+	expect(validate.match(/KODY_VALIDATE_LOAD=1/g)).toHaveLength(1)
 	const loadLegs = legs.filter((leg) => /\bKODY_VALIDATE_LOAD=/.test(leg))
 	expect(loadLegs).toEqual(['CI=1 KODY_VALIDATE_LOAD=1 npm run test:workers'])
 	expect(serialTail).not.toMatch(/\bKODY_VALIDATE_LOAD=/)
