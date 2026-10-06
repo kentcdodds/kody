@@ -81,6 +81,37 @@ test('allows negations and rejects hosted execute as a fallback', () => {
 			content: 'fall back to hosted MCP `execute`',
 		}),
 	).toEqual([])
+
+	expect(
+		findDisallowedHostedExecuteMentions({
+			relativePath: 'docs/guides/local-execute.md',
+			content:
+				'Do **not** fall back to hosted MCP `execute` when --local fails.',
+		}),
+	).toEqual([])
+
+	expect(
+		findDisallowedHostedExecuteMentions({
+			relativePath: 'docs/guides/search-and-execute.md',
+			content: 'If --local is unavailable, fall back to\nhosted MCP `execute`.',
+		}),
+	).toEqual([
+		expect.objectContaining({
+			pattern: 'fall back to MCP execute',
+			line: 1,
+		}),
+	])
+
+	expect(
+		findDisallowedHostedExecuteMentions({
+			relativePath: '.agents/skills/prefer-local-cli-execute/SKILL.md',
+			content: 'If local execution fails, use MCP `execute`.',
+		}),
+	).toEqual([
+		expect.objectContaining({
+			pattern: 'if local fails, use MCP execute',
+		}),
+	])
 })
 
 test('lists scan roots and fails a planted fallback recommendation', async () => {

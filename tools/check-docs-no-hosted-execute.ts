@@ -34,10 +34,20 @@ export const scannedRelativeFiles: ReadonlyArray<string> = [
  * Present-tense negations. Blank these before matching so "do not use" and
  * "is banned" stay legal.
  */
+const fallBackToMcpExecute =
+	/fall(?:\s+|-)back\s+to\s+(?:using\s+)?(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/
+		.source
+
 export const allowedHostedExecutePhrasePatterns: ReadonlyArray<RegExp> = [
 	/\bdo\s+\*{0,2}not\*{0,2}\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
 	/\bdon't\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
 	/\bnever\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
+	new RegExp(
+		String.raw`\bdo\s+\*{0,2}not\*{0,2}\s+${fallBackToMcpExecute}`,
+		'gi',
+	),
+	new RegExp(String.raw`\bdon't\s+${fallBackToMcpExecute}`, 'gi'),
+	new RegExp(String.raw`\bnever\s+${fallBackToMcpExecute}`, 'gi'),
 	/\bnever\s+hosted\s+MCP\s+`?execute`?/gi,
 	/\bhosted\s+MCP\s+`?execute`?\s+is\s+banned\b/gi,
 	/\bover\s+hosted\s+MCP\s+`?execute`?/gi,
@@ -52,8 +62,7 @@ export const bannedHostedExecutePatterns: ReadonlyArray<BannedHostedExecutePatte
 	[
 		{
 			label: 'fall back to MCP execute',
-			regex:
-				/\bfall(?:\s+|-)back\s+to\s+(?:using\s+)?(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/i,
+			regex: new RegExp(String.raw`\b${fallBackToMcpExecute}`, 'i'),
 		},
 		{
 			label: 'use/prefer/call/try hosted MCP execute',
@@ -73,6 +82,11 @@ export const bannedHostedExecutePatterns: ReadonlyArray<BannedHostedExecutePatte
 			label: 'otherwise use MCP execute',
 			regex:
 				/\botherwise\s+(?:use|call|try)\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/i,
+		},
+		{
+			label: 'if local fails, use MCP execute',
+			regex:
+				/\bif\b[^.]{0,160}?\b(?:cannot|can't|unavailable|fails|failed|missing)\b[^.]{0,100}?\buse\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/i,
 		},
 	]
 
@@ -103,22 +117,51 @@ export function findDisallowedHostedExecuteMentions(input: {
 	}
 
 	const matches: Array<HostedExecuteMention> = []
-	for (const [lineIndex, line] of input.content.split('\n').entries()) {
-		const searchable = blankAllowedPhrases(line)
+	const lines = input.content.split('\n')
+	let index = 0
+	while (index < lines.length) {
+		if (lines[index]?.trim() === '') {
+			index += 1
+			continue
+		}
+		const start = index
+		while (index < lines.length && lines[index]?.trim() !== '') {
+			index += 1
+		}
+		const block = lines.slice(start, index)
+		const searchable = blankAllowedPhrases(block.join(' '))
 		for (const pattern of bannedHostedExecutePatterns) {
 			pattern.regex.lastIndex = 0
 			const match = pattern.regex.exec(searchable)
 			if (!match) continue
+			const located = locateInBlock(block, match.index)
+			const excerptLine = block[located.lineOffset] ?? block[0] ?? ''
 			matches.push({
 				file: relativePath,
-				line: lineIndex + 1,
-				column: match.index + 1,
+				line: start + located.lineOffset + 1,
+				column: located.column,
 				pattern: pattern.label,
-				excerpt: line.trim(),
+				excerpt: excerptLine.trim(),
 			})
 		}
 	}
 	return matches
+}
+
+function locateInBlock(
+	block: ReadonlyArray<string>,
+	offset: number,
+): { lineOffset: number; column: number } {
+	let cursor = 0
+	for (let lineOffset = 0; lineOffset < block.length; lineOffset += 1) {
+		const line = block[lineOffset] ?? ''
+		const end = cursor + line.length
+		if (offset <= end) {
+			return { lineOffset, column: offset - cursor + 1 }
+		}
+		cursor = end + 1
+	}
+	return { lineOffset: 0, column: 1 }
 }
 
 async function collectMatchingPaths(
