@@ -276,7 +276,10 @@ test('resetPreviewD1Databases deletes only per-PR app and audit D1 names', async
 	)
 	await expect(
 		resetPreviewD1Databases({ workerName: 'kody', dryRun: true }),
-	).rejects.toThrow(/Refusing to delete d1/)
+	).rejects.toThrow(/limited to kody-pr-<number>/)
+	await expect(
+		resetPreviewD1Databases({ workerName: 'kody-branch-feat', dryRun: true }),
+	).rejects.toThrow(/limited to kody-pr-<number>/)
 })
 
 test('assertPreviewResourceName accepts every derived preview name kind, including 63-character truncation', () => {

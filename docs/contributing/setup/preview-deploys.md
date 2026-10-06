@@ -108,29 +108,33 @@ example `duplicate column name`). Before each preview `d1 migrations apply`, the
 workflow runs `tools/ci/rewrite-renamed-preview-migrations.ts` (requires
 `CLOUDFLARE_ENV=preview`). It rewrites `d1_migrations` rows whose filename is
 gone but whose SQL sha256 still matches a current file on the branch (historical
-SQL is recovered from git; the preview deploy job checks out with
-`fetch-depth: 0`). The script also refuses any wrangler config whose binding
-`database_name` is not a preview name (`kody-pr-*` / `kody-branch-*` or shared
-`kody-preview-jobs`). That is bookkeeping only — not a schema drop — and never
-runs in production.
+SQL is recovered from git via `commit^:path` when the last touch renamed the
+file; the preview deploy job checks out with `fetch-depth: 0`). When
+rebase-and-renumber erased the old path from `HEAD` history, the rewrite falls
+back to a unique kebab-slug match. The script also refuses any wrangler config
+whose binding `database_name` is not a preview name (`kody-pr-*` /
+`kody-branch-*` or shared `kody-preview-jobs`). That is bookkeeping only — not a
+schema drop — and never runs in production.
 
 If rewrite cannot match (content changed as well as the name, or git cannot
-recover the old file), use the **reset preview D1** fallback for the per-PR
-databases only (`kody-pr-<n>-db` and `kody-pr-<n>-audit-db`). This deletes
-preview seed data for that PR; the next Deploy Preview Resources run recreates
-the D1s, applies migrations fresh, and reseeds. It is not a production
-data-drop. Names still pass through `assertPreviewResourceName`.
+recover the old file and slug match is ambiguous), use the **reset preview D1**
+fallback for **PR** preview databases only (`kody-pr-<n>-db` and
+`kody-pr-<n>-audit-db`). This deletes preview seed data for that PR; the next
+Deploy Preview Resources run recreates the D1s, applies migrations fresh, and
+reseeds. It is not a production data-drop. Names still pass through
+`assertPreviewResourceName`, and `reset-d1` refuses `kody-branch-*` worker
+names.
 
 ```bash
 # Requires CLOUDFLARE_API_TOKEN (+ CLOUDFLARE_ACCOUNT_ID for list/delete).
+# Worker name must be exactly kody-pr-<n>.
 node tools/ci/preview-resources.ts reset-d1 --worker-name kody-pr-<n>
 ```
 
 Then re-run the preview workflow (or `preview-resources.ts ensure` followed by
 migrations apply and `tools/seed-test-data.ts --remote`). Do **not** delete the
 shared jobs preview database (`kody-preview-jobs`) this way — that name is
-shared across previews; prefer the sha-match rewrite, or ask before resetting
-it.
+shared across previews; prefer the sha/slug rewrite, or ask before resetting it.
 
 To **manually test** a PR preview (find the URL, sign in as the seeded user,
 create specific data with `--request`, assert the change), see

@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -11,6 +12,7 @@ import {
 	parseArgs,
 	planRenamedMigrationRewrites,
 	readD1DatabaseNameFromConfig,
+	resolveHistoricalMigrationContent,
 	sharedPreviewJobsD1DatabaseName,
 } from './rewrite-renamed-preview-migrations.ts'
 
@@ -40,6 +42,7 @@ test('planRenamedMigrationRewrites renames when historical sha matches one curre
 			from: '0074-platform-oauth-app-visibility.sql',
 			to: '0075-platform-oauth-app-visibility.sql',
 			sha256: hashMigrationContent(sql),
+			matchedBy: 'sha',
 		},
 	])
 })
@@ -62,11 +65,32 @@ test('planRenamedMigrationRewrites drops stale name when target is already appli
 			from: '0074-platform-oauth-app-visibility.sql',
 			to: '0075-platform-oauth-app-visibility.sql',
 			sha256: hashMigrationContent(sql),
+			matchedBy: 'sha',
 		},
 	])
 })
 
-test('planRenamedMigrationRewrites skips when content changed or history is missing', () => {
+test('planRenamedMigrationRewrites falls back to unique kebab slug after rebase erased history', () => {
+	const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
+		currentFiles: [digest('0075-platform-oauth-app-visibility.sql', sql)],
+		resolveHistoricalContent: () => null,
+	})
+
+	expect(plan.skipped).toEqual([])
+	expect(plan.rewrites).toEqual([
+		{
+			kind: 'rename',
+			from: '0074-platform-oauth-app-visibility.sql',
+			to: '0075-platform-oauth-app-visibility.sql',
+			sha256: hashMigrationContent(sql),
+			matchedBy: 'slug',
+		},
+	])
+})
+
+test('planRenamedMigrationRewrites skips when content changed or history/slug cannot match', () => {
 	const plan = planRenamedMigrationRewrites({
 		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
 		currentFiles: [
@@ -92,7 +116,7 @@ test('planRenamedMigrationRewrites skips when content changed or history is miss
 		resolveHistoricalContent: () => null,
 	})
 	expect(missingHistory.rewrites).toEqual([])
-	expect(missingHistory.skipped[0]?.reason).toMatch(/could not recover/)
+	expect(missingHistory.skipped[0]?.reason).toMatch(/no current file has slug/)
 })
 
 test('planRenamedMigrationRewrites skips ambiguous sha matches', () => {
@@ -130,6 +154,47 @@ test('parseArgs requires remote, binding, config, and migrations-dir', () => {
 		migrationsDir: 'packages/worker/migrations',
 		dryRun: true,
 	})
+})
+
+test('resolveHistoricalMigrationContent recovers SQL from rename via commit parent', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'rewrite-git-rename-'))
+	const migrationsDir = join(dir, 'packages', 'worker', 'migrations')
+	mkdirSync(migrationsDir, { recursive: true })
+	const run = (args: Array<string>) => {
+		const result = spawnSync('git', args, {
+			cwd: dir,
+			encoding: 'utf8',
+		})
+		expect(result.status, result.stderr).toBe(0)
+		return result.stdout
+	}
+	try {
+		run(['init'])
+		run(['config', 'user.email', 'test@example.com'])
+		run(['config', 'user.name', 'test'])
+		const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+		const oldName = '0074-platform-oauth-app-visibility.sql'
+		const newName = '0075-platform-oauth-app-visibility.sql'
+		writeFileSync(join(migrationsDir, oldName), sql)
+		run(['add', '.'])
+		run(['commit', '-m', 'add migration'])
+		run([
+			'mv',
+			`packages/worker/migrations/${oldName}`,
+			`packages/worker/migrations/${newName}`,
+		])
+		run(['commit', '-m', 'renumber migration'])
+
+		expect(
+			resolveHistoricalMigrationContent({
+				migrationsDir: 'packages/worker/migrations',
+				filename: oldName,
+				cwd: dir,
+			}),
+		).toBe(sql)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
 })
 
 test('isAllowedPreviewD1DatabaseName accepts per-PR and shared jobs preview only', () => {

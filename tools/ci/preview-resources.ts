@@ -918,9 +918,12 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 /**
  * Delete only the per-PR app + audit D1 databases so the next preview ensure /
  * migrations apply bootstraps a fresh ledger. Used when rename-aware
- * `d1_migrations` rewrite cannot match (#2776). Never touches production or
- * the shared `kody-preview-jobs` database.
+ * `d1_migrations` rewrite cannot match (#2776). Never touches production, the
+ * shared `kody-preview-jobs` database, or `kody-branch-*` previews (docs and
+ * this guard are PR-only).
  */
+export const resetPreviewD1WorkerNamePattern = /^kody-pr-\d+$/
+
 export async function resetPreviewD1Databases(options: {
 	workerName: string
 	dryRun: boolean
@@ -929,11 +932,21 @@ export async function resetPreviewD1Databases(options: {
 	deadlineMs?: number
 	now?: () => number
 }) {
+	if (!resetPreviewD1WorkerNamePattern.test(options.workerName)) {
+		throw new Error(
+			`Refusing to reset D1 databases for "${options.workerName}": reset-d1 is limited to kody-pr-<number> (not branch previews or production).`,
+		)
+	}
 	const { d1DatabaseName, auditD1DatabaseName } = buildPreviewResourceNames(
 		options.workerName,
 	)
-	for (const name of [auditD1DatabaseName, d1DatabaseName]) {
+	const names = [auditD1DatabaseName, d1DatabaseName]
+	// Validate both names before deleting either so a truncation mismatch cannot
+	// remove audit-db and then fail on app-db.
+	for (const name of names) {
 		assertPreviewResourceName(name, 'd1')
+	}
+	for (const name of names) {
 		await deletePreviewD1Database({
 			name,
 			dryRun: options.dryRun,
