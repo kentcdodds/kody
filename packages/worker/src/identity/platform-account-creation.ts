@@ -1,4 +1,4 @@
-import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
@@ -136,7 +136,11 @@ export async function createPlatformAccount(input: {
 		} satisfies CreatedPlatformAccount
 	} catch (error) {
 		if (userId != null) {
-			await deleteUserBestEffort(input.db, userId)
+			await deleteUserBestEffort({
+				db: input.db,
+				userId,
+				stableUserId,
+			})
 			if (error instanceof PlatformAccountCreateError) throw error
 			throw new PlatformAccountCreateError(
 				'create_failed',
@@ -161,13 +165,20 @@ export async function createPlatformAccount(input: {
 	}
 }
 
-async function deleteUserBestEffort(db: D1Database, userId: number) {
+async function deleteUserBestEffort(input: {
+	db: D1Database
+	userId: number
+	stableUserId: string
+}) {
 	try {
-		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
+		await input.db
+			.prepare(`DELETE FROM users WHERE id = ?`)
+			.bind(input.userId)
+			.run()
 	} catch (error) {
 		console.error('Failed to roll back platform account user:', error)
 		return
 	}
-	// Invalidate after DELETE so a failed SELECT cannot block rollback.
-	await invalidatePackageAppOwnerCacheForDbUserId(db, userId)
+	// Use the known stable id: a post-DELETE SELECT would find nothing.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 }

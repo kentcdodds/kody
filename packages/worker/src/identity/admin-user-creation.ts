@@ -1,4 +1,4 @@
-import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
@@ -76,15 +76,22 @@ async function resolveUsername(input: {
 	return explicitUsername
 }
 
-async function deleteUserBestEffort(db: D1Database, userId: number) {
+async function deleteUserBestEffort(input: {
+	db: D1Database
+	userId: number
+	stableUserId: string
+}) {
 	try {
-		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
+		await input.db
+			.prepare(`DELETE FROM users WHERE id = ?`)
+			.bind(input.userId)
+			.run()
 	} catch (error) {
 		console.error('Failed to roll back admin-created user:', error)
 		return
 	}
-	// Invalidate after DELETE so a failed SELECT cannot block rollback.
-	await invalidatePackageAppOwnerCacheForDbUserId(db, userId)
+	// Use the known stable id: a post-DELETE SELECT would find nothing.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 }
 
 function buildSetupLink(input: { origin: string; token: string }) {
@@ -176,7 +183,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		roleName: 'user',
 	})
 	if (!assigned) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'default_role_assignment_failed',
 			'Unable to create account.',
@@ -186,7 +197,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	try {
 		await claimAccountEmail(input.db, { userId, email, now })
 	} catch (error) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'create_failed',
 			error instanceof Error ? error.message : 'Unable to create account.',
@@ -202,7 +217,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			expiresAt: setupTokenExpiresAt,
 		})
 	} catch (error) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'setup_token_failed',
 			error instanceof Error ? error.message : 'Unable to create setup link.',
