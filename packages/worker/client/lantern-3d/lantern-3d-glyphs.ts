@@ -19,11 +19,19 @@ import { type LandingPrimitiveId } from '#universal/landing-lantern.ts'
  * padlock, the package cube, the bolt, the two plugs, and the app grid.
  * Each glyph is centred and scaled so its larger side is one unit, facing
  * +z, so the model can size it to the orb and turn it to face the viewer.
+ *
+ * Behind each white face sits a keyline: the same parts grown outward and
+ * set back a little, drawn dark. It outlines the glyph against any orb
+ * color and fills the seams (between the cube's faces, the app tiles, the
+ * keyhole), so the icon stays crisp at phone size and in dark mode.
  */
 
 type Point = readonly [x: number, y: number]
 
-const stroke = 0.045
+const stroke = 0.052
+
+/** How far the keyline reaches past the face, in glyph units. */
+const keylineWidth = 0.065
 
 /** Glyphs draw at a few dozen pixels, so the curves stay coarse. */
 const extrusion = {
@@ -38,36 +46,52 @@ const extrusion = {
 /** Strokes run through the middle of the extrusions' depth. */
 const middle = extrusion.depth / 2
 
-export function createGlyphGeometry(id: LandingPrimitiveId): BufferGeometry {
-	const parts = glyphParts(id)
+export function createGlyphGeometry(id: LandingPrimitiveId): {
+	face: BufferGeometry
+	keyline: BufferGeometry
+} {
+	const face = merge(glyphParts(id, 0))
+	const keyline = merge(glyphParts(id, keylineWidth))
+	face.computeBoundingBox()
+	const box = face.boundingBox!
+	const centre = box.getCenter(new Vector3())
+	const size = box.getSize(new Vector3())
+	const scale = 1 / Math.max(size.x, size.y)
+	// Set back past the grown strokes, so no part of it covers the face.
+	const setBack = keylineWidth + 0.03
+	face.translate(-centre.x, -centre.y, -centre.z)
+	keyline.translate(-centre.x, -centre.y, -centre.z - setBack)
+	face.scale(scale, scale, scale)
+	keyline.scale(scale, scale, scale)
+	return { face, keyline }
+}
+
+function merge(parts: Array<BufferGeometry>) {
 	const merged = mergeGeometries(
 		parts.map((part) => (part.index ? part.toNonIndexed() : part)),
 	)
 	for (const part of parts) part.dispose()
-	merged.computeBoundingBox()
-	const box = merged.boundingBox!
-	const centre = box.getCenter(new Vector3())
-	const size = box.getSize(new Vector3())
-	merged.translate(-centre.x, -centre.y, -centre.z)
-	const scale = 1 / Math.max(size.x, size.y)
-	merged.scale(scale, scale, scale)
 	return merged
 }
 
-function glyphParts(id: LandingPrimitiveId): Array<BufferGeometry> {
+/** `grow` widens every stroke and shape by that much, for the keyline. */
+function glyphParts(
+	id: LandingPrimitiveId,
+	grow: number,
+): Array<BufferGeometry> {
 	switch (id) {
 		case 'memory':
-			return brain()
+			return brain(grow)
 		case 'secrets':
-			return padlock()
+			return padlock(grow)
 		case 'packages':
-			return cube()
+			return cube(grow)
 		case 'triggers':
-			return bolt()
+			return bolt(grow)
 		case 'integrations':
-			return plugs()
+			return plugs(grow)
 		case 'apps':
-			return tiles()
+			return tiles(grow)
 		default: {
 			const exhaustive: never = id
 			return exhaustive
@@ -75,9 +99,15 @@ function glyphParts(id: LandingPrimitiveId): Array<BufferGeometry> {
 	}
 }
 
+/** The bevel offset grows the outline and shrinks the holes. */
+function extrude(shape: Shape, grow: number) {
+	return new ExtrudeGeometry(shape, { ...extrusion, bevelOffset: grow })
+}
+
 /** Scalloped outline, a stem down the middle, and four traces that end in
  *  rings, like the memory orb art. */
-function brain() {
+function brain(grow: number) {
+	const line = stroke + grow
 	const outline: Array<Vector3> = []
 	const samples = 100
 	for (let i = 0; i < samples; i++) {
@@ -92,44 +122,59 @@ function brain() {
 		)
 	}
 	return [
-		new TubeGeometry(new CatmullRomCurve3(outline, true), 140, stroke, 8, true),
-		...polyline([
-			[0, 0.36],
-			[0, -0.5],
-		]),
-		...polyline([
-			[0, 0.13],
-			[-0.15, 0.13],
-			[-0.15, 0.2],
-		]),
-		ring([-0.15, 0.26]),
-		...polyline([
-			[0, -0.07],
-			[-0.19, -0.07],
-		]),
-		ring([-0.25, -0.07]),
-		...polyline([
-			[0, 0.05],
-			[0.16, 0.05],
-			[0.16, 0.13],
-		]),
-		ring([0.16, 0.19]),
-		...polyline([
-			[0, -0.17],
-			[0.19, -0.17],
-		]),
-		ring([0.25, -0.17]),
+		new TubeGeometry(new CatmullRomCurve3(outline, true), 140, line, 8, true),
+		...polyline(
+			[
+				[0, 0.36],
+				[0, -0.5],
+			],
+			line,
+		),
+		...polyline(
+			[
+				[0, 0.13],
+				[-0.15, 0.13],
+				[-0.15, 0.2],
+			],
+			line,
+		),
+		ring([-0.15, 0.26], grow),
+		...polyline(
+			[
+				[0, -0.07],
+				[-0.19, -0.07],
+			],
+			line,
+		),
+		ring([-0.25, -0.07], grow),
+		...polyline(
+			[
+				[0, 0.05],
+				[0.16, 0.05],
+				[0.16, 0.13],
+			],
+			line,
+		),
+		ring([0.16, 0.19], grow),
+		...polyline(
+			[
+				[0, -0.17],
+				[0.19, -0.17],
+			],
+			line,
+		),
+		ring([0.25, -0.17], grow),
 	]
 }
 
-function padlock() {
-	const body = roundedRect(-0.33, -0.44, 0.66, 0.52, 0.1)
+function padlock(grow: number) {
+	const body = roundedRect(-0.34, -0.44, 0.68, 0.54, 0.1)
 	const keyhole = new Path()
-	const centre: Point = [0, -0.14]
-	const radius = 0.075
-	const neck = 0.032
+	const centre: Point = [0, -0.13]
+	const radius = 0.09
+	const neck = 0.04
 	const meet = Math.sqrt(radius * radius - neck * neck)
-	keyhole.moveTo(-0.05, -0.34)
+	keyhole.moveTo(-0.06, -0.34)
 	keyhole.lineTo(-neck, centre[1] - meet)
 	keyhole.absarc(
 		centre[0],
@@ -139,8 +184,8 @@ function padlock() {
 		Math.atan2(-meet, neck),
 		true,
 	)
-	keyhole.lineTo(0.05, -0.34)
-	keyhole.lineTo(-0.05, -0.34)
+	keyhole.lineTo(0.06, -0.34)
+	keyhole.lineTo(-0.06, -0.34)
 	body.holes.push(keyhole)
 
 	const arch: Array<Vector3> = [
@@ -155,13 +200,13 @@ function padlock() {
 	}
 	arch.push(new Vector3(0.2, 0.14, middle), new Vector3(0.2, 0.04, middle))
 	return [
-		new ExtrudeGeometry(body, extrusion),
-		new TubeGeometry(new CatmullRomCurve3(arch), 40, 0.06, 10, false),
+		extrude(body, grow),
+		new TubeGeometry(new CatmullRomCurve3(arch), 40, 0.066 + grow, 10, false),
 	]
 }
 
 /** Three faces of an isometric cube, pulled apart so the seams read. */
-function cube() {
+function cube(grow: number) {
 	const r = 0.5
 	const c = r * Math.cos(Math.PI / 6)
 	const faces: Array<ReadonlyArray<Point>> = [
@@ -184,13 +229,12 @@ function cube() {
 			[0, -r],
 		],
 	]
-	return faces.map(
-		(face) =>
-			new ExtrudeGeometry(roundedPolygon(shrink(face, 0.84), 0.05), extrusion),
+	return faces.map((face) =>
+		extrude(roundedPolygon(shrink(face, 0.74), 0.05), grow),
 	)
 }
 
-function bolt() {
+function bolt(grow: number) {
 	const points: ReadonlyArray<Point> = [
 		[0.1, 0.5],
 		[-0.27, -0.02],
@@ -199,12 +243,12 @@ function bolt() {
 		[0.27, 0.05],
 		[0.03, 0.05],
 	]
-	return [new ExtrudeGeometry(roundedPolygon(points, 0.035), extrusion)]
+	return [extrude(roundedPolygon(points, 0.035), grow)]
 }
 
 /** Two plugs about to meet on the diagonal: prongs from the lower left,
  *  the socket from the upper right, each trailing its cable. */
-function plugs() {
+function plugs(grow: number) {
 	const plug = new Shape()
 	plug.moveTo(-0.1, 0.15)
 	plug.lineTo(-0.22, 0.15)
@@ -220,46 +264,52 @@ function plugs() {
 	socket.lineTo(0.1, -0.15)
 
 	const parts = [
-		new ExtrudeGeometry(plug, extrusion),
-		new ExtrudeGeometry(socket, extrusion),
+		extrude(plug, grow),
+		extrude(socket, grow),
 		...polyline(
 			[
 				[-0.1, 0.07],
 				[0.02, 0.07],
 			],
-			0.03,
+			0.034 + grow,
 		),
 		...polyline(
 			[
 				[-0.1, -0.07],
 				[0.02, -0.07],
 			],
-			0.03,
+			0.034 + grow,
 		),
-		...polyline([
-			[-0.36, 0],
-			[-0.6, 0],
-		]),
-		...polyline([
-			[0.38, 0],
-			[0.62, 0],
-		]),
+		...polyline(
+			[
+				[-0.36, 0],
+				[-0.6, 0],
+			],
+			stroke + grow,
+		),
+		...polyline(
+			[
+				[0.38, 0],
+				[0.62, 0],
+			],
+			stroke + grow,
+		),
 	]
 	for (const part of parts) part.rotateZ(Math.PI / 4)
 	return parts
 }
 
-function tiles() {
+function tiles(grow: number) {
 	const size = 0.4
-	const gap = 0.1
+	const gap = 0.12
 	const offset = (size + gap) / 2
 	const parts: Array<BufferGeometry> = []
 	for (const x of [-offset, offset]) {
 		for (const y of [-offset, offset]) {
 			parts.push(
-				new ExtrudeGeometry(
+				extrude(
 					roundedRect(x - size / 2, y - size / 2, size, size, 0.09),
-					extrusion,
+					grow,
 				),
 			)
 		}
@@ -268,7 +318,7 @@ function tiles() {
 }
 
 /** Capsules along a polyline: round caps and round joins. */
-function polyline(points: ReadonlyArray<Point>, radius = stroke) {
+function polyline(points: ReadonlyArray<Point>, radius: number) {
 	const z = middle
 	const parts: Array<BufferGeometry> = []
 	const up = new Vector3(0, 1, 0)
@@ -300,8 +350,8 @@ function polyline(points: ReadonlyArray<Point>, radius = stroke) {
 	return parts
 }
 
-function ring([x, y]: Point) {
-	const geometry = new TorusGeometry(0.055, stroke * 0.8, 8, 20)
+function ring([x, y]: Point, grow: number) {
+	const geometry = new TorusGeometry(0.055, stroke * 0.8 + grow, 8, 20)
 	geometry.translate(x, y, middle)
 	return geometry
 }

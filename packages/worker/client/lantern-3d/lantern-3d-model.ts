@@ -48,6 +48,7 @@ import {
 	createGlowMaterial,
 	createGlowTexture,
 	createGlyphMaterial,
+	createKeylineMaterial,
 	createLitEdgeMaterial,
 	createMetalMaterial,
 	createOrbCoreMaterial,
@@ -81,6 +82,7 @@ export type LanternOrbView = {
 	core: ShaderMaterial
 	shell: ShaderMaterial
 	glyphMaterial: MeshStandardMaterial
+	keyline: MeshBasicMaterial
 	halo: SpriteMaterial
 }
 
@@ -417,10 +419,16 @@ function buildOrb(parts: {
 	roll.add(coreMesh, shellMesh)
 
 	const glyph = new Group()
+	const shapes = createGlyphGeometry(id)
 	const glyphMaterial = keep(createGlyphMaterial())
-	const glyphMesh = new Mesh(keep(createGlyphGeometry(id)), glyphMaterial)
-	glyphMesh.scale.setScalar(lanternOrbRadius * 1.08)
-	glyph.add(glyphMesh)
+	const keyline = keep(createKeylineMaterial())
+	for (const mesh of [
+		new Mesh(keep(shapes.face), glyphMaterial),
+		new Mesh(keep(shapes.keyline), keyline),
+	]) {
+		mesh.scale.setScalar(lanternOrbRadius * 1.16)
+		glyph.add(mesh)
+	}
 
 	const halo = keep(
 		createGlowMaterial(glowTexture, {
@@ -442,6 +450,7 @@ function buildOrb(parts: {
 		core,
 		shell: shellMaterial,
 		glyphMaterial,
+		keyline,
 		halo,
 	}
 }
@@ -450,7 +459,8 @@ function buildOrb(parts: {
 export function paintLanternOrb(orb: LanternOrbView, color: Color) {
 	orb.core.uniforms.uColor!.value.copy(color)
 	orb.shell.uniforms.uRim!.value.copy(color).lerp(new Color(1, 1, 1), 0.45)
-	orb.glyphMaterial.emissive.copy(color).lerp(new Color(1, 0.97, 0.9), 0.84)
+	orb.glyphMaterial.emissive.copy(color).lerp(new Color(1, 0.98, 0.94), 0.92)
+	orb.keyline.color.copy(color).multiplyScalar(0.12)
 	orb.halo.color.copy(color)
 }
 

@@ -455,6 +455,11 @@ export function createGlyphMaterial() {
 	})
 }
 
+/** The dark line round a glyph, in a deep shade of its orb's color. */
+export function createKeylineMaterial() {
+	return new MeshBasicMaterial({ color: 0x000000 })
+}
+
 /** White disc with a soft falloff, for halos, the light pool, and the
  *  contact shadow. */
 export function createGlowTexture(): Texture {
