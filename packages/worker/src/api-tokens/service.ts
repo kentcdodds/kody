@@ -368,7 +368,9 @@ async function listActiveApiTokenRecords(input: {
 /**
  * When the account is at or over the active-token cap, revoke active tokens
  * with the least remaining life until `activeCount + slotsNeeded <= max`.
- * Never revokes ids in `excludeTokenIds` (caller + just-minted). Applies to
+ * Never revokes ids in `excludeTokenIds` (caller + just-minted). Optionally
+ * only considers tokens created strictly before `onlyCreatedBefore` so a
+ * concurrent sibling mint is not revoked by post-insert healing. Applies to
  * every mint via `mintApiToken`.
  */
 async function reclaimApiTokenSlots(input: {
@@ -376,6 +378,8 @@ async function reclaimApiTokenSlots(input: {
 	userId: string
 	now: Date
 	excludeTokenIds?: ReadonlyArray<string>
+	/** ISO timestamp: only reclaim rows with created_at strictly earlier. */
+	onlyCreatedBefore?: string
 	slotsNeeded: number
 }) {
 	const excluded = new Set(
@@ -388,7 +392,16 @@ async function reclaimApiTokenSlots(input: {
 	) {
 		const active = await listActiveApiTokenRecords(input)
 		const candidates = active
-			.filter((record) => !excluded.has(record.id))
+			.filter((record) => {
+				if (excluded.has(record.id)) return false
+				if (
+					input.onlyCreatedBefore &&
+					!(record.created_at < input.onlyCreatedBefore)
+				) {
+					return false
+				}
+				return true
+			})
 			.sort((left, right) => {
 				const lifeDiff =
 					apiTokenRemainingLifeMs(left, input.now) -
@@ -398,6 +411,8 @@ async function reclaimApiTokenSlots(input: {
 			})
 		const victim = candidates[0]
 		if (!victim) {
+			// Soft overshoot from concurrent sibling mints; next mint heals.
+			if (input.onlyCreatedBefore && input.slotsNeeded === 0) return
 			throw new McpCallerError(
 				`This account already has ${apiTokenPolicy.maxActiveTokensPerUser} active API tokens and none can be reclaimed (protected tokens cannot be revoked). Revoke one before minting another.`,
 			)
@@ -551,12 +566,14 @@ export async function mintApiToken(input: {
 			record.profile_name,
 		)
 		.run()
-	// Heal concurrent mint races that both reclaimed the same victim.
+	// Heal concurrent mint races that both reclaimed the same victim. Only
+	// reclaim older rows so a sibling mint created in the same race is kept.
 	await reclaimApiTokenSlots({
 		db: input.db,
 		userId: input.userId,
 		now,
 		excludeTokenIds: [...protectedIds, record.id],
+		onlyCreatedBefore: record.created_at,
 		slotsNeeded: 0,
 	})
 	return {

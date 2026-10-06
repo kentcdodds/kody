@@ -89,8 +89,9 @@ At most **500** active API tokens per account. When a mint would exceed the cap,
 one slot is free, then mints. Remaining life is time until the stored
 `expires_at` (already the sooner of the sliding idle window and
 `max_expires_at`, so rotation and use stay accurate). A post-insert reclaim
-heals concurrent races. HTTP bootstrap redeem runs under the account write
-lease.
+heals concurrent races by only considering tokens created strictly before the
+just-inserted row, so a sibling mint from the same race is kept (soft overshoot
+until the next mint). HTTP bootstrap redeem runs under the account write lease.
 
 This policy applies to **every** mint (`tokenCreate`, bootstrap redeem, and any
 other `mintApiToken` caller). It does not special-case by token name or
