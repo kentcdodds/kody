@@ -94,19 +94,22 @@ function hasNonEmptyString(value: unknown, key: string): boolean {
 /**
  * Classify which package-identity input a tools/call used. Nested `target`
  * covers repo tools that wrap package identity; nested `params` covers the MCP
- * `api` tool (`arguments.params.kody_id`). `name` is counted only when it looks
- * like a scoped package name (`@scope/leaf`); bare names are usually plain
- * repos or person names and are not package-identity evidence.
+ * `api` tool only (`arguments.params.kody_id`). `execute` also has a `params`
+ * bag for arbitrary user-code input — that must not count as package-alias
+ * use. `name` is counted only when it looks like a scoped package name
+ * (`@scope/leaf`); bare names are usually plain repos or person names and are
+ * not package-identity evidence.
  */
 export function classifyMcpPackageIdentityParam(
 	toolArguments: unknown,
+	options?: { toolName?: string },
 ): McpPackageIdentityParam {
 	const bags: Array<unknown> = [toolArguments]
 	if (isRecord(toolArguments)) {
 		if (isRecord(toolArguments['target'])) {
 			bags.push(toolArguments['target'])
 		}
-		if (isRecord(toolArguments['params'])) {
+		if (options?.toolName === 'api' && isRecord(toolArguments['params'])) {
 			bags.push(toolArguments['params'])
 		}
 	}
@@ -216,13 +219,17 @@ export async function classifyMcpProtocolRequest(
 			? params?.['clientInfo']
 			: undefined
 
+	const toolName =
+		method === 'tools/call' && isRecord(params)
+			? readString(params['name'])
+			: ''
 	const toolArguments =
 		method === 'tools/call' && isRecord(params)
 			? params['arguments']
 			: undefined
 	const packageIdentityParam =
 		method === 'tools/call'
-			? classifyMcpPackageIdentityParam(toolArguments)
+			? classifyMcpPackageIdentityParam(toolArguments, { toolName })
 			: ''
 
 	return {

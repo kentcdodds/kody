@@ -86,6 +86,7 @@ import {
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
@@ -1610,16 +1611,18 @@ function buildPackageAppPublicContext(input: {
 	const username =
 		input.runtime.servingUsername ??
 		getUsernameFromPackageName(input.savedPackage.name)
-	const { kodyId } = input.savedPackage
+	// Public URLs use the name leaf (Kent: slug = leaf). Keep kodyId on the
+	// package context as identity; only the path segment switches to the leaf.
+	const urlSlug = getPackageNameLeaf(input.savedPackage.name)
 	if (input.runtime.hostedOrigin) {
 		// Request-scoped: the mount the request actually arrived on. On a
 		// per-user subdomain the username lives in the hostname, so the app is
-		// mounted at `/packages/{kodyId}`; inline serving keeps the
+		// mounted at `/packages/{slug}`; inline serving keeps the
 		// `/@{username}` path prefix.
 		const appBasePath =
 			input.runtime.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({ kodyId })
-				: buildPackageAppPath({ username, kodyId })
+				? buildPackageAppSubdomainPath({ kodyId: urlSlug })
+				: buildPackageAppPath({ username, kodyId: urlSlug })
 		return {
 			appBasePath,
 			hostedUrl: `${input.runtime.hostedOrigin.replace(/\/+$/, '')}${appBasePath}`,
@@ -1632,7 +1635,7 @@ function buildPackageAppPublicContext(input: {
 		packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
 		appBaseUrl: input.baseUrl,
 		username,
-		kodyId,
+		kodyId: urlSlug,
 	})
 	return {
 		appBasePath: new URL(hostedUrl).pathname,

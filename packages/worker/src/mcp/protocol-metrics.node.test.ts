@@ -189,6 +189,28 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 		),
 	).toMatchObject({ packageIdentityParam: 'kody_id' })
 
+	// execute also has a params bag, but those are user-code inputs — not
+	// package-identity aliases for the alias-retirement soak.
+	expect(
+		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 9,
+					method: 'tools/call',
+					params: {
+						name: 'execute',
+						arguments: {
+							code: 'export default () => 1',
+							params: { kody_id: 'not-a-package-alias' },
+						},
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'none' })
+
 	expect(
 		await classifyMcpProtocolRequest(
 			new Request(mcpUrl, {

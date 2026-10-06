@@ -584,12 +584,15 @@ export async function servePackageAppRequest(input: {
 	if (assetRelativePath !== null) {
 		// Same mount rule as buildPackageAppPublicContext: the username lives in
 		// the hostname on a per-user subdomain and in the path when inline.
+		// URL path segment is the name leaf (Kent: slug = leaf), not kodyId —
+		// those can diverge until Phase 2's single writer.
+		const urlSlug = getPackageNameLeaf(savedPackage.name)
 		const appBasePath =
 			packagePath.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({ kodyId: savedPackage.kodyId })
+				? buildPackageAppSubdomainPath({ kodyId: urlSlug })
 				: buildPackageAppPath({
 						username: packagePath.username,
-						kodyId: savedPackage.kodyId,
+						kodyId: urlSlug,
 					})
 		try {
 			const packageManifest = await pushServerTiming(

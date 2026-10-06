@@ -818,6 +818,40 @@ test('package app worker exposes its public mount and records fetch query and re
 	).toEqual(['audio', 'code', 'state'])
 })
 
+test('package app public mount uses the name leaf when kodyId diverges', async () => {
+	const { env, loader } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		makeArtifact('export default { fetch() { return new Response("ok") } }'),
+	)
+
+	await buildPackageAppWorker(
+		makeBuildInput(env, 'public-context-leaf', {
+			baseUrl: 'https://app.kody.test',
+			savedPackage: {
+				kodyId: 'legacy-kody-id',
+				name: '@current-owner/canonical-leaf',
+			},
+			runtime: {
+				callerContext: {
+					user: { email: 'owner@example.com', displayName: 'Owner' },
+				} as never,
+				servingUsername: 'serving-owner',
+				hostedOrigin: 'https://packages.kody.test',
+			},
+		}),
+	)
+
+	expect(
+		loaderWorkerOptions(loader)?.env['__kodyPackageContext'],
+	).toMatchObject({
+		kodyId: 'legacy-kody-id',
+		appBasePath: '/@serving-owner/packages/canonical-leaf',
+		hostedUrl:
+			'https://packages.kody.test/@serving-owner/packages/canonical-leaf',
+		assetBasePath: '/@serving-owner/packages/canonical-leaf/_assets',
+	})
+})
+
 test('package app worker exposes the fingerprinted client module URL when kody.app.client is declared', async () => {
 	const { env, loader } = createPackageAppTestEnv()
 	const appArtifact = makeArtifact()

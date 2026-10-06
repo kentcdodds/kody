@@ -6,6 +6,7 @@ import {
 	invalidateInvokeContractFreshness,
 	invokeContractFreshnessTtlMs,
 	loadModuleArtifactWithCommitCache,
+	resolvePackageAppSlugWithFreshnessCache,
 } from './invoke-contract-cache.ts'
 import {
 	ensureModuleArtifact,
@@ -776,4 +777,62 @@ test('resolveSavedPackage resolves id or slug through one package ref lookup', a
 		{ userId: 'user-resolve-ref', ref: 'shared-key' },
 	)
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+})
+
+test('package-app slug cache evicts by name leaf from kody:@ refs and packageAppSlugs', async () => {
+	const userId = 'user-slug-evict'
+	const savedPackage = {
+		id: 'pkg-slug-evict',
+		userId,
+		name: '@kentcdodds/new-leaf',
+		kodyId: 'legacy-kody-id',
+	} as SavedPackageRecord
+	const load = vi.fn(async () => ({
+		savedPackage,
+		retired: true,
+	}))
+	const loadOld = () =>
+		resolvePackageAppSlugWithFreshnessCache({
+			userId,
+			slug: 'old-leaf',
+			load,
+		})
+	const loadNew = () =>
+		resolvePackageAppSlugWithFreshnessCache({
+			userId,
+			slug: 'new-leaf',
+			load: async () => ({ savedPackage, retired: false }),
+		})
+
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(1)
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(1)
+
+	// kody:@ refs alone must clear the leaf-keyed package-app slug cache.
+	invalidateInvokeContractFreshness({
+		userId,
+		packageIdOrKodyIds: [`kody:@kentcdodds/old-leaf`],
+	})
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(2)
+
+	await loadNew()
+	invalidateInvokeContractFreshness({
+		userId,
+		packageIdOrKodyIds: [savedPackage.id, savedPackage.kodyId],
+		packageAppSlugs: ['new-leaf', 'prior-redirect'],
+	})
+	const loadPrior = vi.fn(async () => null)
+	await resolvePackageAppSlugWithFreshnessCache({
+		userId,
+		slug: 'prior-redirect',
+		load: loadPrior,
+	})
+	expect(loadPrior).toHaveBeenCalledTimes(1)
+	await resolvePackageAppSlugWithFreshnessCache({
+		userId,
+		slug: 'new-leaf',
+		load: async () => ({ savedPackage, retired: false }),
+	})
 })

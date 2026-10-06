@@ -6,6 +6,7 @@ import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	deletePackageSlugRedirects,
+	listPackageSlugRedirects,
 	releasePackageSlugRedirect,
 	retirePackageSlug,
 } from '#worker/community/package-url.ts'
@@ -485,6 +486,12 @@ export async function refreshSavedPackageProjection(input: {
 						? [`kody:${existing.name}`]
 						: []),
 				],
+				// Package-app slug cache is keyed by name leaf, not package id /
+				// kody:@ refs — pass current and previous leaves explicitly.
+				packageAppSlugs: [
+					getPackageNameLeaf(savedPackage.name),
+					...(existing ? [getPackageNameLeaf(existing.name)] : []),
+				],
 				sourceId: input.sourceId,
 			})
 			// Prefer a normalized source of truth (manifests) plus this KV cache of
@@ -670,6 +677,16 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
+			// Capture retired leaves before deleting redirect rows so the
+			// package-app slug cache can be cleared for every path that still
+			// pointed here (not only the current name leaf).
+			const retiredPackageAppSlugs = savedPackage
+				? await listPackageSlugRedirects({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						packageId: input.packageId,
+					})
+				: []
 			// Retired slugs only mean something while the package they point at
 			// exists; leaving them behind would hand a later package another
 			// package's redirect history.
@@ -699,6 +716,10 @@ export async function deleteSavedPackageProjection(input: {
 					...(savedPackage
 						? [savedPackage.kodyId, `kody:${savedPackage.name}`]
 						: []),
+				],
+				packageAppSlugs: [
+					...(savedPackage ? [getPackageNameLeaf(savedPackage.name)] : []),
+					...retiredPackageAppSlugs,
 				],
 				sourceId: savedPackage?.sourceId ?? null,
 			})

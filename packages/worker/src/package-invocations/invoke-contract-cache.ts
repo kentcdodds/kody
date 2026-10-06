@@ -1,3 +1,4 @@
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type PublishedBundleArtifact } from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -239,6 +240,14 @@ export async function loadModuleArtifactWithCommitCache(input: {
 	})
 }
 
+function evictPackageAppSlugCache(input: { userId: string; slug: string }) {
+	const slug = input.slug.trim()
+	if (!slug) return
+	packageAppSlugCache.delete(
+		packageAppSlugCacheKey({ userId: input.userId, slug }),
+	)
+}
+
 /**
  * Eager same-isolate invalidation for publish / projection-refresh / delete
  * flows. Cross-isolate pickup is bounded by
@@ -249,9 +258,16 @@ export function invalidateInvokeContractFreshness(input: {
 	userId: string
 	/**
 	 * Every lookup key the package resolves under: its package id plus any
-	 * current (and, on rename, previous) kody ids.
+	 * current (and, on rename, previous) kody ids / `kody:@scope/name` refs.
 	 */
 	packageIdOrKodyIds: Array<string>
+	/**
+	 * Package-app URL leaves to evict (current leaf, previous leaf on rename,
+	 * and retired redirect slugs about to be released). Callers must pass
+	 * these explicitly: {@link packageIdOrKodyIds} are often package ids or
+	 * `kody:@scope/name` refs, not the name-leaf keys this cache uses.
+	 */
+	packageAppSlugs?: Array<string>
 	sourceId?: string | null
 }) {
 	for (const packageIdOrKodyId of input.packageIdOrKodyIds) {
@@ -262,18 +278,25 @@ export function invalidateInvokeContractFreshness(input: {
 			savedPackageCache.deleteWhere((cacheKey) =>
 				savedPackageCacheKeyMatchesLookup(cacheKey, packageIdOrKodyId),
 			)
+			// Derive the URL leaf from the scoped name so rename/delete also
+			// clears the package-app slug cache (keys are never `kody:@…`).
+			evictPackageAppSlugCache({
+				userId: input.userId,
+				slug: getPackageNameLeaf(packageIdOrKodyId.slice('kody:'.length)),
+			})
 		} else {
 			savedPackageCache.delete(
 				savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
 			)
-			// Slug keys may be the current or previous leaf; evict both shapes.
-			packageAppSlugCache.delete(
-				packageAppSlugCacheKey({
-					userId: input.userId,
-					slug: packageIdOrKodyId,
-				}),
-			)
+			// When kodyId still equals the leaf, this also clears the slug entry.
+			evictPackageAppSlugCache({
+				userId: input.userId,
+				slug: packageIdOrKodyId,
+			})
 		}
+	}
+	for (const slug of input.packageAppSlugs ?? []) {
+		evictPackageAppSlugCache({ userId: input.userId, slug })
 	}
 	if (input.sourceId) {
 		sourceRowCache.delete(

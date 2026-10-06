@@ -402,6 +402,34 @@ export async function retirePackageSlug(input: {
 }
 
 /**
+ * Retired URL leaves that still forward to this package. Used to clear the
+ * package-app slug freshness cache before the redirect rows are deleted.
+ */
+export async function listPackageSlugRedirects(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+}): Promise<Array<string>> {
+	const rows = await input.db
+		.prepare(
+			`SELECT old_slug AS slug FROM package_slug_redirects
+			 WHERE user_id = ? AND package_id = ?
+			 UNION
+			 SELECT old_kody_id AS slug FROM package_kody_id_redirects
+			 WHERE user_id = ? AND package_id = ?`,
+		)
+		.bind(input.userId, input.packageId, input.userId, input.packageId)
+		.all<{ slug: string }>()
+	return [
+		...new Set(
+			(rows.results ?? [])
+				.map((row) => row.slug.trim())
+				.filter((slug) => slug.length > 0),
+		),
+	]
+}
+
+/**
  * Deleting a package releases every slug it retired: the slugs no longer lead
  * anywhere, and keeping them would let a later package inherit another
  * package's redirect history.
