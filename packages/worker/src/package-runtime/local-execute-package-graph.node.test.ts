@@ -606,6 +606,85 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 	}
 })
 
+test('local isolate wraps globalThis.fetch so frozen copies still hop secrets', async () => {
+	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
+	expect(shim).toContain('kody.localExecuteFetchPatched')
+	expect(shim).toContain(
+		'globalThis.fetch = (input, init) => __kodyGatewayFetch(input, init)',
+	)
+	const callStart = shim.indexOf('async function __kodyGatewayFetchCall')
+	const callEnd = shim.indexOf(
+		'export function __kodyCreatePackageBoundStorage',
+	)
+	expect(callStart).toBeGreaterThan(-1)
+	expect(callEnd).toBeGreaterThan(callStart)
+	const callSource = shim.slice(callStart, callEnd)
+	expect(callSource).toContain('__kodyNativeFetch')
+	expect(callSource).not.toContain('globalThis.fetch')
+
+	const start = shim.indexOf('const __kodyNullBodyStatuses')
+	const end = shim.indexOf('export function __kodyCreatePackageBoundSecrets')
+	expect(start).toBeGreaterThan(-1)
+	expect(end).toBeGreaterThan(start)
+	const helpersSource = shim.slice(start, end).replaceAll(/^export /gm, '')
+	const ambientCalls: Array<{ input: unknown; init: unknown }> = []
+	const gatewayCalls: Array<unknown> = []
+	const kody = {
+		gatewayFetch: async (args: unknown) => {
+			gatewayCalls.push(args)
+			return {
+				status: 200,
+				statusText: 'OK',
+				headers: {},
+				bodyBase64: btoa('gw'),
+			}
+		},
+	}
+	const patchedSymbol = Symbol.for('kody.localExecuteFetchPatched')
+	const originalFetch = globalThis.fetch
+	const originalPatched = Reflect.get(globalThis, patchedSymbol)
+	globalThis.fetch = (async (input: unknown, init?: unknown) => {
+		ambientCalls.push({ input, init })
+		return new Response('ambient')
+	}) as typeof fetch
+	Reflect.deleteProperty(globalThis, patchedSymbol)
+	try {
+		new Function('kody', `${helpersSource}; return null;`)(kody)
+		expect(Reflect.get(globalThis, patchedSymbol)).toBe(true)
+
+		const frozenAlias = globalThis.fetch
+		await frozenAlias('https://discord.com/api/v10/channels/1/messages/2', {
+			method: 'PATCH',
+			headers: {
+				authorization: 'Bot {{secret:discordBotTokenKentPersonalAutomation}}',
+			},
+		})
+		expect(gatewayCalls).toHaveLength(1)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://discord.com/api/v10/channels/1/messages/2',
+				headers: {
+					authorization: 'Bot {{secret:discordBotTokenKentPersonalAutomation}}',
+				},
+			},
+		})
+
+		gatewayCalls.length = 0
+		await globalThis.fetch('https://api.example.com/health')
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/health')
+	} finally {
+		globalThis.fetch = originalFetch
+		if (originalPatched === undefined) {
+			Reflect.deleteProperty(globalThis, patchedSymbol)
+		} else {
+			Reflect.set(globalThis, patchedSymbol, originalPatched)
+		}
+	}
+})
+
 test('local meter stamp overrides closed-over gatewayFetch packageId for nested imports', async () => {
 	const { AsyncLocalStorage } = await import('node:async_hooks')
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)

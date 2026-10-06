@@ -99,9 +99,11 @@ export function __kodyGetSecretAuthority() {
 }
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// opaque refs from packageSecrets.get). Local ambient fetch does not expand
-// them; package-graph rebinds fetch to __kodyGatewayFetch so secret-bearing
-// calls hop through CapabilityProxy to the fetch gateway (same as cloud).
+// opaque refs from packageSecrets.get). Local isolate wraps globalThis.fetch
+// with __kodyGatewayFetch so secret-bearing calls hop through CapabilityProxy
+// (same as cloud), including frozen dependency copies that call
+// globalThis.fetch instead of free \`fetch\`. Non-secret requests still use
+// the captured native fetch (no 4 MiB hop).
 export function __kodySecretRef(name, scope) {
 	const trimmed = String(name ?? "").trim();
 	if (!trimmed) {
@@ -208,6 +210,7 @@ export function __kodyCreatePackageBoundOauthClientCredentials(packageId) {
 }
 
 const __kodyNullBodyStatuses = new Set([204, 205, 304]);
+const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 
 function __kodyBytesToBase64(bytes) {
 	let binary = "";
@@ -320,8 +323,8 @@ async function __kodyCreateAuthenticatedFetch(providerName, packageId) {
  * Secret-aware ambient fetch for local execute: hops through CapabilityProxy
  * \`kody.gatewayFetch\` when the request carries secret / integration-token
  * placeholders so expansion happens on origin via the same fetch gateway as
- * cloud execute. Non-secret requests use ambient global fetch (no 4 MiB hop
- * cap, no CapabilityProxy round-trip).
+ * cloud execute. Non-secret requests use the captured native fetch (no 4 MiB
+ * hop cap, no CapabilityProxy round-trip).
  *
  * Prefer the meter ALS stamp (imported package export) over the module-path
  * closed-over id so nested inlined callees stamp as themselves (kody#2876).
@@ -433,7 +436,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				if (
 					!__kodyRequestHasSecretPlaceholders(url, headers, null)
 				) {
-					return globalThis.fetch(input, init);
+					return __kodyNativeFetch(input, init);
 				}
 				const encoded = new Request(url, {
 					method,
@@ -482,7 +485,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
 		if (reuseOriginal) {
-			return globalThis.fetch(input, init);
+			return __kodyNativeFetch(input, init);
 		}
 		const fallbackInit = {
 			method,
@@ -495,7 +498,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		const redirect =
 			init?.redirect ?? (input instanceof Request ? input.redirect : null);
 		if (redirect != null) fallbackInit.redirect = redirect;
-		return globalThis.fetch(url, fallbackInit);
+		return __kodyNativeFetch(url, fallbackInit);
 	}
 	const contentType = Object.entries(headers).find(
 		([key]) => key.toLowerCase() === "content-type",
@@ -557,6 +560,14 @@ export function __kodyCreatePackageBoundStorage(packageId) {
 			clear: async () => await kody.packageStorageClear({ packageId }),
 		};
 	};
+}
+
+const __kodyLocalExecuteFetchPatchedSymbol = Symbol.for(
+	"kody.localExecuteFetchPatched",
+);
+if (!globalThis[__kodyLocalExecuteFetchPatchedSymbol]) {
+	globalThis.fetch = (input, init) => __kodyGatewayFetch(input, init);
+	globalThis[__kodyLocalExecuteFetchPatchedSymbol] = true;
 }
 
 export function __kodyCreatePackageBoundSecrets(packageId) {
