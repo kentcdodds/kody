@@ -29,14 +29,17 @@ separate from Open API; some `/v1` routes exist so the CLI can hop to origin.
 
 ## Mint a scoped API token
 
-With MCP `api` available, mint a short-lived token (value returned once):
+With MCP `api` available, mint a token (value returned once). Lifetime is
+required: `short` (1h idle / 24h max), `long` (14d idle / 3mo max), or both
+`idle_ttl_seconds` and `max_lifetime_seconds`.
 
 ```json
 {
 	"operationId": "tokenCreate",
 	"params": {
 		"name": "ci-bot",
-		"scopes": ["account:read", "search:read"]
+		"scopes": ["account:read", "search:read"],
+		"lifetime": "short"
 	}
 }
 ```

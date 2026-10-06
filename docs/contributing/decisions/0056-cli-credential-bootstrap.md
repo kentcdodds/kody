@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-01
+- **Amended:** 2026-10-06 (required lifetimes, active-token cap 500, reclaim)
 - **Amends:** [0053](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md),
   [0055](./0055-cli-mcp-oauth-local-execute-http.md)
 
@@ -17,30 +18,89 @@ connected to Kody over MCP still faced a second interactive OAuth (or a
 **host** MCP OAuth into the CLI. The missing piece is an **explicit**
 session→CLI handoff that does not paste long-lived secrets into chat.
 
+Cloud Agent fleets then filled the old 50-token cap with same-day
+`kody-cli-bootstrap` tokens because every fresh VM minted a long-lived bootstrap
+credential and idle TTL did not help inside one day (#2966).
+
 ## Decision
 
 One credential-bootstrap primitive, dual-exposed:
 
 1. **Capability + Open API** `cliCredentialBootstrap`
    (`kody.cliCredentialBootstrap` / `POST /v1/tokens/bootstrap`, scope
-   `tokens:write`) — authenticated by the current MCP session or an eligible API
+   `tokens:write`) - authenticated by the current MCP session or an eligible API
    token. Returns a one-shot `kody_bc_…` bootstrap code + `cli_command`. Never
-   returns `kody_at_…`.
+   returns `kody_at_…`. The caller must choose the eventual token lifetime
+   (`lifetime: "short"|"long"` or both `idle_ttl_seconds` and
+   `max_lifetime_seconds`). The returned `cli_command` includes matching CLI
+   flags.
 2. **Native Open API** `cliCredentialBootstrapRedeem`
-   (`POST /v1/tokens/bootstrap/redeem`) — code-authenticated only (no Bearer).
+   (`POST /v1/tokens/bootstrap/redeem`) - code-authenticated only (no Bearer).
    Burns the code and mints a normal scoped `kody_at_…` for the CLI to store.
-   Rejected for the MCP `api` tool principal so redeem cannot dump secrets into
-   chat.
+   Lifetime is required again on redeem (CLI flags / body). Rejected for the MCP
+   `api` tool principal so redeem cannot dump secrets into chat.
 
-Default eventual scopes: `local-execute` + `account:read`. Default eventual
-token lifetimes: 2 weeks unused (`idle_ttl_seconds` 1209600) and 3 months
-absolute (`max_lifetime_seconds` 7776000). Token parents cannot escalate scopes
-or outlive their own `max_expires_at`. `tokenCreate` remains for CI/headless and
-power users (and keeps its own shorter defaults). Interactive humans who already
-ran `kody login` skip bootstrap (0055).
+Default eventual scopes: `local-execute` + `account:read`. Token parents cannot
+escalate scopes or outlive their own `max_expires_at`. `tokenCreate` remains for
+CI/headless and power users. Interactive humans who already ran `kody login`
+skip bootstrap (0055).
+
+### Required lifetimes (all mints)
+
+Every `tokenCreate`, `cliCredentialBootstrap`, and bootstrap redeem must choose
+a lifetime. There is no silent default.
+
+| Choice   | Idle        | Absolute max       |
+| -------- | ----------- | ------------------ |
+| `short`  | 1 hour      | 24 hours           |
+| `long`   | 14 days     | 3 months           |
+| explicit | 60s-14 days | ≥ idle, ≤ 3 months |
+
+Aliases are input sugar only. Store only the resulting idle timeout and absolute
+expiry. Do not store a short/long label on the token.
+
+```json
+{ "operationId": "cliCredentialBootstrap", "params": { "lifetime": "short" } }
+```
+
+```bash
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
+```
+
+```json
+{
+	"operationId": "tokenCreate",
+	"params": {
+		"name": "ci-bot",
+		"scopes": ["account:read", "search:read"],
+		"lifetime": "short"
+	}
+}
+```
+
+Missing lifetime fails with the exact flag / field syntax (CLI:
+`--lifetime short|long` or both `--idle-ttl-seconds` and
+`--max-lifetime-seconds`).
+
+### Active-token cap and reclaim
+
+At most **500** active API tokens per account. When a mint would exceed the cap,
+`mintApiToken` revokes the active token(s) with the least remaining life until
+one slot is free, then mints. Remaining life is the sooner of:
+
+- idle deadline: `last_used_at` (or `created_at` if never used) +
+  `idle_ttl_seconds`
+- absolute expiry: `max_expires_at`
+
+This policy applies to **every** mint (`tokenCreate`, bootstrap redeem, and any
+other `mintApiToken` caller). It does not special-case by token name or
+`created_via`. It never revokes the caller's own token when the mint is
+authenticated by an API token (`excludeTokenId`). MCP session and code-only
+redeem have no caller token to protect.
 
 Do **not** add OAuth device flow. Do **not** accept bootstrap codes as general
-Open API Bearers. Do **not** scavenge host MCP tokens from disk.
+Open API Bearers. Do **not** scavenge host MCP tokens from disk. Do **not** keep
+a flagless / default-lifetime mint path.
 
 ## Consequences
 
@@ -48,7 +108,10 @@ Open API Bearers. Do **not** scavenge host MCP tokens from disk.
 - `api_tokens.created_via` gains `cli-bootstrap`.
 - HTTP handler allows one unauthenticated route (redeem), rate-limited at the
   API edge by IP.
-- CLI companion: `npx @kodycodes/cli auth bootstrap --code …` redeems and stores
-  the API token for `--local`.
+- CLI companion:
+  `npx @kodycodes/cli auth bootstrap --code … --lifetime short|long` (or
+  explicit idle/max flags) redeems and stores the API token for `--local`.
 - Agent tips prefer bootstrap (or login) over `tokenCreate` for interactive
-  local execute.
+  local execute; single-task agents use `short`.
+- Ordinary and bootstrap tokens share the same idle/max ceilings (14 days / 3
+  months). Cap reclaim is generic in `mintApiToken`.

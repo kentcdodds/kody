@@ -12,7 +12,11 @@ import {
 	apiTokenScopes,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
-import { apiTokenPolicy } from '#worker/api-tokens/service.ts'
+import {
+	apiTokenIdleTtlDescription,
+	apiTokenLifetimeAliasNames,
+	apiTokenPolicy,
+} from '#worker/api-tokens/service.ts'
 import { requireMcpUser } from './require-user.ts'
 
 const scopeSchema = z.enum(
@@ -22,6 +26,10 @@ const scopeSchema = z.enum(
 const scopeListDescription = Object.entries(apiTokenScopeDescriptions)
 	.map(([scope, description]) => `\`${scope}\`: ${description}`)
 	.join('\n')
+
+const lifetimeAliasSchema = z.enum(
+	apiTokenLifetimeAliasNames as [string, ...Array<string>],
+)
 
 const inputSchema = z
 	.object({
@@ -40,23 +48,28 @@ const inputSchema = z
 			.describe(
 				`Scopes for the eventual \`kody_at_\` (default \`local-execute\` + \`account:read\`). \`<resource>:write\` also grants \`<resource>:read\`.\n${scopeListDescription}`,
 			),
+		lifetime: lifetimeAliasSchema
+			.optional()
+			.describe(
+				'Required unless idle_ttl_seconds and max_lifetime_seconds are both set. `short` = 1h idle / 24h max. `long` = 14d idle / 3mo max. Single-task agents should use `short`.',
+			),
 		idle_ttl_seconds: z
 			.number()
 			.int()
-			.min(cliCredentialBootstrapPolicy.minIdleTtlSeconds)
-			.max(cliCredentialBootstrapPolicy.maxIdleTtlSeconds)
+			.min(apiTokenPolicy.minIdleTtlSeconds)
+			.max(apiTokenPolicy.maxIdleTtlSeconds)
 			.optional()
 			.describe(
-				`Seconds without use before the eventual token expires (default ${cliCredentialBootstrapPolicy.defaultIdleTtlSeconds}).`,
+				'Seconds without use before the eventual token expires. Required with max_lifetime_seconds when lifetime is omitted.',
 			),
 		max_lifetime_seconds: z
 			.number()
 			.int()
-			.min(cliCredentialBootstrapPolicy.minIdleTtlSeconds)
-			.max(cliCredentialBootstrapPolicy.maxMaxLifetimeSeconds)
+			.min(apiTokenPolicy.minIdleTtlSeconds)
+			.max(apiTokenPolicy.maxMaxLifetimeSeconds)
 			.optional()
 			.describe(
-				`Absolute lifetime cap for the eventual token in seconds (default ${cliCredentialBootstrapPolicy.defaultMaxLifetimeSeconds}).`,
+				'Absolute lifetime cap for the eventual token in seconds. Required with idle_ttl_seconds when lifetime is omitted.',
 			),
 		redeem_ttl_seconds: z
 			.number()
@@ -74,13 +87,13 @@ const outputSchema = z.object({
 	bootstrap_code: z
 		.string()
 		.describe(
-			'One-shot code for the CLI (`kody_bc_…`). Not an API token. Pass it to `npx @kodycodes/cli auth bootstrap --code …` — do not paste a `kody_at_` into chat.',
+			'One-shot code for the CLI (`kody_bc_…`). Not an API token. Pass it to `npx @kodycodes/cli auth bootstrap --code … --lifetime short` — do not paste a `kody_at_` into chat.',
 		),
 	expires_at: z.string().describe('Absolute redeem deadline (ISO-8601).'),
 	cli_command: z
 		.string()
 		.describe(
-			'Ready-to-run CLI command that redeems the code into a local `KODY_API_TOKEN` store entry without a second interactive OAuth.',
+			'Ready-to-run CLI command that redeems the code into a local `KODY_API_TOKEN` store entry without a second interactive OAuth. Includes the required lifetime flags.',
 		),
 	name: z.string(),
 	scopes: z.array(scopeSchema),
@@ -97,8 +110,7 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'cliCredentialBootstrap',
-		description:
-			'Seed CLI `--local` auth from the current Kody session without a second interactive OAuth: returns a one-shot `kody_bc_…` bootstrap code plus a CLI command. The CLI redeems the code over HTTPS for a scoped `kody_at_…` (never returned here). Prefer this over `tokenCreate` for interactive agents already on MCP. Do not paste API tokens into chat. Interactive desktop humans who already ran `kody login` can skip this. CI/headless may still mint `kody_at_` directly.',
+		description: `Seed CLI \`--local\` auth from the current Kody session without a second interactive OAuth: returns a one-shot \`kody_bc_…\` bootstrap code plus a CLI command that includes required lifetime flags. The CLI redeems the code over HTTPS for a scoped \`kody_at_…\` (never returned here). Prefer this over \`tokenCreate\` for interactive agents already on MCP. Do not paste API tokens into chat. Interactive desktop humans who already ran \`kody login\` can skip this. CI/headless may still mint \`kody_at_\` directly. ${apiTokenIdleTtlDescription()}`,
 		keywords: [
 			'cli',
 			'local execute',
@@ -149,6 +161,7 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 				userId: user.userId,
 				...(input.name === undefined ? {} : { name: input.name }),
 				...(input.scopes === undefined ? {} : { scopes: input.scopes }),
+				...(input.lifetime === undefined ? {} : { lifetime: input.lifetime }),
 				...(input.idle_ttl_seconds === undefined
 					? {}
 					: { idleTtlSeconds: input.idle_ttl_seconds }),

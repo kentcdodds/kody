@@ -125,9 +125,10 @@ Open these before proposing a new primitive, surface, or storage home.
   other Open API routes stay `kody_at_`-only; amended by 0056 for headless/agent
   bootstrap without a second interactive OAuth
 - [0056 — Explicit MCP/API session → CLI credential bootstrap](./0056-cli-credential-bootstrap.md)
-  — one-shot `kody_bc_…` code from `cliCredentialBootstrap` (capability + Open
-  API); CLI redeems for `kody_at_…` without chat-facing secrets or host-token
-  scavenging
+  (amended 2026-10-06: required lifetimes, 500-token cap, reclaim by soonest
+  expiry) — one-shot `kody_bc_…` code from `cliCredentialBootstrap`
+  (capability + Open API); CLI redeems for `kody_at_…` without chat-facing
+  secrets or host-token scavenging
 - [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
   — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
   TanStack, Preact, or any other framework; packages bring frameworks themselves

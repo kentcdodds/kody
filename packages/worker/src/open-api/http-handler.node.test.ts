@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { mintApiToken } from '#worker/api-tokens/service.ts'
+import {
+	mintApiToken,
+	apiTokenLifetimeAliases,
+} from '#worker/api-tokens/service.ts'
 import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -141,6 +144,8 @@ async function createApi(
 			userId,
 			name: 'test',
 			scopes,
+			idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
+			maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 			createdVia: 'api',
 		})
 		return minted.token
@@ -248,33 +253,59 @@ test('token minting enforces parent scopes for local-execute', async () => {
 	const parent = await api.mint(['tokens:write', 'packages:read'])
 	const child = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'child', scopes: ['packages:read'], idle_ttl_seconds: 300 },
+		body: {
+			name: 'child',
+			scopes: ['packages:read'],
+			lifetime: 'short',
+			idle_ttl_seconds: 300,
+			max_lifetime_seconds: 600,
+		},
 	})
-	expect(child.status).toBe(200)
-	expect(child.body).toMatchObject({
+	expect(child.status).toBe(400)
+
+	const childOk = await api.call('POST', '/v1/tokens', {
+		token: parent,
+		body: {
+			name: 'child',
+			scopes: ['packages:read'],
+			idle_ttl_seconds: 300,
+			max_lifetime_seconds: 600,
+		},
+	})
+	expect(childOk.status).toBe(200)
+	expect(childOk.body).toMatchObject({
 		scopes: ['packages:read'],
 		idle_ttl_seconds: 300,
 		token_type: 'Bearer',
 		created_via: 'api',
 	})
-	expect(child.body['token']).toMatch(/^kody_at_/)
+	expect(childOk.body['token']).toMatch(/^kody_at_/)
+
+	const missingLifetime = await api.call('POST', '/v1/tokens', {
+		token: parent,
+		body: { name: 'no-life', scopes: ['packages:read'] },
+	})
+	expect(missingLifetime.status).toBe(400)
+	expect(missingLifetime.body.error?.message).toMatch(
+		/Token lifetime is required/,
+	)
 
 	const escalate = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'escalate', scopes: ['secrets:read'] },
+		body: { name: 'escalate', scopes: ['secrets:read'], lifetime: 'short' },
 	})
 	expect(escalate.status).toBe(400)
 
 	const missingParentScope = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'local', scopes: ['local-execute'] },
+		body: { name: 'local', scopes: ['local-execute'], lifetime: 'short' },
 	})
 	expect(missingParentScope.status).toBe(400)
 
 	const listed = await api.call('GET', '/v1/tokens', { token: parent })
 	expect(listed.status).toBe(200)
 	expect(listed.body['tokens']).toHaveLength(2)
-	expect(JSON.stringify(listed.body)).not.toContain(child.body['token'])
+	expect(JSON.stringify(listed.body)).not.toContain(childOk.body['token'])
 })
 
 test('a token can only rotate tokens it could have minted', async () => {
@@ -285,6 +316,8 @@ test('a token can only rotate tokens it could have minted', async () => {
 		userId: api.userId,
 		name: 'stronger',
 		scopes: ['secrets:write'],
+		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
+		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'mcp-api',
 	})
 	const denied = await api.call('POST', `/v1/tokens/${stronger.id}/rotate`, {
@@ -306,6 +339,7 @@ test('a token can only rotate tokens it could have minted', async () => {
 		userId: api.userId,
 		name: 'longer',
 		scopes: ['tokens:write'],
+		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
 		maxLifetimeSeconds: 7 * 24 * 60 * 60,
 		createdVia: 'mcp-api',
 	})
@@ -322,6 +356,7 @@ test('a token can only rotate tokens it could have minted', async () => {
 		userId: api.userId,
 		name: 'peer',
 		scopes: ['tokens:read'],
+		idleTtlSeconds: 60,
 		maxLifetimeSeconds: 60 * 60,
 		createdVia: 'api',
 	})
@@ -334,11 +369,14 @@ test('a token can only rotate tokens it could have minted', async () => {
 
 test('reported expiry includes the slide from the current request', async () => {
 	const api = await createApi()
+	const idleTtlSeconds = apiTokenLifetimeAliases.short.idleTtlSeconds
 	const minted = await mintApiToken({
 		db: api.db,
 		userId: api.userId,
 		name: 'aged',
 		scopes: ['account:read'],
+		idleTtlSeconds,
+		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'api',
 		now: new Date(Date.now() - 5 * 60 * 1000),
 	})
@@ -349,7 +387,7 @@ test('reported expiry includes the slide from the current request', async () => 
 	expect(current.status).toBe(200)
 	const reported = Date.parse(String(current.body['expires_at']))
 	expect(reported).toBeGreaterThan(Date.parse(minted.expires_at))
-	expect(reported).toBeGreaterThanOrEqual(before + 15 * 60 * 1000 - 1000)
+	expect(reported).toBeGreaterThanOrEqual(before + idleTtlSeconds * 1000 - 1000)
 	const stored = api.sqlite
 		.prepare(`SELECT expires_at FROM api_tokens WHERE id = ?`)
 		.get(minted.id) as { expires_at: string }
@@ -361,7 +399,7 @@ test('local-execute tokens are mintable when the parent holds the scope', async 
 	const parent = await mintWithLocalExecute(api)
 	const minted = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'local', scopes: ['local-execute'] },
+		body: { name: 'local', scopes: ['local-execute'], lifetime: 'short' },
 	})
 	expect(minted.status).toBe(200)
 	expect(minted.body['scopes']).toEqual(['local-execute'])
@@ -375,6 +413,8 @@ async function mintWithLocalExecute(
 		userId: api.userId,
 		name: 'parent',
 		scopes: ['tokens:write', 'local-execute'],
+		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
+		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'mcp-api',
 	})
 	return minted.token

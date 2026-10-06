@@ -7,10 +7,12 @@ import {
 } from '#worker/api-tokens/scopes.ts'
 import {
 	apiTokenIdleTtlDescription,
+	apiTokenLifetimeAliasNames,
 	apiTokenPolicy,
 	getApiTokenRecord,
 	listApiTokens,
 	mintApiToken,
+	resolveApiTokenLifetime,
 	revokeApiToken,
 	rotateApiToken,
 	toApiTokenView,
@@ -83,6 +85,10 @@ const tokenSecretViewSchema = tokenViewSchema.extend({
 
 export const emptyInputSchema = z.object({}).strict()
 
+const lifetimeAliasSchema = z.enum(
+	apiTokenLifetimeAliasNames as [string, ...Array<string>],
+)
+
 const tokenCreateInputSchema = z
 	.object({
 		name: z
@@ -104,6 +110,11 @@ const tokenCreateInputSchema = z
 			.describe(
 				'Optional connection profile name. The token’s package access is limited to that profile’s grants. Experimenters only.',
 			),
+		lifetime: lifetimeAliasSchema
+			.optional()
+			.describe(
+				'Required unless idle_ttl_seconds and max_lifetime_seconds are both set. `short` = 1h idle / 24h max. `long` = 14d idle / 3mo max. Single-task agents should use `short`.',
+			),
 		idle_ttl_seconds: z
 			.number()
 			.int()
@@ -111,7 +122,7 @@ const tokenCreateInputSchema = z
 			.max(apiTokenPolicy.maxIdleTtlSeconds)
 			.optional()
 			.describe(
-				`Seconds without use before the token expires (default ${apiTokenPolicy.defaultIdleTtlSeconds}).`,
+				'Seconds without use before the token expires. Required with max_lifetime_seconds when lifetime is omitted.',
 			),
 		max_lifetime_seconds: z
 			.number()
@@ -120,7 +131,7 @@ const tokenCreateInputSchema = z
 			.max(apiTokenPolicy.maxMaxLifetimeSeconds)
 			.optional()
 			.describe(
-				`Absolute lifetime cap in seconds (default ${apiTokenPolicy.defaultMaxLifetimeSeconds}).`,
+				'Absolute lifetime cap in seconds. Required with idle_ttl_seconds when lifetime is omitted.',
 			),
 	})
 	.strict()
@@ -231,12 +242,17 @@ export const tokenOperationDefinitions: Record<
 	},
 	tokenCreate: {
 		summary: 'Mint a scoped API token',
-		description: `Mint a short-lived, scoped API token for this account. The token value is returned once. ${ttlDescription} A token-authenticated caller can only grant scopes it holds and cannot outlive its own max_expires_at.`,
+		description: `Mint a scoped API token for this account. The token value is returned once. ${ttlDescription} A token-authenticated caller can only grant scopes it holds and cannot outlive its own max_expires_at.`,
 		inputSchema: tokenCreateInputSchema,
 		outputSchema: tokenSecretViewSchema,
 		readOnly: false,
 		async handler(params, ctx) {
 			const input = parseNativeInput(tokenCreateInputSchema, params)
+			const lifetime = resolveApiTokenLifetime({
+				lifetime: input.lifetime,
+				idleTtlSeconds: input.idle_ttl_seconds,
+				maxLifetimeSeconds: input.max_lifetime_seconds,
+			})
 			const parent =
 				ctx.principal.kind === 'token'
 					? {
@@ -314,14 +330,13 @@ export const tokenOperationDefinitions: Record<
 				userId: userIdOf(ctx),
 				name: input.name,
 				scopes: input.scopes,
-				...(input.idle_ttl_seconds === undefined
-					? {}
-					: { idleTtlSeconds: input.idle_ttl_seconds }),
-				...(input.max_lifetime_seconds === undefined
-					? {}
-					: { maxLifetimeSeconds: input.max_lifetime_seconds }),
+				idleTtlSeconds: lifetime.idleTtlSeconds,
+				maxLifetimeSeconds: lifetime.maxLifetimeSeconds,
 				createdVia: ctx.principal.kind === 'token' ? 'api' : 'mcp-api',
 				...(parent ? { parent } : {}),
+				...(ctx.principal.kind === 'token'
+					? { excludeTokenId: ctx.principal.token.id }
+					: {}),
 				profileName,
 			})
 		},
@@ -412,6 +427,29 @@ const bootstrapRedeemInputSchema = z
 			.describe(
 				'One-shot `kody_bc_…` bootstrap code from `cliCredentialBootstrap`.',
 			),
+		lifetime: lifetimeAliasSchema
+			.optional()
+			.describe(
+				'Required unless idle_ttl_seconds and max_lifetime_seconds are both set. `short` = 1h idle / 24h max. `long` = 14d idle / 3mo max. Single-task agents should use `short`.',
+			),
+		idle_ttl_seconds: z
+			.number()
+			.int()
+			.min(apiTokenPolicy.minIdleTtlSeconds)
+			.max(apiTokenPolicy.maxIdleTtlSeconds)
+			.optional()
+			.describe(
+				'Seconds without use before the redeemed token expires. Required with max_lifetime_seconds when lifetime is omitted.',
+			),
+		max_lifetime_seconds: z
+			.number()
+			.int()
+			.min(apiTokenPolicy.minIdleTtlSeconds)
+			.max(apiTokenPolicy.maxMaxLifetimeSeconds)
+			.optional()
+			.describe(
+				'Absolute lifetime cap for the redeemed token in seconds. Required with idle_ttl_seconds when lifetime is omitted.',
+			),
 	})
 	.strict()
 
@@ -422,21 +460,23 @@ const bootstrapRedeemInputSchema = z
 export const cliCredentialBootstrapRedeemDefinition: NativeApiOperationDefinition =
 	{
 		summary: 'Redeem a CLI credential bootstrap code',
-		description:
-			'Exchange a one-shot `kody_bc_…` bootstrap code for a scoped `kody_at_…` API token. For `@kodycodes/cli auth bootstrap` only — not the MCP `api` tool. No Authorization header; the code is the credential. The code burns on first successful redeem.',
+		description: `Exchange a one-shot \`kody_bc_…\` bootstrap code for a scoped \`kody_at_…\` API token. For \`@kodycodes/cli auth bootstrap\` only — not the MCP \`api\` tool. No Authorization header; the code is the credential. The code burns on first successful redeem. Lifetime is required on redeem (CLI flags). ${ttlDescription}`,
 		inputSchema: bootstrapRedeemInputSchema,
 		outputSchema: tokenSecretViewSchema,
 		readOnly: false,
 		async handler(params, ctx) {
 			if (ctx.principal.kind === 'mcp') {
 				throw invalidRequest(
-					'cliCredentialBootstrapRedeem is HTTP/CLI only. Call cliCredentialBootstrap for a one-shot code, then run `npx @kodycodes/cli auth bootstrap --code …` — do not redeem through MCP `api` (that would return a kody_at_ into chat).',
+					'cliCredentialBootstrapRedeem is HTTP/CLI only. Call cliCredentialBootstrap for a one-shot code, then run `npx @kodycodes/cli auth bootstrap --code … --lifetime short` — do not redeem through MCP `api` (that would return a kody_at_ into chat).',
 				)
 			}
 			const input = parseNativeInput(bootstrapRedeemInputSchema, params)
 			const redeemed = await redeemCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
 				code: input.code,
+				lifetime: input.lifetime,
+				idleTtlSeconds: input.idle_ttl_seconds,
+				maxLifetimeSeconds: input.max_lifetime_seconds,
 			})
 			return redeemed.token
 		},

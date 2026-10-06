@@ -101,23 +101,25 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   that sign, lock, or run caller queries (`secretLock`, `secretJwtSign`,
   `secretProviderLock`, `storageQuery`) need `:write`. `local-execute` grants
   the whole `kody.*` runtime surface, like cloud execute.
-- TTL: tokens expire after `idle_ttl_seconds` without use (default 900, range
-  60–3600). Each authenticated request slides `expires_at` forward (debounced to
-  one write per minute), never past `max_expires_at` (default 24 hours, at most
-  7 days).
+- TTL: tokens require an explicit lifetime: `lifetime` `short` (1h idle / 24h
+  max) or `long` (14d idle / 3mo max), or both `idle_ttl_seconds` (60–1209600)
+  and `max_lifetime_seconds` (up to 7776000). Each authenticated request slides
+  `expires_at` forward (debounced), never past `max_expires_at`. Aliases are
+  input sugar only; only the resulting idle/max values are stored.
 - Minting: the first token comes from the MCP `api` tool (`tokenCreate`, full
   MCP grant). A token holding `tokens:write` can mint more, but only with scopes
-  it holds and never outliving its own `max_expires_at`. At most 50 active
-  tokens per account.
+  it holds and never outliving its own `max_expires_at`. At most 500 active
+  tokens per account. When the pool is full, a new mint revokes the active
+  token(s) with the least remaining life (sooner of idle deadline and absolute
+  expiry), never the caller's own token. Reclaim applies to every mint.
 - **CLI bootstrap (ADR 0056):** `cliCredentialBootstrap` (capability +
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
-  `kody_at_`). `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no
-  Bearer; rejected for MCP `api`) and mints a normal `kody_at_` with
-  `created_via: cli-bootstrap` for the CLI to store. Bootstrap tokens default to
-  a 2-week sliding idle TTL (`idle_ttl_seconds` 1209600) and a 3-month absolute
-  lifetime (`max_lifetime_seconds` 7776000), not the shorter `tokenCreate`
-  defaults above. CLI `whoami` / `GET /v1/tokens/current` surface sliding
-  `expires_at` (the idle window).
+  `kody_at_`) and a `cli_command` that includes required lifetime flags.
+  `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no Bearer;
+  rejected for MCP `api`) and mints a normal `kody_at_` with
+  `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
+  both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
+  surface sliding `expires_at` (the idle window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.

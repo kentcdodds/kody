@@ -123,16 +123,28 @@ async function handleOperation(input: {
 			match,
 			inputSchema: resolved.inputSchema,
 		})
-		const code =
-			typeof params === 'object' &&
-			params !== null &&
-			'code' in params &&
-			typeof (params as { code: unknown }).code === 'string'
-				? (params as { code: string }).code
-				: ''
+		const redeemInput =
+			typeof params === 'object' && params !== null
+				? (params as {
+						code?: unknown
+						lifetime?: unknown
+						idle_ttl_seconds?: unknown
+						max_lifetime_seconds?: unknown
+					})
+				: {}
+		const code = typeof redeemInput.code === 'string' ? redeemInput.code : ''
 		const redeemed = await redeemCliCredentialBootstrap({
 			db: input.env.APP_DB,
 			code,
+			...(typeof redeemInput.lifetime === 'string'
+				? { lifetime: redeemInput.lifetime }
+				: {}),
+			...(typeof redeemInput.idle_ttl_seconds === 'number'
+				? { idleTtlSeconds: redeemInput.idle_ttl_seconds }
+				: {}),
+			...(typeof redeemInput.max_lifetime_seconds === 'number'
+				? { maxLifetimeSeconds: redeemInput.max_lifetime_seconds }
+				: {}),
 		})
 		input.waitUntil(
 			recordUsage(

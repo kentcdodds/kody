@@ -22,12 +22,12 @@ import {
 } from './scopes.ts'
 
 export const apiTokenPolicy = {
-	defaultIdleTtlSeconds: 15 * 60,
 	minIdleTtlSeconds: 60,
-	maxIdleTtlSeconds: 60 * 60,
-	defaultMaxLifetimeSeconds: 24 * 60 * 60,
-	maxMaxLifetimeSeconds: 7 * 24 * 60 * 60,
-	maxActiveTokensPerUser: 50,
+	/** ADR 0056: idle timeout at most 14 days. */
+	maxIdleTtlSeconds: 14 * 24 * 60 * 60,
+	/** ADR 0056: absolute lifetime at most 3 months. */
+	maxMaxLifetimeSeconds: 90 * 24 * 60 * 60,
+	maxActiveTokensPerUser: 500,
 	maxNameLength: 100,
 	/**
 	 * Sliding-expiry writes are skipped when they would extend the expiry by
@@ -39,20 +39,114 @@ export const apiTokenPolicy = {
 } as const
 
 /**
- * Lifetimes for API tokens minted by CLI credential bootstrap redeem
- * (`created_via: cli-bootstrap`). Distinct from `tokenCreate` defaults so
- * agents can keep a local CLI credential across Cloud Agent sessions without
- * widening ordinary scoped API tokens.
+ * Input aliases for required token lifetimes. Sugar only: never stored on the
+ * token. `short` suits single-task agents; `long` is the policy maximum.
  */
-export const cliBootstrapTokenLifetimePolicy = {
-	/** 2 weeks unused before the sliding expiry goes stale. */
-	defaultIdleTtlSeconds: 14 * 24 * 60 * 60,
-	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
-	maxIdleTtlSeconds: 14 * 24 * 60 * 60,
-	/** 3 months absolute lifetime from mint. */
-	defaultMaxLifetimeSeconds: 90 * 24 * 60 * 60,
-	maxMaxLifetimeSeconds: 90 * 24 * 60 * 60,
+export const apiTokenLifetimeAliases = {
+	short: {
+		idleTtlSeconds: 60 * 60,
+		maxLifetimeSeconds: 24 * 60 * 60,
+	},
+	long: {
+		idleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds,
+		maxLifetimeSeconds: apiTokenPolicy.maxMaxLifetimeSeconds,
+	},
 } as const
+
+export type ApiTokenLifetimeAlias = keyof typeof apiTokenLifetimeAliases
+
+export const apiTokenLifetimeAliasNames = Object.keys(
+	apiTokenLifetimeAliases,
+) as Array<ApiTokenLifetimeAlias>
+
+export type ResolvedApiTokenLifetime = {
+	idleTtlSeconds: number
+	maxLifetimeSeconds: number
+	/** CLI flags that reproduce this choice (alias or explicit pair). */
+	cliFlags: string
+}
+
+export function apiTokenLifetimeMissingError(surface: 'api' | 'cli') {
+	if (surface === 'cli') {
+		return (
+			'Token lifetime is required. Pass --lifetime short|long, or both ' +
+			`--idle-ttl-seconds <n> and --max-lifetime-seconds <n> ` +
+			`(idle ${apiTokenPolicy.minIdleTtlSeconds}-${apiTokenPolicy.maxIdleTtlSeconds}s, ` +
+			`max age up to ${apiTokenPolicy.maxMaxLifetimeSeconds}s). ` +
+			'Single-task agents should use --lifetime short.'
+		)
+	}
+	return (
+		'Token lifetime is required. Pass lifetime: "short"|"long", or both ' +
+		`idle_ttl_seconds and max_lifetime_seconds ` +
+		`(idle ${apiTokenPolicy.minIdleTtlSeconds}-${apiTokenPolicy.maxIdleTtlSeconds}, ` +
+		`max age up to ${apiTokenPolicy.maxMaxLifetimeSeconds}). ` +
+		'Single-task agents should use lifetime: "short".'
+	)
+}
+
+/**
+ * Resolve a required lifetime choice. Aliases expand to idle/max seconds;
+ * the label is not kept. Rejects missing, mixed, or over-limit values.
+ */
+export function resolveApiTokenLifetime(input: {
+	lifetime?: string | null
+	idleTtlSeconds?: number
+	maxLifetimeSeconds?: number
+	missingError?: string
+}): ResolvedApiTokenLifetime {
+	const missingError = input.missingError ?? apiTokenLifetimeMissingError('api')
+	const aliasRaw =
+		typeof input.lifetime === 'string' ? input.lifetime.trim() : ''
+	const hasAlias = aliasRaw.length > 0
+	const hasIdle = input.idleTtlSeconds !== undefined
+	const hasMax = input.maxLifetimeSeconds !== undefined
+
+	if (!hasAlias && !hasIdle && !hasMax) {
+		throw new McpCallerError(missingError)
+	}
+	if (hasAlias && (hasIdle || hasMax)) {
+		throw new McpCallerError(
+			'Pass lifetime: "short"|"long", or both idle_ttl_seconds and max_lifetime_seconds, not both forms.',
+		)
+	}
+	if (hasAlias) {
+		if (!(aliasRaw in apiTokenLifetimeAliases)) {
+			throw new McpCallerError(
+				`lifetime must be "short" or "long" (got ${JSON.stringify(aliasRaw)}).`,
+			)
+		}
+		const alias = aliasRaw as ApiTokenLifetimeAlias
+		const resolved = apiTokenLifetimeAliases[alias]
+		return {
+			idleTtlSeconds: resolved.idleTtlSeconds,
+			maxLifetimeSeconds: resolved.maxLifetimeSeconds,
+			cliFlags: `--lifetime ${alias}`,
+		}
+	}
+	if (!hasIdle || !hasMax) {
+		throw new McpCallerError(
+			'When not using lifetime: "short"|"long", both idle_ttl_seconds and max_lifetime_seconds are required.',
+		)
+	}
+	const idleTtlSeconds = readRequiredInteger({
+		value: input.idleTtlSeconds!,
+		min: apiTokenPolicy.minIdleTtlSeconds,
+		max: apiTokenPolicy.maxIdleTtlSeconds,
+		field: 'idle_ttl_seconds',
+	})
+	const maxLifetimeSeconds = readRequiredInteger({
+		value: input.maxLifetimeSeconds!,
+		min: idleTtlSeconds,
+		max: apiTokenPolicy.maxMaxLifetimeSeconds,
+		field: 'max_lifetime_seconds',
+	})
+	return {
+		idleTtlSeconds,
+		maxLifetimeSeconds,
+		cliFlags: `--idle-ttl-seconds ${idleTtlSeconds} --max-lifetime-seconds ${maxLifetimeSeconds}`,
+	}
+}
 
 export const apiTokenCreatedVia = ['api', 'mcp-api', 'cli-bootstrap'] as const
 export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
@@ -169,14 +263,12 @@ function slidingExpiry(input: {
 	).toISOString()
 }
 
-function readIntegerOption(input: {
-	value: number | undefined
-	fallback: number
+function readRequiredInteger(input: {
+	value: number
 	min: number
 	max: number
 	field: string
 }) {
-	if (input.value === undefined) return input.fallback
 	if (
 		!Number.isInteger(input.value) ||
 		input.value < input.min ||
@@ -242,6 +334,87 @@ async function countActiveApiTokens(input: {
 }
 
 /**
+ * Remaining life until the token stops working if unused from `now`: the
+ * sooner of its idle deadline (last_used_at, or created_at if never used, plus
+ * idle_ttl_seconds) and its absolute max_expires_at.
+ */
+export function apiTokenRemainingLifeMs(
+	record: Pick<
+		ApiTokenRecord,
+		'last_used_at' | 'created_at' | 'idle_ttl_seconds' | 'max_expires_at'
+	>,
+	now: Date,
+) {
+	const idleDeadlineMs =
+		Date.parse(record.last_used_at ?? record.created_at) +
+		record.idle_ttl_seconds * 1000
+	const absoluteMs = Date.parse(record.max_expires_at)
+	return Math.min(idleDeadlineMs, absoluteMs) - now.getTime()
+}
+
+async function listActiveApiTokenRecords(input: {
+	db: D1Database
+	userId: string
+	now: Date
+}) {
+	const rows = await input.db
+		.prepare(
+			`SELECT *
+			FROM api_tokens
+			WHERE user_id = ?
+				AND revoked_at IS NULL
+				AND expires_at > ?
+			ORDER BY created_at ASC, id ASC`,
+		)
+		.bind(input.userId, input.now.toISOString())
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapRow)
+}
+
+/**
+ * When the account is at the active-token cap, revoke active tokens with the
+ * least remaining life until one slot is free. Never revokes `excludeTokenId`
+ * (the caller's own token). Applies to every mint via `mintApiToken`.
+ */
+async function reclaimApiTokenSlots(input: {
+	db: D1Database
+	userId: string
+	now: Date
+	excludeTokenId?: string
+	slotsNeeded: number
+}) {
+	let activeCount = await countActiveApiTokens(input)
+	while (
+		activeCount + input.slotsNeeded >
+		apiTokenPolicy.maxActiveTokensPerUser
+	) {
+		const active = await listActiveApiTokenRecords(input)
+		const candidates = active
+			.filter((record) => record.id !== input.excludeTokenId)
+			.sort((left, right) => {
+				const lifeDiff =
+					apiTokenRemainingLifeMs(left, input.now) -
+					apiTokenRemainingLifeMs(right, input.now)
+				if (lifeDiff !== 0) return lifeDiff
+				return left.id.localeCompare(right.id)
+			})
+		const victim = candidates[0]
+		if (!victim) {
+			throw new McpCallerError(
+				`This account already has ${apiTokenPolicy.maxActiveTokensPerUser} active API tokens and none can be reclaimed (the calling token is protected). Revoke one before minting another.`,
+			)
+		}
+		await revokeApiToken({
+			db: input.db,
+			userId: input.userId,
+			tokenId: victim.id,
+			now: input.now,
+		})
+		activeCount = await countActiveApiTokens(input)
+	}
+}
+
+/**
  * The token doing the minting, when a token mints a token. A child token can
  * never hold scopes the parent lacks or outlive the parent's absolute expiry.
  * A profile-bound parent can only mint tokens for the same profile.
@@ -257,11 +430,13 @@ export async function mintApiToken(input: {
 	userId: string
 	name: string
 	scopes: ReadonlyArray<unknown>
-	idleTtlSeconds?: number
-	maxLifetimeSeconds?: number
+	idleTtlSeconds: number
+	maxLifetimeSeconds: number
 	createdVia: ApiTokenCreatedVia
 	parent?: ApiTokenMintParent
 	profileName?: string | null
+	/** Never reclaimed when the active-token pool is full. */
+	excludeTokenId?: string
 	now?: Date
 }): Promise<ApiTokenSecretView> {
 	const now = input.now ?? new Date()
@@ -299,25 +474,16 @@ export async function mintApiToken(input: {
 			)
 		}
 	}
-	const lifetimePolicy =
-		input.createdVia === 'cli-bootstrap'
-			? cliBootstrapTokenLifetimePolicy
-			: apiTokenPolicy
-	const idleTtlSeconds = readIntegerOption({
+	const idleTtlSeconds = readRequiredInteger({
 		value: input.idleTtlSeconds,
-		fallback: lifetimePolicy.defaultIdleTtlSeconds,
-		min: lifetimePolicy.minIdleTtlSeconds,
-		max: lifetimePolicy.maxIdleTtlSeconds,
+		min: apiTokenPolicy.minIdleTtlSeconds,
+		max: apiTokenPolicy.maxIdleTtlSeconds,
 		field: 'idle_ttl_seconds',
 	})
-	const maxLifetimeSeconds = readIntegerOption({
+	const maxLifetimeSeconds = readRequiredInteger({
 		value: input.maxLifetimeSeconds,
-		fallback: Math.max(
-			lifetimePolicy.defaultMaxLifetimeSeconds,
-			idleTtlSeconds,
-		),
 		min: idleTtlSeconds,
-		max: lifetimePolicy.maxMaxLifetimeSeconds,
+		max: apiTokenPolicy.maxMaxLifetimeSeconds,
 		field: 'max_lifetime_seconds',
 	})
 	let maxExpiresAtMs = addSeconds(now, maxLifetimeSeconds).getTime()
@@ -327,16 +493,13 @@ export async function mintApiToken(input: {
 	const maxExpiresAt = new Date(maxExpiresAtMs).toISOString()
 
 	await pruneInactiveApiTokens({ db: input.db, userId: input.userId, now })
-	const activeCount = await countActiveApiTokens({
+	await reclaimApiTokenSlots({
 		db: input.db,
 		userId: input.userId,
 		now,
+		excludeTokenId: input.excludeTokenId,
+		slotsNeeded: 1,
 	})
-	if (activeCount >= apiTokenPolicy.maxActiveTokensPerUser) {
-		throw new McpCallerError(
-			`This account already has ${apiTokenPolicy.maxActiveTokensPerUser} active API tokens. Revoke one before minting another.`,
-		)
-	}
 
 	const tokenId = generateApiTokenId()
 	const secret = generateApiTokenSecret()
@@ -604,5 +767,19 @@ export function getApiTokenIssuedAtMs(record: ApiTokenRecord) {
 }
 
 export function apiTokenIdleTtlDescription() {
-	return `Tokens expire after idle_ttl_seconds without use (default ${apiTokenPolicy.defaultIdleTtlSeconds}s, ${apiTokenPolicy.minIdleTtlSeconds}-${apiTokenPolicy.maxIdleTtlSeconds}s). Each successful request slides expires_at forward, never past max_expires_at (default ${apiTokenPolicy.defaultMaxLifetimeSeconds}s after mint, at most ${apiTokenPolicy.maxMaxLifetimeSeconds}s).`
+	return (
+		`Tokens require an explicit lifetime: lifetime "short" ` +
+		`(${apiTokenLifetimeAliases.short.idleTtlSeconds}s idle / ` +
+		`${apiTokenLifetimeAliases.short.maxLifetimeSeconds}s max) or "long" ` +
+		`(${apiTokenLifetimeAliases.long.idleTtlSeconds}s idle / ` +
+		`${apiTokenLifetimeAliases.long.maxLifetimeSeconds}s max), or both ` +
+		`idle_ttl_seconds (${apiTokenPolicy.minIdleTtlSeconds}-` +
+		`${apiTokenPolicy.maxIdleTtlSeconds}) and max_lifetime_seconds ` +
+		`(up to ${apiTokenPolicy.maxMaxLifetimeSeconds}). Each successful ` +
+		`request slides expires_at forward, never past max_expires_at. ` +
+		`At most ${apiTokenPolicy.maxActiveTokensPerUser} active tokens per ` +
+		`account; a new mint reclaims the active token(s) with the least ` +
+		`remaining life (sooner of idle deadline and absolute expiry), never ` +
+		`the caller's own token.`
+	)
 }

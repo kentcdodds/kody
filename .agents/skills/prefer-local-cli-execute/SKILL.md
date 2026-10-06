@@ -22,13 +22,22 @@ source of truth. Open API fallback: [Open API](https://kody.codes/docs/open-api)
 
 ## Command
 
-Agents already on MCP: call `cliCredentialBootstrap` (MCP `api`), then run the
-returned `cli_command`. Humans who can finish browser OAuth:
+Agents already on MCP: call `cliCredentialBootstrap` with a required lifetime
+(single-task agents use `short`), then run the returned `cli_command` (it
+already includes lifetime flags). Humans who can finish browser OAuth:
 `npx @kodycodes/cli login` once. CI with no MCP session and no interactive
 login: set `KODY_API_TOKEN` in the environment. Never paste a `kody_at_…` into
 chat.
 
+```json
+{
+	"operationId": "cliCredentialBootstrap",
+	"params": { "lifetime": "short" }
+}
+```
+
 ```bash
+npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.metaGetCurrentUser({}) }'
 ```
 
@@ -38,8 +47,12 @@ Saved packages keep `--local` and a static `kody:@…` import.
 
 - Node is below 22, the CLI is missing, or the host cannot run workerd. Use Open
   API / MCP `api`, or fix the environment. Hosted MCP `execute` stays banned.
-- The bootstrap code is rejected. Call `cliCredentialBootstrap` again. Do not
-  switch to `kody login` or `tokenCreate` while an MCP session exists.
+- Lifetime is missing. Pass `lifetime: "short"|"long"` (or both idle/max
+  seconds) to `cliCredentialBootstrap`, and `--lifetime short|long` (or both
+  `--idle-ttl-seconds` / `--max-lifetime-seconds`) to `auth bootstrap`.
+- The bootstrap code is rejected. Call `cliCredentialBootstrap` again with
+  `lifetime: "short"`. Do not switch to `kody login` or `tokenCreate` while an
+  MCP session exists.
 - `search` is forbidden. Default bootstrap scopes are `local-execute` and
   `account:read`
   ([ADR 0056](../../../docs/contributing/decisions/0056-cli-credential-bootstrap.md)).
