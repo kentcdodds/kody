@@ -143,6 +143,12 @@ const fov = 24
 /** Device pixels the canvas may draw, so a big screen cannot ask for 4K. */
 const maxPixels = 2_600_000
 
+/** Texels along each cube face of the studio's environment map. A software
+ *  renderer spends most of its first frame filtering that map, and the whole
+ *  page stalls on it the first time the canvas composites, so software draws
+ *  the studio softer. */
+const environmentSize = { gpu: 256, software: 64 }
+
 /** Drag across the whole lantern turns it this far, radians. */
 const turnPerWidth = 2.8
 const tiltPerHeight = 1.4
@@ -189,7 +195,9 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 
 	const pmrem = new PMREMGenerator(renderer)
 	const studio = createLanternStudio()
-	const environment: Texture = pmrem.fromScene(studio.scene, 0.04).texture
+	const environment: Texture = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, {
+		size: software ? environmentSize.software : environmentSize.gpu,
+	}).texture
 	studio.dispose()
 	pmrem.dispose()
 	model.root.traverse((object) => {
