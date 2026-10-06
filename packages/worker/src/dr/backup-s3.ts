@@ -87,7 +87,6 @@ async function drainResponseBody(response: Response) {
 
 export function createDrBackupS3Client(
 	config: DrBackupS3Config,
-	fetchImpl: typeof fetch = fetch,
 	options?: {
 		maxAttempts?: number
 		baseDelayMs?: number
@@ -104,7 +103,7 @@ export function createDrBackupS3Client(
 
 	async function signedFetch(key: string, init?: RequestInit) {
 		const request = await aws.sign(objectUrl(config, key), init)
-		return fetchImpl(request)
+		return fetch(request)
 	}
 
 	/**

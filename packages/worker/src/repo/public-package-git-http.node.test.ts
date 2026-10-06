@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { encodeGitFlushPkt, encodeGitPktLine } from './git-pkt-line.ts'
 
 const resolveCommunityPackageUrl = vi.fn()
@@ -216,29 +218,31 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 		encodeGitPktLine(`${liveCommit} refs/heads/wip\n`) +
 		encodeGitFlushPkt()
 
-	const fetchImpl = vi.fn(async (input: string, init?: RequestInit) => {
-		const url = String(input)
-		if (url.includes('/info/refs')) {
-			expect(url).toContain('artifacts.example.test')
-			expect(url).not.toContain('art_v1_secret')
-			expect(new Headers(init?.headers).get('Authorization')).toBe(
-				'Bearer art_v1_secret',
-			)
-			return new Response(upstreamAdvertisement, {
+	const artifactsRemote =
+		'https://artifacts.example.test/git/default/package-pkg-1.git'
+	const fetchCalls: Array<{ url: string; method: string; headers: Headers }> =
+		[]
+	using _server = createMswNodeServer([
+		http.get(`${artifactsRemote}/info/refs`, ({ request }) => {
+			fetchCalls.push({
+				url: request.url,
+				method: request.method,
+				headers: request.headers,
+			})
+			return new HttpResponse(upstreamAdvertisement, {
 				status: 200,
 				headers: {
 					'Content-Type': 'application/x-git-upload-pack-advertisement',
 				},
 			})
-		}
-		if (url.endsWith('/git-upload-pack')) {
-			expect(url).toContain('artifacts.example.test')
-			expect(url).not.toContain('art_v1_secret')
-			expect(new Headers(init?.headers).get('Authorization')).toBe(
-				'Bearer art_v1_secret',
-			)
-			expect(init?.method).toBe('POST')
-			return new Response('PACK-FAKE', {
+		}),
+		http.post(`${artifactsRemote}/git-upload-pack`, ({ request }) => {
+			fetchCalls.push({
+				url: request.url,
+				method: request.method,
+				headers: request.headers,
+			})
+			return new HttpResponse('PACK-FAKE', {
 				status: 200,
 				headers: {
 					'Content-Type': 'application/x-git-upload-pack-result',
@@ -247,16 +251,14 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 					'Set-Cookie': 'artifacts=1',
 				},
 			})
-		}
-		throw new Error(`Unexpected fetch: ${url}`)
-	})
+		}),
+	])
 
 	const infoRefs = await handlePublicPackageGitHttpRequest(
 		new Request(
 			'https://kody.codes/@kody/cloudflare.git/info/refs?service=git-upload-pack',
 		),
 		envStub(),
-		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(infoRefs).not.toBeNull()
 	expect(infoRefs!.status).toBe(200)
@@ -287,7 +289,6 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 				encodeGitPktLine('done\n'),
 		}),
 		envStub(),
-		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(uploadPack).not.toBeNull()
 	expect(uploadPack!.status).toBe(200)
@@ -298,14 +299,17 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 	expect(uploadPack!.headers.get('WWW-Authenticate')).toBeNull()
 	expect(uploadPack!.headers.get('Set-Cookie')).toBeNull()
 	expect(await uploadPack!.text()).toBe('PACK-FAKE')
-	expect(fetchImpl).toHaveBeenCalledTimes(2)
-	const uploadCall = fetchImpl.mock.calls.find(([url]) =>
-		String(url).endsWith('/git-upload-pack'),
+	expect(fetchCalls).toHaveLength(2)
+	for (const call of fetchCalls) {
+		expect(call.url).toContain('artifacts.example.test')
+		expect(call.url).not.toContain('art_v1_secret')
+		expect(call.headers.get('Authorization')).toBe('Bearer art_v1_secret')
+	}
+	const uploadCall = fetchCalls.find((call) =>
+		call.url.includes('/git-upload-pack'),
 	)
-	expect(uploadCall).toBeDefined()
-	expect(new Headers(uploadCall?.[1]?.headers).get('Git-Protocol')).toBe(
-		'version=1',
-	)
+	expect(uploadCall?.method).toBe('POST')
+	expect(uploadCall?.headers.get('Git-Protocol')).toBe('version=1')
 
 	const unpublishedWant = await handlePublicPackageGitHttpRequest(
 		new Request('https://kody.codes/@kody/cloudflare.git/git-upload-pack', {
@@ -319,12 +323,11 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 				encodeGitPktLine('done\n'),
 		}),
 		envStub(),
-		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(unpublishedWant!.status).toBe(403)
 	expect(await unpublishedWant!.text()).toMatch(/published snapshot/i)
 	// Rejected before upstream fetch.
-	expect(fetchImpl).toHaveBeenCalledTimes(2)
+	expect(fetchCalls).toHaveLength(2)
 
 	const oversized = await handlePublicPackageGitHttpRequest(
 		new Request('https://kody.codes/@kody/cloudflare.git/git-upload-pack', {
@@ -336,9 +339,9 @@ test('public package git HTTP advertises the published snapshot and proxies uplo
 			body: new Uint8Array(300 * 1024),
 		}),
 		envStub(),
-		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(oversized!.status).toBe(413)
+	expect(fetchCalls).toHaveLength(2)
 })
 
 test('public package git HTTP rejects push and hides private packages', async () => {
@@ -397,18 +400,24 @@ test('public package git HTTP redirects listing renames and falls back to a loca
 
 	resetMocks()
 	seedPublicListing()
-	const fetchImpl = vi.fn(async () => {
-		throw new Error('upstream down')
-	})
+	let upstreamFetches = 0
+	using _server = createMswNodeServer([
+		http.get(
+			'https://artifacts.example.test/git/default/package-pkg-1.git/info/refs',
+			() => {
+				upstreamFetches += 1
+				return HttpResponse.error()
+			},
+		),
+	])
 	const fallback = await handlePublicPackageGitHttpRequest(
 		new Request(
 			'https://kody.codes/@kody/cloudflare.git/info/refs?service=git-upload-pack',
 		),
 		envStub(),
-		{ fetchImpl: fetchImpl as unknown as typeof fetch },
 	)
 	expect(fallback!.status).toBe(200)
-	expect(fetchImpl).toHaveBeenCalled()
+	expect(upstreamFetches).toBe(1)
 	const body = await fallback!.text()
 	expect(body.startsWith('001e# service=git-upload-pack\n0000')).toBe(true)
 	expect(body).toContain(`${publishedCommit} HEAD\0`)
