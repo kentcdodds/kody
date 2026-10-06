@@ -815,8 +815,11 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		},
 		endTurn(flick) {
 			if (!turning) return
-			const samples = turning.samples
+			const { samples, yaw, tilt } = turning
 			turning = null
+			// A release can land before the frame that applies the last moves.
+			// Both branches below replace the velocities this sets.
+			spin = dragLanternSpin(spin, { yaw, tilt }, 1 / 60)
 			if (motion.reduced) {
 				// No coast and no ease back: it keeps its turn and stands up.
 				spin = { ...spin, tilt: 0, yawVelocity: 0, tiltVelocity: 0 }
