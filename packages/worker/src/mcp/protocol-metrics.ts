@@ -93,16 +93,22 @@ function hasNonEmptyString(value: unknown, key: string): boolean {
 
 /**
  * Classify which package-identity input a tools/call used. Nested `target`
- * covers repo tools that wrap package identity. `name` is counted only when
- * it looks like a scoped package name (`@scope/leaf`); bare names are usually
- * plain repos or person names and are not package-identity evidence.
+ * covers repo tools that wrap package identity; nested `params` covers the MCP
+ * `api` tool (`arguments.params.kody_id`). `name` is counted only when it looks
+ * like a scoped package name (`@scope/leaf`); bare names are usually plain
+ * repos or person names and are not package-identity evidence.
  */
 export function classifyMcpPackageIdentityParam(
 	toolArguments: unknown,
 ): McpPackageIdentityParam {
 	const bags: Array<unknown> = [toolArguments]
-	if (isRecord(toolArguments) && isRecord(toolArguments['target'])) {
-		bags.push(toolArguments['target'])
+	if (isRecord(toolArguments)) {
+		if (isRecord(toolArguments['target'])) {
+			bags.push(toolArguments['target'])
+		}
+		if (isRecord(toolArguments['params'])) {
+			bags.push(toolArguments['params'])
+		}
 	}
 	let hasKodyId = false
 	let hasPackageId = false

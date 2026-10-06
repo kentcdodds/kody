@@ -440,7 +440,7 @@ test('package-app host permanent-308s a retired slug to the current leaf', async
 	expect(redirected.headers.get('Location')).toBe(
 		'/@kentcdodds/packages/new-app/dashboard',
 	)
-	expect(redirected.headers.get('Cache-Control')).toBe('public, max-age=3600')
+	expect(redirected.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 
 	mockModule.buildPackageAppWorker.mockResolvedValue({
@@ -461,6 +461,34 @@ test('package-app host permanent-308s a retired slug to the current leaf', async
 	const current = await serveHelloWorld({ kodyId: 'new-app' })
 	expect(current.status).toBe(200)
 	expect(await current.text()).toBe('ok')
+})
+
+test('package-app 308 Location uses the name leaf when kodyId diverges', async () => {
+	const fixture = createFixture({ kodyId: 'stale-kody-id' })
+	fixture.savedPackage.name = '@kentcdodds/canonical-leaf'
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (
+			_db: unknown,
+			input: {
+				userId: string
+				ref: string
+				followRedirects?: boolean
+			},
+		) => {
+			if (input.userId !== fixture.savedPackage.userId) return null
+			if (input.ref === 'diverged-old-app' && input.followRedirects) {
+				return fixture.savedPackage
+			}
+			return null
+		},
+	)
+
+	const redirected = await serveHelloWorld({ kodyId: 'diverged-old-app' })
+	expect(redirected.status).toBe(308)
+	expect(redirected.headers.get('Location')).toBe(
+		'/@kentcdodds/packages/canonical-leaf',
+	)
+	expect(redirected.headers.get('Cache-Control')).toBe('no-store')
 })
 
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {

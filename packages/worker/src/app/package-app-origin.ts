@@ -6,6 +6,7 @@ import {
 	buildPackageAppSubdomainUrl,
 	buildPackagePagePath,
 } from '@kody-internal/shared/public-urls.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	getAppBaseUrl,
 	getPackageAppBaseUrl,
@@ -261,15 +262,17 @@ async function redirectRetiredPackageAppSlug(input: {
 		slug: input.packagePath.kodyId,
 	})
 	if (!lookup?.retired) return null
-	const target = new URL(
-		input.buildLocation(lookup.savedPackage.kodyId),
-		input.url,
-	)
+	// Location must use the name leaf (Kent: slug = package name leaf), not
+	// savedPackage.kodyId — those can diverge until Phase 2's single writer.
+	const currentSlug = getPackageNameLeaf(lookup.savedPackage.name)
+	const target = new URL(input.buildLocation(currentSlug), input.url)
 	target.search = withoutHandoffToken(input.url).search
 	return redirectResponse({
 		location: `${target.pathname}${target.search}`,
 		status: 308,
-		cacheControl: 'public, max-age=3600',
+		// Source slug can be reclaimed by a later package; positive freshness
+		// would keep sending browsers to the wrong app.
+		cacheControl: 'no-store',
 	})
 }
 

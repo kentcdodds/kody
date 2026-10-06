@@ -16,6 +16,7 @@ import {
 	loadInvokeManifestBySourceId,
 	resolveSavedPackageForPackageAppSlug,
 } from '#worker/package-invocations/module-artifacts.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildPackageAppWorker,
@@ -482,10 +483,14 @@ export async function servePackageAppRequest(input: {
 	}
 	const savedPackage = slugLookup.savedPackage
 	if (slugLookup.retired) {
+		// Location must use the name leaf (Kent: slug = package name leaf), not
+		// savedPackage.kodyId — those can diverge until Phase 2's single writer,
+		// and a mismatch would 308 to the same retired path forever.
+		const currentSlug = getPackageNameLeaf(savedPackage.name)
 		const locationPath =
 			packagePath.mount === 'user-subdomain'
 				? buildPackageAppSubdomainPath({
-						kodyId: savedPackage.kodyId,
+						kodyId: currentSlug,
 						restPath:
 							forwardedPackageRestPath === '/'
 								? null
@@ -493,7 +498,7 @@ export async function servePackageAppRequest(input: {
 					})
 				: buildPackageAppPath({
 						username: packagePath.username,
-						kodyId: savedPackage.kodyId,
+						kodyId: currentSlug,
 						restPath:
 							forwardedPackageRestPath === '/'
 								? null
@@ -508,7 +513,9 @@ export async function servePackageAppRequest(input: {
 				status: 308,
 				headers: {
 					Location: `${location.pathname}${location.search}`,
-					'Cache-Control': 'public, max-age=3600',
+					// Source slug can be reclaimed by a later package; positive
+					// freshness would keep sending browsers to the wrong app.
+					'Cache-Control': 'no-store',
 				},
 			}),
 			serverTiming,

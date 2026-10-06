@@ -171,6 +171,26 @@ test('classifyMcpProtocolRequest covers legacy, modern, and failure paths', asyn
 
 	expect(
 		await classifyMcpProtocolRequest(
+			jsonRequest(
+				{
+					jsonrpc: '2.0',
+					id: 8,
+					method: 'tools/call',
+					params: {
+						name: 'api',
+						arguments: {
+							operationId: 'packageGet',
+							params: { kody_id: 'notes' },
+						},
+					},
+				},
+				{ 'mcp-protocol-version': '2025-03-26' },
+			),
+		),
+	).toMatchObject({ packageIdentityParam: 'kody_id' })
+
+	expect(
+		await classifyMcpProtocolRequest(
 			new Request(mcpUrl, {
 				headers: {
 					Accept: 'text/event-stream',
