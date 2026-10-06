@@ -1300,7 +1300,9 @@ html.is-settled {
 	border-width: 3px;
 }
 
-.landing-lantern-orb:focus-visible {
+/* The second selector is the 3D lantern's orbs (landing-lantern-3d.tsx). */
+.landing-lantern-orb:focus-visible,
+.landing-lantern button[data-orb]:focus-visible {
 	outline: 3px solid var(--color-text);
 	outline-offset: 5px;
 }

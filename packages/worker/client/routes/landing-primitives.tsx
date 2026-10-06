@@ -18,10 +18,8 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
-import {
-	LandingLantern,
-	hoverPointer,
-} from '#client/routes/landing-lantern.tsx'
+import { hoverPointer } from '#client/routes/landing-lantern.tsx'
+import { LandingLantern3D } from '#client/routes/landing-lantern-3d.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
 /**
@@ -50,13 +48,14 @@ function leaderFollow() {
 		const stage = node.querySelector<HTMLElement>('.landing-primitives-stage')
 		if (!svg || !stage) return
 		const words = node.querySelector<HTMLElement>('.landing-primitives-words')
-		const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
 
 		const draw = () => {
 			if (getComputedStyle(svg).display === 'none') return
 			const origin = stage.getBoundingClientRect()
 			if (origin.width === 0) return
 			svg.setAttribute('viewBox', `0 0 ${origin.width} ${origin.height}`)
+			// Looked up per draw: the 3D lantern replaces the still's art.
+			const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
 			if (lanternArt) {
 				// Lines run faint inside the glass and come up to full strength
 				// as they leave it (see the mask in styles.css).
@@ -208,7 +207,7 @@ export function LandingPrimitives(handle: Handle) {
 				{landingPrimitivesIntroLead}
 			</h2>
 			<div class="landing-primitives-stage">
-				<LandingLantern
+				<LandingLantern3D
 					activeId={openId}
 					panelId={panelId}
 					onOpen={setOpen}
