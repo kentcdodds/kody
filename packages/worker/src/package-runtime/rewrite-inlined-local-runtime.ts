@@ -390,12 +390,27 @@ function isOnlyBareTypeofProbe(source: string, name: string) {
 	if (matches.length === 0) return true
 	return matches.every((match) => {
 		const index = match.index ?? 0
-		const before = source.slice(Math.max(0, index - 8), index)
-		if (!/\btypeof\s+$/.test(before)) return false
+		if (!isPrecededByTypeof(source, index)) return false
 		const after = source.slice(index + name.length, index + name.length + 2)
 		// Bare probe: typeof name / typeof name === … — not typeof name?.x
 		return !/^[?.([]/.test(after)
 	})
+}
+
+/** True when `source[index]` is immediately after `typeof` plus whitespace. */
+function isPrecededByTypeof(source: string, index: number) {
+	let cursor = index
+	while (cursor > 0 && /\s/.test(source[cursor - 1] ?? '')) {
+		cursor -= 1
+	}
+	const keyword = 'typeof'
+	if (cursor < keyword.length) return false
+	if (source.slice(cursor - keyword.length, cursor) !== keyword) return false
+	const beforeKeyword = cursor - keyword.length - 1
+	if (beforeKeyword >= 0 && /[A-Za-z0-9_$]/.test(source[beforeKeyword] ?? '')) {
+		return false
+	}
+	return true
 }
 
 /**

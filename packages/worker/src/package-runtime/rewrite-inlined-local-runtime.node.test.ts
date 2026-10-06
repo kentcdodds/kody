@@ -591,3 +591,44 @@ export function main() {
 		[...result.source.matchAll(/\bvar\s+(email\d+)\s*=/g)].map((m) => m[1]),
 	).toEqual([])
 })
+
+test('rewrite does not bind multiline bare typeof probes for shared export names', () => {
+	// CodeRabbit: an 8-char lookbehind misses `typeof\n  email2` (9+ chars of
+	// keyword + whitespace), which would incorrectly alias the probe.
+	const source = `import { kody } from "./dep-runtime.js";
+
+// virtual:.__kody_virtual__/runtime.js
+function __kodyOptionalRuntimeFunctionExport(exportName) {
+  return () => {};
+}
+function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
+function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
+var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
+
+// virtual:.__kody_root__/src/probe.ts
+export function main() {
+  return (
+    typeof
+      email2 === "undefined"
+  );
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/demo/.__published_bundle__/2e2f70726f6265/bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toMatch(/typeof\s+email2/)
+	expect(
+		[...result.source.matchAll(/\bas\s+(__kodyShim\w+)\b/g)].map((m) => m[1]),
+	).not.toContain('__kodyShimEmail')
+	expect(
+		[...result.source.matchAll(/\bvar\s+(email\d+)\s*=/g)].map((m) => m[1]),
+	).toEqual([])
+})
