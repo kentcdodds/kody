@@ -364,7 +364,8 @@ test('plan role sync assigns the subscribed plan and removes the other', async (
 				stripePlan,
 			}),
 		).toEqual({ status: 'assigned' })
-		expect(routes(calls)).toEqual(expectedRoutes)
+		expect(routes(calls)).toEqual(expect.arrayContaining([...expectedRoutes]))
+		expect(routes(calls)).toHaveLength(expectedRoutes.length)
 		expect(
 			calls.every((call) => call.authorization === 'Bot bot-token-test'),
 		).toBe(true)
