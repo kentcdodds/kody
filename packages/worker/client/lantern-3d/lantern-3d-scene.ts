@@ -1,7 +1,6 @@
 import {
 	Color,
 	Matrix4,
-	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	NeutralToneMapping,
 	type Object3D,
@@ -191,10 +190,7 @@ export async function createLanternScene(
 	model.root.traverse((object) => {
 		if (!('material' in object)) return
 		const material = object.material
-		if (
-			material instanceof MeshPhysicalMaterial ||
-			material instanceof MeshStandardMaterial
-		) {
+		if (material instanceof MeshStandardMaterial) {
 			material.envMap = environment
 			material.needsUpdate = true
 		}
@@ -531,6 +527,7 @@ export async function createLanternScene(
 		model.glassInterior.uniforms.uGlow!.value = glow
 		model.glassInterior.uniforms.uTime!.value = time
 		model.glassFloor.uniforms.uGlow!.value = glow
+		model.glassFloor.uniforms.uTime!.value = time
 		model.innerLight.intensity = 7 * glow
 		model.sparkles.uniforms.uSwirl!.value = contents.swirlAngle
 		model.sparkles.uniforms.uTime!.value = time

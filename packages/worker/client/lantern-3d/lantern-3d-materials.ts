@@ -5,10 +5,11 @@ import {
 	DataTexture,
 	FrontSide,
 	LinearFilter,
+	LinearMipmapLinearFilter,
 	MeshBasicMaterial,
-	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	NormalBlending,
+	RepeatWrapping,
 	RGBAFormat,
 	ShaderMaterial,
 	SpriteMaterial,
@@ -17,10 +18,13 @@ import {
 } from 'three'
 
 /**
- * Materials for the 3D lantern. The glass is the still's warm amber: an
- * opaque interior that glows brighter where it faces you, a hot rim, and
- * clear-coat reflections added on top. Each orb is a marble in three
- * layers: a colored core seen from inside, the glyph, and a glossy shell.
+ * Materials for the 3D lantern. The glass holds Kody's lantern light: the
+ * far wall glows brightest where your line of sight passes nearest the
+ * heart of the globe and deepens to amber toward the glass, light ripples
+ * over the floor, and the outside adds crisp edges and the studio's
+ * windows on top. The metal is brushed dark bronze with brass bevels.
+ * Each orb is a marble in three layers: a colored core seen from inside,
+ * the glyph, and a glossy shell.
  *
  * Glows add their color weighted by alpha, so on a light page they tint
  * it and on a dark page or over the glass they brighten it. A glow that
@@ -48,21 +52,60 @@ const outputChunks = /* glsl */ `
 	#include <colorspace_fragment>
 `
 
-/** Linear sRGB, sampled off the still: deep amber glass between bright
- *  sparkles, over a floor that glows yellow. */
+/** Linear sRGB. The heart of the globe is Kody's lantern glow
+ *  (oklch(0.88 0.11 85)) run a little paler, deepening through gold to
+ *  amber at the glass, as in the still. */
 export const lanternAmber = {
-	deep: new Color(0.27, 0.085, 0.004),
-	bright: new Color(0.58, 0.22, 0.012),
-	hot: new Color(1, 0.6, 0.12),
-	floor: new Color(1.15, 0.66, 0.07),
-	rim: new Color(1, 0.72, 0.34),
+	deep: new Color(0.23, 0.072, 0.004),
+	bright: new Color(0.66, 0.3, 0.03),
+	heart: new Color(0.99, 0.79, 0.38),
+	hot: new Color(1, 0.64, 0.17),
+	floor: new Color(1, 0.72, 0.24),
+	rim: new Color(0.98, 0.7, 0.28),
 	spark: new Color(1, 0.8, 0.4),
 	/** What the lantern throws on the page around it. */
-	glow: new Color(1, 0.52, 0.06),
+	glow: new Color(0.95, 0.6, 0.14),
 } as const
 
-/** The far wall of the glass, seen from inside. It writes depth so motes
- *  that drift behind the lantern stay hidden. */
+/** Linear sRGB for the frame: dark bronze, brushed, with brass where an
+ *  edge is turned. */
+export const lanternMetal = {
+	bronze: new Color(0.05, 0.032, 0.02),
+	brass: new Color(0.56, 0.34, 0.1),
+} as const
+
+/** Bright lines where two warped sine lattices cancel: light through the
+ *  moving fluid, thrown on what is under it. */
+const causticChunk = /* glsl */ `
+	float caustic(vec2 p, float t) {
+		vec2 q = p + vec2(sin(p.y * 1.7 + t), cos(p.x * 1.3 - t * 0.8)) * 0.6;
+		float a = sin(q.x * 2.3 + t * 0.6) * sin(q.y * 2.1 - t * 0.5);
+		vec2 r = p * 1.6 + vec2(cos(q.y + t * 0.7), sin(q.x - t * 0.4));
+		float b = sin(r.x * 2.0) * sin(r.y * 2.4);
+		return pow(1.0 - abs(a + b) * 0.5, 7.0);
+	}
+`
+
+const glassInteriorVertex = /* glsl */ `
+varying vec3 vWorldPosition;
+varying vec3 vWorldNormal;
+varying vec3 vLocalPosition;
+varying vec3 vHeart;
+
+void main() {
+	vec4 world = modelMatrix * vec4(position, 1.0);
+	vWorldPosition = world.xyz;
+	vWorldNormal = normalize(mat3(modelMatrix) * normal);
+	vLocalPosition = position;
+	vHeart = (modelMatrix * vec4(0.0, 0.05, 0.0, 1.0)).xyz;
+	gl_Position = projectionMatrix * viewMatrix * world;
+}
+`
+
+/** The far wall of the glass, seen from inside. Every line of sight runs
+ *  through the whole globe, so how near it passes the heart sets how much
+ *  light it gathers. It writes depth so motes that drift behind the
+ *  lantern stay hidden. */
 export function createGlassInteriorMaterial(band: {
 	top: number
 	bottom: number
@@ -71,16 +114,18 @@ export function createGlassInteriorMaterial(band: {
 		uniforms: {
 			uDeep: { value: lanternAmber.deep.clone() },
 			uBright: { value: lanternAmber.bright.clone() },
+			uHeart: { value: lanternAmber.heart.clone() },
 			uHot: { value: lanternAmber.hot.clone() },
 			uGlow: { value: 1 },
 			uTime: { value: 0 },
 			uTop: { value: band.top },
 			uBottom: { value: band.bottom },
 		},
-		vertexShader: worldVertex,
+		vertexShader: glassInteriorVertex,
 		fragmentShader: /* glsl */ `
 			uniform vec3 uDeep;
 			uniform vec3 uBright;
+			uniform vec3 uHeart;
 			uniform vec3 uHot;
 			uniform float uGlow;
 			uniform float uTime;
@@ -89,18 +134,29 @@ export function createGlassInteriorMaterial(band: {
 			varying vec3 vWorldPosition;
 			varying vec3 vWorldNormal;
 			varying vec3 vLocalPosition;
+			varying vec3 vHeart;
+			${causticChunk}
 
 			void main() {
 				vec3 view = normalize(cameraPosition - vWorldPosition);
 				float facing = clamp(dot(-normalize(vWorldNormal), view), 0.0, 1.0);
-				vec3 color = mix(uDeep, uBright, pow(facing, 1.25));
-				float top = smoothstep(uTop - 0.16, uTop, vLocalPosition.y);
-				float bottom = smoothstep(uBottom + 0.3, uBottom, vLocalPosition.y);
-				color += uHot * (top * top * 0.85 + bottom * bottom * 0.8);
+				vec3 color = mix(uDeep, uBright, pow(facing, 2.2)) * 0.7;
+
+				vec3 toHeart = vHeart - cameraPosition;
+				float miss = length(toHeart - view * dot(toHeart, view));
+				float gathered = exp(-miss * miss * 3.6);
+				color += uHeart * (gathered * 0.95 + gathered * gathered * 0.3);
+
+				float top = smoothstep(uTop - 0.2, uTop, vLocalPosition.y);
+				float bottom = smoothstep(uBottom + 0.32, uBottom, vLocalPosition.y);
+				color += uHot * (top * top * 0.5 + bottom * bottom * 0.6);
+				color += uHeart * caustic(vLocalPosition.xz * 2.4 + vLocalPosition.y, uTime * 0.3)
+					* bottom * 0.35;
+
 				vec3 p = vLocalPosition;
 				float shimmer = sin(p.y * 7.0 + uTime * 0.9 + sin(p.x * 5.0 - uTime * 0.6))
 					* sin(p.x * 6.0 - p.z * 4.0 + uTime * 0.7);
-				color *= 1.0 + shimmer * 0.06;
+				color *= 1.0 + shimmer * 0.05;
 				gl_FragColor = vec4(color * uGlow, 0.97);
 				${outputChunks}
 			}
@@ -110,28 +166,35 @@ export function createGlassInteriorMaterial(band: {
 	})
 }
 
-/** The base's top seen through the glass: lit from above and brightest in
- *  a ring where it meets the glass. */
+/** The base's top seen through the glass: lit from above, rippling with
+ *  caustics, and brightest in a ring where it meets the glass. */
 export function createGlassFloorMaterial(radius: number) {
 	return new ShaderMaterial({
 		uniforms: {
 			uFloor: { value: lanternAmber.floor.clone() },
 			uHot: { value: lanternAmber.hot.clone() },
+			uHeart: { value: lanternAmber.heart.clone() },
 			uGlow: { value: 1 },
+			uTime: { value: 0 },
 			uRadius: { value: radius },
 		},
 		vertexShader: worldVertex,
 		fragmentShader: /* glsl */ `
 			uniform vec3 uFloor;
 			uniform vec3 uHot;
+			uniform vec3 uHeart;
 			uniform float uGlow;
+			uniform float uTime;
 			uniform float uRadius;
 			varying vec3 vLocalPosition;
+			${causticChunk}
 
 			void main() {
 				float reach = length(vLocalPosition.xy) / uRadius;
 				float ring = smoothstep(0.62, 0.95, reach);
-				vec3 color = uFloor * (0.82 + 0.18 * reach) + uHot * ring * 0.45;
+				float light = caustic(vLocalPosition.xy * 3.4, uTime * 0.3);
+				vec3 color = uFloor * (0.7 + 0.2 * reach) + uHot * ring * 0.4
+					+ uHeart * light * 0.55;
 				gl_FragColor = vec4(color * uGlow, 1.0);
 				${outputChunks}
 			}
@@ -139,79 +202,150 @@ export function createGlassFloorMaterial(radius: number) {
 	})
 }
 
-export function createGlassRimMaterial() {
+/**
+ * The outside of the glass, added over the glow: a crisp bright edge with
+ * a warm band inside it where the light inside catches the thick of the
+ * wall, and the studio's lights in reflection (tall softboxes behind each
+ * shoulder that wrap the sides, a small four-pane window up and to the
+ * left, a softbox overhead). They are worked out from the reflected ray,
+ * so they stay put while the globe turns, as they would on real glass.
+ * Face-on the glass reflects little, so the orbs behind it stay clear.
+ * One cheap shader, so the software path draws it too.
+ */
+export function createGlassShellMaterial() {
 	return new ShaderMaterial({
 		uniforms: {
 			uRim: { value: lanternAmber.rim.clone() },
-			uStrength: { value: 1.2 },
+			uReflect: { value: 1 },
 		},
 		vertexShader: worldVertex,
 		fragmentShader: /* glsl */ `
 			uniform vec3 uRim;
-			uniform float uStrength;
+			uniform float uReflect;
 			varying vec3 vWorldPosition;
 			varying vec3 vWorldNormal;
 			varying vec3 vLocalPosition;
 
+			/** A soft-edged rectangle of light in direction centre, as seen
+			 *  along the reflected ray. Returns how much of it is hit and,
+			 *  in out q, where on it (half sizes in tangent units). */
+			float panel(vec3 ray, vec3 centre, vec2 halfSize, float soft, out vec2 q) {
+				q = vec2(10.0);
+				float along = dot(ray, centre);
+				if (along <= 0.0) return 0.0;
+				vec3 right = normalize(vec3(centre.z, 0.0, -centre.x));
+				vec3 up = cross(right, centre);
+				vec3 p = ray / along - centre;
+				q = vec2(dot(p, right), dot(p, up)) / halfSize;
+				vec2 inside = smoothstep(1.0 + soft, 1.0 - soft, abs(q));
+				return inside.x * inside.y;
+			}
+
 			void main() {
 				vec3 view = normalize(cameraPosition - vWorldPosition);
-				float facing = clamp(dot(normalize(vWorldNormal), view), 0.0, 1.0);
-				float fresnel = pow(1.0 - facing, 2.6);
-				gl_FragColor = vec4(uRim * 1.35, clamp(fresnel * uStrength, 0.0, 1.0));
+				vec3 normal = normalize(vWorldNormal);
+				float facing = clamp(dot(normal, view), 0.0, 1.0);
+				vec3 ray = reflect(-view, normal);
+				float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);
+
+				vec2 q;
+				float window = panel(ray, normalize(vec3(-0.5, 0.45, 0.74)), vec2(0.17, 0.13), 0.12, q);
+				vec2 bars = smoothstep(0.05, 0.1, abs(q));
+				window *= bars.x * bars.y;
+				float left = panel(ray, normalize(vec3(-0.86, 0.22, -0.46)), vec2(0.16, 0.9), 0.45, q);
+				float right = panel(ray, normalize(vec3(0.94, 0.16, -0.3)), vec2(0.07, 0.8), 0.4, q);
+				float overhead = panel(ray, normalize(vec3(0.0, 1.0, 0.2)), vec2(0.6, 0.4), 0.5, q);
+				vec3 studio = vec3(1.0, 0.97, 0.92)
+					* (window * 4.0 + left * 9.0 + right * 8.0 + overhead * 2.0);
+
+				float edge = pow(1.0 - facing, 7.0);
+				float band = pow(1.0 - facing, 2.4);
+				vec3 color = studio * fresnel * uReflect
+					+ vec3(1.0, 0.93, 0.78) * edge * 0.9
+					+ uRim * band * 0.42;
+				gl_FragColor = vec4(color, 1.0);
 				${outputChunks}
 			}
 		`,
 		side: FrontSide,
 		transparent: true,
 		depthWrite: false,
+		blending: AdditiveBlending,
 	})
 }
 
-/** Only the reflections: black diffuse, added over the glow. `lite` drops
- *  the clear coat, the costliest shader in the scene, for software
- *  renderers. */
-export function createGlassShellMaterial(lite: boolean) {
-	const options = {
-		color: 0x000000,
-		roughness: 0.06,
-		metalness: 0,
-		transparent: true,
-		opacity: 0.55,
-		blending: AdditiveBlending,
-		depthWrite: false,
+/** Fine lines running the way the metal was turned or drawn, for its
+ *  roughness (and, on a GPU, its relief). Lathe parts, the handle tube, and
+ *  the rings all run their v coordinate across the grain. */
+export function createBrushedTexture(): Texture {
+	const width = 4
+	const height = 256
+	const data = new Uint8Array(width * height * 4)
+	let state = 2414
+	const random = () => {
+		state = (state * 16807) % 2147483647
+		return state / 2147483647
 	}
-	return lite
-		? new MeshStandardMaterial({ ...options, envMapIntensity: 2.4 })
-		: new MeshPhysicalMaterial({
-				...options,
-				clearcoat: 1,
-				clearcoatRoughness: 0.04,
-				envMapIntensity: 1.5,
-			})
+	for (let y = 0; y < height; y++) {
+		const drift = 0.5 + 0.5 * Math.sin(y * 0.11) * Math.sin(y * 0.037 + 1.3)
+		const value = Math.round((0.6 + 0.24 * random() + 0.16 * drift) * 255)
+		for (let x = 0; x < width; x++) {
+			data.fill(value, (y * width + x) * 4, (y * width + x) * 4 + 3)
+			data[(y * width + x) * 4 + 3] = 255
+		}
+	}
+	const texture = new DataTexture(
+		data,
+		width,
+		height,
+		RGBAFormat,
+		UnsignedByteType,
+	)
+	texture.wrapS = RepeatWrapping
+	texture.wrapT = RepeatWrapping
+	texture.repeat.set(1, 2)
+	texture.magFilter = LinearFilter
+	texture.minFilter = LinearMipmapLinearFilter
+	texture.generateMipmaps = true
+	texture.needsUpdate = true
+	return texture
 }
 
-/** Soft-touch charcoal of the cap, handle, and base. */
-export function createMetalMaterial(lite: boolean) {
-	const options = {
-		color: new Color(0.058, 0.055, 0.056),
-		roughness: 0.34,
-		metalness: 0.3,
-		envMapIntensity: 1.15,
-	}
-	return lite
-		? new MeshStandardMaterial({ ...options, roughness: 0.26 })
-		: new MeshPhysicalMaterial({
-				...options,
-				clearcoat: 0.75,
-				clearcoatRoughness: 0.18,
-			})
+/** Brushed dark bronze for the cap, handle, and base. `lite` skips the
+ *  relief, which a software renderer pays for on every pixel. */
+export function createMetalMaterial(lite: boolean, grain: Texture) {
+	return new MeshStandardMaterial({
+		color: lanternMetal.bronze.clone(),
+		metalness: 0.86,
+		roughness: 0.62,
+		roughnessMap: grain,
+		bumpMap: lite ? null : grain,
+		bumpScale: 0.7,
+		envMapIntensity: 1.35,
+	})
 }
 
-/** Where the glass meets the cap and the base, and the lid vents. */
+/** Polished brass on the turned edges, the hinge pins, and the trims. */
+export function createTrimMaterial() {
+	return new MeshStandardMaterial({
+		color: lanternMetal.brass.clone(),
+		metalness: 1,
+		roughness: 0.3,
+		envMapIntensity: 1.5,
+	})
+}
+
+/** Where the glass meets the cap and the base. */
 export function createLitEdgeMaterial() {
 	return new MeshBasicMaterial({
 		color: lanternAmber.hot.clone().multiplyScalar(2.4),
 	})
+}
+
+/** The slots round the cap, lit from inside: hottest at the foot, nearest
+ *  the light, through vertex colors. */
+export function createVentMaterial() {
+	return new MeshBasicMaterial({ vertexColors: true })
 }
 
 const hashChunk = /* glsl */ `

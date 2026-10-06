@@ -9,10 +9,12 @@ import {
 	DirectionalLight,
 	Group,
 	HemisphereLight,
+	InstancedMesh,
 	LatheGeometry,
 	Mesh,
 	type MeshBasicMaterial,
 	type MeshStandardMaterial,
+	Object3D,
 	PlaneGeometry,
 	PointLight,
 	Points,
@@ -37,11 +39,11 @@ import {
 	lanternShape,
 } from './lantern-3d-layout.ts'
 import {
+	createBrushedTexture,
 	createBurstMaterial,
 	createFireflyMaterial,
 	createGlassFloorMaterial,
 	createGlassInteriorMaterial,
-	createGlassRimMaterial,
 	createGlassShellMaterial,
 	createGlowMaterial,
 	createGlowTexture,
@@ -53,6 +55,8 @@ import {
 	createPoolMaterial,
 	createShadowMaterial,
 	createSparkleMaterial,
+	createTrimMaterial,
+	createVentMaterial,
 	lanternAmber,
 } from './lantern-3d-materials.ts'
 
@@ -147,7 +151,7 @@ const glassProfile: ReadonlyArray<readonly [number, number]> = [
 	[0.54, lanternShape.capBottom + 0.04],
 ]
 
-/** `lite` trades the clear coats and some curve detail for frame time on
+/** `lite` trades the metal's relief and some curve detail for frame time on
  *  software renderers. Built a part per `step`. */
 export async function createLanternModel(options: {
 	lite: boolean
@@ -167,11 +171,12 @@ export async function createLanternModel(options: {
 	root.add(lantern)
 
 	const glowTexture = keep(createGlowTexture())
-	const metal = keep(createMetalMaterial(lite))
+	const metal = keep(createMetalMaterial(lite, keep(createBrushedTexture())))
+	const trim = keep(createTrimMaterial())
 	const litEdge = keep(createLitEdgeMaterial())
 
 	const { glassInterior, glassFloor, handle } = await step(() =>
-		buildLantern({ lantern, lite, metal, litEdge, keep }),
+		buildLantern({ lantern, lite, metal, trim, litEdge, keep }),
 	)
 
 	const fluid = new Group()
@@ -221,7 +226,9 @@ export async function createLanternModel(options: {
 	const poolMesh = new Mesh(plane, pool)
 	poolMesh.rotation.x = -Math.PI / 2
 	poolMesh.position.y = lanternShape.baseBottom - 0.004
-	poolMesh.scale.set(4.6, 3.4, 1)
+	// The canvas reaches 1.85 units either side of the glass; wider and the
+	// pool's faint edge is cut off there.
+	poolMesh.scale.set(3.5, 3, 1)
 	poolMesh.renderOrder = -2
 	const shadow = keep(createShadowMaterial(glowTexture))
 	const shadowMesh = new Mesh(plane, shadow)
@@ -233,7 +240,7 @@ export async function createLanternModel(options: {
 	ground.rotation.x = lanternViewPitch
 	ground.add(poolMesh, shadowMesh)
 
-	const innerLight = new PointLight(new Color(1, 0.6, 0.2), 7, 0, 2)
+	const innerLight = new PointLight(new Color(1, 0.68, 0.3), 7, 0, 2)
 	root.add(innerLight)
 	const key = new DirectionalLight(new Color(1, 0.95, 0.88), 1.9)
 	key.position.set(-2.6, 4.2, 5)
@@ -269,11 +276,12 @@ type Keep = <T extends { dispose: () => void }>(item: T) => T
 function buildLantern(parts: {
 	lantern: Group
 	lite: boolean
-	metal: ReturnType<typeof createMetalMaterial>
+	metal: MeshStandardMaterial
+	trim: MeshStandardMaterial
 	litEdge: MeshBasicMaterial
 	keep: Keep
 }) {
-	const { lantern, lite, metal, litEdge, keep } = parts
+	const { lantern, lite, metal, trim, litEdge, keep } = parts
 	const glassGeometry = keep(
 		new LatheGeometry(
 			new SplineCurve(
@@ -290,11 +298,9 @@ function buildLantern(parts: {
 	)
 	const interior = new Mesh(glassGeometry, glassInterior)
 	interior.renderOrder = -1
-	const shell = new Mesh(glassGeometry, keep(createGlassShellMaterial(lite)))
+	const shell = new Mesh(glassGeometry, keep(createGlassShellMaterial()))
 	shell.renderOrder = 3
-	const rim = new Mesh(glassGeometry, keep(createGlassRimMaterial()))
-	rim.renderOrder = 4
-	lantern.add(interior, shell, rim)
+	lantern.add(interior, shell)
 
 	lantern.add(new Mesh(keep(capGeometry()), metal))
 	const capSeam = new Mesh(
@@ -311,23 +317,28 @@ function buildLantern(parts: {
 	baseSeam.position.y = lanternShape.baseTop + 0.004
 	lantern.add(capSeam, baseSeam)
 
-	const vent = keep(new CapsuleGeometry(0.011, 0.05, 4, 8))
-	const ventCount = 10
-	for (let i = 0; i < ventCount; i++) {
-		const angle = (i / ventCount) * Math.PI * 2
-		const mesh = new Mesh(vent, litEdge)
-		mesh.position.set(
-			Math.sin(angle) * (lanternShape.lidRadius - 0.004),
-			lanternShape.capTop + 0.058,
-			Math.cos(angle) * (lanternShape.lidRadius - 0.004),
+	const { capRadius, capBottom, capTop, lidRadius, lidTop } = lanternShape
+	const { baseRadius, baseTop } = lanternShape
+	for (const [radius, y, tube] of [
+		[capRadius - 0.006, capBottom + 0.02, 0.017],
+		[capRadius - 0.006, capTop - 0.02, 0.015],
+		[lidRadius + 0.006, capTop + 0.008, 0.01],
+		[lidRadius - 0.006, lidTop - 0.012, 0.012],
+		[baseRadius - 0.008, baseTop - 0.02, 0.017],
+	] as const) {
+		const bead = new Mesh(
+			keep(new TorusGeometry(radius, tube, lite ? 6 : 10, lite ? 72 : 128)),
+			trim,
 		)
-		mesh.rotation.set(0, angle, Math.PI / 2)
-		lantern.add(mesh)
+		bead.rotation.x = Math.PI / 2
+		bead.position.y = y
+		lantern.add(bead)
 	}
+	lantern.add(keep(buildVents(keep)))
 
 	const pin = keep(new CylinderGeometry(0.05, 0.05, 0.1, 16))
 	for (const side of [-1, 1]) {
-		const mesh = new Mesh(pin, metal)
+		const mesh = new Mesh(pin, trim)
 		mesh.rotation.z = Math.PI / 2
 		mesh.position.set(side * handleLegX(), hingeY + 0.012, 0)
 		lantern.add(mesh)
@@ -346,6 +357,43 @@ function buildLantern(parts: {
 	lantern.add(floor)
 
 	return { glassInterior, glassFloor, handle }
+}
+
+/** Slots round the cap ring, lit by the globe under them: hottest at the
+ *  foot, through vertex colors. One draw for all of them. */
+function buildVents(keep: Keep) {
+	const count = 16
+	const radius = 0.014
+	const length = 0.09
+	const geometry = keep(new CapsuleGeometry(radius, length, 4, 8))
+	const position = geometry.getAttribute('position')
+	const colors = new Float32Array(position.count * 3)
+	const foot = lanternAmber.hot.clone().multiplyScalar(2.6)
+	const head = lanternAmber.bright.clone().multiplyScalar(1.3)
+	const half = length / 2 + radius
+	const color = new Color()
+	for (let i = 0; i < position.count; i++) {
+		color.copy(foot).lerp(head, (position.getY(i) + half) / (2 * half))
+		colors.set([color.r, color.g, color.b], i * 3)
+	}
+	geometry.setAttribute('color', new BufferAttribute(colors, 3))
+
+	const vents = new InstancedMesh(geometry, keep(createVentMaterial()), count)
+	const { capRadius, capBottom, capTop } = lanternShape
+	const place = new Object3D()
+	for (let i = 0; i < count; i++) {
+		const angle = (i / count) * Math.PI * 2
+		place.position.set(
+			Math.sin(angle) * (capRadius - 0.006),
+			(capBottom + capTop) / 2,
+			Math.cos(angle) * (capRadius - 0.006),
+		)
+		place.rotation.set(0, angle, 0)
+		place.scale.set(1, 1, 0.55)
+		place.updateMatrix()
+		vents.setMatrixAt(i, place.matrix)
+	}
+	return vents
 }
 
 /** One orb: a glowing core, a glass shell, its glyph, and a halo. */
