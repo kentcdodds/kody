@@ -297,7 +297,9 @@ scene {
 }
 
 #memory .ball { color: radial-gradient(circle at 42% 38%, #ff9478 0%, #f2412e 50%, #b31c16 100%); }
-#secrets .ball { color: radial-gradient(circle at 42% 38%, #d2a8ff 0%, #9150ee 50%, #5a1fb0 100%); }
+/* Bluer than the secrets tone: it rests behind the flame, which lights its
+   face warm, and a true purple base turns pink there, next to apps. */
+#secrets .ball { color: radial-gradient(circle at 42% 38%, #9a7dff 0%, #5a3cf0 50%, #2a1494 100%); }
 #packages .ball { color: radial-gradient(circle at 42% 38%, #9ccdff 0%, #2483f2 50%, #0b4fb8 100%); }
 #triggers .ball { color: radial-gradient(circle at 42% 38%, #fff8c4 0%, #ffdb2e 50%, #ffb800 100%); }
 #integrations .ball { color: radial-gradient(circle at 42% 38%, #9ff5b6 0%, #1bba56 50%, #077a33 100%); }
