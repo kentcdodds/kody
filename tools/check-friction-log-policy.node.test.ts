@@ -21,7 +21,7 @@ test('friction-log policy rejects HTML skip marker and requires label gate', () 
 		]),
 	})
 
-	const good = [
+	const goodLines = [
 		'# Friction log',
 		'',
 		'| `friction-skipped` | Daily sweep will not re-investigate until this label is removed. |',
@@ -40,10 +40,33 @@ test('friction-log policy rejects HTML skip marker and requires label gate', () 
 		'package when spawned.',
 		'',
 		'https://kody.codes/@kentcdodds/friction-log',
-	].join('\n')
+	]
+	const good = goodLines.join('\n')
 	expect(checkFrictionLogPolicyContent(good)).toEqual({
 		ok: true,
 		errors: [],
+	})
+
+	const withoutOwnershipPhrase = goodLines
+		.filter((line) => !line.startsWith('Daily agent instructions'))
+		.join('\n')
+	expect(checkFrictionLogPolicyContent(withoutOwnershipPhrase)).toEqual({
+		ok: false,
+		errors: expect.arrayContaining([
+			expect.stringContaining('daily agent instructions come from the package'),
+		]),
+	})
+
+	const withoutPackageUrl = goodLines
+		.filter((line) => line !== 'https://kody.codes/@kentcdodds/friction-log')
+		.join('\n')
+	expect(checkFrictionLogPolicyContent(withoutPackageUrl)).toEqual({
+		ok: false,
+		errors: expect.arrayContaining([
+			expect.stringContaining(
+				'point at https://kody.codes/@kentcdodds/friction-log',
+			),
+		]),
 	})
 })
 
