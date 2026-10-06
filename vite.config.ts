@@ -15,6 +15,7 @@ import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { resolveLocalD1PersistPath } from './tools/local-d1-persist.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
+import { gssScenes } from './tools/vite-gss-scenes.ts'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { workerWholeGraphReload } from './tools/vite-worker-whole-graph-reload.ts'
 
@@ -121,6 +122,7 @@ export default defineConfig(async ({ command }) => {
 		},
 		plugins: [
 			markdownAsText(),
+			gssScenes(),
 			remix({
 				serverHandler: false,
 				clientEntry: 'packages/worker/client/entry.tsx',
