@@ -5,8 +5,7 @@ style, tests, MCP capabilities, and runtime architecture.
 
 ## Setup and workflow
 
-- [Engineering principles](../principles/index.md) (no invasive test-only code;
-  lean agent context)
+- [Engineering principles](../principles/index.md)
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (steering veto list: product-shaped
   nos and durable constraints — not an ADR-per-PR log)
@@ -37,12 +36,9 @@ style, tests, MCP capabilities, and runtime architecture.
   `kody:@kentcdodds/friction-log/file`; daily Cursor agent investigates)
 - [Repo health](./repo-health.md) (CI + in-repo budgets: AGENTS.md ratchet,
   Validate unit-job timing, ship-pr review-bot sort)
-- Prefer local CLI execute when Node ≥22 + CLI are available (MCP agents:
-  `cliCredentialBootstrap`; interactive: `kody login`; CI/headless: scoped
-  `KODY_API_TOKEN`; if `--local` cannot run, use Open API / MCP `api` or fix the
-  environment): [local execute](../guides/local-execute.md),
-  [Open API](../guides/open-api.md), and
-  [prefer-local-cli-execute skill](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
+- Local CLI execute (when, command, failure):
+  [guide:local_execute](../guides/local-execute.md) and
+  [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
 - PR system recaps (visual plan/recap blocks in PR descriptions):
   [visual-recap skill](../../.agents/skills/visual-recap/SKILL.md)
 

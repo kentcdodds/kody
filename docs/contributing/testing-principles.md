@@ -1,8 +1,8 @@
 # Testing principles
 
-This codebase favors small, readable test suites with explicit setup and minimal
-magic. Individual tests should follow a meaningful workflow end-to-end, even
-when that makes a single test longer and more assertion-heavy.
+Durable rules: [Test the workflow](../principles/test-the-workflow.md) and
+[No invasive test-only code](../principles/no-invasive-test-only-code.md). This
+page is how to choose a flavor and run suites in this repo.
 
 ## Test flavor decision matrix
 
@@ -25,88 +25,11 @@ rows instead of spying.
 
 Shared test helpers live under `packages/worker/src/test-support/`. Import
 factories explicitly inside each test (or a per-test factory). Do not introduce
-`beforeEach` hooks that hide setup — that conflicts with the principles below.
+`beforeEach` hooks that hide setup. See
+[Test the workflow](../principles/test-the-workflow.md).
 
-## Principles
+## Suite mechanics
 
-- Production must not carry invasive test-only seams; see
-  [No invasive test-only code](../principles/no-invasive-test-only-code.md).
-- Prefer the "fewer, longer tests" style from Kent C. Dodds when assertions
-  belong to one workflow.
-- Treat each test like a manual tester's script: one setup, then as many actions
-  and assertions as needed to validate the whole journey.
-- Do not split a single flow into many tiny tests just to satisfy "one assertion
-  per test." Multiple related assertions in one test are a feature, not a smell.
-- Prefer flat test files: use top-level `test(...)` and avoid `describe`
-  nesting.
-- Avoid shared setup like `beforeEach`/`afterEach`; inline setup per test.
-- Avoid shared mutable test state across cases. If the next assertion depends on
-  the same rendered object, request, or response, it likely belongs in the same
-  test.
-- Do not add tautological assertions. An assertion is tautological when it
-  cannot fail unless the implementation and the test change in lockstep — there
-  is no independent oracle. Typical forms:
-  - Identity predicates: `isFoo(FOO_CONSTANT)` when `isFoo` is `===`,
-    `includes`, or `Set.has` of that same constant. Keep the interesting
-    branches (normalization, prefix/suffix, negatives, Error wrapping, cause
-    chains).
-  - Constant-to-self pins: `expect(EXPORTED_DAYS).toBe(14)` or
-    `expect(exportedDelays).toEqual([100, 500, 1_500])`. If the value is a
-    public contract, assert it where a caller observes it (serialized payload,
-    HTTP body, retry `nextDelayMs`), not on the export itself.
-  - Algorithm echo: building `expected` with the same helper the production
-    function uses (`shellQuote(x)` on both sides; picking the same fields
-    `toSummary(post)` returns). Use an independent oracle (hardcoded quoted
-    string, live schema after migration).
-  - Self-equality: `equal(x, x)`. Type-only checks, instructional-copy pins, and
-    a lone "q is not there" after a deletion (later bullets) are the same
-    failure mode. Identity predicates and algorithm echo stay a review item;
-    vanished-copy `not.toContain` is `kody-custom/no-tautological-absence`.
-- Don't write tests for what the type system already guarantees.
-- Use disposable objects only when there is real cleanup. If no cleanup, skip
-  `using` and `Symbol.dispose`.
-- Build helpers that return ready-to-run objects (factory pattern), not globals.
-- Keep test intent obvious in the name: "auth handler returns 400 for invalid
-  JSON".
-- Write tests so they could run offline if necessary: avoid relying on the
-  public internet and third-party services; prefer local fakes/fixtures.
-- Keep the bar for adding tests high, especially slower integration and E2E
-  tests.
-- Prefer fast unit tests for server logic; keep e2e tests focused on a very
-  small number of important happy-path journeys.
-- Treat `packages/worker/src/mcp/*.mcp-e2e.test.ts` as a tiny MCP transport
-  smoke suite. Do not add capability-specific cases there unless they require
-  the real MCP HTTP transport, OAuth flow, and package-app session wiring.
-- Prefer asserting intermediate states inside the broader workflow that causes
-  them rather than adding isolated tests that only check an incidental loading
-  or transition state.
-- Do not add regression tests for bugs that are unlikely to happen again unless
-  the flow is important enough to justify the maintenance cost.
-- Avoid tests that only assert a string blob contains a description or other
-  incidental copy. Favor behavior-focused assertions (structured output,
-  user-visible outcomes, or stable public contracts) instead. When a blog
-  catalog pin must quote an approved sentence, run the source through
-  `normalizeMarkdownPhraseSource` in
-  [`packages/worker/src/blog/catalog.ts`](../../packages/worker/src/blog/catalog.ts)
-  first. oxfmt reflows markdown blockquotes onto continuation `>` lines, so a
-  raw `post.body.includes('exact phrase')` fails after format even though the
-  words are still there.
-- Do not add tests whose only value is pinning configuration-style strings such
-  as tool descriptions, usage hints, warnings, or other instructional copy. If
-  the behavior matters, test the behavior or stable structured contract rather
-  than asserting that specific prose appears.
-- Keep absence assertions that flip state. "x is there, z is not; click y; now x
-  is gone and z is there" is useful. A lone "q is not there" after q was deleted
-  is not. That only fails if someone pastes the old name back. Fine to use
-  locally while deleting; do not commit it. Same for old class names, filenames,
-  aria-labels, CSS selectors, retired capability ids, and deleted table names on
-  a static inventory list. Absence is still a good assertion when a live path
-  could show the thing: loading vs ready, empty vs populated, secret vs
-  redacted, admin vs user, or generated SQL vs a table the generator could still
-  emit. `kody-custom/no-tautological-absence` (`npm run lint`) rejects
-  instructional-copy `not.toContain('…')` when that string exists only as the
-  absence assertion (state flips, fixtures, live production copy, and
-  wrong-template siblings still pass).
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
@@ -171,32 +94,6 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   and route `logAuditEvent` back through the shared spy.
 
 ## Examples
-
-### Tautological assertions
-
-```ts
-// Bad — matcher is `normalized === THE_CONSTANT`
-expect(isResetMessage(resetMessageConstant)).toBe(true)
-expect(exportedRetryDelaysMs).toEqual([100, 500, 1_500])
-expect(windowsEqual(window, window)).toBe(true)
-
-// Good — independent oracle or a real branch
-expect(isResetMessage(resetMessageConstant.replace(/\.$/, ''))).toBe(true)
-expect(retries).toEqual([{ attempt: 1, nextDelayMs: 100 }])
-expect(windowsEqual(window, { ...window, end: window.end + 1 })).toBe(false)
-```
-
-### Absence assertions
-
-```ts
-// Bad — q is gone; nothing can show it again
-expect(capabilityMap.old_write).toBeUndefined()
-expect(html).not.toContain('old-aria-label')
-
-// Good — state flip: present on one path, absent on the other
-expect(adminMap.adminUserList).toBeTruthy()
-expect(userMap.adminUserList).toBeUndefined()
-```
 
 ### `Symbol.dispose` with `using`
 

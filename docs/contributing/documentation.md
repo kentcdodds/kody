@@ -20,17 +20,22 @@ duplicate decision-record numbers. `npm run docs:check-no-packages-invoke`
 rejects teaching `packages.invoke` in usage docs, guides, MCP instruction files
 under `packages/worker/src/mcp/instructions/` and the assembler
 (`server-instructions.ts`), skills, and `AGENTS.md` (only the present-tense
-negation phrase is allowed; decision 0037 / #1750). `npm run mermaid:check`
-parses fenced mermaid in docs and agent skills (and `--stdin` recap blocks) so
-GitHub's "Unable to render rich display" failures fail locally.
-`npm run slop-ratchet:check` holds the client-route and node-test file-size
-allowlists (line budgets counted after `oxfmt`), the root `AGENTS.md` line
-budget (`agents-md`), and rejects decorative `========` / `----------` comment
-banners. `kody-custom/no-tautological-absence` rejects vanished-copy
-`not.toContain` leftovers in tests during `npm run lint`. `npm run knip` fails
-on unused files, exports, and types against the configured entrypoints.
-`kody-custom/no-oversized-guide-section` rejects official guide headings that
-exceed the search response budget. These run as part of `npm run validate`.
+negation phrase is allowed; decision 0037 / #1750).
+`npm run docs:check-no-hosted-execute` rejects guidance that sends agents to the
+hosted execute tool when local CLI or Open API can run. The rule lives in
+[Local CLI execute](../guides/local-execute.md) and
+[prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+Negations stay allowed. `npm run mermaid:check` parses fenced mermaid in docs
+and agent skills (and `--stdin` recap blocks) so GitHub's "Unable to render rich
+display" failures fail locally. `npm run slop-ratchet:check` holds the
+client-route and node-test file-size allowlists (line budgets counted after
+`oxfmt`), the root `AGENTS.md` line budget (`agents-md`), and rejects decorative
+`========` / `----------` comment banners. `kody-custom/no-tautological-absence`
+rejects vanished-copy `not.toContain` leftovers in tests during `npm run lint`.
+`npm run knip` fails on unused files, exports, and types against the configured
+entrypoints. `kody-custom/no-oversized-guide-section` rejects official guide
+headings that exceed the search response budget. These run as part of
+`npm run validate`.
 
 Docs-like product copy follows the same rule: MCP server instructions, tool and
 schema descriptions, and user-visible UI strings should not read like release
