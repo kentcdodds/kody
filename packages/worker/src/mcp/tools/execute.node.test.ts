@@ -301,7 +301,7 @@ const timing = (durationMs: number) => ({
 const truncationNote = (bytes: number, limit: number) =>
 	`Returned value was ${String(bytes)} bytes, exceeding responseLimit ${String(limit)} bytes; output was truncated. Project fields before returning.`
 
-test('execute tool serializes successes and errors, binds no packages.invoke tools, and truncates oversized returns', async () => {
+test('execute tool serializes successes and errors, binds no packages helper tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{

@@ -529,7 +529,7 @@ declare module "kody:runtime" {
     assetBasePath?: string;
     clientModuleUrl?: string | null;
   } | null;
-  /** Always null: there is no author-facing packages.invoke. */
+  /** Always null leftover so old if (packages) guards keep bundling. */
   export const packages: null;
   export function packageStorage(): KodyStorageRuntime;
   export const email: KodyEmailRuntime;

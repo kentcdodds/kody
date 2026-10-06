@@ -420,7 +420,7 @@ export async function servePackageAppRequest(input: {
 	if (owner.username !== packagePath.username) {
 		return new Response(buildPackageAppNotFoundMessage(), { status: 404 })
 	}
-	// Same freshness-tier cache as keyless `packages.invoke`: warm serve must
+	// Same freshness-tier cache as keyless host export invoke: warm serve must
 	// not pay a D1 round trip for the saved-package or entity-source row.
 	const savedPackage = await resolveSavedPackage({
 		db: env.APP_DB,

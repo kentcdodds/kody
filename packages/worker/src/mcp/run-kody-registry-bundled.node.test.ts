@@ -212,8 +212,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	})
 	expect(packageEventResult.result).toBe('ok')
 	// Main provider + computed-import bridge + package-events bridge +
-	// static-call meter bridge (bound whenever the run has a user). There is no
-	// packages.invoke bridge.
+	// static-call meter bridge (bound whenever the run has a user).
 	const packageEventProviders = executor.calls.at(-1)!.providers
 	expect(packageEventProviders).toHaveLength(4)
 	await expect(

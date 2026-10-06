@@ -66,8 +66,7 @@ stamp-aligned secret authority.
 
 `packageContext` on a static import from execute stays `null`. Code that needs
 the ambient run (hosted URL, app paths) must run as that package: inbound
-webhooks for external clients, or a job / subscription / app surface. Authors do
-not get a `packages.invoke` composition helper (0037).
+webhooks for external clients, or a job / subscription / app surface.
 
 Issue `#1691` is user-scope `{{secret}}` placeholders resolved at the fetch
 gateway for the calling user. The gateway authorizes those placeholders as the
@@ -172,8 +171,8 @@ Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` for `kody:@` names loads caller-owned /
 forked modules through a host library-load bridge
 (`resolveCurrentDynamicPackageArtifact` / nested evaluate with the caller's
-`packageContext` and callee stamp grants). Authors and agents do not call
-`packages.invoke`; the helper is deleted and `packages` is always `null`
+`packageContext` and callee stamp grants). Authors compose with static `kody:@`
+imports, `import(specifier)`, or workflows; `packages` stays `null`
 ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 
 If the specifier is a **caller-owned** package and `import()` means “library

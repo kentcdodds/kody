@@ -10,7 +10,7 @@ export type PackageEventsDispatchQueueMessage = {
 	/**
 	 * Runtime invocation depth carried across the queue boundary so
 	 * event-driven package chains (A emits, B's handler emits, ...) keep the
-	 * same cycle protection as synchronous packages.invoke chains.
+	 * same cycle protection as synchronous host invoke chains.
 	 */
 	invokeDepth: number
 }

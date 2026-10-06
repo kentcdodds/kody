@@ -112,7 +112,7 @@ export async function invokeSavedPackageModule(input: {
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
-	 * Artifact already prepared by a `packages.invoke` check phase moments
+	 * Artifact already prepared by a host invoke check phase moments
 	 * earlier; skips a second manifest + artifact load. The claim still
 	 * happens first, so replay semantics are unchanged.
 	 */

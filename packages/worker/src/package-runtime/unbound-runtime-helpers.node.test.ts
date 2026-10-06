@@ -192,10 +192,10 @@ test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeH
 
 test('buildUnboundRuntimeHelperNextStep ignores inherited Object keys', () => {
 	expect(buildUnboundRuntimeHelperNextStep('packages')).toContain(
-		'packages.invoke',
+		'`packages` is always unbound',
 	)
 	expect(buildUnboundRuntimeHelperNextStep('toString')).not.toContain(
-		'packages.invoke',
+		'`packages` is always unbound',
 	)
 	expect(buildUnboundRuntimeHelperNextStep('toString')).toContain('`toString`')
 })

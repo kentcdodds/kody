@@ -34,8 +34,6 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 Saved packages keep `--local` and a static `kody:@…` import.
 
-- There is no author-facing `packages.invoke`.
-
 ## Failure
 
 - Node is below 22, the CLI is missing, or the host cannot run workerd. Use Open

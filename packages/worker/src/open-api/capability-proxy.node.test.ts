@@ -244,7 +244,7 @@ test('CapabilityProxy caps bootstrap token lifetime to the parent token lifetime
 	).toBeGreaterThan(3000)
 })
 
-test('packages.invoke is rejected as unbound', async () => {
+test('packages invoke path is rejected as unknown', async () => {
 	const error = await runCapabilityProxyCall({
 		ctx,
 		call: {
@@ -254,10 +254,10 @@ test('packages.invoke is rejected as unbound', async () => {
 	}).catch((value: unknown) => value)
 	expect(error).toMatchObject({ status: 404, code: 'not_found' })
 	expect(String((error as { message?: string }).message)).toMatch(
-		/There is no author-facing packages\.invoke/,
+		/Unknown runtime path/,
 	)
 	expect(String((error as { message?: string }).message)).toMatch(
-		/static kody:@scope\/package\/export import/,
+		/packages\.invoke|packages.*invoke/,
 	)
 	expect(String((error as { message?: string }).message)).not.toMatch(
 		/run execute without --local/,

@@ -120,7 +120,7 @@ export type RunLogLevel = (typeof runLogLevelValues)[number]
  *   same way jobs and webhooks do.
  * - `on-failure`: nothing is persisted unless the run ends in `error`.
  *   {@link runPersistenceForContext} selects this only for key-less `export`
- *   (the lean `packages.invoke` path). That caller already holds the result
+ *   (the lean host export path). That caller already holds the result
  *   inline, and the user-visible history is the parent execute, job, webhook,
  *   or app run. An execute `idempotencyKey` claims the row for replay; it does
  *   not decide whether a success is stored.
@@ -171,9 +171,9 @@ export type RunRecordContext = {
 
 /**
  * Persistence for one begin/finish pair. Same as
- * {@link runPersistenceForSurface} except key-less `export` (the lean
- * `packages.invoke` path, which has no ledger row and returns its result
- * inline) downgrades to `on-failure`.
+ * {@link runPersistenceForSurface} except key-less `export` (the lean host
+ * export path, which has no ledger row and returns its result inline)
+ * downgrades to `on-failure`.
  */
 export function runPersistenceForContext(
 	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,

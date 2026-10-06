@@ -9,9 +9,9 @@ import { createRelativeImportSpecifier } from './module-graph-paths.ts'
 import { resolveCurrentDynamicPackageArtifact } from './module-graph-hydration.ts'
 
 /**
- * Nested depth budget for computed `kody:@` library loads. Matches the
- * quarantined `packages.invoke` ceiling so a mutual computed-import cycle
- * fails closed instead of exhausting the isolate.
+ * Nested depth budget for computed `kody:@` library loads. Matches the host
+ * package-runtime invoke ceiling so a mutual computed-import cycle fails
+ * closed instead of exhausting the isolate.
  */
 export const maxComputedPackageImportDepth = maxPackageRuntimeInvokeDepth
 

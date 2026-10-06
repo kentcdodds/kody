@@ -27,9 +27,8 @@ import { createCapabilityProxyPackageHostTools } from './capability-proxy-packag
  * `kody.mcp`, and `workflows.create` behave as they do in the cloud. Static
  * `kody:@…` imports are downloaded via `POST /v1/local-execute/package-graph`
  * and embedded in that workerd — never a silent whole-module hop to
- * `kody.execute`. There is no author-facing `packages.invoke`. Local CPU is
- * never metered; each hop is one `api_call`, and the capability behind it
- * meters itself as usual.
+ * `kody.execute`. Local CPU is never metered; each hop is one `api_call`, and
+ * the capability behind it meters itself as usual.
  *
  * Authenticated outbound fetch uses `kody.authenticatedFetch` (placeholder +
  * fetch-gateway on origin). Secret-bearing ambient `fetch` uses
@@ -228,11 +227,6 @@ async function dispatchCapabilityProxyCall(input: {
 			packageContext: null,
 		})
 		return invokeCapability(() => workflowTools.create(call.args[0] as never))
-	}
-	if (root === 'packages' && name === 'invoke') {
-		throw notFound(
-			`There is no author-facing packages.invoke. Use a static kody:@scope/package/export import when the name is known, or import(specifier) when the name is data.`,
-		)
 	}
 	throw notFound(
 		`Unknown runtime path ${describePath(call.path)}. CapabilityProxy serves kody.*, kody.authenticatedFetch, kody.gatewayFetch, kody.oauthClientCredentials, kody.mcp.<server>.<tool>, kody.packageStorage* / kody.packageSecret*, and workflows.create.`,

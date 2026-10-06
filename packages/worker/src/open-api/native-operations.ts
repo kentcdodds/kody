@@ -92,7 +92,7 @@ const capabilityProxyOperationDefinitions: Record<
 	capabilityProxyCall: {
 		summary: 'Proxy one kody:runtime call',
 		description:
-			"Run one `kody:runtime` call from a local execute venue: `path` is the runtime property path (`['kody','emailSend']`, `['kody','authenticatedFetch']`, `['kody','oauthClientCredentials']`, `['kody','mcp',server,tool]`, `['kody','packageStorageGet']`, `['workflows','create']`) and `args` the positional arguments. Behaves like the same call inside cloud execute. Authenticated fetch, OAuth client-credentials grants, and stamped packageStorage / packageSecrets hop here so OAuth tokens and secret plaintext stay on origin. Accepts a scoped API token or CLI MCP OAuth. There is no author-facing `packages.invoke`. Errors use the standard envelope; capability failures return `capability_error` with the capability's message.",
+			"Run one `kody:runtime` call from a local execute venue: `path` is the runtime property path (`['kody','emailSend']`, `['kody','authenticatedFetch']`, `['kody','oauthClientCredentials']`, `['kody','mcp',server,tool]`, `['kody','packageStorageGet']`, `['workflows','create']`) and `args` the positional arguments. Behaves like the same call inside cloud execute. Authenticated fetch, OAuth client-credentials grants, and stamped packageStorage / packageSecrets hop here so OAuth tokens and secret plaintext stay on origin. Accepts a scoped API token or CLI MCP OAuth. Errors use the standard envelope; capability failures return `capability_error` with the capability's message.",
 		inputSchema: capabilityProxyCallInputSchema,
 		outputSchema: capabilityProxyCallOutputSchema,
 		readOnly: false,

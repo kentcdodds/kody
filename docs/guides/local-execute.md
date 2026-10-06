@@ -77,7 +77,7 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 Use `--file path.ts` the same way when the module lives on disk. Keep `--local`;
 static `kody:@owner/name` imports still run locally (package-graph download +
-CapabilityProxy hops). There is no author-facing `packages.invoke`.
+CapabilityProxy hops).
 
 See [Cursor Cloud Agent notes](../contributing/cloud-agents.md) and the
 [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)

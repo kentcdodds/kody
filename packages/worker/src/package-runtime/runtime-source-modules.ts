@@ -1239,8 +1239,7 @@ export function createComputedDynamicImportGuardSource(input: {
 	// pass the check with one toString() and load a different path.
 	//
 	// Computed `kody:@` loads go through the host `__kodyComputedPackageImport`
-	// bridge (library-load semantics for caller-owned / fork modules). They
-	// must not call author-facing `packages.invoke` ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+	// bridge (library-load semantics for caller-owned / fork modules).
 	return `
 const ${input.helperName} = async (specifier) => {
 	const resolvedSpecifier = \`\${specifier}\`;

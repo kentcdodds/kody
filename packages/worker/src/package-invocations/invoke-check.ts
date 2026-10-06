@@ -61,7 +61,7 @@ function buildPackageInvokeCheckWarnings(input: {
  * Everything the check phase already loaded that the invoke phase would
  * otherwise reload from D1/KV: the saved-package row, the current manifest,
  * the resolved module target, and the prepared bundle artifact.
- * `packages.invoke` passes these straight into the invocation so one logical
+ * Host invoke passes these straight into the invocation so one logical
  * call resolves its package exactly once.
  */
 export type PackageInvokeCheckPreloads = {

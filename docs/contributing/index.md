@@ -71,8 +71,7 @@ style, tests, MCP capabilities, and runtime architecture.
   not platform scope grants —
   [0050](./decisions/0050-package-share-grants-are-not-scope-grants.md))
 - [`packageStorage()` grants and stamp-aligned secrets](./package-storage-static-imports.md)
-  (stamp/grant model under fork-only official packages and no author-facing
-  invoke)
+  (stamp/grant model under fork-only official packages)
 - [Package codemods](./package-codemods.md)
 - [Public packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md) (unadvertised

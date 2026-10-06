@@ -150,10 +150,10 @@ returns published, stamped importable-module artifacts for embedding — it does
 - `path` is the `kody:runtime` property path: `['kody', name]`,
   `['kody', 'mcp', server, tool]`, or `['workflows', 'create']`. `args` are
   positional (at most 8; paths at most 8 segments). Unknown keys answer 400.
-  `['packages', 'invoke']` is rejected: there is no author-facing
-  `packages.invoke` (use a static `kody:@` import or `import(specifier)`).
-  Token-auth / `--local` package composition uses package-graph download + local
-  workerd embedding — not `packages.invoke` and not whole-module `kody.execute`.
+  `['packages', 'invoke']` answers the same unknown-path 404 as any other
+  unbound runtime path. Token-auth / `--local` package composition uses
+  package-graph download + local workerd embedding — not whole-module
+  `kody.execute`.
 - Package-graph uses the same static-import scanner and resolution policy as
   cloud ad hoc execute (own copy → share grant → platform scopes only when
   allowed). Prefer published `importable-module` artifacts; unpublished or

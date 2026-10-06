@@ -165,7 +165,6 @@ When you create or materially change a public export:
 3. Add `@param` for each input.
 4. Add `@returns`.
 5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it.
-   There is no author-facing `packages.invoke`.
 
 If the export's `package.json` `exports` entry has a `types` condition, put the
 JSDoc on that types file — search reads the types module when it exists. JSDoc
@@ -419,7 +418,7 @@ require it.
 ## Cross-package composition
 
 Call another package export the same way search entity detail shows: import it,
-then call it. There is no author-facing `packages.invoke`.
+then call it.
 
 - **Name known when you write the code** → static import, and list the package
   in `package.json#kody.dependencies` when the call site is package source:

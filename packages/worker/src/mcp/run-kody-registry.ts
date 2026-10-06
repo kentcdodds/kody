@@ -826,10 +826,8 @@ export function collectPackageStorageGrantIds(input: {
 
 /**
  * Host tools for computed `import(specifier)` of caller-owned `kody:@`
- * names. `packages` is always unbound; there is no author-facing
- * `packages.invoke` ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
- * Nested evaluate uses library-load semantics: caller's `packageContext`,
- * callee stamp grants via the importable-module artifact.
+ * names. Nested evaluate uses library-load semantics: caller's
+ * `packageContext`, callee stamp grants via the importable-module artifact.
  */
 export function createComputedPackageImportTools(input: {
 	env: Env

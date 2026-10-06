@@ -53,7 +53,7 @@ async function loadBackgroundMcpUser(
 	}
 	const profileDisplayName = user.display_name?.trim()
 
-	// Package jobs / packages.invoke filter the capability registry by role.
+	// Package jobs filter the capability registry by role.
 	// Omitting roles hides admin_* tools as "not found" even for admin owners.
 	let roles: McpUserContext['roles'] = []
 	let permissions: McpUserContext['permissions'] = []

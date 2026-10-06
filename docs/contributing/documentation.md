@@ -20,11 +20,7 @@ of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 
 `npm run docs:check-temporal` checks durable documentation and docs-like MCP
 instructions for common rollout phrases. `npm run docs:check-decisions` rejects
-duplicate decision-record numbers. `npm run docs:check-no-packages-invoke`
-rejects teaching `packages.invoke` in usage docs, guides, MCP instruction files
-under `packages/worker/src/mcp/instructions/` and the assembler
-(`server-instructions.ts`), skills, and `AGENTS.md` (only the present-tense
-negation phrase is allowed; decision 0037 / #1750).
+duplicate decision-record numbers.
 `npm run docs:check-file-refs` fails when markdown points at a repo file that is
 not in the tree (generated `wrangler-*.generated.json` files and local `.env`
 files are ignored). `npm run skills-lock:check` fails when `skills-lock.json`

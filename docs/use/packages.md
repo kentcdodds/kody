@@ -244,13 +244,13 @@ Person-owned packages must not import a platform scope; `communityFork` first.
 `packageStorage()` on a static import reaches the declaring package's bucket for
 **caller-owned** packages.
 
-There is no author-facing `packages.invoke`. Interactive MCP
-`packageSubscriptionDispatch` is the post-publish subscription smoke test, not a
-composition primitive. External trusted clients that must call a named export
-over HTTP use inbound webhooks: declare one webhook per export, mint a handle
-with `webhookUrlMint`, register it with `webhookUrlApply` when a provider needs
-the URL, and POST JSON (`inputMode: "params"` and `Idempotency-Key` for
-first-party clients). See [Inbound webhooks](./webhooks.md).
+Interactive MCP `packageSubscriptionDispatch` is the post-publish subscription
+smoke test, not a composition primitive. External trusted clients that must call
+a named export over HTTP use inbound webhooks: declare one webhook per export,
+mint a handle with `webhookUrlMint`, register it with `webhookUrlApply` when a
+provider needs the URL, and POST JSON (`inputMode: "params"` and
+`Idempotency-Key` for first-party clients). See
+[Inbound webhooks](./webhooks.md).
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects a package under
 that person scope that the caller owns or has an accepted

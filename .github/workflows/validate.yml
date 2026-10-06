@@ -177,10 +177,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run docs:check-decisions
 
-      - name: 📚 Docs (no packages invoke)
-        if: ${{ !cancelled() }}
-        run: npm run docs:check-no-packages-invoke
-
       - name: 📚 Docs (file refs)
         if: ${{ !cancelled() }}
         run: npm run docs:check-file-refs

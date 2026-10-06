@@ -69,7 +69,7 @@ export function parseUnboundRuntimeHelperMessage(message: string) {
  */
 export const unboundRuntimeHelperNextSteps: Readonly<Record<string, string>> = {
 	packages:
-		'There is no author-facing `packages.invoke`; `packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
+		'`packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
