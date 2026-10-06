@@ -88,13 +88,15 @@ Humans can use the
 [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml), which applies
 the `friction` label.
 
-Agents file through `kody:@kentcdodds/friction-log/create` or `./file` via
-prefer-local CLI execute when available
+Agents file leftovers through `kody:@kentcdodds/friction-log/file` (`target` +
+`items`, including a one-element array) via prefer-local CLI execute when
+available
 ([prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)).
-If `--local` cannot run, fix the environment so local works. Open API / MCP
-`api` cannot invoke this package export, and hosted MCP `execute` is banned.
-Always pass `target`. Contract, fields, soft-skip shapes, and examples live in
-the [package](https://kody.codes/@kentcdodds/friction-log).
+Use `./create` only for its top-level single-issue fields (not `items`). If
+`--local` cannot run, fix the environment so local works. Open API / MCP `api`
+cannot invoke this package export, and hosted MCP `execute` is banned. Always
+pass `target`. Contract, fields, soft-skip shapes, and examples live in the
+[package](https://kody.codes/@kentcdodds/friction-log).
 
 [file-friction](../../.agents/skills/file-friction/SKILL.md) is the short entry
 point outside the ship-pr leftover pass. Ship-pr uses `./file` before Discord.

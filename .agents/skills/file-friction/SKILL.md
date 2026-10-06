@@ -27,10 +27,12 @@ not help the next agent.
 - Kody package → `{ host: 'kody', repo: '@owner/leaf' }` (wakes Patch; no GitHub
   issue).
 
-Prefer `kody:@kentcdodds/friction-log/file` (or `./create` for one) via
+Prefer `kody:@kentcdodds/friction-log/file` for one or many leftovers via
 prefer-local CLI execute
-([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). If `--local`
-cannot run, fix the environment so local works. Open API / MCP `api` cannot
-invoke this package export, and hosted MCP `execute` is banned. Do not invent
-issues via `gh`. Pass `target` + `items`. If nothing meets the bar, skip the
-call.
+([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)). Pass
+`target` + `items` (a one-element `items` array is fine). Use `./create` only
+when you intentionally want its top-level single-issue fields — do not pass
+`items` to `create`. If `--local` cannot run, fix the environment so local
+works. Open API / MCP `api` cannot invoke this package export, and hosted MCP
+`execute` is banned. Do not invent issues via `gh`. If nothing meets the bar,
+skip the call.
