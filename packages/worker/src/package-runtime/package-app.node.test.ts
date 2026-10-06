@@ -31,18 +31,18 @@ function extractGeneratedSource(startMarker: string, endMarker: string) {
 }
 
 const kodyProxySource = extractGeneratedSource(
-	'function createKodyProxy(runtimeBridge, mcpServerNames) {',
+	'function createKodyProxy(runtimeBridge, mcpServerNamesOrLoader) {',
 	'\nfunction createRealtimeProxy',
 )
 
 function createKodyProxyForTest(
 	runtimeBridge: unknown,
-	mcpServerNames: Array<string> = [],
+	mcpServerNames: Array<string> | (() => Promise<Array<string>>) = [],
 ) {
 	return new Function(
 		'runtimeBridge',
-		'mcpServerNames',
-		`${kodyProxySource}; return createKodyProxy(runtimeBridge, mcpServerNames);`,
+		'mcpServerNamesOrLoader',
+		`${kodyProxySource}; return createKodyProxy(runtimeBridge, mcpServerNamesOrLoader);`,
 	)(runtimeBridge, mcpServerNames) as Record<string, unknown>
 }
 
@@ -208,6 +208,80 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 	} finally {
 		delete (globalThis as unknown as Record<symbol, unknown>)[authoritySymbol]
 	}
+})
+
+test('package app kody.mcp loads server names lazily on first mcp touch', async () => {
+	let loadCount = 0
+	const runtimeBridge = {
+		callCapability: async () => ({ ok: true }),
+	}
+	const proxy = createKodyProxyForTest(runtimeBridge, async () => {
+		loadCount += 1
+		return ['home']
+	})
+
+	expect(loadCount).toBe(0)
+	// Capability calls do not need the name list; they only start the load.
+	await expect(
+		(
+			proxy.mcp as Record<
+				string,
+				{ set_pin: (args: unknown) => Promise<unknown> }
+			>
+		).home?.set_pin({ pin: '1' }),
+	).resolves.toEqual({ ok: true })
+	expect(loadCount).toBe(1)
+
+	// Wait for the in-flight lazy load if ownKeys still suspensed.
+	try {
+		Reflect.ownKeys(proxy.mcp as object)
+	} catch (error) {
+		const suspense = error as {
+			__kodyMcpNamesSuspense?: boolean
+			promise?: Promise<unknown>
+		}
+		expect(suspense.__kodyMcpNamesSuspense).toBe(true)
+		await suspense.promise
+	}
+	expect(Reflect.ownKeys(proxy.mcp as object)).toEqual(['home'])
+	expect(loadCount).toBe(1)
+
+	const advertised = getViaOwnKeysThenGopd(proxy.mcp as object, 'home') as {
+		set_pin: (args: unknown) => Promise<unknown>
+	}
+	expect(advertised).toBeTypeOf('object')
+	await expect(advertised.set_pin({ pin: '2' })).resolves.toEqual({ ok: true })
+	expect(loadCount).toBe(1)
+})
+
+test('package app kody.mcp ownKeys suspense waits for lazy name load', async () => {
+	let resolveNames: ((names: Array<string>) => void) | undefined
+	const namesPromise = new Promise<Array<string>>((resolve) => {
+		resolveNames = resolve
+	})
+	const proxy = createKodyProxyForTest(
+		{ callCapability: async () => ({ ok: true }) },
+		async () => await namesPromise,
+	)
+
+	let suspense: {
+		__kodyMcpNamesSuspense?: boolean
+		promise?: Promise<unknown>
+	} | null = null
+	try {
+		Reflect.ownKeys(proxy.mcp as object)
+	} catch (error) {
+		suspense = error as {
+			__kodyMcpNamesSuspense?: boolean
+			promise?: Promise<unknown>
+		}
+	}
+	expect(suspense?.__kodyMcpNamesSuspense).toBe(true)
+	expect(suspense?.promise).toBeTypeOf('object')
+
+	resolveNames?.(['home', 'mediarss'])
+	await suspense?.promise
+	expect(Reflect.ownKeys(proxy.mcp as object)).toEqual(['home', 'mediarss'])
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

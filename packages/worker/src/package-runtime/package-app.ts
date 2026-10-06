@@ -179,7 +179,7 @@ function buildFacetClassExportName(rawFacetName) {
 		: \`App_\${sanitizedFacetName}_\${hashSuffix}\`;
 }
 
-function createKodyProxy(runtimeBridge, mcpServerNames) {
+function createKodyProxy(runtimeBridge, mcpServerNamesOrLoader) {
 	const isProxyLookupKey = (name) =>
 		typeof name !== 'string' || name === 'then';
 	const createOpenNamespaceProxy = (getValue) =>
@@ -206,27 +206,80 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 	// Empty/missing names stay open (GOPD still returns getValue) so a
 	// listing failure does not hide Get. Only a non-empty list restricts
 	// has/GOPD. Tool namespaces stay fully open.
-	const knownServerNames = Array.isArray(mcpServerNames)
-		? [...new Set(mcpServerNames.filter((name) => typeof name === 'string' && name.length > 0))]
-		: [];
-	const restrictServerKeys = knownServerNames.length > 0;
+	//
+	// Names load lazily on first \`kody.mcp\` touch so hello-world / non-MCP
+	// apps never pay for listMcpServerNames. Tests may still pass a string
+	// array for a sync snapshot.
+	const mcpNamesState = { known: [], restrict: false, ready: false };
+	let mcpNamesLoadPromise = null;
+	const applyMcpServerNames = (names) => {
+		mcpNamesState.known = [
+			...new Set(
+				(Array.isArray(names) ? names : []).filter(
+					(name) => typeof name === 'string' && name.length > 0,
+				),
+			),
+		];
+		mcpNamesState.restrict = mcpNamesState.known.length > 0;
+		mcpNamesState.ready = true;
+		return mcpNamesState.known;
+	};
+	const ensureMcpServerNames = () => {
+		if (mcpNamesLoadPromise) return mcpNamesLoadPromise;
+		if (Array.isArray(mcpServerNamesOrLoader)) {
+			applyMcpServerNames(mcpServerNamesOrLoader);
+			mcpNamesLoadPromise = Promise.resolve(mcpNamesState.known);
+			return mcpNamesLoadPromise;
+		}
+		const loader =
+			typeof mcpServerNamesOrLoader === 'function'
+				? mcpServerNamesOrLoader
+				: async () => [];
+		mcpNamesLoadPromise = Promise.resolve()
+			.then(() => loader())
+			.then((names) => applyMcpServerNames(names))
+			.catch(() => applyMcpServerNames([]));
+		return mcpNamesLoadPromise;
+	};
+	if (Array.isArray(mcpServerNamesOrLoader)) {
+		ensureMcpServerNames();
+	}
+	const throwMcpNamesSuspenseIfNeeded = () => {
+		if (mcpNamesState.ready) return;
+		if (Array.isArray(mcpServerNamesOrLoader)) return;
+		const promise = ensureMcpServerNames();
+		if (mcpNamesState.ready) return;
+		// Loader path: names are async. Throw a suspense marker so the
+		// entrypoint can await the list and retry before Workerd ownKeys+GOPD
+		// destructuring binds \`home\` to undefined.
+		const suspense = new Error('kody-mcp-names-suspense');
+		suspense.__kodyMcpNamesSuspense = true;
+		suspense.promise = promise;
+		throw suspense;
+	};
 	const createMcpServerNamespaceProxy = (getValue) =>
 		new Proxy({}, {
 			get(_target, name) {
 				if (isProxyLookupKey(name)) return undefined;
+				// Property access stays open while names load; Workerd
+				// destructuring uses ownKeys/GOPD and may suspense below.
+				void ensureMcpServerNames();
 				return getValue(name);
 			},
 			has(_target, name) {
 				if (isProxyLookupKey(name)) return false;
-				if (!restrictServerKeys) return true;
-				return knownServerNames.includes(name);
+				throwMcpNamesSuspenseIfNeeded();
+				if (!mcpNamesState.restrict) return true;
+				return mcpNamesState.known.includes(name);
 			},
 			ownKeys() {
-				return [...knownServerNames];
+				throwMcpNamesSuspenseIfNeeded();
+				return [...mcpNamesState.known];
 			},
 			getOwnPropertyDescriptor(_target, name) {
 				if (isProxyLookupKey(name)) return undefined;
-				if (restrictServerKeys && !knownServerNames.includes(name)) {
+				throwMcpNamesSuspenseIfNeeded();
+				if (mcpNamesState.restrict && !mcpNamesState.known.includes(name)) {
 					return undefined;
 				}
 				return {
@@ -264,10 +317,14 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 			}),
 		),
 	);
+	const touchMcp = () => {
+		void ensureMcpServerNames();
+		return mcp;
+	};
 	return new Proxy({}, {
 		get(_target, property) {
 			if (typeof property !== 'string' || property === 'then') return undefined;
-			if (property === 'mcp') return mcp;
+			if (property === 'mcp') return touchMcp();
 			if (property.startsWith('mcp:')) {
 				throw new Error(
 					\`MCP server tool "\${property}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`,
@@ -291,7 +348,7 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 				configurable: true,
 				enumerable: true,
 				writable: true,
-				value: mcp,
+				value: touchMcp(),
 			};
 		},
 	});
@@ -564,7 +621,7 @@ function createPackageAppEnv(env, userModule) {
 	return runtimeEnv;
 }
 
-function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
+function createRuntime(runtimeBridge, packageContext, mcpServerNamesOrLoader) {
 	const packageId = packageContext?.packageId ?? '';
 	const packageSecrets =
 		packageId.length > 0
@@ -582,7 +639,7 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 					},
 				}
 	return {
-		kody: createKodyProxy(runtimeBridge, mcpServerNames),
+		kody: createKodyProxy(runtimeBridge, mcpServerNamesOrLoader),
 		storage: undefined,
 		__kodyPackageSecrets: (secretsPackageId) =>
 			createPackageSecretsProxy(runtimeBridge, secretsPackageId),
@@ -771,11 +828,10 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
-		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
-			mcpServerNames,
+			() => runtimeBridge.listMcpServerNames().catch(() => []),
 		);
 		try {
 			consoleCapture.install();
@@ -792,7 +848,17 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				if (!fetchHandler) {
 					throw new Error('Package apps must default export a fetch handler or an object with fetch().');
 				}
-				return await fetchHandler(request, runtimeEnv, this.ctx);
+				for (;;) {
+					try {
+						return await fetchHandler(request, runtimeEnv, this.ctx);
+					} catch (error) {
+						if (error?.__kodyMcpNamesSuspense && error.promise) {
+							await error.promise;
+							continue;
+						}
+						throw error;
+					}
+				}
 			});
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
@@ -829,11 +895,10 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
-		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
-			mcpServerNames,
+			() => runtimeBridge.listMcpServerNames().catch(() => []),
 		);
 		try {
 			consoleCapture.install();
@@ -844,23 +909,33 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				if (!resolved) {
 					return { actions: [] };
 				}
-				if (resolved.kind === 'function') {
-					return await resolved.exported(payload, runtimeEnv, this.ctx);
+				for (;;) {
+					try {
+						if (resolved.kind === 'function') {
+							return await resolved.exported(payload, runtimeEnv, this.ctx);
+						}
+						if (resolved.kind === 'bound-method') {
+							return await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+						}
+						const state = createInternalDurableObjectState(
+							runtimeBridge,
+							createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
+						);
+						const instance = Object.create(resolved.exported.prototype);
+						instance.ctx = state;
+						instance.env = runtimeEnv;
+						if (typeof instance.onRealtimeEvent !== 'function') {
+							throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
+						}
+						return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
+					} catch (error) {
+						if (error?.__kodyMcpNamesSuspense && error.promise) {
+							await error.promise;
+							continue;
+						}
+						throw error;
+					}
 				}
-				if (resolved.kind === 'bound-method') {
-					return await resolved.exported.onRealtimeEvent(payload, runtimeEnv, this.ctx);
-				}
-				const state = createInternalDurableObjectState(
-					runtimeBridge,
-					createFacetStorageId(this.env.__kodyPackageContext ?? null, payload?.facet),
-				);
-				const instance = Object.create(resolved.exported.prototype);
-				instance.ctx = state;
-				instance.env = runtimeEnv;
-				if (typeof instance.onRealtimeEvent !== 'function') {
-					throw new Error(\`Package app facet "\${buildFacetName(payload?.facet)}" must implement onRealtimeEvent().\`);
-				}
-				return await instance.onRealtimeEvent(payload, runtimeEnv, this.ctx);
 			});
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
