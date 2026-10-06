@@ -29,6 +29,8 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
 
 ## Principles
 
+- Production must not carry invasive test-only seams; see
+  [No invasive test-only code](../principles/no-invasive-test-only-code.md).
 - Prefer the "fewer, longer tests" style from Kent C. Dodds when assertions
   belong to one workflow.
 - Treat each test like a manual tester's script: one setup, then as many actions

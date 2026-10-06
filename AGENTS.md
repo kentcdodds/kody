@@ -10,8 +10,8 @@ This file is a map, not the docs. Open the page that owns the task:
 
 - Contributor documentation map:
   [docs/contributing/index.md](./docs/contributing/index.md)
+- Engineering principles: [docs/principles/](./docs/principles/index.md)
 - Task skills: [`.agents/skills/`](./.agents/skills/)
-- Line budget: `npm run file-size-ratchet:check` (`agents-md`)
 
 ## Cursor Cloud-specific instructions
 
