@@ -4,7 +4,15 @@ import {
 	fleetDynamicWorkerCostAlertUsd,
 	toAdminDynamicWorkerCost,
 } from '#universal/dynamic-worker-cost.ts'
-import { type EntitlementLadder, type PlanName } from '#universal/plans.ts'
+import {
+	parseEntitlementLadder,
+	parseStoredPlanName,
+	resolveEffectivePlan,
+	type CreditWalletState,
+	type EntitlementLadder,
+	type PlanName,
+	type UserEntitlement,
+} from '#universal/plans.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import {
 	adminFleetCostVsPayDisplayLimit,
@@ -16,7 +24,6 @@ import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
-	resolveBaseUserEntitlement,
 	resolveUserEntitlementFromRow,
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
@@ -63,6 +70,34 @@ export const adminFleetRuntimeDurationAlertMetrics =
 export const fleetRuntimeDurationAlertThresholdMs = 24 * 60 * 60 * 1000
 
 const entitlementSweepConcurrency = 4
+
+/**
+ * Inbound receives enforce the base (manual + Stripe) plan so a temporary Pro
+ * gift cannot inflate the receive cap. Overlays only raise Free → Pro, so when
+ * effective and base differ the base wallet is always `none` and we skip a
+ * second credit-wallet read. When they match, omit the override entirely.
+ */
+function inboundReceiveAgainstBasePlan(
+	row: Pick<UserEntitlementRow, 'plan' | 'stripe_plan' | 'entitlement_ladder'>,
+	effective: UserEntitlement,
+):
+	| {
+			plan: PlanName
+			ladder: EntitlementLadder
+			creditWallet: CreditWalletState
+	  }
+	| undefined {
+	const basePlan = resolveEffectivePlan(
+		parseStoredPlanName(row.plan),
+		row.stripe_plan,
+	)
+	if (basePlan === effective.plan) return undefined
+	return {
+		plan: basePlan,
+		ladder: parseEntitlementLadder(row.entitlement_ladder),
+		creditWallet: 'none',
+	}
+}
 
 type RuntimeDurationRow = {
 	user_id: string
@@ -189,19 +224,12 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const [effective, base] = await Promise.all([
-				resolveUserEntitlementFromRow({
-					db: input.env.APP_DB,
-					stableUserId: user.stable_user_id,
-					row: user,
-					now: input.now,
-				}),
-				resolveBaseUserEntitlement({
-					db: input.env.APP_DB,
-					stableUserId: user.stable_user_id,
-					row: user,
-				}),
-			])
+			const effective = await resolveUserEntitlementFromRow({
+				db: input.env.APP_DB,
+				stableUserId: user.stable_user_id,
+				row: user,
+				now: input.now,
+			})
 			const { plan, ladder, creditWallet } = effective
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
@@ -210,11 +238,7 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 				ladder,
 				creditWallet,
 				now: input.now,
-				inboundReceive: {
-					plan: base.plan,
-					ladder: base.ladder,
-					creditWallet: base.creditWallet,
-				},
+				inboundReceive: inboundReceiveAgainstBasePlan(user, effective),
 			})
 			snapshots.push({
 				stableUserId: user.stable_user_id,
@@ -490,19 +514,12 @@ async function buildEntitlementPressurePanel(input: {
 		activeUsers,
 		entitlementSweepConcurrency,
 		async (user) => {
-			const [entitlement, base] = await Promise.all([
-				resolveUserEntitlementFromRow({
-					db: input.env.APP_DB,
-					stableUserId: user.stable_user_id,
-					row: user,
-					now: input.now,
-				}),
-				resolveBaseUserEntitlement({
-					db: input.env.APP_DB,
-					stableUserId: user.stable_user_id,
-					row: user,
-				}),
-			])
+			const entitlement = await resolveUserEntitlementFromRow({
+				db: input.env.APP_DB,
+				stableUserId: user.stable_user_id,
+				row: user,
+				now: input.now,
+			})
 			const plan = toAdminPlanName(entitlement.plan)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
@@ -511,11 +528,7 @@ async function buildEntitlementPressurePanel(input: {
 				ladder: entitlement.ladder,
 				creditWallet: entitlement.creditWallet,
 				now: input.now,
-				inboundReceive: {
-					plan: base.plan,
-					ladder: base.ladder,
-					creditWallet: base.creditWallet,
-				},
+				inboundReceive: inboundReceiveAgainstBasePlan(user, entitlement),
 			})
 			const pressuredResources = consumption
 				.filter((item) => item.overEightyPercent && item.percentOfLimit != null)

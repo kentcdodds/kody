@@ -307,7 +307,7 @@ test('admin users list exposes temporary Pro gift overlay fields for Package fil
 		],
 	)
 
-	const payload = await list()
+	const payload = await list('')
 	expect(payload.users).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
