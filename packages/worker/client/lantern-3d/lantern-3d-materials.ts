@@ -72,7 +72,7 @@ export const lanternAmber = {
 
 /** Linear sRGB for the frame: dark bronze, brushed, with brass where an
  *  edge is turned. */
-export const lanternMetal = {
+const lanternMetal = {
 	bronze: new Color(0.05, 0.032, 0.02),
 	brass: new Color(0.56, 0.34, 0.1),
 } as const
