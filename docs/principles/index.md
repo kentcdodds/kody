@@ -8,6 +8,7 @@ only the page the task needs.
 | [Generic platform](./generic-platform.md)                                   | Adding a vendor branch, a framework mount, or a provider-named type                                       |
 | [Normalized source of truth](./normalized-source-of-truth.md)               | Adding a cache, index, or second store for a fact that already has a record                               |
 | [Delete what is off the common path](./delete-off-the-common-path.md)       | Keeping a shim, flag, field, or doc for a path the product does not take                                  |
+| [Cleanup](./cleanup.md)                                                     | A migration left the old lane beside the new one, or leftovers still name the old way                     |
 | [Fail loudly at the right layer](./fail-loudly.md)                          | An error could be swallowed so a partial result continues                                                 |
 | [Two-way and one-way doors](./two-way-doors.md)                             | Deciding how much review a change needs                                                                   |
 | [Examples over prose](./examples-over-prose.md)                             | Writing docs, skills, or a multi-step procedure                                                           |

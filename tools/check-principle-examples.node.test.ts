@@ -19,6 +19,10 @@ const citedFences: ReadonlyArray<{
 		source: 'packages/worker/src/package-registry/manifest.ts',
 	},
 	{
+		page: 'docs/principles/cleanup.md',
+		source: 'tools/check-docs-no-packages-invoke.ts',
+	},
+	{
 		page: 'docs/principles/fail-loudly.md',
 		source:
 			'packages/worker/src/package-invocations/subscription-topic-cache.ts',
