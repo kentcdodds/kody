@@ -12,6 +12,8 @@ import {
 	lanternFlickVelocity,
 	lanternIdleMoment,
 	lanternOrbRadius,
+	lanternOrbSettledPosition,
+	lanternOrbsAtRest,
 	lanternPose,
 	lanternViewBasis,
 	localToWorld,
@@ -235,7 +237,7 @@ export function startLanternEngine(options: {
 			active === null &&
 			orbit.yawTarget === null &&
 			Math.abs(orbit.yawVelocity) < 0.05 &&
-			!bodies.some((body) => body.coasting)
+			lanternOrbsAtRest(bodies)
 		rest = untouched ? rest + dt : 0
 		const moment = untouched ? lanternIdleMoment(rest) : null
 		for (const id of landingPrimitiveIds) {
@@ -393,7 +395,7 @@ export function startLanternEngine(options: {
 	const turnTo = (id: LandingPrimitiveId) => {
 		const body = bodyOf(id)
 		if (!body || gesture !== null) return
-		orbit = turnLanternTo(orbit, time, body.position)
+		orbit = turnLanternTo(orbit, time, lanternOrbSettledPosition(body))
 		wake()
 	}
 
@@ -629,7 +631,7 @@ export function startLanternEngine(options: {
 			if (gesture !== null) return true
 			if (orbit.yawTarget !== null) return true
 			if (Math.abs(orbit.yawVelocity) > 0.6) return true
-			return bodies.some((body) => body.coasting)
+			return !lanternOrbsAtRest(bodies)
 		},
 	}
 }

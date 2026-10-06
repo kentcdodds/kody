@@ -15,14 +15,14 @@ import {
  * (`rotate-y: --yaw`), so an orb set from it turns exactly as the bail
  * does. Idle orbs drift like a lava lamp toward slow wander targets. A
  * grabbed orb follows the pointer and a flick tosses it: it coasts,
- * bounces off the glass, Kody, and the other orbs, then settles back into
- * the drift. Spinning the lantern lets the orbs lag behind and fling
- * outward, like marbles in a turning jar.
+ * bounces off the glass, Kody, and the other orbs, then is drawn home.
  *
  * The homes step down the globe in the order of the word list, so from
  * every side the orbs keep that order down the screen and the leader lines
  * to the words never cross. The lantern only turns about its axis: a tilt
- * would shuffle that order.
+ * would shuffle that order. For the same reason a turn or a tap carries
+ * every orb round the axis together (the swirl): they lag behind a turn
+ * like marbles in a jar, then swirl back, in order from every side.
  */
 
 export type Vec3 = { x: number; y: number; z: number }
@@ -96,12 +96,24 @@ const floatMaxSpeed = 0.09
 const coastMaxSpeed = 4.2
 const coastDamping = 1.05
 const coastSettleSpeed = 0.09
+/** Under this speed a coasting orb is drawn home, fully once it is slow. */
+const homingSpeed = 2.4
+/** The pull home, per second squared, and the damping that goes with it. */
+const homingSpring = 14
+const homingDamping = 7.5
+/** This close to its drift, a coasting orb is back in it. Within `roam`,
+ *  so the orbs are in order again by then. */
+const homingReach = 0.04
 const restitution = 0.62
 const wallSkin = 0.01
 /** Share of the lantern's turn the orbs do not follow at once. */
-const spinSlip = 0.35
-/** Outward push per (radian per second) squared of spin. */
-const spinFling = 0.05
+const spinSlip = 0.5
+/** How fast the orbs swirl back to their homes, per second. */
+const swirlReturn = 3
+/** How fast a tap's swirl dies away, per second. */
+const swirlFade = 4
+/** A tap starts the orbs swirling at this many radians per second. */
+const tapSwirl = 4.5
 /** How far back a flick's velocity sample looks, in milliseconds. */
 const flickWindowMs = 90
 
@@ -294,8 +306,13 @@ export type LanternOrbBody = {
 	phase: number
 	/** Hover and grab grow an orb; collisions use the grown radius. */
 	scale: number
-	/** A grab or a knock is still carrying this orb. */
+	/** A grab or a knock is still carrying this orb, until it is back in its
+	 *  drift. */
 	coasting: boolean
+	/** How far the swirl has carried the homes round the axis, radians, and
+	 *  how fast a tap is still turning it. Every orb has the same swirl. */
+	swirl: number
+	swirlSpeed: number
 }
 
 export type LanternOrbHold = {
@@ -314,6 +331,8 @@ export function createLanternOrbBodies(): Array<LanternOrbBody> {
 		phase: phases[id],
 		scale: 1,
 		coasting: false,
+		swirl: 0,
+		swirlSpeed: 0,
 	}))
 }
 
@@ -354,19 +373,21 @@ export function stepLanternOrbs(
 	const amplitude = Math.min(Math.max(options.amplitude, 0), 1)
 	const hold = options.hold ?? null
 	const spin = amplitude > 0 ? (options.spin ?? 0) : 0
-	const omega = dt > 0 ? spin / dt : 0
+	const swirl = stepSwirl(bodies[0], spin, dt)
 	const next = bodies.map((body) => ({
 		...body,
-		position: { ...body.position },
-		velocity: { ...body.velocity },
+		// One turn for every orb, so their order down the screen holds.
+		position: rotateAboutY(body.position, swirl.turn),
+		velocity: rotateAboutY(body.velocity, swirl.turn),
+		swirl: swirl.angle,
+		swirlSpeed: swirl.speed,
 	}))
 	for (const body of next) {
 		if (hold && body.id === hold.id) {
 			placeHeld(body, hold)
 			continue
 		}
-		if (spin !== 0) dragBySpin(body, spin, omega, dt)
-		if (body.coasting) integrateCoast(body, dt)
+		if (body.coasting) integrateCoast(body, dt, options.time, amplitude)
 		else integrateFloat(body, dt, options.time, amplitude)
 	}
 	for (let pass = 0; pass < 4; pass++) {
@@ -383,31 +404,77 @@ export function stepLanternOrbs(
 		if (hold && body.id === hold.id) continue
 		if (!body.coasting) continue
 		if (length(body.velocity) >= coastSettleSpeed) continue
+		const target = wanderTarget(body, options.time, amplitude)
+		if (length(sub(target, body.position)) > homingReach) continue
 		body.coasting = false
 	}
 	return next
 }
 
-/** Every orb gets a random knock, as if the lantern were tapped. */
+/** The way from `from` to `to` that goes round the lantern's axis, where
+ *  Kody stands, rather than through him: straight up or down and in or
+ *  out, and along the arc round him. */
+function offsetRoundKody(from: Vec3, to: Vec3): Vec3 {
+	const fromOut = Math.hypot(from.x, from.z)
+	const toOut = Math.hypot(to.x, to.z)
+	if (fromOut < 1e-6 || toOut < 1e-6) return sub(to, from)
+	const outward = { x: from.x / fromOut, y: 0, z: from.z / fromOut }
+	const around = { x: -outward.z, y: 0, z: outward.x }
+	const turn = wrapAngle(Math.atan2(to.z, to.x) - Math.atan2(from.z, from.x))
+	const arc = turn * (fromOut + toOut) * 0.5
+	return {
+		x: outward.x * (toOut - fromOut) + around.x * arc,
+		y: to.y - from.y,
+		z: outward.z * (toOut - fromOut) + around.z * arc,
+	}
+}
+
+/** This frame's swirl: the orbs keep part of their place in the world as
+ *  the lantern turns by `spin`, a tap's swirl carries on, and both ease
+ *  back to the homes. `turn` is how far the orbs go round this frame. */
+function stepSwirl(body: LanternOrbBody | undefined, spin: number, dt: number) {
+	const from = body?.swirl ?? 0
+	let speed = (body?.swirlSpeed ?? 0) * Math.exp(-swirlFade * dt)
+	let angle =
+		(from + spin * spinSlip + speed * dt) * Math.exp(-swirlReturn * dt)
+	if (Math.abs(angle) < 1e-5 && Math.abs(speed) < 1e-4) {
+		angle = 0
+		speed = 0
+	}
+	return { angle, speed, turn: angle - from }
+}
+
+/** No orb is coasting and the swirl has died away: the orbs only drift. */
+export function lanternOrbsAtRest(bodies: ReadonlyArray<LanternOrbBody>) {
+	const first = bodies[0]
+	if (
+		first &&
+		(Math.abs(first.swirl) > 0.02 || Math.abs(first.swirlSpeed) > 0.05)
+	) {
+		return false
+	}
+	return !bodies.some((body) => body.coasting)
+}
+
+/** Where an orb will be once the swirl has died away. */
+export function lanternOrbSettledPosition(body: LanternOrbBody): Vec3 {
+	return body.swirl === 0
+		? body.position
+		: rotateAboutY(body.position, -body.swirl)
+}
+
+/** A tap on the glass sets the orbs swirling round Kody, one way or the
+ *  other, all together so they keep their order. */
 export function pokeLanternOrbs(
 	bodies: ReadonlyArray<LanternOrbBody>,
 	random: () => number = Math.random,
 ): Array<LanternOrbBody> {
-	return bodies.map((body) => {
-		const kick = normalize({
-			x: random() - 0.5,
-			y: random() - 0.35,
-			z: random() - 0.5,
-		})
-		return {
-			...body,
-			velocity: capVec(
-				add(body.velocity, scaleVec(kick, 0.9 + random() * 0.6)),
-				coastMaxSpeed,
-			),
-			coasting: true,
-		}
-	})
+	const way = random() < 0.5 ? -1 : 1
+	const speed = way * tapSwirl * (0.85 + random() * 0.3)
+	return bodies.map((body) => ({
+		...body,
+		swirlSpeed: body.swirlSpeed + speed,
+	}))
 }
 
 /** Keep a centre inside the glass, clear of the cap, the base, and Kody. */
@@ -456,7 +523,10 @@ function wanderTarget(body: LanternOrbBody, time: number, amplitude: number) {
 		y: home.y + Math.sin(angle * 0.76 + 0.7) * reach * roamRise,
 		z: home.z + Math.sin(angle * 0.53 + 1.9) * reach * 0.8,
 	}
-	return clampToLanternCavity(target, bodyRadius(body))
+	return clampToLanternCavity(
+		body.swirl === 0 ? target : rotateAboutY(target, body.swirl),
+		bodyRadius(body),
+	)
 }
 
 function integrateFloat(
@@ -472,31 +542,31 @@ function integrateFloat(
 	body.position = add(body.position, scaleVec(body.velocity, dt))
 }
 
-function integrateCoast(body: LanternOrbBody, dt: number) {
+/** A fast orb flies free. As it slows it is drawn home, quickly, since out
+ *  of its drift it can be out of order on the screen. */
+function integrateCoast(
+	body: LanternOrbBody,
+	dt: number,
+	time: number,
+	amplitude: number,
+) {
+	const homing = smooth(clamp(1 - length(body.velocity) / homingSpeed, 0, 1))
+	if (homing > 0) {
+		const offset = offsetRoundKody(
+			body.position,
+			wanderTarget(body, time, amplitude),
+		)
+		body.velocity = add(
+			body.velocity,
+			scaleVec(offset, homingSpring * homing * dt),
+		)
+	}
+	const damping = coastDamping + homingDamping * homing
 	body.velocity = capVec(
-		scaleVec(body.velocity, Math.exp(-coastDamping * dt)),
+		scaleVec(body.velocity, Math.exp(-damping * dt)),
 		coastMaxSpeed,
 	)
 	body.position = add(body.position, scaleVec(body.velocity, dt))
-}
-
-/** The lantern turned by `spin` this frame: the orbs keep part of their
- *  world position (they slip), and a fast spin flings them outward. */
-function dragBySpin(
-	body: LanternOrbBody,
-	spin: number,
-	omega: number,
-	dt: number,
-) {
-	body.position = rotateAboutY(body.position, spin * spinSlip)
-	const fling = omega * omega * spinFling * dt
-	if (fling < 0.002) return
-	body.velocity = add(body.velocity, {
-		x: body.position.x * fling,
-		y: 0,
-		z: body.position.z * fling,
-	})
-	if (length(body.velocity) > floatMaxSpeed) body.coasting = true
 }
 
 function placeHeld(body: LanternOrbBody, hold: LanternOrbHold) {

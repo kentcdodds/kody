@@ -12,6 +12,8 @@ import {
 	lanternIdleDelay,
 	lanternIdleMoment,
 	lanternOrbRadius,
+	lanternOrbSettledPosition,
+	lanternOrbsAtRest,
 	lanternPose,
 	lanternViewBasis,
 	localToWorld,
@@ -90,14 +92,6 @@ function closestPair(bodies: ReadonlyArray<LanternOrbBody>) {
 		}
 	}
 	return closest
-}
-
-function seededRandom(seed: number) {
-	let state = seed
-	return () => {
-		state = (state * 1_664_525 + 1_013_904_223) % 4_294_967_296
-		return state / 4_294_967_296
-	}
 }
 
 function runOrbit(orbit: LanternOrbit, seconds: number, motion = true) {
@@ -232,6 +226,41 @@ function leadersCross(
 		}
 	}
 	return false
+}
+
+/** The pairs of leaders the page would draw crossing, with the lantern
+ *  turned to `yaw`. */
+function crossingLeaders(
+	stage: ReturnType<typeof desktopStage>,
+	bodies: ReadonlyArray<LanternOrbBody>,
+	yaw: number,
+	scale = 1,
+) {
+	const basis = lanternViewBasis()
+	const leaders = bodies.map((body, index) => {
+		const world = localToWorld(body.position, yaw)
+		const point = projectLanternPoint(basis, world, stage.view)
+		const radius = projectedSphereRadius(
+			basis,
+			world,
+			lanternOrbRadius * scale,
+			stage.view.height,
+		)
+		const centre = {
+			x: stage.view.left + point.x,
+			y: stage.view.top + point.y,
+		}
+		const to = stage.words[index]!
+		return leaderPoints(landingLeaderOrbExit(centre, to, radius), to)
+	})
+	const pairs: Array<string> = []
+	for (let i = 0; i < leaders.length; i++) {
+		for (let j = i + 1; j < leaders.length; j++) {
+			if (!leadersCross(leaders[i]!, leaders[j]!)) continue
+			pairs.push(`${bodies[i]!.id} and ${bodies[j]!.id}`)
+		}
+	}
+	return pairs
 }
 
 test('the projection lands the globe and an orb where GSS draws them', () => {
@@ -395,7 +424,6 @@ test('orbs drift inside the glass without touching and rest at home when still',
 })
 
 test('leaders to the word list never cross, whichever way the lantern turns', () => {
-	const basis = lanternViewBasis()
 	const drift: Array<Array<LanternOrbBody>> = []
 	let bodies = createLanternOrbBodies()
 	for (let step = 0; step < 60 / frame; step++) {
@@ -414,35 +442,139 @@ test('leaders to the word list never cross, whichever way the lantern turns', ()
 			for (const orbs of drift) {
 				for (let degree = 0; degree < 360; degree += 3) {
 					const yaw = (degree * Math.PI) / 180
-					const leaders = orbs.map((body, index) => {
-						const world = localToWorld(body.position, yaw)
-						const point = projectLanternPoint(basis, world, stage.view)
-						const radius = projectedSphereRadius(
-							basis,
-							world,
-							lanternOrbRadius * scale,
-							stage.view.height,
+					for (const pair of crossingLeaders(stage, orbs, yaw, scale)) {
+						crossings.push(
+							`${pair} at ${degree}deg, gap ${gap}, scale ${scale}`,
 						)
-						const centre = {
-							x: stage.view.left + point.x,
-							y: stage.view.top + point.y,
-						}
-						const to = stage.words[index]!
-						return leaderPoints(landingLeaderOrbExit(centre, to, radius), to)
-					})
-					for (let i = 0; i < leaders.length; i++) {
-						for (let j = i + 1; j < leaders.length; j++) {
-							if (!leadersCross(leaders[i]!, leaders[j]!)) continue
-							crossings.push(
-								`${orbs[i]!.id} and ${orbs[j]!.id} at ${degree}deg, gap ${gap}, scale ${scale}`,
-							)
-						}
 					}
 				}
 			}
 		}
 	}
 	expect(crossings).toEqual([])
+})
+
+test('a turn or a tap swirls the orbs round together, so leaders never cross', () => {
+	const stages = [desktopStage(56), desktopStage(96)]
+	const crossings: Array<string> = []
+	let widest = 0
+	/** The engine's frame: the orbit, then the orbs, lagging its turn. */
+	const watch = (
+		label: string,
+		start: { orbit: LanternOrbit; bodies: Array<LanternOrbBody> },
+		seconds: number,
+	) => {
+		let { orbit, bodies } = start
+		let poseYaw = lanternPose(orbit, 0).yaw
+		for (let time = frame; time < seconds; time += frame) {
+			orbit = stepLanternOrbit(orbit, frame, { held: false, motion: true })
+			const yaw = lanternPose(orbit, time).yaw
+			bodies = stepLanternOrbs(bodies, frame, {
+				time,
+				amplitude: 1,
+				spin: yaw - poseYaw,
+			})
+			poseYaw = yaw
+			widest = Math.max(widest, Math.abs(bodies[0]!.swirl))
+			for (const stage of stages) {
+				for (const pair of crossingLeaders(stage, bodies, yaw)) {
+					crossings.push(`${label}: ${pair} at ${time.toFixed(2)} s`)
+				}
+			}
+		}
+		return bodies
+	}
+	const homes = createLanternOrbBodies()
+	const expectHome = (bodies: ReadonlyArray<LanternOrbBody>) => {
+		expect(Math.abs(bodies[0]!.swirl)).toBeLessThan(0.02)
+		for (const body of bodies) {
+			const home = homes.find((entry) => entry.id === body.id)!
+			expect(distance(body.position, home.position)).toBeLessThan(0.1)
+		}
+	}
+
+	// A flick at the engine's top spin, each way: the orbs lag behind, then
+	// swirl back.
+	for (const yawVelocity of [-9, 9]) {
+		const orbit = { ...holdLanternOrbit(createLanternOrbit(), 0), yawVelocity }
+		expectHome(watch(`flick ${yawVelocity}`, { orbit, bodies: homes }, 4))
+	}
+	expect(widest).toBeGreaterThan((30 * Math.PI) / 180)
+
+	// The word list and keyboard focus turn each orb to the front, from the
+	// far side.
+	for (const body of homes) {
+		const far = { ...createLanternOrbit(), yaw: Math.PI }
+		const orbit = turnLanternTo(far, 0, body.position)
+		expectHome(watch(`turn to ${body.id}`, { orbit, bodies: homes }, 3))
+	}
+
+	// A tap sets every orb swirling, one way or the other.
+	for (const roll of [0.2, 0.8]) {
+		widest = 0
+		const bodies = pokeLanternOrbs(homes, () => roll)
+		expect(
+			bodies.every((body) => body.swirlSpeed === bodies[0]!.swirlSpeed),
+		).toBe(true)
+		expectHome(
+			watch(`tap ${roll}`, { orbit: createLanternOrbit(), bodies }, 3.5),
+		)
+		expect(widest).toBeGreaterThan((15 * Math.PI) / 180)
+	}
+	expect(crossings).toEqual([])
+})
+
+test('the sway leaves the orbs at rest, and a tap is busy until its swirl dies', () => {
+	let orbit = createLanternOrbit()
+	let poseYaw = lanternPose(orbit, 0).yaw
+	let time = 0
+	let untapped = createLanternOrbBodies()
+	let tapped: Array<LanternOrbBody> = []
+	const step = () => {
+		time += frame
+		orbit = stepLanternOrbit(orbit, frame, { held: false, motion: true })
+		const yaw = lanternPose(orbit, time).yaw
+		const options = { time, amplitude: 1, spin: yaw - poseYaw }
+		untapped = stepLanternOrbs(untapped, frame, options)
+		if (tapped.length > 0) tapped = stepLanternOrbs(tapped, frame, options)
+		poseYaw = yaw
+	}
+
+	// Kody's idle moment and hover both wait for the orbs to rest, so the
+	// sway alone must not keep them busy.
+	let busy = 0
+	while (time < 60) {
+		step()
+		if (!lanternOrbsAtRest(untapped)) busy++
+	}
+	expect(busy).toBe(0)
+
+	tapped = pokeLanternOrbs(untapped, () => 0.8)
+	expect(lanternOrbsAtRest(tapped)).toBe(false)
+	const tappedAt = time
+	let apart = 0
+	let settledApart = 0
+	while (!lanternOrbsAtRest(tapped) && time < tappedAt + 5) {
+		step()
+		for (const [index, body] of tapped.entries()) {
+			const twin = untapped[index]!
+			apart = Math.max(apart, distance(body.position, twin.position))
+			settledApart = Math.max(
+				settledApart,
+				distance(
+					lanternOrbSettledPosition(body),
+					lanternOrbSettledPosition(twin),
+				),
+			)
+		}
+	}
+	expect(time - tappedAt).toBeGreaterThan(0.5)
+	expect(time - tappedAt).toBeLessThan(2.5)
+	// The swirl carries the orbs well round, yet once it is gone each is
+	// where it would have been without the tap, which is where the word
+	// list turns the lantern to.
+	expect(apart).toBeGreaterThan(0.15)
+	expect(settledApart).toBeLessThan(1e-6)
 })
 
 test('orbs keep out of Kody, even thrown straight at him', () => {
@@ -489,8 +621,28 @@ test('orbs keep out of Kody, even thrown straight at him', () => {
 	}
 })
 
-test('a tossed orb bounces off the glass, knocks the others, and settles', () => {
+test('a tossed orb bounces, knocks the others, and they are soon home in order', () => {
 	let bodies = createLanternOrbBodies()
+	const orb = (id: string) => bodies.find((body) => body.id === id)!
+	// Thrown straight at the glass, an orb comes back off it.
+	bodies = stepLanternOrbs(bodies, 0, {
+		time: 0,
+		amplitude: 1,
+		hold: {
+			id: 'packages',
+			position: orb('packages').position,
+			velocity: { x: 4, y: 0, z: 0 },
+		},
+	})
+	let bounced = false
+	for (let t = frame; t < 0.5 && !bounced; t += frame) {
+		bodies = stepLanternOrbs(bodies, frame, { time: t, amplitude: 1 })
+		expectInsideLantern(bodies)
+		bounced = orb('packages').velocity.x < -1
+	}
+	expect(bounced).toBe(true)
+
+	bodies = createLanternOrbBodies()
 	// Dragged past the glass: the held orb stays inside.
 	bodies = stepLanternOrbs(bodies, frame, {
 		time: 0,
@@ -502,8 +654,7 @@ test('a tossed orb bounces off the glass, knocks the others, and settles', () =>
 		},
 	})
 	expectInsideLantern(bodies)
-	const memory = () => bodies.find((body) => body.id === 'memory')!
-	expect(memory().position.x).toBeGreaterThan(0.5)
+	expect(orb('memory').position.x).toBeGreaterThan(0.5)
 
 	// Released mid-flick, as the engine does on pointerup.
 	bodies = stepLanternOrbs(bodies, 0, {
@@ -511,41 +662,33 @@ test('a tossed orb bounces off the glass, knocks the others, and settles', () =>
 		amplitude: 1,
 		hold: {
 			id: 'memory',
-			position: memory().position,
+			position: orb('memory').position,
 			velocity: { x: -4, y: 0.4, z: 0 },
 		},
 	})
-	expect(memory().coasting).toBe(true)
-	let bounced = false
+	expect(orb('memory').coasting).toBe(true)
+	const stage = desktopStage(56)
 	const knocked = new Set<string>()
+	let lastCrossing = 0
 	let settledAt: number | null = null
-	for (let t = 0; t < 12; t += frame) {
+	for (let t = frame; t < 8; t += frame) {
 		bodies = stepLanternOrbs(bodies, frame, { time: t, amplitude: 1 })
 		expectInsideLantern(bodies)
-		if (memory().velocity.x > 0) bounced = true
 		for (const body of bodies) {
 			if (body.id !== 'memory' && body.coasting) knocked.add(body.id)
 		}
+		if (crossingLeaders(stage, bodies, 0).length > 0) lastCrossing = t
 		if (settledAt === null && bodies.every((body) => !body.coasting)) {
 			settledAt = t
 		}
 	}
-	expect(bounced).toBe(true)
 	expect(knocked.size).toBeGreaterThan(0)
+	// Its leader crosses the others while it flies, but every orb is drawn
+	// home: in order again within two seconds, and back in the drift soon
+	// after.
+	expect(lastCrossing).toBeLessThan(2)
 	expect(settledAt).not.toBeNull()
-	expect(closestPair(bodies)).toBeGreaterThan(lanternOrbRadius * 2 - 0.005)
-
-	// A tap knocks every orb about; they all settle back into the drift.
-	bodies = pokeLanternOrbs(bodies, seededRandom(7))
-	expect(bodies.every((body) => body.coasting)).toBe(true)
-	expect(
-		Math.min(...bodies.map((body) => length(body.velocity))),
-	).toBeGreaterThan(0.5)
-	for (let t = 12; t < 24; t += frame) {
-		bodies = stepLanternOrbs(bodies, frame, { time: t, amplitude: 1 })
-		expectInsideLantern(bodies)
-	}
-	expect(bodies.every((body) => !body.coasting)).toBe(true)
+	expect(settledAt!).toBeLessThan(4)
 	expect(closestPair(bodies)).toBeGreaterThan(lanternOrbRadius * 2 - 0.005)
 })
 
