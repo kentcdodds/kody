@@ -393,4 +393,10 @@ test('adaptive resolution settles at the sharpest level the GPU holds', () => {
 	// A 30 Hz display drawing every frame is not slow.
 	const saver = createLanternResolution(30, 2, 0)
 	expect(runResolution(saver, gpu(30, 30), 10).lowest).toBe(1)
+
+	// A 120 Hz display at 83 fps is past 60, so it stays sharp. At 40 fps
+	// it is not.
+	const fast = createLanternResolution(120, 2, 0)
+	expect(runResolution(fast, gpu(12, 120), 10).lowest).toBe(1)
+	expect(runResolution(fast, gpu(25, 120), 10).lowest).toBeLessThan(1)
 })

@@ -602,13 +602,14 @@ function bounce(body: LanternOrbBody, normal: Vec3): Vec3 {
 
 /** Adaptive resolution: the share of the device pixel ratio the canvas
  *  renders at, stepped down when frames drop and back up after a calm
- *  stretch. `refreshFps` is the display's rate measured before the scene
- *  drew, so a 30 Hz power-saving display is not mistaken for a slow GPU. */
+ *  stretch. It aims for the display's rate, measured before the scene
+ *  drew, up to 60 fps: a 30 Hz power-saving display is not mistaken for a
+ *  slow GPU, and a 120 Hz display does not blur the lantern past 60. */
 export type LanternResolution = {
 	scale: number
 	/** The lowest scale this screen may step down to. */
 	floor: number
-	refreshFps: number
+	targetFps: number
 	/** A level that dropped frames, and when it may be tried again. */
 	ceiling: number
 	retryAt: number
@@ -645,7 +646,7 @@ export function createLanternResolution(
 	return {
 		scale: 1,
 		floor: lanternResolutionFloor(devicePixelRatio),
-		refreshFps: Math.min(Math.max(refreshFps, 30), 240),
+		targetFps: Math.min(Math.max(refreshFps, 30), 60),
 		ceiling: 1,
 		retryAt: 0,
 		windowStart: now,
@@ -682,11 +683,11 @@ export function stepLanternResolution(
 	const fps = (next.frames * 1000) / span
 	next.windowStart = now
 	next.frames = 0
-	if (fps < state.refreshFps * 0.75) {
+	if (fps < state.targetFps * 0.75) {
 		next.calmSince = now
 		if (state.scale <= state.floor) return next
 		// Pixels cost linearly, so scale each side by the root of the shortfall.
-		const wanted = state.scale * Math.sqrt(fps / (state.refreshFps * 0.9))
+		const wanted = state.scale * Math.sqrt(fps / (state.targetFps * 0.9))
 		next.scale = Math.max(
 			state.floor,
 			Math.min(
@@ -699,7 +700,7 @@ export function stepLanternResolution(
 		next.settleUntil = now + resolutionWindowMs
 		return next
 	}
-	if (fps < state.refreshFps * 0.95) {
+	if (fps < state.targetFps * 0.95) {
 		next.calmSince = now
 		return next
 	}
