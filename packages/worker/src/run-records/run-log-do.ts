@@ -2572,9 +2572,7 @@ class RunLogBase extends DurableObject<Env> {
 			if (previousStatus === 'running' || previousStatus == null) {
 				const existed = previousStatus != null
 				this.transactionSyncWithMetaCache(() => {
-					this.clearSystemPlatformInterruptTriageBeforeErrorFinish(
-						releasedRun,
-					)
+					this.clearSystemPlatformInterruptTriageBeforeErrorFinish(releasedRun)
 					this.upsertRun(releasedRun, 'replace')
 					this.replaceLogs(releasedRun.id, input.logs)
 					if (!existed) {
