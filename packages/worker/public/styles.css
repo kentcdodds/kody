@@ -1814,6 +1814,13 @@ html.is-settled {
 	opacity: 1;
 }
 
+/* With an orb open the other lines step back but stay traceable across the
+   bright glass to their orbs. */
+.landing-primitives[data-leaders='3d'][data-active]
+	.landing-leader:not([data-open]) {
+	opacity: 0.5;
+}
+
 .landing-leader-end {
 	fill: var(--primitive-color);
 	stroke: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
