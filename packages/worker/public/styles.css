@@ -1634,11 +1634,12 @@ html.is-settled {
 }
 
 /* 3D lantern (`client/lantern-3d/`). The wrapper keeps the lantern box;
-   the 2D poster and the 3D scene both fill it, and the poster fades out
-   once the scene is live. The canvas bleeds past the box so the glow and
-   fireflies can leave the frame. It never takes the pointer: the frame
-   does, so the words beside it stay clickable. The orb buttons are
-   invisible and follow the orbs; the scene draws their lit state. */
+   the 2D poster and the 3D scene both fill it, and the scene takes over
+   once it is live (a crossfade unless motion is reduced). The canvas
+   bleeds past the box so the glow and fireflies can leave the frame. It
+   never takes the pointer: the frame does, so the words beside it stay
+   clickable. The orb buttons are invisible and follow the orbs; the
+   scene draws their lit state. */
 @media (min-width: 801px) {
 	.landing-primitives-stage:has(.landing-lantern-3d) {
 		grid-template-columns: minmax(14rem, 22rem) minmax(0, 15rem);
@@ -1662,10 +1663,6 @@ html.is-settled {
 .landing-lantern-3d-poster .landing-lantern {
 	width: 100%;
 	margin: 0;
-}
-
-.landing-lantern-3d-poster {
-	transition: opacity 0.8s ease;
 }
 
 .landing-lantern-3d[data-stage='live'] .landing-lantern-3d-poster {
@@ -1695,7 +1692,6 @@ html.is-settled {
 	translate: -50% -50%;
 	pointer-events: none;
 	opacity: 0;
-	transition: opacity 0.8s ease;
 }
 
 .landing-lantern-3d[data-stage='live'] .landing-lantern-3d-canvas {
@@ -1755,7 +1751,6 @@ html.is-settled {
 	border-radius: 50%;
 	box-shadow: var(--shadow-sm);
 	cursor: pointer;
-	animation: landing-lantern-3d-in 0.8s ease both;
 	transition:
 		color 0.2s ease,
 		border-color 0.2s ease;
@@ -1778,6 +1773,15 @@ html.is-settled {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+	.landing-lantern-3d-poster,
+	.landing-lantern-3d-canvas {
+		transition: opacity 0.8s ease;
+	}
+
+	.landing-lantern-3d-spin {
+		animation: landing-lantern-3d-in 0.8s ease both;
+	}
+
 	.landing-lantern-3d-spin svg {
 		transition: rotate 0.5s ease;
 	}
