@@ -1,5 +1,8 @@
 import { type Handle, ref } from 'remix/component'
-import { observeNearViewport } from '#client/deferred-turnstile.ts'
+import {
+	isElementNearViewport,
+	observeNearViewport,
+} from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import {
 	LandingLantern,
@@ -391,6 +394,9 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 			inView = entry?.isIntersecting ?? false
 			scene?.setVisible(inView)
 		})
+		// Some mobile browsers skip the first callback for a node already on
+		// screen, and a hidden scene never wakes.
+		inView = isElementNearViewport(node, '0px')
 		visibility.observe(node)
 		const onMotion = () => scene?.setMotion(readMotion())
 		motionOk.addEventListener('change', onMotion, { signal })
