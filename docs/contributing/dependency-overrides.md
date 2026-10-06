@@ -118,6 +118,44 @@ be removed yet.
 
 The upper bound `<4.0.0` keeps the override within the same major version.
 
+### `proxy-addr` → `>=2.0.8 <3.0.0`
+
+Keeps the transitive `proxy-addr` copy (via `express` from
+`@modelcontextprotocol/sdk`) at or above the current advisory floor. Upstream
+`express@5.2.1` still declares `proxy-addr@^2.0.7`, which allows `2.0.7`, so
+this override cannot be removed yet.
+
+- [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h) — IP
+  spoofing via IPv4-mapped IPv6 trust subnet (`>=1.1.0, <=2.0.7`)
+
+The upper bound `<3.0.0` keeps the override within the same major version.
+
+### `source-map-js` → `>=1.2.2 <2.0.0`
+
+Keeps the transitive `source-map-js` copy (via Remix packages and Vite /
+PostCSS) at or above the current advisory floor. Upstream still declares
+`source-map-js@^1.2.1`, which allows `1.2.1`, so this override cannot be removed
+yet.
+
+- [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) —
+  event-loop denial of service through indexed source-map section offsets
+  (`>=1.0.0, <=1.2.1`)
+
+The upper bound `<2.0.0` keeps the override within the same major version.
+
+### `smol-toml` → `>=1.9.0 <2.0.0`
+
+Keeps the transitive `smol-toml` copy (via `@cloudflare/worker-bundler`) at or
+above the current advisory floor. Upstream `@cloudflare/worker-bundler@0.2.5`
+still declares `smol-toml@^1.7.2`, which allows `1.8.0`, so this override cannot
+be removed yet.
+
+- [GHSA-r4xh-jqrq-34v2](https://github.com/advisories/GHSA-r4xh-jqrq-34v2) —
+  quadratic-time `parse()` from `parseKey` rescanning to the end of the document
+  on each key line (`<=1.8.0`)
+
+The upper bound `<2.0.0` keeps the override within the same major version.
+
 ### `undici` (under `wrangler` / `miniflare` / `@cloudflare/vite-plugin`) → `>=7.29.1 <8.0.0`
 
 Floors only the Cloudflare 7.x undici copies. The root `undici@6.28.1` is
