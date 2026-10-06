@@ -45,7 +45,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   Actions. Full `npm run validate` sets `KODY_VALIDATE_LOAD=1` on the
   `test:workers` leg so `vitest.workers.config.ts` gives that suite a 40s
   timeout and `maxWorkers=2` under the parallel gate without changing production
-  startup CPU budgets or node-unit timeouts.
+  startup CPU budgets or node-unit timeouts (Cloud Agent load flakes: #2475,
+  #2939; `tools/validate-load-contract.node.test.ts` locks the validate script
+  shape).
 - Because the commit hook already enforces formatting, lint fixes,
   install:check, and typechecking for commits that include code, agents do not
   need to run those checks separately before every code commit unless they want
@@ -70,15 +72,15 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `overrides:check` in parallel, reporting every failure (sibling checks are not
   aborted on the first failure, including when one of the docs or mermaid checks
   fails). `worker-startup-time:check` runs after that parallel phase so the CPU
-  budget measures the bundle, not contention from e2e and Worker builds. The
-  unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and Nx
-  cache hashes match the contended parallel layout used in GitHub Actions. CI
-  runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP,
-  🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes locally, CI
-  will pass. Trusted writers (Cloud Agent environments, and same-repo validate)
-  set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads
-  task artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate
-  uses the read token and can only GET (see
+  budget measures the bundle, not contention from e2e and Worker builds (#2475,
+  #2759). The unit-test and Playwright legs set `CI=1` so timeouts, worker
+  limits, and Nx cache hashes match the contended parallel layout used in GitHub
+  Actions. CI runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️
+  Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
+  passes locally, CI will pass. Trusted writers (Cloud Agent environments, and
+  same-repo validate) set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write
+  token so Nx uploads task artifacts to `https://nx-cache.kody.codes`. Fork
+  `pull_request` validate uses the read token and can only GET (see
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
