@@ -110,8 +110,8 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   MCP grant). A token holding `tokens:write` can mint more, but only with scopes
   it holds and never outliving its own `max_expires_at`. At most 500 active
   tokens per account. When the pool is full, a new mint revokes the active
-  token(s) with the least remaining life (sooner of idle deadline and absolute
-  expiry), never the caller's own token. Reclaim applies to every mint.
+  token(s) with the least remaining life (time until stored `expires_at`), never
+  the caller's own token. Reclaim applies to every mint.
 - **CLI bootstrap (ADR 0056):** `cliCredentialBootstrap` (capability +
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
   `kody_at_`) and a `cli_command` that includes required lifetime flags.

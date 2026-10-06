@@ -133,6 +133,9 @@ test('resolveApiTokenLifetime requires a choice and expands short/long/explicit'
 			maxLifetimeSeconds: apiTokenPolicy.maxMaxLifetimeSeconds + 1,
 		}),
 	).toThrow(/max_lifetime_seconds/)
+	expect(() => resolveApiTokenLifetime({ lifetime: 'toString' })).toThrow(
+		/lifetime must be "short" or "long"/,
+	)
 })
 
 test('authentication rejects malformed, wrong-secret, expired, and revoked tokens', async () => {
@@ -415,6 +418,74 @@ test('reclaim never revokes the caller token even when it is soonest to expire',
 	const active = await listApiTokens({ db, userId, now: at(1) })
 	expect(active.some((token) => token.id === caller.id)).toBe(true)
 	expect(active).toHaveLength(apiTokenPolicy.maxActiveTokensPerUser)
+})
+
+test('reclaim ranks by expires_at so a recently rotated token is not preferred', async () => {
+	const { db } = createDb()
+	const longLife = apiTokenLifetimeAliases.long
+	for (
+		let index = 0;
+		index < apiTokenPolicy.maxActiveTokensPerUser - 2;
+		index++
+	) {
+		await mintApiToken({
+			db,
+			userId,
+			name: `bulk-${index}`,
+			scopes: ['account:read'],
+			idleTtlSeconds: longLife.idleTtlSeconds,
+			maxLifetimeSeconds: longLife.maxLifetimeSeconds,
+			createdVia: 'api',
+			now: start,
+		})
+	}
+	const aged = await mintApiToken({
+		db,
+		userId,
+		name: 'aged-then-rotated',
+		scopes: ['account:read'],
+		idleTtlSeconds: 60,
+		maxLifetimeSeconds: 24 * 60 * 60,
+		createdVia: 'api',
+		now: start,
+	})
+	const soon = await mintApiToken({
+		db,
+		userId,
+		name: 'soon',
+		scopes: ['account:read'],
+		idleTtlSeconds: 60,
+		maxLifetimeSeconds: 90,
+		createdVia: 'api',
+		now: start,
+	})
+	// Rotation slides expires_at to now+idle (110s). The old created_at+idle
+	// formula would still rank this token first; expires_at ranking must not.
+	const rotated = await rotateApiToken({
+		db,
+		userId,
+		tokenId: aged.id,
+		now: at(50),
+	})
+	expect(rotated?.expires_at).toBe(at(110).toISOString())
+
+	const next = await mintApiToken({
+		db,
+		userId,
+		name: 'after-cap',
+		scopes: ['account:read'],
+		idleTtlSeconds: shortLife.idleTtlSeconds,
+		maxLifetimeSeconds: shortLife.maxLifetimeSeconds,
+		createdVia: 'api',
+		now: at(51),
+	})
+	expect(next.status).toBe('active')
+	expect(
+		await getApiTokenRecord({ db, userId, tokenId: soon.id }),
+	).toMatchObject({ revoked_at: at(51).toISOString() })
+	expect(
+		await getApiTokenRecord({ db, userId, tokenId: aged.id }),
+	).toMatchObject({ revoked_at: null })
 })
 
 test('mint prunes long-dead rows before reclaim', async () => {

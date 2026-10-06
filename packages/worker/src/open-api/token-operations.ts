@@ -474,6 +474,7 @@ export const cliCredentialBootstrapRedeemDefinition: NativeApiOperationDefinitio
 			const redeemed = await redeemCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
 				code: input.code,
+				env: ctx.env,
 				lifetime: input.lifetime,
 				idleTtlSeconds: input.idle_ttl_seconds,
 				maxLifetimeSeconds: input.max_lifetime_seconds,

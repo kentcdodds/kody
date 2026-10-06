@@ -136,6 +136,7 @@ async function handleOperation(input: {
 		const redeemed = await redeemCliCredentialBootstrap({
 			db: input.env.APP_DB,
 			code,
+			env: input.env,
 			...(typeof redeemInput.lifetime === 'string'
 				? { lifetime: redeemInput.lifetime }
 				: {}),

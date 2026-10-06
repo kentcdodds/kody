@@ -129,27 +129,45 @@ test('bootstrap redeem requires a lifetime and yields a working token', async ()
 	).rejects.toBeInstanceOf(McpCallerError)
 })
 
+test('bootstrap redeem rejects a lifetime longer than the code authorized', async () => {
+	const { db } = createDb()
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		lifetime: 'short',
+		now: start,
+	})
+	await expect(
+		redeemCliCredentialBootstrap({
+			db,
+			code: minted.bootstrap_code,
+			lifetime: 'long',
+			now: at(30),
+		}),
+	).rejects.toThrow(/cannot exceed the bootstrap code's authorized/)
+})
+
 test('bootstrap redeem accepts explicit idle and max lifetime values', async () => {
 	const { db } = createDb()
 	const minted = await mintCliCredentialBootstrap({
 		db,
 		userId,
-		idleTtlSeconds: 120,
-		maxLifetimeSeconds: 600,
+		idleTtlSeconds: 180,
+		maxLifetimeSeconds: 900,
 		now: start,
 	})
-	expect(minted.cli_command).toContain('--idle-ttl-seconds 120')
-	expect(minted.cli_command).toContain('--max-lifetime-seconds 600')
+	expect(minted.cli_command).toContain('--idle-ttl-seconds 180')
+	expect(minted.cli_command).toContain('--max-lifetime-seconds 900')
 
 	const redeemed = await redeemCliCredentialBootstrap({
 		db,
 		code: minted.bootstrap_code,
-		idleTtlSeconds: 180,
-		maxLifetimeSeconds: 900,
+		idleTtlSeconds: 120,
+		maxLifetimeSeconds: 600,
 		now: at(30),
 	})
-	expect(redeemed.token.idle_ttl_seconds).toBe(180)
-	expect(redeemed.token.max_expires_at).toBe(at(30 + 900).toISOString())
+	expect(redeemed.token.idle_ttl_seconds).toBe(120)
+	expect(redeemed.token.max_expires_at).toBe(at(30 + 600).toISOString())
 })
 
 test('bootstrap rejects idle or max lifetime values above the policy caps', async () => {

@@ -86,17 +86,18 @@ Missing lifetime fails with the exact flag / field syntax (CLI:
 
 At most **500** active API tokens per account. When a mint would exceed the cap,
 `mintApiToken` revokes the active token(s) with the least remaining life until
-one slot is free, then mints. Remaining life is the sooner of:
-
-- idle deadline: `last_used_at` (or `created_at` if never used) +
-  `idle_ttl_seconds`
-- absolute expiry: `max_expires_at`
+one slot is free, then mints. Remaining life is time until the stored
+`expires_at` (already the sooner of the sliding idle window and
+`max_expires_at`, so rotation and use stay accurate). A post-insert reclaim
+heals concurrent races. HTTP bootstrap redeem runs under the account write
+lease.
 
 This policy applies to **every** mint (`tokenCreate`, bootstrap redeem, and any
 other `mintApiToken` caller). It does not special-case by token name or
 `created_via`. It never revokes the caller's own token when the mint is
 authenticated by an API token (`excludeTokenId`). MCP session and code-only
-redeem have no caller token to protect.
+redeem have no caller token to protect. Redeem lifetime cannot exceed the
+idle/max stored on the bootstrap code at mint (parent clamps stay enforced).
 
 Do **not** add OAuth device flow. Do **not** accept bootstrap codes as general
 Open API Bearers. Do **not** scavenge host MCP tokens from disk. Do **not** keep

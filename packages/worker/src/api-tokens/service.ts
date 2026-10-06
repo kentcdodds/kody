@@ -111,7 +111,7 @@ export function resolveApiTokenLifetime(input: {
 		)
 	}
 	if (hasAlias) {
-		if (!(aliasRaw in apiTokenLifetimeAliases)) {
+		if (!Object.hasOwn(apiTokenLifetimeAliases, aliasRaw)) {
 			throw new McpCallerError(
 				`lifetime must be "short" or "long" (got ${JSON.stringify(aliasRaw)}).`,
 			)
@@ -334,22 +334,16 @@ async function countActiveApiTokens(input: {
 }
 
 /**
- * Remaining life until the token stops working if unused from `now`: the
- * sooner of its idle deadline (last_used_at, or created_at if never used, plus
- * idle_ttl_seconds) and its absolute max_expires_at.
+ * Remaining life until the token stops working: time until the stored
+ * `expires_at` (already the sooner of the sliding idle window and
+ * `max_expires_at`). Prefer `expires_at` over recomputing from
+ * last_used_at/created_at so rotation and touch stay accurate for reclaim.
  */
 export function apiTokenRemainingLifeMs(
-	record: Pick<
-		ApiTokenRecord,
-		'last_used_at' | 'created_at' | 'idle_ttl_seconds' | 'max_expires_at'
-	>,
+	record: Pick<ApiTokenRecord, 'expires_at'>,
 	now: Date,
 ) {
-	const idleDeadlineMs =
-		Date.parse(record.last_used_at ?? record.created_at) +
-		record.idle_ttl_seconds * 1000
-	const absoluteMs = Date.parse(record.max_expires_at)
-	return Math.min(idleDeadlineMs, absoluteMs) - now.getTime()
+	return Date.parse(record.expires_at) - now.getTime()
 }
 
 async function listActiveApiTokenRecords(input: {
@@ -372,17 +366,21 @@ async function listActiveApiTokenRecords(input: {
 }
 
 /**
- * When the account is at the active-token cap, revoke active tokens with the
- * least remaining life until one slot is free. Never revokes `excludeTokenId`
- * (the caller's own token). Applies to every mint via `mintApiToken`.
+ * When the account is at or over the active-token cap, revoke active tokens
+ * with the least remaining life until `activeCount + slotsNeeded <= max`.
+ * Never revokes ids in `excludeTokenIds` (caller + just-minted). Applies to
+ * every mint via `mintApiToken`.
  */
 async function reclaimApiTokenSlots(input: {
 	db: D1Database
 	userId: string
 	now: Date
-	excludeTokenId?: string
+	excludeTokenIds?: ReadonlyArray<string>
 	slotsNeeded: number
 }) {
+	const excluded = new Set(
+		(input.excludeTokenIds ?? []).filter((id) => typeof id === 'string' && id),
+	)
 	let activeCount = await countActiveApiTokens(input)
 	while (
 		activeCount + input.slotsNeeded >
@@ -390,7 +388,7 @@ async function reclaimApiTokenSlots(input: {
 	) {
 		const active = await listActiveApiTokenRecords(input)
 		const candidates = active
-			.filter((record) => record.id !== input.excludeTokenId)
+			.filter((record) => !excluded.has(record.id))
 			.sort((left, right) => {
 				const lifeDiff =
 					apiTokenRemainingLifeMs(left, input.now) -
@@ -401,7 +399,7 @@ async function reclaimApiTokenSlots(input: {
 		const victim = candidates[0]
 		if (!victim) {
 			throw new McpCallerError(
-				`This account already has ${apiTokenPolicy.maxActiveTokensPerUser} active API tokens and none can be reclaimed (the calling token is protected). Revoke one before minting another.`,
+				`This account already has ${apiTokenPolicy.maxActiveTokensPerUser} active API tokens and none can be reclaimed (protected tokens cannot be revoked). Revoke one before minting another.`,
 			)
 		}
 		await revokeApiToken({
@@ -493,14 +491,14 @@ export async function mintApiToken(input: {
 	const maxExpiresAt = new Date(maxExpiresAtMs).toISOString()
 
 	await pruneInactiveApiTokens({ db: input.db, userId: input.userId, now })
+	const protectedIds = input.excludeTokenId ? [input.excludeTokenId] : []
 	await reclaimApiTokenSlots({
 		db: input.db,
 		userId: input.userId,
 		now,
-		excludeTokenId: input.excludeTokenId,
+		excludeTokenIds: protectedIds,
 		slotsNeeded: 1,
 	})
-
 	const tokenId = generateApiTokenId()
 	const secret = generateApiTokenSecret()
 	const nowIso = now.toISOString()
@@ -553,6 +551,14 @@ export async function mintApiToken(input: {
 			record.profile_name,
 		)
 		.run()
+	// Heal concurrent mint races that both reclaimed the same victim.
+	await reclaimApiTokenSlots({
+		db: input.db,
+		userId: input.userId,
+		now,
+		excludeTokenIds: [...protectedIds, record.id],
+		slotsNeeded: 0,
+	})
 	return {
 		...toApiTokenView(record, now),
 		token: formatApiToken({ tokenId, secret }),
