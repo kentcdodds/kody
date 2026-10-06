@@ -71,6 +71,9 @@ export type LanternHostMessage =
 			paused: boolean
 	  }
 	| { type: 'layout'; viewport: LanternViewport }
+	/** Where the 2D orbs are now, just before the 3D ones fade in over
+	 *  them. Answered with `matched`. */
+	| { type: 'poster'; orbs: ReadonlyArray<LanternPoint> }
 	| { type: 'palette'; palette: LanternPalette }
 	| { type: 'motion'; motion: LanternMotion }
 	| { type: 'visible'; visible: boolean }
@@ -92,5 +95,7 @@ export type LanternHostMessage =
 export type LanternWorkerMessage =
 	| { type: 'ready'; frame: LanternSceneFrame }
 	| { type: 'frame'; frame: LanternSceneFrame }
+	/** The canvas now shows the orbs where the 2D ones are. */
+	| { type: 'matched'; frame: LanternSceneFrame }
 	/** No WebGL2 here, startup threw, or the GPU context was lost. */
 	| { type: 'failed' }

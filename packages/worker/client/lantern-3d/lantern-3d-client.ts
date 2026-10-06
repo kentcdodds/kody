@@ -38,6 +38,9 @@ export type LanternClientOptions = {
 export type LanternClient = {
 	/** Resolves once the first frame has drawn; rejects if startup fails. */
 	ready: Promise<void>
+	/** Puts the 3D orbs where the 2D ones are now. Resolves once that
+	 *  frame has drawn. */
+	matchPoster: (orbs: ReadonlyArray<LanternPoint>) => Promise<void>
 	layout: () => void
 	setActive: (id: LandingPrimitiveId | null) => void
 	setPalette: (palette: LanternPalette) => void
@@ -80,6 +83,7 @@ export function createLanternClient(
 	const ready = new Promise<void>((resolve, reject) => {
 		settle = { resolve, reject }
 	})
+	let matched: (() => void) | null = null
 
 	function fail() {
 		if (disposed) return
@@ -103,6 +107,11 @@ export function createLanternClient(
 					return
 				case 'frame':
 					options.onFrame(message.frame)
+					return
+				case 'matched':
+					options.onFrame(message.frame)
+					matched?.()
+					matched = null
 					return
 				case 'failed':
 					fail()
@@ -162,6 +171,12 @@ export function createLanternClient(
 
 	return {
 		ready,
+		matchPoster(orbs) {
+			return new Promise<void>((resolve) => {
+				matched = resolve
+				post({ type: 'poster', orbs })
+			})
+		},
 		layout: () => post({ type: 'layout', viewport: viewport() }),
 		setActive: (id) => post({ type: 'active', id }),
 		setPalette: (palette) => post({ type: 'palette', palette }),

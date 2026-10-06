@@ -166,9 +166,14 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 			})
 			scene = created
 			await created.ready
-			if (scene !== created) return
-			await settled()
-			if (scene !== created) return
+			// The 2D orbs drift, and the page can resize, while the worker
+			// starts, so the swap begins from where they are now.
+			do {
+				await settled()
+				if (scene !== created) return
+				await created.matchPoster(posterOrbs())
+				if (scene !== created) return
+			} while (navigating)
 			created.setActive(handle.props.activeId)
 			reveal(created)
 		} catch {

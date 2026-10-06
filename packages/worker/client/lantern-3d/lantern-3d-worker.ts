@@ -106,6 +106,12 @@ function apply(live: LanternScene, message: LanternHostMessage) {
 		case 'layout':
 			live.layout(message.viewport)
 			return
+		case 'poster':
+			scope.postMessage({
+				type: 'matched',
+				frame: live.matchPoster(message.orbs),
+			})
+			return
 		case 'palette':
 			live.setPalette(message.palette)
 			return

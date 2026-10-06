@@ -103,6 +103,8 @@ export type LanternSceneOptions = {
 export type LanternScene = {
 	frame: () => LanternSceneFrame
 	layout: (viewport: LanternViewport) => void
+	/** Moves the orbs onto the 2D ones and draws at once. */
+	matchPoster: (orbs: ReadonlyArray<LanternPoint>) => LanternSceneFrame
 	setActive: (id: LandingPrimitiveId | null) => void
 	setPalette: (palette: LanternPalette) => void
 	setMotion: (motion: LanternMotion) => void
@@ -766,6 +768,14 @@ export async function createLanternScene(
 	return {
 		frame: () => lastReport,
 		layout,
+		matchPoster(orbs) {
+			placeOrbs(orbs)
+			advance(0)
+			paint(0)
+			renderer.render(scene, camera)
+			lastReport = project()
+			return lastReport
+		},
 		setActive(id) {
 			if (activeId === id) return
 			activeId = id
