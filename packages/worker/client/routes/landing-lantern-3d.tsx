@@ -179,7 +179,7 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 		})
 		mountScene(canvas, fail)
 			.then((mounted) => {
-				if (signal.aborted) {
+				if (signal.aborted || failed) {
 					mounted.destroy()
 					return
 				}
