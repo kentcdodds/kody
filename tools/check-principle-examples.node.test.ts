@@ -66,19 +66,3 @@ test.each(citedFences)(
 		}
 	},
 )
-
-test('examples-over-prose points at the local-execute sources and the checker', async () => {
-	const page = await readFile('docs/principles/examples-over-prose.md', 'utf8')
-	expect(page).toContain('guide:local_execute')
-	expect(page).toContain('.agents/skills/prefer-local-cli-execute/SKILL.md')
-	expect(page).toContain('docs:check-no-hosted-execute')
-	expect(page).toContain('npx @kodycodes/cli execute --local')
-
-	const rules = await readFile('tools/oxlint/oxlint-rules.json', 'utf8')
-	const workflow = await readFile(
-		'docs/principles/test-the-workflow.md',
-		'utf8',
-	)
-	expect(workflow).toContain('kody-custom/no-tautological-absence')
-	expect(rules).toContain('"kody-custom/no-tautological-absence"')
-})

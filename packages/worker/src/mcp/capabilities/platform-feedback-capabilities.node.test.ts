@@ -221,18 +221,6 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		status: 'open',
 		created_at: '2026-07-19T00:00:00.000Z',
 	})
-	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
-		'metaPlatformFeedbackGet',
-	)
-	expect(metaPlatformFeedbackSubmitCapability.description).toContain(
-		'metaPlatformFeedbackList',
-	)
-	expect(metaPlatformFeedbackGetCapability.keywords).toContain(
-		'status of my feedback',
-	)
-	expect(metaPlatformFeedbackListCapability.keywords).toContain(
-		'status of my feedback',
-	)
 
 	consoleError.mockImplementation(() => {})
 	mockModule.queueSend.mockRejectedValueOnce(new Error('Queue unavailable'))

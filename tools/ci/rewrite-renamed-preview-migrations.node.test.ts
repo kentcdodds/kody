@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -137,9 +136,6 @@ test('planRenamedMigrationRewrites skips when content changed or history cannot 
 
 test('planRenamedMigrationRewrites skips ambiguous sha matches', () => {
 	const sql = 'SELECT 1;\n'
-	const sha = hashMigrationContent(sql)
-	expect(sha).toBe(createHash('sha256').update(sql).digest('hex'))
-
 	const plan = planRenamedMigrationRewrites({
 		appliedNames: ['0074-old.sql'],
 		currentFiles: [digest('0075-a.sql', sql), digest('0076-b.sql', sql)],

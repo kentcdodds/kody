@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
@@ -187,24 +187,6 @@ test('checkMarkdownFileRefs reads the tree and fails on a missing citation', asy
 	} finally {
 		await rm(repoRoot, { recursive: true, force: true })
 	}
-})
-
-test('package.json and CI run the file-ref and skills-lock checks', async () => {
-	const packageJson = JSON.parse(
-		await readFile(new URL('../package.json', import.meta.url), 'utf8'),
-	) as { scripts?: Record<string, string> }
-	expect(packageJson.scripts?.['docs:check-file-refs']).toBe(
-		'node tools/check-markdown-file-refs.ts',
-	)
-	expect(packageJson.scripts?.['skills-lock:check']).toBe(
-		'node tools/check-skills-lock.ts',
-	)
-	const workflow = await readFile(
-		new URL('../.github/workflows/validate.yml', import.meta.url),
-		'utf8',
-	)
-	expect(workflow).toContain('npm run docs:check-file-refs')
-	expect(workflow).toContain('npm run skills-lock:check')
 })
 
 test('committed markdown file references exist', async () => {

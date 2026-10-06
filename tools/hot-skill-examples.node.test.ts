@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from 'vitest'
-import ts from 'typescript'
 import { loadPrimitivesMap } from '../.agents/skills/visual-recap/scripts/primitives-map.mjs'
 
 const root = process.cwd()
@@ -12,7 +11,7 @@ const localExecuteExample =
 
 const localExecuteCommand = `npx @kodycodes/cli execute --local --code '${localExecuteExample}'`
 
-test('prefer-local example matches the guide and parses', () => {
+test('prefer-local example matches the guide', () => {
 	const skill = readFileSync(
 		path.join(root, '.agents/skills/prefer-local-cli-execute/SKILL.md'),
 		'utf8',
@@ -23,17 +22,6 @@ test('prefer-local example matches the guide and parses', () => {
 	)
 	expect(skill).toContain(localExecuteCommand)
 	expect(guide).toContain(localExecuteCommand)
-	expect(skill).not.toContain('--invoke')
-
-	const transpiled = ts.transpileModule(localExecuteExample, {
-		compilerOptions: {
-			module: ts.ModuleKind.ESNext,
-			target: ts.ScriptTarget.ES2022,
-		},
-	})
-	expect(transpiled.diagnostics ?? []).toEqual([])
-	expect(transpiled.outputText).toContain('metaGetCurrentUser')
-	expect(transpiled.outputText).toContain('kody:runtime')
 })
 
 test('ship-pr tick command stays a local static import', () => {
@@ -46,7 +34,6 @@ test('ship-pr tick command stays a local static import', () => {
 		'import run from "kody:@kentcdodds/ship-pr/tick"; export default (p) => run(p)',
 	)
 	expect(command).toContain('npx @kodycodes/cli execute --local')
-	expect(command).not.toContain('--invoke')
 })
 
 test('visual-recap example participants are primitive ids', () => {

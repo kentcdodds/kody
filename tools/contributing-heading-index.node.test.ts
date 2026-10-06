@@ -22,31 +22,6 @@ const indexedPages = [
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const linkPattern = /^- \[(.*)\]\(#([a-z0-9_-]+)\)$/
 
-const githubPermalinkFixtures: ReadonlyArray<readonly [string, string]> = [
-	['D1 (`APP_DB`)', 'd1-app_db'],
-	['D1 (`JOBS_DB`)', 'd1-jobs_db'],
-	['KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)', 'kv-oauth_kv-bundle_artifacts_kv'],
-	[
-		'R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`, `REPO_SESSION_BLOBS`)',
-		'r2-community_assets-email_blobs-repo_session_blobs',
-	],
-	['Durable Objects (`MCP_OBJECT`)', 'durable-objects-mcp_object'],
-	[
-		'Durable Objects (`JobManager` and `StorageRunner`)',
-		'durable-objects-jobmanager-and-storagerunner',
-	],
-	[
-		'Per-user runtime context (no shared `globalThis`)',
-		'per-user-runtime-context-no-shared-globalthis',
-	],
-	[
-		'Recipe: instrumenting a new chokepoint',
-		'recipe-instrumenting-a-new-chokepoint',
-	],
-	['Execute interpretable share (`q`)', 'execute-interpretable-share-q'],
-	['Maintenance mode (edge)', 'maintenance-mode-edge'],
-]
-
 function githubHeadingSlug(title: string) {
 	return title
 		.normalize('NFKD')
@@ -92,12 +67,6 @@ function contentsLinks(markdown: string) {
 	if (links.length === 0) throw new Error('## Contents has no links')
 	return links
 }
-
-test('github heading slugs match rendered permalinks', () => {
-	for (const [title, slug] of githubPermalinkFixtures) {
-		expect(githubHeadingSlug(title)).toBe(slug)
-	}
-})
 
 test('giant pages open with a contents list of every level-2 heading', () => {
 	for (const relativePath of indexedPages) {

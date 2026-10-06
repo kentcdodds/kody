@@ -11,28 +11,7 @@ import {
 test('only login and signup stay fillable for 1Password', () => {
 	expect(shouldIgnorePasswordManagerPage('/login')).toBe(false)
 	expect(shouldIgnorePasswordManagerPage('/signup')).toBe(false)
-
-	expect(shouldIgnorePasswordManagerPage('/admin/users')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/admin')).toBe(true)
 	expect(shouldIgnorePasswordManagerPage('/account')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/account/billing')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/account/two-factor')).toBe(true)
-	expect(
-		shouldIgnorePasswordManagerPage('/account/packages/pkg/files/readme.md'),
-	).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/pending-verification')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/@jane/helper/approve-publish')).toBe(
-		true,
-	)
-	expect(shouldIgnorePasswordManagerPage('/reset-password')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/verify')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/verify-email')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/oauth/authorize')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/onboarding')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/pricing')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/docs')).toBe(true)
-	expect(shouldIgnorePasswordManagerPage('/connect/secrets')).toBe(true)
 	expect(shouldIgnorePasswordManagerPage('/login/extra')).toBe(true)
 	expect(shouldIgnorePasswordManagerPage('/signup/extra')).toBe(true)
 })

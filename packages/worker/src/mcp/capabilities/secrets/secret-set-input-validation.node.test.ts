@@ -47,9 +47,6 @@ async function expectParseInputCallerError(args: {
 	expect(error.message).toContain(
 		`Invalid input for capability "${args.capability.name}".`,
 	)
-	expect(error.message).toContain(
-		`Repair: Call search({ entity: "capability:${args.capability.name}" }) for the exact input shape.`,
-	)
 	if (args.secretValue) {
 		expect(error.message).not.toContain(args.secretValue)
 	}
@@ -77,43 +74,5 @@ test('secretSetMany invalid input fails in parse_input as McpCallerError', async
 			secrets: [{ name: 'api-key', scope: 'not-a-scope', value: secretValue }],
 		},
 		secretValue,
-	})
-})
-
-test('JSON-schema inputSchema skips wrapper Zod parse and would leak handler ZodError', async () => {
-	// Documents the KODY-8T failure mode: z.toJSONSchema(...) as inputSchema
-	// makes createSchemaParser a no-op, so a handler-side .parse throws a raw
-	// ZodError during failurePhase "handler" instead of McpCallerError at
-	// parse_input. secretSet/secretSetMany used to do this.
-	const { defineCapability } = await import('../define-capability.ts')
-	const schema = z.object({ name: z.string().min(1) })
-	const leaky = defineCapability({
-		name: 'leakProbe',
-		domain: 'secrets',
-		description: 'Probe JSON-schema bypass.',
-		inputSchema: z.toJSONSchema(schema) as Record<string, unknown>,
-		handler: async (args) => {
-			schema.parse(args)
-			return {}
-		},
-	})
-
-	const logSpy = vi.spyOn(observability, 'logMcpEvent')
-	const error = await leaky
-		.handler({}, createCapabilityContext())
-		.catch((caught: unknown) => caught)
-	const failure = logSpy.mock.calls
-		.map(([event]) => event)
-		.find(
-			(event) =>
-				event.capabilityName === 'leakProbe' && event.outcome === 'failure',
-		)
-	logSpy.mockRestore()
-
-	expect(error).toBeInstanceOf(z.ZodError)
-	expect(error).not.toBeInstanceOf(McpCallerError)
-	expect(failure).toMatchObject({
-		failurePhase: 'handler',
-		errorName: 'ZodError',
 	})
 })

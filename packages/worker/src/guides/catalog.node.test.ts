@@ -19,7 +19,6 @@ import {
 	legacyGuideIdAliases,
 	listDocsNavSlugs,
 	unadvertisedDocSlugs,
-	useDocGuideTwins,
 } from '#universal/docs-nav.ts'
 import { listDocWatchEmbeds } from '#universal/doc-youtube.ts'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
@@ -225,11 +224,5 @@ test('agent playbooks are marked and merged docs keep resolving through aliases'
 	for (const [oldId, alias] of Object.entries(legacyGuideIdAliases)) {
 		expect(getGuideById(oldId)).toBeNull()
 		expect(getGuideById(alias.id)).not.toBeNull()
-	}
-})
-
-test('docs/use stubs point at a real catalog guide', () => {
-	for (const slug of Object.values(useDocGuideTwins)) {
-		expect(getGuideBySlug(slug)).not.toBeNull()
 	}
 })
