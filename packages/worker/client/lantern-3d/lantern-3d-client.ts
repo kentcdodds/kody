@@ -21,23 +21,28 @@ import {
  * three.js: that lives in the worker's own bundle.
  */
 
-/** Asks a throwaway worker whether WebGL here runs on a GPU. */
+type LanternGpuProbe = 'gpu' | 'no-gpu' | 'unknown'
+
+/** Asks a throwaway worker whether WebGL here runs on a GPU. A probe that
+ *  never answers (its chunk failed to load, say) says nothing about the
+ *  GPU, so it comes back `unknown`. */
 export function probeLanternGpu() {
-	return new Promise<boolean>((resolve) => {
+	return new Promise<LanternGpuProbe>((resolve) => {
 		const probe = new Worker(
 			new URL('./lantern-3d-probe.ts', import.meta.url),
 			{ type: 'module', name: 'lantern-3d-probe' },
 		)
-		const answer = (gpu: boolean) => {
+		const answer = (verdict: LanternGpuProbe) => {
 			probe.terminate()
-			resolve(gpu)
+			resolve(verdict)
 		}
 		probe.addEventListener(
 			'message',
-			(event: MessageEvent<LanternProbeMessage>) => answer(event.data.gpu),
+			(event: MessageEvent<LanternProbeMessage>) =>
+				answer(event.data.gpu ? 'gpu' : 'no-gpu'),
 		)
-		probe.addEventListener('error', () => answer(false))
-		probe.addEventListener('messageerror', () => answer(false))
+		probe.addEventListener('error', () => answer('unknown'))
+		probe.addEventListener('messageerror', () => answer('unknown'))
 	})
 }
 

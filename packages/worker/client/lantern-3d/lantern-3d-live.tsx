@@ -146,10 +146,9 @@ export function LandingLantern3dLive(
 		try {
 			await settled()
 			if (handle.signal.aborted) return
-			if (!(await probeLanternGpu())) {
-				declineLantern3d('no-gpu')
-				return
-			}
+			const gpu = await probeLanternGpu()
+			if (gpu === 'no-gpu') declineLantern3d('no-gpu')
+			if (gpu !== 'gpu') return
 			await settled()
 			if (handle.signal.aborted) return
 			await setStage('loading')
