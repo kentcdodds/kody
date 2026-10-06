@@ -5,6 +5,7 @@ import {
 } from '#universal/docs-nav.ts'
 
 const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/kentcdodds/kody/main'
+const GITHUB_BLOB_BASE = 'https://github.com/kentcdodds/kody/blob/main'
 
 /** Directory of a guide file inside the repo, relative to the repo root. */
 export type GuideSourceDir = 'docs/guides' | 'docs/guides/providers'
@@ -39,7 +40,8 @@ function resolveRepoPath(baseDir: string, target: string): string | null {
  * - Other repo-relative links (`../use/packages.md`) become raw GitHub
  *   URLs (`raw.githubusercontent.com`), so an agent fetch returns the file
  *   instead of a GitHub HTML page. Those documents are not served on the
- *   web app.
+ *   web app. A heading fragment also keeps the rendered blob URL, because
+ *   raw text has no heading anchors, and adds a `raw` sibling for the fetch.
  * - Absolute URLs, `mailto:`, anchors, and root-relative app links pass
  *   through untouched.
  */
@@ -81,8 +83,11 @@ export function rewriteRelativeGuideLinks(input: {
 					return `](${docHref(alias.slug)}${twinSuffix}${title})`
 				}
 			}
-			const suffix = fragment ? `#${fragment}` : ''
-			return `](${GITHUB_RAW_BASE}/${resolved}${suffix}${title})`
+			const rawUrl = `${GITHUB_RAW_BASE}/${resolved}`
+			if (!fragment) return `](${rawUrl}${title})`
+			// Rendered page so the heading fragment navigates. The raw sibling
+			// is what an agent fetches.
+			return `](${GITHUB_BLOB_BASE}/${resolved}#${fragment}${title}) ([raw](${rawUrl}))`
 		},
 	)
 }

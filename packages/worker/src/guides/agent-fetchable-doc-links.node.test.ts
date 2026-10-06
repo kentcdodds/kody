@@ -17,7 +17,6 @@ const rootedFiles = [
 	'packages/worker/src/mcp/tools/search-tool-definition.ts',
 	'packages/worker/universal/onboarding-mcp-clients.ts',
 	'packages/worker/src/app/agent-discovery.ts',
-	'packages/worker/src/guides/rewrite-relative-links.ts',
 ]
 
 function markdownFiles(dir: string): Array<string> {

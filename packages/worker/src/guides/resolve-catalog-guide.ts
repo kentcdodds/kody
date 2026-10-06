@@ -1,4 +1,7 @@
-import { legacyGuideIdAliases } from '#universal/docs-nav.ts'
+import {
+	legacyDocSlugAliases,
+	legacyGuideIdAliases,
+} from '#universal/docs-nav.ts'
 
 type GuideIdentity = {
 	id: string
@@ -14,7 +17,8 @@ export type ResolvedCatalogGuide = {
 
 /**
  * Entity lookup for `guide:{id}`. Accepts the catalog id, the page slug,
- * hyphen/underscore spelling, and `legacyGuideIdAliases`.
+ * hyphen/underscore spelling, `legacyGuideIdAliases`, and former page
+ * slugs in `legacyDocSlugAliases`.
  */
 export function resolveCatalogGuide(
 	guides: ReadonlyArray<GuideIdentity>,
@@ -40,7 +44,24 @@ export function resolveCatalogGuide(
 			guide.slug.replaceAll('-', '_') === underscored,
 	)
 	if (bySlug) return { id: bySlug.id }
-	return null
+
+	return legacyDocSlugHit(guides, requestedId)
+}
+
+function legacyDocSlugHit(
+	guides: ReadonlyArray<GuideIdentity>,
+	requestedId: string,
+): ResolvedCatalogGuide | null {
+	const hyphenated = requestedId.replaceAll('_', '-')
+	const alias =
+		legacyDocSlugAliases[requestedId] ??
+		(hyphenated === requestedId ? undefined : legacyDocSlugAliases[hyphenated])
+	if (!alias) return null
+	const guide = guides.find((candidate) => candidate.slug === alias.slug)
+	if (!guide) return null
+	return alias.fragment
+		? { id: guide.id, aliasSection: alias.fragment }
+		: { id: guide.id }
 }
 
 function aliasHit(

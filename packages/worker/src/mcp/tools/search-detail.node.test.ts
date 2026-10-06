@@ -292,6 +292,23 @@ test('resolveEntityDetail loads official guides without a signed-in user and gat
 		id: 'package_apps',
 		section: 'after-an-integration-smoke-test',
 	})
+	expect(
+		await resolve('guide:integration-backed-app-happy-path', anonymous),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'after-an-integration-smoke-test',
+	})
+	expect(
+		await resolve(
+			'guide:integration-backed-app-happy-path#session-handoff',
+			anonymous,
+		),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'session-handoff',
+	})
 
 	expect(
 		await resolve('guide:admin_events', {

@@ -23,6 +23,18 @@ test('resolveCatalogGuide accepts ids, slugs, and merged-doc aliases', () => {
 		id: 'package_apps',
 		aliasSection: 'after-an-integration-smoke-test',
 	})
+	expect(
+		resolveCatalogGuide(guides, 'integration-backed-app-happy-path'),
+	).toEqual({
+		id: 'package_apps',
+		aliasSection: 'after-an-integration-smoke-test',
+	})
+	expect(
+		resolveCatalogGuide(guides, 'integration_backed_app_happy_path'),
+	).toEqual({
+		id: 'package_apps',
+		aliasSection: 'after-an-integration-smoke-test',
+	})
 	expect(resolveCatalogGuide(guides, 'not_a_real_guide')).toBeNull()
 })
 

@@ -41,7 +41,14 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		expect(guide.body).not.toMatch(/\]\(\.{1,2}\//)
 		expect(guide.body).not.toMatch(/\]\([a-z0-9-]+\.md/)
 		expect(guide.body).not.toContain('](/guides/')
-		expect(guide.body).not.toMatch(/github\.com\/[^/\s)]+\/[^/\s)]+\/blob\//)
+		for (const match of guide.body.matchAll(
+			/https:\/\/github\.com\/([^/\s)]+)\/([^/\s)]+)\/blob\/([^/\s)]+)\/([^#)\s]+)(#[^)\s]+)?/g,
+		)) {
+			expect(match[5], `${guide.slug} blob link needs a heading`).toBeTruthy()
+			expect(guide.body, guide.slug).toContain(
+				`https://raw.githubusercontent.com/${match[1]}/${match[2]}/${match[3]}/${match[4]}`,
+			)
+		}
 		expect(isReservedDocsIndexSlug(guide.slug)).toBe(false)
 		expect(getGuideBySlug(guide.slug)?.id).toBe(guide.id)
 		expect(getGuideById(guide.id)?.slug).toBe(guide.slug)
