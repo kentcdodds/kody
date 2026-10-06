@@ -7,17 +7,23 @@ import lanternScene from './landing-lantern-3d.gss'
  * the homepage chunk until the lantern is about to scroll into view.
  */
 
-/** Fetch and decode the orb glyphs, so they are in the image cache when
- *  the scene asks for them and the orbs never show up blank. GSS loads
- *  textures as anonymous CORS images, and the cache is keyed by CORS mode. */
+/** Fetch the orb glyphs, so they are in the image cache when the scene asks
+ *  for them. GSS loads textures as anonymous CORS images, and the cache is
+ *  keyed by CORS mode. Rejects if a glyph cannot load: GSS only warns and
+ *  draws that orb blank. */
 export async function preloadLanternTextures() {
 	await Promise.all(
-		lanternScene.textures.map(async (src) => {
-			const image = new Image()
-			image.crossOrigin = 'anonymous'
-			image.src = src
-			await image.decode()
-		}),
+		lanternScene.textures.map(
+			(src) =>
+				new Promise<void>((resolve, reject) => {
+					const image = new Image()
+					image.crossOrigin = 'anonymous'
+					image.onload = () => resolve()
+					image.onerror = () =>
+						reject(new Error(`Cannot load the lantern glyph ${src}`))
+					image.src = src
+				}),
+		),
 	)
 }
 

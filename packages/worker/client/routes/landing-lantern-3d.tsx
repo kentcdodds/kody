@@ -124,7 +124,7 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 			// compiled shaders stay out of the homepage chunk.
 			const { mountLanternScene, preloadLanternTextures } =
 				await import('./landing-lantern-3d-scene.ts')
-			await preloadLanternTextures().catch(() => {})
+			await preloadLanternTextures()
 			refreshFps = await fps
 			if (signal.aborted || failed) return
 			mountScene = mountLanternScene
