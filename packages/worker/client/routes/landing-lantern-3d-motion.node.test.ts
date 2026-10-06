@@ -3,6 +3,7 @@ import {
 	createLanternOrbBodies,
 	createLanternOrbit,
 	createLanternResolution,
+	createLanternWarmup,
 	holdLanternOrbit,
 	lanternFlickVelocity,
 	lanternGlobeRadius,
@@ -14,15 +15,19 @@ import {
 	pokeLanternOrbs,
 	projectLanternPoint,
 	projectedSphereRadius,
+	resumeLanternWarmup,
 	screenDeltaToWorld,
 	stepLanternOrbit,
 	stepLanternOrbs,
 	stepLanternResolution,
+	stepLanternWarmup,
 	turnLanternTo,
 	worldToLocal,
 	type LanternOrbBody,
 	type LanternOrbit,
 	type LanternResolution,
+	type LanternWarmup,
+	type LanternWarmupVerdict,
 	type Vec3,
 } from './landing-lantern-3d-motion.ts'
 
@@ -99,6 +104,25 @@ function runResolution(
 		lowest = Math.min(lowest, next.scale)
 	}
 	return { state: next, lowest }
+}
+
+/** Frames until the warm-up decides, each `frameMs(stage, index)` long. */
+function runWarmup(
+	frameMs: (stage: LanternWarmup['stage'], index: number) => number,
+	seconds = 10,
+) {
+	let state = createLanternWarmup(0)
+	let now = 0
+	const verdicts: Array<LanternWarmupVerdict> = []
+	for (let index = 0; now < seconds * 1000; index++) {
+		now += frameMs(state.stage, index)
+		const step = stepLanternWarmup(state, now)
+		state = step.state
+		if (step.verdict === 'wait') continue
+		verdicts.push(step.verdict)
+		if (state.stage === 'done') break
+	}
+	return { verdicts, now, state }
 }
 
 test('the projection lands the globe and an orb where GSS draws them', () => {
@@ -399,4 +423,51 @@ test('adaptive resolution settles at the sharpest level the GPU holds', () => {
 	const fast = createLanternResolution(120, 2, 0)
 	expect(runResolution(fast, gpu(12, 120), 10).lowest).toBe(1)
 	expect(runResolution(fast, gpu(25, 120), 10).lowest).toBeLessThan(1)
+})
+
+test('the warm-up shows a scene that keeps up and keeps the still otherwise', () => {
+	// Compiling the shader stalls the first frames; they do not count.
+	const smooth = runWarmup((_, index) => (index < 3 ? 900 : 1000 / 60))
+	expect(smooth.verdicts).toEqual(['show'])
+	expect(smooth.now).toBeLessThan(3 * 900 + 700)
+
+	// Too slow at full resolution, fine at the lowest: lower, then show.
+	expect(runWarmup((stage) => (stage === 'full' ? 50 : 25)).verdicts).toEqual([
+		'lower',
+		'show',
+	])
+	// Too slow even at the lowest.
+	expect(runWarmup(() => 70).verdicts).toEqual(['lower', 'slow'])
+
+	// A software renderer gives up within a couple of its frames.
+	const software = runWarmup(() => 400)
+	expect(software.verdicts).toEqual(['slow'])
+	expect(software.now).toBeLessThanOrEqual(5 * 400)
+
+	// One long task elsewhere on the page is forgiven; a second is not.
+	expect(
+		runWarmup((_, index) => (index === 8 ? 400 : 1000 / 60)).verdicts,
+	).toEqual(['show'])
+	expect(
+		runWarmup((_, index) => (index === 8 || index === 20 ? 400 : 1000 / 60))
+			.verdicts,
+	).toEqual(['slow'])
+
+	// A pause (a hidden tab) is not a slow frame.
+	let state = createLanternWarmup(0)
+	let now = 0
+	for (let index = 0; index < 5; index++) {
+		now += 16
+		state = stepLanternWarmup(state, now).state
+	}
+	now += 5000
+	state = resumeLanternWarmup(state, now)
+	const verdicts: Array<LanternWarmupVerdict> = []
+	for (let index = 0; index < 60; index++) {
+		now += 16
+		const step = stepLanternWarmup(state, now)
+		state = step.state
+		if (step.verdict !== 'wait') verdicts.push(step.verdict)
+	}
+	expect(verdicts).toEqual(['show'])
 })

@@ -7,7 +7,7 @@ import {
  * Motion for the 3D lantern (landing-lantern-3d.gss). Pure math, no DOM:
  * the camera projection that keeps the HTML orb buttons on the painted
  * orbs, the turntable orbit, the orbs floating inside the globe, and the
- * frame-rate governor behind the adaptive resolution.
+ * frame-rate checks behind the warm-up and the adaptive resolution.
  *
  * Orbs live in the lantern's own frame (`local`), so they turn with it.
  * `localToWorld` applies the same rotation the scene gives `#body`
@@ -598,6 +598,116 @@ function bounce(body: LanternOrbBody, normal: Vec3): Vec3 {
 	if (outward <= 0) return body.velocity
 	const keep = body.coasting ? 1 + restitution : 1
 	return sub(body.velocity, scaleVec(normal, outward * keep))
+}
+
+/**
+ * Warm-up: before the crossfade, the scene has to show it keeps up. Past
+ * the first frames (shader warm-up), it gets a short window at full
+ * resolution, then one at the lowest resolution the screen allows. A
+ * second frame slower than `warmupStallMs` ends it: that is a software
+ * renderer or a GPU far too weak for the scene, and the still lantern
+ * stays. The first is forgiven, since a long task elsewhere on the page
+ * stalls a frame just the same.
+ */
+export type LanternWarmup = {
+	stage: 'full' | 'floor' | 'done'
+	/** Frames still to skip before measuring. */
+	settle: number
+	/** Frames slower than `warmupStallMs` so far. */
+	stalls: number
+	windowStart: number
+	frames: number
+	lastFrame: number
+}
+
+export type LanternWarmupVerdict = 'wait' | 'lower' | 'show' | 'slow'
+
+const warmupSettleFrames = 3
+const warmupWindowMs = 600
+const warmupFullFps = 24
+const warmupFloorFps = 20
+const warmupStallMs = 250
+const warmupStallLimit = 2
+
+export function createLanternWarmup(now: number): LanternWarmup {
+	return {
+		stage: 'full',
+		settle: warmupSettleFrames,
+		stalls: 0,
+		windowStart: now,
+		frames: 0,
+		lastFrame: now,
+	}
+}
+
+/** The frame loop stopped (hidden tab, scrolled away): measure afresh
+ *  from the next frame, so the gap does not read as a slow frame. */
+export function resumeLanternWarmup(
+	state: LanternWarmup,
+	now: number,
+): LanternWarmup {
+	if (state.stage === 'done') return state
+	return {
+		...state,
+		settle: Math.max(state.settle, 1),
+		windowStart: now,
+		frames: 0,
+		lastFrame: now,
+	}
+}
+
+/** Count one frame drawn at `now`. Does not mutate `state`. `lower`
+ *  asks for the lowest resolution before the next window. */
+export function stepLanternWarmup(
+	state: LanternWarmup,
+	now: number,
+): { state: LanternWarmup; verdict: LanternWarmupVerdict } {
+	if (state.stage === 'done') return { state, verdict: 'wait' }
+	if (state.settle > 0) {
+		return {
+			state: {
+				...state,
+				settle: state.settle - 1,
+				windowStart: now,
+				frames: 0,
+				lastFrame: now,
+			},
+			verdict: 'wait',
+		}
+	}
+	if (now - state.lastFrame > warmupStallMs) {
+		const stalls = state.stalls + 1
+		if (stalls >= warmupStallLimit) {
+			return { state: { ...state, stage: 'done', stalls }, verdict: 'slow' }
+		}
+		return {
+			state: { ...state, stalls, windowStart: now, frames: 0, lastFrame: now },
+			verdict: 'wait',
+		}
+	}
+	const next = { ...state, frames: state.frames + 1, lastFrame: now }
+	const span = now - state.windowStart
+	if (span < warmupWindowMs) return { state: next, verdict: 'wait' }
+	const fps = (next.frames * 1000) / span
+	const floor = state.stage === 'full' ? warmupFullFps : warmupFloorFps
+	if (fps >= floor) {
+		return { state: { ...next, stage: 'done' }, verdict: 'show' }
+	}
+	if (state.stage === 'full') {
+		return {
+			state: {
+				stage: 'floor',
+				// The canvas resizes for the new resolution first.
+				settle: 2,
+				stalls: state.stalls,
+				windowStart: now,
+				frames: 0,
+				lastFrame: now,
+			},
+			verdict: 'lower',
+		}
+	}
+	return { state: { ...next, stage: 'done' }, verdict: 'slow' }
 }
 
 /** Adaptive resolution: the share of the device pixel ratio the canvas

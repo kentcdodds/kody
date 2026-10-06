@@ -6,6 +6,7 @@ import {
 	createLanternOrbBodies,
 	createLanternOrbit,
 	createLanternResolution,
+	createLanternWarmup,
 	holdLanternOrbit,
 	lanternFlickVelocity,
 	lanternOrbRadius,
@@ -16,10 +17,12 @@ import {
 	pokeLanternOrbs,
 	projectLanternPoint,
 	projectedSphereRadius,
+	resumeLanternWarmup,
 	screenDeltaToWorld,
 	stepLanternOrbit,
 	stepLanternOrbs,
 	stepLanternResolution,
+	stepLanternWarmup,
 	turnLanternTo,
 	worldToLocal,
 	type LanternOrbBody,
@@ -38,6 +41,10 @@ import {
  * the HTML orb buttons on the painted orbs. Pointer gestures on the figure
  * turn the lantern (a flick keeps it spinning), toss an orb, or tap the
  * glass, which flares the light and knocks the orbs about.
+ *
+ * The first frames are a warm-up (`stepLanternWarmup`): only once the
+ * scene keeps up does `onShown` crossfade it in. Otherwise `onSlow` hands
+ * the page back to the still lantern.
  */
 
 /** The canvas box, as fractions of the figure (same aspect ratio). It
@@ -109,8 +116,10 @@ export function startLanternEngine(options: {
 	scene: LanternSceneView
 	refreshFps: number
 	activeId: () => LandingPrimitiveId | null
-	/** The scene has drawn its first frames. */
+	/** The scene drew its warm-up and keeps up. */
 	onShown: () => void
+	/** The warm-up was too slow: this device should keep the still. */
+	onSlow: () => void
 	/** Adaptive resolution picked a new share of the device pixel ratio. */
 	onResolution: (scale: number) => void
 	signal: AbortSignal
@@ -129,10 +138,12 @@ export function startLanternEngine(options: {
 		window.devicePixelRatio || 1,
 		performance.now(),
 	)
+	let warmup = createLanternWarmup(performance.now())
 	let time = 0
 	let last = performance.now()
 	let poseYaw = 0
 	let raf: number | null = null
+	let framing = false
 	let visible = true
 	let frames = 0
 	let flare = 0
@@ -179,6 +190,14 @@ export function startLanternEngine(options: {
 
 	const frame = (now: number) => {
 		raf = null
+		framing = true
+		const going = step(now)
+		framing = false
+		if (going && keepGoing()) schedule()
+	}
+
+	/** One frame. False once the warm-up gave up on this device. */
+	const step = (now: number) => {
 		// The orb buttons render once the scene has shown its first frames.
 		if (width === 0 || buttons.size < landingPrimitiveIds.length) measure()
 		const dt = Math.min(Math.max((now - last) / 1000, 0), 1 / 30)
@@ -226,7 +245,10 @@ export function startLanternEngine(options: {
 		const flame = motion ? flicker(time) : 0
 		write('--core', mixHex(flameCore, '#ffffff', flare * 0.7 + flame * 0.16))
 		write('--amber', mixHex(flameAmber, '#ffe3a1', flare * 0.85 + flame * 0.1))
-		write('--sparkle', 2.6 + flare * 2.4)
+		// Through the warm-up, a change GSS cannot skip makes it draw every
+		// frame, even under reduced motion, where nothing else moves.
+		const probe = warmup.stage === 'done' ? 0 : (frames % 2) * 0.001
+		write('--sparkle', 2.6 + flare * 2.4 + probe)
 		const box = viewSize()
 		const depths: Array<{ id: LandingPrimitiveId; depth: number }> = []
 		for (const body of bodies) {
@@ -265,18 +287,47 @@ export function startLanternEngine(options: {
 			new CustomEvent(lanternOrbMotionEvent, { bubbles: true }),
 		)
 		frames += 1
-		if (frames === 4) options.onShown()
-		const nextResolution = stepLanternResolution(resolution, now)
-		if (nextResolution.scale !== resolution.scale) {
-			options.onResolution(nextResolution.scale)
+		if (warmup.stage === 'done') {
+			const nextResolution = stepLanternResolution(resolution, now)
+			if (nextResolution.scale !== resolution.scale) {
+				options.onResolution(nextResolution.scale)
+			}
+			resolution = nextResolution
+			return true
 		}
-		resolution = nextResolution
-		if (keepGoing()) schedule()
+		const warm = stepLanternWarmup(warmup, now)
+		warmup = warm.state
+		switch (warm.verdict) {
+			case 'wait':
+				return true
+			case 'lower':
+				resolution = { ...resolution, scale: resolution.floor }
+				options.onResolution(resolution.scale)
+				return true
+			case 'show':
+				resolution = {
+					...createLanternResolution(
+						options.refreshFps,
+						window.devicePixelRatio || 1,
+						now,
+					),
+					scale: resolution.scale,
+				}
+				options.onShown()
+				return true
+			case 'slow':
+				options.onSlow()
+				return false
+			default: {
+				const unhandled: never = warm.verdict
+				throw new Error(`Unknown warm-up verdict: ${String(unhandled)}`)
+			}
+		}
 	}
 
 	const keepGoing = () => {
 		if (!visible || document.visibilityState === 'hidden') return false
-		if (frames < 4 || gesture !== null) return true
+		if (warmup.stage !== 'done' || gesture !== null) return true
 		// A still lantern (reduced motion) has to place its buttons once.
 		if (buttons.size < landingPrimitiveIds.length) return true
 		if (motionOk.matches) return true
@@ -287,9 +338,11 @@ export function startLanternEngine(options: {
 		if (raf == null) raf = requestAnimationFrame(frame)
 	}
 
+	/** Restart a stopped loop. A pause is not a slow frame to the warm-up. */
 	const wake = () => {
-		if (raf != null) return
+		if (raf != null || framing) return
 		last = performance.now()
+		warmup = resumeLanternWarmup(warmup, last)
 		schedule()
 	}
 

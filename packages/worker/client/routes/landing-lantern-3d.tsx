@@ -19,6 +19,7 @@ import {
 	startLanternEngine,
 	type LanternEngine,
 } from '#client/routes/landing-lantern-3d-engine.ts'
+import { hasLanternGpu } from '#client/routes/landing-lantern-3d-gpu.ts'
 import { landingHomePrimitives } from '#universal/landing-home-copy.ts'
 import {
 	landingLanternGlass,
@@ -32,8 +33,9 @@ import {
  * the same orb buttons, popovers, and leader lines as the 2D lantern. The
  * server and the first client render show the 2D lantern. Near the
  * viewport, the scene loads, mounts under the still, and crossfades in
- * once it has drawn. No WebGL2 or WebGPU, a failed mount, or a lost GPU
- * context keep (or bring back) the 2D lantern.
+ * once its warm-up shows the device keeps up. No WebGL2 or WebGPU, a
+ * software renderer, a slow warm-up, a failed mount, or a lost GPU context
+ * keep (or bring back) the 2D lantern.
  *
  * Drag to turn the lantern; a flick keeps it spinning and the orbs lag
  * like marbles in a jar. Drag an orb to toss it. Tap the glass to flare
@@ -88,13 +90,6 @@ const glassBox = (() => {
 	}
 })()
 
-function supportsGpu() {
-	return (
-		typeof WebGL2RenderingContext !== 'undefined' ||
-		(typeof navigator !== 'undefined' && 'gpu' in navigator)
-	)
-}
-
 export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 	let phase: Phase = 'still'
 	let failed = false
@@ -120,6 +115,10 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 
 	async function load(signal: AbortSignal) {
 		try {
+			// Checked before the import, so a device that keeps the still
+			// never downloads the GSS runtime.
+			if (!(await hasLanternGpu())) return
+			if (signal.aborted || failed) return
 			const fps = measureRefreshFps(signal)
 			// Dynamic import is intentional so the GSS runtime and the
 			// compiled shaders stay out of the homepage chunk.
@@ -137,7 +136,6 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 	}
 
 	const loader = ref((node: Element, signal: AbortSignal) => {
-		if (!supportsGpu()) return
 		const stop = observeNearViewport(node, () => void load(signal))
 		signal.addEventListener('abort', stop)
 	})
@@ -190,6 +188,7 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 					refreshFps,
 					activeId: () => handle.props.activeId,
 					onShown: () => shown(node),
+					onSlow: fail,
 					onResolution(scale) {
 						resolution = scale
 						handle.update()
