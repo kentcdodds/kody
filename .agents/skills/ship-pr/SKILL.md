@@ -19,17 +19,18 @@ Self-assess `risk` and pass it on every tick; user policy overrides. Kent's
 standing policy (2026-08-08): auto-ship once AI feedback is handled and CI is
 green, unless high risk.
 
-- **low** — green CI; AI review optional; bot nits ignorable.
-- **medium** — wait for Bugbot; handle valid feedback.
-- **high** — also wait for CodeRabbit / Devin; park ready-for-review unless the
+- **low:** green CI; AI review optional; bot nits ignorable.
+- **medium:** wait for Bugbot; handle valid feedback.
+- **high:** also wait for CodeRabbit / Devin; park ready-for-review unless the
   user granted merge authority (pass `mergeAuthority: true`).
 
 ## Loop
 
-Run exports with the local CLI
-([prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md)); never hosted
-MCP `execute`. The CLI rejects `--local` with `--invoke`, so use the
-static-import passthrough that tick's `exampleInvokes` already print:
+Run exports with the local CLI. Bootstrap, login, token priority, saved-package
+imports, and the hosted MCP `execute` ban live in
+[prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md). The CLI
+rejects `--local` with `--invoke`, so use the static-import passthrough that
+tick's `exampleInvokes` already print:
 
 ```bash
 npx @kodycodes/cli execute --local \
@@ -48,8 +49,8 @@ npx @kodycodes/cli execute --local \
 3. **Decide.** You own the call on CI and AI feedback: fix + push and reply
    `Fixed in <sha>: …` (`./reply-review`), reply with wontfix reasoning, or
    record a 7-day `./decide` (`ignored | skipped | wontfix | accepted`, reason
-   required) for noise — a thread, a check, an AI reviewer you will not wait on,
-   or a step (`merge` skipped = park).
+   required) for noise (a thread, a check, an AI reviewer you will not wait on,
+   or a step where `merge` skipped means park).
 4. **Wait** when `exit.status` is `waiting`: about `pollAfterSeconds`, or end
    the turn. Do not tight-loop or code-thrash.
 5. **Tick again** (prefer the printed re-tick with `brief: true`) until
@@ -62,14 +63,14 @@ head SHA). When it focuses `friction`, file leftovers per
 focuses `report`, pass the Discord fields to `./send-summary` (`status` defaults
 from the PR: merged → Shipped, else Parked):
 
-- `title` — human headline of the change (not `ship owner/repo#N`).
-- `difficulty` — `Easy | Medium | Hard` (not risk).
-- `agentId` —
+- `title`: human headline of the change (not `ship owner/repo#N`).
+- `difficulty`: `Easy | Medium | Hard` (not risk).
+- `agentId`:
   `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/agent/id`,
   or the `bc-` id from your launch URL.
-- `model` — `…/v1/meta-data/turn/model` on the same socket, or the launch
-  `model.id`. Missing → omit. Never infer.
-- `extras` — links to user-visible pages that actually deployed. Never invent
+- `model`: `…/v1/meta-data/turn/model` on the same socket, or the launch
+  `model.id`. Missing means omit. Never infer.
+- `extras`: links to user-visible pages that actually deployed. Never invent
   URLs.
 
 ## This repo
@@ -84,3 +85,5 @@ from the PR: merged → Shipped, else Parked):
   a `Cleanup:` issue
   ([cleanup-after-migrations](../cleanup-after-migrations/SKILL.md)).
 - PR bodies say `Related to #N`, never `does not close #N`.
+- Non-trivial PR descriptions include a system recap. Author that block with
+  [visual-recap](../visual-recap/SKILL.md).
