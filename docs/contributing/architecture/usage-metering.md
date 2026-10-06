@@ -1,5 +1,19 @@
 # Usage metering
 
+## Contents
+
+- [Per-user isolation](#per-user-isolation)
+- [The event schema](#the-event-schema)
+- [Sinks](#sinks)
+- [Agent package conversation uses](#agent-package-conversation-uses)
+- [Helper contract](#helper-contract)
+- [Recipe: instrumenting a new chokepoint](#recipe-instrumenting-a-new-chokepoint)
+- [Execute interpretable share (`q`)](#execute-interpretable-share-q)
+- [MCP search duration](#mcp-search-duration)
+- [Onboarding funnel](#onboarding-funnel)
+- [Reading the data](#reading-the-data)
+- [Usage campaign](#usage-campaign)
+
 Kody records per-user usage events at runtime chokepoints for cost attribution,
 admin cohort views, and abuse detection. This document describes the event
 schema, the `recordUsage()` helper contract, which chokepoints are instrumented,

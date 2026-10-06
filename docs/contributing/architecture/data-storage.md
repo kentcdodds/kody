@@ -1,5 +1,25 @@
 # Data storage
 
+## Contents
+
+- [Per-user isolation invariant](#per-user-isolation-invariant)
+- [Account deletion inventory](#account-deletion-inventory)
+- [Account export inventory](#account-export-inventory)
+- [D1 (`APP_DB`)](#d1-app_db)
+- [D1 (`JOBS_DB`)](#d1-jobs_db)
+- [Analytics Engine reporting](#analytics-engine-reporting)
+- [KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)](#kv-oauth_kv-bundle_artifacts_kv)
+- [R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`, `REPO_SESSION_BLOBS`)](#r2-community_assets-email_blobs-repo_session_blobs)
+- [Durable Objects (`MCP_OBJECT`)](#durable-objects-mcp_object)
+- [Durable Objects (`JobManager` and `StorageRunner`)](#durable-objects-jobmanager-and-storagerunner)
+- [Durable Objects (`UserMeter`)](#durable-objects-usermeter)
+- [Durable Objects (`Mailbox`)](#durable-objects-mailbox)
+- [Per-user Durable Object naming](#per-user-durable-object-naming)
+- [Per-user runtime context (no shared `globalThis`)](#per-user-runtime-context-no-shared-globalthis)
+- [Configuration reference](#configuration-reference)
+- [Repo-backed source and Artifacts](#repo-backed-source-and-artifacts)
+- [Frozen storage contract inventory](#frozen-storage-contract-inventory)
+
 This project uses several Cloudflare storage systems for different purposes.
 
 ## Per-user isolation invariant

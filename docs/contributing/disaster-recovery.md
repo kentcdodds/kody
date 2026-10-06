@@ -1,5 +1,21 @@
 # Disaster recovery
 
+## Contents
+
+- [Prevention](#prevention)
+- [Live evidence log](#live-evidence-log)
+- [Objectives](#objectives)
+- [Architecture](#architecture)
+- [Credentials and Access](#credentials-and-access)
+- [Secret escrow](#secret-escrow)
+- [Admin UI](#admin-ui)
+- [Schedules and freshness](#schedules-and-freshness)
+- [Maintenance mode (edge)](#maintenance-mode-edge)
+- [Offline CLI fallback](#offline-cli-fallback)
+- [Solo enablement checklist](#solo-enablement-checklist)
+- [Explicit exclusions](#explicit-exclusions)
+- [Provider references](#provider-references)
+
 Solo-operator runbook for Kody production data. One operator (Kent) owns
 enablement, escrow, drills, and restore. The engineering invariants stay
 fail-closed: immutable R2 objects, Ed25519-signed manifests, checked-in trust

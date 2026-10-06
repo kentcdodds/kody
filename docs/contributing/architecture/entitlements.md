@@ -1,5 +1,21 @@
 # Entitlements (plans and quotas)
 
+## Contents
+
+- [Plan model](#plan-model)
+- [Prepaid credits](#prepaid-credits)
+- [Compute rate limits](#compute-rate-limits)
+- [UserMeter](#usermeter)
+- [Schema history](#schema-history)
+- [Assigning plans](#assigning-plans)
+- [Plan lookup](#plan-lookup)
+- [The error shape](#the-error-shape)
+- [Counting strategy](#counting-strategy)
+- [How to add an enforcement point](#how-to-add-an-enforcement-point)
+- [Enforcement points](#enforcement-points)
+- [Billing](#billing)
+- [Related tables and coordination](#related-tables-and-coordination)
+
 Per-user plans with per-plan resource limits. This is Kody's denial-of-wallet
 protection for open signup: it bounds how many billable resources a single
 account can consume. Stripe subscription billing lives in a separate module
