@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { createBlogPostHandler } from '#app/handlers/blog.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getBlogPost, getReadNextBlogPost } from '#worker/blog/catalog.ts'
@@ -58,7 +58,7 @@ function createTestEnv() {
 }
 
 test('homepage carousel SSR keeps short quotes and story links only for vignettes', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const response = await renderAppPage({
 		request: new Request('https://example.com/'),
@@ -86,7 +86,7 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 })
 
 test('case studies blog post SSR renders approved vignettes and heading anchors', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const post = getBlogPost(landingTestimonialsStorySlug)
 	expect(post).toBeDefined()
@@ -113,7 +113,7 @@ test('case studies blog post SSR renders approved vignettes and heading anchors'
 })
 
 test('case studies page SSR renders all vignettes and stable anchors', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const response = await renderAppPage({
 		request: new Request('https://example.com/case-studies'),

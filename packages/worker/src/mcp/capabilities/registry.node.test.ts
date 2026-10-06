@@ -1,13 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
-	clearCapabilityRegistryCacheForTests,
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
 
 test('getCapabilityRegistryForContext hides flag-gated capabilities when the flag is off', async () => {
-	clearCapabilityRegistryCacheForTests()
+	const userId = `user-registry-flag-gate-${crypto.randomUUID()}`
 	const prepare = vi.fn(() => {
 		return {
 			bind() {
@@ -32,7 +31,7 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId,
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 			roles: ['admin'],

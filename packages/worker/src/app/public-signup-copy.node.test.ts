@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { createBlogPostHandler } from '#app/handlers/blog.tsx'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
@@ -64,7 +64,7 @@ function anchors(html: string) {
 }
 
 async function renderMarketing(path: string) {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
 	const request = new Request(`https://example.com${path}`)
@@ -116,7 +116,7 @@ test('FAQ, pricing, and home SSR copy send visitors to create an account under a
 })
 
 test('blog post closer invites visitors to create an account', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const slug = listBlogPosts()[0]?.slug
 	if (!slug) throw new Error('expected a catalog blog post')

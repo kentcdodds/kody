@@ -209,6 +209,15 @@ export const legacyGuideIdAliases: Readonly<
 		id: 'package_apps',
 		section: 'after-an-integration-smoke-test',
 	},
+	what_can_kody_do: { id: 'what_is_kody' },
+}
+
+/**
+ * `docs/use` filenames whose page only points at a catalog guide.
+ * Bundled links to those files resolve to the served `/docs` route.
+ */
+export const useDocGuideTwins: Readonly<Record<string, string>> = {
+	'what-can-kody-do': 'what-is-kody',
 }
 
 export function isReservedDocsIndexSlug(slug: string): boolean {

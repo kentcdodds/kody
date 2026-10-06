@@ -1,10 +1,13 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import {
 	type KitSignupError,
+	KIT_API_BASE_URL,
 	maybeTagKitSubscriberOnSignup,
 	tagExistingKitSubscriberOnSignup,
 } from '#app/kit-signup.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 type KitSignupEnv = Pick<Env, 'KIT_API_KEY' | 'KIT_SIGNED_UP_TAG_ID'>
 
@@ -12,20 +15,43 @@ function kitEnv(env: Partial<KitSignupEnv>) {
 	return env as KitSignupEnv
 }
 
+type KitCall = {
+	url: string
+	method: string
+	body: unknown
+	apiKey: string | null
+}
+
+type RecordedHttpRequest = {
+	url: string
+	method: string
+	headers: { get(name: string): string | null }
+	clone(): { json(): Promise<unknown> }
+}
+
+async function recordKitCall(
+	request: RecordedHttpRequest,
+	calls: Array<KitCall>,
+) {
+	calls.push({
+		url: request.url,
+		method: request.method,
+		body:
+			request.method === 'GET' || request.method === 'DELETE'
+				? null
+				: await request.clone().json(),
+		apiKey: request.headers.get('X-Kit-Api-Key'),
+	})
+}
+
 test('tagExistingKitSubscriberOnSignup tags existing subscribers, skips unknowns, and classifies client failures', async () => {
-	const existingCalls: Array<{ url: string; method: string; body: unknown }> =
-		[]
-	const existingFetchImpl = async (
-		input: RequestInfo | URL,
-		init?: RequestInit,
-	) => {
-		const url = String(input)
-		const method = init?.method ?? 'GET'
-		const body = init?.body ? JSON.parse(String(init.body)) : null
-		existingCalls.push({ url, method, body })
-		if (url.includes('/subscribers?email_address=')) {
-			return Response.json(
-				{
+	const existingCalls: Array<KitCall> = []
+	using msw = createMswNodeServer([
+		http.get(`${KIT_API_BASE_URL}/subscribers`, async ({ request }) => {
+			await recordKitCall(request, existingCalls)
+			const email = new URL(request.url).searchParams.get('email_address')
+			if (email === 'ada@example.com') {
+				return HttpResponse.json({
 					subscribers: [
 						{
 							id: 9,
@@ -33,66 +59,65 @@ test('tagExistingKitSubscriberOnSignup tags existing subscribers, skips unknowns
 							first_name: 'Ada',
 						},
 					],
-				},
-				{ status: 200 },
-			)
-		}
-		if (url.includes('/tags/123/subscribers') && method === 'POST') {
-			return Response.json(
-				{ subscriber: { id: 9, email_address: 'ada@example.com' } },
-				{ status: 201 },
-			)
-		}
-		throw new Error(`Unexpected Kit call: ${method} ${url}`)
-	}
+				})
+			}
+			if (email === 'new@example.com') {
+				return HttpResponse.json({ subscribers: [] })
+			}
+			return HttpResponse.json({ errors: ['unexpected'] }, { status: 500 })
+		}),
+		http.post(
+			`${KIT_API_BASE_URL}/tags/:tagId/subscribers`,
+			async ({ request }) => {
+				await recordKitCall(request, existingCalls)
+				return HttpResponse.json(
+					{ subscriber: { id: 9, email_address: 'ada@example.com' } },
+					{ status: 201 },
+				)
+			},
+		),
+	])
 
 	const tagged = await tagExistingKitSubscriberOnSignup({
 		apiKey: 'key',
 		email: 'ada@example.com',
 		tagId: 123,
-		fetchImpl: existingFetchImpl as typeof fetch,
 	})
 	expect(tagged).toEqual({ tagged: true, subscriberId: 9 })
 	expect(existingCalls.map((call) => call.method)).toEqual(['GET', 'POST'])
+	expect(existingCalls.every((call) => call.apiKey === 'key')).toBe(true)
+	expect(existingCalls[1]).toMatchObject({
+		url: `${KIT_API_BASE_URL}/tags/123/subscribers`,
+		method: 'POST',
+		body: { email_address: 'ada@example.com' },
+	})
 	expect(
 		existingCalls.some(
 			(call) =>
 				call.method === 'POST' &&
-				call.url === 'https://api.kit.com/v4/subscribers',
+				call.url === `${KIT_API_BASE_URL}/subscribers`,
 		),
 	).toBe(false)
 
-	const missingCalls: Array<{ url: string; method: string }> = []
-	const missingFetchImpl = async (
-		input: RequestInfo | URL,
-		init?: RequestInit,
-	) => {
-		const url = String(input)
-		const method = init?.method ?? 'GET'
-		missingCalls.push({ url, method })
-		if (url.includes('/subscribers?email_address=')) {
-			return Response.json({ subscribers: [] }, { status: 200 })
-		}
-		throw new Error(`Unexpected Kit call: ${method} ${url}`)
-	}
+	const missingBefore = existingCalls.length
 	expect(
 		await tagExistingKitSubscriberOnSignup({
 			apiKey: 'key',
 			email: 'new@example.com',
 			tagId: 123,
-			fetchImpl: missingFetchImpl as typeof fetch,
 		}),
 	).toEqual({ tagged: false, reason: 'not_found' })
-	expect(missingCalls).toHaveLength(1)
+	expect(existingCalls.length - missingBefore).toBe(1)
 
-	const failingFetch = vi.fn(async () =>
-		Response.json({ errors: ['invalid'] }, { status: 422 }),
+	msw.use(
+		http.get(`${KIT_API_BASE_URL}/subscribers`, () =>
+			HttpResponse.json({ errors: ['invalid'] }, { status: 422 }),
+		),
 	)
 	await expect(
 		tagExistingKitSubscriberOnSignup({
 			apiKey: 'key',
 			email: 'ada@example.com',
-			fetchImpl: failingFetch as typeof fetch,
 		}),
 	).rejects.toMatchObject({
 		name: 'KitSignupError',
@@ -103,35 +128,35 @@ test('tagExistingKitSubscriberOnSignup tags existing subscribers, skips unknowns
 
 test('maybeTagKitSubscriberOnSignup no-ops without Kit config and swallows failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const idleFetch = vi.fn()
+	const failingCalls: Array<string> = []
+	using msw = createMswNodeServer()
+
 	await maybeTagKitSubscriberOnSignup({
 		env: kitEnv({}),
 		email: 'ada@example.com',
-		fetchImpl: idleFetch as typeof fetch,
 	})
-	expect(idleFetch).not.toHaveBeenCalled()
 	expect(consoleWarn).not.toHaveBeenCalled()
 
 	await maybeTagKitSubscriberOnSignup({
 		env: { KIT_API_KEY: 'key', KIT_SIGNED_UP_TAG_ID: 'nope' },
 		email: 'ada@example.com',
-		fetchImpl: idleFetch as typeof fetch,
 	})
-	expect(idleFetch).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Skipping Kit signed-up tagging: KIT_SIGNED_UP_TAG_ID is invalid.',
 	)
 
 	consoleWarn.mockClear()
-	const failingFetch = vi.fn(async () =>
-		Response.json({ errors: ['boom'] }, { status: 500 }),
+	msw.use(
+		http.get(`${KIT_API_BASE_URL}/subscribers`, ({ request }) => {
+			failingCalls.push(request.url)
+			return HttpResponse.json({ errors: ['boom'] }, { status: 500 })
+		}),
 	)
 	await maybeTagKitSubscriberOnSignup({
 		env: kitEnv({ KIT_API_KEY: 'key' }),
 		email: 'ada@example.com',
-		fetchImpl: failingFetch as typeof fetch,
 	})
-	expect(failingFetch).toHaveBeenCalled()
+	expect(failingCalls.length).toBeGreaterThan(0)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Failed to tag Kit subscriber on signup:',
 		expect.any(Error),

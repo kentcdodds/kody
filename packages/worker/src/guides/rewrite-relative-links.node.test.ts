@@ -3,11 +3,12 @@ import { rewriteRelativeGuideLinks } from './rewrite-relative-links.ts'
 
 const knownSlugs = new Set(['oauth', 'integration-bootstrap', 'google'])
 
-test('rewriteRelativeGuideLinks maps guide files to /docs routes and repo docs to GitHub', () => {
+test('rewriteRelativeGuideLinks maps guide files to /docs routes and repo docs to raw GitHub', () => {
 	const body = [
 		'Read [integration-bootstrap.md](./integration-bootstrap.md) first.',
 		'Also [oauth](oauth.md#redirect-uri) and [google](providers/google.md).',
 		'See [packages](../use/packages.md#ambient-storage-in-package-code).',
+		'Whole file: [index](../use/index.md).',
 		'External [docs](https://developers.google.com/identity) stay put.',
 		'App links like [connect](/connect/oauth?provider=google) stay put.',
 		'Anchors [scopes](#scopes) stay put.',
@@ -23,8 +24,12 @@ test('rewriteRelativeGuideLinks maps guide files to /docs routes and repo docs t
 	expect(rewritten).toContain('](/docs/oauth#redirect-uri)')
 	expect(rewritten).toContain('](/docs/google)')
 	expect(rewritten).toContain(
-		'](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md#ambient-storage-in-package-code)',
+		'](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md#ambient-storage-in-package-code) ([raw](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/packages.md))',
 	)
+	expect(rewritten).toContain(
+		'](https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/index.md)',
+	)
+	expect(rewritten).not.toContain('blob/main/docs/use/index.md')
 	expect(rewritten).toContain('](https://developers.google.com/identity)')
 	expect(rewritten).toContain('](/connect/oauth?provider=google)')
 	expect(rewritten).toContain('](#scopes)')
@@ -65,4 +70,14 @@ test('rewriteRelativeGuideLinks sends the introduction to /docs and merged files
 	)
 	// An authored fragment wins over the alias default.
 	expect(rewritten).toContain('](/docs/package-apps#avoid-this-detour)')
+})
+
+test('rewriteRelativeGuideLinks sends docs/use stubs to the catalog guide', () => {
+	const rewritten = rewriteRelativeGuideLinks({
+		body: 'Read [What can Kody do?](../use/what-can-kody-do.md).',
+		sourceDir: 'docs/guides',
+		knownSlugs: new Set(['what-is-kody']),
+	})
+	expect(rewritten).toContain('](/docs)')
+	expect(rewritten).not.toContain('raw.githubusercontent.com')
 })

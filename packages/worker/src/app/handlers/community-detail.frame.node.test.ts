@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createCommunityDetailHandler } from './community-detail.tsx'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -114,7 +114,7 @@ async function renderDetail({
 } = {}) {
 	// Every render addresses `listing-1` with its own source fixture; the
 	// in-isolate listing cache must not carry one answer into the next.
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
 	mockModule.getEntitySourceById.mockResolvedValue(source)

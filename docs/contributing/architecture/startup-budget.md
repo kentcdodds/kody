@@ -28,8 +28,25 @@ startup path are, in order:
 - Anything that touches ICU at module scope (`new Intl.NumberFormat(...)`).
 - Statically imported WebAssembly modules (compiled at load).
 
-Request-time work is not part of the budget. Cloudflare only measures module
-evaluation, so moving work to first use is a real fix, not a shuffle.
+Request-time work is not part of the budget. Cloudflare measures module
+evaluation of the uploaded main module. An in-repo dynamic `import()` can defer
+that evaluation: capability domains stay in the same bundle and run on the first
+request that needs the registry (rule 1).
+
+A dynamic `import()` of an npm package is inlined into the Wrangler main module,
+so that source is parsed during startup. A bare import of
+`@cloudflare/worker-bundler` is also evaluated on every cold start
+(`packages/worker/src/worker-bundler-modules.ts`). Bytes still count when a
+wrapper only defers evaluation (`packages/worker/src/isomorphic-git-load.ts`).
+
+To keep a heavy library off the main module, prebuild it to
+`packages/worker/src/node_modules/.kody-generated/*.mjs`
+(`tools/build-worker-bundler-modules.ts`) and list that filename in the
+`find_additional_modules` ESModule rule. The `node_modules/` prefix is
+load-bearing: Wrangler's walker discovers the file under `src/`, and its
+directory watcher skips `node_modules` (Friction #1789). A `../` specifier from
+`repo/` inlines the module. Origin Vite builds are the exception in rule 1: they
+emit `import()` targets as hashed SSR chunks.
 
 ## Measuring
 
@@ -49,6 +66,11 @@ garbage collection) and writes a `.cpuprofile` that Chrome DevTools or VS Code
 can open as a flamegraph. Absolute numbers are machine-specific; compare before
 and after on the same machine.
 
+`wrangler check startup` profiles the multipart bundle from an inner
+`wrangler deploy --dry-run --outfile`. Pass `--workerBundle` (alias `--worker`)
+only with that same `--outfile` form-data file. An extracted `.js` is not a
+worker bundle: Wrangler reads the path as multipart form data.
+
 To attribute time to source files, inspect the Vite origin source map at
 `dist/ssr/index.js.map` (or a Wrangler `--dry-run --outdir` map for platform and
 runtime). A frame with no ancestor in `packages/` is third-party module
@@ -66,8 +88,10 @@ non-library caller to find which of our modules imported it.
    hashed SSR chunks under `dist/ssr`. Never import a `*/domain.ts` or a
    capability definition module statically from anything on the startup path;
    one static edge makes the Wrangler/esbuild path evaluate the module eagerly
-   again. Shared helpers (`{domain}/shared.ts`) are the supported static entry
-   points, so keep them light: helpers, not schema catalogs.
+   again. That lazy wrap is for these in-repo domain modules. An npm package
+   follows the additional-module rule in [What counts](#what-counts). Shared
+   helpers (`{domain}/shared.ts`) are the supported static entry points, so keep
+   them light: helpers, not schema catalogs.
 2. **Heavy libraries load on first use.** `isomorphic-git` goes through
    `packages/worker/src/isomorphic-git-load.ts` (re-exported as
    `repo/isomorphic-git-lazy.ts`), including platform `RepoSession`. That helper

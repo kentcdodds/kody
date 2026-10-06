@@ -31,7 +31,7 @@ import {
 	listBlogPosts,
 	toBlogPostSummary,
 } from '#worker/blog/catalog.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { firstPartySecurityHeaders } from '#app/security-headers.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -204,7 +204,7 @@ function createUserTestDb(users: Array<TestUser>) {
 }
 
 function setupEnv(users: Array<TestUser> = []) {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	return {
 		COOKIE_SECRET: testCookieSecret,

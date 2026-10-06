@@ -164,7 +164,6 @@ export async function maybeJoinOfficialDiscordGuild(input: {
 	env: DiscordGuildRoleEnv
 	discordUserId: string
 	accessToken: string | null | undefined
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordGuildJoinResult> {
 	const accessToken = input.accessToken?.trim()
@@ -179,10 +178,9 @@ export async function maybeJoinOfficialDiscordGuild(input: {
 		return { status: 'skipped', reason: 'not-configured' }
 	}
 
-	const fetchImpl = input.fetchImpl ?? fetch
 	const timeoutMs = input.timeoutMs ?? DISCORD_MEMBER_ROLE_REQUEST_TIMEOUT_MS
 	try {
-		const response = await fetchImpl(
+		const response = await fetch(
 			guildMemberUrl(config.guildId, input.discordUserId),
 			{
 				method: 'PUT',
@@ -247,7 +245,6 @@ async function callDiscordMemberRoleApi(input: {
 	discordUserId: string
 	roleId: string
 	method: 'PUT' | 'DELETE'
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordMemberRoleSyncResult> {
 	if (!isDiscordSnowflake(input.discordUserId)) {
@@ -258,10 +255,9 @@ async function callDiscordMemberRoleApi(input: {
 		return { status: 'skipped', reason: 'not-configured' }
 	}
 
-	const fetchImpl = input.fetchImpl ?? fetch
 	const timeoutMs = input.timeoutMs ?? DISCORD_MEMBER_ROLE_REQUEST_TIMEOUT_MS
 	try {
-		const response = await fetchImpl(
+		const response = await fetch(
 			memberRoleUrl(config.guildId, input.discordUserId, input.roleId),
 			{
 				method: input.method,
@@ -296,7 +292,6 @@ async function callDiscordMemberRoleApi(input: {
 export async function assignDiscordMemberRole(input: {
 	env: DiscordMemberRoleEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordMemberRoleSyncResult> {
 	const config = getDiscordMemberRoleConfig(input.env)
@@ -313,7 +308,6 @@ export async function assignDiscordMemberRole(input: {
 export async function removeDiscordMemberRole(input: {
 	env: DiscordMemberRoleEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordMemberRoleSyncResult> {
 	const config = getDiscordMemberRoleConfig(input.env)
@@ -331,7 +325,6 @@ export async function syncDiscordPlanRoles(input: {
 	env: DiscordGuildRoleEnv
 	discordUserId: string
 	stripePlan: PlanName | null | undefined
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordMemberRoleSyncResult> {
 	const config = getDiscordGuildBotConfig(input.env)
@@ -353,7 +346,6 @@ export async function syncDiscordPlanRoles(input: {
 				discordUserId: input.discordUserId,
 				roleId,
 				method: desired === plan ? 'PUT' : 'DELETE',
-				fetchImpl: input.fetchImpl,
 				timeoutMs: input.timeoutMs,
 			})
 		}),
@@ -382,7 +374,6 @@ function warnDiscordRoleFailure(
 export async function maybeAssignDiscordMemberRole(input: {
 	env: DiscordMemberRoleEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 }): Promise<DiscordMemberRoleSyncResult> {
 	const result = await assignDiscordMemberRole(input)
 	warnDiscordRoleFailure('assign', 'Kody Discord member role', result)
@@ -396,7 +387,6 @@ export async function maybeAssignDiscordMemberRole(input: {
 export async function maybeRemoveDiscordMemberRole(input: {
 	env: DiscordMemberRoleEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 }): Promise<DiscordMemberRoleSyncResult> {
 	const result = await removeDiscordMemberRole(input)
 	warnDiscordRoleFailure('remove', 'Kody Discord member role', result)
@@ -407,7 +397,6 @@ export async function maybeSyncDiscordPlanRoles(input: {
 	env: DiscordGuildRoleEnv
 	discordUserId: string
 	stripePlan: PlanName | null | undefined
-	fetchImpl?: typeof fetch
 }): Promise<DiscordMemberRoleSyncResult> {
 	const result = await syncDiscordPlanRoles(input)
 	warnDiscordRoleFailure('sync', 'Kody Discord plan roles', result)
@@ -418,7 +407,6 @@ export async function maybeSyncDiscordGuildRoles(input: {
 	env: DiscordGuildRoleEnv
 	discordUserId: string
 	stripePlan: PlanName | null | undefined
-	fetchImpl?: typeof fetch
 }): Promise<DiscordGuildRoleSyncSummary> {
 	const [member, plan] = await Promise.all([
 		maybeAssignDiscordMemberRole(input),
@@ -430,7 +418,6 @@ export async function maybeSyncDiscordGuildRoles(input: {
 export async function maybeRemoveDiscordGuildRoles(input: {
 	env: DiscordGuildRoleEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 }): Promise<DiscordGuildRoleSyncSummary> {
 	const [member, plan] = await Promise.all([
 		maybeRemoveDiscordMemberRole(input),
@@ -483,7 +470,6 @@ export async function maybeSyncDiscordGuildRolesForUser(input: {
 	userId: number
 	discordUserId?: string
 	stripePlan?: PlanName | null
-	fetchImpl?: typeof fetch
 }): Promise<
 	| DiscordGuildRoleSyncSummary
 	| { status: 'skipped'; reason: 'not-configured' | 'no-discord-connection' }
@@ -506,7 +492,6 @@ export async function maybeSyncDiscordGuildRolesForUser(input: {
 			env: input.env,
 			discordUserId,
 			stripePlan,
-			fetchImpl: input.fetchImpl,
 		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)

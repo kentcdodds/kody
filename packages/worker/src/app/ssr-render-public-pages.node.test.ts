@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { createDiscordHandler } from '#app/handlers/discord.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
@@ -61,7 +61,7 @@ function createTestEnv() {
 }
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
 
@@ -84,7 +84,7 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 })
 
 test('renderAppPage renders the public support page for anonymous visitors', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
 
@@ -101,7 +101,7 @@ test('renderAppPage renders the public support page for anonymous visitors', asy
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = {
 		...createTestEnv(),

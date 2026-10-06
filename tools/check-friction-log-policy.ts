@@ -10,21 +10,28 @@ export const defaultFrictionLogPolicyPath = path.join(
 
 export const retiredHtmlSkipMarker = 'friction-log:skipped'
 export const frictionSkippedLabel = 'friction-skipped'
+export const packageOwnershipPhrase =
+	'Daily agent instructions (outcomes, skip/unskip, record-outcome) come from the package'
 
 export type FrictionLogPolicyCheckResult = {
 	ok: boolean
 	errors: Array<string>
 }
 
+function flattenWs(content: string): string {
+	return content.replace(/\s+/g, ' ')
+}
+
 /**
- * Keep the contributing friction-log page aligned with label-based skip.
- * The hosted friction-log package owns runtime eligibility; this repo owns the
- * agent-facing policy copy agents load from main.
+ * Keep the contributing friction-log page aligned with label-based skip and
+ * package ownership of daily/API behavior. This repo owns the short policy
+ * stub; @kentcdodds/friction-log owns runtime eligibility and agent prompts.
  */
 export function checkFrictionLogPolicyContent(
 	content: string,
 ): FrictionLogPolicyCheckResult {
 	const errors: Array<string> = []
+	const flat = flattenWs(content)
 
 	if (content.includes(retiredHtmlSkipMarker)) {
 		errors.push(
@@ -42,8 +49,8 @@ export function checkFrictionLogPolicyContent(
 		)
 	}
 	if (
-		!/Daily sweep eligibility is:\s*open \+ `friction` \+ NOT\s*`friction-skipped`/m.test(
-			content,
+		!/Daily sweep eligibility is:\s*open \+ `friction` \+ NOT\s*`friction-skipped`/.test(
+			flat,
 		)
 	) {
 		errors.push(
@@ -51,26 +58,36 @@ export function checkFrictionLogPolicyContent(
 		)
 	}
 	if (
-		!/apply the GitHub label\s*`friction-skipped`/m.test(content) &&
-		!/Apply the GitHub label\s*`friction-skipped`/m.test(content)
+		!/apply the GitHub label\s*`friction-skipped`/.test(flat) &&
+		!/Apply the GitHub label\s*`friction-skipped`/.test(flat)
 	) {
 		errors.push(
 			'Policy must tell agents to apply the `friction-skipped` label on skip.',
 		)
 	}
-	if (!/remove `friction-skipped`/m.test(content)) {
+	if (!/remove `friction-skipped`/.test(flat)) {
 		errors.push(
 			'Policy must tell agents to remove `friction-skipped` when unskipping or acting on Kent reply.',
 		)
 	}
-	if (!/does not scrape issue comments/m.test(content)) {
+	if (!/does not scrape issue comments/.test(flat)) {
 		errors.push(
 			'Policy must state that eligibility does not scrape issue comments.',
 		)
 	}
-	if (!/no `\.github\/labels\.yml`/m.test(content)) {
+	if (!/no `\.github\/labels\.yml`/.test(flat)) {
 		errors.push(
 			'Policy must note that labels are not defined in-tree (no .github/labels.yml).',
+		)
+	}
+	if (!flat.includes(packageOwnershipPhrase)) {
+		errors.push(
+			'Policy must state that daily agent instructions come from the package when spawned.',
+		)
+	}
+	if (!content.includes('kody.codes/@kentcdodds/friction-log')) {
+		errors.push(
+			'Policy must point at https://kody.codes/@kentcdodds/friction-log for package ownership.',
 		)
 	}
 

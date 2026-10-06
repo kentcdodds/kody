@@ -268,6 +268,47 @@ test('resolveEntityDetail loads official guides without a signed-in user and gat
 	for (const entity of ['guide:not_a_real_guide', 'guide:admin_events']) {
 		await expect(resolve(entity, anonymous)).rejects.toThrow('Guide not found.')
 	}
+	await expect(resolve('guide:not_a_real_guide', anonymous)).rejects.toThrow(
+		/^Guide not found\.$/,
+	)
+	await expect(resolve('guide:search', anonymous)).rejects.toThrow(
+		'Did you mean `guide:search_and_execute`?',
+	)
+
+	expect(await resolve('guide:package-authoring', anonymous)).toMatchObject({
+		type: 'guide',
+		id: 'package_authoring',
+		slug: 'package-authoring',
+	})
+	expect(await resolve('guide:what_can_kody_do', anonymous)).toMatchObject({
+		type: 'guide',
+		id: 'what_is_kody',
+		slug: 'what-is-kody',
+	})
+	expect(
+		await resolve('guide:integration_backed_app', anonymous),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'after-an-integration-smoke-test',
+	})
+	expect(
+		await resolve('guide:integration-backed-app-happy-path', anonymous),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'after-an-integration-smoke-test',
+	})
+	expect(
+		await resolve(
+			'guide:integration-backed-app-happy-path#session-handoff',
+			anonymous,
+		),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'session-handoff',
+	})
 
 	expect(
 		await resolve('guide:admin_events', {

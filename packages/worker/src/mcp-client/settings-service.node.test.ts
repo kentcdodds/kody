@@ -28,8 +28,8 @@ vi.mock('./hub-client.ts', () => ({
 
 const {
 	addMcpServer,
-	clearEnabledMcpServerRefsCacheForTests,
 	enabledMcpServerRefsCacheTtlMs,
+	invalidateEnabledMcpServerRefsCache,
 	listEnabledMcpServerRefsCached,
 	resolveMcpServerOAuthClientUrls,
 	listVisibleEnabledMcpServerRefsCached,
@@ -91,7 +91,8 @@ function persistLastError(
 }
 
 test('listEnabledMcpServerRefsCached warms per user, expires, and invalidates on mutation', async () => {
-	clearEnabledMcpServerRefsCacheForTests()
+	invalidateEnabledMcpServerRefsCache({ userId: 'user-1' })
+	invalidateEnabledMcpServerRefsCache({ userId: 'user-2' })
 	repo.listEnabledMcpServerSettingRows.mockResolvedValue([createSettingRow()])
 	const first = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
 	const second = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
@@ -169,7 +170,7 @@ test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host
 })
 
 test('addMcpServer forwards bearer tokens as Authorization headers and persists a discover-timeout lastError', async () => {
-	clearEnabledMcpServerRefsCacheForTests()
+	invalidateEnabledMcpServerRefsCache({ userId: 'user-1' })
 	repo.getMcpServerSettingRowByName.mockResolvedValue(null)
 	repo.insertMcpServerSettingRow.mockResolvedValue(undefined)
 	mockModule.hubClient.addServer.mockResolvedValue({
@@ -306,7 +307,7 @@ test('persistMcpServerLastErrorIfChanged writes token-recovery errors, skips unc
 })
 
 test('MCP server usage lock hides the server from execute and grants a package', async () => {
-	clearEnabledMcpServerRefsCacheForTests()
+	invalidateEnabledMcpServerRefsCache({ userId: 'user-1' })
 	const lockedRow = {
 		...createSettingRow(),
 		usage_mode: 'packages' as const,

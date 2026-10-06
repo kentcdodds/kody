@@ -86,6 +86,29 @@ head SHA, not that merge commit. The script treats `/health` as ready when
 `commitSha` equals the PR head **or** is a merge commit that has the PR head as
 a parent. Pass `--sha` to override the expected commit.
 
+## DR backup control plane
+
+The origin preview does not run the disaster-recovery backup control plane. That
+worker is `kody-production-d1-backups` (`packages/backup-control-plane/`, admin
+UI at `https://kody-dr.kentcdodds.com`). `POST /actions/seal-day` and the other
+control-plane routes are not served by `kody-pr-<n>`.
+
+`.github/workflows/preview.yml` never deploys this worker.
+`.github/workflows/deploy.yml` deploys it from `main` only, in
+`deploy-backup-control-plane`, when the 15-commit path filter matches
+`packages/backup-control-plane/`, `packages/shared/src/backup-*`,
+`tools/ci/backup-resources`, or `deploy.yml` (a manual Deploy dispatch forces it
+too). Shared backup helpers that the origin worker imports can still run on a
+preview. Behavior that exists only on the control-plane worker cannot.
+
+For a change whose behavior lives only on that worker, an origin preview pass is
+not proof. Use the control-plane Node tests
+(`packages/backup-control-plane/**/*.node.test.ts`, included by
+`vitest.node.config.ts` via `npm run test:node`), `npm run backup:build`
+(Wrangler dry-run of that config), and, after merge, the
+`deploy-backup-control-plane` job on `main`. See
+[disaster recovery](./disaster-recovery.md).
+
 ## Seed login
 
 Preview seeding uses a **non-admin** account (the local `jane` companion is not

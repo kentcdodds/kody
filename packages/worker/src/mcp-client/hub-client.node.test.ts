@@ -4,9 +4,9 @@ import {
 	mcpServerDisconnectedTopic,
 } from './connection-episodes.ts'
 import {
-	clearMcpClientHubSnapshotCacheForTests,
 	getCachedMcpClientHubServers,
 	getCachedMcpClientHubSnapshot,
+	invalidateMcpClientHubSnapshotCache,
 } from './hub-client.ts'
 import type * as packageSubscriptionsModule from './package-subscriptions.ts'
 import { type McpClientHubSnapshot, type McpServerSnapshot } from './types.ts'
@@ -77,8 +77,8 @@ function createEnv() {
 	} as unknown as Env
 }
 
-function resetHub() {
-	clearMcpClientHubSnapshotCacheForTests()
+function resetHub(userId = 'user-1') {
+	invalidateMcpClientHubSnapshotCache({ userId })
 	mocks.emitMcpServerConnectionEventsIfNeeded.mockClear()
 	mocks.ackConnectionEvents.mockClear()
 }
@@ -142,7 +142,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).not.toHaveBeenCalled()
 	expect(mocks.ackConnectionEvents).not.toHaveBeenCalled()
 
-	resetHub()
+	resetHub('user-2')
 	queueAuthenticatingPeek()
 	await getCachedMcpClientHubServers({ env, userId: 'user-2' })
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).toHaveBeenCalledWith({
@@ -155,7 +155,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 })
 
 test('waiting peek does not ack when dispatch reports incomplete', async () => {
-	resetHub()
+	resetHub('user-incomplete')
 	mocks.emitMcpServerConnectionEventsIfNeeded.mockResolvedValueOnce(false)
 	queueAuthenticatingPeek()
 	await getCachedMcpClientHubServers({

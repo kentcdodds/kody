@@ -63,7 +63,6 @@ async function readDiscordConnectionUserIds(db: D1Database, userId: number) {
 export async function readOfficialDiscordGuildMembership(input: {
 	env: DiscordMembershipEnv
 	discordUserId: string
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<DiscordGuildMembershipResult> {
 	if (!isDiscordSnowflake(input.discordUserId)) {
@@ -74,10 +73,9 @@ export async function readOfficialDiscordGuildMembership(input: {
 		return { status: 'skipped', reason: 'not-configured' }
 	}
 
-	const fetchImpl = input.fetchImpl ?? fetch
 	const timeoutMs = input.timeoutMs ?? DISCORD_MEMBERSHIP_REQUEST_TIMEOUT_MS
 	try {
-		const response = await fetchImpl(
+		const response = await fetch(
 			guildMemberUrl(config.guildId, input.discordUserId),
 			{
 				method: 'GET',
@@ -114,7 +112,6 @@ export async function readOfficialDiscordGuildMembership(input: {
 export async function readOfficialDiscordMembershipForUser(input: {
 	env: DiscordMembershipEnv & { APP_DB: D1Database }
 	userId: number
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }): Promise<boolean | null> {
 	try {
@@ -128,7 +125,6 @@ export async function readOfficialDiscordMembershipForUser(input: {
 			const membership = await readOfficialDiscordGuildMembership({
 				env: input.env,
 				discordUserId,
-				fetchImpl: input.fetchImpl,
 				timeoutMs: input.timeoutMs,
 			})
 			switch (membership.status) {

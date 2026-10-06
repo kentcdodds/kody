@@ -189,6 +189,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run skills-lock:check
 
+      - name: 📚 Docs (no hosted execute fallback)
+        if: ${{ !cancelled() }}
+        run: npm run docs:check-no-hosted-execute
+
       - name: 🧜 Mermaid
         if: ${{ !cancelled() }}
         run: npm run mermaid:check

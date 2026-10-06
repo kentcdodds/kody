@@ -397,9 +397,7 @@ async function readUploadPackRequestBody(
 async function proxyArtifactsUploadPack(input: {
 	target: ResolvedPublicGitTarget
 	request: Request
-	fetchImpl?: typeof fetch
 }): Promise<Response> {
-	const fetchImpl = input.fetchImpl ?? fetch
 	// Authenticated URL builder validates the remote protocol; credentials go
 	// in Authorization so proxied responses never need to echo a credentialed URL.
 	buildAuthenticatedArtifactsRemote({
@@ -429,7 +427,7 @@ async function proxyArtifactsUploadPack(input: {
 		return wantRejectedResponse()
 	}
 
-	const upstream = await fetchImpl(upstreamUrl, {
+	const upstream = await fetch(upstreamUrl, {
 		method: 'POST',
 		headers,
 		body: Uint8Array.from(bodyResult.body),
@@ -445,9 +443,7 @@ async function proxyArtifactsUploadPack(input: {
 
 async function proxyArtifactsInfoRefs(input: {
 	target: ResolvedPublicGitTarget
-	fetchImpl?: typeof fetch
 }) {
-	const fetchImpl = input.fetchImpl ?? fetch
 	buildAuthenticatedArtifactsRemote({
 		remote: input.target.remote,
 		token: input.target.tokenPlaintext,
@@ -467,7 +463,7 @@ async function proxyArtifactsInfoRefs(input: {
 		})
 
 	try {
-		const upstream = await fetchImpl(upstreamUrl, {
+		const upstream = await fetch(upstreamUrl, {
 			method: 'GET',
 			headers,
 			signal: AbortSignal.timeout(15_000),
@@ -513,7 +509,6 @@ function stripTrailingSlash(value: string) {
 export async function handlePublicPackageGitHttpRequest(
 	request: Request,
 	env: Env,
-	options?: { fetchImpl?: typeof fetch },
 ): Promise<Response | null> {
 	const url = new URL(request.url)
 	const parsed = parsePublicPackageGitHttpPath(url.pathname)
@@ -580,7 +575,6 @@ export async function handlePublicPackageGitHttpRequest(
 		try {
 			return await proxyArtifactsInfoRefs({
 				target: resolved.target,
-				fetchImpl: options?.fetchImpl,
 			})
 		} catch {
 			const advertisement = buildUploadPackAdvertisement({
@@ -620,7 +614,6 @@ export async function handlePublicPackageGitHttpRequest(
 			return await proxyArtifactsUploadPack({
 				target: resolved.target,
 				request,
-				fetchImpl: options?.fetchImpl,
 			})
 		} catch {
 			return serviceUnavailableResponse(

@@ -11,7 +11,7 @@ import {
 	entitlementLimitErrorCode,
 } from '#worker/entitlements/errors.ts'
 import { invokePackageExport } from './service.ts'
-import { clearInvokeContractCachesForTests } from './invoke-contract-cache.ts'
+import { invalidateInvokeContractFreshness } from './invoke-contract-cache.ts'
 import {
 	packageInvocationsRepoMockModule as repoMockModule,
 	createDatabase,
@@ -111,8 +111,16 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 	}),
 }))
 
+function invalidateSeededInvokeContract() {
+	invalidateInvokeContractFreshness({
+		userId: 'user-123',
+		packageIdOrKodyIds: ['pkg-1', 'discord-gateway', '@owner/pkg'],
+		sourceId: 'source-1',
+	})
+}
+
 function prepareSuccessfulExport() {
-	clearInvokeContractCachesForTests()
+	invalidateSeededInvokeContract()
 	seedPackageResolution()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { ok: true },
@@ -229,7 +237,7 @@ test('automation_invocations_per_day at quota fails before sandbox, leaves execu
 })
 
 test('execute_calls_per_day flood does not burn automation_invocations_per_day', async () => {
-	clearInvokeContractCachesForTests()
+	invalidateSeededInvokeContract()
 	const { env } = createEnvWithUserMeter(createDatabase())
 	const userId = 'user-123'
 

@@ -28,7 +28,6 @@ export async function fillMcpServerFavicon(input: {
 	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	serverId: string
-	fetchImpl?: typeof fetch
 }): Promise<void> {
 	const row = await getMcpServerSettingRowById({
 		db: input.db,
@@ -47,7 +46,6 @@ export async function fillMcpServerFavicon(input: {
 	if (!resolved) return
 	const bytes = await fetchFaviconBytes({
 		origin: resolved.origin,
-		fetchImpl: input.fetchImpl,
 	})
 	if (!bytes) return
 	try {

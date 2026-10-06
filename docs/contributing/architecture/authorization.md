@@ -139,9 +139,10 @@ async handler({ request }) {
 Roles and permissions load **fresh per request** in `readAuthenticatedAppUser`
 (`packages/worker/src/app/authenticated-user.ts`). They are not stored in the
 session cookie, so revocation takes effect immediately. If the roles query fails
-transiently, the lookup fails closed: the user stays authenticated with empty
-roles and permissions until the query recovers (the MCP context lookup behaves
-the same way).
+transiently, the browser lookup fails closed: the user stays authenticated with
+empty roles and permissions until the query recovers (`loadUserAndRoles` in
+`packages/worker/src/app/request-auth-cache.ts`). MCP context throws on that D1
+error, so the request stops. See [MCP context](#mcp-context).
 
 ### Where guards are used
 
@@ -220,15 +221,31 @@ the default account out.
 ## MCP context
 
 MCP requests authenticate via OAuth bearer tokens. Roles must **not** ride in
-grant props — they would go stale on revocation.
+grant props. They would go stale on revocation.
 
-Instead, `packages/worker/src/mcp-auth.ts` calls
-`buildMcpUserContextFromGrantProps`
-(`packages/worker/src/mcp-auth-user-context.ts`) when building
-`McpCallerContext`: look up the `users` row by the grant's email, then call
-`getUserRolesAndPermissions`. The shared schema in `packages/shared/src/chat.ts`
-(`mcpUserContextSchema`) includes optional `roles` and `permissions` arrays on
-the user object.
+`mcp-auth.ts` calls `buildMcpUserContextFromGrantProps`
+(`packages/worker/src/mcp-auth-user-context.ts`). The users row is
+`grantProps.userId` (`users.stable_user_id`), then roles for that integer id:
+
+```ts
+const userId = grantProps.userId.trim()
+const row = await env.APP_DB.prepare(
+	`SELECT id, email, username, display_name, stable_user_id,
+		deleting_at, email_verified_at, suspended_at, password_changed_at
+	 FROM users
+	 WHERE stable_user_id = ?`,
+)
+	.bind(userId)
+	.first()
+if (!row || row.deleting_at) return null
+const { roles, permissions } = await getUserRolesAndPermissions(
+	env.APP_DB,
+	row.id,
+)
+```
+
+A missing or blank `userId`, or a deleting account, returns null. A D1 error
+throws.
 
 For capability guards, use `requireMcpUserWithPermission` in
 `packages/worker/src/mcp/capabilities/meta/require-permission.ts`:

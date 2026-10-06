@@ -395,7 +395,7 @@ export function buildSecurityTxt(origin: string, now = new Date()): string {
 		`Expires: ${expires.toISOString()}`,
 		'Preferred-Languages: en',
 		`Canonical: ${origin}${securityTxtPath}`,
-		'Policy: https://github.com/kentcdodds/kody/blob/main/SECURITY.md',
+		'Policy: https://raw.githubusercontent.com/kentcdodds/kody/main/SECURITY.md',
 		'',
 	].join('\n')
 }

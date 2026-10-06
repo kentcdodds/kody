@@ -2,6 +2,7 @@ import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as AppBaseUrl from '#worker/app-base-url.ts'
+import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -101,10 +102,18 @@ function savedPackage(overrides?: { hasApp?: boolean }) {
 	}
 }
 
+function invalidateDemoPackageCache() {
+	invalidateInvokeContractFreshness({
+		userId: 'user-1',
+		packageIdOrKodyIds: ['package-1', 'demo-app', '@kody/demo-app'],
+	})
+}
+
 const lastServedRequest = () =>
 	mockModule.servePackageAppRequest.mock.calls.at(-1)?.[0]?.request as Request
 
 test('packageAppFetch dispatches synthetic in-process app requests against hosted URLs', async () => {
+	invalidateDemoPackageCache()
 	mockModule.resolveSavedPackageRef.mockResolvedValue(savedPackage())
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response(JSON.stringify({ ok: true }), {
@@ -178,6 +187,7 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 })
 
 test('packageAppFetch resolves owned packages by package_id', async () => {
+	invalidateDemoPackageCache()
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage())
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response('ok', { status: 200 }),
@@ -197,6 +207,7 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 })
 
 test('packageAppFetch rejects invalid callers, paths, and missing packages', async () => {
+	invalidateDemoPackageCache()
 	const exactlyOne =
 		'Provide exactly one of `package_id` or the package name leaf.'
 	const runtimeOnly =
@@ -245,6 +256,9 @@ test('packageAppFetch rejects invalid callers, paths, and missing packages', asy
 		'Promote plain repo before package lookup',
 	)
 
+	// Drop the hasApp-true entry warmed by earlier cases in this test before
+	// asserting the no-app path.
+	invalidateDemoPackageCache()
 	mockModule.resolveSavedPackageRef.mockResolvedValue(
 		savedPackage({ hasApp: false }),
 	)
@@ -252,6 +266,7 @@ test('packageAppFetch rejects invalid callers, paths, and missing packages', asy
 })
 
 test('packageAppFetch truncates oversized bodies and encodes binary as base64', async () => {
+	invalidateDemoPackageCache()
 	mockModule.resolveSavedPackageRef.mockResolvedValue(savedPackage())
 	const respondWith = (
 		body: string | Uint8Array<ArrayBuffer>,

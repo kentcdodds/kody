@@ -74,7 +74,7 @@ npm run dev
 ```
 
 Or run the published image. See the starter's
-[Docker guide](https://github.com/kody-bot/home-mcp-starter/blob/main/docs/docker.md).
+[Docker guide](https://raw.githubusercontent.com/kody-bot/home-mcp-starter/main/docs/docker.md).
 
 Bind the process to a local interface and confirm `/health` and the MCP endpoint
 before adding a tunnel. Keep authorization checks in the MCP server; the tunnel
@@ -82,7 +82,7 @@ is transport, not a replacement for tool-level policy.
 
 Replace the example notes tools with adapters for your vault, devices, or CLIs.
 The starter's
-[adding-tools guide](https://github.com/kody-bot/home-mcp-starter/blob/main/docs/adding-tools.md)
+[adding-tools guide](https://raw.githubusercontent.com/kody-bot/home-mcp-starter/main/docs/adding-tools.md)
 covers schemas, destructive hints, and why unrestricted shells do not belong
 here.
 
@@ -102,7 +102,7 @@ it. They must match the URL you later paste into Kody.
 Use Cloudflare's guide for dashboard or CLI details. Keep the connector running
 under the machine's service manager so the URL does not depend on an open
 terminal. The starter's
-[Tunnel guide](https://github.com/kody-bot/home-mcp-starter/blob/main/docs/cloudflare-tunnel.md)
+[Tunnel guide](https://raw.githubusercontent.com/kody-bot/home-mcp-starter/main/docs/cloudflare-tunnel.md)
 records the Home MCP-specific env and routing notes.
 
 ## 3. Put Access in front of the human authorize route
@@ -128,7 +128,7 @@ The local origin trusts its own network. Access protects the browser approve
 step. The MCP server authenticates Kody. Read the starter's well-known documents
 on your hostname and build policies from what they advertise. Full path notes
 live in the starter's
-[Access guide](https://github.com/kody-bot/home-mcp-starter/blob/main/docs/cloudflare-access.md).
+[Access guide](https://raw.githubusercontent.com/kody-bot/home-mcp-starter/main/docs/cloudflare-access.md).
 
 Give each Kody account its own MCP connection and authorization grant. Do not
 reuse one bearer across accounts. If several accounts share a public endpoint,
@@ -162,7 +162,7 @@ On HTTPS Kody, the client identifies itself with CIMD. Allowlist:
 
 Self-hosted Kody uses that deployment's origin in all three places. Details are
 in [Connect remote MCP servers](../use/mcp-client-servers.md) and the starter's
-[OAuth and CIMD](https://github.com/kody-bot/home-mcp-starter/blob/main/docs/oauth-cimd.md)
+[OAuth and CIMD](https://raw.githubusercontent.com/kody-bot/home-mcp-starter/main/docs/oauth-cimd.md)
 page.
 
 ## Security checklist

@@ -23,11 +23,6 @@ type ArtifactsGitHttpRequest = {
 	body?: AsyncIterable<Uint8Array>
 }
 
-type ArtifactsGitFetch = (
-	input: string,
-	init?: RequestInit,
-) => Promise<Response>
-
 async function collectAsyncBytes(iterable: AsyncIterable<Uint8Array>) {
 	const chunks: Array<Uint8Array> = []
 	let size = 0
@@ -58,19 +53,15 @@ function isFetchDeadline(error: unknown) {
 	)
 }
 
-export function createArtifactsGitHttp(input?: {
-	timeoutMs?: number
-	fetchImpl?: ArtifactsGitFetch
-}) {
+export function createArtifactsGitHttp(input?: { timeoutMs?: number }) {
 	const timeoutMs = input?.timeoutMs ?? artifactsGitRequestTimeoutMs
-	const fetchImpl = input?.fetchImpl ?? fetch
 	return {
 		async request(request: ArtifactsGitHttpRequest) {
 			const body = request.body
 				? await collectAsyncBytes(request.body)
 				: undefined
 			try {
-				const response = await fetchImpl(request.url, {
+				const response = await fetch(request.url, {
 					method: request.method ?? 'GET',
 					headers: request.headers,
 					signal: AbortSignal.timeout(timeoutMs),

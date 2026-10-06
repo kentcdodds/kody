@@ -24,7 +24,7 @@ Example arguments:
 - \`{ "domain": "jobs" }\`
 - \`{ "entity": "guide:package_authoring" }\`
 
-https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
+https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/search.md
 	`.trim(),
 	annotations: {
 		readOnlyHint: true,

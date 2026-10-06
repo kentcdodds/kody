@@ -63,10 +63,10 @@ function createArtifactCache() {
 	})
 }
 
-let savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
-let sourceRowCache = createFreshnessCache<EntitySourceRow>()
-let platformAccountFlagCache = createFreshnessCache<boolean>()
-let moduleArtifactCache = createArtifactCache()
+const savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
+const sourceRowCache = createFreshnessCache<EntitySourceRow>()
+const platformAccountFlagCache = createFreshnessCache<boolean>()
+const moduleArtifactCache = createArtifactCache()
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
 	if (value && typeof value === 'object') {
@@ -230,11 +230,4 @@ export function invalidateInvokeContractFreshness(input: {
 			sourceRowCacheKey({ userId: input.userId, sourceId: input.sourceId }),
 		)
 	}
-}
-
-export function clearInvokeContractCachesForTests() {
-	savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
-	sourceRowCache = createFreshnessCache<EntitySourceRow>()
-	platformAccountFlagCache = createFreshnessCache<boolean>()
-	moduleArtifactCache = createArtifactCache()
 }

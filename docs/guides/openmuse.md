@@ -45,8 +45,9 @@ conversation ends. The rest of this page is about using them together.
   keep its interface and swap the agent behind it.
 
 The full list lives in OpenMuse's
-[feature inventory](https://github.com/CopilotKit/OpenMuse/blob/main/docs/FEATURES.md)
-and [roadmap](https://github.com/CopilotKit/OpenMuse/blob/main/ROADMAP.md).
+[feature inventory](https://raw.githubusercontent.com/CopilotKit/OpenMuse/main/docs/FEATURES.md)
+and
+[roadmap](https://raw.githubusercontent.com/CopilotKit/OpenMuse/main/ROADMAP.md).
 
 ### Kody
 
@@ -183,7 +184,7 @@ preferences and repeatable work there."
 
 OpenMuse can hand conversation to an external AG-UI agent. Set
 `AGENT_BACKEND=agui`, `AGENT_URL`, and optionally `AGENT_TOKEN` as shown in its
-[`.env.example`](https://github.com/CopilotKit/OpenMuse/blob/main/.env.example).
+[`.env.example`](https://raw.githubusercontent.com/CopilotKit/OpenMuse/main/.env.example).
 If the harness you already use speaks AG-UI and supports remote MCP servers,
 connect Kody there the way that harness connects any OAuth MCP server, then
 point OpenMuse at it.
@@ -230,7 +231,7 @@ cloud with no model in the loop, and your OpenMuse server can be off.
 - **OpenMuse is alpha.** Its README notes that open-ended reasoning, live Google
   accounts, and Rich Threads need their own configuration. Expect file paths and
   settings to move between releases, and check its
-  [verification notes](https://github.com/CopilotKit/OpenMuse/blob/main/docs/VERIFICATION.md)
+  [verification notes](https://raw.githubusercontent.com/CopilotKit/OpenMuse/main/docs/VERIFICATION.md)
   before relying on a flow.
 - **The Kody wiring is yours.** Neither option above is an official OpenMuse
   feature. You are adding an MCP client to your own fork or harness.

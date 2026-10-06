@@ -45,7 +45,7 @@ function createCapabilityRegistryCache() {
 	})
 }
 
-let capabilityRegistryCache = createCapabilityRegistryCache()
+const capabilityRegistryCache = createCapabilityRegistryCache()
 
 function createCapabilityRegistryCacheKey(input: {
 	userId: string
@@ -224,8 +224,4 @@ export async function getCapabilityRegistryForContext(input: {
 			registry,
 		}),
 	})
-}
-
-export function clearCapabilityRegistryCacheForTests() {
-	capabilityRegistryCache = createCapabilityRegistryCache()
 }

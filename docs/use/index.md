@@ -6,12 +6,14 @@ automations than rent them.
 Kody gives your AI assistant secure, reusable access to your services and lets
 it run durable Worker-native automations while your computer is offline.
 
-These docs are for people who connect their assistant to Kody over MCP. Setup
-and repository development live elsewhere
-([contributing docs](../contributing/index.md)). The in-app Get started page
-(`/onboarding`) connects a host, gives that agent access, then proves the same
-home works from a second agent. People with a Kody account can also
-[join the Discord](https://kody.codes/discord).
+These docs are for people who connect their assistant to Kody over MCP. The
+served catalog is [`docs/guides`](../guides/README.md)
+(`curl -fsS https://kody.codes/docs/search-and-execute.md`). This folder is the
+field reference ([README](./README.md)). Setup and repository development live
+elsewhere ([contributing docs](../contributing/index.md)). The in-app Get
+started page (`/onboarding`) connects a host, gives that agent access, then
+proves the same home works from a second agent. People with a Kody account can
+also [join the Discord](https://kody.codes/discord).
 
 Read in order for a full tour, or jump to a topic.
 

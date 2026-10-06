@@ -94,13 +94,12 @@ function isAbortError(error: unknown) {
 }
 
 async function kitFetch(
-	fetchImpl: typeof fetch,
 	url: string,
 	init: RequestInit,
 	timeoutMs: number,
 ): Promise<Response> {
 	try {
-		return await fetchImpl(url, {
+		return await fetch(url, {
 			...init,
 			signal: AbortSignal.timeout(timeoutMs),
 		})
@@ -184,11 +183,9 @@ export function desiredKitTagKeys(
 async function lookupKitSubscriberId(input: {
 	apiKey: string
 	email: string
-	fetchImpl: typeof fetch
 	timeoutMs: number
 }): Promise<number | null> {
 	const response = await kitFetch(
-		input.fetchImpl,
 		`${KIT_API_BASE_URL}/subscribers?email_address=${encodeURIComponent(input.email)}`,
 		{ method: 'GET', headers: kitHeaders(input.apiKey) },
 		input.timeoutMs,
@@ -203,7 +200,6 @@ async function lookupKitSubscriberId(input: {
 
 async function listKitTagsByName(input: {
 	apiKey: string
-	fetchImpl: typeof fetch
 	timeoutMs: number
 }): Promise<Map<string, number>> {
 	const byName = new Map<string, number>()
@@ -213,7 +209,6 @@ async function listKitTagsByName(input: {
 		url.searchParams.set('per_page', '50')
 		if (after) url.searchParams.set('after', after)
 		const response = await kitFetch(
-			input.fetchImpl,
 			url.toString(),
 			{ method: 'GET', headers: kitHeaders(input.apiKey) },
 			input.timeoutMs,
@@ -238,11 +233,9 @@ async function addKitTag(input: {
 	apiKey: string
 	email: string
 	tagId: number
-	fetchImpl: typeof fetch
 	timeoutMs: number
 }) {
 	const response = await kitFetch(
-		input.fetchImpl,
 		`${KIT_API_BASE_URL}/tags/${input.tagId}/subscribers`,
 		{
 			method: 'POST',
@@ -259,11 +252,9 @@ async function removeKitTag(input: {
 	apiKey: string
 	subscriberId: number
 	tagId: number
-	fetchImpl: typeof fetch
 	timeoutMs: number
 }) {
 	const response = await kitFetch(
-		input.fetchImpl,
 		`${KIT_API_BASE_URL}/subscribers/${input.subscriberId}/tags/${input.tagId}`,
 		{ method: 'DELETE', headers: kitHeaders(input.apiKey) },
 		input.timeoutMs,
@@ -278,19 +269,16 @@ export async function syncExistingKitSubscriber(input: {
 	email: string
 	facts: KitSubscriberFacts
 	signedUpTagId?: number
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 	tagNames?: Map<string, number>
 }): Promise<
 	| { synced: true; subscriberId: number }
 	| { synced: false; reason: 'not_found' }
 > {
-	const fetchImpl = input.fetchImpl ?? fetch
 	const timeoutMs = input.timeoutMs ?? KIT_SYNC_REQUEST_TIMEOUT_MS
 	const subscriberId = await lookupKitSubscriberId({
 		apiKey: input.apiKey,
 		email: input.email,
-		fetchImpl,
 		timeoutMs,
 	})
 	if (subscriberId == null) {
@@ -301,7 +289,6 @@ export async function syncExistingKitSubscriber(input: {
 		input.tagNames ??
 		(await listKitTagsByName({
 			apiKey: input.apiKey,
-			fetchImpl,
 			timeoutMs,
 		}))
 	const desired = new Set(desiredKitTagKeys(input.facts))
@@ -328,7 +315,6 @@ export async function syncExistingKitSubscriber(input: {
 				apiKey: input.apiKey,
 				email: input.email,
 				tagId,
-				fetchImpl,
 				timeoutMs,
 			})
 			continue
@@ -338,7 +324,6 @@ export async function syncExistingKitSubscriber(input: {
 				apiKey: input.apiKey,
 				subscriberId,
 				tagId,
-				fetchImpl,
 				timeoutMs,
 			})
 		}
@@ -356,7 +341,6 @@ export async function maybeSyncKitSubscriber(input: {
 	env: Pick<Env, 'KIT_API_KEY' | 'KIT_SIGNED_UP_TAG_ID'>
 	email: string
 	facts: KitSubscriberFacts
-	fetchImpl?: typeof fetch
 	tagNames?: Map<string, number>
 }): Promise<void> {
 	const apiKey = resolveKitApiKey(input.env)
@@ -374,7 +358,6 @@ export async function maybeSyncKitSubscriber(input: {
 			email: input.email,
 			facts: input.facts,
 			signedUpTagId: tagId,
-			fetchImpl: input.fetchImpl,
 			tagNames: input.tagNames,
 		})
 	} catch (error) {
@@ -394,7 +377,6 @@ export async function maybeSyncKitSubscriberForUser(input: {
 	env: Pick<Env, 'APP_DB' | 'KIT_API_KEY' | 'KIT_SIGNED_UP_TAG_ID'>
 	email?: string | null
 	stableUserId?: string | null
-	fetchImpl?: typeof fetch
 	tagNames?: Map<string, number>
 }): Promise<void> {
 	const email = input.email?.trim()
@@ -424,7 +406,6 @@ export async function maybeSyncKitSubscriberForUser(input: {
 		env: input.env,
 		email: row.email,
 		facts: kitFactsFromUserRow(row),
-		fetchImpl: input.fetchImpl,
 		tagNames: input.tagNames,
 	})
 }
@@ -470,7 +451,6 @@ export type KitSubscriberReconcileResult =
 export async function reconcileKitSubscribers(input: {
 	env: Env
 	now?: Date
-	fetchImpl?: typeof fetch
 }): Promise<KitSubscriberReconcileResult> {
 	const apiKey = resolveKitApiKey(input.env)
 	if (!apiKey) return { status: 'skipped', reason: 'no_api_key' }
@@ -500,12 +480,10 @@ export async function reconcileKitSubscribers(input: {
 		return { status: 'synced', considered: 0, tagged: 0 }
 	}
 
-	const fetchImpl = input.fetchImpl ?? fetch
 	let tagNames: Map<string, number>
 	try {
 		tagNames = await listKitTagsByName({
 			apiKey,
-			fetchImpl,
 			timeoutMs: KIT_SYNC_REQUEST_TIMEOUT_MS,
 		})
 	} catch (error) {
@@ -521,7 +499,6 @@ export async function reconcileKitSubscribers(input: {
 				email: row.email,
 				facts: kitFactsFromUserRow(row),
 				signedUpTagId: tagId,
-				fetchImpl,
 				tagNames,
 			})
 			if (result.synced) tagged += 1

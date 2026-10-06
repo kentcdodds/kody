@@ -1,4 +1,6 @@
 import { expect, test } from 'vitest'
+import { delay, http, HttpResponse } from 'msw'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { isTransientArtifactsGitError } from './artifacts-git-retry.ts'
 import {
 	ArtifactsGitTimeoutError,
@@ -6,54 +8,45 @@ import {
 } from './artifacts-git-http.ts'
 
 test('artifacts git http aborts a hung request and returns advertisement bytes', async () => {
-	const hung = createArtifactsGitHttp({
-		timeoutMs: 30,
-		fetchImpl: (_url, init) =>
-			new Promise((_resolve, reject) => {
-				const signal = init?.signal
-				if (!signal) {
-					reject(new Error('missing abort signal'))
-					return
-				}
-				signal.addEventListener('abort', () => {
-					reject(
-						signal.reason instanceof Error
-							? signal.reason
-							: new DOMException(
-									'The operation was aborted due to timeout',
-									'TimeoutError',
-								),
-					)
-				})
+	{
+		using _hung = createMswNodeServer([
+			http.get('https://example.test/info/refs', async () => {
+				await delay('infinite')
+				return HttpResponse.text('never')
 			}),
-	})
-	const startedAt = Date.now()
-	const timeoutError = await hung
-		.request({
-			url: 'https://example.test/info/refs?service=git-upload-pack',
+		])
+		const hung = createArtifactsGitHttp({ timeoutMs: 30 })
+		const startedAt = Date.now()
+		const timeoutError = await hung
+			.request({
+				url: 'https://example.test/info/refs?service=git-upload-pack',
+			})
+			.then(
+				() => null,
+				(error: unknown) => error,
+			)
+		expect(timeoutError).toBeInstanceOf(ArtifactsGitTimeoutError)
+		expect(timeoutError).toMatchObject({
+			message: 'Artifacts git request timed out after 30ms.',
 		})
-		.then(
-			() => null,
-			(error: unknown) => error,
-		)
-	expect(timeoutError).toBeInstanceOf(ArtifactsGitTimeoutError)
-	expect(timeoutError).toMatchObject({
-		message: 'Artifacts git request timed out after 30ms.',
-	})
-	expect(isTransientArtifactsGitError(timeoutError)).toBe(true)
-	expect(Date.now() - startedAt).toBeLessThan(1_000)
+		expect(isTransientArtifactsGitError(timeoutError)).toBe(true)
+		expect(Date.now() - startedAt).toBeLessThan(1_000)
+	}
 
-	const ok = createArtifactsGitHttp({
-		timeoutMs: 1_000,
-		fetchImpl: async () =>
-			new Response('001e# service=git-upload-pack\n', {
-				status: 200,
-				statusText: 'OK',
-				headers: {
-					'content-type': 'application/x-git-upload-pack-advertisement',
-				},
-			}),
-	})
+	using _ok = createMswNodeServer([
+		http.get(
+			'https://example.test/git/repo.git/info/refs',
+			() =>
+				new HttpResponse('001e# service=git-upload-pack\n', {
+					status: 200,
+					statusText: 'OK',
+					headers: {
+						'content-type': 'application/x-git-upload-pack-advertisement',
+					},
+				}),
+		),
+	])
+	const ok = createArtifactsGitHttp({ timeoutMs: 1_000 })
 	const response = await ok.request({
 		url: 'https://example.test/git/repo.git/info/refs?service=git-upload-pack',
 		method: 'GET',

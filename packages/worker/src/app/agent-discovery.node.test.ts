@@ -104,6 +104,9 @@ test('agent discovery documents describe the MCP server and public pages', async
 	)
 	expect(securityTxt).toContain('Expires: 2027-08-18T20:00:00.000Z')
 	expect(securityTxt).toContain(`Canonical: ${origin}/.well-known/security.txt`)
+	expect(securityTxt).toContain(
+		'Policy: https://raw.githubusercontent.com/kentcdodds/kody/main/SECURITY.md',
+	)
 
 	expect(
 		getAgentSkill('connect-kody')?.body.startsWith('# Connect Kody\n'),

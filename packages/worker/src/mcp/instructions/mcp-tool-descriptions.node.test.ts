@@ -4,6 +4,10 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
 import { searchTool } from '#mcp/tools/search-tool-definition.ts'
 
 test('search and execute tool descriptions fit a 2048-character client cut', () => {
+	expect(searchTool.description).toContain(
+		'https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/search.md',
+	)
+	expect(searchTool.description).not.toContain('github.com/')
 	expect(searchTool.description.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)

@@ -115,7 +115,11 @@ unchanged when every locked direct dependency satisfies the peer ranges its
 declared range can still reach, including optional peers.
 `npm run lockfile:check` (part of `npm run validate` and the CI static job)
 rejects a lockfile `npm install` would rewrite, such as an
-`@cloudflare/workers-types` pin older than wrangler's peer range.
+`@cloudflare/workers-types` pin older than wrangler's peer range. A boot can
+already show `package-lock.json` modified, often that `workers-types` bump,
+before you install anything yourself. Leave that diff unstaged. Restore it with
+`git restore package-lock.json` when you did not change dependencies. A pin
+update that `lockfile:check` asks for belongs in its own commit.
 
 ## GitHub CLI
 

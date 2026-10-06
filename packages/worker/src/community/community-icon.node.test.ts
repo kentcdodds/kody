@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	getCommunityPublicCacheVersion,
-	resetDataCacheForTests,
+	invalidateCommunityPublicCache,
 } from '#app/data-cache.ts'
 import {
 	deleteCommunityIconAssets,
@@ -420,7 +420,8 @@ test('deleteCommunityIconAssets removes superseded revisions and keeps servable 
 })
 
 test('refreshCommunityIconForPackagePublish drops superseded icon caches for active listings', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
+	const versionAfterClear = getCommunityPublicCacheVersion()
 	const { env, ...stores } = createIconEnv()
 	seedIconAssets(stores, listing.id, [
 		listing.pinnedCommit,
@@ -448,7 +449,7 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 	expect(Array.from(stores.r2Values.keys()).sort()).toEqual(
 		kept.map((commit) => r2IconKey('v3', listing.id, commit)).sort(),
 	)
-	expect(getCommunityPublicCacheVersion()).toBe(1)
+	expect(getCommunityPublicCacheVersion()).toBe(versionAfterClear + 1)
 
 	// Without an active listing the hook must be a no-op.
 	mocks.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
@@ -456,6 +457,6 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 	stores.r2Values.set(oldR2Key, Uint8Array.from([1]))
 	await refresh('newest-publish')
 	expect(stores.r2Values.has(oldR2Key)).toBe(true)
-	expect(getCommunityPublicCacheVersion()).toBe(1)
-	resetDataCacheForTests()
+	expect(getCommunityPublicCacheVersion()).toBe(versionAfterClear + 1)
+	invalidateCommunityPublicCache()
 })

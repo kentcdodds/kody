@@ -17,9 +17,8 @@ Agent notes — for AI agents explaining or using search and execute:
 - This page is the playbook for search and execute. Load it when someone
   asks what those tools are, how to call them, or why Kody is not a long
   tool list.
-- Prefer `npx @kodycodes/cli execute --local` when Node ≥22 + CLI are available
-  (guide:local_execute). If `--local` cannot run, use Open API / MCP api or fix
-  the environment (guide:open_api).
+- Local CLI execute: search({ entity: "guide:local_execute" }) and
+  .agents/skills/prefer-local-cli-execute/SKILL.md. Open API: guide:open_api.
 - Official guides load with search({ entity: "guide:{id}" }). Capability
   detail includes a ready-to-run execute snippet; adapt that snippet, then
   execute.
@@ -130,11 +129,10 @@ helpers, workflows, and timeouts.
 1. **Search** for the outcome — a query, a domain list, or a known entity ref.
 2. **Read** the ranked hit or entity detail. Capability detail includes the
    execute module and input type.
-3. **Execute** with that adapted snippet. Prefer
-   `npx @kodycodes/cli execute --local` when Node ≥22 and the CLI are available
-   ([Local CLI execute](./local-execute.md)). If `--local` cannot run, use Open
-   API / MCP `api` ([Open API](./open-api.md)) or fix the environment. Put
-   varying capability args in `params` so the same `code` graph is reused.
+3. **Execute** with that adapted snippet. When Node ≥22 and the CLI are
+   available, use local CLI execute ([Local CLI execute](./local-execute.md),
+   `guide:local_execute`). Put varying capability args in `params` so the same
+   `code` graph is reused.
 4. **Reuse `conversationId`** from the tool response on the next search or
    execute in the same conversation.
 5. **Save** the working module as a package when the behavior should live past

@@ -12,14 +12,8 @@ import {
 } from '#universal/youtube-watch.ts'
 import { guides } from '#worker/guides/catalog.ts'
 
-type YoutubeWatchFetch = (
-	input: string,
-	init?: RequestInit,
-) => Promise<Response>
-
 export async function resolveYoutubeWatchAllowedVideoIds(input: {
 	env: Env
-	fetchImpl?: YoutubeWatchFetch
 	cache?: Cache
 	/**
 	 * Playlist Atom fetch plus the homepage hero chooser ids. Default true
@@ -39,7 +33,6 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		loadPlaylists
 			? loadPlaylistVideoIds({
 					playlistIds,
-					fetchImpl: input.fetchImpl ?? fetch,
 					cache: input.cache ?? readDefaultCache(),
 				})
 			: Promise.resolve([]),
@@ -47,10 +40,8 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 			? loadLandingHeroVideos({
 					env: input.env,
 					playlistId: landingHeroSourcePlaylistId,
-					fetchImpl: input.fetchImpl,
 				})
 			: Promise.resolve([]),
-		,
 	])
 	return mergeYoutubeWatchAllowlist({
 		playlistVideoIds,
@@ -81,7 +72,6 @@ export function bundledDocWatchVideoIds(): Array<string> {
 
 export async function loadPlaylistVideoIds(input: {
 	playlistIds: ReadonlyArray<string>
-	fetchImpl: YoutubeWatchFetch
 	cache?: Cache
 }): Promise<Array<string>> {
 	if (input.playlistIds.length === 0) return []
@@ -89,7 +79,6 @@ export async function loadPlaylistVideoIds(input: {
 		input.playlistIds.map((playlistId) =>
 			loadOnePlaylistVideoIds({
 				playlistId,
-				fetchImpl: input.fetchImpl,
 				cache: input.cache,
 			}),
 		),
@@ -99,7 +88,6 @@ export async function loadPlaylistVideoIds(input: {
 
 async function loadOnePlaylistVideoIds(input: {
 	playlistId: string
-	fetchImpl: YoutubeWatchFetch
 	cache?: Cache
 }): Promise<Array<string>> {
 	const cacheRequest = new Request(
@@ -114,10 +102,10 @@ async function loadOnePlaylistVideoIds(input: {
 	}
 
 	try {
-		const response = await input.fetchImpl(
-			youtubePlaylistFeedUrl(input.playlistId),
-			{ signal: AbortSignal.timeout(2_500) },
-		)
+		// workerd's `fetch` is not a bound function; call the global.
+		const response = await fetch(youtubePlaylistFeedUrl(input.playlistId), {
+			signal: AbortSignal.timeout(2_500),
+		})
 		if (!response.ok) return []
 		const xml = await response.text()
 		if (input.cache) {

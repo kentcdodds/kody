@@ -21,7 +21,9 @@
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
 				"{workspaceRoot}/skills-lock.json",
-				"{workspaceRoot}/.agents/skills/ship-pr/**/*"
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
+				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
+				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
 			]
 		},
 		"test-node": {
@@ -34,7 +36,9 @@
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
 				"{workspaceRoot}/skills-lock.json",
-				"{workspaceRoot}/.agents/skills/ship-pr/**/*"
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
+				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
+				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
 			]
 		},
 		"test-workers": {

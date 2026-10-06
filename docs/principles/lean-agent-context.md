@@ -18,6 +18,7 @@ in focused docs, and do not restate the same policy across files.
 
 ## Related
 
+- [Examples over prose](./examples-over-prose.md): one example, or a script
 - [Harness engineering](../contributing/harness-engineering.md): promote
   repeated advice into checkers
 - [Documentation principles](../contributing/documentation.md): how we write and
