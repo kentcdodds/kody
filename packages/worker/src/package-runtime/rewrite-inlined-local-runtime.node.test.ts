@@ -381,7 +381,8 @@ test('rewrite rebinds esbuild __esm package-runtime inits and storage names', ()
 	// `var packageStorage5;` + assignment inside init_<hex>(). Stripping that
 	// section without re-emitting the init and renamed storage binding leaves
 	// retained author modules with ReferenceError under local workerd.
-	// Esbuild also renames colliding factory helpers (`…Storage` → `…Storage2`).
+	// Esbuild also renames colliding factory helpers (`…Storage` → `…Storage2`)
+	// and shared ALS exports (`packageContext` → `packageContext6`).
 	const initName =
 		'init_d646661662d346238642d613236612d616461393339323234303331'
 	const source = `import { kody, createAuthenticatedFetch, email } from "./dep-runtime.js";
@@ -390,11 +391,15 @@ test('rewrite rebinds esbuild __esm package-runtime inits and storage names', ()
 function __kodyOptionalRuntimeFunctionExport(exportName) {
   return () => {};
 }
+function __kodyCreateRuntimeRecordExport(exportName) {
+  return { exportName };
+}
 function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
 function __kodyCreatePackageBoundStorage2(id) { return () => ({ id }); }
 function __kodyCreatePackageBoundSecrets2(id) { return { get: async () => "", has: async () => false }; }
 var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
+var packageContext6 = __kodyCreateRuntimeRecordExport("packageContext");
+var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2, packageContext: packageContext6 };
 var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
 
 // virtual:.__kody_virtual__/package-runtime/${packageId}.js
@@ -411,13 +416,16 @@ var ${initName} = __esm({
 async function readPaused() {
   return await packageStorage5().get("paused");
 }
+function readHostedUrl() {
+  return typeof packageContext6?.hostedUrl === "string" ? packageContext6.hostedUrl : null;
+}
 var init_storage = __esm({
   "virtual:.__kody_root__/src/storage.ts"() {
     ${initName}();
   }
 });
 export async function main() {
-  return [typeof kody, typeof packageStorage5, await readPaused()];
+  return [typeof kody, typeof packageStorage5, await readPaused(), readHostedUrl()];
 }
 `
 	const result = rewriteInlinedLocalExecuteBundleSource({
@@ -434,9 +442,11 @@ export async function main() {
 	expect(result.source).toContain(
 		`var packageSecrets5 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
 	)
+	expect(result.source).toContain('var packageContext6 = packageContext;')
 	expect(result.source).toContain(`var ${initName} = () => {};`)
 	expect(result.source).toContain(`${initName}();`)
 	expect(result.source).not.toContain('__kodyOptionalRuntimeFunctionExport')
+	expect(result.source).not.toContain('__kodyCreateRuntimeRecordExport')
 	const shimImportBodies = [
 		...result.source.matchAll(
 			/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g,
@@ -452,4 +462,9 @@ export async function main() {
 	for (const body of shimImportBodies) {
 		expect(body).not.toMatch(/(^|[\s,])kody([\s,]|$)/)
 	}
+	expect(
+		shimImportBodies.some((body) =>
+			/(^|[\s,])packageContext([\s,]|$)/.test(body),
+		),
+	).toBe(true)
 })

@@ -82,6 +82,11 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 	const removableInitNames = readRemovableEsmInitNames(preambleSource).filter(
 		(name) => retained.includes(name),
 	)
+	const sharedRuntimeExportAliases = readRemovableSharedRuntimeExportAliases(
+		preambleSource,
+	).filter(
+		(alias) => retained.includes(alias.name) && !authorBindings.has(alias.name),
+	)
 	const relativeShim = createRelativeImportSpecifier(
 		normalizeWorkspaceModulePath(input.modulePath),
 		normalizeWorkspaceModulePath(input.primaryRuntimePath),
@@ -93,6 +98,7 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		bindingNames,
 		authorBindings,
 		removableInitNames,
+		sharedRuntimeExportAliases,
 	})
 
 	// Walk sections in order: keep author modules where they were, emit the
@@ -192,6 +198,64 @@ const packageBoundFactoryPatterns: ReadonlyArray<{
 ]
 
 /**
+ * Shared ALS / CapabilityProxy exports that the local shim re-provides under
+ * their canonical names. Esbuild renames colliding inlined copies
+ * (`packageContext` → `packageContext6`); retained author modules keep the
+ * renamed identifier after the removable runtime sections are stripped.
+ */
+const sharedRuntimeExportCanonicals = [
+	'kody',
+	'secretHeaders',
+	'packageContext',
+	'email',
+	'workflows',
+	'packages',
+	'events',
+] as const
+
+type SharedRuntimeExportCanonical =
+	(typeof sharedRuntimeExportCanonicals)[number]
+
+type SharedRuntimeExportAlias = {
+	canonical: SharedRuntimeExportCanonical
+	name: string
+}
+
+const sharedRuntimeExportFactoryPatterns: ReadonlyArray<{
+	canonical: SharedRuntimeExportCanonical
+	rhs: RegExp
+}> = [
+	{
+		canonical: 'kody',
+		rhs: /__kodyCreateRuntimeObjectProxy\d*\s*\(\s*["']kody["']/,
+	},
+	{
+		canonical: 'secretHeaders',
+		rhs: /__kodyOptionalRuntimeObjectExport\d*\s*\(\s*["']secretHeaders["']/,
+	},
+	{
+		canonical: 'packageContext',
+		rhs: /__kodyCreateRuntimeRecordExport\d*\s*\(\s*["']packageContext["']/,
+	},
+	{
+		canonical: 'email',
+		rhs: /__kodyOptionalRuntimeObjectExport\d*\s*\(\s*["']email["']/,
+	},
+	{
+		canonical: 'workflows',
+		rhs: /__kodyOptionalRuntimeObjectExport\d*\s*\(\s*["']workflows["']/,
+	},
+	{
+		canonical: 'packages',
+		rhs: /__kodyOptionalRuntimeObjectExport\d*\s*\(\s*["']packages["']/,
+	},
+	{
+		canonical: 'events',
+		rhs: /__kodyOptionalRuntimeObjectExport\d*\s*\(\s*["']events["']/,
+	},
+]
+
+/**
  * Every package-stamped factory assignment in the removed preamble, in source
  * order. Multi-facade graphs bind dependency storage/secrets before the root;
  * each binding keeps the package ID from its own facade.
@@ -221,6 +285,55 @@ export function readPackageBoundBindings(
 		name,
 		packageId,
 	}))
+}
+
+/**
+ * Renamed shared runtime exports declared in removable sections
+ * (`packageContext6 = __kodyCreateRuntimeRecordExport("packageContext")`, or
+ * a hoisted `var packageContext6` later assigned inside `__esm`). Retained
+ * author modules keep those names; the replacement preamble must alias them
+ * to the shim's canonical binding.
+ */
+export function readRemovableSharedRuntimeExportAliases(
+	preambleSource: string,
+): Array<SharedRuntimeExportAlias> {
+	const aliases: Array<SharedRuntimeExportAlias & { index: number }> = []
+	const seen = new Set<string>()
+	const remember = (
+		canonical: SharedRuntimeExportCanonical,
+		name: string | undefined,
+		index: number,
+	) => {
+		if (!name || name === canonical || seen.has(name)) return
+		if (!name.startsWith(canonical)) return
+		const suffix = name.slice(canonical.length)
+		if (!/^\d+$/.test(suffix)) return
+		seen.add(name)
+		aliases.push({ canonical, name, index })
+	}
+
+	for (const { canonical, rhs } of sharedRuntimeExportFactoryPatterns) {
+		const assignPattern = new RegExp(
+			`(?:(?:var|let|const)\\s+)?([A-Za-z_$][\\w$]*)\\s*=\\s*${rhs.source}`,
+			'g',
+		)
+		for (const match of preambleSource.matchAll(assignPattern)) {
+			remember(canonical, match[1], match.index ?? 0)
+		}
+	}
+
+	for (const canonical of sharedRuntimeExportCanonicals) {
+		const declPattern = new RegExp(
+			`(?:var|let|const)\\s+(${canonical}\\d+)\\b`,
+			'g',
+		)
+		for (const match of preambleSource.matchAll(declPattern)) {
+			remember(canonical, match[1], match.index ?? 0)
+		}
+	}
+
+	aliases.sort((left, right) => left.index - right.index)
+	return aliases.map(({ canonical, name }) => ({ canonical, name }))
 }
 
 /**
@@ -534,6 +647,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
 	authorBindings: ReadonlySet<string>
 	removableInitNames?: ReadonlyArray<string>
+	sharedRuntimeExportAliases?: ReadonlyArray<SharedRuntimeExportAlias>
 }) {
 	const {
 		packageStorage,
@@ -592,6 +706,17 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			// author `__esm` modules only need the init symbol to exist.
 			(name) => `var ${name} = () => {};`,
 		)
+	const packageBoundEmittedNames = new Set(
+		input.packageBoundBindings.map((binding) => binding.name),
+	)
+	const sharedAliasBlock = (input.sharedRuntimeExportAliases ?? [])
+		.filter(
+			(alias) =>
+				!input.authorBindings.has(alias.name) &&
+				!packageBoundEmittedNames.has(alias.name),
+		)
+		.map((alias) => `var ${alias.name} = ${alias.canonical};`)
+		.join('\n')
 	const facadeBlock = [...facadeLines, ...initStubLines]
 		.filter(Boolean)
 		.join('\n')
@@ -736,6 +861,7 @@ ${
 		: ''
 }
 ${aliases}
+${sharedAliasBlock}
 ${facadeBlock}
 `.trim()
 	}
@@ -814,6 +940,7 @@ ${facadeBlock}
 		),
 		emitCanonicalAlias('packageStorage', packageStorage, input.authorBindings),
 		emitCanonicalAlias('packageSecrets', packageSecrets, input.authorBindings),
+		sharedAliasBlock,
 	]
 		.filter(Boolean)
 		.join('\n')
