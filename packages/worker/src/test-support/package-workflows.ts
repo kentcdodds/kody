@@ -380,11 +380,18 @@ export function createWorkflowRunsDatabase(options?: {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	const now = '2026-05-03T00:00:00.000Z'
+	const usernames = new Set<string>()
 	for (const [index, user] of (options?.users ?? []).entries()) {
 		const stableUserId = user.stable_user_id ?? `user-${index + 1}`
-		const username =
+		const baseUsername =
 			user.email.split('@')[0]?.replace(/[^a-z0-9_-]/gi, '') ||
 			`user${index + 1}`
+		let username = baseUsername
+		let suffix = 2
+		while (usernames.has(username)) {
+			username = `${baseUsername}-${suffix++}`
+		}
+		usernames.add(username)
 		sqlite
 			.prepare(
 				`INSERT INTO users (
@@ -393,22 +400,26 @@ export function createWorkflowRunsDatabase(options?: {
 			)
 			.run(username, user.email, now, user.plan ?? 'free', stableUserId)
 	}
-	const savedPackage =
-		options?.savedPackage === undefined
-			? {
-					id: 'pkg-1',
-					user_id: 'user-1',
-					name: 'Shade automation',
-					kody_id: 'shade-automation',
-					description: 'Shade automation package',
-					tags_json: '[]',
-					search_text: null,
-					source_id: 'source-1',
-					has_app: 0,
-					created_at: now,
-					updated_at: now,
+	const defaultSavedPackage: Record<string, unknown> = {
+		id: 'pkg-1',
+		user_id: 'user-1',
+		name: 'Shade automation',
+		kody_id: 'shade-automation',
+		description: 'Shade automation package',
+		tags_json: '[]',
+		search_text: null,
+		source_id: 'source-1',
+		has_app: 0,
+		created_at: now,
+		updated_at: now,
+	}
+	const savedPackage: Record<string, unknown> | null =
+		options?.savedPackage === null
+			? null
+			: {
+					...defaultSavedPackage,
+					...options?.savedPackage,
 				}
-			: options.savedPackage
 	if (savedPackage) {
 		sqlite
 			.prepare(
