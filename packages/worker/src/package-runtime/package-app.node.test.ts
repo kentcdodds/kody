@@ -221,7 +221,6 @@ test('package app kody.mcp loads server names lazily on first mcp touch', async 
 	})
 
 	expect(loadCount).toBe(0)
-	// Capability calls do not need the name list; they only start the load.
 	await expect(
 		(
 			proxy.mcp as Record<
@@ -232,17 +231,8 @@ test('package app kody.mcp loads server names lazily on first mcp touch', async 
 	).resolves.toEqual({ ok: true })
 	expect(loadCount).toBe(1)
 
-	// Wait for the in-flight lazy load if ownKeys still suspensed.
-	try {
-		Reflect.ownKeys(proxy.mcp as object)
-	} catch (error) {
-		const suspense = error as {
-			__kodyMcpNamesSuspense?: boolean
-			promise?: Promise<unknown>
-		}
-		expect(suspense.__kodyMcpNamesSuspense).toBe(true)
-		await suspense.promise
-	}
+	await Promise.resolve()
+	await Promise.resolve()
 	expect(Reflect.ownKeys(proxy.mcp as object)).toEqual(['home'])
 	expect(loadCount).toBe(1)
 
@@ -254,34 +244,27 @@ test('package app kody.mcp loads server names lazily on first mcp touch', async 
 	expect(loadCount).toBe(1)
 })
 
-test('package app kody.mcp ownKeys suspense waits for lazy name load', async () => {
-	let resolveNames: ((names: Array<string>) => void) | undefined
-	const namesPromise = new Promise<Array<string>>((resolve) => {
-		resolveNames = resolve
-	})
-	const proxy = createKodyProxyForTest(
-		{ callCapability: async () => ({ ok: true }) },
-		async () => await namesPromise,
-	)
-
-	let suspense: {
-		__kodyMcpNamesSuspense?: boolean
-		promise?: Promise<unknown>
-	} | null = null
-	try {
-		Reflect.ownKeys(proxy.mcp as object)
-	} catch (error) {
-		suspense = error as {
-			__kodyMcpNamesSuspense?: boolean
-			promise?: Promise<unknown>
-		}
-	}
-	expect(suspense?.__kodyMcpNamesSuspense).toBe(true)
-	expect(suspense?.promise).toBeTypeOf('object')
-
-	resolveNames?.(['home', 'mediarss'])
-	await suspense?.promise
-	expect(Reflect.ownKeys(proxy.mcp as object)).toEqual(['home', 'mediarss'])
+test('modulesReferenceKodyMcp detects authored kody.mcp access', async () => {
+	const { modulesReferenceKodyMcp } =
+		await import('./package-app-mcp-preload.ts')
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'export default { async fetch() { return new Response("ok") } }',
+		}),
+	).toBe(false)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody } from "kody:runtime"\nexport default { async fetch() { return kody.mcp.home.ping({}) } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody } from "kody:runtime"\nconst home = kody["mcp"].home\nexport default home',
+		}),
+	).toBe(true)
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
