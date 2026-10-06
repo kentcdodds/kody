@@ -201,7 +201,9 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 	})
 
 	function noticeActive(active: LandingPrimitiveId | null) {
-		if (active === seenActive) return
+		// A word opened while the scene loads waits for the engine, so the
+		// lantern still turns to it once it is live.
+		if (!engine || active === seenActive) return
 		seenActive = active
 		const fromLantern = active !== null && active === openedHere
 		openedHere = null
