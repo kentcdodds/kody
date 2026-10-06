@@ -109,8 +109,10 @@ test('bootstrap redeem requires a lifetime and yields a working token', async ()
 	expect(redeemed.token.expires_at).toBe(
 		at(30 + longLife.idleTtlSeconds).toISOString(),
 	)
+	// Absolute expiry is anchored to code created_at + authorized max, not
+	// restarted from redeem time.
 	expect(redeemed.token.max_expires_at).toBe(
-		at(30 + longLife.maxLifetimeSeconds).toISOString(),
+		at(longLife.maxLifetimeSeconds).toISOString(),
 	)
 	const auth = await authenticateApiToken({
 		db,

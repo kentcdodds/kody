@@ -419,7 +419,7 @@ export const tokenOperationDefinitions: Record<
 	},
 }
 
-const bootstrapRedeemInputSchema = z
+export const bootstrapRedeemInputSchema = z
 	.object({
 		code: z
 			.string()

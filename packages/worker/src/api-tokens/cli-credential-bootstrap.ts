@@ -449,6 +449,14 @@ export async function redeemCliCredentialBootstrap(input: {
 			idleTtlSeconds: requested.idleTtlSeconds,
 			maxLifetimeSeconds: requested.maxLifetimeSeconds,
 			createdVia: 'cli-bootstrap',
+			// Absolute expiry cannot restart past the window authorized when the
+			// code was minted (parent clamps live in stored max_lifetime_seconds).
+			parent: {
+				scopes,
+				maxExpiresAt: new Date(
+					Date.parse(row.created_at) + row.max_lifetime_seconds * 1000,
+				).toISOString(),
+			},
 			now,
 		})
 		return { token, userId: row.user_id }

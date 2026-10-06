@@ -3,7 +3,7 @@ id: local_execute
 title: Local CLI execute
 summary:
   Prefer @kodycodes/cli execute --local when Node ≥22 and the CLI are available.
-  Orthogonal to Open API  -  use this guide for CLI setup and --local usage; see
+  Orthogonal to Open API: use this guide for CLI setup and --local usage; see
   guide:open_api for HTTPS / MCP api fallback.
 category: platform
 ---
@@ -18,16 +18,15 @@ CapabilityProxy. Do **not** use hosted MCP `execute` for agent work when a local
 or Open API path exists.
 
 Auth: `--token` / `KODY_API_TOKEN` (`kody_at_…` with `local-execute` scope), or
-
-- when no API token is set - the access token from `kody login` (MCP OAuth) as
-  Bearer on CapabilityProxy and package-graph routes.
+when no API token is set, the access token from `kody login` (MCP OAuth) as
+Bearer on CapabilityProxy and package-graph routes.
 
 ## Setup
 
-**Agents already on MCP** - call `cliCredentialBootstrap` with a required
+**Agents already on MCP:** call `cliCredentialBootstrap` with a required
 lifetime (single-task agents use `short`). It returns a one-shot `kody_bc_…`
-code and a `cli_command` that already includes lifetime flags - **not** a
-`kody_at_…`. Run the CLI command (no second OAuth, no `tokenCreate`):
+code and a `cli_command` that already includes lifetime flags (**not** a
+`kody_at_…`). Run the CLI command (no second OAuth, no `tokenCreate`):
 
 ```json
 {
@@ -44,14 +43,14 @@ npx @kodycodes/cli auth bootstrap --code 'kody_bc_…' --lifetime short
 pass both `--idle-ttl-seconds` and `--max-lifetime-seconds`. Lifetime is
 required; missing it fails with the exact flag syntax.
 
-**Interactive humans** - `kody login` once per machine, then run `--local`
+**Interactive humans:** `kody login` once per machine, then run `--local`
 without `KODY_API_TOKEN`.
 
 ```bash
 npx @kodycodes/cli login   # once
 ```
 
-**CI / headless only** - scoped `KODY_API_TOKEN` (`kody_at_…` with
+**CI / headless only:** scoped `KODY_API_TOKEN` (`kody_at_…` with
 `local-execute` scope), usually from MCP `api` `tokenCreate` with a required
 lifetime. Put the value in the environment; never paste it into chat. Prefer the
 env var over `--token`. When set, `KODY_API_TOKEN` wins over `kody login` /

@@ -25,12 +25,14 @@ import {
 	isCapabilityProxyOperation,
 	isCliCredentialBootstrapRedeemOperation,
 } from './invoke.ts'
+import { parseNativeInput } from './native-operation-helpers.ts'
 import { apiOperationUsesQueryInputs, matchApiRoute } from './operations.ts'
 import {
 	mergeApiParams,
 	readJsonBody,
 	readQueryParams,
 } from './request-params.ts'
+import { bootstrapRedeemInputSchema } from './token-operations.ts'
 
 export const openApiDocumentPath = '/openapi.json'
 
@@ -123,29 +125,20 @@ async function handleOperation(input: {
 			match,
 			inputSchema: resolved.inputSchema,
 		})
-		const redeemInput =
-			typeof params === 'object' && params !== null
-				? (params as {
-						code?: unknown
-						lifetime?: unknown
-						idle_ttl_seconds?: unknown
-						max_lifetime_seconds?: unknown
-					})
-				: {}
-		const code = typeof redeemInput.code === 'string' ? redeemInput.code : ''
+		const redeemInput = parseNativeInput(bootstrapRedeemInputSchema, params)
 		const redeemed = await redeemCliCredentialBootstrap({
 			db: input.env.APP_DB,
-			code,
+			code: redeemInput.code,
 			env: input.env,
-			...(typeof redeemInput.lifetime === 'string'
-				? { lifetime: redeemInput.lifetime }
-				: {}),
-			...(typeof redeemInput.idle_ttl_seconds === 'number'
-				? { idleTtlSeconds: redeemInput.idle_ttl_seconds }
-				: {}),
-			...(typeof redeemInput.max_lifetime_seconds === 'number'
-				? { maxLifetimeSeconds: redeemInput.max_lifetime_seconds }
-				: {}),
+			...(redeemInput.lifetime === undefined
+				? {}
+				: { lifetime: redeemInput.lifetime }),
+			...(redeemInput.idle_ttl_seconds === undefined
+				? {}
+				: { idleTtlSeconds: redeemInput.idle_ttl_seconds }),
+			...(redeemInput.max_lifetime_seconds === undefined
+				? {}
+				: { maxLifetimeSeconds: redeemInput.max_lifetime_seconds }),
 		})
 		input.waitUntil(
 			recordUsage(
