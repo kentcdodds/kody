@@ -307,6 +307,22 @@ test('modulesReferenceKodyMcp detects authored kody.mcp access', async () => {
 				'export default { async fetch() { const { kody: api } = await import("../.__kody_virtual__/public-runtime.js"); return api.mcp.home.ping({}) } }',
 		}),
 	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'runtime.js':
+				'export { kody } from "../.__kody_virtual__/public-runtime.js"',
+			'entry.js':
+				'import { kody as api } from "./runtime.js"\nexport default { async fetch() { const { home } = api.mcp; return home } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'runtime.js':
+				'export { kody } from "../.__kody_virtual__/public-runtime.js"',
+			'entry.js':
+				'import { kody as api } from "./runtime.js"\nexport default { async fetch() { return new Response(api.metaGetCurrentUser ? "ok" : "no") } }',
+		}),
+	).toBe(false)
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

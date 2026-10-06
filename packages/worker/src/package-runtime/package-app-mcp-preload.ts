@@ -60,16 +60,24 @@ function sourceImportsKodyRuntime(source: string): boolean {
  * the generated entrypoint preloads `listMcpServerNames`. Hello-world and
  * other non-MCP modules stay on the lazy loader path.
  *
- * Also treats `import { kody as api } from 'kody:runtime'` plus `api.mcp`
- * as a hit (including after the bundler rewrites the specifier to a virtual
- * runtime path, and for `require()` / dynamic `import()`): the direct
- * `kody.mcp` regex misses renamed bindings.
+ * Same-module aliased access (`import { kody as api }` plus `api.mcp`,
+ * including rewritten virtual runtime paths and `require()` / `import()`)
+ * is a hit. Runtime import and `.mcp` access may also live in different
+ * modules after a re-export, so the scan ORs those signals across the
+ * whole module set rather than requiring both in one file.
  */
 export function modulesReferenceKodyMcp(modules: WorkerLoaderModules): boolean {
-	return Object.values(modules).some((module) => {
+	const sources: Array<string> = []
+	for (const module of Object.values(modules)) {
 		const source = readModuleSource(module)
-		if (source == null) return false
-		if (directKodyMcpPattern.test(source)) return true
-		return sourceImportsKodyRuntime(source) && mcpAccessPattern.test(source)
-	})
+		if (source != null) sources.push(source)
+	}
+	if (sources.some((source) => directKodyMcpPattern.test(source))) {
+		return true
+	}
+	const importsRuntime = sources.some((source) =>
+		sourceImportsKodyRuntime(source),
+	)
+	if (!importsRuntime) return false
+	return sources.some((source) => mcpAccessPattern.test(source))
 }
