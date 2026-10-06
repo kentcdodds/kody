@@ -265,6 +265,18 @@ test('modulesReferenceKodyMcp detects authored kody.mcp access', async () => {
 				'import { kody } from "kody:runtime"\nconst home = kody["mcp"].home\nexport default home',
 		}),
 	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody as api } from "kody:runtime"\nexport default { async fetch() { const { home } = api.mcp; return home } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody as api } from "kody:runtime"\nexport default { async fetch() { return new Response(api.metaGetCurrentUser ? "ok" : "no") } }',
+		}),
+	).toBe(false)
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

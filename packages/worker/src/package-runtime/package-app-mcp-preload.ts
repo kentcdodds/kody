@@ -10,16 +10,27 @@ function readModuleSource(
 	return null
 }
 
+const directKodyMcpPattern =
+	/\bkody\s*\.\s*mcp\b|\bkody\s*\[\s*['"]mcp['"]\s*\]/
+const kodyRuntimeImportPattern = /from\s+['"]kody:runtime['"]/
+const mcpAccessPattern = /\.\s*mcp\b|\[\s*['"]mcp['"]\s*\]/
+
 /**
  * True when authored package modules reference `kody.mcp`. Those apps need
  * MCP server names advertised before Workerd ownKeys+GOPD destructuring, so
  * the generated entrypoint preloads `listMcpServerNames`. Hello-world and
  * other non-MCP modules stay on the lazy loader path.
+ *
+ * Also treats `import { kody as api } from 'kody:runtime'` plus `api.mcp`
+ * as a hit: the direct `kody.mcp` regex misses renamed bindings.
  */
 export function modulesReferenceKodyMcp(modules: WorkerLoaderModules): boolean {
-	const pattern = /\bkody\s*\.\s*mcp\b|\bkody\s*\[\s*['"]mcp['"]\s*\]/
 	return Object.values(modules).some((module) => {
 		const source = readModuleSource(module)
-		return source != null && pattern.test(source)
+		if (source == null) return false
+		if (directKodyMcpPattern.test(source)) return true
+		return (
+			kodyRuntimeImportPattern.test(source) && mcpAccessPattern.test(source)
+		)
 	})
 }
