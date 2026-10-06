@@ -277,3 +277,101 @@ export async function searchMessages() { return typeof createAuthenticatedFetch 
 	})
 	expect(result).toEqual({ source, rewritten: false, packageId: null })
 })
+
+test('rewrite skips shim locals that retained nested package runtime imports already bind', () => {
+	// npm-backed published bundles (e.g. kodykoala-activity reconcile) inline
+	// dependency graphs that keep `import { kody, … }` from nested package
+	// runtimes, then also contain an inlined optional-CAF runtime section.
+	// Re-importing `kody` from the CapabilityProxy shim SyntaxErrors under
+	// workerd ("Identifier 'kody' has already been declared").
+	const nestedRuntime =
+		'./.__kody_packages__/@kentcdodds/x/.__published_bundle__/2e2f6765742d706f7374/.__kody_virtual__/runtime.js'
+	const source = `import { kody, createAuthenticatedFetch, secretHeaders, oauthClientCredentials, packageContext, email, workflows, packages, events } from ${JSON.stringify(nestedRuntime)};
+import { __kodyCreatePackageBoundStorage, __kodyCreatePackageBoundSecrets } from ${JSON.stringify(nestedRuntime)};
+
+// virtual:.__kody_virtual__/runtime.js
+function __kodyOptionalRuntimeFunctionExport(exportName) {
+  return () => {};
+}
+var runtime_default = { createAuthenticatedFetch: __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch") };
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
+
+// virtual:.__kody_root__/src/entry.ts
+export async function main() {
+  return [typeof kody, typeof createAuthenticatedFetch, typeof email];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/kodykoala-activity/.__published_bundle__/2e2f7265636f6e63696c652d61637469766974792d6d6973736573/bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toContain(
+		`import { kody, createAuthenticatedFetch, secretHeaders, oauthClientCredentials, packageContext, email, workflows, packages, events } from ${JSON.stringify(nestedRuntime)}`,
+	)
+	// Shim hops to the graph-canonical runtime (not a nested published copy).
+	const shimImportBodies = [
+		...result.source.matchAll(
+			/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g,
+		),
+	]
+		.filter(
+			(match) =>
+				(match[2] ?? '').includes('.__kody_virtual__/runtime.js') &&
+				!(match[2] ?? '').includes('.__kody_packages__'),
+		)
+		.map((match) => match[1] ?? '')
+	expect(shimImportBodies.length).toBeGreaterThan(0)
+	for (const body of shimImportBodies) {
+		expect(body).not.toMatch(/(^|[\s,])kody([\s,]|$)/)
+		expect(body).not.toMatch(/(^|[\s,])email([\s,]|$)/)
+		expect(body).not.toMatch(/(^|[\s,])secretHeaders([\s,]|$)/)
+		expect(body).not.toMatch(
+			/(^|[\s,])createAuthenticatedFetch(\s+as\b|[\s,]|$)/,
+		)
+	}
+	// packageStorage / packageSecrets were not in the retained imports — bind them.
+	expect(result.source).toContain(
+		'var packageStorage = __kodyShimPackageStorage',
+	)
+	expect(result.source).toContain(
+		'var packageSecrets = __kodyShimPackageSecrets',
+	)
+	expect(result.source).not.toContain('__kodyOptionalRuntimeFunctionExport')
+})
+
+test('rewrite stamped shim skips kody when author already imported it', () => {
+	const source = `import { kody, email } from "./dep-runtime.js";
+
+// virtual:.__kody_virtual__/runtime.js
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+
+// virtual:.__kody_virtual__/package-runtime/abc.js
+var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+
+// virtual:.__kody_root__/src/entry.ts
+export async function main() {
+  return typeof kody.metaGetCurrentUser;
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath: 'bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.packageId).toBe(packageId)
+	expect(result.source).toContain(
+		'import { kody, email } from "./dep-runtime.js"',
+	)
+	expect(result.source).not.toMatch(
+		/import\s*\{[^}]*\bkody\b[^}]*\}\s*from\s*["'][^"']*__kody_virtual__\/runtime\.js["']/,
+	)
+	expect(result.source).toContain('__kodyCreatePackageBoundAuthenticatedFetch')
+	expect(result.source).toContain(
+		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+})

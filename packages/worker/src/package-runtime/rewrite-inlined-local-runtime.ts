@@ -457,6 +457,47 @@ function emitCanonicalAlias(
 	return `var ${canonical} = ${actual};`
 }
 
+type ShimImportBinding =
+	| string
+	| {
+			name: string
+			as: string
+	  }
+
+/**
+ * Named imports from the CapabilityProxy shim. Skip any local binding that
+ * retained author source already declares — npm-backed published bundles often
+ * keep `import { kody, … }` from nested package runtimes (esbuild aliases the
+ * later ones to `kody2`), and a second `import { kody }` is a SyntaxError under
+ * workerd. Hosted execute never injects this shim import.
+ */
+function collectShimImportSpecifiers(
+	bindings: ReadonlyArray<ShimImportBinding>,
+	authorBindings: ReadonlySet<string>,
+) {
+	const specifiers: Array<string> = []
+	for (const binding of bindings) {
+		if (typeof binding === 'string') {
+			if (authorBindings.has(binding)) continue
+			specifiers.push(binding)
+			continue
+		}
+		if (authorBindings.has(binding.as)) continue
+		specifiers.push(`${binding.name} as ${binding.as}`)
+	}
+	return specifiers
+}
+
+function formatShimImportBlock(
+	relativeShimSpecifier: string,
+	specifiers: ReadonlyArray<string>,
+) {
+	if (specifiers.length === 0) return ''
+	return `import {\n\t${specifiers.join(',\n\t')},\n} from ${JSON.stringify(
+		relativeShimSpecifier,
+	)};`
+}
+
 function createInlinedRuntimeReplacementPreamble(input: {
 	relativeShimSpecifier: string
 	packageId: string | null
@@ -464,7 +505,6 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
 	authorBindings: ReadonlySet<string>
 }) {
-	const shim = JSON.stringify(input.relativeShimSpecifier)
 	const {
 		packageStorage,
 		packageSecrets,
@@ -516,6 +556,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		const emittedBindingNames = new Set<string>()
 		for (const binding of input.packageBoundBindings) {
 			if (emittedBindingNames.has(binding.name)) continue
+			if (input.authorBindings.has(binding.name)) continue
 			emittedBindingNames.add(binding.name)
 			const idLiteral = JSON.stringify(binding.packageId)
 			switch (binding.kind) {
@@ -548,25 +589,37 @@ function createInlinedRuntimeReplacementPreamble(input: {
 		// Optional-export CAF/oauth (shared runtime) and any missing host
 		// bindings stamp to the root package id so author entry code still
 		// resolves them under --local.
-		if (!emittedBindingNames.has(createAuthenticatedFetch)) {
+		if (
+			!emittedBindingNames.has(createAuthenticatedFetch) &&
+			!input.authorBindings.has(createAuthenticatedFetch)
+		) {
 			packageBoundLines.push(
 				`var ${createAuthenticatedFetch} = __kodyCreatePackageBoundAuthenticatedFetch(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(createAuthenticatedFetch)
 		}
-		if (!emittedBindingNames.has(packageStorage)) {
+		if (
+			!emittedBindingNames.has(packageStorage) &&
+			!input.authorBindings.has(packageStorage)
+		) {
 			packageBoundLines.push(
 				`var ${packageStorage} = __kodyCreatePackageBoundStorage(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(packageStorage)
 		}
-		if (!emittedBindingNames.has(packageSecrets)) {
+		if (
+			!emittedBindingNames.has(packageSecrets) &&
+			!input.authorBindings.has(packageSecrets)
+		) {
 			packageBoundLines.push(
 				`var ${packageSecrets} = __kodyCreatePackageBoundSecrets(${packageIdLiteral});`,
 			)
 			emittedBindingNames.add(packageSecrets)
 		}
-		if (!emittedBindingNames.has(oauthClientCredentials)) {
+		if (
+			!emittedBindingNames.has(oauthClientCredentials) &&
+			!input.authorBindings.has(oauthClientCredentials)
+		) {
 			packageBoundLines.push(
 				`var ${oauthClientCredentials} = __kodyCreatePackageBoundOauthClientCredentials(${packageIdLiteral});`,
 			)
@@ -597,22 +650,38 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			.filter(Boolean)
 			.join('\n')
 		const emitFetchBinding = !input.authorBindings.has('fetch')
+		const needsPackageBoundFactories = packageBoundLines.length > 0
+		const shimImport = formatShimImportBlock(
+			input.relativeShimSpecifier,
+			collectShimImportSpecifiers(
+				[
+					'kody',
+					'secretHeaders',
+					'packageContext',
+					'email',
+					'workflows',
+					'packages',
+					'events',
+					...(needsPackageBoundFactories || emitFetchBinding
+						? (['__kodySecretRef'] as const)
+						: []),
+					...(needsPackageBoundFactories
+						? ([
+								'__kodyCreatePackageBoundAuthenticatedFetch',
+								'__kodyCreatePackageBoundStorage',
+								'__kodyCreatePackageBoundSecrets',
+								'__kodyCreatePackageBoundOauthClientCredentials',
+							] as const)
+						: []),
+					...(emitFetchBinding
+						? (['__kodyCreatePackageBoundGatewayFetch'] as const)
+						: []),
+				],
+				input.authorBindings,
+			),
+		)
 		return `
-import {
-	kody,
-	secretHeaders,
-	packageContext,
-	email,
-	workflows,
-	packages,
-	events,
-	__kodySecretRef,
-	__kodyCreatePackageBoundAuthenticatedFetch,
-	${emitFetchBinding ? '__kodyCreatePackageBoundGatewayFetch,' : ''}
-	__kodyCreatePackageBoundStorage,
-	__kodyCreatePackageBoundSecrets,
-	__kodyCreatePackageBoundOauthClientCredentials,
-} from ${shim};
+${shimImport}
 
 ${packageBoundLines.join('\n')}
 ${
@@ -627,29 +696,85 @@ ${facadeBlock}
 
 	// Unstamped inlined runtime (rare): import shim helpers under stable local
 	// aliases, then expose whatever esbuild names the author body still uses.
+	// Nested npm-backed graphs often already import `kody` / CAF from an
+	// external package runtime — do not redeclare those locals.
+	const bindCreateAuthenticatedFetch = !input.authorBindings.has(
+		createAuthenticatedFetch,
+	)
+	const bindOauthClientCredentials = !input.authorBindings.has(
+		oauthClientCredentials,
+	)
+	const bindPackageStorage = !input.authorBindings.has(packageStorage)
+	const bindPackageSecrets = !input.authorBindings.has(packageSecrets)
+	const shimImport = formatShimImportBlock(
+		input.relativeShimSpecifier,
+		collectShimImportSpecifiers(
+			[
+				'kody',
+				...(bindCreateAuthenticatedFetch
+					? [
+							{
+								name: 'createAuthenticatedFetch',
+								as: '__kodyShimCreateAuthenticatedFetch',
+							},
+						]
+					: []),
+				'secretHeaders',
+				...(bindOauthClientCredentials
+					? [
+							{
+								name: 'oauthClientCredentials',
+								as: '__kodyShimOauthClientCredentials',
+							},
+						]
+					: []),
+				'packageContext',
+				...(bindPackageStorage
+					? [{ name: 'packageStorage', as: '__kodyShimPackageStorage' }]
+					: []),
+				...(bindPackageSecrets
+					? [{ name: 'packageSecrets', as: '__kodyShimPackageSecrets' }]
+					: []),
+				'email',
+				'workflows',
+				'packages',
+				'events',
+			],
+			input.authorBindings,
+		),
+	)
+	const assignmentLines = [
+		bindCreateAuthenticatedFetch
+			? `var ${createAuthenticatedFetch} = __kodyShimCreateAuthenticatedFetch;`
+			: '',
+		bindOauthClientCredentials
+			? `var ${oauthClientCredentials} = __kodyShimOauthClientCredentials;`
+			: '',
+		bindPackageStorage
+			? `var ${packageStorage} = __kodyShimPackageStorage;`
+			: '',
+		bindPackageSecrets
+			? `var ${packageSecrets} = __kodyShimPackageSecrets;`
+			: '',
+		emitCanonicalAlias(
+			'createAuthenticatedFetch',
+			createAuthenticatedFetch,
+			input.authorBindings,
+		),
+		emitCanonicalAlias(
+			'oauthClientCredentials',
+			oauthClientCredentials,
+			input.authorBindings,
+		),
+		emitCanonicalAlias('packageStorage', packageStorage, input.authorBindings),
+		emitCanonicalAlias('packageSecrets', packageSecrets, input.authorBindings),
+	]
+		.filter(Boolean)
+		.join('\n')
 	return `
-import {
-	kody,
-	createAuthenticatedFetch as __kodyShimCreateAuthenticatedFetch,
-	secretHeaders,
-	oauthClientCredentials as __kodyShimOauthClientCredentials,
-	packageContext,
-	packageStorage as __kodyShimPackageStorage,
-	packageSecrets as __kodyShimPackageSecrets,
-	email,
-	workflows,
-	packages,
-	events,
-} from ${shim};
+${shimImport}
 
-var ${createAuthenticatedFetch} = __kodyShimCreateAuthenticatedFetch;
-var ${oauthClientCredentials} = __kodyShimOauthClientCredentials;
-var ${packageStorage} = __kodyShimPackageStorage;
-var ${packageSecrets} = __kodyShimPackageSecrets;
-${emitCanonicalAlias('createAuthenticatedFetch', createAuthenticatedFetch, input.authorBindings)}
-${emitCanonicalAlias('oauthClientCredentials', oauthClientCredentials, input.authorBindings)}
-${emitCanonicalAlias('packageStorage', packageStorage, input.authorBindings)}
-${emitCanonicalAlias('packageSecrets', packageSecrets, input.authorBindings)}
+${assignmentLines}
 ${facadeBlock}
 `.trim()
 }
