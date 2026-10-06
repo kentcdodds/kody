@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
 	getCommunityPublicCacheVersion,
-	resetDataCacheForTests,
+	invalidateCommunityPublicCache,
 } from '#app/data-cache.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
@@ -244,7 +244,7 @@ test('updateCommunityProfile validates display name and bio bounds', async () =>
 		/Bio must be at most 500/,
 	)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	const versionBeforeVisibilityChange = getCommunityPublicCacheVersion()
 	await update({
 		displayName: '  Nice Name  ',

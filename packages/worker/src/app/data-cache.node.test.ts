@@ -6,20 +6,28 @@ import {
 	getOrSetDataCache,
 	invalidateCommunityPublicCache,
 	peekDataCache,
-	resetDataCacheForTests,
 	setDataCache,
 } from './data-cache.ts'
 
+const indexKeyInput = {
+	query: '',
+	sort: 'best',
+	limit: 50,
+	category: null,
+	overview: true,
+} as const
+
 test('getOrSetDataCache returns miss then hit for the same key', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
+	const key = buildCommunityIndexCacheKey(indexKeyInput)
 	const load = vi.fn(async () => ({ listings: ['a'] }))
 
 	const first = await getOrSetDataCache({
-		key: 'community-index:v0:q=:limit=50',
+		key,
 		load,
 	})
 	const second = await getOrSetDataCache({
-		key: 'community-index:v0:q=:limit=50',
+		key,
 		load,
 	})
 
@@ -29,7 +37,7 @@ test('getOrSetDataCache returns miss then hit for the same key', async () => {
 })
 
 test('setDataCache expires entries after ttl', () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	vi.useFakeTimers()
 	try {
 		vi.setSystemTime(new Date('2026-07-04T00:00:00.000Z'))
@@ -41,53 +49,42 @@ test('setDataCache expires entries after ttl', () => {
 		expect(peekDataCache('short-lived')).toBeUndefined()
 	} finally {
 		vi.useRealTimers()
-		resetDataCacheForTests()
+		invalidateCommunityPublicCache()
 	}
 })
 
 test('invalidateCommunityPublicCache bumps version and clears entries', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	const load = vi.fn(async () => ['listing'])
-	const keyV0 = buildCommunityIndexCacheKey({
-		query: '',
-		sort: 'best',
-		limit: 50,
-		category: null,
-		overview: true,
-	})
+	const versionBefore = getCommunityPublicCacheVersion()
+	const keyBefore = buildCommunityIndexCacheKey(indexKeyInput)
 
-	await getOrSetDataCache({ key: keyV0, load })
-	expect(getCommunityPublicCacheVersion()).toBe(0)
-	expect(peekDataCache(keyV0)).toEqual(['listing'])
+	await getOrSetDataCache({ key: keyBefore, load })
+	expect(getCommunityPublicCacheVersion()).toBe(versionBefore)
+	expect(peekDataCache(keyBefore)).toEqual(['listing'])
 
 	invalidateCommunityPublicCache()
 
-	expect(getCommunityPublicCacheVersion()).toBe(1)
-	expect(peekDataCache(keyV0)).toBeUndefined()
+	expect(getCommunityPublicCacheVersion()).toBe(versionBefore + 1)
+	expect(peekDataCache(keyBefore)).toBeUndefined()
 
-	const keyV1 = buildCommunityIndexCacheKey({
-		query: '',
-		sort: 'best',
-		limit: 50,
-		category: null,
-		overview: true,
-	})
-	expect(keyV1).toContain(':v1:')
-	const next = await getOrSetDataCache({ key: keyV1, load })
+	const keyAfter = buildCommunityIndexCacheKey(indexKeyInput)
+	expect(keyAfter).toContain(`:v${versionBefore + 1}:`)
+	const next = await getOrSetDataCache({ key: keyAfter, load })
 	expect(next.lookup).toBe('miss')
 	expect(load).toHaveBeenCalledTimes(2)
 })
 
 test('buildCommunityDetailListingCacheKey includes listing id and version', () => {
-	resetDataCacheForTests()
 	invalidateCommunityPublicCache()
+	const version = getCommunityPublicCacheVersion()
 	expect(buildCommunityDetailListingCacheKey('listing-1')).toBe(
-		'community-detail-listing:v1:id=listing-1',
+		`community-detail-listing:v${version}:id=listing-1`,
 	)
 })
 
 test('setDataCache sweeps expired entries on write', () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	vi.useFakeTimers()
 	try {
 		vi.setSystemTime(new Date('2026-07-04T00:00:00.000Z'))
@@ -103,12 +100,12 @@ test('setDataCache sweeps expired entries on write', () => {
 		expect(peekDataCache('another')).toBe('value')
 	} finally {
 		vi.useRealTimers()
-		resetDataCacheForTests()
+		invalidateCommunityPublicCache()
 	}
 })
 
 test('setDataCache evicts oldest entries when over max bound', () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	for (let index = 0; index < 257; index += 1) {
 		setDataCache(`key-${index}`, index)
 	}

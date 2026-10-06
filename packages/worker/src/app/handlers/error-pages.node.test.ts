@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
 	createInternalErrorPageHandler,
 	createNotFoundPageHandler,
@@ -79,7 +79,7 @@ function readAppRootProps(html: string) {
 }
 
 test('GET /404 and /500 are explicit illustrated error routes', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
 

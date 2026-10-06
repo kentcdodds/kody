@@ -7,7 +7,7 @@ import type * as forkListingRelation from '#worker/community/fork-listing-relati
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import { onboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import { resetDataCacheForTests } from './data-cache.ts'
+import { invalidateCommunityPublicCache } from './data-cache.ts'
 import {
 	loadCommunityDetailData,
 	loadCommunityIndexData,
@@ -154,7 +154,7 @@ function signedInUser() {
 const request = (path: string) => new Request(`https://example.com${path}`)
 
 test('community index overlays fork installs and ignores same-leaf packages without a fork', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
@@ -169,7 +169,7 @@ test('community index overlays fork installs and ignores same-leaf packages with
 	expect(sameLeafOnly.listings).toHaveLength(1)
 	expect(sameLeafOnly.listings[0]?.viewerInstall).toBeUndefined()
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
@@ -199,7 +199,7 @@ test('community index overlays fork installs and ignores same-leaf packages with
 })
 
 test('community index resolves the viewer while listings are still loading', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	let releaseOverview!: () => void
 	const overviewGate = new Promise<void>((resolve) => {
@@ -222,7 +222,7 @@ test('community index resolves the viewer while listings are still loading', asy
 })
 
 test('onboarding MCP chooser listings load official packages by pinned id', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	const pinnedIds = onboardingFeaturedMcpServers
 		.map((server) => server.listingId)
@@ -257,7 +257,7 @@ test('onboarding MCP chooser listings load official packages by pinned id', asyn
 })
 
 test('onboarding featured listings overlay inert forks as adaptation_required', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listFeaturedCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
@@ -284,7 +284,7 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 })
 
 test('community detail overlays viewerInstall for forked listings and omits it when not forked', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
 	mockModule.getEntitySourceById.mockResolvedValue(null)
@@ -303,7 +303,7 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	const notForked = await loadDetail('/community/listing-github')
 	expect(notForked?.viewerInstall).toBeNull()
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
 		viewerFork(),
 	])
@@ -321,7 +321,7 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	expect(forkedListing.viewerInstall?.status).toBe('installed')
 	expect(forked?.viewerInstall?.listingAhead).toBe(false)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
 		...sampleListing,
 		pinnedCommit: 'commit-new',
@@ -340,7 +340,7 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	)
 	expect(outdated?.viewerInstall?.listingAheadPrompt).toMatch(/\S/)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
 		...sampleListing,
 		pinnedCommit: 'commit-pin',
@@ -369,7 +369,7 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 })
 
 test('sourceAhead compares HEAD to the runtime pin, not the community catalog snapshot', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
@@ -404,7 +404,7 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 	expect(publishedListing.pinnedCommit).toBe(sampleListing.pinnedCommit)
 	expect(publishedListing.pinnedCommit).not.toBe(runtimePin)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.resolveCachedArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: unpublishedHead,
@@ -421,7 +421,7 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 })
 
 test('community index is memoized per request and forwards newest sort to loaders', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
@@ -497,7 +497,7 @@ test('community index is memoized per request and forwards newest sort to loader
 })
 
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 

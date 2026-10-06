@@ -140,7 +140,7 @@ function createEnabledMcpServerRefsCache() {
 	})
 }
 
-let enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
+const enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
 
 /**
  * Short-TTL per-user cache over {@link listEnabledMcpServerRefs} for hot
@@ -173,12 +173,8 @@ export async function listVisibleEnabledMcpServerRefsCached(input: {
 	})
 }
 
-function invalidateEnabledMcpServerRefsCache(input: { userId: string }) {
+export function invalidateEnabledMcpServerRefsCache(input: { userId: string }) {
 	enabledMcpServerRefsCache.delete(input.userId)
-}
-
-export function clearEnabledMcpServerRefsCacheForTests() {
-	enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
 }
 
 function validateNameOrThrow(name: string) {

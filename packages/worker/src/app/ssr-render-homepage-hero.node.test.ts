@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { landingFactoryBeats } from '#universal/landing-factory-beats.ts'
@@ -48,7 +48,7 @@ const homepageHeroVideos = [
 ] as const
 
 async function renderHome(requestUrl: string, loggedIn = false) {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = {
 		COOKIE_SECRET: testCookieSecret,

@@ -154,7 +154,7 @@ function createMcpClientHubSnapshotCache() {
 	})
 }
 
-let mcpClientHubSnapshotCache = createMcpClientHubSnapshotCache()
+const mcpClientHubSnapshotCache = createMcpClientHubSnapshotCache()
 
 export function getCachedMcpClientHubSnapshot(
 	input: McpClientHubClientInput,
@@ -204,8 +204,4 @@ export function invalidateMcpClientHubSnapshotCache(input: { userId: string }) {
 	const key = mcpClientHubKey(input.userId)
 	mcpClientHubSnapshotCache.delete(key)
 	mcpClientHubSnapshotCache.delete(mcpClientHubServersCacheKey(input.userId))
-}
-
-export function clearMcpClientHubSnapshotCacheForTests() {
-	mcpClientHubSnapshotCache = createMcpClientHubSnapshotCache()
 }

@@ -7,7 +7,6 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	addReservedUsernames,
-	clearReservedUsernameSettingsCacheForTests,
 	findReservedUsernameConflicts,
 	getEffectiveReservedUsernameError,
 	isEffectivelyReservedUsername,
@@ -131,7 +130,6 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 		),
 	).toEqual([])
 
-	clearReservedUsernameSettingsCacheForTests()
 	const { env: swearEnv } = overrideEnv(['fuck'])
 	const reservedMessage = 'This username is reserved.'
 	const swearValidationCases = [
@@ -151,7 +149,6 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	expect(await isEffectivelyReservedUsername('fuck_you', swearEnv)).toBe(true)
 	expect(await isEffectivelyReservedUsername('super_fuck', swearEnv)).toBe(true)
 
-	clearReservedUsernameSettingsCacheForTests()
 	consoleWarn.mockImplementation(() => {})
 	expect(
 		await isEffectivelyReservedUsername(
@@ -164,7 +161,6 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 		expect.anything(),
 	)
 
-	clearReservedUsernameSettingsCacheForTests()
 	vi.useFakeTimers()
 	try {
 		const { kv: memoKv, env: memoEnv } = overrideEnv(['brandnew'])
@@ -179,7 +175,6 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 		vi.useRealTimers()
 	}
 
-	clearReservedUsernameSettingsCacheForTests()
 	const setEnv = createEnv(createMemoryKv())
 	const edit = (
 		change: typeof addReservedUsernames,

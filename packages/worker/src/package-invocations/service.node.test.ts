@@ -10,7 +10,7 @@ import {
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import { invokePackageExport, invokePackageSubscription } from './service.ts'
-import { clearInvokeContractCachesForTests } from './invoke-contract-cache.ts'
+import { invalidateInvokeContractFreshness } from './invoke-contract-cache.ts'
 import { maxStoredInvocationResponseJsonBytes } from './repo.ts'
 import {
 	packageInvocationsRepoMockModule as repoMockModule,
@@ -115,6 +115,14 @@ const source1 = {
 	source_root: '/',
 	created_at: '2026-04-27T00:00:00.000Z',
 	updated_at: '2026-04-27T00:00:00.000Z',
+}
+
+function invalidateSeededInvokeContract() {
+	invalidateInvokeContractFreshness({
+		userId: 'user-123',
+		packageIdOrKodyIds: ['pkg-1', 'discord-gateway'],
+		sourceId: 'source-1',
+	})
 }
 
 function dispatchRequest(
@@ -551,10 +559,13 @@ test('invokePackageExport stores terminal failures for execution errors and miss
 })
 
 test('invokePackageExport treats a missing npm-backed runtime bundle as retryable artifact prep', async () => {
-	clearInvokeContractCachesForTests()
+	invalidateSeededInvokeContract()
 	const db = createDatabase()
 	seedPackageResolution()
-	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
+	const missingBundleSource = {
+		...source1,
+		published_commit: 'commit-missing-bundle',
+	}
 	const manifest = {
 		name: '@kentcdodds/discord-gateway',
 		exports: {
@@ -562,8 +573,13 @@ test('invokePackageExport treats a missing npm-backed runtime bundle as retryabl
 		},
 		kody: { id: 'discord-gateway', description: 'Discord gateway helpers' },
 	}
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: missingBundleSource,
+		manifest,
+	})
+	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
 	repoMockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: source1,
+		source: missingBundleSource,
 		manifest,
 		files: {
 			'package.json': JSON.stringify({
@@ -719,9 +735,32 @@ test('invokePackageSubscription uses the normal capability registry with package
 	}
 
 	// The commit-keyed artifact cache is warm from the invocations above and
-	// would absorb the injected KV failure; this scenario is about a cold
-	// artifact load failing transiently.
-	clearInvokeContractCachesForTests()
+	// would absorb the injected KV failure; bump the published commit so the
+	// commit-tier key is cold, matching a same-isolate republish.
+	invalidateSeededInvokeContract()
+	const transientSource = {
+		...source1,
+		published_commit: 'commit-transient',
+	}
+	repoMockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		source: transientSource,
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway helpers',
+				app: { entry: './src/app.ts' },
+				subscriptions: {
+					'email.message.received': {
+						handler: './src/email-message-received.ts',
+					},
+				},
+			},
+		},
+	})
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockRejectedValueOnce(
 		new Error('KV timeout'),
 	)
