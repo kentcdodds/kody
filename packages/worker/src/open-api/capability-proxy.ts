@@ -189,7 +189,12 @@ async function callKodyPath(input: {
 		const capability = server.capabilities.find(
 			(entry) => entry.name === toolName,
 		)
-		const tool = capability ? tools[capability.dispatchName] : undefined
+		// tools map is keyed by raw capability.name (`mcp:server:tool`). Cloud
+		// ToolDispatcher indexes by sanitizeToolName (dispatchName); looking up
+		// dispatchName here misses colon-bearing keys and throws Unknown tool
+		// while still listing the short name as available (#2949).
+		const toolKey = `mcp:${serverName}:${toolName}`
+		const tool = capability ? tools[toolKey] : undefined
 		if (!tool) {
 			throw notFound(
 				`Unknown tool "${toolName}" for MCP server "${serverName}". Available tools: ${

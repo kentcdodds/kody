@@ -263,3 +263,59 @@ test('packages.invoke is rejected as unbound', async () => {
 		/run execute without --local/,
 	)
 })
+
+test('dotted kody.mcp[server].tool looks up raw tools-map keys, not sanitizeToolName dispatchName', async () => {
+	const rawCapabilityName = 'mcp:home:set_pin'
+	const sanitizedDispatchName = 'mcphomeset_pin'
+	const calls: Array<unknown> = []
+	mockFns.buildKodyToolContext.mockResolvedValue({
+		mcpServers: [
+			{
+				name: 'home',
+				serverId: 'home-server',
+				status: {
+					state: 'ready',
+					connected: true,
+					toolCount: 1,
+					message: 'connected',
+					unavailableMessage: 'unavailable',
+				},
+				capabilities: [
+					{
+						name: 'set_pin',
+						// Cloud ToolDispatcher key; CapabilityProxy must not use this
+						// against the raw-name tools map (#2949).
+						dispatchName: sanitizedDispatchName,
+					},
+				],
+			},
+		],
+		// Production tools map is keyed by raw capability.name (colons intact).
+		tools: {
+			[rawCapabilityName]: async (args: unknown) => {
+				calls.push(args)
+				return { ok: true }
+			},
+		},
+	})
+
+	const dotted = await runCapabilityProxyCall({
+		ctx,
+		call: {
+			path: ['kody', 'mcp', 'home', 'set_pin'],
+			args: [{ pin: '1234' }],
+		},
+	})
+	expect(dotted.result).toEqual({ ok: true })
+
+	const flat = await runCapabilityProxyCall({
+		ctx,
+		call: {
+			path: ['kody', rawCapabilityName],
+			args: [{ pin: '5678' }],
+		},
+	})
+	expect(flat.result).toEqual({ ok: true })
+
+	expect(calls).toEqual([{ pin: '1234' }, { pin: '5678' }])
+})
