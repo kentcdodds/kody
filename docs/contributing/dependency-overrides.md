@@ -16,17 +16,43 @@ packages can still report findings outside this file's scope.
 
 ## Production overrides
 
-### `@modelcontextprotocol/sdk` → `1.30.0`
+### `@modelcontextprotocol/sdk` → `1.32.1`
 
-The MCP SDK is pinned to a single version so that all workspaces resolve the
-same copy. Without this override, npm may hoist conflicting versions from
-transitive consumers (`agents`, `@kody/worker`). `agents@0.20.x` peers this
-exact version.
+Pins a single MCP SDK copy across the workspace and floors it above the current
+advisory range. Without this override, npm may hoist conflicting versions from
+transitive consumers (`agents`, `@kody/worker`), and `agents@0.22.x` still peers
+the vulnerable exact `1.30.0`.
+
+- [GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h) —
+  OAuth client could send credentials to an authorization server chosen by the
+  MCP server (`>=1.12.0, <=1.30.1`)
+
+### `@modelcontextprotocol/client` → `2.3.1`
+
+Floors the MCP client above the same OAuth advisory. `agents@0.22.x` still peers
+the vulnerable exact `2.0.0`, so this override cannot be removed yet.
+
+- [GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h) —
+  OAuth client could send credentials to an authorization server chosen by the
+  MCP server (`>=2.0.0, <=2.1.0`)
+
+### `esbuild` → `$esbuild`
+
+Forces every transitive esbuild copy onto the root `esbuild@^0.28.2` resolution.
+Without this, `@remix-run/test` nests `esbuild@^0.27.1` and lands inside the
+current advisory range.
+
+- [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) —
+  arbitrary file read when the development server runs on Windows
+  (`>=0.27.3, <=0.28.0`)
+
+Keep the root `esbuild` range at or above `0.28.1` so the shared copy stays
+outside that advisory.
 
 ### `hono` → `>=4.13.7 <5.0.0`
 
 Keeps the transitive hono copy at or above the current advisory floor. Upstream
-`@modelcontextprotocol/sdk@1.30.0` still declares `hono@^4.11.4`, which allows
+`@modelcontextprotocol/sdk@1.32.1` still declares `hono@^4.11.4`, which allows
 vulnerable releases below `4.13.7`, so this override cannot be removed yet.
 
 The floor is `4.13.7` for:
@@ -59,7 +85,7 @@ avoid breaking changes.
 ### `@hono/node-server` → `>=2.0.10 <3.0.0`
 
 Keeps the transitive `@hono/node-server` copy at or above the current advisory
-floor. Upstream `@modelcontextprotocol/sdk@1.30.0` declares
+floor. Upstream `@modelcontextprotocol/sdk@1.32.1` declares
 `@hono/node-server@^1.19.9 || ^2.0.5`, which can still resolve a vulnerable 1.x
 or a 2.x below `2.0.10`, so this override forces the patched 2.x floor and
 cannot be removed yet.

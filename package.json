@@ -116,8 +116,8 @@
     "@cloudflare/workers-types": "^5.20261003.1",
     "@epic-web/config": "^3.2.1",
     "@kody-internal/shared": "file:packages/shared",
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@mswjs/interceptors": "^0.45.6",
     "@pitlane/dev": "^0.7.0",
     "@playwright/test": "^1.63.0",
@@ -145,8 +145,10 @@
     "wrangler": "^4.147.0"
   },
   "overrides": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "brace-expansion": ">=5.0.12 <6.0.0",
+    "esbuild": "$esbuild",
     "hono": ">=4.13.7 <5.0.0",
     "@hono/node-server": ">=2.0.10 <3.0.0",
     "postcss": ">=8.5.10 <9.0.0",
