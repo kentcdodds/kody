@@ -20,7 +20,7 @@ const citedFences: ReadonlyArray<{
 	},
 	{
 		page: 'docs/principles/cleanup.md',
-		source: 'tools/check-docs-no-packages-invoke.ts',
+		source: 'packages/worker/src/package-registry/manifest.ts',
 	},
 	{
 		page: 'docs/principles/fail-loudly.md',

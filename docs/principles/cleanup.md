@@ -11,20 +11,23 @@ One-way doors (data drops, auth changes, token purges) still follow
 
 ## Example
 
-`packages.invoke` is gone as an author-facing API. The docs guard allows only
-the present-tense negation, then fails any other mention:
+Package apps used to configure a runtime mode. That lane is gone. Publish still
+rejects the old field so it cannot come back:
 
 ```ts
-export const allowedPackagesInvokePhrasePattern =
-	/\bthere is no author-facing\s+(?:\\?`)?packages\.invoke(?:\\?`)?\b/i
+const retiredPackageAppRuntimeMessage =
+	'kody.app.runtime was removed; every package app is a fetch handler and receives the mount-stripped path. There is no configured runtime mode.'
 ```
 
-(`tools/check-docs-no-packages-invoke.ts`,
-`npm run docs:check-no-packages-invoke`.) Leftovers that still trip that check
-(including oxfmt wrapping the allowed sentence,
-[#2975](https://github.com/kentcdodds/kody/issues/2975)) are being removed by
-[Remove packages.invoke completely](https://cursor.com/agents/bc-026e6a59-87a9-55f1-b70d-1b11df3f4ecb);
-link that agent's PR here once it lands. Do not reopen a second removal track.
+(`packages/worker/src/package-registry/manifest.ts`.) The same shape applies
+after the Remix platform-mount removal: stored stamps with `remixVersion` fail
+closed in `isUsableStoredPublishedBundleArtifact`.
+
+Motivating leftover, not this page's checked example: `packages.invoke` docs and
+checker leftovers ([#2975](https://github.com/kentcdodds/kody/issues/2975)) are
+owned by
+[Remove packages.invoke completely](https://cursor.com/agents/bc-026e6a59-87a9-55f1-b70d-1b11df3f4ecb).
+Link that PR here once it lands. Do not open a second removal track.
 
 ## Related
 
