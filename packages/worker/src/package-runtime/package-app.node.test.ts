@@ -274,7 +274,25 @@ test('modulesReferenceKodyMcp detects authored kody.mcp access', async () => {
 	expect(
 		modulesReferenceKodyMcp({
 			'entry.js':
+				'import { kody as api } from "../.__kody_virtual__/public-runtime.js"\nexport default { async fetch() { const { home } = api.mcp; return home } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody as api } from "../.__kody_virtual__/package-runtime/abc.js"\nexport default { async fetch() { return api.mcp.home.ping({}) } }',
+		}),
+	).toBe(true)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
 				'import { kody as api } from "kody:runtime"\nexport default { async fetch() { return new Response(api.metaGetCurrentUser ? "ok" : "no") } }',
+		}),
+	).toBe(false)
+	expect(
+		modulesReferenceKodyMcp({
+			'entry.js':
+				'import { kody as api } from "../.__kody_virtual__/public-runtime.js"\nexport default { async fetch() { return new Response("ok") } }',
 		}),
 	).toBe(false)
 })
