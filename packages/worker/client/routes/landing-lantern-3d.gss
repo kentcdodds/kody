@@ -1,71 +1,111 @@
-/* Kody's lantern in 3D: a dark cap and base around a glowing globe, six
-   primitive orbs, and a swirl of motes. landing-lantern-3d-engine.ts
-   drives the orbit (--yaw), every orb's position, size, and glow,
-   and the page and flame colors, so the scene itself only animates the
-   motes.
+/* Kody's lantern in 3D: brass hardware around a glass globe, Kody with a
+   candle flame on his head, six primitive marbles, and eddies of sparks.
+   landing-lantern-3d-engine.ts drives the turn (--yaw), every orb's
+   position, size, and glow, and the page and flame colors, so the scene
+   itself only animates the flame's flicker, the sparks, and Kody's blink.
 
-   The globe is the scene background: a radial glow centered on the
-   lantern's pivot, so it stays put while the lantern turns. The orbs live
-   outside #body in world space and always face the camera, so their
-   glyph textures stay readable from every side. */
+   The globe's glow is the scene background: a radial glow centered on the
+   flame, so it stays put while the lantern turns. The cap and the base are
+   round, so only the bail turns with --yaw: a rotation on them would make
+   GSS test them at every step of every ray. The orbs live in world space
+   and always face the camera, so their glyphs stay readable from every
+   side. */
 
 @property --yaw { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @property --page { syntax: "<color>"; inherits: false; initial-value: #e6e8ea; }
-@property --core { syntax: "<color>"; inherits: false; initial-value: #fff1c2; }
-@property --amber { syntax: "<color>"; inherits: false; initial-value: #ffb733; }
-@property --sparkle { syntax: "<number>"; inherits: false; initial-value: 2.6; }
+@property --core { syntax: "<color>"; inherits: false; initial-value: #ffdf8e; }
+@property --amber { syntax: "<color>"; inherits: false; initial-value: #ffc24a; }
+/* The light the globe throws past its rim, warmer on a dark page. */
+@property --rim-glow { syntax: "<color>"; inherits: false; initial-value: #f4c98c; }
+@property --halo { syntax: "<color>"; inherits: false; initial-value: #f6dcb8; }
+@property --sparkle { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --flame { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --memory-x { syntax: "<number>"; inherits: false; initial-value: 0; }
-@property --memory-y { syntax: "<number>"; inherits: false; initial-value: 0.44; }
-@property --memory-z { syntax: "<number>"; inherits: false; initial-value: 0.32; }
+@property --memory-x { syntax: "<number>"; inherits: false; initial-value: -0.38; }
+@property --memory-y { syntax: "<number>"; inherits: false; initial-value: 0.475; }
+@property --memory-z { syntax: "<number>"; inherits: false; initial-value: -0.011; }
 @property --memory-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --memory-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --secrets-x { syntax: "<number>"; inherits: false; initial-value: -0.44; }
-@property --secrets-y { syntax: "<number>"; inherits: false; initial-value: 0.2; }
-@property --secrets-z { syntax: "<number>"; inherits: false; initial-value: -0.3; }
+@property --secrets-x { syntax: "<number>"; inherits: false; initial-value: 0.322; }
+@property --secrets-y { syntax: "<number>"; inherits: false; initial-value: 0.355; }
+@property --secrets-z { syntax: "<number>"; inherits: false; initial-value: -0.39; }
 @property --secrets-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --secrets-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --packages-x { syntax: "<number>"; inherits: false; initial-value: 0.44; }
-@property --packages-y { syntax: "<number>"; inherits: false; initial-value: 0.2; }
-@property --packages-z { syntax: "<number>"; inherits: false; initial-value: -0.3; }
+@property --packages-x { syntax: "<number>"; inherits: false; initial-value: 0.487; }
+@property --packages-y { syntax: "<number>"; inherits: false; initial-value: 0.124; }
+@property --packages-z { syntax: "<number>"; inherits: false; initial-value: -0.052; }
 @property --packages-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --packages-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --triggers-x { syntax: "<number>"; inherits: false; initial-value: -0.42; }
-@property --triggers-y { syntax: "<number>"; inherits: false; initial-value: -0.24; }
-@property --triggers-z { syntax: "<number>"; inherits: false; initial-value: 0.3; }
+@property --triggers-x { syntax: "<number>"; inherits: false; initial-value: 0.397; }
+@property --triggers-y { syntax: "<number>"; inherits: false; initial-value: -0.089; }
+@property --triggers-z { syntax: "<number>"; inherits: false; initial-value: 0.317; }
 @property --triggers-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --triggers-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --integrations-x { syntax: "<number>"; inherits: false; initial-value: 0.42; }
-@property --integrations-y { syntax: "<number>"; inherits: false; initial-value: -0.24; }
-@property --integrations-z { syntax: "<number>"; inherits: false; initial-value: 0.3; }
+@property --integrations-x { syntax: "<number>"; inherits: false; initial-value: -0.272; }
+@property --integrations-y { syntax: "<number>"; inherits: false; initial-value: -0.301; }
+@property --integrations-z { syntax: "<number>"; inherits: false; initial-value: 0.28; }
 @property --integrations-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --integrations-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
-@property --apps-x { syntax: "<number>"; inherits: false; initial-value: 0; }
-@property --apps-y { syntax: "<number>"; inherits: false; initial-value: -0.42; }
-@property --apps-z { syntax: "<number>"; inherits: false; initial-value: -0.3; }
+@property --apps-x { syntax: "<number>"; inherits: false; initial-value: 0.124; }
+@property --apps-y { syntax: "<number>"; inherits: false; initial-value: -0.439; }
+@property --apps-z { syntax: "<number>"; inherits: false; initial-value: 0.464; }
 @property --apps-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
 @property --apps-glow { syntax: "<number>"; inherits: false; initial-value: 1; }
 
+/* Order matters: an operation cuts everything declared before it. The
+   bail's cut comes first, so it only meets the bail; the hole in the glass
+   comes next, and stays clear of the bail at every turn. */
 @scene {
-  group#body {
-    lathe#cap;
-    cylinder#cap-button;
-    cylinder#cap-glow;
-    path#handle;
-    lathe#base;
-    cylinder#plate;
-    torus#seam-top;
-    torus#seam-bottom;
+  group#spin {
+    torus#bail;
+    cube#bail-cut;
+    group#lugs { sphere.lug * 2; }
+  }
+  group#grip-spin { capsule#grip; }
+  group#globe {
+    sphere#glass;
+    cylinder#glass-hole;
+    group#streaks { capsule.streak * 3; }
+    group#streaks-small { capsule.streak-small * 2; }
+    sphere#glint;
+  }
+  torus#cap-collar;
+  cylinder#cap-band;
+  torus#cap-bead-low;
+  torus#cap-bead;
+  cone#cap-roof;
+  torus#cap-crown;
+  cylinder#cap-chimney;
+  sphere#cap-finial;
+  group#vents { cube.vent * 12; }
+  torus#base-collar;
+  cone#base-crown;
+  torus#base-ring;
+  cylinder#base-band;
+  torus#base-bead-top;
+  torus#base-bead;
+  cone#base-foot;
+  torus#base-rim;
+  group#studs { sphere.stud * 16; }
+  group#kody {
+    sphere#head;
+    group#ears { sphere.ear * 2; }
+    group#inner-ears { sphere.inner-ear * 2; }
+    sphere#muzzle;
+    capsule#nose;
+    group#eyes { sphere.eye * 2; }
   }
   group#glints {
-    torus#glass-rim;
-    group#swarm {
-      sphere.mote * 18;
+    group#flame { lathe#flame-body; }
+    group#sparks {
+      group.eddy { sphere.mote * 3; }
+      group.eddy { sphere.mote * 3; }
+      group.eddy { sphere.mote * 2; }
     }
   }
   group#memory.orb { sphere.ball; }
@@ -74,113 +114,147 @@
   group#triggers.orb { sphere.ball; }
   group#integrations.orb { sphere.ball; }
   group#apps.orb { sphere.ball; }
-  light#pool;
+  light#ember;
+  light#key;
 }
 
+/* Three layers, top first: the window's sheen on the glass, a shade on the
+   far side of the flame, and the glow itself, which fades into the page. */
 scene {
   floor: none;
-  background: radial-gradient(circle closest-side at 50% 54.8%, var(--core) 0%, var(--amber) 42%, #f08a12 77%, #f6c77a 79.5%, var(--page) 100%);
+  background:
+    radial-gradient(circle closest-side at 39% 40%, rgb(255 252 240 / 0.42) 0%, rgb(255 248 230 / 0.16) 34%, rgb(255 248 230 / 0) 62%),
+    radial-gradient(circle closest-side at 61% 68%, rgb(150 52 0 / 0.22) 0%, rgb(150 52 0 / 0.1) 30%, rgb(150 52 0 / 0) 55%),
+    radial-gradient(circle closest-side at 50% 51%, var(--core) 0%, var(--core) 3%, var(--amber) 28%, #fbae38 50%, #f39c26 66%, #e3830f 76.5%, var(--rim-glow) 78.2%, var(--halo) 81%, var(--page) 96%);
   camera-angle: 0deg 10deg;
   camera-distance: 5.5;
   camera-target: 0 0.18 0;
-  light: -35deg 50deg #fff4e0 0.9;
-  ambient: 0.35;
+  light: -35deg 50deg #fff1dc 0.75;
+  ambient: 0.34 #fff0dc;
+  fog: 4.8 9.5;
 }
 
-#body {
-  rotate-y: var(--yaw);
+/* Turning about the y axis through the bail keeps GSS's bounds around the
+   bail tight; through the origin, they would take in the whole globe. */
+#spin { rotate-y: var(--yaw); transform-origin: 0 0.9 0; }
+#grip-spin { rotate-y: var(--yaw); transform-origin: 0 1.6 0; }
+
+#bail, #bail-cut, .lug, #cap-collar, #cap-bead-low, #cap-bead, #cap-crown, #cap-chimney, #cap-finial,
+#base-collar, #base-ring, #base-bead-top, #base-bead, #base-rim, .stud {
+  color: #dcab60;
+  material: metal(0.16);
 }
 
-#cap, #handle, #base {
-  color: #2b2c31;
-  material: jelly(0.95);
+#cap-roof { color: #c8924a; material: metal(0.55); }
+
+/* Painted sheen instead of metal(): a reflection is one more ray per pixel,
+   and these faces would mostly reflect the inside of the globe. */
+#base-crown { color: radial-gradient(circle closest-side at 40% 40%, #f3cf8a 0%, #c89250 45%, #8a5a2a 100%); }
+#cap-band, #base-band, #base-foot {
+  color: linear-gradient(to right, #24160c 0%, #5a3c22 22%, #b98a55 34%, #6b4728 46%, #3a2616 78%, #24160c 100%);
 }
 
-#cap {
-  d: polygon(0 -0.21, 0.40 -0.21, 0.44 -0.17, 0.44 -0.07, 0.60 -0.07, 0.65 -0.02, 0.65 0.16, 0.60 0.21, 0 0.21);
-  translate: 0 0.91 0;
-}
+/* A half ring: a torus cut by a box. Its ends sit at the height of the
+   cap's top bead, far enough off the camera axis to miss #glass-hole. */
+#bail { radius: 0.7; thickness: 0.024; rotate-x: 90deg; translate: 0 0.9 0; }
+#bail-cut { size: 1.7 0.8 1.7; translate: 0 1.3 0; operation: intersect; }
+.lug { radius: 0.046; translate: calc(sibling-index() * 1.4 - 2.1) 0.9 0; }
+#grip { radius: 0.046; height: 0.36; rotate-z: 90deg; translate: 0 1.6 0; color: #8a5530; material: metal(0.45); }
 
-#cap-button {
-  radius: 0.3;
-  height: 0.03;
-  translate: 0 1.12 0;
-  color: #3a3b42;
-}
+#cap-collar { radius: 0.615; thickness: 0.035; translate: 0 0.74 0; }
+#cap-band { radius: 0.66; height: 0.16; translate: 0 0.83 0; }
+#cap-bead-low { radius: 0.665; thickness: 0.024; translate: 0 0.752 0; }
+#cap-bead { radius: 0.665; thickness: 0.028; translate: 0 0.908 0; }
+#cap-roof { radius: 0.64 0.24; height: 0.2; translate: 0 1.0 0; blend: 0.02; }
+#cap-crown { radius: 0.235; thickness: 0.026; translate: 0 1.1 0; }
+#cap-chimney { radius: 0.2; height: 0.08; translate: 0 1.14 0; }
+#cap-finial { radius: 0.072; translate: 0 1.235 0; }
 
-/* The underside of the cap, lit by the globe below it. */
-#cap-glow {
-  radius: 0.6;
-  height: 0.012;
-  translate: 0 0.695 0;
-  color: #ffbf5e;
-  filter: brightness(1.3);
-}
-
-#handle {
-  d: path("M-0.56 0.3 V0 A0.56 0.56 0 0 1 0.56 0 V0.3");
-  stroke-width: 0.15;
-  translate: 0 1.19 0;
-}
-
-#base {
-  d: polygon(0 0, 0.90 0, 0.97 0.06, 0.97 0.36, 0.86 0.52, 0.72 0.58, 0 0.58);
-  translate: 0 -0.99 0;
-}
-
-#plate {
-  radius: 0.86;
-  height: 0.02;
-  translate: 0 -0.695 0;
-  color: #9a6a33;
-}
-
-#seam-top, #seam-bottom {
-  thickness: 0.028;
+/* The vents glow with the flame below them. */
+.vent {
+  size: 0.036 0.078 0.03;
+  corner-radius: 0.013;
+  translate: calc(sin(sibling-index() * 30deg) * 0.653) 0.83 calc(cos(sibling-index() * 30deg) * 0.653);
+  rotate-y: calc(sibling-index() * 30deg);
   color: #ffd27a;
+  material: jelly(0);
 }
 
-#seam-top {
-  radius: 0.63;
-  translate: 0 0.7 0;
+#base-collar { radius: 0.615; thickness: 0.035; translate: 0 -0.74 0; }
+#base-crown { radius: 0.62 0.16; height: 0.12; translate: 0 -0.7 0; blend: 0.03; }
+#base-ring { radius: 0.15; thickness: 0.022; translate: 0 -0.64 0; }
+#base-band { radius: 0.68; height: 0.15; translate: 0 -0.83 0; }
+#base-bead-top { radius: 0.684; thickness: 0.024; translate: 0 -0.755 0; }
+#base-bead { radius: 0.684; thickness: 0.024; translate: 0 -0.905 0; }
+#base-foot { radius: 0.84 0.68; height: 0.1; translate: 0 -0.955 0; blend: 0.02; }
+#base-rim { radius: 0.83; thickness: 0.03; translate: 0 -1.0 0; }
+.stud {
+  radius: 0.018;
+  translate: calc(sin(sibling-index() * 22.5deg) * 0.682) -0.83 calc(cos(sibling-index() * 22.5deg) * 0.682);
 }
 
-#seam-bottom {
-  radius: 0.88;
-  translate: 0 -0.7 0;
+/* The glass is a band round the rim: in the middle a ray crosses no glass,
+   which is where it would cost the most. The band is clear until it turns
+   from the camera, then darkens and catches the light at the very edge.
+   The hole's blend rounds its edge, which otherwise sparkles. */
+#glass-hole { radius: 0.84; height: 2.4; rotate-x: 90deg; operation: subtract; blend: 0.04; }
+#glass {
+  radius: 0.97;
+  color: radial-gradient(circle closest-side, rgb(255 244 222 / 0) 0%, rgb(255 236 200 / 0) 88%, rgb(214 116 28 / 0.14) 91.5%, rgb(150 62 8 / 0.3) 95.2%, rgb(255 230 190 / 0.55) 97.2%, rgb(255 253 246 / 0.96) 98.4%);
 }
 
-/* The globe's edge: a thin ring where the glass turns away from the
-   camera, tilted to face it so the cap and base hide its ends. */
-#glass-rim {
-  radius: 0.955;
-  thickness: 0.005;
-  rotate-x: -78deg;
-  translate: 0 0.035 0.166;
-  color: #ffe6b0;
-  filter: brightness(1.7);
-}
+/* A window's reflection on the front of the glass, and a glint low right. */
+.streak, .streak-small, #glint { color: #fffaf0; material: jelly(0); }
+.streak { radius: 0.012; height: 0.254; opacity: 0.8; }
+.streak:nth-child(1) { translate: -0.7423 0.4981 0.3894; rotate-z: -29.67deg; }
+.streak:nth-child(2) { translate: -0.604 0.6764 0.358; rotate-z: -45deg; }
+.streak:nth-child(3) { translate: -0.4228 0.8125 0.334; rotate-z: -60.33deg; }
+.streak-small { radius: 0.007; height: 0.164; opacity: 0.55; }
+.streak-small:nth-child(1) { translate: -0.6321 0.5456 0.4978; rotate-z: -35.5deg; }
+.streak-small:nth-child(2) { translate: -0.5345 0.6562 0.4783; rotate-z: -46.5deg; }
+#glint { radius: 0.02; translate: 0.6 -0.3685 0.6742; opacity: 0.6; }
 
 /* One bloom for everything that sparkles: each bloom() is its own set of
    passes, even with the same settings. */
-#glints {
-  filter: bloom(1.4, 12px);
+#glints { filter: bloom(1.3, 18px); }
+
+/* Kody, a grey koala, faces the camera whichever way the lantern turns. */
+#kody { translate: 0 -0.14 0.04; }
+#head, .ear { color: #6c6f7c; material: jelly(0.9); }
+#head { radius: 0.13; }
+.ear { radius: 0.07; translate: calc(sibling-index() * 0.25 - 0.375) 0.085 -0.02; }
+.inner-ear { radius: 0.044; translate: calc(sibling-index() * 0.25 - 0.375) 0.08 0.022; color: #f1e8e2; material: jelly(0.7); }
+#muzzle { radius: 0.06; translate: 0 -0.058 0.085; color: #e6e2e0; material: jelly(0.7); }
+#nose { radius: 0.036; height: 0.094; translate: 0 -0.016 0.122; color: #1d1a1c; material: metal(0.25); }
+.eye { animation: blink 4.6s linear; radius: 0.024; translate: calc(sibling-index() * 0.13 - 0.195) 0.026 0.112; color: #2a1406; material: metal(0.1); }
+
+/* The flame sways from its base, on Kody's head. Its edge fades out, so
+   the bloom reads as heat rather than as a bulb. */
+#flame { translate: 0 0.1 0.04; transform-origin: 0 -0.1575 0; scale: 1.65; animation: flicker 1.7s linear; }
+#flame-body {
+  d: polygon(0 0.07, 0.032 0.063, 0.05 0.047, 0.06 0.024, 0.063 0, 0.06 -0.035, 0.052 -0.075, 0.04 -0.115, 0.027 -0.155, 0.015 -0.19, 0.006 -0.222, 0 -0.245);
+  color: radial-gradient(ellipse farthest-side at 50% 76%, rgb(255 255 240 / 1) 0%, rgb(255 240 160 / 1) 12%, rgb(255 198 60 / 0.98) 30%, rgb(255 140 26 / 0.94) 52%, rgb(240 92 14 / 0.8) 76%, rgb(214 58 8 / 0.38) 92%, rgb(200 48 6 / 0) 100%);
+  material: jelly(0);
+  filter: brightness(var(--flame));
 }
 
-#swarm {
-  animation: swirl 36s linear;
-  filter: brightness(var(--sparkle));
-}
+#sparks { filter: brightness(var(--sparkle)); }
+.eddy { animation: swirl 11s linear; }
+.eddy:nth-child(1) { translate: -0.44 0.22 0.22; rotate-z: 18deg; animation-duration: 9s; }
+.eddy:nth-child(2) { translate: 0.3 0.3 0.32; rotate-z: -14deg; animation-duration: 13s; animation-direction: reverse; }
+.eddy:nth-child(3) { translate: -0.35 0 -0.4; rotate-x: 16deg; animation-duration: 10s; }
 
 .mote {
-  radius: random(0.012, 0.024);
-  translate: random(-0.65, 0.65) random(-0.55, 0.55) random(-0.55, 0.55);
-  color: #fff6d8;
+  radius: random(0.009, 0.019);
+  translate: random(-0.16, 0.16) random(-0.1, 0.1) random(-0.16, 0.16);
+  color: #ffe9a8;
+  material: jelly(0);
 }
 
+/* Marbles: a lit side, a deep side, and a glow from inside. */
 .ball {
   radius: 0.175;
-  material: jelly(0.55);
+  material: jelly(0.6);
 }
 
 #memory {
@@ -219,12 +293,12 @@ scene {
   filter: brightness(var(--apps-glow));
 }
 
-#memory .ball { color: #f13b2e; }
-#secrets .ball { color: #9754ed; }
-#packages .ball { color: #007df3; }
-#triggers .ball { color: #d6b603; }
-#integrations .ball { color: #05b047; }
-#apps .ball { color: #ff53c6; }
+#memory .ball { color: radial-gradient(circle at 42% 38%, #ff9478 0%, #f2412e 50%, #b31c16 100%); }
+#secrets .ball { color: radial-gradient(circle at 42% 38%, #d2a8ff 0%, #9150ee 50%, #5a1fb0 100%); }
+#packages .ball { color: radial-gradient(circle at 42% 38%, #9ccdff 0%, #2483f2 50%, #0b4fb8 100%); }
+#triggers .ball { color: radial-gradient(circle at 42% 38%, #fff8c4 0%, #ffdb2e 50%, #ffb800 100%); }
+#integrations .ball { color: radial-gradient(circle at 42% 38%, #9ff5b6 0%, #1bba56 50%, #077a33 100%); }
+#apps .ball { color: radial-gradient(circle at 42% 38%, #ffb8ea 0%, #f450c0 50%, #b31e7c 100%); }
 
 #memory .ball::face(front) { texture: url("/images/lantern/kody-primitives-glyph-memory.svg"); }
 #secrets .ball::face(front) { texture: url("/images/lantern/kody-primitives-glyph-secrets.svg"); }
@@ -233,14 +307,36 @@ scene {
 #integrations .ball::face(front) { texture: url("/images/lantern/kody-primitives-glyph-integrations.svg"); }
 #apps .ball::face(front) { texture: url("/images/lantern/kody-primitives-glyph-apps.svg"); }
 
-#pool {
-  translate: 0 -0.67 0;
-  color: #ffb347;
-  intensity: 0.2;
+/* Behind Kody, so the flame lights the orbs and his ears without washing
+   out his face. */
+#ember {
+  translate: 0 0.13 -0.16;
+  color: #ffb648;
+  intensity: calc(var(--flame) * 0.55);
+}
+
+#key {
+  translate: -1.6 1.8 2.8;
+  color: #fff6ea;
+  intensity: 2.7;
 }
 
 @keyframes swirl {
   to {
     rotate-y: 1turn;
   }
+}
+
+@keyframes flicker {
+  0%, 100% { scale: 1.65; rotate-z: 0deg; }
+  14% { scale: 1.73; rotate-z: 2.5deg; }
+  31% { scale: 1.6; rotate-z: -2deg; }
+  52% { scale: 1.7; rotate-z: 1.5deg; }
+  68% { scale: 1.57; rotate-z: -3deg; }
+  86% { scale: 1.68; rotate-z: 1deg; }
+}
+
+@keyframes blink {
+  0%, 94%, 100% { scale: 1; }
+  97% { scale: 0.1; }
 }

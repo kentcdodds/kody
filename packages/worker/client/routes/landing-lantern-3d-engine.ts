@@ -51,8 +51,15 @@ import {
 export const lanternView = { left: -0.061, top: -0.083, size: 1.122 } as const
 
 /** The globe's glow in landing-lantern-3d.gss; a tap flares both. */
-const flameCore = '#fff1c2'
-const flameAmber = '#ffb733'
+const flameCore = '#ffdf8e'
+const flameAmber = '#ffc24a'
+
+/** The light past the globe's rim, as in the scene. On a dark page a pale
+ *  halo reads as fog, so it burns deeper there. */
+const rimGlow = {
+	light: { rim: '#f4c98c', halo: '#f6dcb8' },
+	dark: { rim: '#eaa555', halo: '#9a531f' },
+} as const
 
 const basis = lanternViewBasis()
 const dragSlopPx = 8
@@ -180,6 +187,9 @@ export function startLanternEngine(options: {
 
 	const writePage = () => {
 		write('--page', pageColor(figure))
+		const rim = dark.matches ? rimGlow.dark : rimGlow.light
+		write('--rim-glow', rim.rim)
+		write('--halo', rim.halo)
 	}
 
 	const ease = (from: number, to: number, dt: number, rate: number) =>
@@ -239,12 +249,14 @@ export function startLanternEngine(options: {
 				: createLanternOrbBodies()
 		write('--yaw', `${pose.yaw}rad`)
 		const flame = motion ? flicker(time) : 0
+		const waver = motion ? (flame - 0.5) * 0.12 : 0
 		write('--core', mixHex(flameCore, '#ffffff', flare * 0.7 + flame * 0.16))
 		write('--amber', mixHex(flameAmber, '#ffe3a1', flare * 0.85 + flame * 0.1))
+		write('--flame', 1 + waver + flare * 0.5)
 		// Through the warm-up, a change GSS cannot skip makes it draw every
 		// frame, even under reduced motion, where nothing else moves.
 		const probe = warmup.stage === 'done' ? 0 : (frames % 2) * 0.001
-		write('--sparkle', 2.6 + flare * 2.4 + probe)
+		write('--sparkle', 1 + flare * 1.6 + probe)
 		const box = viewSize()
 		const depths: Array<{ id: LandingPrimitiveId; depth: number }> = []
 		for (const body of bodies) {

@@ -10,16 +10,18 @@ import {
  * frame-rate checks behind the warm-up and the adaptive resolution.
  *
  * Orbs live in the lantern's own frame (`local`), so they turn with it.
- * `localToWorld` applies the same turn the scene gives `#body`
- * (`rotate-y: --yaw`), so an orb set from it sits exactly where it would
- * if it were part of the body. Idle orbs drift like a lava lamp toward
- * slow wander targets. A grabbed orb follows the pointer and a flick
- * tosses it: it coasts, bounces off the glass and the other orbs, then
- * settles back into the drift. Spinning the lantern lets the orbs lag
- * behind and fling outward, like marbles in a turning jar.
+ * `localToWorld` applies the same turn the scene gives the bail
+ * (`rotate-y: --yaw`), so an orb set from it turns exactly as the bail
+ * does. Idle orbs drift like a lava lamp toward slow wander targets. A
+ * grabbed orb follows the pointer and a flick tosses it: it coasts,
+ * bounces off the glass, Kody, and the other orbs, then settles back into
+ * the drift. Spinning the lantern lets the orbs lag behind and fling
+ * outward, like marbles in a turning jar.
  *
- * The lantern only turns about its axis: a tilt shuffles the orbs' order
- * down the screen, and the leader lines to the words cross.
+ * The homes step down the globe in the order of the word list, so from
+ * every side the orbs keep that order down the screen and the leader lines
+ * to the words never cross. The lantern only turns about its axis: a tilt
+ * would shuffle that order.
  */
 
 export type Vec3 = { x: number; y: number; z: number }
@@ -45,13 +47,23 @@ export const lanternOrbRadius = 0.175
 /** Room the orbs swim in: inside the glass, between the cap and the base. */
 const cavity = { radius: 0.86, top: 0.66, bottom: -0.64 } as const
 
+/** Kody and his flame (`#kody` and `#flame` in the scene): a capsule up the
+ *  lantern's axis. He never turns, but on the axis the same capsule holds
+ *  in the lantern's frame at every turn. */
+const kody = { bottom: -0.26, top: 0.32, radius: 0.2 } as const
+
+/** Top to bottom in the order of the word list, in a ring round Kody. The
+ *  orbs to the left of him sit over his flame or under his chin, so the
+ *  leaders from them pass him by, and through the sway no orb hides his
+ *  face or another orb's glyph, and none sits behind the flame. Matches
+ *  the initial orb positions in landing-lantern-3d.gss. */
 const lanternOrbHomes: Record<LandingPrimitiveId, Vec3> = {
-	memory: { x: 0, y: 0.44, z: 0.32 },
-	secrets: { x: -0.44, y: 0.2, z: -0.3 },
-	packages: { x: 0.44, y: 0.2, z: -0.3 },
-	triggers: { x: -0.42, y: -0.24, z: 0.3 },
-	integrations: { x: 0.42, y: -0.24, z: 0.3 },
-	apps: { x: 0, y: -0.42, z: -0.3 },
+	memory: { x: -0.38, y: 0.475, z: -0.011 },
+	secrets: { x: 0.322, y: 0.355, z: -0.39 },
+	packages: { x: 0.487, y: 0.124, z: -0.052 },
+	triggers: { x: 0.397, y: -0.089, z: 0.317 },
+	integrations: { x: -0.272, y: -0.301, z: 0.28 },
+	apps: { x: 0.124, y: -0.439, z: 0.464 },
 }
 
 const phases: Record<LandingPrimitiveId, number> = {
@@ -63,8 +75,11 @@ const phases: Record<LandingPrimitiveId, number> = {
 	apps: 6.4,
 }
 
-/** How far a wander target sits from home. */
-const roam = 0.075
+/** How far a wander target sits from home. Past this, the drift can swap
+ *  two orbs' order on screen while the lantern is turned side on. */
+const roam = 0.055
+/** Share of `roam` the drift takes up and down, where the orbs' order is. */
+const roamRise = 0.35
 /** Wander angular speed, radians per second. */
 const wanderRate = 0.34
 /** Pull toward the wander target, per second. */
@@ -391,7 +406,7 @@ export function pokeLanternOrbs(
 	})
 }
 
-/** Keep a centre inside the glass, clear of the cap and the base. */
+/** Keep a centre inside the glass, clear of the cap, the base, and Kody. */
 function clampToLanternCavity(point: Vec3, radius: number): Vec3 {
 	const limit = cavity.radius - radius - wallSkin
 	const distance = length(point)
@@ -399,7 +414,29 @@ function clampToLanternCavity(point: Vec3, radius: number): Vec3 {
 	if (distance > limit && distance > 0) next = scaleVec(point, limit / distance)
 	const top = cavity.top - radius - wallSkin
 	const bottom = cavity.bottom + radius + wallSkin
-	return { ...next, y: Math.min(top, Math.max(bottom, next.y)) }
+	next = { ...next, y: Math.min(top, Math.max(bottom, next.y)) }
+	return pushOffKody(next, radius)?.point ?? next
+}
+
+/** A centre inside Kody's capsule, moved straight out from the axis to its
+ *  surface along `normal`. Out from the axis, never up or down, so an orb
+ *  over the flame or under his chin is not pushed into the cap or the
+ *  base. Null when the orb is clear of him. */
+function pushOffKody(point: Vec3, radius: number) {
+	const clear = kody.radius + radius + wallSkin
+	const beyond = Math.max(point.y - kody.top, kody.bottom - point.y, 0)
+	if (beyond >= clear) return null
+	const reach = Math.sqrt(clear * clear - beyond * beyond)
+	const out = Math.hypot(point.x, point.z)
+	if (out >= reach) return null
+	const normal =
+		out === 0
+			? { x: 0, y: 0, z: 1 }
+			: { x: point.x / out, y: 0, z: point.z / out }
+	return {
+		point: { x: normal.x * reach, y: point.y, z: normal.z * reach },
+		normal,
+	}
 }
 
 function bodyRadius(body: LanternOrbBody) {
@@ -412,7 +449,7 @@ function wanderTarget(body: LanternOrbBody, time: number, amplitude: number) {
 	const angle = time * wanderRate + body.phase
 	const target = {
 		x: home.x + Math.cos(angle) * reach,
-		y: home.y + Math.sin(angle * 0.76 + 0.7) * reach * 0.9,
+		y: home.y + Math.sin(angle * 0.76 + 0.7) * reach * roamRise,
 		z: home.z + Math.sin(angle * 0.53 + 1.9) * reach * 0.8,
 	}
 	return clampToLanternCavity(target, bodyRadius(body))
@@ -541,6 +578,11 @@ function containOrbs(
 		} else if (body.position.y < bottom) {
 			body.position = { ...body.position, y: bottom }
 			body.velocity = bounce(body, { x: 0, y: -1, z: 0 })
+		}
+		const pushed = pushOffKody(body.position, radius)
+		if (pushed) {
+			body.position = pushed.point
+			body.velocity = bounce(body, scaleVec(pushed.normal, -1))
 		}
 	}
 }

@@ -42,7 +42,7 @@ import {
  * the light. Hover, focus, or the word list lights an orb and dims the
  * rest; keyboard focus and the word list turn the lantern to show that
  * orb, and the left and right arrow keys on an orb turn it. Reduced
- * motion drops the sway, drift, inertia, and turns; the motes hold
+ * motion drops the sway, drift, inertia, and turns; the sparks hold
  * still.
  */
 

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { lanternView } from './landing-lantern-3d-engine.ts'
 import {
 	createLanternOrbBodies,
 	createLanternOrbit,
@@ -29,12 +30,23 @@ import {
 	type LanternWarmupVerdict,
 	type Vec3,
 } from './landing-lantern-3d-motion.ts'
+import {
+	landingLeaderOrbExit,
+	landingLeaderPath,
+	landingPrimitiveIds,
+	type LandingLeaderPoint,
+} from '#universal/landing-lantern.ts'
 
 const frame = 1 / 60
 
 /** Under the cap and over the base plate in landing-lantern-3d.gss. */
 const capUnderside = 0.695
 const basePlate = -0.695
+
+/** Kody and the flame on his head in landing-lantern-3d.gss, swept round
+ *  the lantern's axis: from under his chin to the flame's tip, ears and
+ *  all. */
+const kodySweep = { bottom: -0.26, top: 0.32, radius: 0.2 }
 
 function length(v: Vec3) {
 	return Math.hypot(v.x, v.y, v.z)
@@ -51,6 +63,17 @@ function expectInsideLantern(bodies: ReadonlyArray<LanternOrbBody>) {
 		expect(body.position.y + radius).toBeLessThan(capUnderside)
 		expect(body.position.y - radius).toBeGreaterThan(basePlate)
 	}
+}
+
+/** Room between an orb and Kody; negative when they overlap. */
+function roomFromKody(body: LanternOrbBody) {
+	const { x, y, z } = body.position
+	const spine = Math.min(kodySweep.top, Math.max(kodySweep.bottom, y))
+	return (
+		Math.hypot(x, y - spine, z) -
+		kodySweep.radius -
+		lanternOrbRadius * body.scale
+	)
 }
 
 function closestPair(bodies: ReadonlyArray<LanternOrbBody>) {
@@ -124,6 +147,90 @@ function runWarmup(
 	return { verdicts, now, state }
 }
 
+/** The desktop stage in styles.css: the lantern at its 18rem column, the
+ *  word list centered beside it, one 1.32rem word per 1.5 lines with
+ *  0.55rem between. Words land on the left edge of their dots. */
+function desktopStage(gap: number) {
+	const width = 288
+	const height = (width * 1242) / 863
+	const row = 1.32 * 16 * 1.5
+	const between = 0.55 * 16
+	const top = (height - (6 * row + 5 * between)) / 2
+	return {
+		view: {
+			left: width * lanternView.left,
+			top: height * lanternView.top,
+			width: width * lanternView.size,
+			height: height * lanternView.size,
+		},
+		words: landingPrimitiveIds.map((_, index) => ({
+			x: width + gap - 2,
+			y: top + row / 2 + index * (row + between),
+		})),
+	}
+}
+
+/** Points along a leader, from the path the page draws. */
+function leaderPoints(from: LandingLeaderPoint, to: LandingLeaderPoint) {
+	const [x0, y0, x1, y1, x2, y2, x3, y3] = landingLeaderPath(from, to)
+		.match(/-?\d+(\.\d+)?/g)!
+		.map(Number) as [
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+	]
+	return Array.from({ length: 25 }, (_, index) => {
+		const t = index / 24
+		const u = 1 - t
+		const a = u * u * u
+		const b = 3 * u * u * t
+		const c = 3 * u * t * t
+		const d = t * t * t
+		return {
+			x: a * x0 + b * x1 + c * x2 + d * x3,
+			y: a * y0 + b * y1 + c * y2 + d * y3,
+		}
+	})
+}
+
+function segmentsCross(
+	a: LandingLeaderPoint,
+	b: LandingLeaderPoint,
+	c: LandingLeaderPoint,
+	d: LandingLeaderPoint,
+) {
+	const side = (
+		p: LandingLeaderPoint,
+		q: LandingLeaderPoint,
+		r: LandingLeaderPoint,
+	) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+	return side(c, d, a) * side(c, d, b) < 0 && side(a, b, c) * side(a, b, d) < 0
+}
+
+function leadersCross(
+	a: ReadonlyArray<LandingLeaderPoint>,
+	b: ReadonlyArray<LandingLeaderPoint>,
+) {
+	const span = (points: ReadonlyArray<LandingLeaderPoint>) => ({
+		top: Math.min(...points.map((point) => point.y)),
+		bottom: Math.max(...points.map((point) => point.y)),
+	})
+	const spanA = span(a)
+	const spanB = span(b)
+	if (spanA.bottom < spanB.top || spanB.bottom < spanA.top) return false
+	for (let i = 0; i < a.length - 1; i++) {
+		for (let j = 0; j < b.length - 1; j++) {
+			if (segmentsCross(a[i]!, a[i + 1]!, b[j]!, b[j + 1]!)) return true
+		}
+	}
+	return false
+}
+
 test('the projection lands the globe and an orb where GSS draws them', () => {
 	// Measured from gss-lang 0.0.5 renders with the scene's camera on a
 	// 600 by 864 canvas: a 0.97 sphere at the pivot spans x 11.5% to 88.3%
@@ -172,7 +279,7 @@ test('the lantern frame turns the front toward the drag and round trips', () => 
 	const size = { width: 600, height: 864 }
 	const front = { x: 0, y: 0, z: 0.5 }
 	const centre = projectLanternPoint(basis, front, size)
-	// Dragging right turns the lantern the same way the body turns in GSS:
+	// Dragging right turns the lantern the same way the bail turns in GSS:
 	// its front swings right, then round to the back (farther away).
 	const quarter = projectLanternPoint(
 		basis,
@@ -282,6 +389,101 @@ test('orbs drift inside the glass without touching and rest at home when still',
 	const turned = Math.atan2(after.x, after.z) - Math.atan2(before.x, before.z)
 	expect(turned).toBeGreaterThan(0)
 	expect(turned).toBeLessThan(spin)
+})
+
+test('leaders to the word list never cross, whichever way the lantern turns', () => {
+	const basis = lanternViewBasis()
+	const drift: Array<Array<LanternOrbBody>> = []
+	let bodies = createLanternOrbBodies()
+	for (let step = 0; step < 60 / frame; step++) {
+		bodies = stepLanternOrbs(bodies, frame, {
+			time: step * frame,
+			amplitude: 1,
+		})
+		if (step % 90 === 0) drift.push(bodies)
+	}
+	const crossings: Array<string> = []
+	// The narrowest and widest desktop gaps, with the orbs at rest and as
+	// big as hover makes them.
+	for (const gap of [56, 96]) {
+		const stage = desktopStage(gap)
+		for (const scale of [1, 1.18]) {
+			for (const orbs of drift) {
+				for (let degree = 0; degree < 360; degree += 3) {
+					const yaw = (degree * Math.PI) / 180
+					const leaders = orbs.map((body, index) => {
+						const world = localToWorld(body.position, yaw)
+						const point = projectLanternPoint(basis, world, stage.view)
+						const radius = projectedSphereRadius(
+							basis,
+							world,
+							lanternOrbRadius * scale,
+							stage.view.height,
+						)
+						const centre = {
+							x: stage.view.left + point.x,
+							y: stage.view.top + point.y,
+						}
+						const to = stage.words[index]!
+						return leaderPoints(landingLeaderOrbExit(centre, to, radius), to)
+					})
+					for (let i = 0; i < leaders.length; i++) {
+						for (let j = i + 1; j < leaders.length; j++) {
+							if (!leadersCross(leaders[i]!, leaders[j]!)) continue
+							crossings.push(
+								`${orbs[i]!.id} and ${orbs[j]!.id} at ${degree}deg, gap ${gap}, scale ${scale}`,
+							)
+						}
+					}
+				}
+			}
+		}
+	}
+	expect(crossings).toEqual([])
+})
+
+test('orbs keep out of Kody, even thrown straight at him', () => {
+	let bodies = createLanternOrbBodies()
+	for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+
+	for (const id of landingPrimitiveIds) {
+		const { x, y, z } = bodies.find((body) => body.id === id)!.position
+		const size = Math.hypot(x, y, z)
+		bodies = stepLanternOrbs(bodies, 0, {
+			time: 0,
+			amplitude: 1,
+			hold: {
+				id,
+				position: { x, y, z },
+				velocity: {
+					x: (-x / size) * 4,
+					y: (-y / size) * 4,
+					z: (-z / size) * 4,
+				},
+			},
+		})
+		for (let t = 0; t < 2; t += frame) {
+			bodies = stepLanternOrbs(bodies, frame, { time: t, amplitude: 1 })
+			expectInsideLantern(bodies)
+			for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+		}
+	}
+
+	// Dragged onto him from over the flame, under his chin, or head on, an
+	// orb stops beside him, still inside the glass.
+	for (const position of [
+		{ x: 0, y: 0.6, z: 0 },
+		{ x: 0.02, y: -0.6, z: 0 },
+		{ x: 0, y: -0.1, z: 0.05 },
+	]) {
+		bodies = stepLanternOrbs(bodies, frame, {
+			time: 0,
+			amplitude: 1,
+			hold: { id: 'memory', position, velocity: { x: 0, y: 0, z: 0 } },
+		})
+		expectInsideLantern(bodies)
+		for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+	}
 })
 
 test('a tossed orb bounces off the glass, knocks the others, and settles', () => {
