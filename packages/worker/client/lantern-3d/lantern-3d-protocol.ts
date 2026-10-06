@@ -93,9 +93,15 @@ export type LanternHostMessage =
 	| { type: 'look-away' }
 
 export type LanternWorkerMessage =
+	/** The first second drew fast enough to show (it is drawn hidden). */
 	| { type: 'ready'; frame: LanternSceneFrame }
+	/** The first second drew too slow to show; the scene has stopped. */
+	| { type: 'slow' }
 	| { type: 'frame'; frame: LanternSceneFrame }
 	/** The canvas now shows the orbs where the 2D ones are. */
 	| { type: 'matched'; frame: LanternSceneFrame }
 	/** No WebGL2 here, startup threw, or the GPU context was lost. */
 	| { type: 'failed' }
+
+/** The probe worker's one answer: whether WebGL here runs on a GPU. */
+export type LanternProbeMessage = { type: 'probe'; gpu: boolean }

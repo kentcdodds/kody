@@ -17,8 +17,12 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
-import { createLanternClient, type LanternClient } from './lantern-3d-client.ts'
-import { whenIdle } from './lantern-3d-gate.ts'
+import {
+	createLanternClient,
+	probeLanternGpu,
+	type LanternClient,
+} from './lantern-3d-client.ts'
+import { declineLantern3d, whenIdle } from './lantern-3d-gate.ts'
 import {
 	type LanternMotion,
 	type LanternPalette,
@@ -30,10 +34,13 @@ export { createLanternLeaders } from './lantern-3d-leaders.ts'
 /**
  * The live half of the 3D lantern, loaded once the homepage's lantern comes
  * near the viewport (see `landing-lantern-3d.tsx`, which keeps the 2D
- * lantern as the poster). Once the page is idle, the scene starts in its
- * own worker, draws a first frame with the orbs where the 2D ones are, and
- * fades in over the poster. A navigation holds every step of that (and the
- * frames) until it ends, and leaving the page ends the worker.
+ * lantern as the poster). A throwaway worker first asks whether WebGL here
+ * runs on a GPU; without one the 2D lantern stays and the scene never
+ * starts. Otherwise, once the page is idle, the scene starts in its own
+ * worker and draws its first second hidden behind the poster. If that ran
+ * fast enough, it moves its orbs to where the 2D ones are and fades in;
+ * if not, the 2D lantern stays. A navigation holds every step of that
+ * (and the frames) until it ends, and leaving the page ends the worker.
  *
  * Each orb has an invisible button that follows it every frame, so hover,
  * focus, click, Escape, and the leader lines work as they do in 2D. Drag the
@@ -139,6 +146,12 @@ export function LandingLantern3dLive(
 		try {
 			await settled()
 			if (handle.signal.aborted) return
+			if (!(await probeLanternGpu())) {
+				declineLantern3d('no-gpu')
+				return
+			}
+			await settled()
+			if (handle.signal.aborted) return
 			await setStage('loading')
 			await settled()
 			await new Promise<void>((resolve) => whenIdle(resolve))
@@ -159,7 +172,12 @@ export function LandingLantern3dLive(
 				onLost: fail,
 			})
 			scene = created
-			await created.ready
+			const speed = await created.ready
+			if (scene !== created) return
+			if (speed === 'slow') {
+				tooSlow()
+				return
+			}
 			// The 2D orbs drift, and the page can resize, while the worker
 			// starts, so the swap begins from where they are now.
 			do {
@@ -201,6 +219,15 @@ export function LandingLantern3dLive(
 		scene?.dispose()
 		scene = null
 		void setStage('failed')
+	}
+
+	/** The scene drew too slow to show: back to the 2D lantern, here and on
+	 *  later visits in this tab. */
+	function tooSlow() {
+		declineLantern3d('slow')
+		scene?.dispose()
+		scene = null
+		void setStage('poster')
 	}
 
 	function placeHotspots(frame: LanternSceneFrame) {

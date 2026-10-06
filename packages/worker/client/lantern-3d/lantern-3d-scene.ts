@@ -63,6 +63,7 @@ import {
 } from './lantern-3d-protocol.ts'
 import {
 	createLanternQuality,
+	lanternTrialSpeed,
 	resizeLanternQuality,
 	stepLanternQuality,
 	type LanternQuality,
@@ -84,8 +85,8 @@ import { createLanternStudio } from './lantern-3d-studio.ts'
  * coasting, or idle constellation, and frames draw only when something
  * changes. Pointer turns and drags still respond directly.
  *
- * A software renderer gets the lite model, no multisampling, and a lower
- * resolution, so the CPU it shares with the page stays usable.
+ * The first second of frames is a trial (`trial`): a device that cannot
+ * draw them fast enough keeps the 2D lantern.
  */
 
 export type LanternSceneOptions = {
@@ -122,6 +123,10 @@ export type LanternScene = {
 	releaseOrb: (flick: boolean, t: number) => void
 	look: (x: number, y: number) => void
 	stopLooking: () => void
+	/** Times the first second of frames drawn one after another, whenever
+	 *  the scene is visible: `slow` when they ran too slow to show.
+	 *  Reduced motion draws only on change, so it passes at once. */
+	trial: () => Promise<'fast' | 'slow'>
 	dispose: () => void
 }
 
@@ -130,10 +135,8 @@ const fov = 24
 /** Device pixels the canvas may draw, so a big screen cannot ask for 4K. */
 const maxPixels = 2_600_000
 
-/** Texels along each cube face of the studio's environment map. A software
- *  renderer spends most of its first frame filtering that map, so it gets
- *  the studio softer. */
-const environmentSize = { gpu: 256, software: 64 }
+/** Texels along each cube face of the studio's environment map. */
+const environmentSize = 256
 
 /** Drag across the whole lantern turns it this far, radians. */
 const turnPerWidth = 2.8
@@ -162,14 +165,13 @@ export async function createLanternScene(
 	options: LanternSceneOptions,
 ): Promise<LanternScene> {
 	const { canvas, step } = options
-	const software = await step(drawsInSoftware)
 	const renderer = await step(() => {
 		const created = new WebGLRenderer({
 			canvas,
 			alpha: true,
-			// Multisampling multiplies a software renderer's per-pixel cost.
-			antialias: !software,
+			antialias: true,
 			powerPreference: 'default',
+			failIfMajorPerformanceCaveat: true,
 		})
 		created.setClearColor(0x000000, 0)
 		created.outputColorSpace = SRGBColorSpace
@@ -180,14 +182,14 @@ export async function createLanternScene(
 
 	const scene = new Scene()
 	const camera = new PerspectiveCamera(fov, 1, 1, 30)
-	const model = await createLanternModel({ lite: software, step })
+	const model = await createLanternModel({ step })
 	scene.add(model.root, model.ground)
 
 	const environment = await step(() => {
 		const pmrem = new PMREMGenerator(renderer)
 		const studio = createLanternStudio()
 		const texture = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, {
-			size: software ? environmentSize.software : environmentSize.gpu,
+			size: environmentSize,
 		}).texture
 		studio.dispose()
 		pmrem.dispose()
@@ -223,8 +225,12 @@ export async function createLanternScene(
 		devicePixelRatio: viewport.devicePixelRatio,
 		cssPixels: 1,
 		maxPixels,
-		software,
 	})
+	/** The trial's frame times so far, and who waits on its verdict. */
+	let trial: {
+		stamps: Array<number>
+		done: (speed: 'fast' | 'slow') => void
+	} | null = null
 
 	let hold: {
 		id: LandingPrimitiveId
@@ -328,7 +334,6 @@ export async function createLanternScene(
 			devicePixelRatio: next.devicePixelRatio,
 			cssPixels: size.width * size.height,
 			maxPixels,
-			software,
 		})
 		applySize()
 		wake()
@@ -725,14 +730,31 @@ export async function createLanternScene(
 		}
 		last = now
 		draw(dt)
+		timeTrial(now)
 		const keepGoing = visible && busy()
 		lastFrameAt = keepGoing ? now : null
 		if (keepGoing) cancelFrame = requestFrame(tick)
 	}
 
+	/** Only frames drawn one after another count, so a pause starts over. */
+	function timeTrial(now: number) {
+		if (!trial) return
+		if (lastFrameAt === null) trial.stamps = []
+		trial.stamps.push(now)
+		const speed = lanternTrialSpeed(trial.stamps)
+		if (speed) endTrial(speed)
+	}
+
+	function endTrial(speed: 'fast' | 'slow') {
+		const done = trial?.done
+		trial = null
+		done?.(speed)
+	}
+
 	function wake() {
 		if (disposed || lost || !started || !visible || cancelFrame) return
 		last = performance.now()
+		lastFrameAt = null
 		cancelFrame = requestFrame(tick)
 	}
 
@@ -790,6 +812,7 @@ export async function createLanternScene(
 			if (calmed) {
 				contents = createLanternContents(lanternOrbHomes)
 				spin = createLanternSpin()
+				endTrial('fast')
 			}
 			wake()
 		},
@@ -980,6 +1003,13 @@ export async function createLanternScene(
 		stopLooking() {
 			pointer = null
 		},
+		trial() {
+			return new Promise((done) => {
+				if (motion.reduced) return done('fast')
+				trial = { stamps: [], done }
+				wake()
+			})
+		},
 		dispose() {
 			disposed = true
 			cancelFrame?.()
@@ -1037,8 +1067,8 @@ function frameClock(): (callback: (now: number) => void) => () => void {
 }
 
 /** Resolves once the GPU has run every command issued so far, without
- *  blocking. A software renderer's first frame (every shader, the
- *  environment map) is slow, and the reveal should not wait on it. */
+ *  blocking. The first frame (every shader, the environment map) can take
+ *  a while, and the trial should time the frames after it. */
 function gpuCaughtUp(gl: WebGLRenderingContext | WebGL2RenderingContext) {
 	if (!('fenceSync' in gl)) return Promise.resolve()
 	const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
@@ -1057,23 +1087,4 @@ function gpuCaughtUp(gl: WebGLRenderingContext | WebGL2RenderingContext) {
 		// A fence never signals within the task that set it.
 		setTimeout(check, 16)
 	})
-}
-
-/** Software rasterizers seen in the wild: Chrome's, Mesa's, and Windows'. */
-const softwareRenderer = /swiftshader|llvmpipe|softpipe|basic render|software/i
-
-/** Some browsers refuse a context that asks to fail on a major
- *  performance caveat when WebGL would run on the CPU; others only say so
- *  in the renderer's name. */
-function drawsInSoftware() {
-	const probe = new OffscreenCanvas(1, 1).getContext('webgl2', {
-		failIfMajorPerformanceCaveat: true,
-	})
-	if (!probe) return true
-	const info = probe.getExtension('WEBGL_debug_renderer_info')
-	const name: unknown = probe.getParameter(
-		info ? info.UNMASKED_RENDERER_WEBGL : probe.RENDERER,
-	)
-	probe.getExtension('WEBGL_lose_context')?.loseContext()
-	return typeof name === 'string' && softwareRenderer.test(name)
 }

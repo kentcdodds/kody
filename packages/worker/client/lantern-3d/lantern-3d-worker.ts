@@ -13,8 +13,10 @@ import { createLanternScene, type LanternScene } from './lantern-3d-scene.ts'
  *
  * Startup runs one small step at a time at background priority, so any
  * message the page sent goes first. While the page navigates, startup
- * stops before its next step and no frames draw. The page terminates the
- * worker when the lantern leaves it.
+ * stops before its next step and no frames draw. The first second of
+ * frames then draws behind the 2D lantern, and only if it ran fast enough
+ * does the page get `ready`; otherwise the scene stops and the page keeps
+ * the 2D lantern. The page terminates the worker when the lantern leaves.
  */
 
 type WorkerScope = {
@@ -68,8 +70,15 @@ async function start(message: Extract<LanternHostMessage, { type: 'start' }>) {
 		})
 		scene = created
 		for (const queued of early.splice(0)) apply(created, queued)
-		scope.postMessage({ type: 'ready', frame: created.frame() })
+		const speed = created.trial()
 		created.setVisible(visible && !paused)
+		if ((await speed) === 'slow') {
+			scene = null
+			created.dispose()
+			scope.postMessage({ type: 'slow' })
+			return
+		}
+		scope.postMessage({ type: 'ready', frame: created.frame() })
 	} catch {
 		scope.postMessage({ type: 'failed' })
 	}

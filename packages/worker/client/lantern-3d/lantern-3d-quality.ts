@@ -4,14 +4,12 @@
  * and steps down while frames run long. It does not climb back, so a
  * device that ran slow once settles instead of oscillating.
  *
- * A software renderer pays CPU time for every pixel, so it starts below
- * the device ratio and may settle lower than a GPU would.
+ * Before any of that, the first second of frames decides whether the
+ * device shows the 3D lantern at all (`lanternTrialSpeed`).
  */
 
 export type LanternQuality = {
 	pixelRatio: number
-	/** The lowest ratio it steps down to. */
-	floor: number
 	/** Whether it has stepped down, so a resize keeps the lower ratio. */
 	dropped: boolean
 	/** Smoothed frame time, milliseconds. */
@@ -26,7 +24,6 @@ export type LanternQualityOptions = {
 	devicePixelRatio: number
 	cssPixels: number
 	maxPixels: number
-	software: boolean
 }
 
 /** Under about 42 frames a second counts as slow. */
@@ -41,16 +38,22 @@ const hitchMs = 250
 const hitchRun = 3
 
 const dropFactor = 0.8
-const gpu = { start: Number.POSITIVE_INFINITY, floor: 1 }
-const software = { start: 0.75, floor: 0.5 }
+
+/** The lowest ratio it steps down to. */
+const floorRatio = 1
+
+/** How long the trial watches, milliseconds of frame timestamps. */
+const trialMs = 1000
+
+/** Trial frames slower than this on average (under 20 frames a second)
+ *  keep the 2D lantern. Battery savers that hold 30 still pass. */
+const trialFrameMs = 50
 
 export function createLanternQuality(
 	options: LanternQualityOptions,
 ): LanternQuality {
-	const limits = options.software ? software : gpu
 	return {
-		pixelRatio: Math.min(lanternPixelRatioCap(options), limits.start),
-		floor: limits.floor,
+		pixelRatio: lanternPixelRatioCap(options),
 		dropped: false,
 		frameMs: 1000 / 60,
 		slowForMs: 0,
@@ -59,15 +62,13 @@ export function createLanternQuality(
 }
 
 /** The sharpest ratio a canvas of `cssPixels` gets on this device. */
-export function lanternPixelRatioCap(
-	options: Omit<LanternQualityOptions, 'software'>,
-) {
+export function lanternPixelRatioCap(options: LanternQualityOptions) {
 	const device = Math.min(Math.max(options.devicePixelRatio || 1, 1), 3)
 	const budget =
 		options.cssPixels > 0
 			? Math.sqrt(options.maxPixels / options.cssPixels)
 			: device
-	return roundRatio(Math.max(Math.min(device, budget), gpu.floor))
+	return roundRatio(Math.max(Math.min(device, budget), floorRatio))
 }
 
 /** A new canvas size moves the cap, but a device that stepped down keeps
@@ -96,20 +97,36 @@ export function stepLanternQuality(
 	const sample = Math.min(frameMs, hitchMs)
 	const smoothed = quality.frameMs + (sample - quality.frameMs) * 0.08
 	const slowForMs = smoothed > slowFrameMs ? quality.slowForMs + sample : 0
-	if (slowForMs < slowWindowMs || quality.pixelRatio <= quality.floor) {
+	if (slowForMs < slowWindowMs || quality.pixelRatio <= floorRatio) {
 		return { ...quality, frameMs: smoothed, slowForMs, longFrames }
 	}
 	return {
 		pixelRatio: roundRatio(
-			Math.max(quality.pixelRatio * dropFactor, quality.floor),
+			Math.max(quality.pixelRatio * dropFactor, floorRatio),
 		),
-		floor: quality.floor,
 		dropped: true,
 		// Give the new size a fresh window before judging it.
 		frameMs: 1000 / 60,
 		slowForMs: 0,
 		longFrames,
 	}
+}
+
+/**
+ * The trial's verdict from the timestamps of frames drawn one after
+ * another: null until they span a second, then whether they averaged
+ * under 20 a second. Not the typical gap: a renderer that falls behind
+ * can stall every other frame, so half its gaps still look quick.
+ */
+export function lanternTrialSpeed(
+	stamps: ReadonlyArray<number>,
+): 'fast' | 'slow' | null {
+	const first = stamps[0]
+	const last = stamps.at(-1)
+	if (first === undefined || last === undefined || last - first < trialMs) {
+		return null
+	}
+	return (last - first) / (stamps.length - 1) > trialFrameMs ? 'slow' : 'fast'
 }
 
 function roundRatio(value: number) {

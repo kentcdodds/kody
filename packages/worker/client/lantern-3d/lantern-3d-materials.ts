@@ -214,7 +214,6 @@ export function createGlassFloorMaterial(radius: number) {
  * while the globe turns, as they would on real glass. The small one has no
  * window panes: on the glass they read as a logo or as the apps glyph.
  * Face-on the glass reflects little, so the orbs behind it stay clear.
- * One cheap shader, so the software path draws it too.
  */
 export function createGlassShellMaterial() {
 	return new ShaderMaterial({
@@ -277,8 +276,8 @@ export function createGlassShellMaterial() {
 }
 
 /** Fine lines running the way the metal was turned or drawn, for its
- *  roughness (and, on a GPU, its relief). Lathe parts, the handle tube, and
- *  the rings all run their v coordinate across the grain. */
+ *  roughness and relief. Lathe parts, the handle tube, and the rings all
+ *  run their v coordinate across the grain. */
 export function createBrushedTexture(): Texture {
 	const width = 4
 	const height = 256
@@ -313,15 +312,14 @@ export function createBrushedTexture(): Texture {
 	return texture
 }
 
-/** Brushed dark bronze for the cap, handle, and base. `lite` skips the
- *  relief, which a software renderer pays for on every pixel. */
-export function createMetalMaterial(lite: boolean, grain: Texture) {
+/** Brushed dark bronze for the cap, handle, and base. */
+export function createMetalMaterial(grain: Texture) {
 	return new MeshStandardMaterial({
 		color: lanternMetal.bronze.clone(),
 		metalness: 0.86,
 		roughness: 0.62,
 		roughnessMap: grain,
-		bumpMap: lite ? null : grain,
+		bumpMap: grain,
 		bumpScale: 0.7,
 		envMapIntensity: 1.35,
 	})

@@ -8,6 +8,7 @@ import {
 	type LanternMotion,
 	type LanternPalette,
 	type LanternPoint,
+	type LanternProbeMessage,
 	type LanternSceneFrame,
 	type LanternViewport,
 	type LanternWorkerMessage,
@@ -19,6 +20,26 @@ import {
  * answers each frame with where the orbs project. Nothing here loads
  * three.js: that lives in the worker's own bundle.
  */
+
+/** Asks a throwaway worker whether WebGL here runs on a GPU. */
+export function probeLanternGpu() {
+	return new Promise<boolean>((resolve) => {
+		const probe = new Worker(
+			new URL('./lantern-3d-probe.ts', import.meta.url),
+			{ type: 'module', name: 'lantern-3d-probe' },
+		)
+		const answer = (gpu: boolean) => {
+			probe.terminate()
+			resolve(gpu)
+		}
+		probe.addEventListener(
+			'message',
+			(event: MessageEvent<LanternProbeMessage>) => answer(event.data.gpu),
+		)
+		probe.addEventListener('error', () => answer(false))
+		probe.addEventListener('messageerror', () => answer(false))
+	})
+}
 
 export type LanternClientOptions = {
 	canvas: HTMLCanvasElement
@@ -36,8 +57,9 @@ export type LanternClientOptions = {
 }
 
 export type LanternClient = {
-	/** Resolves once the first frame has drawn; rejects if startup fails. */
-	ready: Promise<void>
+	/** Resolves once the first second has drawn (hidden): `slow` when it
+	 *  ran too slow to show. Rejects if startup fails. */
+	ready: Promise<'fast' | 'slow'>
 	/** Puts the 3D orbs where the 2D ones are now. Resolves once that
 	 *  frame has drawn. */
 	matchPoster: (orbs: ReadonlyArray<LanternPoint>) => Promise<void>
@@ -78,9 +100,11 @@ export function createLanternClient(
 	let started = false
 	/** The held orb's recent pointer positions, to tell a toss from a drop. */
 	let samples: Array<LanternPointerSample3d> = []
-	let settle: { resolve: () => void; reject: (error: Error) => void } | null =
-		null
-	const ready = new Promise<void>((resolve, reject) => {
+	let settle: {
+		resolve: (speed: 'fast' | 'slow') => void
+		reject: (error: Error) => void
+	} | null = null
+	const ready = new Promise<'fast' | 'slow'>((resolve, reject) => {
 		settle = { resolve, reject }
 	})
 	let matched: (() => void) | null = null
@@ -103,7 +127,10 @@ export function createLanternClient(
 				case 'ready':
 					started = true
 					options.onFrame(message.frame)
-					settle?.resolve()
+					settle?.resolve('fast')
+					return
+				case 'slow':
+					settle?.resolve('slow')
 					return
 				case 'frame':
 					options.onFrame(message.frame)

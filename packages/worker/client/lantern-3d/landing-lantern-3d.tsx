@@ -15,10 +15,12 @@ import {
 /**
  * The primitives lantern in 3D, with the 2D lantern as its poster. The page
  * ships the 2D one, and it stays for no-JS, no WebGL2 in a worker,
- * Save-Data, and a lost GPU context. Near the viewport, once the page is
- * idle, this loads the 3D lantern's own chunk (`lantern-3d-live.tsx`),
- * which starts the scene and fades it in over the poster. The poster stays
- * mounted until then, so its orbs keep drifting where the 3D ones start.
+ * Save-Data, WebGL without a GPU, a first second too slow to show, and a
+ * lost GPU context. Near the viewport, once the page is idle, this loads
+ * the 3D lantern's own chunk (`lantern-3d-live.tsx`), which makes those
+ * checks, starts the scene, and fades it in over the poster. The poster
+ * stays mounted until then, so its orbs keep drifting where the 3D ones
+ * start.
  */
 
 export type LandingLantern3dProps = Omit<LandingLanternProps, 'decorative'> & {

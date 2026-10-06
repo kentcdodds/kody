@@ -160,13 +160,11 @@ const glassProfile: ReadonlyArray<readonly [number, number]> = [
 	[0.54, lanternShape.capBottom + 0.04],
 ]
 
-/** `lite` trades the metal's relief and some curve detail for frame time on
- *  software renderers. Built a part per `step`. */
+/** Built a part per `step`. */
 export async function createLanternModel(options: {
-	lite: boolean
 	step: LanternStep
 }): Promise<LanternModel> {
-	const { lite, step } = options
+	const { step } = options
 	const disposables: Array<{ dispose: () => void }> = []
 	const keep = <T extends { dispose: () => void }>(item: T) => {
 		disposables.push(item)
@@ -180,12 +178,12 @@ export async function createLanternModel(options: {
 	root.add(lantern)
 
 	const glowTexture = keep(createGlowTexture())
-	const metal = keep(createMetalMaterial(lite, keep(createBrushedTexture())))
+	const metal = keep(createMetalMaterial(keep(createBrushedTexture())))
 	const trim = keep(createTrimMaterial())
 	const litEdge = keep(createLitEdgeMaterial())
 
 	const { glassInterior, glassFloor, handle } = await step(() =>
-		buildLantern({ lantern, lite, metal, trim, litEdge, keep }),
+		buildLantern({ lantern, metal, trim, litEdge, keep }),
 	)
 
 	const fluid = new Group()
@@ -196,9 +194,7 @@ export async function createLanternModel(options: {
 	fluid.add(sparkles)
 	root.add(fluid)
 
-	const orbSphere = keep(
-		lite ? new SphereGeometry(1, 24, 16) : new SphereGeometry(1, 40, 28),
-	)
+	const orbSphere = keep(new SphereGeometry(1, 40, 28))
 	const orbs: Array<LanternOrbView> = []
 	for (const [index, id] of landingPrimitiveIds.entries()) {
 		const orb = await step(() =>
@@ -293,13 +289,12 @@ type Keep = <T extends { dispose: () => void }>(item: T) => T
 /** Glass, cap, handle, and base. */
 function buildLantern(parts: {
 	lantern: Group
-	lite: boolean
 	metal: MeshStandardMaterial
 	trim: MeshStandardMaterial
 	litEdge: MeshBasicMaterial
 	keep: Keep
 }) {
-	const { lantern, lite, metal, trim, litEdge, keep } = parts
+	const { lantern, metal, trim, litEdge, keep } = parts
 	const glassGeometry = keep(
 		new LatheGeometry(
 			new SplineCurve(
@@ -344,10 +339,7 @@ function buildLantern(parts: {
 		[lidRadius - 0.006, lidTop - 0.012, 0.012],
 		[baseRadius - 0.008, baseTop - 0.02, 0.017],
 	] as const) {
-		const bead = new Mesh(
-			keep(new TorusGeometry(radius, tube, lite ? 6 : 10, lite ? 72 : 128)),
-			trim,
-		)
+		const bead = new Mesh(keep(new TorusGeometry(radius, tube, 10, 128)), trim)
 		bead.rotation.x = Math.PI / 2
 		bead.position.y = y
 		lantern.add(bead)
