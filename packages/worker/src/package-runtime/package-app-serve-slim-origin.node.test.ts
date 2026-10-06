@@ -10,7 +10,7 @@ const runtimeForwardMock = vi.hoisted(() => ({
 	>(() => null),
 	servePackageApp: vi.fn(),
 	buildPackageAppWorker: vi.fn(),
-	resolveSavedPackage: vi.fn(),
+	resolveSavedPackageForPackageAppSlug: vi.fn(),
 	createPackageAppCallerContext: vi.fn(),
 }))
 
@@ -29,8 +29,8 @@ vi.mock('#worker/runtime-worker-service.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: (...args: Array<unknown>) =>
-		runtimeForwardMock.resolveSavedPackage(...args),
+	resolveSavedPackageForPackageAppSlug: (...args: Array<unknown>) =>
+		runtimeForwardMock.resolveSavedPackageForPackageAppSlug(...args),
 	loadInvokeManifestBySourceId: vi.fn(),
 }))
 
@@ -85,7 +85,9 @@ test('servePackageAppRequest forwards to RUNTIME_WORKER when PackageAppRuntimeBr
 		dispatch: input.dispatch,
 	})
 	expect(runtimeForwardMock.buildPackageAppWorker).not.toHaveBeenCalled()
-	expect(runtimeForwardMock.resolveSavedPackage).not.toHaveBeenCalled()
+	expect(
+		runtimeForwardMock.resolveSavedPackageForPackageAppSlug,
+	).not.toHaveBeenCalled()
 })
 
 test('servePackageAppRequest stays local when PackageAppRuntimeBridge is available', async () => {
@@ -94,7 +96,9 @@ test('servePackageAppRequest stays local when PackageAppRuntimeBridge is availab
 		fetch: vi.fn(),
 		servePackageApp: runtimeForwardMock.servePackageApp,
 	})
-	runtimeForwardMock.resolveSavedPackage.mockResolvedValue(null)
+	runtimeForwardMock.resolveSavedPackageForPackageAppSlug.mockResolvedValue(
+		null,
+	)
 
 	const response = await servePackageAppRequest(
 		createServeInput({ RUNTIME_WORKER: {} } as Env),
@@ -102,7 +106,9 @@ test('servePackageAppRequest stays local when PackageAppRuntimeBridge is availab
 
 	expect(response.status).toBe(404)
 	expect(runtimeForwardMock.servePackageApp).not.toHaveBeenCalled()
-	expect(runtimeForwardMock.resolveSavedPackage).toHaveBeenCalled()
+	expect(
+		runtimeForwardMock.resolveSavedPackageForPackageAppSlug,
+	).toHaveBeenCalled()
 })
 
 test('servePackageAppRequest fails closed when PackageAppRuntimeBridge and RUNTIME_WORKER are both missing', async () => {
@@ -115,6 +121,8 @@ test('servePackageAppRequest fails closed when PackageAppRuntimeBridge and RUNTI
 	const body = (await response.json()) as { cause?: string }
 	expect(body.cause).toBe(packageAppRuntimeForwardUnavailableMessage)
 	expect(runtimeForwardMock.servePackageApp).not.toHaveBeenCalled()
-	expect(runtimeForwardMock.resolveSavedPackage).not.toHaveBeenCalled()
+	expect(
+		runtimeForwardMock.resolveSavedPackageForPackageAppSlug,
+	).not.toHaveBeenCalled()
 	expect(runtimeForwardMock.buildPackageAppWorker).not.toHaveBeenCalled()
 })

@@ -54,8 +54,10 @@ const mockModule = vi.hoisted(() => ({
 		(..._args: Parameters<typeof AppBaseUrl.getAppBaseUrl>) =>
 			'https://example.com',
 	),
-	resolveSavedPackage: vi.fn<typeof ModuleArtifacts.resolveSavedPackage>(
-		async () => ({
+	resolveSavedPackageForPackageAppSlug: vi.fn<
+		typeof ModuleArtifacts.resolveSavedPackageForPackageAppSlug
+	>(async () => ({
+		savedPackage: {
 			id: 'package-1',
 			userId: 'user-1',
 			name: '@kody/example',
@@ -70,8 +72,9 @@ const mockModule = vi.hoisted(() => ({
 			lockedAt: null,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
-		}),
-	),
+		},
+		retired: false,
+	})),
 	loadPackageSourceBySourceId: vi.fn<
 		typeof PackageSource.loadPackageSourceBySourceId
 	>(async () => {
@@ -128,9 +131,11 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: (
-		...args: Parameters<typeof ModuleArtifacts.resolveSavedPackage>
-	) => mockModule.resolveSavedPackage(...args),
+	resolveSavedPackageForPackageAppSlug: (
+		...args: Parameters<
+			typeof ModuleArtifacts.resolveSavedPackageForPackageAppSlug
+		>
+	) => mockModule.resolveSavedPackageForPackageAppSlug(...args),
 	loadInvokeManifestBySourceId: (
 		...args: Parameters<typeof ModuleArtifacts.loadInvokeManifestBySourceId>
 	) => mockModule.loadInvokeManifestBySourceId(...args),
@@ -335,5 +340,5 @@ test('handlePackageAppRequest forwards package code a request stripped of owner 
 test('handlePackageAppRequest returns not found when the URL username does not match the signed-in user', async () => {
 	const response = await request('/@other-user/packages/example')
 	expect(response.status).toBe(404)
-	expect(mockModule.resolveSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.resolveSavedPackageForPackageAppSlug).not.toHaveBeenCalled()
 })
