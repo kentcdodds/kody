@@ -80,7 +80,7 @@ export type LanternOrbView = {
 	halo: SpriteMaterial
 }
 
-export type LanternBurst = {
+type LanternBurst = {
 	points: Points<BufferGeometry, ShaderMaterial>
 	emit: (
 		origin: Vector3,

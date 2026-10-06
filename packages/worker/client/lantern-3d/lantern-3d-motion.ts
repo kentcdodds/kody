@@ -17,7 +17,7 @@ import { lanternCavity, lanternOrbRadius } from './lantern-3d-layout.ts'
 
 export type Vec3 = { x: number; y: number; z: number }
 
-export type LanternOrb3d = Vec3 & {
+type LanternOrb3d = Vec3 & {
 	id: LandingPrimitiveId
 	vx: number
 	vy: number

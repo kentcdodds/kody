@@ -30,7 +30,7 @@ export function parseCssColor(input: string): LinearRgb | null {
 }
 
 /** `hue` in degrees. Reduces chroma until the color fits in sRGB. */
-export function oklchToLinearSrgb(
+function oklchToLinearSrgb(
 	lightness: number,
 	chroma: number,
 	hue: number,

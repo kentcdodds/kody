@@ -22,7 +22,7 @@ export const lanternStill = {
 } as const
 
 /** World x and y for a point on the still, as fractions of its box. */
-export function stillToWorld(fx: number, fy: number) {
+function stillToWorld(fx: number, fy: number) {
 	return {
 		x: (fx - landingLanternGlass.x) * lanternStill.width,
 		y: (landingLanternGlass.y - fy) * lanternStill.height,

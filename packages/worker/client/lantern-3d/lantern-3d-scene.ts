@@ -82,7 +82,7 @@ export type LanternMotion = {
 	wander: number
 }
 
-export type LanternOrbFrame = {
+type LanternOrbFrame = {
 	id: LandingPrimitiveId
 	/** Centre in CSS pixels from the frame's top left. */
 	x: number
