@@ -6,15 +6,14 @@
  * its file to NNNN+1, and a naive apply re-runs the same ALTER under the new
  * name (duplicate column).
  *
- * Matching prefers content-sha (Wrangler stores names, not hashes). Historical
+ * Matching is content-sha only (Wrangler stores names, not hashes). Historical
  * SQL for a missing applied name is recovered from git (`commit^:path` when
  * the last touch deleted/renamed the file). Preview deploy checks out with
- * `fetch-depth: 0`. When rebase-and-renumber rewrote history so the old path
- * never appears on HEAD, fall back to a unique kebab-slug match (same
- * description, new numeric prefix). When rewrite is still unsafe (ambiguous
- * slug/sha, or no candidate), this script no-ops for that row and leaves apply
- * to fail loudly — use the documented reset-preview-D1 fallback in
- * docs/contributing/setup/preview-deploys.md.
+ * `fetch-depth: 0`. When history cannot recover the old blob (for example
+ * rebase-and-renumber rewrote it away), skip the rewrite and leave apply to
+ * fail loudly — use the documented reset-preview-D1 fallback in
+ * docs/contributing/setup/preview-deploys.md. Never invent a match from the
+ * kebab slug alone: that can mark revised SQL as already applied.
  *
  * Never runs against production: requires CLOUDFLARE_ENV=preview, --remote,
  * and a config whose binding resolves to a preview D1 database_name
@@ -43,14 +42,12 @@ export type RenamedMigrationRewrite =
 			from: string
 			to: string
 			sha256: string
-			matchedBy: 'sha' | 'slug'
 	  }
 	| {
 			kind: 'drop-stale'
 			from: string
 			to: string
 			sha256: string
-			matchedBy: 'sha' | 'slug'
 	  }
 
 export type RenamedMigrationSkip = {
@@ -70,87 +67,6 @@ export function assertSafeMigrationFilename(name: string): string {
 		)
 	}
 	return name
-}
-
-/** `0075-platform-oauth-app-visibility.sql` → `platform-oauth-app-visibility`. */
-export function migrationSlug(filename: string): string | null {
-	const match = filename.match(/^\d{4}-(.+)\.sql$/)
-	return match?.[1] ?? null
-}
-
-function pickRewriteTarget(input: {
-	appliedName: string
-	currentFiles: ReadonlyArray<MigrationFileDigest>
-	appliedSet: ReadonlySet<string>
-	claimedTargets: ReadonlySet<string>
-	resolveHistoricalContent: (filename: string) => string | null
-}):
-	| { target: MigrationFileDigest; matchedBy: 'sha' | 'slug' }
-	| { skip: string } {
-	const historical = input.resolveHistoricalContent(input.appliedName)
-	if (historical !== null) {
-		const sha256 = hashMigrationContent(historical)
-		const matches = input.currentFiles.filter((file) => file.sha256 === sha256)
-		if (matches.length === 0) {
-			return {
-				skip: `no current migration matches sha256 ${sha256}`,
-			}
-		}
-		if (matches.length > 1) {
-			return {
-				skip: `ambiguous sha256 ${sha256} matches ${matches
-					.map((file) => file.filename)
-					.join(', ')}`,
-			}
-		}
-		const target = matches[0]
-		if (!target) {
-			return { skip: `no current migration matches sha256 ${sha256}` }
-		}
-		if (input.claimedTargets.has(target.filename)) {
-			return {
-				skip: `target ${target.filename} already claimed by another rewrite`,
-			}
-		}
-		return { target, matchedBy: 'sha' }
-	}
-
-	// Rebase-and-renumber often rewrites history so the old path never appears
-	// on HEAD. Fall back to a unique kebab slug match (same description, new
-	// prefix) among current files.
-	const slug = migrationSlug(input.appliedName)
-	if (!slug) {
-		return {
-			skip: 'could not recover historical SQL content from git (and no slug)',
-		}
-	}
-	const slugMatches = input.currentFiles.filter(
-		(file) => migrationSlug(file.filename) === slug,
-	)
-	if (slugMatches.length === 0) {
-		return {
-			skip: `could not recover historical SQL from git, and no current file has slug "${slug}"`,
-		}
-	}
-	if (slugMatches.length > 1) {
-		return {
-			skip: `could not recover historical SQL from git, and slug "${slug}" is ambiguous (${slugMatches
-				.map((file) => file.filename)
-				.join(', ')})`,
-		}
-	}
-	const target = slugMatches[0]
-	if (!target) {
-		return {
-			skip: `could not recover historical SQL from git, and no current file has slug "${slug}"`,
-		}
-	}
-	if (input.claimedTargets.has(target.filename)) {
-		return {
-			skip: `target ${target.filename} already claimed by another rewrite`,
-		}
-	}
-	return { target, matchedBy: 'slug' }
 }
 
 export function planRenamedMigrationRewrites(input: {
@@ -181,20 +97,45 @@ export function planRenamedMigrationRewrites(input: {
 			continue
 		}
 
-		const picked = pickRewriteTarget({
-			appliedName,
-			currentFiles: input.currentFiles,
-			appliedSet,
-			claimedTargets,
-			resolveHistoricalContent: input.resolveHistoricalContent,
-		})
-		if ('skip' in picked) {
-			skipped.push({ name: appliedName, reason: picked.skip })
+		const historical = input.resolveHistoricalContent(appliedName)
+		if (historical === null) {
+			skipped.push({
+				name: appliedName,
+				reason:
+					'could not recover historical SQL content from git; use reset-d1 when content cannot be sha-matched',
+			})
 			continue
 		}
 
+		const sha256 = hashMigrationContent(historical)
+		const matches = input.currentFiles.filter((file) => file.sha256 === sha256)
+		if (matches.length === 0) {
+			skipped.push({
+				name: appliedName,
+				reason: `no current migration matches sha256 ${sha256}`,
+			})
+			continue
+		}
+		if (matches.length > 1) {
+			skipped.push({
+				name: appliedName,
+				reason: `ambiguous sha256 ${sha256} matches ${matches
+					.map((file) => file.filename)
+					.join(', ')}`,
+			})
+			continue
+		}
+
+		const target = matches[0]
+		if (!target) {
+			skipped.push({
+				name: appliedName,
+				reason: `no current migration matches sha256 ${sha256}`,
+			})
+			continue
+		}
 		try {
-			assertSafeMigrationFilename(picked.target.filename)
+			assertSafeMigrationFilename(target.filename)
 		} catch (error) {
 			skipped.push({
 				name: appliedName,
@@ -205,24 +146,29 @@ export function planRenamedMigrationRewrites(input: {
 			})
 			continue
 		}
+		if (claimedTargets.has(target.filename)) {
+			skipped.push({
+				name: appliedName,
+				reason: `target ${target.filename} already claimed by another rewrite`,
+			})
+			continue
+		}
 
-		claimedTargets.add(picked.target.filename)
-		if (appliedSet.has(picked.target.filename)) {
+		claimedTargets.add(target.filename)
+		if (appliedSet.has(target.filename)) {
 			rewrites.push({
 				kind: 'drop-stale',
 				from: appliedName,
-				to: picked.target.filename,
-				sha256: picked.target.sha256,
-				matchedBy: picked.matchedBy,
+				to: target.filename,
+				sha256,
 			})
 			continue
 		}
 		rewrites.push({
 			kind: 'rename',
 			from: appliedName,
-			to: picked.target.filename,
-			sha256: picked.target.sha256,
-			matchedBy: picked.matchedBy,
+			to: target.filename,
+			sha256,
 		})
 	}
 
@@ -576,8 +522,8 @@ export function main(argv: ReadonlyArray<string>): void {
 	for (const rewrite of plan.rewrites) {
 		const action =
 			rewrite.kind === 'rename'
-				? `rename ${rewrite.from} → ${rewrite.to} (matched by ${rewrite.matchedBy})`
-				: `drop stale ${rewrite.from} (sha matches already-applied ${rewrite.to}, matched by ${rewrite.matchedBy})`
+				? `rename ${rewrite.from} → ${rewrite.to}`
+				: `drop stale ${rewrite.from} (sha matches already-applied ${rewrite.to})`
 		if (options.dryRun) {
 			console.log(
 				`Preview migration rename rewrite (${options.binding}): dry-run would ${action} (sha256 ${rewrite.sha256})`,

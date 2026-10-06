@@ -42,7 +42,6 @@ test('planRenamedMigrationRewrites renames when historical sha matches one curre
 			from: '0074-platform-oauth-app-visibility.sql',
 			to: '0075-platform-oauth-app-visibility.sql',
 			sha256: hashMigrationContent(sql),
-			matchedBy: 'sha',
 		},
 	])
 })
@@ -65,12 +64,11 @@ test('planRenamedMigrationRewrites drops stale name when target is already appli
 			from: '0074-platform-oauth-app-visibility.sql',
 			to: '0075-platform-oauth-app-visibility.sql',
 			sha256: hashMigrationContent(sql),
-			matchedBy: 'sha',
 		},
 	])
 })
 
-test('planRenamedMigrationRewrites falls back to unique kebab slug after rebase erased history', () => {
+test('planRenamedMigrationRewrites skips when git history is gone (no content-blind slug match)', () => {
 	const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
 	const plan = planRenamedMigrationRewrites({
 		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
@@ -78,19 +76,17 @@ test('planRenamedMigrationRewrites falls back to unique kebab slug after rebase 
 		resolveHistoricalContent: () => null,
 	})
 
-	expect(plan.skipped).toEqual([])
-	expect(plan.rewrites).toEqual([
+	expect(plan.rewrites).toEqual([])
+	expect(plan.skipped).toEqual([
 		{
-			kind: 'rename',
-			from: '0074-platform-oauth-app-visibility.sql',
-			to: '0075-platform-oauth-app-visibility.sql',
-			sha256: hashMigrationContent(sql),
-			matchedBy: 'slug',
+			name: '0074-platform-oauth-app-visibility.sql',
+			reason:
+				'could not recover historical SQL content from git; use reset-d1 when content cannot be sha-matched',
 		},
 	])
 })
 
-test('planRenamedMigrationRewrites skips when content changed or history/slug cannot match', () => {
+test('planRenamedMigrationRewrites skips when content changed or history cannot match', () => {
 	const plan = planRenamedMigrationRewrites({
 		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
 		currentFiles: [
@@ -116,7 +112,7 @@ test('planRenamedMigrationRewrites skips when content changed or history/slug ca
 		resolveHistoricalContent: () => null,
 	})
 	expect(missingHistory.rewrites).toEqual([])
-	expect(missingHistory.skipped[0]?.reason).toMatch(/no current file has slug/)
+	expect(missingHistory.skipped[0]?.reason).toMatch(/use reset-d1/)
 })
 
 test('planRenamedMigrationRewrites skips ambiguous sha matches', () => {
