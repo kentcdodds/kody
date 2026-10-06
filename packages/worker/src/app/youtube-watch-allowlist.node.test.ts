@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { youtubeWatchSampleVideoId } from '#universal/youtube-watch.ts'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import {
 	bundledDocWatchVideoIds,
 	loadPlaylistVideoIds,
@@ -54,6 +55,7 @@ test('loadPlaylistVideoIds fails open when YouTube is unreachable', async () => 
 })
 
 test('resolveYoutubeWatchAllowedVideoIds always includes the sample id and env extras', async () => {
+	silenceExpectedConsoleWarns(['landing-hero-videos'])
 	const extraVideoId = 'dQw4w9wgvcQ'
 	const fetchImpl = async () => {
 		throw new Error('playlist fetch should not run')

@@ -14,7 +14,7 @@ import { guides } from '#worker/guides/catalog.ts'
 
 type YoutubeWatchFetch = (
 	input: string,
-	init?: { signal?: AbortSignal },
+	init?: RequestInit,
 ) => Promise<Response>
 
 export async function resolveYoutubeWatchAllowedVideoIds(input: {
@@ -47,8 +47,10 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 			? loadLandingHeroVideos({
 					env: input.env,
 					playlistId: landingHeroSourcePlaylistId,
+					fetchImpl: input.fetchImpl,
 				})
 			: Promise.resolve([]),
+		,
 	])
 	return mergeYoutubeWatchAllowlist({
 		playlistVideoIds,

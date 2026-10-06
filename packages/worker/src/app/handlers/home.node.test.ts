@@ -10,6 +10,7 @@ import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import type * as OnboardingData from '#app/onboarding-data.ts'
 
@@ -96,6 +97,10 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		return Response.json({ session: loaded.session })
 	})
 
+	silenceExpectedConsoleWarns(['landing-hero-videos'])
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockRejectedValue(new Error('offline'))
 	const response = await createHomeHandler(env).handler(
 		new RequestContext(request),
 	)
@@ -125,10 +130,15 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(
 		homeInput?.loaderData?.onboarding?.discoveryPrompt.length,
 	).toBeGreaterThan(0)
+	fetchMock.mockRestore()
 })
 
 test('anonymous home SSR omits the unused onboarding chooser catalog', async () => {
 	vi.mocked(renderAppPage).mockResolvedValue(new Response('ok'))
+	silenceExpectedConsoleWarns(['landing-hero-videos'])
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockRejectedValue(new Error('offline'))
 
 	setAuthSessionSecret(testCookieSecret)
 	const response = await createHomeHandler({
@@ -140,4 +150,5 @@ test('anonymous home SSR omits the unused onboarding chooser catalog', async () 
 		0,
 	)
 	expect(input?.loaderData?.landingHeroVideos).toEqual([])
+	fetchMock.mockRestore()
 })
