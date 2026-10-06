@@ -334,16 +334,9 @@ export function readRemovableSharedRuntimeExportAliases(
 	}
 
 	for (const canonical of sharedRuntimeExportCanonicals) {
-		// Multi-declarator lists: `var packageStorage6, packageContext6, …`
-		const declPattern = new RegExp(
-			`(?:var|let|const)\\s+[^;]*\\b(${canonical}\\d+)\\b`,
-			'g',
-		)
-		for (const match of preambleSource.matchAll(declPattern)) {
-			remember(canonical, match[1], match.index ?? 0)
-		}
-		// Any remaining mention in removable text (facade fields, assignments
-		// after inlining stripped the factory call, etc.).
+		// Any mention in removable text, including multi-declarator lists
+		// (`var packageStorage6, packageContext6`), facade fields, and
+		// assignments left after inlining stripped the factory call.
 		const anyPattern = new RegExp(`\\b(${canonical}\\d+)\\b`, 'g')
 		for (const match of preambleSource.matchAll(anyPattern)) {
 			remember(canonical, match[1], match.index ?? 0)
