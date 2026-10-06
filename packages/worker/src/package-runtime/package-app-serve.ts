@@ -377,59 +377,6 @@ function createPackageAppErrorResponse(input: {
 	)
 }
 
-// #region agent log
-function agentDebugLog(
-	hypothesisId: string,
-	location: string,
-	message: string,
-	data: Record<string, unknown>,
-) {
-	const payload = {
-		id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-		hypothesisId,
-		location,
-		message,
-		data,
-		timestamp: Date.now(),
-	}
-	const line = `${JSON.stringify(payload)}\n`
-	try {
-		const proc = (
-			globalThis as unknown as {
-				process?: {
-					getBuiltinModule?: (name: string) => unknown
-				}
-			}
-		).process
-		const fs = proc?.getBuiltinModule?.('node:fs') as
-			| {
-					appendFileSync?: (path: string, data: string) => void
-					mkdirSync?: (path: string, opts?: { recursive?: boolean }) => void
-			  }
-			| undefined
-		try {
-			fs?.mkdirSync?.('.tmp', { recursive: true })
-		} catch {
-			// ignore
-		}
-		const paths = [
-			'/opt/cursor/logs/debug.log',
-			'/tmp/agent-debug-package-app.ndjson',
-			'.tmp/agent-debug-package-app.ndjson',
-		]
-		for (const path of paths) {
-			try {
-				fs?.appendFileSync?.(path, line)
-			} catch {
-				// try next sink
-			}
-		}
-	} catch {
-		// Best-effort debug sink; workerd may lack host fs.
-	}
-}
-// #endregion
-
 /**
  * Attach request-scoped Server-Timing phases collected on the package-app
  * serve path. Clones headers so author responses stay immutable-safe.
@@ -443,85 +390,16 @@ function attachPackageAppServerTiming(
 	response: Response,
 	serverTiming: Array<ServerTimingEntry>,
 ) {
-	// #region agent log
-	const ws = response.webSocket
-	agentDebugLog('A', 'package-app-serve.ts:attach:entry', 'attach entry', {
-		runId: 'post-fix',
-		status: response.status,
-		statusText: response.statusText,
-		serverTimingLength: serverTiming.length,
-		serverTimingNames: serverTiming.map((e) => e.name),
-		hasWebSocket: Boolean(ws),
-		webSocketType: ws == null ? String(ws) : typeof ws,
-		hasServerTimingHeader: response.headers.has('Server-Timing'),
-	})
-	// #endregion
-	if (serverTiming.length === 0) {
-		// #region agent log
-		agentDebugLog(
-			'D',
-			'package-app-serve.ts:attach:empty',
-			'early return empty timing',
-			{
-				runId: 'post-fix',
-				status: response.status,
-				hasWebSocket: Boolean(ws),
-			},
-		)
-		// #endregion
-		return response
-	}
+	if (serverTiming.length === 0) return response
 	// Skip timing on WebSocket upgrades — see function doc.
-	if (response.webSocket || response.status === 101) {
-		// #region agent log
-		agentDebugLog(
-			'B',
-			'package-app-serve.ts:attach:ws-skip',
-			'skipping Server-Timing on websocket upgrade',
-			{
-				runId: 'post-fix',
-				status: response.status,
-				hasWebSocket: Boolean(ws),
-				returnedSameResponse: true,
-			},
-		)
-		// #endregion
-		return response
-	}
-	// #region agent log
-	agentDebugLog(
-		'A',
-		'package-app-serve.ts:attach:rebuild',
-		'rebuilding HTTP Response with Server-Timing',
-		{
-			runId: 'post-fix',
-			status: response.status,
-			serverTimingLength: serverTiming.length,
-			bodyNull: response.body === null,
-		},
-	)
-	// #endregion
+	if (response.webSocket || response.status === 101) return response
 	const headers = new Headers(response.headers)
 	applyServerTimingHeader(headers, serverTiming)
-	const rebuilt = new Response(response.body, {
+	return new Response(response.body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers,
 	})
-	// #region agent log
-	agentDebugLog(
-		'C',
-		'package-app-serve.ts:attach:rebuilt',
-		'rebuilt response inspect',
-		{
-			runId: 'post-fix',
-			status: rebuilt.status,
-			hasWebSocketAfterRebuild: Boolean(rebuilt.webSocket),
-			hasServerTiming: rebuilt.headers.has('Server-Timing'),
-		},
-	)
-	// #endregion
-	return rebuilt
 }
 
 /**
@@ -603,79 +481,21 @@ export async function servePackageAppRequest(input: {
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
-			// #region agent log
-			agentDebugLog(
-				'A',
-				'package-app-serve.ts:realtime:before-connect',
-				'realtime upgrade path before connect',
-				{
-					runId: 'post-fix',
-					facet: packageRealtimePath.facet,
-					restPath: packageRealtimeRestPath,
-					serverTimingLength: serverTiming.length,
-					serverTimingNames: serverTiming.map((e) => e.name),
-				},
-			)
-			// #endregion
-			const connectResponse = await packageRealtimeSessionRpc({
-				env,
-				userId: owner.userId,
-				packageId: savedPackage.id,
-				kodyId: savedPackage.kodyId,
-				sourceId: savedPackage.sourceId,
-				baseUrl,
-			}).connect(createPackageCodeRequest(request), packageRealtimePath.facet)
-			// #region agent log
-			agentDebugLog(
-				'A',
-				'package-app-serve.ts:realtime:after-connect',
-				'connect response before attach',
-				{
-					runId: 'post-fix',
-					status: connectResponse.status,
-					hasWebSocket: Boolean(connectResponse.webSocket),
-					webSocketType:
-						connectResponse.webSocket == null
-							? String(connectResponse.webSocket)
-							: typeof connectResponse.webSocket,
-					serverTimingLength: serverTiming.length,
-				},
-			)
-			// #endregion
-			const attached = attachPackageAppServerTiming(
-				connectResponse,
+			return attachPackageAppServerTiming(
+				await packageRealtimeSessionRpc({
+					env,
+					userId: owner.userId,
+					packageId: savedPackage.id,
+					kodyId: savedPackage.kodyId,
+					sourceId: savedPackage.sourceId,
+					baseUrl,
+				}).connect(
+					createPackageCodeRequest(request),
+					packageRealtimePath.facet,
+				),
 				serverTiming,
 			)
-			// #region agent log
-			agentDebugLog(
-				'C',
-				'package-app-serve.ts:realtime:after-attach',
-				'response after attach',
-				{
-					runId: 'post-fix',
-					status: attached.status,
-					hasWebSocket: Boolean(attached.webSocket),
-					sameRef: attached === connectResponse,
-					hasServerTiming: attached.headers.has('Server-Timing'),
-				},
-			)
-			// #endregion
-			return attached
 		} catch (error) {
-			// #region agent log
-			agentDebugLog(
-				'B',
-				'package-app-serve.ts:realtime:catch',
-				'realtime path threw',
-				{
-					runId: 'post-fix',
-					error:
-						error instanceof Error
-							? `${error.name}: ${error.message}`
-							: String(error),
-				},
-			)
-			// #endregion
 			console.error('Package realtime handler failed:', error)
 			reportPackageAppFailure({
 				error,
