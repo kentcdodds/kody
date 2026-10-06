@@ -21,18 +21,31 @@ function readValidateScript() {
 	return validate as string
 }
 
+/** Quoted commands inside the leading `concurrently …` phase (before the serial `&&` tail). */
+function concurrentValidateLegs(validate: string) {
+	const lastAnd = validate.lastIndexOf('&&')
+	expect(lastAnd).toBeGreaterThan(0)
+	const concurrentPortion = validate.slice(0, lastAnd)
+	expect(concurrentPortion).toMatch(/^concurrently\b/)
+	const legs = [...concurrentPortion.matchAll(/"([^"]+)"/g)].map(
+		(match) => match[1]!,
+	)
+	expect(legs.length).toBeGreaterThan(10)
+	return { concurrentPortion, legs, serialTail: validate.slice(lastAnd + 2) }
+}
+
 test('validate runs worker-startup-time:check only after the parallel phase', () => {
 	const validate = readValidateScript()
-	expect(validate).toMatch(/&&\s*npm run worker-startup-time:check\s*$/)
-	const concurrentPortion = validate.slice(0, validate.lastIndexOf('&&'))
+	const { concurrentPortion, serialTail } = concurrentValidateLegs(validate)
+	expect(serialTail.trim()).toBe('npm run worker-startup-time:check')
 	expect(concurrentPortion).not.toContain('worker-startup-time:check')
 	expect(concurrentPortion).toContain('worker-startup-bundles:check')
 })
 
 test('validate sets KODY_VALIDATE_LOAD=1 on the test-workers leg only', () => {
 	const validate = readValidateScript()
-	expect(validate).toContain('CI=1 KODY_VALIDATE_LOAD=1 npm run test:workers')
-	expect(validate).not.toMatch(/KODY_VALIDATE_LOAD=1\s+npm run test:node/)
-	expect(validate).not.toMatch(/KODY_VALIDATE_LOAD=1\s+npm run test:e2e/)
-	expect(validate).not.toMatch(/KODY_VALIDATE_LOAD=1\s+npm run test:mcp/)
+	const { legs, serialTail } = concurrentValidateLegs(validate)
+	const loadLegs = legs.filter((leg) => /\bKODY_VALIDATE_LOAD=/.test(leg))
+	expect(loadLegs).toEqual(['CI=1 KODY_VALIDATE_LOAD=1 npm run test:workers'])
+	expect(serialTail).not.toMatch(/\bKODY_VALIDATE_LOAD=/)
 })
