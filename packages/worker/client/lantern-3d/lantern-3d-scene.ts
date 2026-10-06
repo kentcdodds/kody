@@ -21,6 +21,10 @@ import {
 } from '#universal/landing-lantern.ts'
 import { parseCssColor } from './lantern-3d-color.ts'
 import {
+	constellationArrivals,
+	constellationAt,
+} from './lantern-3d-constellation.ts'
+import {
 	lanternCavity,
 	lanternOrbHomes,
 	lanternOrbRadius,
@@ -76,9 +80,9 @@ import { createLanternStudio } from './lantern-3d-studio.ts'
  * Startup goes through `step`, one small piece at a time, so the worker
  * can stop between pieces while the page navigates.
  *
- * Reduced motion keeps the scene still: no wander, twinkle, fireflies, or
- * coasting, and frames draw only when something changes. Pointer turns and
- * drags still respond directly.
+ * Reduced motion keeps the scene still: no wander, twinkle, fireflies,
+ * coasting, or idle constellation, and frames draw only when something
+ * changes. Pointer turns and drags still respond directly.
  *
  * A software renderer gets the lite model, no multisampling, and a lower
  * resolution, so the CPU it shares with the page stays usable.
@@ -209,6 +213,10 @@ export async function createLanternScene(
 	let activeId: LandingPrimitiveId | null = null
 	let lureAt: Vec3 | null = null
 	let excitement = 0
+	/** When the visitor last did something, on the scene clock. */
+	let quietFrom = 0
+	/** How far the constellation's light had run last frame. */
+	let threadHead: number | null = null
 	let quality: LanternQuality = createLanternQuality({
 		devicePixelRatio: viewport.devicePixelRatio,
 		cssPixels: 1,
@@ -290,6 +298,7 @@ export async function createLanternScene(
 		model.sparkles.uniforms.uScale!.value = scale
 		model.fireflies.uniforms.uScale!.value = scale
 		model.burst.points.material.uniforms.uScale!.value = scale
+		model.thread.points.material.uniforms.uScale!.value = scale
 	}
 
 	function layout(next: LanternViewport) {
@@ -331,6 +340,9 @@ export async function createLanternScene(
 			colors.set(orb.id, color)
 			paintLanternOrb(orb, color)
 		}
+		model.thread.paint(
+			model.orbs.map((orb) => colors.get(orb.id) ?? new Color(1, 1, 1)),
+		)
 		model.aura.opacity = palette.dark ? 0.5 : 0.32
 		model.pool.opacity = palette.dark ? 0.55 : 0.38
 		model.shadow.opacity = palette.dark ? 0.5 : 0.26
@@ -536,6 +548,45 @@ export async function createLanternScene(
 		model.burst.points.material.uniforms.uTime!.value = time
 
 		for (const orb of model.orbs) paintOrb(orb, dt, settle, animate)
+		paintThread()
+	}
+
+	/** The idle constellation, shown only while the visitor just watches. */
+	function paintThread() {
+		const moment =
+			motion.reduced || activeId || hold || turning
+				? null
+				: constellationAt(time - quietFrom, model.orbs.length - 1)
+		model.thread.points.visible = moment !== null
+		if (!moment) {
+			threadHead = null
+			return
+		}
+		model.thread.place(
+			model.orbs.flatMap((view) => {
+				const at = orbRoot(view.id)
+				if (!at) return []
+				return [{ ...at, radius: lanternOrbRadius * view.group.scale.x }]
+			}),
+		)
+		const uniforms = model.thread.points.material.uniforms
+		uniforms.uHead!.value = moment.head
+		uniforms.uSettle!.value = moment.settle
+		uniforms.uGlow!.value = moment.glow
+		for (const stop of constellationArrivals(threadHead, moment.head)) {
+			const view = model.orbs[stop]
+			const fx = view ? effects.get(view.id) : undefined
+			if (fx) fx.pop = Math.max(fx.pop, 0.45)
+			if (stop === model.orbs.length - 1) {
+				excitement = Math.min(excitement + 0.2, 0.45)
+			}
+		}
+		threadHead = moment.head
+	}
+
+	/** The visitor did something: the idle moment waits for quiet again. */
+	function stir() {
+		quietFrom = time
 	}
 
 	function paintOrb(
@@ -719,6 +770,7 @@ export async function createLanternScene(
 			if (activeId === id) return
 			activeId = id
 			lureAt = id ? lureToward(id) : null
+			stir()
 			wake()
 		},
 		setPalette,
@@ -732,6 +784,7 @@ export async function createLanternScene(
 			wake()
 		},
 		setVisible(next) {
+			if (next && !visible) stir()
 			visible = next
 			if (!next) {
 				cancelFrame?.()
@@ -740,6 +793,7 @@ export async function createLanternScene(
 			wake()
 		},
 		celebrate(id) {
+			stir()
 			const fx = effects.get(id)
 			const at = orbRoot(id)
 			if (!fx || !at || motion.reduced) return
@@ -753,6 +807,7 @@ export async function createLanternScene(
 			wake()
 		},
 		nudge() {
+			stir()
 			if (motion.reduced) return
 			spin = {
 				...spin,
@@ -763,6 +818,7 @@ export async function createLanternScene(
 			wake()
 		},
 		spin(direction, big) {
+			stir()
 			if (motion.reduced) {
 				spin = { ...spin, yaw: spin.yaw + direction * (Math.PI / 4) }
 			} else {
@@ -778,6 +834,7 @@ export async function createLanternScene(
 			wake()
 		},
 		beginTurn(x, y, t) {
+			stir()
 			turning = {
 				lastX: x,
 				lastY: y,
@@ -807,6 +864,7 @@ export async function createLanternScene(
 		},
 		endTurn(flick, t) {
 			if (!turning) return
+			stir()
 			const { samples, yaw, tilt } = turning
 			turning = null
 			// A release can land before the frame that applies the last moves.
@@ -828,6 +886,7 @@ export async function createLanternScene(
 			wake()
 		},
 		grabOrb(id, x, y, t) {
+			stir()
 			const orb = orbRoot(id)
 			if (!orb) return
 			const at = rootPoint(x, y, orb.z)
@@ -863,6 +922,7 @@ export async function createLanternScene(
 		},
 		releaseOrb(flick, t) {
 			if (!hold) return
+			stir()
 			const { id, pose, samples } = hold
 			hold = null
 			if (motion.reduced) {

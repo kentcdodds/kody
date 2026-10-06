@@ -32,6 +32,10 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
+import {
+	createConstellationThread,
+	type ConstellationThread,
+} from './lantern-3d-constellation.ts'
 import { createGlyphGeometry } from './lantern-3d-glyphs.ts'
 import {
 	lanternCavity,
@@ -56,6 +60,7 @@ import {
 	createPoolMaterial,
 	createShadowMaterial,
 	createSparkleMaterial,
+	createThreadMaterial,
 	createTrimMaterial,
 	createVentMaterial,
 	lanternAmber,
@@ -109,6 +114,8 @@ export type LanternModel = {
 	sparkles: ShaderMaterial
 	fireflies: ShaderMaterial
 	burst: LanternBurst
+	/** The idle constellation, orb to orb in word order. */
+	thread: ConstellationThread
 	aura: SpriteMaterial
 	pool: MeshBasicMaterial
 	shadow: MeshBasicMaterial
@@ -211,6 +218,14 @@ export async function createLanternModel(options: {
 	burst.points.renderOrder = 2
 	root.add(burst.points)
 
+	const thread = createConstellationThread(
+		keep(createThreadMaterial()),
+		landingPrimitiveIds.length - 1,
+	)
+	keep(thread.points.geometry)
+	thread.points.renderOrder = 1
+	root.add(thread.points)
+
 	const aura = keep(
 		createGlowMaterial(glowTexture, {
 			color: lanternAmber.glow.clone(),
@@ -262,6 +277,7 @@ export async function createLanternModel(options: {
 		sparkles: sparkleMaterial,
 		fireflies: firefliesMaterial,
 		burst,
+		thread,
 		aura,
 		pool,
 		shadow,

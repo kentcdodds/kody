@@ -2,6 +2,7 @@ import {
 	AdditiveBlending,
 	BackSide,
 	Color,
+	CustomBlending,
 	DataTexture,
 	FrontSide,
 	LinearFilter,
@@ -9,6 +10,8 @@ import {
 	MeshBasicMaterial,
 	MeshStandardMaterial,
 	NormalBlending,
+	OneFactor,
+	OneMinusSrcAlphaFactor,
 	RepeatWrapping,
 	RGBAFormat,
 	ShaderMaterial,
@@ -644,6 +647,65 @@ export function createFireflyMaterial() {
 		transparent: true,
 		depthWrite: false,
 		blending: AdditiveBlending,
+	})
+}
+
+/** The idle constellation: motes laid orb to orb. A white-hot head runs
+ *  along them trailing a tail in the orbs' colors; once it reaches the
+ *  last orb the whole thread lights, holds, and fades. Light added alone
+ *  washes out on the bright glass, so each mote also covers some of what
+ *  is behind it (premultiplied over) and its color reads on the pale
+ *  heart as well as on the deep amber. */
+export function createThreadMaterial() {
+	return new ShaderMaterial({
+		uniforms: {
+			uScale: { value: 1 },
+			uHead: { value: 0 },
+			uGlow: { value: 0 },
+			uSettle: { value: 0 },
+		},
+		vertexShader: /* glsl */ `
+			uniform float uScale;
+			uniform float uHead;
+			uniform float uGlow;
+			uniform float uSettle;
+			attribute float aAlong;
+			attribute vec3 aColor;
+			varying vec3 vColor;
+			varying float vLight;
+			varying float vHot;
+
+			void main() {
+				float behind = uHead - aAlong;
+				float tail = exp(-max(behind, 0.0) * 1.4);
+				vHot = exp(-max(behind, 0.0) * 14.0);
+				vLight = behind < 0.0 ? 0.0 : max(tail, uSettle * 0.8) * uGlow;
+				vColor = aColor;
+				vec4 view = modelViewMatrix * vec4(position, 1.0);
+				gl_Position = projectionMatrix * view;
+				gl_PointSize = vLight > 0.0 ? (0.075 + 0.08 * vHot) * uScale / -view.z : 0.0;
+			}
+		`,
+		fragmentShader: /* glsl */ `
+			varying vec3 vColor;
+			varying float vLight;
+			varying float vHot;
+
+			void main() {
+				${pointFragmentDisc}
+				gl_FragColor = vec4(mix(vColor, vec3(1.0), vHot * 0.8) * (1.0 + vHot * 1.5), 1.0);
+				${outputChunks}
+				gl_FragColor = vec4(
+					gl_FragColor.rgb * clamp((core + halo) * vLight, 0.0, 1.0),
+					clamp((core * 0.9 + halo * 0.7) * vLight, 0.0, 1.0)
+				);
+			}
+		`,
+		transparent: true,
+		depthWrite: false,
+		blending: CustomBlending,
+		blendSrc: OneFactor,
+		blendDst: OneMinusSrcAlphaFactor,
 	})
 }
 
