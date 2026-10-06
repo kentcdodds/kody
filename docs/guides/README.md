@@ -10,6 +10,10 @@ Sources are bundled into origin and `kody-platform` at build time so the web
 pages and `search({ entity: "guide:{id}" })` serve the same deployed content.
 Doc-only deploys upload those two scripts and skip runtime and jobs.
 
+MCP field reference that is not a catalog page lives in
+[`docs/use`](../use/README.md). A `docs/use` file that only repeats a guide is a
+stub; the catalog page stays here.
+
 Surfaces:
 
 - **`/docs`** — the introduction (`what-is-kody`) with the docs sidebar;

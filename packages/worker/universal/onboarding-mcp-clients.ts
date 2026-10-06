@@ -413,7 +413,7 @@ const claudeCustomConnectorsGuideUrl =
 
 /** Long-form host notes when a vendor page is not a better first click. */
 const kodyConnectYourAgentUrl =
-	'https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md'
+	'https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/connect-your-agent.md'
 
 /** Grok.com UI for adding a custom remote MCP connector. */
 export const grokConnectorsUrl = 'https://grok.com/connectors'

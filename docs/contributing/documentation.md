@@ -2,8 +2,12 @@
 
 This repository maintains two audiences:
 
-- **[`docs/use/`](../use/index.md)** — People who connect an agent to Kody over
-  MCP. Progressive disclosure: short pages linked from the usage index.
+- **[`docs/guides/`](../guides/README.md)** — Served catalog at
+  [kody.codes/docs](https://kody.codes/docs). Agents load a page with
+  `search({ entity: "guide:{id}" })` or
+  `curl -fsS https://kody.codes/docs/<slug>.md`.
+- **[`docs/use/`](../use/README.md)** — MCP field reference linked from those
+  guides. A page that only repeats a guide is a stub pointing at the catalog.
 - **`docs/contributing/`** — People who develop Kody (code, kody, infra).
 
 ## Principles

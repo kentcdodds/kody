@@ -4,7 +4,11 @@ import { callerHasRole } from '#mcp/capabilities/access-control.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { importGuideCatalog } from '#worker/guide-catalog-modules.ts'
-import { legacyGuideIdAliases } from '#universal/docs-nav.ts'
+import {
+	guideNotFoundMessage,
+	resolveCatalogGuide,
+	suggestCatalogGuideIds,
+} from '#worker/guides/resolve-catalog-guide.ts'
 import {
 	getJoinedIntegration,
 	toJoinedIntegrationConfig,
@@ -88,18 +92,22 @@ export async function resolveEntityDetail(input: {
 
 	if (ref.type === 'guide') {
 		const { guides } = await importGuideCatalog()
-		// Ids of docs merged into another doc keep resolving to the absorbing
-		// guide (scoped to the heading that took the content).
-		const alias = legacyGuideIdAliases[ref.id]
-		const guideId = alias?.id ?? ref.id
-		const section = ref.section ?? alias?.section
-		const guide = guides.find((candidate) => candidate.id === guideId) ?? null
-		if (!guide) {
+		// Entity lookup: catalog id, slug, or a merged-doc alias.
+		const includeAdmin = callerHasRole(input.callerContext, 'admin')
+		const resolved = resolveCatalogGuide(guides, ref.id)
+		if (!resolved) {
+			throw new McpCallerError(
+				guideNotFoundMessage(
+					suggestCatalogGuideIds(guides, ref.id, { includeAdmin }),
+				),
+			)
+		}
+		const guide =
+			guides.find((candidate) => candidate.id === resolved.id) ?? null
+		if (!guide || (guide.adminOnly && !includeAdmin)) {
 			throw new McpCallerError('Guide not found.')
 		}
-		if (guide.adminOnly && !callerHasRole(input.callerContext, 'admin')) {
-			throw new McpCallerError('Guide not found.')
-		}
+		const section = ref.section ?? resolved.aliasSection
 		return {
 			type: 'guide' as const,
 			id: guide.id,

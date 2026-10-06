@@ -1,6 +1,10 @@
-import { docHref, resolveLegacyDocSlug } from '#universal/docs-nav.ts'
+import {
+	docHref,
+	resolveLegacyDocSlug,
+	useDocGuideTwins,
+} from '#universal/docs-nav.ts'
 
-const GITHUB_BLOB_BASE = 'https://github.com/kentcdodds/kody/blob/main'
+const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/kentcdodds/kody/main'
 
 /** Directory of a guide file inside the repo, relative to the repo root. */
 export type GuideSourceDir = 'docs/guides' | 'docs/guides/providers'
@@ -30,8 +34,12 @@ function resolveRepoPath(baseDir: string, target: string): string | null {
  *   `/docs`), which resolve against the deployment origin on every surface.
  *   A file that was merged into another doc resolves through
  *   `legacyDocSlugAliases` to the absorbing page and heading.
- * - Other repo-relative links (`../use/packages.md`) become absolute GitHub
- *   blob URLs, since those documents are not served on the web app.
+ * - Links to a `docs/use` stub that only points at a catalog guide become
+ *   that guide's `/docs` route.
+ * - Other repo-relative links (`../use/packages.md`) become raw GitHub
+ *   URLs (`raw.githubusercontent.com`), so an agent fetch returns the file
+ *   instead of a GitHub HTML page. Those documents are not served on the
+ *   web app.
  * - Absolute URLs, `mailto:`, anchors, and root-relative app links pass
  *   through untouched.
  */
@@ -63,8 +71,18 @@ export function rewriteRelativeGuideLinks(input: {
 					return `](${docHref(alias.slug)}${suffix}${title})`
 				}
 			}
+			const useDoc = /^docs\/use\/([a-z0-9-]+)\.md$/.exec(resolved)
+			const twinSlug = useDoc ? useDocGuideTwins[useDoc[1]!] : undefined
+			if (twinSlug) {
+				const alias = resolveLegacyDocSlug(twinSlug)
+				if (knownSlugs.has(alias.slug)) {
+					const resolvedFragment = fragment ?? alias.fragment
+					const twinSuffix = resolvedFragment ? `#${resolvedFragment}` : ''
+					return `](${docHref(alias.slug)}${twinSuffix}${title})`
+				}
+			}
 			const suffix = fragment ? `#${fragment}` : ''
-			return `](${GITHUB_BLOB_BASE}/${resolved}${suffix}${title})`
+			return `](${GITHUB_RAW_BASE}/${resolved}${suffix}${title})`
 		},
 	)
 }
