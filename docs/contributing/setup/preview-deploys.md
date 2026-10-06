@@ -95,7 +95,38 @@ If you ever need to do the same operations manually, use:
 
 - `node tools/ci/preview-resources.ts ensure --worker-name <name> --out-config <path>`
 - `node tools/ci/preview-resources.ts cleanup --worker-name <name>`
+- `node tools/ci/preview-resources.ts reset-d1 --worker-name <name>` (per-PR
+  app + audit D1 only; see migration renumber race below)
 - `node tools/ci/production-resources.ts ensure --out-config <path>`
+
+### Migration renumber race on an existing preview D1
+
+When a long-lived PR preview already applied migration `NNNN-foo.sql`, then
+`main` lands another `NNNN-…` and the branch renumbers to `NNNN+1-foo.sql`,
+Wrangler would otherwise re-apply the same SQL under the new name and fail (for
+example `duplicate column name`). Before each preview `d1 migrations apply`, the
+workflow runs `tools/ci/rewrite-renamed-preview-migrations.ts` (requires
+`CLOUDFLARE_ENV=preview`). It rewrites `d1_migrations` rows whose filename is
+gone but whose SQL sha256 still matches a current file on the branch. That is
+bookkeeping only — not a schema drop — and never runs in production.
+
+If rewrite cannot match (content changed as well as the name, or git cannot
+recover the old file), use the **reset preview D1** fallback for the per-PR
+databases only (`kody-pr-<n>-db` and `kody-pr-<n>-audit-db`). This deletes
+preview seed data for that PR; the next Deploy Preview Resources run recreates
+the D1s, applies migrations fresh, and reseeds. It is not a production
+data-drop. Names still pass through `assertPreviewResourceName`.
+
+```bash
+# Requires CLOUDFLARE_API_TOKEN (+ CLOUDFLARE_ACCOUNT_ID for list/delete).
+node tools/ci/preview-resources.ts reset-d1 --worker-name kody-pr-<n>
+```
+
+Then re-run the preview workflow (or `preview-resources.ts ensure` followed by
+migrations apply and `tools/seed-test-data.ts --remote`). Do **not** delete the
+shared jobs preview database (`kody-preview-jobs`) this way — that name is
+shared across previews; prefer the sha-match rewrite, or ask before resetting
+it.
 
 To **manually test** a PR preview (find the URL, sign in as the seeded user,
 create specific data with `--request`, assert the change), see

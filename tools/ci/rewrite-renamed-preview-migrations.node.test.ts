@@ -1,0 +1,126 @@
+import { expect, test } from 'vitest'
+import { createHash } from 'node:crypto'
+
+import { hashMigrationContent } from '../check-migrations.ts'
+import {
+	parseArgs,
+	planRenamedMigrationRewrites,
+} from './rewrite-renamed-preview-migrations.ts'
+
+function digest(filename: string, sql: string) {
+	return { filename, sha256: hashMigrationContent(sql) }
+}
+
+test('planRenamedMigrationRewrites renames when historical sha matches one current file', () => {
+	const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: [
+			'0001-squashed-init.sql',
+			'0074-platform-oauth-app-visibility.sql',
+		],
+		currentFiles: [
+			digest('0001-squashed-init.sql', '-- baseline\n'),
+			digest('0075-platform-oauth-app-visibility.sql', sql),
+		],
+		resolveHistoricalContent: (filename) =>
+			filename === '0074-platform-oauth-app-visibility.sql' ? sql : null,
+	})
+
+	expect(plan.skipped).toEqual([])
+	expect(plan.rewrites).toEqual([
+		{
+			kind: 'rename',
+			from: '0074-platform-oauth-app-visibility.sql',
+			to: '0075-platform-oauth-app-visibility.sql',
+			sha256: hashMigrationContent(sql),
+		},
+	])
+})
+
+test('planRenamedMigrationRewrites drops stale name when target is already applied', () => {
+	const sql = 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: [
+			'0074-platform-oauth-app-visibility.sql',
+			'0075-platform-oauth-app-visibility.sql',
+		],
+		currentFiles: [digest('0075-platform-oauth-app-visibility.sql', sql)],
+		resolveHistoricalContent: (filename) =>
+			filename === '0074-platform-oauth-app-visibility.sql' ? sql : null,
+	})
+
+	expect(plan.rewrites).toEqual([
+		{
+			kind: 'drop-stale',
+			from: '0074-platform-oauth-app-visibility.sql',
+			to: '0075-platform-oauth-app-visibility.sql',
+			sha256: hashMigrationContent(sql),
+		},
+	])
+})
+
+test('planRenamedMigrationRewrites skips when content changed or history is missing', () => {
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: ['0074-platform-oauth-app-visibility.sql'],
+		currentFiles: [
+			digest(
+				'0075-platform-oauth-app-visibility.sql',
+				'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT NOT NULL DEFAULT "public";\n',
+			),
+		],
+		resolveHistoricalContent: (filename) =>
+			filename === '0074-platform-oauth-app-visibility.sql'
+				? 'ALTER TABLE oauth_apps ADD COLUMN visibility TEXT;\n'
+				: null,
+	})
+
+	expect(plan.rewrites).toEqual([])
+	expect(plan.skipped).toHaveLength(1)
+	expect(plan.skipped[0]?.name).toBe('0074-platform-oauth-app-visibility.sql')
+	expect(plan.skipped[0]?.reason).toMatch(/no current migration matches sha256/)
+
+	const missingHistory = planRenamedMigrationRewrites({
+		appliedNames: ['0074-gone.sql'],
+		currentFiles: [digest('0075-other.sql', 'SELECT 1;\n')],
+		resolveHistoricalContent: () => null,
+	})
+	expect(missingHistory.rewrites).toEqual([])
+	expect(missingHistory.skipped[0]?.reason).toMatch(/could not recover/)
+})
+
+test('planRenamedMigrationRewrites skips ambiguous sha matches', () => {
+	const sql = 'SELECT 1;\n'
+	const sha = hashMigrationContent(sql)
+	expect(sha).toBe(createHash('sha256').update(sql).digest('hex'))
+
+	const plan = planRenamedMigrationRewrites({
+		appliedNames: ['0074-old.sql'],
+		currentFiles: [digest('0075-a.sql', sql), digest('0076-b.sql', sql)],
+		resolveHistoricalContent: () => sql,
+	})
+
+	expect(plan.rewrites).toEqual([])
+	expect(plan.skipped[0]?.reason).toMatch(/ambiguous sha256/)
+})
+
+test('parseArgs requires remote, binding, config, and migrations-dir', () => {
+	expect(() => parseArgs([])).toThrow(/--remote/)
+	expect(() => parseArgs(['--remote'])).toThrow(/--binding/)
+	expect(
+		parseArgs([
+			'--remote',
+			'--binding',
+			'APP_DB',
+			'--config',
+			'w.json',
+			'--migrations-dir',
+			'packages/worker/migrations',
+			'--dry-run',
+		]),
+	).toEqual({
+		binding: 'APP_DB',
+		config: 'w.json',
+		migrationsDir: 'packages/worker/migrations',
+		dryRun: true,
+	})
+})

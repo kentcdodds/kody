@@ -206,6 +206,19 @@ jobs:
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
+          # Rename-aware bookkeeping: if this PR renumbered a migration that
+          # preview D1 already applied under the old name, rewrite the ledger
+          # row when the SQL sha256 still matches (#2776). Never runs in prod.
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding APP_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/worker/migrations
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding AUDIT_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/worker/audit-migrations
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
           node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
@@ -323,6 +336,11 @@ jobs:
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
         run: |
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding JOBS_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/jobs-worker/migrations
           node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote --config "$WRANGLER_CONFIG"
 
       - name: ☁️ Deploy preview highlight worker

@@ -14,6 +14,7 @@ import {
 	deletePreviewWorkerScript,
 	previewResourceNamePattern,
 	removePreviewQueueConsumers,
+	resetPreviewD1Databases,
 	type PreviewResourceKind,
 } from './preview-resources.ts'
 import { parseJsonc } from './resource-utils.ts'
@@ -255,6 +256,27 @@ test('assertPreviewResourceName rejects committed production names and names out
 	expect(() => assertPreviewResourceName('kody-pr-preview', 'd1')).toThrow(
 		'Refusing to delete d1 "kody-pr-preview"',
 	)
+})
+
+test('resetPreviewD1Databases deletes only per-PR app and audit D1 names', async () => {
+	consoleError.mockImplementation(() => {})
+	spawnSync.mockReset()
+	spawnSync.mockImplementation(() =>
+		wranglerResult(0, '', JSON.stringify([{ name: 'kody-pr-99-db' }])),
+	)
+
+	await resetPreviewD1Databases({ workerName: 'kody-pr-99', dryRun: true })
+
+	expect(loggedMessages()).toEqual(
+		expect.arrayContaining([
+			'[dry-run] delete D1 database: kody-pr-99-audit-db',
+			'[dry-run] delete D1 database: kody-pr-99-db',
+			expect.stringContaining('Preview D1 reset for kody-pr-99'),
+		]),
+	)
+	await expect(
+		resetPreviewD1Databases({ workerName: 'kody', dryRun: true }),
+	).rejects.toThrow(/Refusing to delete d1/)
 })
 
 test('assertPreviewResourceName accepts every derived preview name kind, including 63-character truncation', () => {

@@ -14,7 +14,12 @@ in [Seed test account](./seeding.md).
   `0076-my-change.sql`).
 - If your branch is behind `main` and a new migration has landed upstream with
   the prefix you picked, rebase and renumber your file to a new unused prefix.
-  Do not introduce new duplicate prefixes.
+  Do not introduce new duplicate prefixes. PR preview D1s that already applied
+  the old filename are healed by
+  `tools/ci/rewrite-renamed-preview-migrations.ts` (sha256 match) before preview
+  `d1 migrations apply`; see
+  [PR preview deployments](./preview-deploys.md#migration-renumber-race-on-an-existing-preview-d1)
+  for the reset-preview-D1 fallback when rewrite is unsafe.
 - Do not edit migration files that have already landed in `main` and been
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
