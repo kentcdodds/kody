@@ -110,6 +110,9 @@ export type LanternModel = {
 	dispose: () => void
 }
 
+/** Runs one slice of startup, then yields. Rejects once startup is dropped. */
+export type LanternStep = <T>(work: () => T | PromiseLike<T>) => Promise<T>
+
 /** Above the still's horizon, as its cap and base rims show. */
 export const lanternViewPitch = 0.1
 
@@ -145,9 +148,12 @@ const glassProfile: ReadonlyArray<readonly [number, number]> = [
 ]
 
 /** `lite` trades the clear coats and some curve detail for frame time on
- *  software renderers. */
-export function createLanternModel(options: { lite: boolean }): LanternModel {
-	const { lite } = options
+ *  software renderers. Built a part per `step`. */
+export async function createLanternModel(options: {
+	lite: boolean
+	step: LanternStep
+}): Promise<LanternModel> {
+	const { lite, step } = options
 	const disposables: Array<{ dispose: () => void }> = []
 	const keep = <T extends { dispose: () => void }>(item: T) => {
 		disposables.push(item)
@@ -164,6 +170,110 @@ export function createLanternModel(options: { lite: boolean }): LanternModel {
 	const metal = keep(createMetalMaterial(lite))
 	const litEdge = keep(createLitEdgeMaterial())
 
+	const { glassInterior, glassFloor, handle } = await step(() =>
+		buildLantern({ lantern, lite, metal, litEdge, keep }),
+	)
+
+	const fluid = new Group()
+	const sparkleMaterial = keep(createSparkleMaterial())
+	const sparkles = new Points(keep(sparkleGeometry()), sparkleMaterial)
+	sparkles.renderOrder = 1
+	sparkles.frustumCulled = false
+	fluid.add(sparkles)
+	root.add(fluid)
+
+	const orbSphere = keep(
+		lite ? new SphereGeometry(1, 24, 16) : new SphereGeometry(1, 40, 28),
+	)
+	const orbs: Array<LanternOrbView> = []
+	for (const [index, id] of landingPrimitiveIds.entries()) {
+		const orb = await step(() =>
+			buildOrb({ id, index, sphere: orbSphere, glowTexture, keep }),
+		)
+		root.add(orb.group)
+		orbs.push(orb)
+	}
+
+	const firefliesMaterial = keep(createFireflyMaterial())
+	const fireflies = new Points(keep(fireflyGeometry()), firefliesMaterial)
+	fireflies.renderOrder = 1
+	fireflies.frustumCulled = false
+	root.add(fireflies)
+
+	const burst = createBurst(keep(createBurstMaterial()), keep)
+	burst.points.renderOrder = 2
+	root.add(burst.points)
+
+	const aura = keep(
+		createGlowMaterial(glowTexture, {
+			color: lanternAmber.glow.clone(),
+			opacity: 0.4,
+		}),
+	)
+	const auraSprite = new Sprite(aura)
+	auraSprite.scale.set(4.3, 4.8, 1)
+	auraSprite.position.set(0, 0.05, -1.4)
+	auraSprite.renderOrder = -2
+	root.add(auraSprite)
+
+	const plane = keep(new PlaneGeometry(1, 1))
+	const pool = keep(createPoolMaterial(glowTexture))
+	const poolMesh = new Mesh(plane, pool)
+	poolMesh.rotation.x = -Math.PI / 2
+	poolMesh.position.y = lanternShape.baseBottom - 0.004
+	poolMesh.scale.set(4.6, 3.4, 1)
+	poolMesh.renderOrder = -2
+	const shadow = keep(createShadowMaterial(glowTexture))
+	const shadowMesh = new Mesh(plane, shadow)
+	shadowMesh.rotation.x = -Math.PI / 2
+	shadowMesh.position.y = lanternShape.baseBottom - 0.002
+	shadowMesh.scale.set(2.5, 2.1, 1)
+	shadowMesh.renderOrder = -2
+	const ground = new Group()
+	ground.rotation.x = lanternViewPitch
+	ground.add(poolMesh, shadowMesh)
+
+	const innerLight = new PointLight(new Color(1, 0.6, 0.2), 7, 0, 2)
+	root.add(innerLight)
+	const key = new DirectionalLight(new Color(1, 0.95, 0.88), 1.9)
+	key.position.set(-2.6, 4.2, 5)
+	const back = new DirectionalLight(new Color(1, 0.82, 0.58), 1.1)
+	back.position.set(3.2, 1.6, -3.4)
+	root.add(key, back, new HemisphereLight(0xfff4e6, 0x2a1608, 0.55))
+
+	return {
+		root,
+		ground,
+		lantern,
+		handle,
+		fluid,
+		orbs,
+		glassInterior,
+		glassFloor,
+		sparkles: sparkleMaterial,
+		fireflies: firefliesMaterial,
+		burst,
+		aura,
+		pool,
+		shadow,
+		innerLight,
+		dispose() {
+			for (const item of disposables) item.dispose()
+		},
+	}
+}
+
+type Keep = <T extends { dispose: () => void }>(item: T) => T
+
+/** Glass, cap, handle, and base. */
+function buildLantern(parts: {
+	lantern: Group
+	lite: boolean
+	metal: ReturnType<typeof createMetalMaterial>
+	litEdge: MeshBasicMaterial
+	keep: Keep
+}) {
+	const { lantern, lite, metal, litEdge, keep } = parts
 	const glassGeometry = keep(
 		new LatheGeometry(
 			new SplineCurve(
@@ -235,126 +345,56 @@ export function createLanternModel(options: { lite: boolean }): LanternModel {
 	floor.position.y = lanternShape.baseTop + 0.002
 	lantern.add(floor)
 
-	const fluid = new Group()
-	const sparkleMaterial = keep(createSparkleMaterial())
-	const sparkles = new Points(keep(sparkleGeometry()), sparkleMaterial)
-	sparkles.renderOrder = 1
-	sparkles.frustumCulled = false
-	fluid.add(sparkles)
-	root.add(fluid)
+	return { glassInterior, glassFloor, handle }
+}
 
-	const orbSphere = keep(
-		lite ? new SphereGeometry(1, 24, 16) : new SphereGeometry(1, 40, 28),
-	)
-	const orbs = landingPrimitiveIds.map((id, index) => {
-		const group = new Group()
-		const roll = new Group()
-		const core = keep(createOrbCoreMaterial(index * 3.7 + 1.3))
-		const coreMesh = new Mesh(orbSphere, core)
-		coreMesh.scale.setScalar(lanternOrbRadius)
-		const shellMaterial = keep(createOrbShellMaterial())
-		const shellMesh = new Mesh(orbSphere, shellMaterial)
-		shellMesh.scale.setScalar(lanternOrbRadius * 1.004)
-		shellMesh.renderOrder = 0
-		roll.add(coreMesh, shellMesh)
+/** One orb: a glowing core, a glass shell, its glyph, and a halo. */
+function buildOrb(parts: {
+	id: LandingPrimitiveId
+	index: number
+	sphere: SphereGeometry
+	glowTexture: ReturnType<typeof createGlowTexture>
+	keep: Keep
+}): LanternOrbView {
+	const { id, index, sphere, glowTexture, keep } = parts
+	const group = new Group()
+	const roll = new Group()
+	const core = keep(createOrbCoreMaterial(index * 3.7 + 1.3))
+	const coreMesh = new Mesh(sphere, core)
+	coreMesh.scale.setScalar(lanternOrbRadius)
+	const shellMaterial = keep(createOrbShellMaterial())
+	const shellMesh = new Mesh(sphere, shellMaterial)
+	shellMesh.scale.setScalar(lanternOrbRadius * 1.004)
+	shellMesh.renderOrder = 0
+	roll.add(coreMesh, shellMesh)
 
-		const glyph = new Group()
-		const glyphMaterial = keep(createGlyphMaterial())
-		const glyphMesh = new Mesh(keep(createGlyphGeometry(id)), glyphMaterial)
-		glyphMesh.scale.setScalar(lanternOrbRadius * 1.08)
-		glyph.add(glyphMesh)
+	const glyph = new Group()
+	const glyphMaterial = keep(createGlyphMaterial())
+	const glyphMesh = new Mesh(keep(createGlyphGeometry(id)), glyphMaterial)
+	glyphMesh.scale.setScalar(lanternOrbRadius * 1.08)
+	glyph.add(glyphMesh)
 
-		const halo = keep(
-			createGlowMaterial(glowTexture, {
-				color: new Color(1, 1, 1),
-				opacity: 0.5,
-			}),
-		)
-		const haloSprite = new Sprite(halo)
-		haloSprite.scale.setScalar(lanternOrbRadius * 4.4)
-		haloSprite.position.z = -lanternOrbRadius * 0.8
-		haloSprite.renderOrder = 0
-
-		group.add(haloSprite, roll, glyph)
-		root.add(group)
-		return {
-			id,
-			group,
-			roll,
-			glyph,
-			core,
-			shell: shellMaterial,
-			glyphMaterial,
-			halo,
-		}
-	})
-
-	const firefliesMaterial = keep(createFireflyMaterial())
-	const fireflies = new Points(keep(fireflyGeometry()), firefliesMaterial)
-	fireflies.renderOrder = 1
-	fireflies.frustumCulled = false
-	root.add(fireflies)
-
-	const burst = createBurst(keep(createBurstMaterial()), keep)
-	burst.points.renderOrder = 2
-	root.add(burst.points)
-
-	const aura = keep(
+	const halo = keep(
 		createGlowMaterial(glowTexture, {
-			color: lanternAmber.glow.clone(),
-			opacity: 0.4,
+			color: new Color(1, 1, 1),
+			opacity: 0.5,
 		}),
 	)
-	const auraSprite = new Sprite(aura)
-	auraSprite.scale.set(4.3, 4.8, 1)
-	auraSprite.position.set(0, 0.05, -1.4)
-	auraSprite.renderOrder = -2
-	root.add(auraSprite)
+	const haloSprite = new Sprite(halo)
+	haloSprite.scale.setScalar(lanternOrbRadius * 4.4)
+	haloSprite.position.z = -lanternOrbRadius * 0.8
+	haloSprite.renderOrder = 0
 
-	const plane = keep(new PlaneGeometry(1, 1))
-	const pool = keep(createPoolMaterial(glowTexture))
-	const poolMesh = new Mesh(plane, pool)
-	poolMesh.rotation.x = -Math.PI / 2
-	poolMesh.position.y = lanternShape.baseBottom - 0.004
-	poolMesh.scale.set(4.6, 3.4, 1)
-	poolMesh.renderOrder = -2
-	const shadow = keep(createShadowMaterial(glowTexture))
-	const shadowMesh = new Mesh(plane, shadow)
-	shadowMesh.rotation.x = -Math.PI / 2
-	shadowMesh.position.y = lanternShape.baseBottom - 0.002
-	shadowMesh.scale.set(2.5, 2.1, 1)
-	shadowMesh.renderOrder = -2
-	const ground = new Group()
-	ground.rotation.x = lanternViewPitch
-	ground.add(poolMesh, shadowMesh)
-
-	const innerLight = new PointLight(new Color(1, 0.6, 0.2), 7, 0, 2)
-	root.add(innerLight)
-	const key = new DirectionalLight(new Color(1, 0.95, 0.88), 1.9)
-	key.position.set(-2.6, 4.2, 5)
-	const back = new DirectionalLight(new Color(1, 0.82, 0.58), 1.1)
-	back.position.set(3.2, 1.6, -3.4)
-	root.add(key, back, new HemisphereLight(0xfff4e6, 0x2a1608, 0.55))
-
+	group.add(haloSprite, roll, glyph)
 	return {
-		root,
-		ground,
-		lantern,
-		handle,
-		fluid,
-		orbs,
-		glassInterior,
-		glassFloor,
-		sparkles: sparkleMaterial,
-		fireflies: firefliesMaterial,
-		burst,
-		aura,
-		pool,
-		shadow,
-		innerLight,
-		dispose() {
-			for (const item of disposables) item.dispose()
-		},
+		id,
+		group,
+		roll,
+		glyph,
+		core,
+		shell: shellMaterial,
+		glyphMaterial,
+		halo,
 	}
 }
 

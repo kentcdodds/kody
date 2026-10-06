@@ -1,4 +1,5 @@
 import { type Handle, ref } from 'remix/component'
+import { routerEvents } from '#client/client-router.tsx'
 import {
 	isElementNearViewport,
 	observeNearViewport,
@@ -20,18 +21,21 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
+import { type LanternClient } from './lantern-3d-client.ts'
 import {
 	type LanternMotion,
 	type LanternPalette,
-	type LanternScene,
 	type LanternSceneFrame,
-} from './lantern-3d-scene.ts'
+} from './lantern-3d-protocol.ts'
 
 /**
  * The primitives lantern in 3D, with the 2D lantern as its poster. The page
- * ships the 2D one, and it stays for no-JS, no WebGL2, Save-Data, and a lost
- * GPU context. Near the viewport the scene loads in its own chunk, draws a
- * first frame with the orbs where the 2D ones are, and fades in over it.
+ * ships the 2D one, and it stays for no-JS, no WebGL2 in a worker,
+ * Save-Data, and a lost GPU context. Near the viewport, once the page is
+ * idle, the scene starts in its own worker, draws a first frame with the
+ * orbs where the 2D ones are, and fades in over it. A navigation holds
+ * every step of that (and the frames) until it ends, and leaving the page
+ * ends the worker.
  *
  * Each orb has an invisible button that follows it every frame, so hover,
  * focus, click, Escape, and the leader lines work as they do in 2D. Drag the
@@ -67,7 +71,7 @@ export type LandingLantern3dProps = Omit<LandingLanternProps, 'decorative'>
 export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 	let stage: Stage = 'poster'
 	let posterShown = true
-	let scene: LanternScene | null = null
+	let scene: LanternClient | null = null
 	let lastFrame: LanternSceneFrame | null = null
 	let wrapper: HTMLElement | null = null
 	let figure: HTMLElement | null = null
@@ -75,12 +79,48 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 	let inView = false
 	let revealTimer: ReturnType<typeof setTimeout> | null = null
 	const hotspots = new Map<LandingPrimitiveId, HTMLElement>()
+	/** A client-side navigation is under way. */
+	let navigating = false
+	let afterNavigation: Array<() => void> = []
+	let armWhenSettled = false
 
 	handle.signal.addEventListener('abort', () => {
 		if (revealTimer !== null) clearTimeout(revealTimer)
 		scene?.dispose()
 		scene = null
+		afterNavigation = []
 	})
+
+	if (typeof document !== 'undefined') {
+		routerEvents.addEventListener(
+			'navigationstart',
+			() => {
+				navigating = true
+				scene?.pause(true)
+			},
+			{ signal: handle.signal },
+		)
+		// Latest wins: a superseded navigation never ends, the last one does.
+		routerEvents.addEventListener(
+			'navigationend',
+			() => {
+				navigating = false
+				scene?.pause(false)
+				for (const resume of afterNavigation.splice(0)) resume()
+				if (armWhenSettled) {
+					armWhenSettled = false
+					whenIdle(arm)
+				}
+			},
+			{ signal: handle.signal },
+		)
+	}
+
+	/** Resolves at once, or when the navigation under way ends. */
+	function settled() {
+		if (!navigating) return Promise.resolve()
+		return new Promise<void>((resolve) => afterNavigation.push(resolve))
+	}
 
 	function leave(id: LandingPrimitiveId) {
 		handle.props.onClose(id)
@@ -89,36 +129,46 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 
 	function arm() {
 		if (stage !== 'poster' || handle.signal.aborted) return
+		if (navigating) {
+			armWhenSettled = true
+			return
+		}
 		stage = 'loading'
 		void handle.update().then(() => start())
 	}
 
 	async function start() {
-		const host = figure
-		const surface = canvas
-		if (!host || !surface || handle.signal.aborted) return
 		// Vite folds this to `true` in the server build, which then drops the
-		// scene chunk from the Worker. Only a browser ever starts the scene.
+		// client chunk (and the worker it names) from the Worker bundle.
 		if (import.meta.env.SSR) return
 		try {
-			// Dynamic import is intentional so three.js and the scene stay out
-			// of the homepage chunk (sanctioned exception to the
-			// no-inline-imports rule).
-			const { createLanternScene } = await import('./lantern-3d-scene.ts')
-			if (handle.signal.aborted || stage !== 'loading') return
-			const created = createLanternScene({
+			// Dynamic import is intentional so the lantern client stays out of
+			// the homepage chunk (sanctioned exception to the no-inline-imports
+			// rule). three.js is only in the worker's own bundle.
+			const { createLanternClient } = await import('./lantern-3d-client.ts')
+			await settled()
+			await new Promise<void>((resolve) => whenIdle(resolve))
+			await settled()
+			const host = figure
+			const surface = canvas
+			if (!host || !surface || handle.signal.aborted) return
+			if (stage !== 'loading') return
+			const created = createLanternClient({
 				canvas: surface,
 				frame: host,
 				palette: readPalette(host),
 				motion: readMotion(),
+				orbs: posterOrbs(),
+				visible: shown(),
+				paused: navigating,
 				onFrame: placeHotspots,
 				onLost: fail,
 			})
 			scene = created
-			created.setVisible(inView)
 			await created.ready
 			if (scene !== created) return
-			created.placeOrbs(posterOrbs())
+			await settled()
+			if (scene !== created) return
 			created.setActive(handle.props.activeId)
 			reveal(created)
 		} catch {
@@ -126,7 +176,12 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 		}
 	}
 
-	function reveal(live: LanternScene) {
+	/** On screen in a visible tab. */
+	function shown() {
+		return inView && document.visibilityState !== 'hidden'
+	}
+
+	function reveal(live: LanternClient) {
 		const focused = focusedPosterOrb()
 		stage = 'live'
 		void handle.update().then(() => {
@@ -392,12 +447,17 @@ export function LandingLantern3d(handle: Handle<LandingLantern3dProps>) {
 		window.addEventListener('resize', () => scene?.layout(), { signal })
 		const visibility = new IntersectionObserver(([entry]) => {
 			inView = entry?.isIntersecting ?? false
-			scene?.setVisible(inView)
+			scene?.setVisible(shown())
 		})
 		// Some mobile browsers skip the first callback for a node already on
 		// screen, and a hidden scene never wakes.
 		inView = isElementNearViewport(node, '0px')
 		visibility.observe(node)
+		document.addEventListener(
+			'visibilitychange',
+			() => scene?.setVisible(shown()),
+			{ signal },
+		)
 		const onMotion = () => scene?.setMotion(readMotion())
 		motionOk.addEventListener('change', onMotion, { signal })
 		narrow.addEventListener('change', onMotion, { signal })
@@ -566,9 +626,16 @@ function isPrimitiveId(value: string | undefined): value is LandingPrimitiveId {
 	return landingPrimitiveIds.some((id) => id === value)
 }
 
-/** WebGL2 (three.js needs it), and no Save-Data request. */
+/** WebGL2 (three.js needs it), a canvas a worker can draw on, and no
+ *  Save-Data request. */
 function supports3d() {
 	if (typeof WebGL2RenderingContext === 'undefined') return false
+	if (typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function') {
+		return false
+	}
+	if (!('transferControlToOffscreen' in HTMLCanvasElement.prototype)) {
+		return false
+	}
 	const connection: { saveData?: boolean } | undefined = Reflect.get(
 		navigator,
 		'connection',
@@ -576,8 +643,7 @@ function supports3d() {
 	return connection?.saveData !== true
 }
 
-/** Off the critical path: building the scene takes a few main-thread
- *  frames, so let the page settle first. */
+/** Off the critical path: let the page settle before starting a worker. */
 function whenIdle(task: () => void) {
 	if ('requestIdleCallback' in window) {
 		window.requestIdleCallback(task, { timeout: 1500 })
@@ -596,8 +662,17 @@ function readMotion(): LanternMotion {
 
 function readPalette(element: Element): LanternPalette {
 	const style = getComputedStyle(element)
+	const color = (id: LandingPrimitiveId) =>
+		style.getPropertyValue(`--primitive-${id}`).trim()
 	return {
-		color: (id) => style.getPropertyValue(`--primitive-${id}`),
+		colors: {
+			memory: color('memory'),
+			secrets: color('secrets'),
+			packages: color('packages'),
+			triggers: color('triggers'),
+			integrations: color('integrations'),
+			apps: color('apps'),
+		},
 		dark: matchMedia('(prefers-color-scheme: dark)').matches,
 	}
 }

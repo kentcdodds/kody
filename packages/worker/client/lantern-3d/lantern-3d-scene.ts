@@ -4,6 +4,7 @@ import {
 	MeshPhysicalMaterial,
 	MeshStandardMaterial,
 	NeutralToneMapping,
+	type Object3D,
 	PerspectiveCamera,
 	PMREMGenerator,
 	Plane,
@@ -11,7 +12,6 @@ import {
 	Raycaster,
 	Scene,
 	SRGBColorSpace,
-	type Texture,
 	Vector2,
 	Vector3,
 	WebGLRenderer,
@@ -32,6 +32,7 @@ import {
 	lanternViewPitch,
 	paintLanternOrb,
 	type LanternOrbView,
+	type LanternStep,
 } from './lantern-3d-model.ts'
 import {
 	clampToCavity,
@@ -49,6 +50,14 @@ import {
 	type Vec3,
 } from './lantern-3d-motion.ts'
 import {
+	type LanternBox,
+	type LanternMotion,
+	type LanternPalette,
+	type LanternPoint,
+	type LanternSceneFrame,
+	type LanternViewport,
+} from './lantern-3d-protocol.ts'
+import {
 	createLanternQuality,
 	resizeLanternQuality,
 	stepLanternQuality,
@@ -57,10 +66,15 @@ import {
 import { createLanternStudio } from './lantern-3d-studio.ts'
 
 /**
- * The live 3D lantern: renderer, camera, and frame loop. The camera is
- * fitted so the lantern lands on the 2D still's box (the frame element),
- * whatever size the canvas bleeds to. Each frame reports where the orbs
- * project so the page can keep its hotspots and leader lines on them.
+ * The live 3D lantern: renderer, camera, and frame loop. It runs in a
+ * worker on a canvas the page handed over, so it never touches the DOM:
+ * the page sends sizes, colors, and pointer positions in canvas pixels.
+ * The camera is fitted so the lantern lands on the 2D still's box (the
+ * frame), whatever size the canvas bleeds to. Each frame reports where the
+ * orbs project so the page can keep its hotspots and leader lines on them.
+ *
+ * Startup goes through `step`, one small piece at a time, so the worker
+ * can stop between pieces while the page navigates.
  *
  * Reduced motion keeps the scene still: no wander, twinkle, fireflies, or
  * coasting, and frames draw only when something changes. Pointer turns and
@@ -70,70 +84,37 @@ import { createLanternStudio } from './lantern-3d-studio.ts'
  * resolution, so the CPU it shares with the page stays usable.
  */
 
-export type LanternPalette = {
-	/** A CSS color, as `--primitive-<id>` resolves on the page. */
-	color: (id: LandingPrimitiveId) => string
-	dark: boolean
-}
-
-export type LanternMotion = {
-	reduced: boolean
-	/** Share of the full wander; small screens use less. */
-	wander: number
-}
-
-type LanternOrbFrame = {
-	id: LandingPrimitiveId
-	/** Centre in CSS pixels from the frame's top left. */
-	x: number
-	y: number
-	/** Projected radius in CSS pixels. */
-	radius: number
-	/** 1 is the farthest orb. */
-	order: number
-}
-
-export type LanternSceneFrame = {
-	orbs: ReadonlyArray<LanternOrbFrame>
-	width: number
-	height: number
-}
-
 export type LanternSceneOptions = {
-	canvas: HTMLCanvasElement
-	/** The lantern's layout box, where the 2D still sits. */
-	frame: HTMLElement
+	canvas: OffscreenCanvas
+	viewport: LanternViewport
 	palette: LanternPalette
 	motion: LanternMotion
+	/** The 2D orbs, in frame pixels: the first frame draws them there. */
+	orbs: ReadonlyArray<LanternPoint>
+	step: LanternStep
 	onFrame: (frame: LanternSceneFrame) => void
 	onLost: () => void
 }
 
 export type LanternScene = {
-	/** Resolves once the shaders compile and the first frame is drawn. */
-	ready: Promise<void>
-	layout: () => void
+	frame: () => LanternSceneFrame
+	layout: (viewport: LanternViewport) => void
 	setActive: (id: LandingPrimitiveId | null) => void
 	setPalette: (palette: LanternPalette) => void
 	setMotion: (motion: LanternMotion) => void
 	setVisible: (visible: boolean) => void
-	/** Start the orbs where the 2D lantern has them, in frame pixels. */
-	placeOrbs: (
-		points: ReadonlyArray<{ id: LandingPrimitiveId; x: number; y: number }>,
-	) => void
 	celebrate: (id: LandingPrimitiveId) => void
 	/** A tap on the lantern itself. */
 	nudge: () => void
 	/** Keyboard and button turns: -1 or 1, with a flourish for `big`. */
-	spin: (direction: number, big?: boolean) => void
-	beginTurn: (clientX: number, clientY: number) => void
-	turn: (clientX: number, clientY: number) => void
-	endTurn: (flick: boolean) => void
-	grabOrb: (id: LandingPrimitiveId, clientX: number, clientY: number) => void
-	moveOrb: (clientX: number, clientY: number) => void
-	/** True when the orb flies off, so the page can hold its hover shut. */
-	releaseOrb: (flick: boolean) => boolean
-	look: (clientX: number, clientY: number) => void
+	spin: (direction: number, big: boolean) => void
+	beginTurn: (x: number, y: number, t: number) => void
+	turn: (x: number, y: number, t: number) => void
+	endTurn: (flick: boolean, t: number) => void
+	grabOrb: (id: LandingPrimitiveId, x: number, y: number, t: number) => void
+	moveOrb: (x: number, y: number, t: number) => void
+	releaseOrb: (flick: boolean, t: number) => void
+	look: (x: number, y: number) => void
 	stopLooking: () => void
 	dispose: () => void
 }
@@ -144,8 +125,7 @@ const fov = 24
 const maxPixels = 2_600_000
 
 /** Texels along each cube face of the studio's environment map. A software
- *  renderer spends most of its first frame filtering that map, and the whole
- *  page stalls on it the first time the canvas composites, so software draws
+ *  renderer spends most of its first frame filtering that map, so it gets
  *  the studio softer. */
 const environmentSize = { gpu: 256, software: 64 }
 
@@ -170,36 +150,43 @@ type OrbEffects = {
 	spunAt: number | null
 	lookYaw: number
 	lookPitch: number
-	velocity: Vec3
 }
 
-export function createLanternScene(options: LanternSceneOptions): LanternScene {
-	const { canvas, frame } = options
-	const software = drawsInSoftware()
-	const renderer = new WebGLRenderer({
-		canvas,
-		alpha: true,
-		// Multisampling multiplies a software renderer's per-pixel cost.
-		antialias: !software,
-		powerPreference: 'default',
+export async function createLanternScene(
+	options: LanternSceneOptions,
+): Promise<LanternScene> {
+	const { canvas, step } = options
+	const software = await step(drawsInSoftware)
+	const renderer = await step(() => {
+		const created = new WebGLRenderer({
+			canvas,
+			alpha: true,
+			// Multisampling multiplies a software renderer's per-pixel cost.
+			antialias: !software,
+			powerPreference: 'default',
+		})
+		created.setClearColor(0x000000, 0)
+		created.outputColorSpace = SRGBColorSpace
+		created.toneMapping = NeutralToneMapping
+		created.toneMappingExposure = 1
+		return created
 	})
-	renderer.setClearColor(0x000000, 0)
-	renderer.outputColorSpace = SRGBColorSpace
-	renderer.toneMapping = NeutralToneMapping
-	renderer.toneMappingExposure = 1
 
 	const scene = new Scene()
 	const camera = new PerspectiveCamera(fov, 1, 1, 30)
-	const model = createLanternModel({ lite: software })
+	const model = await createLanternModel({ lite: software, step })
 	scene.add(model.root, model.ground)
 
-	const pmrem = new PMREMGenerator(renderer)
-	const studio = createLanternStudio()
-	const environment: Texture = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, {
-		size: software ? environmentSize.software : environmentSize.gpu,
-	}).texture
-	studio.dispose()
-	pmrem.dispose()
+	const environment = await step(() => {
+		const pmrem = new PMREMGenerator(renderer)
+		const studio = createLanternStudio()
+		const texture = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, {
+			size: software ? environmentSize.software : environmentSize.gpu,
+		}).texture
+		studio.dispose()
+		pmrem.dispose()
+		return texture
+	})
 	model.root.traverse((object) => {
 		if (!('material' in object)) return
 		const material = object.material
@@ -218,18 +205,18 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 	let contents: LanternContents = createLanternContents(rests)
 	let spin = createLanternSpin()
 	let motion = options.motion
+	let viewport = options.viewport
 	let time = 0
-	let visible = true
+	let visible = false
 	let disposed = false
 	let lost = false
-	/** No frames until the shaders compile and the first frame has drawn, so
-	 *  neither can stall the page. */
+	/** No frames until the first one has drawn. */
 	let started = false
 	let activeId: LandingPrimitiveId | null = null
 	let lureAt: Vec3 | null = null
 	let excitement = 0
 	let quality: LanternQuality = createLanternQuality({
-		devicePixelRatio: window.devicePixelRatio,
+		devicePixelRatio: viewport.devicePixelRatio,
 		cssPixels: 1,
 		maxPixels,
 		software,
@@ -262,15 +249,15 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 				spunAt: null,
 				lookYaw: 0,
 				lookPitch: 0,
-				velocity: { x: 0, y: 0, z: 0 },
 			},
 		]),
 	)
 	const colors = new Map<LandingPrimitiveId, Color>()
 
 	const size = { width: 0, height: 0 }
-	const frameBox = { left: 0, top: 0, width: 0, height: 0 }
+	let frameBox: LanternBox = { left: 0, top: 0, width: 0, height: 0 }
 	let focal = 1
+	let lastReport: LanternSceneFrame = { orbs: [], width: 0, height: 0 }
 
 	const raycaster = new Raycaster()
 	const pointerNdc = new Vector2()
@@ -284,7 +271,9 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 	const turnStep = new Quaternion()
 	const bufferSize = new Vector2()
 
-	let raf: number | null = null
+	const requestFrame = frameClock()
+	/** Cancels the frame on order, if one is. */
+	let cancelFrame: (() => void) | null = null
 	let last = performance.now()
 	let lastFrameAt: number | null = null
 
@@ -322,21 +311,16 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		model.burst.points.material.uniforms.uScale!.value = scale
 	}
 
-	function layout() {
-		if (disposed) return
-		const canvasRect = canvas.getBoundingClientRect()
-		const frameRect = frame.getBoundingClientRect()
-		if (canvasRect.width === 0 || frameRect.width === 0) return
-		size.width = canvasRect.width
-		size.height = canvasRect.height
-		frameBox.left = frameRect.left - canvasRect.left
-		frameBox.top = frameRect.top - canvasRect.top
-		frameBox.width = frameRect.width
-		frameBox.height = frameRect.height
-		const unit = frameRect.width / lanternStill.width
+	function layout(next: LanternViewport) {
+		viewport = next
+		if (disposed || next.width === 0 || next.frame.width === 0) return
+		size.width = next.width
+		size.height = next.height
+		frameBox = next.frame
+		const unit = frameBox.width / lanternStill.width
 		const distance = size.height / (2 * unit * Math.tan((fov * Math.PI) / 360))
-		const glassX = frameBox.left + frameRect.width * landingLanternGlass.x
-		const glassY = frameBox.top + frameRect.height * landingLanternGlass.y
+		const glassX = frameBox.left + frameBox.width * landingLanternGlass.x
+		const glassY = frameBox.top + frameBox.height * landingLanternGlass.y
 		camera.position.set(
 			-(glassX - size.width / 2) / unit,
 			(glassY - size.height / 2) / unit,
@@ -349,7 +333,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		camera.updateMatrixWorld()
 		focal = size.height / (2 * Math.tan((fov * Math.PI) / 360))
 		quality = resizeLanternQuality(quality, {
-			devicePixelRatio: window.devicePixelRatio,
+			devicePixelRatio: next.devicePixelRatio,
 			cssPixels: size.width * size.height,
 			maxPixels,
 			software,
@@ -360,7 +344,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 
 	function setPalette(palette: LanternPalette) {
 		for (const orb of model.orbs) {
-			const rgb = parseCssColor(palette.color(orb.id))
+			const rgb = parseCssColor(palette.colors[orb.id])
 			const color = rgb ? new Color(...rgb) : new Color(1, 0.6, 0.2)
 			if (palette.dark) color.multiplyScalar(darkOrbDepth)
 			colors.set(orb.id, color)
@@ -405,14 +389,11 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		}
 	}
 
-	/** A point under the pointer on the plane z = `depth` in root space. */
-	function rootPoint(clientX: number, clientY: number, depth: number) {
-		const rect = canvas.getBoundingClientRect()
-		if (rect.width === 0 || rect.height === 0) return null
-		pointerNdc.set(
-			((clientX - rect.left) / rect.width) * 2 - 1,
-			-(((clientY - rect.top) / rect.height) * 2 - 1),
-		)
+	/** A point under canvas pixel (x, y) on the plane z = `depth` in root
+	 *  space. */
+	function rootPoint(x: number, y: number, depth: number) {
+		if (size.width === 0 || size.height === 0) return null
+		pointerNdc.set((x / size.width) * 2 - 1, -((y / size.height) * 2 - 1))
 		camera.updateMatrixWorld()
 		model.root.updateMatrixWorld()
 		raycaster.setFromCamera(pointerNdc, camera)
@@ -422,12 +403,31 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		return ray.intersectPlane(plane, hit)
 	}
 
-	function canvasPoint(clientX: number, clientY: number) {
-		const rect = canvas.getBoundingClientRect()
-		return { x: clientX - rect.left, y: clientY - rect.top }
+	function placeOrbs(points: ReadonlyArray<LanternPoint>) {
+		if (frameBox.width === 0) return
+		contents = {
+			...contents,
+			orbs: contents.orbs.map((orb) => {
+				const point = points.find((entry) => entry.id === orb.id)
+				if (!point) return orb
+				const at = rootPoint(
+					frameBox.left + point.x,
+					frameBox.top + point.y,
+					orb.home.z,
+				)
+				if (!at) return orb
+				return {
+					...orb,
+					...clampToCavity(at, orb.radius, 0),
+					vx: 0,
+					vy: 0,
+					vz: 0,
+				}
+			}),
+		}
 	}
 
-	function step(dt: number) {
+	function advance(dt: number) {
 		const animate = !motion.reduced
 		if (animate) time += dt
 
@@ -611,8 +611,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			(0.5 + fx.lit * 0.45 + fx.pop * 0.4) * (1 - fx.dim * 0.6)
 	}
 
-	function report() {
-		if (frameBox.width === 0) return
+	function project(): LanternSceneFrame {
 		const orbs = model.orbs.map((view) => {
 			view.group.getWorldPosition(world)
 			inView.copy(world).applyMatrix4(camera.matrixWorldInverse)
@@ -627,7 +626,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			}
 		})
 		const byDepth = [...orbs].sort((a, b) => b.depth - a.depth)
-		options.onFrame({
+		return {
 			orbs: orbs.map((orb) => ({
 				id: orb.id,
 				x: orb.x,
@@ -637,18 +636,32 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			})),
 			width: frameBox.width,
 			height: frameBox.height,
-		})
+		}
+	}
+
+	function report() {
+		if (frameBox.width === 0) return
+		const next = project()
+		if (sameFrame(lastReport, next)) return
+		lastReport = next
+		options.onFrame(next)
+	}
+
+	function draw(dt: number) {
+		advance(dt)
+		paint(dt)
+		renderer.render(scene, camera)
+		report()
 	}
 
 	function busy() {
 		if (hold || turning) return true
-		if (motion.reduced) return false
-		return true
+		return !motion.reduced
 	}
 
 	function tick(now: number) {
-		raf = null
-		if (disposed) return
+		cancelFrame = null
+		if (disposed || lost) return
 		const dt = Math.min(Math.max((now - last) / 1000, 0), 1 / 30)
 		if (lastFrameAt !== null && !motion.reduced) {
 			const next = stepLanternQuality(quality, now - lastFrameAt)
@@ -660,54 +673,49 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			}
 		}
 		last = now
-		step(dt)
-		paint(dt)
-		renderer.render(scene, camera)
-		report()
-		const keepGoing = visible && document.visibilityState !== 'hidden' && busy()
+		draw(dt)
+		const keepGoing = visible && busy()
 		lastFrameAt = keepGoing ? now : null
-		if (keepGoing) raf = requestAnimationFrame(tick)
+		if (keepGoing) cancelFrame = requestFrame(tick)
 	}
 
 	function wake() {
-		if (disposed || !started || raf !== null) return
-		if (!visible || document.visibilityState === 'hidden') return
+		if (disposed || lost || !started || !visible || cancelFrame) return
 		last = performance.now()
-		raf = requestAnimationFrame(tick)
+		cancelFrame = requestFrame(tick)
 	}
 
 	const onLost = (event: Event) => {
 		event.preventDefault()
 		lost = true
-		if (raf !== null) cancelAnimationFrame(raf)
-		raf = null
+		cancelFrame?.()
+		cancelFrame = null
 		options.onLost()
 	}
 	canvas.addEventListener('webglcontextlost', onLost)
-	const onVisibility = () => wake()
-	document.addEventListener('visibilitychange', onVisibility)
 
 	setPalette(options.palette)
-	layout()
+	layout(viewport)
+	placeOrbs(options.orbs)
 
-	const ready = renderer
-		.compileAsync(scene, camera)
-		.then(() => {
-			if (disposed) return
-			step(0)
-			paint(0)
-			renderer.render(scene, camera)
-			return gpuCaughtUp(renderer.getContext())
-		})
-		.then(() => {
-			if (disposed) return
-			started = true
-			report()
-			wake()
-		})
+	// One part of the scene at a time, so no single step holds the GPU (or
+	// the CPU standing in for one) for long.
+	for (const part of [...model.root.children, model.ground]) {
+		await step(() => compile(renderer, part, camera, scene))
+	}
+	await step(() => {
+		advance(0)
+		paint(0)
+		renderer.render(scene, camera)
+	})
+	// The canvas shows its first frame as soon as this task ends. Wait for
+	// the GPU to finish it so the reveal never waits on a frame in flight.
+	await step(() => gpuCaughtUp(renderer.getContext()))
+	started = true
+	lastReport = project()
 
 	return {
-		ready,
+		frame: () => lastReport,
 		layout,
 		setActive(id) {
 			if (activeId === id) return
@@ -727,37 +735,9 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		},
 		setVisible(next) {
 			visible = next
-			if (next) wake()
-		},
-		placeOrbs(points) {
-			if (frameBox.width === 0) return
-			const canvasRect = canvas.getBoundingClientRect()
-			contents = {
-				...contents,
-				orbs: contents.orbs.map((orb) => {
-					const point = points.find((entry) => entry.id === orb.id)
-					if (!point) return orb
-					const at = rootPoint(
-						canvasRect.left + frameBox.left + point.x,
-						canvasRect.top + frameBox.top + point.y,
-						orb.home.z,
-					)
-					if (!at) return orb
-					return {
-						...orb,
-						...clampToCavity(at, orb.radius, 0),
-						vx: 0,
-						vy: 0,
-						vz: 0,
-					}
-				}),
-			}
-			// Draw now: the loop may be parked offscreen, and the canvas must
-			// not show the orbs anywhere else when it fades in.
-			if (started) {
-				paint(0)
-				renderer.render(scene, camera)
-				report()
+			if (!next) {
+				cancelFrame?.()
+				cancelFrame = null
 			}
 			wake()
 		},
@@ -792,7 +772,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			excitement = Math.min(excitement + 0.25, 0.45)
 			wake()
 		},
-		spin(direction, big = false) {
+		spin(direction, big) {
 			if (motion.reduced) {
 				spin = { ...spin, yaw: spin.yaw + direction * (Math.PI / 4) }
 			} else {
@@ -807,22 +787,22 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			}
 			wake()
 		},
-		beginTurn(clientX, clientY) {
+		beginTurn(x, y, t) {
 			turning = {
-				lastX: clientX,
-				lastY: clientY,
+				lastX: x,
+				lastY: y,
 				yaw: 0,
 				tilt: 0,
-				samples: [{ x: spin.yaw, y: spin.tilt, z: 0, t: performance.now() }],
+				samples: [{ x: spin.yaw, y: spin.tilt, z: 0, t }],
 			}
 			wake()
 		},
-		turn(clientX, clientY) {
+		turn(x, y, t) {
 			if (!turning || frameBox.width === 0) return
-			const yaw = ((clientX - turning.lastX) / frameBox.width) * turnPerWidth
-			const tilt = ((clientY - turning.lastY) / frameBox.height) * tiltPerHeight
-			turning.lastX = clientX
-			turning.lastY = clientY
+			const yaw = ((x - turning.lastX) / frameBox.width) * turnPerWidth
+			const tilt = ((y - turning.lastY) / frameBox.height) * tiltPerHeight
+			turning.lastX = x
+			turning.lastY = y
 			turning.yaw += yaw
 			turning.tilt += tilt
 			const previous = turning.samples[turning.samples.length - 1]
@@ -830,12 +810,12 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 				x: (previous?.x ?? spin.yaw) + yaw,
 				y: (previous?.y ?? spin.tilt) + tilt,
 				z: 0,
-				t: performance.now(),
+				t,
 			})
 			if (turning.samples.length > 12) turning.samples.shift()
 			wake()
 		},
-		endTurn(flick) {
+		endTurn(flick, t) {
 			if (!turning) return
 			const { samples, yaw, tilt } = turning
 			turning = null
@@ -847,7 +827,7 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 				spin = { ...spin, tilt: 0, yawVelocity: 0, tiltVelocity: 0 }
 			} else {
 				const velocity = flick
-					? lanternFlickVelocity(samples, performance.now(), lanternMaxSpin)
+					? lanternFlickVelocity(samples, t, lanternMaxSpin)
 					: { vx: 0, vy: 0, vz: 0 }
 				spin = {
 					...spin,
@@ -857,35 +837,33 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			}
 			wake()
 		},
-		grabOrb(id, clientX, clientY) {
+		grabOrb(id, x, y, t) {
 			const orb = orbState(id)
 			if (!orb) return
-			const at = rootPoint(clientX, clientY, orb.z)
+			const at = rootPoint(x, y, orb.z)
 			if (!at) return
-			const now = performance.now()
 			hold = {
 				id,
 				z: orb.z,
 				offset: { x: orb.x - at.x, y: orb.y - at.y },
-				samples: [{ x: orb.x, y: orb.y, z: orb.z, t: now }],
+				samples: [{ x: orb.x, y: orb.y, z: orb.z, t }],
 				pose: { id, x: orb.x, y: orb.y, z: orb.z, vx: 0, vy: 0, vz: 0 },
 			}
 			wake()
 		},
-		moveOrb(clientX, clientY) {
+		moveOrb(x, y, t) {
 			if (!hold) return
-			const at = rootPoint(clientX, clientY, hold.z)
+			const at = rootPoint(x, y, hold.z)
 			if (!at) return
-			const now = performance.now()
-			const x = at.x + hold.offset.x
-			const y = at.y + hold.offset.y
-			hold.samples.push({ x, y, z: hold.z, t: now })
+			const px = at.x + hold.offset.x
+			const py = at.y + hold.offset.y
+			hold.samples.push({ x: px, y: py, z: hold.z, t })
 			if (hold.samples.length > 12) hold.samples.shift()
-			const velocity = lanternFlickVelocity(hold.samples, now)
+			const velocity = lanternFlickVelocity(hold.samples, t)
 			hold.pose = {
 				id: hold.id,
-				x,
-				y,
+				x: px,
+				y: py,
 				z: hold.z,
 				vx: velocity.vx,
 				vy: velocity.vy,
@@ -893,18 +871,17 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			}
 			wake()
 		},
-		releaseOrb(flick) {
-			if (!hold) return false
+		releaseOrb(flick, t) {
+			if (!hold) return
 			const { id, pose, samples } = hold
 			hold = null
-			let tossed = false
 			if (motion.reduced) {
 				contents = createLanternContents(rests)
 			} else if (pose) {
 				const velocity = flick
-					? lanternFlickVelocity(samples, performance.now())
+					? lanternFlickVelocity(samples, t)
 					: { vx: 0, vy: 0, vz: 0 }
-				tossed = Math.hypot(velocity.vx, velocity.vy, velocity.vz) > 0
+				const tossed = Math.hypot(velocity.vx, velocity.vy, velocity.vz) > 0
 				const tilt = displayTilt()
 				contents = {
 					...contents,
@@ -922,10 +899,9 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 				}
 			}
 			wake()
-			return tossed
 		},
-		look(clientX, clientY) {
-			pointer = canvasPoint(clientX, clientY)
+		look(x, y) {
+			pointer = { x, y }
 			if (!motion.reduced) wake()
 		},
 		stopLooking() {
@@ -933,10 +909,9 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 		},
 		dispose() {
 			disposed = true
-			if (raf !== null) cancelAnimationFrame(raf)
-			raf = null
+			cancelFrame?.()
+			cancelFrame = null
 			canvas.removeEventListener('webglcontextlost', onLost)
-			document.removeEventListener('visibilitychange', onVisibility)
 			model.dispose()
 			environment.dispose()
 			renderer.dispose()
@@ -945,10 +920,52 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 	}
 }
 
+/** Compile one part's shaders without stalling: with
+ *  KHR_parallel_shader_compile the driver builds them while this waits. */
+function compile(
+	renderer: WebGLRenderer,
+	part: Object3D,
+	camera: PerspectiveCamera,
+	scene: Scene,
+) {
+	return renderer.compileAsync(part, camera, scene).then(() => undefined)
+}
+
+/** Nothing moved enough to redraw the hotspots or leader lines. */
+function sameFrame(a: LanternSceneFrame, b: LanternSceneFrame) {
+	if (a.width !== b.width || a.height !== b.height) return false
+	if (a.orbs.length !== b.orbs.length) return false
+	return a.orbs.every((orb, index) => {
+		const other = b.orbs[index]
+		return (
+			other !== undefined &&
+			orb.id === other.id &&
+			orb.order === other.order &&
+			Math.abs(orb.x - other.x) < 0.05 &&
+			Math.abs(orb.y - other.y) < 0.05 &&
+			Math.abs(orb.radius - other.radius) < 0.05
+		)
+	})
+}
+
+/** Worker frames follow the display where the browser offers them. Each
+ *  request returns its own cancel. */
+function frameClock(): (callback: (now: number) => void) => () => void {
+	if (typeof requestAnimationFrame === 'function') {
+		return (callback) => {
+			const handle = requestAnimationFrame(callback)
+			return () => cancelAnimationFrame(handle)
+		}
+	}
+	return (callback) => {
+		const handle = setTimeout(() => callback(performance.now()), 16)
+		return () => clearTimeout(handle)
+	}
+}
+
 /** Resolves once the GPU has run every command issued so far, without
- *  blocking. A canvas's first composite waits on its frame, and a software
- *  renderer's first frame (every shader, the environment map) is slow enough
- *  to stall the whole page if the canvas is revealed while it draws. */
+ *  blocking. A software renderer's first frame (every shader, the
+ *  environment map) is slow, and the reveal should not wait on it. */
 function gpuCaughtUp(gl: WebGLRenderingContext | WebGL2RenderingContext) {
 	if (!('fenceSync' in gl)) return Promise.resolve()
 	const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
@@ -976,9 +993,9 @@ const softwareRenderer = /swiftshader|llvmpipe|softpipe|basic render|software/i
  *  performance caveat when WebGL would run on the CPU; others only say so
  *  in the renderer's name. */
 function drawsInSoftware() {
-	const probe = document
-		.createElement('canvas')
-		.getContext('webgl2', { failIfMajorPerformanceCaveat: true })
+	const probe = new OffscreenCanvas(1, 1).getContext('webgl2', {
+		failIfMajorPerformanceCaveat: true,
+	})
 	if (!probe) return true
 	const info = probe.getExtension('WEBGL_debug_renderer_info')
 	const name: unknown = probe.getParameter(
