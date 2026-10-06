@@ -512,3 +512,42 @@ export function main() {
 	)
 	expect(result.source).not.toContain('var packageContext6 = packageContext;')
 })
+
+test('rewrite aliases packageContextN referenced only in retained author modules', () => {
+	// Real npm-backed bundles can leave `packageContext6` referenced from
+	// retained author code while the removable preamble only still shows the
+	// package-bound storage factories (the shared-export declaration shape is
+	// lost to inlining). Fall back to scanning retained identifiers.
+	const source = `import { kody } from "./dep-runtime.js";
+
+// virtual:.__kody_virtual__/runtime.js
+function __kodyOptionalRuntimeFunctionExport(exportName) {
+  return () => {};
+}
+function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
+function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
+var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+var packageStorage6 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+var packageSecrets6 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2, packageStorage: packageStorage6 };
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
+
+// virtual:.__kody_root__/src/activity-status.ts
+export function main() {
+  return typeof packageContext6?.hostedUrl === "string" ? packageContext6.hostedUrl : null;
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/kodykoala-activity/.__published_bundle__/2e2f61637469766974792d736d6f6b652d74657374/bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.source).toContain(
+		'var packageContext6 = __kodyShimPackageContext;',
+	)
+	expect(result.source).toContain(
+		`var packageStorage6 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+})
