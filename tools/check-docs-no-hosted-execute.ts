@@ -39,9 +39,9 @@ const fallBackToMcpExecute =
 		.source
 
 export const allowedHostedExecutePhrasePatterns: ReadonlyArray<RegExp> = [
-	/\bdo\s+\*{0,2}not\*{0,2}\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
-	/\bdon't\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
-	/\bnever\s+use\s+(?:the\s+)?hosted\s+MCP\s+`?execute`?/gi,
+	/\bdo\s+\*{0,2}not\*{0,2}\s+(?:use|try|call)\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/gi,
+	/\bdon't\s+(?:use|try|call)\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/gi,
+	/\bnever\s+(?:use|try|call)\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/gi,
 	new RegExp(
 		String.raw`\bdo\s+\*{0,2}not\*{0,2}\s+${fallBackToMcpExecute}`,
 		'gi',
@@ -86,7 +86,7 @@ export const bannedHostedExecutePatterns: ReadonlyArray<BannedHostedExecutePatte
 		{
 			label: 'if local fails, use MCP execute',
 			regex:
-				/\bif\b[^.]{0,160}?\b(?:cannot|can't|unavailable|fails|failed|missing)\b[^.]{0,100}?\buse\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/i,
+				/\bif\b[^.]{0,160}?\b(?:cannot|can't|unavailable|fails|failed|missing)\b[^.]{0,100}?\b(?:use|try|call)\s+(?:the\s+)?(?:hosted\s+)?MCP\s+`?execute`?/i,
 		},
 	]
 
