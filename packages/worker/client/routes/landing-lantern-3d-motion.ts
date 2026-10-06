@@ -1,0 +1,765 @@
+import {
+	landingPrimitiveIds,
+	type LandingPrimitiveId,
+} from '#universal/landing-lantern.ts'
+
+/**
+ * Motion for the 3D lantern (landing-lantern-3d.gss). Pure math, no DOM:
+ * the camera projection that keeps the HTML orb buttons on the painted
+ * orbs, the turntable orbit, the orbs floating inside the globe, and the
+ * frame-rate governor behind the adaptive resolution.
+ *
+ * Orbs live in the lantern's own frame (`local`), so they turn with it.
+ * `localToWorld` applies the same rotation the scene gives `#body`
+ * (`rotate-x: --pitch`, then `rotate-y: --yaw`), so an orb set from it
+ * sits exactly where it would if it were part of the body. Idle orbs drift
+ * like a lava lamp toward slow wander targets. A grabbed orb follows the
+ * pointer and a flick tosses it: it coasts, bounces off the glass and the
+ * other orbs, then settles back into the drift. Spinning the lantern lets
+ * the orbs lag behind and fling outward, like marbles in a turning jar.
+ */
+
+export type Vec3 = { x: number; y: number; z: number }
+
+const degrees = Math.PI / 180
+
+/** The scene camera in landing-lantern-3d.gss. GSS shoots each ray along
+ *  `uv.x * right + uv.y * up + zoom * forward`, uv in canvas heights. */
+const lanternCamera = {
+	yaw: 0,
+	pitch: 10 * degrees,
+	distance: 5.5,
+	target: { x: 0, y: 0.18, z: 0 },
+	zoom: 1.5,
+} as const
+
+/** Glass globe, centered on the pivot. Matches the glow and rim in the scene. */
+export const lanternGlobeRadius = 0.97
+
+/** Orb radius before hover scaling (`.ball` in the scene). */
+export const lanternOrbRadius = 0.175
+
+/** Room the orbs swim in: inside the glass, between the cap and the base. */
+const cavity = { radius: 0.86, top: 0.66, bottom: -0.64 } as const
+
+const lanternOrbHomes: Record<LandingPrimitiveId, Vec3> = {
+	memory: { x: 0, y: 0.44, z: 0.32 },
+	secrets: { x: -0.44, y: 0.2, z: -0.3 },
+	packages: { x: 0.44, y: 0.2, z: -0.3 },
+	triggers: { x: -0.42, y: -0.24, z: 0.3 },
+	integrations: { x: 0.42, y: -0.24, z: 0.3 },
+	apps: { x: 0, y: -0.42, z: -0.3 },
+}
+
+const phases: Record<LandingPrimitiveId, number> = {
+	memory: 0.5,
+	secrets: 2.05,
+	packages: 3.7,
+	triggers: 5.15,
+	integrations: 1.15,
+	apps: 6.4,
+}
+
+/** How far a wander target sits from home. */
+const roam = 0.075
+/** Wander angular speed, radians per second. */
+const wanderRate = 0.34
+/** Pull toward the wander target, per second. */
+const spring = 1.15
+/** Velocity decay, per second, while floating. */
+const damping = 2.6
+/** Speed ceiling while floating. */
+const floatMaxSpeed = 0.09
+/** A flick can cross the globe in a fraction of a second. */
+const coastMaxSpeed = 4.2
+const coastDamping = 1.05
+const coastSettleSpeed = 0.09
+const restitution = 0.62
+const wallSkin = 0.01
+/** Share of the lantern's turn the orbs do not follow at once. */
+const spinSlip = 0.35
+/** Outward push per (radian per second) squared of spin. */
+const spinFling = 0.05
+/** How far back a flick's velocity sample looks, in milliseconds. */
+const flickWindowMs = 90
+
+export type LanternViewBasis = {
+	origin: Vec3
+	forward: Vec3
+	right: Vec3
+	up: Vec3
+	zoom: number
+}
+
+export function lanternViewBasis(): LanternViewBasis {
+	const { yaw, pitch, distance, target, zoom } = lanternCamera
+	const origin = {
+		x: target.x + distance * Math.cos(pitch) * Math.sin(yaw),
+		y: target.y + distance * Math.sin(pitch),
+		z: target.z + distance * Math.cos(pitch) * Math.cos(yaw),
+	}
+	const forward = normalize(sub(target, origin))
+	const right = normalize(cross(forward, { x: 0, y: 1, z: 0 }))
+	const up = cross(right, forward)
+	return { origin, forward, right, up, zoom }
+}
+
+export type LanternProjection = {
+	/** CSS pixels from the canvas's top left. */
+	x: number
+	y: number
+	/** Distance in front of the camera, along its axis. */
+	depth: number
+	/** CSS pixels per world unit at that depth. */
+	scale: number
+}
+
+/** Where a world point lands on a canvas `height` CSS pixels tall. */
+export function projectLanternPoint(
+	basis: LanternViewBasis,
+	point: Vec3,
+	size: { width: number; height: number },
+): LanternProjection {
+	const d = sub(point, basis.origin)
+	const depth = Math.max(dot(d, basis.forward), 0.001)
+	const scale = (basis.zoom * size.height) / depth
+	return {
+		x: size.width / 2 + dot(d, basis.right) * scale,
+		y: size.height / 2 - dot(d, basis.up) * scale,
+		depth,
+		scale,
+	}
+}
+
+/** Screen radius of a sphere's outline, in CSS pixels. */
+export function projectedSphereRadius(
+	basis: LanternViewBasis,
+	centre: Vec3,
+	radius: number,
+	height: number,
+) {
+	const distance = length(sub(centre, basis.origin))
+	const sine = Math.min(radius / Math.max(distance, radius + 0.001), 0.99)
+	return basis.zoom * height * Math.tan(Math.asin(sine))
+}
+
+/** A pointer move in CSS pixels, as world movement at a given depth. */
+export function screenDeltaToWorld(
+	basis: LanternViewBasis,
+	dx: number,
+	dy: number,
+	depth: number,
+	height: number,
+): Vec3 {
+	const perPixel = depth / (basis.zoom * height)
+	return add(
+		scaleVec(basis.right, dx * perPixel),
+		scaleVec(basis.up, -dy * perPixel),
+	)
+}
+
+/** `#body` space to world space: undo the scene's rotate-y, then rotate-x. */
+export function localToWorld(point: Vec3, yaw: number, pitch: number): Vec3 {
+	const cy = Math.cos(yaw)
+	const sy = Math.sin(yaw)
+	const cp = Math.cos(pitch)
+	const sp = Math.sin(pitch)
+	const x = cy * point.x + sy * point.z
+	const z1 = -sy * point.x + cy * point.z
+	return { x, y: cp * point.y + sp * z1, z: -sp * point.y + cp * z1 }
+}
+
+/** World space to `#body` space, as the scene's map() does it. */
+export function worldToLocal(point: Vec3, yaw: number, pitch: number): Vec3 {
+	const cy = Math.cos(yaw)
+	const sy = Math.sin(yaw)
+	const cp = Math.cos(pitch)
+	const sp = Math.sin(pitch)
+	const y = cp * point.y - sp * point.z
+	const z1 = sp * point.y + cp * point.z
+	return { x: cy * point.x - sy * z1, y, z: sy * point.x + cy * z1 }
+}
+
+/** The yaw that brings a local point around to face the camera. */
+function yawFacingCamera(point: Vec3, currentYaw: number) {
+	const facing = -Math.atan2(point.x, point.z)
+	return currentYaw + wrapAngle(facing - currentYaw)
+}
+
+function wrapAngle(angle: number) {
+	return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI))
+}
+
+export type LanternOrbit = {
+	/** Turntable angle the user set, radians, unbounded. */
+	yaw: number
+	yawVelocity: number
+	pitch: number
+	pitchVelocity: number
+	/** Pitch the lantern settles back to. */
+	pitchRest: number
+	/** A keyboard or focus turn in progress, radians. */
+	yawTarget: number | null
+	/** 0 while the user holds the lantern, easing back to 1 after. */
+	sway: number
+}
+
+export const lanternPitchLimit = 9 * degrees
+const swayYaw = 13 * degrees
+const swayPitch = 1.6 * degrees
+const swayRate = 0.32
+const spinFriction = 1.6
+const pitchSpring = 30
+const pitchDamping = 9
+const turnSpring = 40
+const turnDamping = 12
+const swayReturnSeconds = 3.5
+
+export function createLanternOrbit(): LanternOrbit {
+	return {
+		yaw: 0,
+		yawVelocity: 0,
+		pitch: 0,
+		pitchVelocity: 0,
+		pitchRest: 0,
+		yawTarget: null,
+		sway: 1,
+	}
+}
+
+/** Advance the orbit one frame. Does not mutate `orbit`. */
+export function stepLanternOrbit(
+	orbit: LanternOrbit,
+	dtSeconds: number,
+	options: { held: boolean; motion: boolean },
+): LanternOrbit {
+	const dt = clampDt(dtSeconds)
+	const next = { ...orbit }
+	if (options.held) {
+		next.sway = 0
+		return next
+	}
+	if (!options.motion) {
+		return {
+			...next,
+			yaw: next.yawTarget ?? next.yaw,
+			yawVelocity: 0,
+			yawTarget: null,
+			pitch: next.pitchRest,
+			pitchVelocity: 0,
+			sway: 0,
+		}
+	}
+	if (next.yawTarget !== null) {
+		const offset = next.yawTarget - next.yaw
+		next.yawVelocity +=
+			(offset * turnSpring - next.yawVelocity * turnDamping) * dt
+		if (Math.abs(offset) < 0.002 && Math.abs(next.yawVelocity) < 0.01) {
+			next.yaw = next.yawTarget
+			next.yawVelocity = 0
+			next.yawTarget = null
+		}
+	} else {
+		next.yawVelocity *= Math.exp(-spinFriction * dt)
+		if (Math.abs(next.yawVelocity) < 0.004) next.yawVelocity = 0
+	}
+	next.yaw += next.yawVelocity * dt
+	const pitchOffset = next.pitchRest - next.pitch
+	next.pitchVelocity +=
+		(pitchOffset * pitchSpring - next.pitchVelocity * pitchDamping) * dt
+	next.pitch += next.pitchVelocity * dt
+	next.sway = Math.min(1, next.sway + dt / swayReturnSeconds)
+	return next
+}
+
+/** Take hold of the lantern. The sway it was showing becomes its pose, so
+ *  a grab does not jump; the sway eases back in after the release. */
+export function holdLanternOrbit(
+	orbit: LanternOrbit,
+	time: number,
+): LanternOrbit {
+	const pose = lanternPose(orbit, time)
+	return {
+		...orbit,
+		yaw: pose.yaw,
+		pitch: pose.pitch,
+		yawVelocity: 0,
+		pitchVelocity: 0,
+		yawTarget: null,
+		sway: 0,
+	}
+}
+
+/** Turn so a local point faces the camera, from wherever the sway left it. */
+export function turnLanternTo(
+	orbit: LanternOrbit,
+	time: number,
+	point: Vec3,
+): LanternOrbit {
+	const held = holdLanternOrbit(orbit, time)
+	return { ...held, yawTarget: yawFacingCamera(point, held.yaw) }
+}
+
+/** The pose the scene draws: the user's orbit plus the idle sway. */
+export function lanternPose(orbit: LanternOrbit, time: number) {
+	const ease = orbit.sway * orbit.sway * (3 - 2 * orbit.sway)
+	return {
+		yaw: orbit.yaw + Math.sin(time * swayRate) * swayYaw * ease,
+		pitch: clampPitch(
+			orbit.pitch + Math.sin(time * swayRate * 1.37 + 1.1) * swayPitch * ease,
+		),
+	}
+}
+
+function clampPitch(pitch: number) {
+	return Math.min(lanternPitchLimit, Math.max(-lanternPitchLimit, pitch))
+}
+
+export type LanternOrbBody = {
+	id: LandingPrimitiveId
+	position: Vec3
+	velocity: Vec3
+	phase: number
+	/** Hover and grab grow an orb; collisions use the grown radius. */
+	scale: number
+	/** A grab or a knock is still carrying this orb. */
+	coasting: boolean
+}
+
+export type LanternOrbHold = {
+	id: LandingPrimitiveId
+	position: Vec3
+	velocity: Vec3
+}
+
+export type LanternPointerSample = { position: Vec3; t: number }
+
+export function createLanternOrbBodies(): Array<LanternOrbBody> {
+	return landingPrimitiveIds.map((id) => ({
+		id,
+		position: { ...lanternOrbHomes[id] },
+		velocity: { x: 0, y: 0, z: 0 },
+		phase: phases[id],
+		scale: 1,
+		coasting: false,
+	}))
+}
+
+/** Local-space velocity from the recent end of a drag. */
+export function lanternFlickVelocity(
+	samples: ReadonlyArray<LanternPointerSample>,
+	now: number,
+): Vec3 {
+	const recent = samples.filter((sample) => now - sample.t <= flickWindowMs)
+	const first = recent[0]
+	const last = recent.at(-1)
+	if (!first || !last || first === last) return { x: 0, y: 0, z: 0 }
+	const dt = (last.t - first.t) / 1000
+	if (dt <= 0.012) return { x: 0, y: 0, z: 0 }
+	return capVec(
+		scaleVec(sub(last.position, first.position), 1 / dt),
+		coastMaxSpeed,
+	)
+}
+
+/**
+ * Advance the orbs one frame in the lantern's frame. `amplitude` is 1 for
+ * full drift and 0 to hold every orb at home. `spin` is how far the
+ * lantern turned this frame, so the orbs can lag behind it. Does not
+ * mutate `bodies`.
+ */
+export function stepLanternOrbs(
+	bodies: ReadonlyArray<LanternOrbBody>,
+	dtSeconds: number,
+	options: {
+		time: number
+		amplitude: number
+		spin?: number
+		hold?: LanternOrbHold | null
+	},
+): Array<LanternOrbBody> {
+	const dt = clampDt(dtSeconds)
+	const amplitude = Math.min(Math.max(options.amplitude, 0), 1)
+	const hold = options.hold ?? null
+	const spin = amplitude > 0 ? (options.spin ?? 0) : 0
+	const omega = dt > 0 ? spin / dt : 0
+	const next = bodies.map((body) => ({
+		...body,
+		position: { ...body.position },
+		velocity: { ...body.velocity },
+	}))
+	for (const body of next) {
+		if (hold && body.id === hold.id) {
+			placeHeld(body, hold)
+			continue
+		}
+		if (spin !== 0) dragBySpin(body, spin, omega, dt)
+		if (body.coasting) integrateCoast(body, dt)
+		else integrateFloat(body, dt, options.time, amplitude)
+	}
+	for (let pass = 0; pass < 4; pass++) {
+		separateOrbs(next, hold?.id ?? null)
+		containOrbs(next, hold?.id ?? null)
+		if (hold) {
+			const held = next.find((body) => body.id === hold.id)
+			if (held) placeHeld(held, hold)
+		}
+	}
+	separateOrbs(next, hold?.id ?? null)
+	containOrbs(next, hold?.id ?? null)
+	for (const body of next) {
+		if (hold && body.id === hold.id) continue
+		if (!body.coasting) continue
+		if (length(body.velocity) >= coastSettleSpeed) continue
+		body.coasting = false
+	}
+	return next
+}
+
+/** Every orb gets a random knock, as if the lantern were tapped. */
+export function pokeLanternOrbs(
+	bodies: ReadonlyArray<LanternOrbBody>,
+	random: () => number = Math.random,
+): Array<LanternOrbBody> {
+	return bodies.map((body) => {
+		const kick = normalize({
+			x: random() - 0.5,
+			y: random() - 0.35,
+			z: random() - 0.5,
+		})
+		return {
+			...body,
+			velocity: capVec(
+				add(body.velocity, scaleVec(kick, 0.9 + random() * 0.6)),
+				coastMaxSpeed,
+			),
+			coasting: true,
+		}
+	})
+}
+
+/** Keep a centre inside the glass, clear of the cap and the base. */
+function clampToLanternCavity(point: Vec3, radius: number): Vec3 {
+	const limit = cavity.radius - radius - wallSkin
+	const distance = length(point)
+	let next = point
+	if (distance > limit && distance > 0) next = scaleVec(point, limit / distance)
+	const top = cavity.top - radius - wallSkin
+	const bottom = cavity.bottom + radius + wallSkin
+	return { ...next, y: Math.min(top, Math.max(bottom, next.y)) }
+}
+
+function bodyRadius(body: LanternOrbBody) {
+	return lanternOrbRadius * body.scale
+}
+
+function wanderTarget(body: LanternOrbBody, time: number, amplitude: number) {
+	const home = lanternOrbHomes[body.id]
+	const reach = roam * amplitude
+	const angle = time * wanderRate + body.phase
+	const target = {
+		x: home.x + Math.cos(angle) * reach,
+		y: home.y + Math.sin(angle * 0.76 + 0.7) * reach * 0.9,
+		z: home.z + Math.sin(angle * 0.53 + 1.9) * reach * 0.8,
+	}
+	return clampToLanternCavity(target, bodyRadius(body))
+}
+
+function integrateFloat(
+	body: LanternOrbBody,
+	dt: number,
+	time: number,
+	amplitude: number,
+) {
+	const target = wanderTarget(body, time, amplitude)
+	const pull = scaleVec(sub(target, body.position), spring * dt)
+	body.velocity = scaleVec(add(body.velocity, pull), Math.exp(-damping * dt))
+	body.velocity = capVec(body.velocity, floatMaxSpeed)
+	body.position = add(body.position, scaleVec(body.velocity, dt))
+}
+
+function integrateCoast(body: LanternOrbBody, dt: number) {
+	body.velocity = capVec(
+		scaleVec(body.velocity, Math.exp(-coastDamping * dt)),
+		coastMaxSpeed,
+	)
+	body.position = add(body.position, scaleVec(body.velocity, dt))
+}
+
+/** The lantern turned by `spin` this frame: the orbs keep part of their
+ *  world position (they slip), and a fast spin flings them outward. */
+function dragBySpin(
+	body: LanternOrbBody,
+	spin: number,
+	omega: number,
+	dt: number,
+) {
+	body.position = rotateAboutY(body.position, spin * spinSlip)
+	const fling = omega * omega * spinFling * dt
+	if (fling < 0.002) return
+	body.velocity = add(body.velocity, {
+		x: body.position.x * fling,
+		y: 0,
+		z: body.position.z * fling,
+	})
+	if (length(body.velocity) > floatMaxSpeed) body.coasting = true
+}
+
+function placeHeld(body: LanternOrbBody, hold: LanternOrbHold) {
+	body.position = clampToLanternCavity(hold.position, bodyRadius(body))
+	body.velocity = capVec(hold.velocity, coastMaxSpeed)
+	body.coasting = true
+}
+
+function separateOrbs(
+	bodies: Array<LanternOrbBody>,
+	heldId: LandingPrimitiveId | null,
+) {
+	for (let i = 0; i < bodies.length; i++) {
+		const a = bodies[i]!
+		for (let j = i + 1; j < bodies.length; j++) {
+			const b = bodies[j]!
+			const delta = sub(b.position, a.position)
+			const distance = length(delta)
+			const min = bodyRadius(a) + bodyRadius(b)
+			if (distance >= min) continue
+			const normal =
+				distance === 0 ? { x: 1, y: 0, z: 0 } : scaleVec(delta, 1 / distance)
+			const overlap = min - distance
+			const aHeld = heldId !== null && a.id === heldId
+			const bHeld = heldId !== null && b.id === heldId
+			if (aHeld || bHeld) {
+				const free = aHeld ? b : a
+				const wall = aHeld ? a : b
+				const away = aHeld ? normal : scaleVec(normal, -1)
+				free.position = add(free.position, scaleVec(away, overlap))
+				shove(free, wall.velocity, away)
+				continue
+			}
+			a.position = sub(a.position, scaleVec(normal, overlap * 0.5))
+			b.position = add(b.position, scaleVec(normal, overlap * 0.5))
+			const closing = dot(sub(a.velocity, b.velocity), normal)
+			if (closing <= 0) continue
+			const share = !a.coasting && !b.coasting ? 0.5 : (1 + restitution) * 0.5
+			a.velocity = sub(a.velocity, scaleVec(normal, closing * share))
+			b.velocity = add(b.velocity, scaleVec(normal, closing * share))
+			if (a.coasting || b.coasting) {
+				kick(a)
+				kick(b)
+			}
+		}
+	}
+}
+
+/** Push `body` as if it hit an immovable orb moving at `velocity`. */
+function shove(body: LanternOrbBody, velocity: Vec3, normal: Vec3) {
+	const approach = dot(sub(velocity, body.velocity), normal)
+	if (approach <= 0) return
+	body.velocity = capVec(
+		add(body.velocity, scaleVec(normal, (1 + restitution) * approach)),
+		coastMaxSpeed,
+	)
+	kick(body)
+}
+
+function kick(body: LanternOrbBody) {
+	if (length(body.velocity) > coastSettleSpeed) body.coasting = true
+}
+
+function containOrbs(
+	bodies: Array<LanternOrbBody>,
+	heldId: LandingPrimitiveId | null,
+) {
+	for (const body of bodies) {
+		if (heldId !== null && body.id === heldId) continue
+		const radius = bodyRadius(body)
+		const limit = cavity.radius - radius - wallSkin
+		const distance = length(body.position)
+		if (distance > limit && distance > 0) {
+			const normal = scaleVec(body.position, 1 / distance)
+			body.position = scaleVec(normal, limit)
+			body.velocity = bounce(body, normal)
+		}
+		const top = cavity.top - radius - wallSkin
+		const bottom = cavity.bottom + radius + wallSkin
+		if (body.position.y > top) {
+			body.position = { ...body.position, y: top }
+			body.velocity = bounce(body, { x: 0, y: 1, z: 0 })
+		} else if (body.position.y < bottom) {
+			body.position = { ...body.position, y: bottom }
+			body.velocity = bounce(body, { x: 0, y: -1, z: 0 })
+		}
+	}
+}
+
+/** Off the wall at `normal` (pointing out): a toss bounces, a drift slides. */
+function bounce(body: LanternOrbBody, normal: Vec3): Vec3 {
+	const outward = dot(body.velocity, normal)
+	if (outward <= 0) return body.velocity
+	const keep = body.coasting ? 1 + restitution : 1
+	return sub(body.velocity, scaleVec(normal, outward * keep))
+}
+
+/** Adaptive resolution: the share of the device pixel ratio the canvas
+ *  renders at, stepped down when frames drop and back up after a calm
+ *  stretch. `refreshFps` is the display's rate measured before the scene
+ *  drew, so a 30 Hz power-saving display is not mistaken for a slow GPU. */
+export type LanternResolution = {
+	scale: number
+	/** The lowest scale this screen may step down to. */
+	floor: number
+	refreshFps: number
+	/** A level that dropped frames, and when it may be tried again. */
+	ceiling: number
+	retryAt: number
+	windowStart: number
+	frames: number
+	lastFrame: number
+	calmSince: number
+	settleUntil: number
+}
+
+const resolutionStep = 0.125
+const resolutionWindowMs = 500
+/** A longer gap is a pause (hidden tab, scrolled away), not a slow frame. */
+const resolutionGapMs = 250
+/** Shader warm-up and texture uploads stutter the first frames. */
+const resolutionSettleMs = 1500
+const resolutionClimbMs = 3000
+const resolutionRetryMs = 20_000
+
+/** GSS sizes the canvas at up to 2 device pixels per CSS pixel. Never drop
+ *  under 0.75 device pixels per CSS pixel, or under half of what GSS
+ *  draws: past that the lantern reads as blurred, not as a lighter frame. */
+function lanternResolutionFloor(devicePixelRatio: number) {
+	const density = Math.min(Math.max(devicePixelRatio, 1), 2)
+	const floor = Math.ceil(0.75 / density / resolutionStep) * resolutionStep
+	return Math.min(1, Math.max(0.5, floor))
+}
+
+export function createLanternResolution(
+	refreshFps: number,
+	devicePixelRatio: number,
+	now: number,
+): LanternResolution {
+	return {
+		scale: 1,
+		floor: lanternResolutionFloor(devicePixelRatio),
+		refreshFps: Math.min(Math.max(refreshFps, 30), 240),
+		ceiling: 1,
+		retryAt: 0,
+		windowStart: now,
+		frames: 0,
+		lastFrame: now,
+		calmSince: now,
+		settleUntil: now + resolutionSettleMs,
+	}
+}
+
+/** Count one frame drawn at `now`. Does not mutate `state`. */
+export function stepLanternResolution(
+	state: LanternResolution,
+	now: number,
+): LanternResolution {
+	const next = { ...state }
+	if (now - state.lastFrame > resolutionGapMs) {
+		next.windowStart = now
+		next.frames = 0
+		next.lastFrame = now
+		next.settleUntil = Math.max(state.settleUntil, now + resolutionWindowMs)
+		return next
+	}
+	next.lastFrame = now
+	if (now < state.settleUntil) {
+		next.windowStart = now
+		next.frames = 0
+		next.calmSince = now
+		return next
+	}
+	next.frames += 1
+	const span = now - state.windowStart
+	if (span < resolutionWindowMs) return next
+	const fps = (next.frames * 1000) / span
+	next.windowStart = now
+	next.frames = 0
+	if (fps < state.refreshFps * 0.75) {
+		next.calmSince = now
+		if (state.scale <= state.floor) return next
+		// Pixels cost linearly, so scale each side by the root of the shortfall.
+		const wanted = state.scale * Math.sqrt(fps / (state.refreshFps * 0.9))
+		next.scale = Math.max(
+			state.floor,
+			Math.min(
+				state.scale - resolutionStep,
+				Math.floor(wanted / resolutionStep) * resolutionStep,
+			),
+		)
+		next.ceiling = state.scale
+		next.retryAt = now + resolutionRetryMs
+		next.settleUntil = now + resolutionWindowMs
+		return next
+	}
+	if (fps < state.refreshFps * 0.95) {
+		next.calmSince = now
+		return next
+	}
+	if (state.scale >= 1 || now - state.calmSince < resolutionClimbMs) return next
+	const up = Math.min(1, state.scale + resolutionStep)
+	if (up >= state.ceiling && now < state.retryAt) return next
+	next.scale = up
+	next.calmSince = now
+	next.settleUntil = now + resolutionWindowMs
+	return next
+}
+
+function rotateAboutY(point: Vec3, angle: number): Vec3 {
+	const c = Math.cos(angle)
+	const s = Math.sin(angle)
+	return {
+		x: c * point.x - s * point.z,
+		y: point.y,
+		z: s * point.x + c * point.z,
+	}
+}
+
+function clampDt(dtSeconds: number) {
+	return Math.min(Math.max(dtSeconds, 0), 1 / 30)
+}
+
+function add(a: Vec3, b: Vec3): Vec3 {
+	return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+function sub(a: Vec3, b: Vec3): Vec3 {
+	return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+}
+
+function scaleVec(a: Vec3, s: number): Vec3 {
+	return { x: a.x * s, y: a.y * s, z: a.z * s }
+}
+
+function dot(a: Vec3, b: Vec3) {
+	return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+	return {
+		x: a.y * b.z - a.z * b.y,
+		y: a.z * b.x - a.x * b.z,
+		z: a.x * b.y - a.y * b.x,
+	}
+}
+
+function length(a: Vec3) {
+	return Math.hypot(a.x, a.y, a.z)
+}
+
+function normalize(a: Vec3): Vec3 {
+	const size = length(a)
+	return size === 0 ? { x: 0, y: 0, z: 0 } : scaleVec(a, 1 / size)
+}
+
+function capVec(a: Vec3, limit: number): Vec3 {
+	const size = length(a)
+	return size <= limit || size === 0 ? a : scaleVec(a, limit / size)
+}
