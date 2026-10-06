@@ -221,19 +221,31 @@ the default account out.
 ## MCP context
 
 MCP requests authenticate via OAuth bearer tokens. Roles must **not** ride in
-grant props — they would go stale on revocation.
+grant props. They would go stale on revocation.
 
-Instead, `packages/worker/src/mcp-auth.ts` calls
-`buildMcpUserContextFromGrantProps`
-(`packages/worker/src/mcp-auth-user-context.ts`) when building
-`McpCallerContext`. Account identity and RBAC resolve through the grant's stable
-user id (`grantProps.userId`, queried as `WHERE stable_user_id = ?`).
-`getUserRolesAndPermissions` then loads roles for that row's integer `users.id`.
-Grant email, username, and display name fill profile fields only after that row
-resolves. A missing `userId` or a deleting account returns null. A D1 error
-throws, so the request does not continue on stale grant metadata. The shared
-schema in `packages/shared/src/chat.ts` (`mcpUserContextSchema`) includes
-optional `roles` and `permissions` arrays on the user object.
+`mcp-auth.ts` calls `buildMcpUserContextFromGrantProps`
+(`packages/worker/src/mcp-auth-user-context.ts`). The users row is
+`grantProps.userId` (`users.stable_user_id`), then roles for that integer id:
+
+```ts
+const userId = grantProps.userId.trim()
+const row = await env.APP_DB.prepare(
+	`SELECT id, email, username, display_name, stable_user_id,
+		deleting_at, email_verified_at, suspended_at, password_changed_at
+	 FROM users
+	 WHERE stable_user_id = ?`,
+)
+	.bind(userId)
+	.first()
+if (!row || row.deleting_at) return null
+const { roles, permissions } = await getUserRolesAndPermissions(
+	env.APP_DB,
+	row.id,
+)
+```
+
+A missing or blank `userId`, or a deleting account, returns null. A D1 error
+throws.
 
 For capability guards, use `requireMcpUserWithPermission` in
 `packages/worker/src/mcp/capabilities/meta/require-permission.ts`:
