@@ -13,7 +13,9 @@ import {
  * The lanes and the rows are in the same order and every curve has the
  * same shape, so no two lines cross. A line that passes behind another orb
  * breaks around it instead of seeming to end there, and a small dot marks
- * where each line meets its own orb.
+ * where each line meets its own orb. Taking over from the 2D layout, the
+ * words keep its list order until the orbs' heights agree with it, so two
+ * rows do not trade places on the way in and back again.
  */
 
 type Point = { x: number; y: number }
@@ -105,6 +107,23 @@ export function leaderLanes(ranked: ReadonlyArray<LeaderOrb>): Array<number> {
 		const reach = orb.radius * laneReach
 		return Math.min(Math.max(lane, orb.y - reach), orb.y + reach)
 	})
+}
+
+/**
+ * Whether words taking over from the 2D layout keep its list order for
+ * another frame, for orbs listed in that order: until the orbs run top to
+ * bottom, and only while their runs, in that order, keep at least half the
+ * usual gap, so holding it never crosses two lines or runs them together.
+ */
+export function leaderListOrderHolds(orbs: ReadonlyArray<LeaderOrb>) {
+	const agreed = orbs.every(
+		(orb, index) => index === 0 || orbs[index - 1]!.y <= orb.y,
+	)
+	if (agreed) return false
+	const lanes = leaderLanes(orbs)
+	return lanes.every(
+		(lane, rank) => rank === 0 || lane - lanes[rank - 1]! > laneGapPx / 2,
+	)
 }
 
 /**
@@ -201,6 +220,8 @@ export function createLanternLeaders(
 	svg: SVGSVGElement,
 ): LanternLeaders {
 	let active = false
+	/** Taking over from the 2D layout, whose words run in list order. */
+	let handingOff = true
 	let order: Array<LeaderRank> = []
 	const ends = new Map<LandingPrimitiveId, SVGCircleElement>()
 	const shifts = new Map<LandingPrimitiveId, string>()
@@ -224,6 +245,7 @@ export function createLanternLeaders(
 		element.style.setProperty('--label-shift', value)
 	}
 
+	/** The orbs on screen, in word order. */
 	function measureOrbs(origin: DOMRect) {
 		return landingPrimitiveIds.flatMap((id): Array<LeaderOrb> => {
 			const hotspot = section.querySelector<HTMLElement>(
@@ -274,8 +296,12 @@ export function createLanternLeaders(
 			}
 
 			const orbs = measureOrbs(origin)
-			order = rankLeaderOrbs(order, orbs)
-			for (const [rank, { id }] of order.entries()) {
+			handingOff &&= leaderListOrderHolds(orbs)
+			order = handingOff ? [] : rankLeaderOrbs(order, orbs)
+			const ranked = handingOff
+				? orbs
+				: order.flatMap(({ id }) => orbs.filter((orb) => orb.id === id))
+			for (const [rank, { id }] of ranked.entries()) {
 				const item = items.get(id)
 				const own = rows.get(id)
 				const target = rows.get(landingPrimitiveIds[rank]!)
@@ -290,9 +316,6 @@ export function createLanternLeaders(
 			const busX = Math.max(
 				art.left - origin.left + art.width * busShare,
 				lastEnd,
-			)
-			const ranked = order.flatMap(({ id }) =>
-				orbs.filter((orb) => orb.id === id),
 			)
 			const lanes = leaderLanes(ranked)
 			for (const [rank, orb] of ranked.entries()) {
@@ -322,6 +345,7 @@ export function createLanternLeaders(
 			if (!active) return
 			active = false
 			delete section.dataset.leaders
+			handingOff = true
 			order = []
 			for (const end of ends.values()) end.remove()
 			ends.clear()

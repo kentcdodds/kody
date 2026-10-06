@@ -6,6 +6,7 @@ import {
 import {
 	leaderEndHidden,
 	leaderLanes,
+	leaderListOrderHolds,
 	leaderOrbEnd,
 	leaderRunSpans,
 	rankLeaderOrbs,
@@ -106,6 +107,34 @@ test('two orbs at nearly one height keep their words where they were', () => {
 	expect(firstTwo(ranks)).toEqual(['secrets', 'memory'])
 	ranks = rankLeaderOrbs(ranks, frameAt(78))
 	expect(firstTwo(ranks)).toEqual(['memory', 'secrets'])
+})
+
+test('taking over from the 2D layout, the words keep their order until the orbs agree with it', () => {
+	// Heights when the 3D lantern took over: the 2D drift had packages a
+	// little above secrets.
+	const handoff = [
+		orb('memory', 200, 421),
+		orb('secrets', 120, 466),
+		orb('packages', 280, 443),
+		orb('triggers', 140, 504),
+		orb('integrations', 260, 539),
+		orb('apps', 200, 584),
+	]
+	expect(leaderListOrderHolds(handoff)).toBe(true)
+	const lanes = leaderLanes(handoff)
+	for (let rank = 1; rank < lanes.length; rank++) {
+		expect(lanes[rank]! - lanes[rank - 1]!).toBeGreaterThan(7.9)
+	}
+	const moved = (id: LandingPrimitiveId, y: number) =>
+		handoff.map((entry) => (entry.id === id ? { ...entry, y } : entry))
+	// Once packages drifts below secrets, ranking by height already gives
+	// the list order, so no word moves when it takes over.
+	const agreed = moved('packages', 470)
+	expect(leaderListOrderHolds(agreed)).toBe(false)
+	expect(ids(rankLeaderOrbs([], agreed))).toEqual(landingPrimitiveIds)
+	// An orb dragged far out of place before the handoff: holding the list
+	// order would cross its line, so the words follow the heights at once.
+	expect(leaderListOrderHolds(moved('apps', 380))).toBe(false)
 })
 
 test('a run breaks around the orbs it passes and nothing else', () => {
