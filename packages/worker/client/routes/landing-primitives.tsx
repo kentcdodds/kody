@@ -19,7 +19,10 @@ import {
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
 import { LandingLantern3d } from '#client/lantern-3d/landing-lantern-3d.tsx'
-import { createLanternLeaders } from '#client/lantern-3d/lantern-3d-leaders.ts'
+import {
+	type CreateLanternLeaders,
+	type LanternLeaders,
+} from '#client/lantern-3d/lantern-3d-leaders.ts'
 import { hoverPointer } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
@@ -42,18 +45,19 @@ export const landingPrimitivesSectionId = 'primitives'
 
 const whatIsKodyHref = docHref('what-is-kody')
 
-/** Measure orbs and words, then write the leader paths in section pixels. */
-function leaderFollow() {
+/** Measure orbs and words, then write the leader paths in section pixels.
+ *  `lanternLeaders` is the 3D lantern's layout once its chunk has loaded. */
+function leaderFollow(lanternLeaders: () => CreateLanternLeaders | null) {
 	return ref((node: Element, signal: AbortSignal) => {
 		const svg = node.querySelector<SVGSVGElement>('.landing-primitives-leaders')
 		const stage = node.querySelector<HTMLElement>('.landing-primitives-stage')
 		if (!svg || !stage || !(node instanceof HTMLElement)) return
 		const words = node.querySelector<HTMLElement>('.landing-primitives-words')
-		const tracked = createLanternLeaders(node, svg)
+		let tracked: LanternLeaders | null = null
 
 		const draw = () => {
 			if (getComputedStyle(svg).display === 'none') {
-				tracked.reset()
+				tracked?.reset()
 				return
 			}
 			const origin = stage.getBoundingClientRect()
@@ -79,12 +83,18 @@ function leaderFollow() {
 				)
 			}
 			// The live 3D lantern turns its orbs, so its words follow them.
-			if (node.querySelector('.landing-lantern-3d[data-stage="live"]')) {
+			const create = node.querySelector(
+				'.landing-lantern-3d[data-stage="live"]',
+			)
+				? lanternLeaders()
+				: null
+			if (create) {
+				tracked ??= create(node, svg)
 				tracked.draw(origin)
 				svg.dataset.ready = ''
 				return
 			}
-			tracked.reset()
+			tracked?.reset()
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
 				const dot = node.querySelector<HTMLElement>(`[data-dot="${id}"]`)
@@ -164,7 +174,8 @@ export function LandingPrimitives(handle: Handle) {
 	let openId: LandingPrimitiveId | null = null
 	let dismissedId: LandingPrimitiveId | null = null
 	let openedAt = 0
-	const follow = leaderFollow()
+	let lanternLeaders: CreateLanternLeaders | null = null
+	const follow = leaderFollow(() => lanternLeaders)
 
 	function panelId(id: LandingPrimitiveId) {
 		return `${handle.id}-${id}-panel`
@@ -227,6 +238,9 @@ export function LandingPrimitives(handle: Handle) {
 					onClose={close}
 					onDismiss={dismiss}
 					onResume={clearDismissed}
+					onLeaders={(create) => {
+						lanternLeaders = create
+					}}
 				/>
 				{renderLeaders(openId)}
 				<ul class="landing-primitives-words" aria-label="The six primitives">

@@ -189,6 +189,8 @@ export type LanternLeaders = {
 	reset: () => void
 }
 
+export type CreateLanternLeaders = typeof createLanternLeaders
+
 /**
  * The DOM side: `section` holds the stage, the leader overlay, and the word
  * list. Rows and the list's centre come from layout (`offsetTop`), which a
