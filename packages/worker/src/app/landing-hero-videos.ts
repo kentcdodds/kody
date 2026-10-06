@@ -22,8 +22,6 @@ const heroVideosStaleWhileRevalidateMs = 60 * 60 * 1000
 const youtubeFetchTimeoutMs = 2_500
 export const landingHeroVideosCacheKeyPrefix = 'landing-hero-videos:v5:'
 
-type YoutubeFetch = (input: string, init?: RequestInit) => Promise<Response>
-
 export function buildLandingHeroVideosCacheKey(playlistId: string) {
 	return `${landingHeroVideosCacheKeyPrefix}${playlistId}`
 }
@@ -38,20 +36,15 @@ export function buildLandingHeroVideosCacheKey(playlistId: string) {
  */
 export async function loadLandingHeroVideos(input: {
 	env: Env
-	fetchImpl?: YoutubeFetch
 	playlistId?: string
 }): Promise<Array<LandingHeroVideo>> {
 	const playlistId = input.playlistId ?? landingHeroSourcePlaylistId
-	// workerd's `fetch` is not a bound function; assigning it and calling
-	// `fetchImpl(...)` throws Illegal invocation.
-	const fetchImpl = input.fetchImpl ?? fetch.bind(globalThis)
 	try {
 		const kv = input.env.BUNDLE_ARTIFACTS_KV
 		if (!kv) {
 			return await fetchLandingHeroVideos({
 				env: input.env,
 				playlistId,
-				fetchImpl,
 			})
 		}
 		return await cachified({
@@ -64,7 +57,6 @@ export async function loadLandingHeroVideos(input: {
 				fetchLandingHeroVideos({
 					env: input.env,
 					playlistId,
-					fetchImpl,
 				}),
 			waitUntil(promise) {
 				void deferWork('landing-hero-videos-refresh', () => promise)
@@ -79,33 +71,30 @@ export async function loadLandingHeroVideos(input: {
 async function fetchLandingHeroVideos(input: {
 	env: Env
 	playlistId: string
-	fetchImpl: YoutubeFetch
 }): Promise<Array<LandingHeroVideo>> {
 	const apiKey = input.env.YOUTUBE_DATA_API_KEY?.trim()
 	if (apiKey) {
 		const fromApi = await fetchPlaylistItemsApi({
 			playlistId: input.playlistId,
 			apiKey,
-			fetchImpl: input.fetchImpl,
 		})
 		if (fromApi.length > 0) return fromApi
 	}
 	return await fetchPlaylistBrowse({
 		playlistId: input.playlistId,
-		fetchImpl: input.fetchImpl,
 	})
 }
 
 async function fetchPlaylistItemsApi(input: {
 	playlistId: string
 	apiKey: string
-	fetchImpl: YoutubeFetch
 }): Promise<Array<LandingHeroVideo>> {
 	const videos: Array<LandingHeroVideo> = []
 	let pageToken: string | undefined
 	try {
 		for (let page = 0; page < youtubePlaylistBrowseMaxPages; page += 1) {
-			const response = await input.fetchImpl(
+			// workerd's `fetch` is not a bound function; call the global.
+			const response = await fetch(
 				youtubePlaylistItemsApiUrl({
 					playlistId: input.playlistId,
 					apiKey: input.apiKey,
@@ -130,13 +119,13 @@ async function fetchPlaylistItemsApi(input: {
 
 async function fetchPlaylistBrowse(input: {
 	playlistId: string
-	fetchImpl: YoutubeFetch
 }): Promise<Array<LandingHeroVideo>> {
 	const videos: Array<LandingHeroVideo> = []
 	let continuation: string | undefined
 	try {
 		for (let page = 0; page < youtubePlaylistBrowseMaxPages; page += 1) {
-			const response = await input.fetchImpl(youtubePlaylistBrowseUrl, {
+			// workerd's `fetch` is not a bound function; call the global.
+			const response = await fetch(youtubePlaylistBrowseUrl, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
