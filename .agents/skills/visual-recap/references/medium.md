@@ -11,8 +11,10 @@ primitive. If a primitive is new, stop and open [high.md](./high.md) only.
   [block-format.md](./block-format.md). Read that file once while authoring.
 - Impact cells say `extends` and name the contract change (column, route, guard,
   capability, or similar).
-- Leave `primitives.yaml` unchanged for an extends-only change. Map edits follow
-  source-of-truth rule 3 in [SKILL.md](../SKILL.md).
+- Update `primitives.yaml` when this change removes a primitive or materially
+  reshapes its meaning or ownership roots. Otherwise leave the map unchanged.
+  Follow source-of-truth rule 3 in [SKILL.md](../SKILL.md), and run
+  `npm run primitives:check` after map edits.
 - Call out an invariant from `primitives.yaml` when the diff touches one.
 
 ## Preview
