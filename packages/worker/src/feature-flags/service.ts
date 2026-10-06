@@ -44,9 +44,9 @@ type OverrideEnabledRow = {
 }
 
 /**
- * Deterministic 0–99 bucket for percentage rollouts. Exported for tests.
+ * Deterministic 0–99 bucket for percentage rollouts.
  */
-export function computeRolloutBucket(key: string, userId: number): number {
+function computeRolloutBucket(key: string, userId: number): number {
 	return fnv1a32(`${key}:${userId}`) % 100
 }
 
