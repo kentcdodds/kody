@@ -251,6 +251,7 @@ function refresh(env: Env, overrides: Record<string, unknown> = {}) {
 function mockPackageRow(id = 'package-1', sourceId = 'source-1') {
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id,
+		name: '@kentcdodds/shade-automation',
 		kodyId: 'shade-automation',
 		sourceId,
 	})
@@ -974,6 +975,15 @@ function createEntitlementsDatabase(input: {
 										left.storageId.localeCompare(right.storageId),
 									)
 								return { results: results as Array<T> }
+							}
+							// deleteSavedPackageProjection lists retired leaves before
+							// clearing redirect rows so the package-app slug cache can
+							// evict them; this mock has no redirect fixtures.
+							if (
+								query.includes('FROM package_slug_redirects') &&
+								query.includes('FROM package_kody_id_redirects')
+							) {
+								return { results: [] as Array<T> }
 							}
 							throw new Error(`Unsupported all query: ${query}`)
 						},
