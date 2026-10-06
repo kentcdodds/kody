@@ -404,6 +404,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	// original body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
 	let reuseOriginal = true;
+	let preservedRequest = null;
 	if (typeof input === "string" || input instanceof URL) {
 		url = String(input);
 		method = String(init?.method ?? "GET");
@@ -477,15 +478,21 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
 		if (method !== "GET" && method !== "HEAD") {
-			bodyBytes = new Uint8Array(await merged.arrayBuffer());
+			// Probe a clone so the unconsumed Request can fall back to native
+			// fetch with cache, credentials, mode, and the rest intact.
+			bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
 			reuseOriginal = false;
 		}
+		preservedRequest = merged;
 	}
 	const bodyText =
 		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
 		if (reuseOriginal) {
 			return __kodyNativeFetch(input, init);
+		}
+		if (preservedRequest) {
+			return __kodyNativeFetch(preservedRequest);
 		}
 		const fallbackInit = {
 			method,

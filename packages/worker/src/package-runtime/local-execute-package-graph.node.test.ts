@@ -511,20 +511,16 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		const request = new Request('https://api.example.com/post', {
 			method: 'POST',
 			body: 'payload',
+			cache: 'no-store',
 		})
 		await __kodyGatewayFetch(request)
 		expect(ambientCalls).toHaveLength(1)
-		expect(typeof ambientCalls[0]?.input).toBe('string')
-		expect(
-			new TextDecoder().decode(
-				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
-			),
-		).toBe('payload')
-		expect(
-			(ambientCalls[0]?.init as RequestInit).headers as Record<string, string>,
-		).toMatchObject({
-			'content-type': 'text/plain;charset=UTF-8',
-		})
+		expect(ambientCalls[0]?.input).toBeInstanceOf(Request)
+		const forwarded = ambientCalls[0]?.input as Request
+		expect(forwarded.url).toBe('https://api.example.com/post')
+		expect(forwarded.method).toBe('POST')
+		expect(forwarded.cache).toBe('no-store')
+		expect(await forwarded.text()).toBe('payload')
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
@@ -675,6 +671,22 @@ test('local isolate wraps globalThis.fetch so frozen copies still hop secrets', 
 		expect(gatewayCalls).toHaveLength(0)
 		expect(ambientCalls).toHaveLength(1)
 		expect(ambientCalls[0]?.input).toBe('https://api.example.com/health')
+
+		ambientCalls.length = 0
+		await globalThis.fetch(
+			new Request('https://api.example.com/post', {
+				method: 'POST',
+				body: 'payload',
+				cache: 'no-store',
+			}),
+		)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(1)
+		expect(ambientCalls[0]?.input).toBeInstanceOf(Request)
+		const forwarded = ambientCalls[0]?.input as Request
+		expect(forwarded.cache).toBe('no-store')
+		expect(forwarded.method).toBe('POST')
+		expect(await forwarded.text()).toBe('payload')
 	} finally {
 		globalThis.fetch = originalFetch
 		if (originalPatched === undefined) {
