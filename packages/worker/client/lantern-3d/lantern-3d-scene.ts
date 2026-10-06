@@ -222,7 +222,8 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 	let visible = true
 	let disposed = false
 	let lost = false
-	/** No frames until the shaders compile, so the first draw cannot stall. */
+	/** No frames until the shaders compile and the first frame has drawn, so
+	 *  neither can stall the page. */
 	let started = false
 	let activeId: LandingPrimitiveId | null = null
 	let lureAt: Vec3 | null = null
@@ -689,15 +690,21 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 	setPalette(options.palette)
 	layout()
 
-	const ready = renderer.compileAsync(scene, camera).then(() => {
-		if (disposed) return
-		started = true
-		step(0)
-		paint(0)
-		renderer.render(scene, camera)
-		report()
-		wake()
-	})
+	const ready = renderer
+		.compileAsync(scene, camera)
+		.then(() => {
+			if (disposed) return
+			step(0)
+			paint(0)
+			renderer.render(scene, camera)
+			return gpuCaughtUp(renderer.getContext())
+		})
+		.then(() => {
+			if (disposed) return
+			started = true
+			report()
+			wake()
+		})
 
 	return {
 		ready,
@@ -936,6 +943,30 @@ export function createLanternScene(options: LanternSceneOptions): LanternScene {
 			if (!lost) renderer.forceContextLoss()
 		},
 	}
+}
+
+/** Resolves once the GPU has run every command issued so far, without
+ *  blocking. A canvas's first composite waits on its frame, and a software
+ *  renderer's first frame (every shader, the environment map) is slow enough
+ *  to stall the whole page if the canvas is revealed while it draws. */
+function gpuCaughtUp(gl: WebGLRenderingContext | WebGL2RenderingContext) {
+	if (!('fenceSync' in gl)) return Promise.resolve()
+	const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+	if (!sync) return Promise.resolve()
+	gl.flush()
+	return new Promise<void>((resolve) => {
+		const check = () => {
+			if (gl.isContextLost()) return resolve()
+			if (gl.getSyncParameter(sync, gl.SYNC_STATUS) !== gl.SIGNALED) {
+				setTimeout(check, 16)
+				return
+			}
+			gl.deleteSync(sync)
+			resolve()
+		}
+		// A fence never signals within the task that set it.
+		setTimeout(check, 16)
+	})
 }
 
 /** Software rasterizers seen in the wild: Chrome's, Mesa's, and Windows'. */
