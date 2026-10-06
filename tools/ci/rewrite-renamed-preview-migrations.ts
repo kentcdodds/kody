@@ -13,15 +13,19 @@
  * use the documented reset-preview-D1 fallback in
  * docs/contributing/setup/preview-deploys.md.
  *
- * Never runs against production: requires CLOUDFLARE_ENV=preview and --remote.
+ * Never runs against production: requires CLOUDFLARE_ENV=preview, --remote,
+ * and a config whose binding resolves to a preview D1 database_name
+ * (`kody-pr-*` / `kody-branch-*` or shared `kody-preview-jobs`).
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 import { hashMigrationContent } from '../check-migrations.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
+import { previewResourceNamePattern } from './preview-resources.ts'
+import { parseJsonc } from './resource-utils.ts'
 
 export const migrationFilenamePattern = /^\d{4}-[a-z0-9-]+\.sql$/
 
@@ -207,15 +211,89 @@ export function resolveHistoricalMigrationContent(input: {
 	if (!commit) {
 		return null
 	}
-	const shown = spawnSync('git', ['show', `${commit}:${relativePath}`], {
-		cwd,
-		encoding: 'utf8',
-		maxBuffer: 16 * 1024 * 1024,
-	})
-	if (shown.status !== 0) {
-		return null
+	// The last commit that touched a renamed/deleted path is usually the
+	// rename itself, where the old path is already gone. Prefer the parent
+	// tree; fall back to the commit tree for odd "last touch was an edit"
+	// histories.
+	for (const spec of [
+		`${commit}^:${relativePath}`,
+		`${commit}:${relativePath}`,
+	]) {
+		const shown = spawnSync('git', ['show', spec], {
+			cwd,
+			encoding: 'utf8',
+			maxBuffer: 16 * 1024 * 1024,
+		})
+		if (shown.status === 0) {
+			return shown.stdout
+		}
 	}
-	return shown.stdout
+	return null
+}
+
+/** Shared preview jobs D1 is not per-PR named; still preview-only. */
+export const sharedPreviewJobsD1DatabaseName = 'kody-preview-jobs'
+
+export function isAllowedPreviewD1DatabaseName(name: string) {
+	return (
+		previewResourceNamePattern.test(name) ||
+		name === sharedPreviewJobsD1DatabaseName
+	)
+}
+
+export function readD1DatabaseNameFromConfig(input: {
+	configPath: string
+	binding: string
+	envName?: string
+}): string {
+	const envName = input.envName ?? process.env.CLOUDFLARE_ENV ?? 'preview'
+	const raw = readFileSync(input.configPath, 'utf8')
+	const config = parseJsonc<Record<string, unknown>>(raw)
+	const env = config.env
+	const targetEnv =
+		env && typeof env === 'object'
+			? (env as Record<string, unknown>)[envName]
+			: undefined
+	const envRecord =
+		targetEnv && typeof targetEnv === 'object'
+			? (targetEnv as Record<string, unknown>)
+			: config
+	const databases = envRecord.d1_databases
+	if (!Array.isArray(databases)) {
+		throw new Error(
+			`wrangler config "${input.configPath}" has no d1_databases for env ${envName}.`,
+		)
+	}
+	for (const entry of databases) {
+		if (!entry || typeof entry !== 'object') continue
+		const record = entry as Record<string, unknown>
+		if (record.binding !== input.binding) continue
+		if (typeof record.database_name !== 'string' || !record.database_name) {
+			throw new Error(
+				`Binding ${input.binding} in ${input.configPath} is missing database_name.`,
+			)
+		}
+		return record.database_name
+	}
+	throw new Error(
+		`Binding ${input.binding} not found in ${input.configPath} env.${envName}.d1_databases.`,
+	)
+}
+
+export function assertPreviewOnlyD1Target(options: {
+	config: string
+	binding: string
+}): string {
+	const databaseName = readD1DatabaseNameFromConfig({
+		configPath: options.config,
+		binding: options.binding,
+	})
+	if (!isAllowedPreviewD1DatabaseName(databaseName)) {
+		throw new Error(
+			`Refusing to rewrite d1_migrations for database "${databaseName}" (binding ${options.binding}): not a preview D1 name (${String(previewResourceNamePattern)} or ${sharedPreviewJobsD1DatabaseName}).`,
+		)
+	}
+	return databaseName
 }
 
 type CliOptions = {
@@ -397,6 +475,10 @@ function applyRewrite(
 export function main(argv: ReadonlyArray<string>): void {
 	const options = parseArgs(argv)
 	assertPreviewCloudflareEnv()
+	const databaseName = assertPreviewOnlyD1Target(options)
+	console.log(
+		`Preview migration rename rewrite (${options.binding}): targeting database ${databaseName}.`,
+	)
 
 	const appliedNames = queryAppliedMigrationNames(options)
 	if (appliedNames === null || appliedNames.length === 0) {

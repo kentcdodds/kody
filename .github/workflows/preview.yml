@@ -68,6 +68,10 @@ jobs:
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          # Full history so rename-aware d1_migrations rewrite can recover the
+          # pre-renumber SQL blob for sha256 matching (#2776 / Devin).
+          fetch-depth: 0
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6

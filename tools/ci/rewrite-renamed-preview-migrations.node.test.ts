@@ -1,10 +1,17 @@
 import { expect, test } from 'vitest'
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { hashMigrationContent } from '../check-migrations.ts'
 import {
+	assertPreviewOnlyD1Target,
+	isAllowedPreviewD1DatabaseName,
 	parseArgs,
 	planRenamedMigrationRewrites,
+	readD1DatabaseNameFromConfig,
+	sharedPreviewJobsD1DatabaseName,
 } from './rewrite-renamed-preview-migrations.ts'
 
 function digest(filename: string, sql: string) {
@@ -123,4 +130,74 @@ test('parseArgs requires remote, binding, config, and migrations-dir', () => {
 		migrationsDir: 'packages/worker/migrations',
 		dryRun: true,
 	})
+})
+
+test('isAllowedPreviewD1DatabaseName accepts per-PR and shared jobs preview only', () => {
+	expect(isAllowedPreviewD1DatabaseName('kody-pr-12-db')).toBe(true)
+	expect(isAllowedPreviewD1DatabaseName('kody-pr-12-audit-db')).toBe(true)
+	expect(isAllowedPreviewD1DatabaseName(sharedPreviewJobsD1DatabaseName)).toBe(
+		true,
+	)
+	expect(isAllowedPreviewD1DatabaseName('kody')).toBe(false)
+	expect(isAllowedPreviewD1DatabaseName('kody-audit')).toBe(false)
+	expect(isAllowedPreviewD1DatabaseName('kody-jobs')).toBe(false)
+})
+
+test('readD1DatabaseNameFromConfig and assertPreviewOnlyD1Target gate production names', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'rewrite-preview-d1-'))
+	try {
+		const previewConfig = join(dir, 'preview.json')
+		writeFileSync(
+			previewConfig,
+			JSON.stringify({
+				env: {
+					preview: {
+						d1_databases: [
+							{
+								binding: 'APP_DB',
+								database_name: 'kody-pr-9-db',
+								database_id: 'uuid',
+							},
+						],
+					},
+				},
+			}),
+		)
+		expect(
+			readD1DatabaseNameFromConfig({
+				configPath: previewConfig,
+				binding: 'APP_DB',
+				envName: 'preview',
+			}),
+		).toBe('kody-pr-9-db')
+		expect(
+			assertPreviewOnlyD1Target({
+				config: previewConfig,
+				binding: 'APP_DB',
+			}),
+		).toBe('kody-pr-9-db')
+
+		const prodConfig = join(dir, 'prod.json')
+		writeFileSync(
+			prodConfig,
+			JSON.stringify({
+				env: {
+					preview: {
+						d1_databases: [
+							{
+								binding: 'APP_DB',
+								database_name: 'kody',
+								database_id: 'uuid',
+							},
+						],
+					},
+				},
+			}),
+		)
+		expect(() =>
+			assertPreviewOnlyD1Target({ config: prodConfig, binding: 'APP_DB' }),
+		).toThrow(/not a preview D1 name/)
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
 })

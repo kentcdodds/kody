@@ -107,8 +107,12 @@ Wrangler would otherwise re-apply the same SQL under the new name and fail (for
 example `duplicate column name`). Before each preview `d1 migrations apply`, the
 workflow runs `tools/ci/rewrite-renamed-preview-migrations.ts` (requires
 `CLOUDFLARE_ENV=preview`). It rewrites `d1_migrations` rows whose filename is
-gone but whose SQL sha256 still matches a current file on the branch. That is
-bookkeeping only — not a schema drop — and never runs in production.
+gone but whose SQL sha256 still matches a current file on the branch (historical
+SQL is recovered from git; the preview deploy job checks out with
+`fetch-depth: 0`). The script also refuses any wrangler config whose binding
+`database_name` is not a preview name (`kody-pr-*` / `kody-branch-*` or shared
+`kody-preview-jobs`). That is bookkeeping only — not a schema drop — and never
+runs in production.
 
 If rewrite cannot match (content changed as well as the name, or git cannot
 recover the old file), use the **reset preview D1** fallback for the per-PR
