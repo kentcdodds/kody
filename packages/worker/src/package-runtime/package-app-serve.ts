@@ -379,13 +379,19 @@ function createPackageAppErrorResponse(input: {
 
 /**
  * Attach request-scoped Server-Timing phases collected on the package-app
- * serve path. Clones headers so author responses stay immutable-safe.
+ * serve path. Clones headers so author responses stay immutable-safe. WebSocket
+ * upgrade responses must keep their paired `webSocket` (status 101); rebuilding
+ * them with `new Response` drops the socket and the browser never opens.
  */
 function attachPackageAppServerTiming(
 	response: Response,
 	serverTiming: Array<ServerTimingEntry>,
 ) {
 	if (serverTiming.length === 0) return response
+	if (response.webSocket) {
+		applyServerTimingHeader(response.headers, serverTiming)
+		return response
+	}
 	const headers = new Headers(response.headers)
 	applyServerTimingHeader(headers, serverTiming)
 	return new Response(response.body, {

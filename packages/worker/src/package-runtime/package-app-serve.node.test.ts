@@ -30,6 +30,7 @@ const mockModule = vi.hoisted(() => ({
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 	persistPublishedBundleArtifact: vi.fn(),
 	createWorker: vi.fn(),
+	packageRealtimeConnect: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/source.ts', async () => {
@@ -42,6 +43,13 @@ vi.mock('#worker/package-registry/source.ts', async () => {
 			mockModule.loadPackageSourceBySourceId(...args),
 	}
 })
+
+vi.mock('#worker/package-runtime/realtime-session.ts', () => ({
+	packageRealtimeSessionRpc: () => ({
+		connect: (...args: Array<unknown>) =>
+			mockModule.packageRealtimeConnect(...args),
+	}),
+}))
 
 vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 	loadPublishedBundleArtifactByIdentity: (...args: Array<unknown>) =>
@@ -372,6 +380,37 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 		'appLoader',
 		'entrypoint',
 	])
+})
+
+test('websocket upgrade responses keep the paired socket when Server-Timing is attached', async () => {
+	seedFixture()
+	const client = { kind: 'client-socket' } as unknown as WebSocket
+	// Node's Response rejects status 101; Workers still pair via `webSocket`.
+	const upgradeResponse = new Response(null, { status: 200 })
+	Object.defineProperty(upgradeResponse, 'webSocket', {
+		value: client,
+		configurable: true,
+	})
+	mockModule.packageRealtimeConnect.mockResolvedValue(upgradeResponse)
+
+	const response = await serveHelloWorld({
+		restPath: '/ws',
+		init: {
+			headers: {
+				Upgrade: 'websocket',
+				Connection: 'Upgrade',
+			},
+		},
+	})
+
+	expect(response.webSocket).toBe(client)
+	expect(response).toBe(upgradeResponse)
+	expect(
+		parseServerTimingHeader(response.headers.get('Server-Timing')).map(
+			(entry) => entry.name,
+		),
+	).toEqual(['resolveSavedPackage'])
+	expect(mockModule.buildPackageAppWorker).not.toHaveBeenCalled()
 })
 
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {
