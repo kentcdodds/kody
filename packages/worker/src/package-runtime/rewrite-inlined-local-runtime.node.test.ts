@@ -375,3 +375,79 @@ export async function main() {
 		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
 	)
 })
+
+test('rewrite rebinds esbuild __esm package-runtime inits and storage names', () => {
+	// npm-backed published bundles wrap package-runtime facades in __esm:
+	// `var packageStorage5;` + assignment inside init_<hex>(). Stripping that
+	// section without re-emitting the init and renamed storage binding leaves
+	// retained author modules with ReferenceError under local workerd.
+	const initName =
+		'init_d646661662d346238642d613236612d616461393339323234303331'
+	const source = `import { kody, createAuthenticatedFetch, email } from "./dep-runtime.js";
+
+// virtual:.__kody_virtual__/runtime.js
+function __kodyOptionalRuntimeFunctionExport(exportName) {
+  return () => {};
+}
+function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
+function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
+var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
+
+// virtual:.__kody_virtual__/package-runtime/${packageId}.js
+var packageStorage5;
+var packageSecrets5;
+var ${initName} = __esm({
+  "virtual:.__kody_virtual__/package-runtime/${packageId}.js"() {
+    packageStorage5 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
+    packageSecrets5 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
+  }
+});
+
+// virtual:.__kody_root__/src/storage.ts
+async function readPaused() {
+  return await packageStorage5().get("paused");
+}
+var init_storage = __esm({
+  "virtual:.__kody_root__/src/storage.ts"() {
+    ${initName}();
+  }
+});
+export async function main() {
+  return [typeof kody, typeof packageStorage5, await readPaused()];
+}
+`
+	const result = rewriteInlinedLocalExecuteBundleSource({
+		modulePath:
+			'.__kody_packages__/@kentcdodds/kodykoala-activity/.__published_bundle__/2e2f7265636f6e63696c652d61637469766974792d6d6973736573/bundle.js',
+		source,
+		primaryRuntimePath: runtimeModulePath,
+	})
+	expect(result.rewritten).toBe(true)
+	expect(result.packageId).toBe(packageId)
+	expect(result.source).toContain(
+		`var packageStorage5 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).toContain(
+		`var packageSecrets5 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});`,
+	)
+	expect(result.source).toContain(`var ${initName} = () => {};`)
+	expect(result.source).toContain(`${initName}();`)
+	expect(result.source).not.toContain('__kodyOptionalRuntimeFunctionExport')
+	const shimImportBodies = [
+		...result.source.matchAll(
+			/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g,
+		),
+	]
+		.filter(
+			(match) =>
+				(match[2] ?? '').includes('.__kody_virtual__/runtime.js') &&
+				!(match[2] ?? '').includes('.__kody_packages__'),
+		)
+		.map((match) => match[1] ?? '')
+	expect(shimImportBodies.length).toBeGreaterThan(0)
+	for (const body of shimImportBodies) {
+		expect(body).not.toMatch(/(^|[\s,])kody([\s,]|$)/)
+	}
+})

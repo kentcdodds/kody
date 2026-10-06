@@ -79,6 +79,9 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		packageBoundBindings.at(-1)?.packageId ??
 		null
 	const bindingNames = readInlinedBindingNames(preambleSource)
+	const removableInitNames = readRemovableEsmInitNames(preambleSource).filter(
+		(name) => retained.includes(name),
+	)
 	const relativeShim = createRelativeImportSpecifier(
 		normalizeWorkspaceModulePath(input.modulePath),
 		normalizeWorkspaceModulePath(input.primaryRuntimePath),
@@ -89,6 +92,7 @@ export function rewriteInlinedLocalExecuteBundleSource(input: {
 		packageBoundBindings,
 		bindingNames,
 		authorBindings,
+		removableInitNames,
 	})
 
 	// Walk sections in order: keep author modules where they were, emit the
@@ -190,6 +194,9 @@ const packageBoundFactoryPatterns: ReadonlyArray<{
  * Every package-stamped factory assignment in the removed preamble, in source
  * order. Multi-facade graphs bind dependency storage/secrets before the root;
  * each binding keeps the package ID from its own facade.
+ *
+ * Matches both Dropbox-style top-level `var name = factory("id")` and esbuild
+ * `__esm` bodies that hoist `var name;` then assign inside the init callback.
  */
 export function readPackageBoundBindings(
 	preambleSource: string,
@@ -197,7 +204,7 @@ export function readPackageBoundBindings(
 	const bindings: Array<PackageBoundBinding & { index: number }> = []
 	for (const { kind, rhs } of packageBoundFactoryPatterns) {
 		const pattern = new RegExp(
-			`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhs.source}\\s*["']([^"']+)["']`,
+			`(?:(?:var|let|const)\\s+)?([A-Za-z_$][\\w$]*)\\s*=\\s*${rhs.source}\\s*["']([^"']+)["']`,
 			'g',
 		)
 		for (const match of preambleSource.matchAll(pattern)) {
@@ -215,9 +222,30 @@ export function readPackageBoundBindings(
 	}))
 }
 
+/**
+ * `__esm` init helpers defined in removable runtime / package-runtime sections.
+ * Retained author modules often call these (`init_storage` → `init_<pkg>()`);
+ * stripping the section without re-emitting the init leaves
+ * `ReferenceError: init_… is not defined` under local workerd after the
+ * rewrite clears the SyntaxError path.
+ */
+export function readRemovableEsmInitNames(preambleSource: string) {
+	const names: Array<string> = []
+	const seen = new Set<string>()
+	for (const match of preambleSource.matchAll(
+		/(?:var|let|const)\s+(init_[A-Za-z0-9_$]+)\s*=\s*__esm\s*\(/g,
+	)) {
+		const name = match[1]
+		if (!name || seen.has(name)) continue
+		seen.add(name)
+		names.push(name)
+	}
+	return names
+}
+
 function readAssignmentBindingName(preambleSource: string, rhsPattern: RegExp) {
 	const match = new RegExp(
-		`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
+		`(?:(?:var|let|const)\\s+)?([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
 	).exec(preambleSource)
 	return match?.[1] ?? null
 }
@@ -229,7 +257,7 @@ function readLastAssignmentBindingName(
 	const matches = [
 		...preambleSource.matchAll(
 			new RegExp(
-				`(?:var|let|const)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
+				`(?:(?:var|let|const)\\s+)?([A-Za-z_$][\\w$]*)\\s*=\\s*${rhsPattern.source}`,
 				'g',
 			),
 		),
@@ -504,6 +532,7 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	packageBoundBindings: ReadonlyArray<PackageBoundBinding>
 	bindingNames: ReturnType<typeof readInlinedBindingNames>
 	authorBindings: ReadonlySet<string>
+	removableInitNames?: ReadonlyArray<string>
 }) {
 	const {
 		packageStorage,
@@ -529,8 +558,13 @@ function createInlinedRuntimeReplacementPreamble(input: {
 }`
 	const facadeLines: Array<string> = []
 	if (packageRuntimeDefault) {
-		facadeLines.push(`var ${packageRuntimeDefault} = ${facadeDefaultObject};`)
-		if (packageRuntimeDefault !== '__kodyPackageRuntimeDefault') {
+		if (!input.authorBindings.has(packageRuntimeDefault)) {
+			facadeLines.push(`var ${packageRuntimeDefault} = ${facadeDefaultObject};`)
+		}
+		if (
+			packageRuntimeDefault !== '__kodyPackageRuntimeDefault' &&
+			!input.authorBindings.has('__kodyPackageRuntimeDefault')
+		) {
 			facadeLines.push(
 				`var __kodyPackageRuntimeDefault = ${packageRuntimeDefault};`,
 			)
@@ -538,9 +572,11 @@ function createInlinedRuntimeReplacementPreamble(input: {
 	}
 	if (kodyRuntime) {
 		const defaultValueExpr = packageRuntimeDefault ?? facadeDefaultObject
-		facadeLines.push(
-			`var ${kodyRuntime} = Object.freeze({ defaultValue: ${defaultValueExpr} });`,
-		)
+		if (!input.authorBindings.has(kodyRuntime)) {
+			facadeLines.push(
+				`var ${kodyRuntime} = Object.freeze({ defaultValue: ${defaultValueExpr} });`,
+			)
+		}
 		if (
 			kodyRuntime !== 'KodyRuntime' &&
 			!input.authorBindings.has('KodyRuntime')
@@ -548,7 +584,16 @@ function createInlinedRuntimeReplacementPreamble(input: {
 			facadeLines.push(`var KodyRuntime = ${kodyRuntime};`)
 		}
 	}
-	const facadeBlock = facadeLines.filter(Boolean).join('\n')
+	const initStubLines = (input.removableInitNames ?? [])
+		.filter((name) => !input.authorBindings.has(name))
+		.map(
+			// Bindings are hoisted onto the shim factories above; retained
+			// author `__esm` modules only need the init symbol to exist.
+			(name) => `var ${name} = () => {};`,
+		)
+	const facadeBlock = [...facadeLines, ...initStubLines]
+		.filter(Boolean)
+		.join('\n')
 
 	if (input.packageId) {
 		const packageIdLiteral = JSON.stringify(input.packageId)
