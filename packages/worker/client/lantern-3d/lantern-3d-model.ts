@@ -9,6 +9,7 @@ import {
 	LatheGeometry,
 	Mesh,
 	type MeshBasicMaterial,
+	type MeshPhysicalMaterial,
 	type MeshStandardMaterial,
 	PlaneGeometry,
 	PointLight,
@@ -37,12 +38,12 @@ import {
 	lanternShape,
 } from './lantern-3d-layout.ts'
 import {
-	createBrushedTexture,
 	createBurstMaterial,
 	createFireflyMaterial,
 	createGlassFloorMaterial,
 	createGlassInteriorMaterial,
-	createGlassShellMaterial,
+	createGlassReflectionMaterial,
+	createGlassRimMaterial,
 	createGlowMaterial,
 	createGlowTexture,
 	createGlyphMaterial,
@@ -78,9 +79,9 @@ export type LanternOrbView = {
 	/** Faces the viewer, looks toward the pointer, and spins when booped. */
 	glyph: Group
 	core: ShaderMaterial
-	shell: ShaderMaterial
-	glyphMaterial: MeshStandardMaterial
-	keyline: MeshBasicMaterial
+	shell: MeshPhysicalMaterial
+	glyphMaterial: MeshPhysicalMaterial
+	keyline: MeshStandardMaterial
 	halo: SpriteMaterial
 }
 
@@ -192,7 +193,7 @@ export async function createLanternModel(options: {
 	root.add(lantern)
 
 	const glowTexture = keep(createGlowTexture())
-	const metal = keep(createMetalMaterial(keep(createBrushedTexture())))
+	const metal = keep(createMetalMaterial())
 	const litEdge = keep(createLitEdgeMaterial())
 
 	const { glassInterior, glassFloor, handle } = await step(() =>
@@ -316,9 +317,17 @@ function buildLantern(parts: {
 	)
 	const interior = new Mesh(glassGeometry, glassInterior)
 	interior.renderOrder = -1
-	const shell = new Mesh(glassGeometry, keep(createGlassShellMaterial()))
-	shell.renderOrder = 3
-	lantern.add(interior, shell)
+	const rim = new Mesh(
+		glassGeometry,
+		keep(createGlassRimMaterial({ top: lanternShape.capBottom })),
+	)
+	rim.renderOrder = 3
+	const reflection = new Mesh(
+		glassGeometry,
+		keep(createGlassReflectionMaterial()),
+	)
+	reflection.renderOrder = 4
+	lantern.add(interior, rim, reflection)
 
 	lantern.add(new Mesh(keep(capGeometry()), metal))
 	const capSeam = new Mesh(
@@ -410,9 +419,10 @@ function buildOrb(parts: {
 /** Set an orb's colors from its primitive color, linear sRGB. */
 export function paintLanternOrb(orb: LanternOrbView, color: Color) {
 	orb.core.uniforms.uColor!.value.copy(color)
-	orb.shell.uniforms.uRim!.value.copy(color).lerp(new Color(1, 1, 1), 0.45)
-	orb.glyphMaterial.emissive.copy(color).lerp(new Color(1, 0.98, 0.94), 0.92)
-	orb.keyline.color.copy(color).multiplyScalar(0.12)
+	const pale = color.clone().lerp(new Color(1, 0.98, 0.94), 0.7)
+	orb.glyphMaterial.color.copy(pale)
+	orb.glyphMaterial.emissive.copy(pale)
+	orb.keyline.color.copy(color).multiplyScalar(0.35)
 	orb.halo.color.copy(color)
 }
 

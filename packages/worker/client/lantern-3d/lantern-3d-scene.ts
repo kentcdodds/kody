@@ -659,10 +659,10 @@ export async function createLanternScene(
 		view.core.uniforms.uLit!.value = fx.lit
 		view.core.uniforms.uDim!.value = fx.dim
 		view.core.uniforms.uTime!.value = time
-		view.shell.uniforms.uLit!.value = fx.lit
-		view.shell.uniforms.uDim!.value = fx.dim
+		view.shell.opacity = 1 - fx.dim * 0.6
+		view.shell.envMapIntensity = 1 + fx.lit * 0.5
 		view.glyphMaterial.emissiveIntensity =
-			(1.15 + fx.lit * 0.55 + fx.pop * 0.8) * (1 - fx.dim * 0.5)
+			(0.85 + fx.lit * 0.45 + fx.pop * 0.7) * (1 - fx.dim * 0.5)
 		view.halo.opacity =
 			(0.5 + fx.lit * 0.45 + fx.pop * 0.4) * (1 - fx.dim * 0.6)
 	}
