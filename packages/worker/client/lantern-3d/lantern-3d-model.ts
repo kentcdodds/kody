@@ -6,7 +6,6 @@ import {
 	Color,
 	DirectionalLight,
 	Group,
-	HemisphereLight,
 	LatheGeometry,
 	Mesh,
 	type MeshBasicMaterial,
@@ -58,6 +57,7 @@ import {
 	createThreadMaterial,
 	lanternAmber,
 } from './lantern-3d-materials.ts'
+import { lanternLights } from './lantern-3d-studio.ts'
 
 /**
  * The lantern as a scene graph, in the world units of lantern-3d-layout.ts.
@@ -268,11 +268,11 @@ export async function createLanternModel(options: {
 
 	const innerLight = new PointLight(new Color(1, 0.68, 0.3), 7, 0, 2)
 	root.add(innerLight)
-	const key = new DirectionalLight(new Color(1, 0.95, 0.88), 1.9)
-	key.position.set(-2.6, 4.2, 5)
-	const back = new DirectionalLight(new Color(1, 0.82, 0.58), 1.1)
-	back.position.set(3.2, 1.6, -3.4)
-	root.add(key, back, new HemisphereLight(0xfff4e6, 0x2a1608, 0.55))
+	for (const { at, color, intensity } of Object.values(lanternLights)) {
+		const light = new DirectionalLight(new Color(...color), intensity)
+		light.position.set(...at)
+		root.add(light)
+	}
 
 	return {
 		root,

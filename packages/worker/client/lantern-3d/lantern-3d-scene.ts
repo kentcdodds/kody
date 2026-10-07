@@ -188,7 +188,7 @@ export async function createLanternScene(
 	const environment = await step(() => {
 		const pmrem = new PMREMGenerator(renderer)
 		const studio = createLanternStudio()
-		const texture = pmrem.fromScene(studio.scene, 0.04, 0.1, 100, {
+		const texture = pmrem.fromScene(studio.scene, 0, 0.1, 100, {
 			size: environmentSize,
 		}).texture
 		studio.dispose()
