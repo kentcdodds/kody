@@ -416,6 +416,61 @@ test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call
 	expect(cold.storageBytes).toBeNull()
 }, 30_000)
 
+test('UserMeter readDailyTrend returns counters and unique worker days for the retention window', async () => {
+	const now = new Date('2026-10-07T15:00:00.000Z')
+	const yesterday = new Date('2026-10-06T15:00:00.000Z')
+	const user = await seedFreeUser('meter-daily-trend')
+	await user.meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(yesterday),
+		count: 11,
+		updatedAt: yesterday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'job_runs_per_day',
+		day: utcDayKey(yesterday),
+		count: 2,
+		updatedAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-a',
+		day: utcDayKey(yesterday),
+		createdAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-b',
+		day: utcDayKey(yesterday),
+		createdAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-a',
+		day: utcDayKey(now),
+		createdAt: now.toISOString(),
+	})
+
+	const trend = await user.meter.readDailyTrend({ now: now.toISOString() })
+	expect(trend.retentionDays).toBeGreaterThan(0)
+	expect(trend.endDay).toBe(utcDayKey(now))
+	expect(trend.counters).toEqual(
+		expect.arrayContaining([
+			{
+				resource: 'execute_calls_per_day',
+				day: utcDayKey(yesterday),
+				count: 11,
+			},
+			{
+				resource: 'job_runs_per_day',
+				day: utcDayKey(yesterday),
+				count: 2,
+			},
+		]),
+	)
+	expect(trend.uniqueWorkerDays).toEqual([
+		{ day: utcDayKey(yesterday), count: 2 },
+		{ day: utcDayKey(now), count: 1 },
+	])
+}, 30_000)
+
 test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
 	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)

@@ -125,6 +125,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 	...capabilityRoutes('account', [
 		['GET', '/v1/me', 'metaGetCurrentUser'],
 		['GET', '/v1/account/usage', 'usageGet'],
+		['GET', '/v1/account/usage/trend', 'usageTrendGet'],
 		['GET', '/v1/account/waiting', 'waitingSummary'],
 		['GET', '/v1/account/export', 'accountExportManifest'],
 		['GET', '/v1/account/export/{section}', 'accountExportSection'],

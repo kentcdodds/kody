@@ -1,7 +1,11 @@
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	isDailyEntitlementResource,
+	userMeterDailyCounterRetentionDays,
 	userMeterMirrorUpdatedAtToken,
 	type DailyEntitlementResource,
+	type UserMeterDailyTrendCounterRow,
+	type UserMeterDailyTrendUniqueWorkerDayRow,
 	type UserMeterDeletionStateExport,
 	type UserMeterStorageBytesState,
 	type UserMeterWriteLeaseEntry,
@@ -297,6 +301,58 @@ export function createInMemoryUserMeterEnv() {
 				return {
 					outcome: 'ready' as const,
 					count: sumRange(input.resource, input.startDay, input.endDay),
+				}
+			},
+			async readDailyTrend(input?: { now?: string }) {
+				const now = input?.now ? new Date(input.now) : new Date()
+				const safeNow = Number.isNaN(now.valueOf()) ? new Date() : now
+				const endDay = utcDayKey(safeNow)
+				const start = new Date(safeNow)
+				start.setUTCDate(
+					start.getUTCDate() - (userMeterDailyCounterRetentionDays - 1),
+				)
+				const startDay = utcDayKey(start)
+				const counters: Array<UserMeterDailyTrendCounterRow> = []
+				for (const [entryKey, row] of rows) {
+					const separator = entryKey.indexOf('\0')
+					if (separator < 0) continue
+					const resource = entryKey.slice(0, separator)
+					const day = entryKey.slice(separator + 1)
+					if (!isDailyEntitlementResource(resource)) continue
+					if (day < startDay || day > endDay) continue
+					counters.push({
+						resource,
+						day,
+						count: row.count,
+					})
+				}
+				counters.sort((left, right) => {
+					const byDay = left.day.localeCompare(right.day)
+					if (byDay !== 0) return byDay
+					return left.resource.localeCompare(right.resource)
+				})
+				const uniqueWorkerDayCounts = new Map<string, number>()
+				for (const key of dynamicWorkerDays) {
+					const separator = key.indexOf('\0')
+					if (separator < 0) continue
+					const day = key.slice(0, separator)
+					if (day < startDay || day > endDay) continue
+					uniqueWorkerDayCounts.set(
+						day,
+						(uniqueWorkerDayCounts.get(day) ?? 0) + 1,
+					)
+				}
+				const uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow> = [
+					...uniqueWorkerDayCounts.entries(),
+				]
+					.map(([day, count]) => ({ day, count }))
+					.sort((left, right) => left.day.localeCompare(right.day))
+				return {
+					retentionDays: userMeterDailyCounterRetentionDays,
+					startDay,
+					endDay,
+					counters,
+					uniqueWorkerDays,
 				}
 			},
 			async claimDynamicWorkerDay(input: {

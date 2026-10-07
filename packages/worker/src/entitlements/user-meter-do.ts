@@ -122,6 +122,35 @@ export type UserMeterUsageSnapshotResult = {
 	storageBytes: UserMeterStorageBytesReadResult | null
 }
 
+/**
+ * One remaining daily_counters row inside the retention window. Missing days
+ * are omitted (callers treat absence as zero).
+ */
+export type UserMeterDailyTrendCounterRow = {
+	resource: DailyEntitlementResource
+	day: string
+	count: number
+}
+
+/** Per-UTC-day unique Dynamic Worker claim count (first-claim rows). */
+export type UserMeterDailyTrendUniqueWorkerDayRow = {
+	day: string
+	count: number
+}
+
+/**
+ * Compact retention-window read for customer usage charts: remaining
+ * daily_counters rows plus unique-worker-day claim counts grouped by day.
+ * Does not bootstrap missing keys — absence means zero.
+ */
+export type UserMeterDailyTrendResult = {
+	retentionDays: number
+	startDay: string
+	endDay: string
+	counters: Array<UserMeterDailyTrendCounterRow>
+	uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow>
+}
+
 export type UserMeterRefundResult = UserMeterReadyState
 
 export type UserMeterInitializeResult = UserMeterReadyState & {
@@ -992,6 +1021,77 @@ class UserMeterBase extends DurableObject<Env> {
 			: null
 
 		return { daily, weekly, storageBytes }
+	}
+
+	/**
+	 * Compact read of remaining daily entitlement counters and unique Dynamic
+	 * Worker claim counts for the retention window ending at `now`. Prunes
+	 * once. Does not write counters or bootstrap missing keys — callers treat
+	 * absent days/resources as zero.
+	 */
+	async readDailyTrend(input?: {
+		now?: string
+	}): Promise<UserMeterDailyTrendResult> {
+		const now = input?.now ? new Date(input.now) : new Date()
+		const safeNow = Number.isNaN(now.valueOf()) ? new Date() : now
+		this.deleteStaleCounters(safeNow)
+		const endDay = utcDayKey(safeNow)
+		const startDay = retentionCutoffDay(safeNow)
+
+		const counterRows = this.ctx.storage.sql
+			.exec<{
+				resource: string
+				day: string
+				count: number
+			}>(
+				`SELECT resource, day, count
+				FROM daily_counters
+				WHERE day >= ? AND day <= ?
+				ORDER BY day ASC, resource ASC`,
+				startDay,
+				endDay,
+			)
+			.toArray()
+
+		const counters: Array<UserMeterDailyTrendCounterRow> = []
+		for (const row of counterRows) {
+			const resource = String(row.resource)
+			if (!isDailyEntitlementResource(resource)) continue
+			counters.push({
+				resource,
+				day: String(row.day),
+				count: Math.max(0, Number(row.count ?? 0)),
+			})
+		}
+
+		const uniqueWorkerDayRows = this.ctx.storage.sql
+			.exec<{
+				day: string
+				count: number
+			}>(
+				`SELECT day, COUNT(*) AS count
+				FROM dynamic_worker_days
+				WHERE day >= ? AND day <= ?
+				GROUP BY day
+				ORDER BY day ASC`,
+				startDay,
+				endDay,
+			)
+			.toArray()
+
+		const uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow> =
+			uniqueWorkerDayRows.map((row) => ({
+				day: String(row.day),
+				count: Math.max(0, Number(row.count ?? 0)),
+			}))
+
+		return {
+			retentionDays: userMeterDailyCounterRetentionDays,
+			startDay,
+			endDay,
+			counters,
+			uniqueWorkerDays,
+		}
 	}
 
 	/**
@@ -1911,6 +2011,13 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		includeStorageBytes?: boolean
 		now?: string
 	}) => Promise<UserMeterUsageSnapshotResult>
+	/**
+	 * Retention-window daily counters plus unique-worker-day counts grouped by
+	 * UTC day. Read-only aside from the usual stale-row prune.
+	 */
+	readDailyTrend: (input?: {
+		now?: string
+	}) => Promise<UserMeterDailyTrendResult>
 	refund: (input: {
 		resource: string
 		day: string
