@@ -82,6 +82,17 @@ const spoofFrames = [
 	{ function: '<anonymous>' },
 	{ function: 'spoofBrowserAndPlatform' },
 ]
+const replayCrossOriginElementMessage = `Failed to read a named property 'Element' from 'Window': Blocked a frame with origin "https://kody.codes" from accessing a cross-origin frame.`
+const replayCrossOriginPrototypeMessage =
+	"Cannot read properties of undefined (reading 'prototype')"
+const replayOnIframeLoadFrame = fr(
+	'sn.onIframeLoad',
+	'@sentry/replay/build/npm/esm/index.js',
+)
+const replayObserveAttachShadowFrame = fr(
+	'observeAttachShadow',
+	'@sentry/replay/build/npm/esm/index.js',
+)
 
 test('individual browser Sentry filters drop AbortError, Firefox Xray, and injected-global noise', () => {
 	const cases: Array<[typeof filterBrowserSentryEvent, Case, boolean]> = [
@@ -372,6 +383,31 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		// CrabApple navigator.userAgent hard-spoof noise (KODY-80).
 		['Error', crabAppleMessage, spoofFrames],
 		['Error', 'something else', undefined, new Error(crabAppleMessage)],
+		// Sentry Replay cross-origin iframe Element read (KODY-8W / #23795).
+		[
+			'SecurityError',
+			replayCrossOriginElementMessage,
+			[replayOnIframeLoadFrame],
+		],
+		[
+			'DOMException',
+			`SecurityError: ${replayCrossOriginElementMessage}`,
+			[replayObserveAttachShadowFrame],
+		],
+		[
+			'TypeError',
+			replayCrossOriginPrototypeMessage,
+			[replayObserveAttachShadowFrame],
+		],
+		[
+			'SecurityError',
+			'something else',
+			undefined,
+			withStack(
+				new DOMException(replayCrossOriginElementMessage, 'SecurityError'),
+				`SecurityError: ${replayCrossOriginElementMessage}\n    at sn.onIframeLoad (@sentry/replay/index.js:2118:35)`,
+			),
+		],
 	]
 	expect(
 		dropped.filter((c) => !droppedBy(filterBrowserSentryEvent, c)),
@@ -475,6 +511,19 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			'TypeError',
 			'TypeError: Cannot redefine property: userAgent',
 			spoofFrames,
+		],
+		// Replay Element SecurityError without onIframeLoad / observeAttachShadow
+		// frames stays visible (could be app cross-origin access).
+		['SecurityError', replayCrossOriginElementMessage, [kodyEntry]],
+		[
+			'TypeError',
+			replayCrossOriginPrototypeMessage,
+			[fr('boot', 'https://kody.codes/assets/entry.js')],
+		],
+		[
+			'SecurityError',
+			"Failed to read a named property 'location' from 'Window': Blocked a frame with origin \"https://kody.codes\" from accessing a cross-origin frame.",
+			[replayOnIframeLoadFrame],
 		],
 	]
 	expect(kept.filter((c) => !keptBy(filterBrowserSentryEvent, c))).toEqual([])
