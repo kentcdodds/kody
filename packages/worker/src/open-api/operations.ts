@@ -126,6 +126,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/me', 'metaGetCurrentUser'],
 		['GET', '/v1/account/usage', 'usageGet'],
 		['GET', '/v1/account/usage/trend', 'usageTrendGet'],
+		['GET', '/v1/account/usage/by-package', 'usageByPackageGet'],
 		['GET', '/v1/account/waiting', 'waitingSummary'],
 		['GET', '/v1/account/export', 'accountExportManifest'],
 		['GET', '/v1/account/export/{section}', 'accountExportSection'],

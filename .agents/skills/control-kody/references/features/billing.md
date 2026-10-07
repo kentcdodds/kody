@@ -56,7 +56,8 @@ daily/weekly/stock cap is at 100%, and its link points at `#credits`. Referral
 share links set a one-week last-wins `kody_ref` cookie; signup persists the
 referrer then. Referral rewards fire on the referee's first qualifying paid
 Stripe invoice (not a trial) after both emails are verified; do not invent a
-paid invoice from this environment.
+paid invoice from this environment. Package credit attribution for the usage
+dashboard filter is `usageByPackageGet` (`GET /v1/account/usage/by-package`).
 
 ## APIs
 
@@ -66,3 +67,4 @@ paid invoice from this environment.
 - `POST /account/credits/top-up.json`
 - `POST /account/credits/settings.json`
 - `GET /account/usage.json`
+- `GET /v1/account/usage/by-package` (`usageByPackageGet`)

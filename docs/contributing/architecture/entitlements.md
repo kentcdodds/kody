@@ -504,6 +504,12 @@ instead of one RPC per resource:
 - `usageTrendGet` MCP / Open API capability (`GET /v1/account/usage/trend`) —
   signed-in daily UserMeter series (`readDailyTrend`) plus a cheap
   `usage_rollups` monthly series for hosted execute and unique Worker days
+- `usageByPackageGet` MCP / Open API capability
+  (`GET /v1/account/usage/by-package`) — signed-in current-UTC-month
+  past-include credit attribution by package (`loadCreditAttributionBreakdown` /
+  account usage `whereItWent`). Meters are Worker compute and Rows read credits
+  only; optional `packageId` returns that package’s slice. Does not add a
+  package axis to UserMeter.
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts` (via
   `readAdminEntitlementConsumption` in
