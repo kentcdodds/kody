@@ -682,6 +682,64 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 	).not.toHaveBeenCalled()
 })
 
+test('ensureModuleArtifact keeps serving the previous npm-backed bundle when the finalize clock is still unknown', async () => {
+	const fixture = {
+		...createFixture({
+			userId: 'user-npm-null-clock',
+			publishedCommit: 'commit-new',
+			suffix: 'npm-null-clock',
+		}),
+	}
+	const previousArtifact = {
+		...fixture.artifact,
+		publishedCommit: 'commit-old',
+	}
+	const npmFiles = {
+		'package.json': JSON.stringify({
+			name: fixture.savedPackage.name,
+			exports: {
+				'./get-issue-state': './src/get-issue-state.ts',
+			},
+			dependencies: {
+				react: '^19.0.0',
+			},
+			kody: {
+				id: fixture.savedPackage.kodyId,
+				description: 'Sentry triage helpers',
+			},
+		}),
+		'src/get-issue-state.ts':
+			'export default async function main() { return "new" }',
+	}
+	mockModule.persistPublishedBundleArtifact.mockClear()
+	mockModule.buildKodyModuleBundle.mockClear()
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockClear()
+	mockModuleArtifactRebuild(fixture, npmFiles, null)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: npmFiles['package.json'],
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { publishedCommit: 'commit-old' },
+		artifact: previousArtifact,
+	})
+
+	const served = await ensureModuleArtifact({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		savedPackage: fixture.savedPackage,
+		selector: { kind: 'export', exportName: 'get-issue-state' },
+		userId: fixture.savedPackage.userId,
+	})
+
+	expect(served.artifact.publishedCommit).toBe('commit-old')
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
+	expect(
+		mockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).not.toHaveBeenCalled()
+})
+
 test('ensureModuleArtifact stops serving a previous npm-backed bundle after the rebuild window', async () => {
 	const fixture = createFixture({
 		userId: 'user-npm-expired',

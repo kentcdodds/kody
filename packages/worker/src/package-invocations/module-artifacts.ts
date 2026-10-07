@@ -18,8 +18,8 @@ import {
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
 	assertPublishedSourceCanRebuildWithoutInstallingDeps,
+	canKeepPreviousNpmBundleDuringRebuild,
 	isPublishedRuntimeBundleMissingError,
-	isPublishedSourceWithinNpmBundleRebuildWindow,
 	listMissingPublishedSourceInstalledDependencies,
 } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -236,16 +236,19 @@ async function ensureModuleArtifactUncached(input: {
 	// hit without retaining it; do the same here when source cannot rebuild
 	// (npm deps live only in the published runtime bundle), and only while
 	// the published snapshot `createdAt` (the finalize clock) is still inside
-	// the rebuild window. `entity_sources.updated_at` is the wrong clock: any
-	// later row write would reopen stale serving. After the window the
-	// missing-bundle error is retryable so a failed rebuild stays visible.
+	// the rebuild window — or is unknown. A null clock is the finalize race
+	// (`published_commit` flipped before `writePublishedSourceSnapshot`) and
+	// Artifacts backfill (intentional: backfill is not a publish clock).
+	// `entity_sources.updated_at` is the wrong clock: any later row write
+	// would reopen stale serving. After the window the missing-bundle error
+	// is retryable so a failed rebuild stays visible.
 	if (
 		listMissingPublishedSourceInstalledDependencies(packageSource.files)
 			.length > 0
 	) {
 		if (
 			loaded?.artifact &&
-			isPublishedSourceWithinNpmBundleRebuildWindow({
+			canKeepPreviousNpmBundleDuringRebuild({
 				publishedAt: packageSource.snapshotCreatedAt,
 			})
 		) {
