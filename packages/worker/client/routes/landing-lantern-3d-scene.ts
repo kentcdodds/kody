@@ -124,6 +124,34 @@ export async function mountLanternScene(
 	onLost: () => void,
 ) {
 	const images = await loadGlyphs()
+	// Each step of the build pushes its undo. They run newest first on
+	// destroy, or as soon as a step throws, so a mount that fails partway
+	// still lets go of the GPU context.
+	const undo: Array<() => void> = []
+	const release = () => {
+		for (const step of undo.splice(0).reverse()) step()
+	}
+	try {
+		const { draw } = await buildLanternScene(canvas, images, onLost, undo)
+		return { draw, destroy: release }
+	} catch (error) {
+		release()
+		throw error
+	}
+}
+
+/** Build the scene on `canvas`, pushing the undo of each step onto `undo`
+ *  as it goes. */
+async function buildLanternScene(
+	canvas: HTMLCanvasElement,
+	images: Record<LandingPrimitiveId, HTMLCanvasElement>,
+	onLost: () => void,
+	undo: Array<() => void>,
+) {
+	const own = <Resource extends { dispose(): void }>(resource: Resource) => {
+		undo.push(() => resource.dispose())
+		return resource
+	}
 	let lost = false
 	const lose = (event?: Event) => {
 		event?.preventDefault()
@@ -131,22 +159,23 @@ export async function mountLanternScene(
 		lost = true
 		onLost()
 	}
+	const renderer = new WebGLRenderer({
+		canvas,
+		alpha: true,
+		premultipliedAlpha: true,
+		antialias: false,
+		depth: false,
+		stencil: false,
+		failIfMajorPerformanceCaveat: true,
+	})
+	undo.push(() => {
+		renderer.dispose()
+		renderer.forceContextLoss()
+	})
+	// Undone before the renderer lets go of the context, so letting it go
+	// on purpose is not reported as a loss.
 	canvas.addEventListener('webglcontextlost', lose)
-	let renderer: WebGLRenderer
-	try {
-		renderer = new WebGLRenderer({
-			canvas,
-			alpha: true,
-			premultipliedAlpha: true,
-			antialias: false,
-			depth: false,
-			stencil: false,
-			failIfMajorPerformanceCaveat: true,
-		})
-	} catch (error) {
-		canvas.removeEventListener('webglcontextlost', lose)
-		throw error
-	}
+	undo.push(() => canvas.removeEventListener('webglcontextlost', lose))
 	renderer.debug.onShaderError = (gl, program, vertex, fragment) => {
 		console.error(
 			'The 3D lantern could not build a shader.',
@@ -161,43 +190,45 @@ export async function mountLanternScene(
 
 	const textures = Object.fromEntries(
 		landingPrimitiveIds.map((id): [LandingPrimitiveId, Texture] => {
-			const texture = new CanvasTexture(images[id])
+			const texture = own(new CanvasTexture(images[id]))
 			texture.colorSpace = SRGBColorSpace
 			texture.minFilter = LinearMipmapLinearFilter
 			texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy())
 			return [id, texture]
 		}),
 	) as Record<LandingPrimitiveId, Texture>
-	const model = createLanternModel({ glyphs: textures })
+	const model = own(createLanternModel({ glyphs: textures }))
 	const scene = new Scene()
 	scene.add(model.lantern, model.lights)
 	for (const id of landingPrimitiveIds) scene.add(model.orbs[id].mesh)
 
 	const pmrem = new PMREMGenerator(renderer)
 	const studio = createLanternStudio()
-	const environment = pmrem.fromScene(studio.scene, 0.02)
+	const environment = own(pmrem.fromScene(studio.scene, 0.02))
 	studio.dispose()
 	pmrem.dispose()
 	scene.environment = environment.texture
 
 	const camera = createLanternCamera(1)
 
-	const sceneTarget = new WebGLRenderTarget(1, 1, {
-		type: HalfFloatType,
-		samples: multisamples(renderer),
-		depthBuffer: true,
-		stencilBuffer: false,
-	})
-	const levels = Array.from(
-		{ length: bloom.levels },
-		() =>
+	const sceneTarget = own(
+		new WebGLRenderTarget(1, 1, {
+			type: HalfFloatType,
+			samples: multisamples(renderer),
+			depthBuffer: true,
+			stencilBuffer: false,
+		}),
+	)
+	const levels = Array.from({ length: bloom.levels }, () =>
+		own(
 			new WebGLRenderTarget(1, 1, {
 				type: HalfFloatType,
 				depthBuffer: false,
 			}),
+		),
 	)
-	const passes = createPasses()
-	const triangle = new BufferGeometry()
+	const passes = own(createPasses())
+	const triangle = own(new BufferGeometry())
 	triangle.setAttribute(
 		'position',
 		new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3),
@@ -223,6 +254,7 @@ export async function mountLanternScene(
 		cssHeight = entry.contentRect.height
 	})
 	resize.observe(canvas)
+	undo.push(() => resize.disconnect())
 
 	const fit = () => {
 		const ratio = Math.min(window.devicePixelRatio || 1, maxPixelRatio)
@@ -248,34 +280,12 @@ export async function mountLanternScene(
 	const texel = (target: WebGLRenderTarget) =>
 		new Vector2(1 / target.width, 1 / target.height)
 
-	const stopListening = () => {
-		canvas.removeEventListener('webglcontextlost', lose)
-		resize.disconnect()
-	}
-
-	const destroy = () => {
-		stopListening()
-		model.dispose()
-		for (const texture of Object.values(textures)) texture.dispose()
-		environment.dispose()
-		sceneTarget.dispose()
-		for (const level of levels) level.dispose()
-		passes.dispose()
-		triangle.dispose()
-		renderer.dispose()
-	}
-
-	try {
-		fit()
-		// Compiled for the target the scene renders into, so the first
-		// frame does not compile again for different output settings.
-		renderer.setRenderTarget(sceneTarget)
-		await renderer.compileAsync(scene, camera)
-		renderer.setRenderTarget(null)
-	} catch (error) {
-		destroy()
-		throw error
-	}
+	fit()
+	// Compiled for the target the scene renders into, so the first frame
+	// does not compile again for different output settings.
+	renderer.setRenderTarget(sceneTarget)
+	await renderer.compileAsync(scene, camera)
+	renderer.setRenderTarget(null)
 
 	return {
 		draw(frame: LanternFrame) {
@@ -314,10 +324,6 @@ export async function mountLanternScene(
 			renderer.setRenderTarget(null)
 			renderer.clear()
 			runPass(passes.final, null)
-		},
-		destroy() {
-			destroy()
-			renderer.forceContextLoss()
 		},
 	}
 }
