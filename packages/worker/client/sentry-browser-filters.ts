@@ -1437,26 +1437,48 @@ function isSentryReplayIframeInstrumentationStackFunction(name: string) {
 	)
 }
 
-function sentryEventMentionsReplayIframeInstrumentation(
-	event: SentryErrorEventLike,
-	originalException?: unknown,
+function stackTextMentionsReplayIframeInstrumentation(stack: string) {
+	return sentryReplayIframeInstrumentationStackFunctions.some((token) =>
+		stack.includes(token),
+	)
+}
+
+function framesMentionReplayIframeInstrumentation(
+	frames: Array<SentryStackFrame> | undefined,
+) {
+	if (!frames || frames.length === 0) return false
+	return frames.some(
+		(frame) =>
+			typeof frame.function === 'string' &&
+			isSentryReplayIframeInstrumentationStackFunction(frame.function),
+	)
+}
+
+function isSentryReplayCrossOriginIframeElementType(type: string | undefined) {
+	return (
+		type === undefined || type === 'SecurityError' || type === 'DOMException'
+	)
+}
+
+function isSentryReplayCrossOriginIframePrototypeType(
+	type: string | undefined,
+) {
+	return type === undefined || type === 'TypeError'
+}
+
+function isSentryReplayCrossOriginIframeTypedMessage(
+	type: string | undefined,
+	message: string,
 ) {
 	if (
-		typeof originalException === 'object' &&
-		originalException !== null &&
-		'stack' in originalException &&
-		typeof originalException.stack === 'string'
+		isSentryReplayCrossOriginIframeElementType(type) &&
+		isSentryReplayCrossOriginIframeElementMessage(message)
 	) {
-		if (
-			sentryReplayIframeInstrumentationStackFunctions.some((token) =>
-				originalException.stack.includes(token),
-			)
-		) {
-			return true
-		}
+		return true
 	}
-	return sentryEventStackFrameFunctions(event).some(
-		isSentryReplayIframeInstrumentationStackFunction,
+	return (
+		isSentryReplayCrossOriginIframePrototypeType(type) &&
+		isSentryReplayCrossOriginIframePrototypeMessage(message)
 	)
 }
 
@@ -1468,41 +1490,53 @@ function isSentryReplayCrossOriginIframeError(error: unknown) {
 		)
 	}
 	if (typeof error !== 'object' || error === null) return false
-	if (!('message' in error) || typeof error.message !== 'string') return false
-	return (
-		isSentryReplayCrossOriginIframeElementMessage(error.message) ||
-		isSentryReplayCrossOriginIframePrototypeMessage(error.message)
-	)
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : undefined
+	const message =
+		'message' in error && typeof error.message === 'string'
+			? error.message
+			: undefined
+	if (!message) return false
+	if (!isSentryReplayCrossOriginIframeTypedMessage(name, message)) return false
+	const stack =
+		'stack' in error && typeof error.stack === 'string' ? error.stack : null
+	return stack ? stackTextMentionsReplayIframeInstrumentation(stack) : false
 }
 
+/**
+ * Drop only when type + message agree on the same exception.values entry
+ * (or on originalException / bare event.message when values are absent) and
+ * that same entry's frames name Replay iframe instrumentation. Never pair a
+ * matching message from one value with an instrumentation frame from another.
+ */
 function isSentryReplayCrossOriginIframeSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
-	const hasMessage =
-		isSentryReplayCrossOriginIframeError(originalException) ||
-		event.exception?.values?.some((value) => {
+	if (isSentryReplayCrossOriginIframeError(originalException)) return true
+
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.some((value) => {
 			if (typeof value.value !== 'string') return false
-			const isElementSecurity =
-				(value.type === 'SecurityError' ||
-					value.type === 'DOMException' ||
-					value.type === undefined) &&
-				isSentryReplayCrossOriginIframeElementMessage(value.value)
-			const isPrototypeTypeError =
-				(value.type === 'TypeError' || value.type === undefined) &&
-				isSentryReplayCrossOriginIframePrototypeMessage(value.value)
-			return isElementSecurity || isPrototypeTypeError
-		}) ||
-		sentryEventMessages(event).some(
-			(message) =>
-				typeof message === 'string' &&
-				(isSentryReplayCrossOriginIframeElementMessage(message) ||
-					isSentryReplayCrossOriginIframePrototypeMessage(message)),
-		)
-	if (!hasMessage) return false
-	return sentryEventMentionsReplayIframeInstrumentation(
-		event,
-		originalException,
+			if (
+				!isSentryReplayCrossOriginIframeTypedMessage(value.type, value.value)
+			) {
+				return false
+			}
+			return framesMentionReplayIframeInstrumentation(value.stacktrace?.frames)
+		})
+	}
+
+	if (typeof event.message !== 'string') return false
+	if (
+		!isSentryReplayCrossOriginIframeElementMessage(event.message) &&
+		!isSentryReplayCrossOriginIframePrototypeMessage(event.message)
+	) {
+		return false
+	}
+	return sentryEventStackFrameFunctions(event).some(
+		isSentryReplayIframeInstrumentationStackFunction,
 	)
 }
 

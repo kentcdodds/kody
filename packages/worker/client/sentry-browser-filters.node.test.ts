@@ -525,6 +525,10 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			"Failed to read a named property 'location' from 'Window': Blocked a frame with origin \"https://kody.codes\" from accessing a cross-origin frame.",
 			[replayOnIframeLoadFrame],
 		],
+		// Mismatched type + matching Element wording must stay visible
+		// (Devin review on #3006): TypeError must not inherit the
+		// SecurityError/DOMException Element drop path.
+		['TypeError', replayCrossOriginElementMessage, [replayOnIframeLoadFrame]],
 	]
 	expect(kept.filter((c) => !keptBy(filterBrowserSentryEvent, c))).toEqual([])
 
@@ -539,4 +543,26 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		},
 	}
 	expect(filterBrowserSentryEvent(crossValueEvent)).toBe(crossValueEvent)
+
+	// Replay Element wording on one value + onIframeLoad frames only on
+	// another value must not drop (same-entry type/message/frame gate).
+	const replayCrossValueEvent = {
+		exception: {
+			values: [
+				{
+					type: 'SecurityError',
+					value: replayCrossOriginElementMessage,
+					stacktrace: { frames: [kodyEntry] },
+				},
+				{
+					type: 'TypeError',
+					value: 'unrelated',
+					stacktrace: { frames: [replayOnIframeLoadFrame] },
+				},
+			],
+		},
+	}
+	expect(filterBrowserSentryEvent(replayCrossValueEvent)).toBe(
+		replayCrossValueEvent,
+	)
 })
