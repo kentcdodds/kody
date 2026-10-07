@@ -1823,8 +1823,9 @@ html.is-settled {
 
 /* On the graphite page the lines run light, and a light line is lost on the
    bright glass. The halo becomes a casing in the page colour: a dark edge
-   on the glass that disappears on the page. The other lines step back less
-   while an orb is open, so their casings still trace across the glass. */
+   on the glass that disappears on the page. While an orb is open the other
+   lines step back in colour only: a casing that faded with them would sink
+   into the deep amber in the middle of the globe. */
 @media (prefers-color-scheme: dark) {
 	.landing-primitives[data-leaders='3d'] .landing-leader-halo {
 		stroke: var(--color-background);
@@ -1833,8 +1834,25 @@ html.is-settled {
 		animation: none;
 	}
 
+	.landing-primitives[data-leaders='3d']
+		:is(.landing-leader-base, .landing-leader-flow) {
+		transition: opacity 0.25s ease;
+	}
+
 	.landing-primitives[data-leaders='3d'][data-active]
 		.landing-leader:not([data-open]) {
+		opacity: 1;
+	}
+
+	.landing-primitives[data-leaders='3d'][data-active]
+		.landing-leader:not([data-open])
+		:is(.landing-leader-base, .landing-leader-flow) {
+		opacity: 0.5;
+	}
+
+	.landing-primitives[data-leaders='3d'][data-active]
+		.landing-leader:not([data-open])
+		.landing-leader-end:not([data-hidden]) {
 		opacity: 0.7;
 	}
 }
