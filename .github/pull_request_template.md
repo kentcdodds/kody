@@ -2,6 +2,21 @@
 
 <!-- Overarching goal of this change — what it is for, not how it works. -->
 
+**Door:** `two-way` | `one-way`
+<!--
+`two-way`: cheap to reverse — ship and change if wrong.
+`one-way`: expensive to undo (stored shapes, public contracts, deleted user data) — spend the review here.
+-->
+
+**Cleanup:** `none` | `needed` | `done`
+<!--
+`none`: no leftover old lane.
+`needed`: migration left something to delete later — fill What to delete below.
+`done`: leftovers already removed in this PR.
+-->
+
+**What to delete:** <!-- only when Cleanup is `needed` -->
+
 ## Why
 
 <!-- Why this change is needed. -->
