@@ -29,11 +29,12 @@ export function isDailyEntitlementResource(
 }
 
 /**
- * Retention window for UserMeter daily rows. Enforcement needs today and,
- * for execute/outbound, the current UTC week (Monday–Sunday). Seven days
- * covers that week.
+ * Retention window for UserMeter daily rows (`daily_counters`,
+ * `inbound_delivery_claims`, and `dynamic_worker_days`). Enforcement needs
+ * today and, for execute/outbound, the current UTC week (Monday–Sunday).
+ * Fourteen days covers that week plus a second week of recent history.
  */
-export const userMeterDailyCounterRetentionDays = 7
+export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */

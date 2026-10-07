@@ -116,9 +116,9 @@ function expectSchemaV12(state: DurableObjectState) {
 /**
  * A stable recent instant for daily-counter tests: yesterday at 15:00 UTC.
  * The UserMeter DO purges daily counters older than its retention window
- * against the real clock, so a hardcoded date silently ages out and flips
- * cold-consume reads back to `needs_bootstrap` (this suite broke exactly
- * seven days after its previous hardcoded date).
+ * (`userMeterDailyCounterRetentionDays`) against the real clock, so a
+ * hardcoded date silently ages out and flips cold-consume reads back to
+ * `needs_bootstrap`.
  */
 function recentDailyCounterNow(): Date {
 	const now = new Date()
@@ -653,7 +653,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		updatedAt: '2026-07-31T17:02:00.000Z',
 	})
 
-	// Wall-clock retention on export/read; keep counters inside the 7-day window.
+	// Wall-clock retention on export/read; keep counters inside the 14-day window.
 	const day = utcDayKey()
 	const counterUpdatedAt = new Date().toISOString()
 	for (const resource of [

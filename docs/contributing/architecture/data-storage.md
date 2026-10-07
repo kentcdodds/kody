@@ -303,7 +303,7 @@ Durable Object export behavior:
   `deletionState`, and `inboundConnectionLastUsed` on the first page only
   (`startAfter` absent; `null` on later pages). Section totals count each state
   inventory once when present. The storage-byte counter lives only in UserMeter.
-  Retention is self-enforced inside the DO (seven UTC days of counter and
+  Retention is self-enforced inside the DO (fourteen UTC days of counter and
   inbound-delivery-claim rows); storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
@@ -817,7 +817,7 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter, inbound-claim, and unique-worker-day rows
-older than seven UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
+older than fourteen UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
 only needs the current day; the window covers timezone edge cases, recent
 account exports, and inbound retries. Storage-byte state is not time-pruned.
 Write-lease rows clear on release/repair/purge.
@@ -1749,7 +1749,7 @@ Current retention policies:
   threads. Derived provider-index cleanup is separately idempotent.
   `system:email` stays on the dedicated D1 retention job and has no
   provider-index rows.
-- UserMeter daily counter rows keep seven UTC days
+- UserMeter daily counter rows keep fourteen UTC days
   (`userMeterDailyCounterRetentionDays`); `adminUserMeterParity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;

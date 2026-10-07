@@ -272,7 +272,7 @@ test('UserMeter inbound claim and consume roll back together on claim insert fai
 	await ensureEmailTestSchema(env.APP_DB)
 	const account = await seedAccount('meter-atomic', 'free')
 	// Use "today" so read()'s default wall-clock retention sweep does not
-	// delete the seeded counter (7-day window).
+	// delete the seeded counter (14-day window).
 	const now = new Date()
 	const day = utcDayKey(now)
 	const updatedAt = now.toISOString()
