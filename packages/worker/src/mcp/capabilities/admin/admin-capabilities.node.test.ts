@@ -17,8 +17,14 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 // audit pipeline, so opt out of the shared audit-log-spy setup mock.
 vi.unmock('#worker/audit-log.ts')
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
+import { adminSystemEmailDeleteCapability } from './admin-system-email-delete.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
+import {
+	emailAttachmentBlobKey,
+	emailRawMimeKey,
+} from '#worker/email/blob-keys.ts'
+import { systemEmailOwnerId } from '#worker/email/system-email.ts'
 import { adminUserUsageCapability } from './admin-user-usage.ts'
 import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
@@ -56,11 +62,31 @@ const jane: SeedUser = {
 	createdAt: '2026-01-03 00:00:00',
 }
 
+function createMemoryEmailBlobs(seed: Record<string, string> = {}) {
+	const store = new Map<string, string>(Object.entries(seed))
+	return {
+		store,
+		blobs: {
+			get: async (key: string) => {
+				const value = store.get(key)
+				if (value == null) return null
+				return { text: async () => value }
+			},
+			put: async (key: string, value: string) => {
+				store.set(key, value)
+			},
+			delete: async (key: string) => {
+				store.delete(key)
+			},
+			head: async (key: string) => (store.has(key) ? { key } : null),
+		},
+	}
+}
+
 function createAdminCapabilityTest(
 	users: Array<SeedUser>,
-	blobs?: {
-		get: (key: string) => Promise<{ text: () => Promise<string> } | null>
-	},
+	blobs?: ReturnType<typeof createMemoryEmailBlobs>['blobs'],
+	callerRoles: Array<string> = ['admin'],
 ) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(
@@ -103,6 +129,7 @@ function createAdminCapabilityTest(
 		for (const role of user.roles) insertRole.run(index + 1, roleIds[role])
 	})
 	const db = createD1FromSqlite(sqlite)
+	const emailBlobs = blobs ?? createMemoryEmailBlobs().blobs
 	const ctx = {
 		env: {
 			...createInMemoryRunLogUsageEnv().env,
@@ -115,7 +142,7 @@ function createAdminCapabilityTest(
 					({ userId }) as unknown as DurableObjectId,
 				get: () => ({ countMessages: async () => ({ total: 0 }) }),
 			},
-			EMAIL_BLOBS: blobs ?? { get: async () => null },
+			EMAIL_BLOBS: emailBlobs,
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
@@ -123,7 +150,7 @@ function createAdminCapabilityTest(
 				userId: 'admin-user',
 				email: 'admin@example.com',
 				displayName: 'admin',
-				roles: ['admin'],
+				roles: callerRoles,
 			},
 		}),
 	}
@@ -262,13 +289,11 @@ test('adminAuditLogQuery accepts legacy SQLite rowids through output parse', asy
 })
 
 test('admin system email capabilities read only system-owned mail and audit reads', async () => {
-	const rawMimeKey = 'email-raw:v1:system:email/system-message-1'
-	const t = createAdminCapabilityTest([admin], {
-		get: async (key: string) =>
-			key === rawMimeKey
-				? { text: async () => 'Subject: Abuse\r\n\r\nSystem body.' }
-				: null,
+	const rawMimeKey = emailRawMimeKey(systemEmailOwnerId, 'system-message-1')
+	const memoryBlobs = createMemoryEmailBlobs({
+		[rawMimeKey]: 'Subject: Abuse\r\n\r\nSystem body.',
 	})
+	const t = createAdminCapabilityTest([admin], memoryBlobs.blobs)
 	t.sqlite.exec(
 		`INSERT INTO email_inboxes (id, user_id, name, created_at, updated_at)
 		 VALUES ('system-inbox-1', 'system:email', 'abuse', '2026-01-01', '2026-01-01')`,
@@ -319,6 +344,133 @@ test('admin system email capabilities read only system-owned mail and audit read
 	expect(t.auditEvents()[1]).toMatchObject({
 		reason: 'target_message_id=system-message-1',
 	})
+})
+
+test('adminSystemEmailDelete removes system mail graph rows and blobs, refuses non-admins and missing ids', async () => {
+	const messageId = 'system-message-delete-1'
+	const rawMimeKey = emailRawMimeKey(systemEmailOwnerId, messageId)
+	const attachmentId = 'system-attachment-delete-1'
+	const attachmentKey = emailAttachmentBlobKey(
+		systemEmailOwnerId,
+		messageId,
+		attachmentId,
+	)
+	const memoryBlobs = createMemoryEmailBlobs({
+		[rawMimeKey]: 'Subject: Phish\r\n\r\nOpen the rar.',
+		[attachmentKey]: 'fake-rar-bytes',
+	})
+	const t = createAdminCapabilityTest([admin], memoryBlobs.blobs)
+	t.sqlite.exec(
+		`INSERT INTO email_inboxes (id, user_id, name, created_at, updated_at)
+		 VALUES ('system-inbox-delete', 'system:email', 'kody', '2026-01-01', '2026-01-01');
+		 INSERT INTO system_email_threads (
+			id, inbox_id, subject_normalized, last_message_at, created_at, updated_at
+		 ) VALUES (
+			'system-thread-delete', 'system-inbox-delete', 'gemini order',
+			'2026-01-03T00:00:00.000Z', '2026-01-03T00:00:00.000Z', '2026-01-03T00:00:00.000Z'
+		 );`,
+	)
+	t.sqlite
+		.prepare(
+			`INSERT INTO system_email_messages (
+				id, direction, inbox_id, thread_id, from_address, envelope_from,
+				to_addresses_json, subject, text_body, raw_mime_key, processing_status,
+				raw_size, received_at, created_at, updated_at
+			) VALUES (
+				?, 'inbound', 'system-inbox-delete', 'system-thread-delete',
+				'phish@example.net', 'phish@example.net', '["kody@kody.codes"]',
+				'Gemini Order No.206378105', 'Open the rar.', ?, 'stored', 64,
+				'2026-01-03T00:00:00.000Z', '2026-01-03T00:00:00.000Z',
+				'2026-01-03T00:00:00.000Z'
+			)`,
+		)
+		.run(messageId, rawMimeKey)
+	t.sqlite
+		.prepare(
+			`INSERT INTO system_email_attachments (
+				id, message_id, filename, content_type, size, storage_kind, storage_key, created_at
+			) VALUES (?, ?, 'invoice.rar', 'application/x-rar-compressed', 12, 'external', ?, ?)`,
+		)
+		.run(attachmentId, messageId, attachmentKey, '2026-01-03T00:00:00.000Z')
+	t.sqlite
+		.prepare(
+			`INSERT INTO system_email_delivery_events (
+				id, message_id, event_type, provider, detail_json, created_at
+			) VALUES ('system-event-delete', ?, 'received', 'test', '{}', ?)`,
+		)
+		.run(messageId, '2026-01-03T00:00:00.000Z')
+
+	const nonAdmin = createAdminCapabilityTest([jane], memoryBlobs.blobs, [
+		'user',
+	])
+	await expect(
+		adminSystemEmailDeleteCapability.handler(
+			{ message_id: messageId },
+			nonAdmin.ctx,
+		),
+	).rejects.toThrow(/admin/i)
+
+	await expect(
+		adminSystemEmailDeleteCapability.handler(
+			{ message_id: 'missing-system-message' },
+			t.ctx,
+		),
+	).rejects.toThrow('System email message not found: missing-system-message')
+	// User-owned mailbox ids are not on the system graph; refuse as not found.
+	await expect(
+		adminSystemEmailDeleteCapability.handler(
+			{ message_id: 'user-message-1' },
+			t.ctx,
+		),
+	).rejects.toThrow('System email message not found: user-message-1')
+
+	const deleted = await adminSystemEmailDeleteCapability.handler(
+		{ message_id: messageId },
+		t.ctx,
+	)
+	expect(deleted).toEqual({
+		ownerId: systemEmailOwnerId,
+		deleted: true,
+		message_id: messageId,
+	})
+	expect(
+		t.sqlite
+			.prepare(`SELECT id FROM system_email_messages WHERE id = ?`)
+			.get(messageId),
+	).toBeUndefined()
+	expect(
+		t.sqlite
+			.prepare(`SELECT id FROM system_email_attachments WHERE message_id = ?`)
+			.all(messageId),
+	).toEqual([])
+	expect(
+		t.sqlite
+			.prepare(
+				`SELECT id FROM system_email_delivery_events WHERE message_id = ?`,
+			)
+			.all(messageId),
+	).toEqual([])
+	expect(
+		t.sqlite
+			.prepare(`SELECT id FROM system_email_threads WHERE id = ?`)
+			.get('system-thread-delete'),
+	).toBeUndefined()
+	expect(memoryBlobs.store.has(rawMimeKey)).toBe(false)
+	expect(memoryBlobs.store.has(attachmentKey)).toBe(false)
+	expect(t.auditEvents().at(-1)).toMatchObject({
+		action: 'adminSystemEmailDelete',
+		result: 'success',
+		reason: `target_message_id=${messageId}`,
+	})
+	expect(
+		t
+			.auditEvents()
+			.some(
+				(event) =>
+					event.action === 'adminSystemEmailDelete' &&
+					event.result === 'failure',
+			),
+	).toBe(true)
 })
 
 test('adminUserCreate records audit metadata and assigns the default role', async () => {

@@ -156,6 +156,7 @@ error, so the request stops. See [MCP context](#mcp-context).
 | `GET /admin/roles.json`                | `requireUserWithPermission('read:role:any')`       |
 | `GET /admin/system-email`              | `requireUserWithRole('admin')`                     |
 | `GET /admin/system-email.json`         | `requireUserWithRole('admin')`                     |
+| `POST /admin/system-email.json`        | `requireUserWithRole('admin')`                     |
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`.
@@ -532,16 +533,19 @@ suppresses repeat pages. Delivery is best-effort (no Queue).
 mail is stored under `system:email` as platform content, not under Kent's or any
 other user's account. Admin reads through MCP (`adminSystemEmailList`,
 `adminSystemEmailGet`) and the `/admin/system-email` UI are audit logged. Admins
-can also **send** from those reserved addresses with `adminSystemEmailSend`
-(also audit logged, with redacted recipients): that channel speaks for the
-platform, so it uses no user mailbox, sender identity, or plan entitlement, and
-it never reads or writes user-owned mail. Stored system mail also fans out
-metadata (never bodies or attachment bytes) on the
-`email.system-message.received` package subscription topic, and only to packages
-saved by users who hold the admin role at dispatch time — a non-admin subscriber
-never receives the event, and revoking admin stops delivery immediately.
-Successful reserved-sender sends fan `email.system-message.sent` the same
-admin-only way. That outbound topic includes the sent correspondence
+can **delete** that operator-owned mail with `adminSystemEmailDelete` (and the
+matching delete action on `/admin/system-email`), which removes the message row,
+attachments, delivery-event rows, blobs, and an empty parent thread — never
+user-owned mailbox content. Admins can also **send** from those reserved
+addresses with `adminSystemEmailSend` (also audit logged, with redacted
+recipients): that channel speaks for the platform, so it uses no user mailbox,
+sender identity, or plan entitlement, and it never reads or writes user-owned
+mail. Stored system mail also fans out metadata (never bodies or attachment
+bytes) on the `email.system-message.received` package subscription topic, and
+only to packages saved by users who hold the admin role at dispatch time — a
+non-admin subscriber never receives the event, and revoking admin stops delivery
+immediately. Successful reserved-sender sends fan `email.system-message.sent`
+the same admin-only way. That outbound topic includes the sent correspondence
 (recipients, subject, and bodies) because those sends are not written to the
 dedicated inbound graph (the graph refuses provider-message-id rows). It does
 not include user-owned mailbox content.

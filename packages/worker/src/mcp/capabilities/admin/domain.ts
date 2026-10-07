@@ -27,6 +27,7 @@ import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-ge
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
 import { adminUserUsageCapability } from './admin-user-usage.ts'
+import { adminSystemEmailDeleteCapability } from './admin-system-email-delete.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
 import { adminSystemEmailSendCapability } from './admin-system-email-send.ts'
@@ -136,6 +137,7 @@ export const adminDomain = defineDomain({
 		adminReservedUsernameRemoveCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
+		adminSystemEmailDeleteCapability,
 		adminSystemEmailSendCapability,
 		adminSystemEmailSenderRuleListCapability,
 		adminSystemEmailSenderRuleSetCapability,

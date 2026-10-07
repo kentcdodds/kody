@@ -625,23 +625,38 @@ export async function deleteSystemEmailMessageById(input: {
 			'System email blob deletion failed before authoritative row delete.',
 		)
 	}
+	const statements: Array<D1PreparedStatement> = [
+		...attachments.map((attachment) =>
+			input.db
+				.prepare(`DELETE FROM system_email_attachments WHERE id = ?`)
+				.bind(attachment.id),
+		),
+		...(deliveryEvents.results ?? []).map((event) =>
+			input.db
+				.prepare(`DELETE FROM system_email_delivery_events WHERE id = ?`)
+				.bind(event.id),
+		),
+		input.db
+			.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
+			.bind(input.messageId),
+	]
+	// Drop the thread when this was its last message so admin deletes leave no
+	// orphan graph rows (retention would eventually prune them otherwise).
+	if (message.threadId) {
+		statements.push(
+			input.db
+				.prepare(
+					`DELETE FROM system_email_threads
+					WHERE id = ? AND NOT EXISTS (
+						SELECT 1 FROM system_email_messages WHERE thread_id = ?
+					)`,
+				)
+				.bind(message.threadId, message.threadId),
+		)
+	}
 	await commitSystemEmailAuthorityBatch({
 		db: input.db,
-		statements: [
-			...attachments.map((attachment) =>
-				input.db
-					.prepare(`DELETE FROM system_email_attachments WHERE id = ?`)
-					.bind(attachment.id),
-			),
-			...(deliveryEvents.results ?? []).map((event) =>
-				input.db
-					.prepare(`DELETE FROM system_email_delivery_events WHERE id = ?`)
-					.bind(event.id),
-			),
-			input.db
-				.prepare(`DELETE FROM system_email_messages WHERE id = ?`)
-				.bind(input.messageId),
-		],
+		statements,
 	})
 	return {
 		messageFound: true,

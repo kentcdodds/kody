@@ -256,6 +256,7 @@ rule.
 - `adminReservedUsernameRemove`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
+- `adminSystemEmailDelete`
 - `adminSystemEmailSend`
 - `adminSystemEmailSenderRuleList`
 - `adminSystemEmailSenderRuleSet`

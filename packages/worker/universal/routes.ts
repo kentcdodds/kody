@@ -190,6 +190,7 @@ export const routes = route({
 	adminPlatformFeedbackApi: '/admin/platform-feedback.json',
 	adminSystemEmail: '/admin/system-email',
 	adminSystemEmailApi: '/admin/system-email.json',
+	adminSystemEmailApiPost: post('/admin/system-email.json'),
 	blog: '/blog',
 	blogApi: '/blog.json',
 	blogRss: '/blog/rss.xml',

@@ -575,6 +575,7 @@ export function createAppRouter(env: Env) {
 			adminPlatformFeedbackApi: createAdminPlatformFeedbackApiHandler(env),
 			adminSystemEmail: createAdminSystemEmailHandler(env),
 			adminSystemEmailApi: createAdminSystemEmailApiHandler(env),
+			adminSystemEmailApiPost: createAdminSystemEmailApiHandler(env),
 			community: createCommunityHandler(env),
 			communityApi: createCommunityApiHandler(env),
 			communityDetail: createCommunityDetailHandler(env),
