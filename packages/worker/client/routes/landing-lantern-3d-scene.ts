@@ -222,6 +222,9 @@ async function buildLanternScene(
 			samples: multisamples(renderer),
 			depthBuffer: true,
 			stencilBuffer: false,
+			// No pass reads depth back, so the multisample resolve copies
+			// only the color.
+			resolveDepthBuffer: false,
 		}),
 	)
 	const levels = Array.from({ length: bloom.levels }, () =>
@@ -252,7 +255,8 @@ async function buildLanternScene(
 
 	let cssWidth = canvas.clientWidth
 	let cssHeight = canvas.clientHeight
-	let fitted = ''
+	let fittedWidth = 0
+	let fittedHeight = 0
 	const resize = new ResizeObserver(([entry]) => {
 		if (!entry) return
 		cssWidth = entry.contentRect.width
@@ -265,9 +269,9 @@ async function buildLanternScene(
 		const ratio = Math.min(window.devicePixelRatio || 1, maxPixelRatio)
 		const width = Math.max(1, Math.round(cssWidth * ratio))
 		const height = Math.max(1, Math.round(cssHeight * ratio))
-		const key = `${width}x${height}`
-		if (key === fitted) return
-		fitted = key
+		if (width === fittedWidth && height === fittedHeight) return
+		fittedWidth = width
+		fittedHeight = height
 		renderer.setPixelRatio(1)
 		renderer.setSize(width, height, false)
 		camera.aspect = width / height
@@ -282,8 +286,12 @@ async function buildLanternScene(
 		}
 	}
 
-	const texel = (target: WebGLRenderTarget) =>
-		new Vector2(1 / target.width, 1 / target.height)
+	/** Point a bloom pass at the target it reads. */
+	const readFrom = (material: ShaderMaterial, source: WebGLRenderTarget) => {
+		material.uniforms.source!.value = source.texture
+		const texel: Vector2 = material.uniforms.texel!.value
+		texel.set(1 / source.width, 1 / source.height)
+	}
 
 	fit()
 	// Compiled for the target the scene renders into, so the first frame
@@ -311,17 +319,14 @@ async function buildLanternScene(
 			renderer.clear()
 			renderer.render(scene, camera)
 
-			passes.prefilter.uniforms.source!.value = sceneTarget.texture
-			passes.prefilter.uniforms.texel!.value = texel(sceneTarget)
+			readFrom(passes.prefilter, sceneTarget)
 			runPass(passes.prefilter, levels[0]!)
 			for (let index = 1; index < levels.length; index++) {
-				passes.down.uniforms.source!.value = levels[index - 1]!.texture
-				passes.down.uniforms.texel!.value = texel(levels[index - 1]!)
+				readFrom(passes.down, levels[index - 1]!)
 				runPass(passes.down, levels[index]!)
 			}
 			for (let index = levels.length - 2; index >= 0; index--) {
-				passes.up.uniforms.source!.value = levels[index + 1]!.texture
-				passes.up.uniforms.texel!.value = texel(levels[index + 1]!)
+				readFrom(passes.up, levels[index + 1]!)
 				runPass(passes.up, levels[index]!)
 			}
 			passes.final.uniforms.scene!.value = sceneTarget.texture
