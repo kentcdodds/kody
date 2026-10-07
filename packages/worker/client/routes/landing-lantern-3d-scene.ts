@@ -206,6 +206,10 @@ async function buildLanternScene(
 	const scene = new Scene()
 	scene.add(model.lantern, model.lights)
 	for (const id of landingPrimitiveIds) scene.add(model.orbs[id].mesh)
+	// Building the model and baking the environment are each a long task,
+	// and the lantern mounts as it scrolls into view: let a frame paint
+	// between them.
+	await afterNextPaint()
 
 	const pmrem = new PMREMGenerator(renderer)
 	const studio = createLanternStudio()
@@ -336,6 +340,12 @@ async function buildLanternScene(
 			runPass(passes.final, null)
 		},
 	}
+}
+
+function afterNextPaint() {
+	return new Promise<void>((resolve) => {
+		requestAnimationFrame(() => setTimeout(resolve, 0))
+	})
 }
 
 /** Up to 4x multisampling, as far as this GPU can for half-float color. */
