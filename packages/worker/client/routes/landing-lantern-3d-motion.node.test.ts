@@ -785,6 +785,11 @@ test('adaptive resolution settles at the sharpest level the GPU holds', () => {
 	expect(runResolution(moved, gpu(200), 10, 1).lowest).toBe(0.75)
 	// And back to the 2x screen, where it may drop to 0.5 again.
 	expect(runResolution(moved, gpu(200), 10, 2).lowest).toBe(0.5)
+	// The level that dropped frames on the 2x screen drew four times the
+	// pixels it draws on the 1x one, so it does not hold back a GPU that
+	// keeps up there.
+	expect(moved.retryAt).toBeGreaterThan(moved.lastFrame + 8000)
+	expect(runResolution(moved, gpu(8), 8, 1).state.scale).toBe(1)
 
 	// A 30 Hz display drawing every frame is not slow.
 	const saver = createLanternResolution(30, 2, 0)

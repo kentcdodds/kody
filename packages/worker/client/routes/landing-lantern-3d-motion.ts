@@ -832,6 +832,8 @@ export function stepLanternWarmup(
  *  slow GPU, and a 120 Hz display does not blur the lantern past 60. */
 export type LanternResolution = {
 	scale: number
+	/** Device pixels per CSS pixel at full scale, on the screen it is on. */
+	density: number
 	/** The lowest scale this screen may step down to. */
 	floor: number
 	targetFps: number
@@ -854,9 +856,14 @@ const resolutionSettleMs = 1500
 const resolutionClimbMs = 3000
 const resolutionRetryMs = 20_000
 
-/** The scene draws at up to 2 device pixels per CSS pixel. Never drop
- *  under 0.75 device pixels per CSS pixel, or under half of what it
- *  draws: past that the lantern reads as blurred, not as a lighter frame. */
+/** The scene draws at up to 2 device pixels per CSS pixel. */
+function lanternDensity(devicePixelRatio: number) {
+	return Math.min(devicePixelRatio, 2)
+}
+
+/** Never drop under 0.75 device pixels per CSS pixel, or under half of
+ *  what the scene draws: past that the lantern reads as blurred, not as a
+ *  lighter frame. */
 function lanternResolutionFloor(devicePixelRatio: number) {
 	const density = Math.min(Math.max(devicePixelRatio, 1), 2)
 	const floor = Math.ceil(0.75 / density / resolutionStep) * resolutionStep
@@ -870,6 +877,7 @@ export function createLanternResolution(
 ): LanternResolution {
 	return {
 		scale: 1,
+		density: lanternDensity(devicePixelRatio),
 		floor: lanternResolutionFloor(devicePixelRatio),
 		targetFps: Math.min(Math.max(refreshFps, 30), 60),
 		ceiling: 1,
@@ -891,11 +899,20 @@ export function stepLanternResolution(
 	devicePixelRatio: number,
 ): LanternResolution {
 	const floor = lanternResolutionFloor(devicePixelRatio)
+	const density = lanternDensity(devicePixelRatio)
+	// A scale's pixels grow with the density, so the level that dropped
+	// frames on another screen sits at another scale on this one.
+	const ceiling =
+		density === state.density
+			? state.ceiling
+			: (state.ceiling * state.density) / density
 	if (state.scale < floor) {
 		// On a screen with fewer device pixels, the old floor blurs it.
 		return {
 			...state,
+			density,
 			floor,
+			ceiling,
 			scale: floor,
 			windowStart: now,
 			frames: 0,
@@ -904,7 +921,7 @@ export function stepLanternResolution(
 			settleUntil: Math.max(state.settleUntil, now + resolutionWindowMs),
 		}
 	}
-	const next = { ...state, floor }
+	const next = { ...state, density, floor, ceiling }
 	if (now - state.lastFrame > resolutionGapMs) {
 		next.windowStart = now
 		next.frames = 0
@@ -948,7 +965,7 @@ export function stepLanternResolution(
 	}
 	if (state.scale >= 1 || now - state.calmSince < resolutionClimbMs) return next
 	const up = Math.min(1, state.scale + resolutionStep)
-	if (up >= state.ceiling && now < state.retryAt) return next
+	if (up >= ceiling && now < state.retryAt) return next
 	next.scale = up
 	next.calmSince = now
 	next.settleUntil = now + resolutionWindowMs
