@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ComputeOverageLimitError } from '#worker/entitlements/errors.ts'
+import { parseServerTimingHeader } from '#worker/server-timing.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
 // Existing serve tests exercise the local construction path (index/platform/
@@ -367,9 +368,18 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalledWith(
 		expect.objectContaining({ serverTiming }),
 	)
-	// Serve path appends phases to the shared bag and mirrors them on the header.
-	expect(serverTiming.length).toBeGreaterThan(3)
-	expect(response.headers.get('Server-Timing')).toBeTruthy()
+	expect(
+		parseServerTimingHeader(response.headers.get('Server-Timing')).map(
+			(entry) => entry.name,
+		),
+	).toEqual([
+		'owner',
+		'resolveSavedPackage',
+		'manifest',
+		'assertWithinComputeInclude',
+		'appLoader',
+		'entrypoint',
+	])
 })
 
 test('websocket upgrade responses skip Server-Timing and keep the paired socket', async () => {
@@ -451,9 +461,11 @@ test('package-app host permanent-308s a retired slug to the current leaf', async
 	const current = await serveHelloWorld({ kodyId: 'new-app' })
 	expect(current.status).toBe(200)
 	expect(await current.text()).toBe('ok')
+})
 
-	const divergedFixture = createFixture({ kodyId: 'stale-kody-id' })
-	divergedFixture.savedPackage.name = '@kentcdodds/canonical-leaf'
+test('package-app 308 Location uses the name leaf when kodyId diverges', async () => {
+	const fixture = createFixture({ kodyId: 'stale-kody-id' })
+	fixture.savedPackage.name = '@kentcdodds/canonical-leaf'
 	mockModule.resolveSavedPackageRef.mockImplementation(
 		async (
 			_db: unknown,
@@ -463,19 +475,20 @@ test('package-app host permanent-308s a retired slug to the current leaf', async
 				followRedirects?: boolean
 			},
 		) => {
-			if (input.userId !== divergedFixture.savedPackage.userId) return null
+			if (input.userId !== fixture.savedPackage.userId) return null
 			if (input.ref === 'diverged-old-app' && input.followRedirects) {
-				return divergedFixture.savedPackage
+				return fixture.savedPackage
 			}
 			return null
 		},
 	)
-	const nameLeafRedirect = await serveHelloWorld({ kodyId: 'diverged-old-app' })
-	expect(nameLeafRedirect.status).toBe(308)
-	expect(nameLeafRedirect.headers.get('Location')).toBe(
+
+	const redirected = await serveHelloWorld({ kodyId: 'diverged-old-app' })
+	expect(redirected.status).toBe(308)
+	expect(redirected.headers.get('Location')).toBe(
 		'/@kentcdodds/packages/canonical-leaf',
 	)
-	expect(nameLeafRedirect.headers.get('Cache-Control')).toBe('no-store')
+	expect(redirected.headers.get('Cache-Control')).toBe('no-store')
 })
 
 test('/_assets/ serves the fingerprinted client module with immutable caching and never builds the worker', async () => {
