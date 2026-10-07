@@ -529,6 +529,17 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		// (Devin review on #3006): TypeError must not inherit the
 		// SecurityError/DOMException Element drop path.
 		['TypeError', replayCrossOriginElementMessage, [replayOnIframeLoadFrame]],
+		// Stack URL substring must not count as a Replay iframe frame
+		// (CodeRabbit on #3006): `onIframeLoad-helper.js` ≠ onIframeLoad.
+		[
+			'SecurityError',
+			'something else',
+			undefined,
+			withStack(
+				new DOMException(replayCrossOriginElementMessage, 'SecurityError'),
+				`SecurityError: ${replayCrossOriginElementMessage}\n    at boot (https://kody.codes/assets/onIframeLoad-helper.js:1:1)`,
+			),
+		],
 	]
 	expect(kept.filter((c) => !keptBy(filterBrowserSentryEvent, c))).toEqual([])
 
