@@ -63,14 +63,6 @@
 			"fallthrough": true,
 		},
 		{
-			// The homepage lantern's GSS scene. Only the browser loads it, from
-			// the Vite build (`tools/vite-gss-scenes.ts`); a Wrangler-bundled
-			// origin just needs the import to resolve.
-			"type": "Text",
-			"globs": ["./*.gss"],
-			"fallthrough": true,
-		},
-		{
 			// Both spellings are required: the bare glob matches file names during
 			// the on-disk traversal that discovers additional modules, while the
 			// `./`-prefixed glob matches the import specifier so wrangler keeps

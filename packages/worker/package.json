@@ -26,7 +26,6 @@
     "agents": "0.22.0",
     "aws4fetch": "^1.0.20",
     "diff": "^9.0.0",
-    "gss-lang": "0.0.5",
     "isomorphic-git": ">=1.40.0 <1.40.8",
     "marked": "^18.0.14",
     "postal-mime": "^3.0.1",
