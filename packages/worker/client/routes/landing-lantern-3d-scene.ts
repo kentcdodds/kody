@@ -54,7 +54,8 @@ let glyphImages: Promise<Record<LandingPrimitiveId, HTMLCanvasElement>> | null =
 	null
 
 /** Fetch and rasterize the orb glyphs. Rejects if any glyph cannot load,
- *  so the page keeps the still lantern rather than a blank orb. */
+ *  so the page keeps the still lantern rather than a blank orb, and the
+ *  next mount fetches them again. */
 export async function preloadLanternTextures() {
 	await loadGlyphs()
 }
@@ -68,6 +69,10 @@ function loadGlyphs() {
 				LandingPrimitiveId,
 				HTMLCanvasElement
 			>,
+		(error: unknown) => {
+			glyphImages = null
+			throw error
+		},
 	)
 	return glyphImages
 }
