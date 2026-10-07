@@ -187,12 +187,15 @@ function resolveBootstrapLifetime(input: {
 			'The calling API token expires too soon to mint a CLI bootstrap code.',
 		)
 	}
+	const maxLifetimeSeconds = Math.min(
+		resolved.maxLifetimeSeconds,
+		input.parentRemainingSeconds,
+	)
+	if (maxLifetimeSeconds === resolved.maxLifetimeSeconds) return resolved
 	return {
 		...resolved,
-		maxLifetimeSeconds: Math.min(
-			resolved.maxLifetimeSeconds,
-			input.parentRemainingSeconds,
-		),
+		maxLifetimeSeconds,
+		cliFlags: `--idle-ttl-seconds ${resolved.idleTtlSeconds} --max-lifetime-seconds ${maxLifetimeSeconds}`,
 	}
 }
 

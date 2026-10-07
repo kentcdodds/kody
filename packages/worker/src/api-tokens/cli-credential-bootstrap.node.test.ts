@@ -357,12 +357,17 @@ test('bootstrap long lifetime clamps absolute max to a shorter API-token parent'
 	expect(minted.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
 	expect(minted.max_lifetime_seconds).toBe(parentRemainingSeconds)
 	expect(minted.max_lifetime_seconds).toBeLessThan(longLife.maxLifetimeSeconds)
+	const idleFlag = minted.cli_command.match(/--idle-ttl-seconds (\d+)/)?.[1]
+	const maxFlag = minted.cli_command.match(/--max-lifetime-seconds (\d+)/)?.[1]
+	expect(idleFlag).toBe(String(longLife.idleTtlSeconds))
+	expect(maxFlag).toBe(String(parentRemainingSeconds))
+	expect(minted.cli_command).not.toMatch(/--lifetime\s+long/)
 
 	const redeemed = await redeemCliCredentialBootstrap({
 		db,
 		code: minted.bootstrap_code,
-		idleTtlSeconds: longLife.idleTtlSeconds,
-		maxLifetimeSeconds: parentRemainingSeconds,
+		idleTtlSeconds: Number(idleFlag),
+		maxLifetimeSeconds: Number(maxFlag),
 		now: start,
 	})
 	expect(redeemed.token.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
