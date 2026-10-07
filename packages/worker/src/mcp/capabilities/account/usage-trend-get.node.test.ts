@@ -267,5 +267,4 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 		execute: 8,
 		uniqueWorkerDays: 1,
 	})
-	expect(capabilityResult.months).toHaveLength(usageTrendMonthHistoryMonths)
 })

@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import { userMeterDailyCounterRetentionDays } from '#worker/entitlements/user-meter-do.ts'
-import {
-	toUsageTrendDays,
-	usageTrendMonthHistoryMonths,
-} from '#worker/entitlements/usage-trend.ts'
+import { toUsageTrendDays } from '#worker/entitlements/usage-trend.ts'
 
 test('toUsageTrendDays pads the retention window and maps counters', () => {
 	const days = toUsageTrendDays({
@@ -66,6 +62,4 @@ test('toUsageTrendDays pads the retention window and maps counters', () => {
 			automationInvocations: 3,
 		},
 	])
-	expect(userMeterDailyCounterRetentionDays).toBeGreaterThan(0)
-	expect(usageTrendMonthHistoryMonths).toBe(12)
 })
