@@ -579,7 +579,9 @@ function createBackWallMaterial(uniforms: LanternUniforms, grain: Texture) {
 			${glslNoise}
 			void main() {
 				vec3 toEye = normalize(-vViewPosition);
-				float facing = abs(dot(normalize(vViewNormal), toEye));
+				// Rounding can carry the dot past 1, and pow() is undefined
+				// for a negative base.
+				float facing = min(abs(dot(normalize(vViewNormal), toEye)), 1.0);
 				float k = 0.34 + 0.85 * pow(1.0 - facing, 0.9);
 				k += 0.7 * exp((vHeight - top) / 0.07);
 				k += 1.1 * exp((bottom - vHeight) / 0.06);
@@ -619,7 +621,10 @@ function createFloorMaterial(uniforms: LanternUniforms, radius: number) {
 			void main() {
 				float r = length(vLocal) / radius;
 				float ring = smoothstep(0.84, 0.99, r);
-				float dip = exp(-pow((r - 0.68) / 0.09, 2.0));
+				// Squared by hand: pow() is undefined for a negative base,
+				// and a GPU that returns NaN there blooms it across the jar.
+				float off = (r - 0.68) / 0.09;
+				float dip = exp(-off * off);
 				float k = 1.35 - dip * 0.2 + ring * 1.3;
 				vec3 hue = mix(vec3(1.0, 0.62, 0.11), vec3(1.0, 0.86, 0.38), ring);
 				gl_FragColor = vec4(hue * k * light, 1.0);
