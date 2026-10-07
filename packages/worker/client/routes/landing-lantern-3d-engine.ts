@@ -8,7 +8,6 @@ import {
 	createLanternResolution,
 	createLanternWarmup,
 	holdLanternOrbit,
-	kodyGaze,
 	lanternFlickVelocity,
 	lanternIdleMoment,
 	lanternOrbRadius,
@@ -40,11 +39,11 @@ import {
 
 /**
  * The live half of the 3D lantern: one frame loop that steps the orbit and
- * the orbs, writes them into the GSS scene as custom properties, and keeps
- * the HTML orb buttons on the painted orbs. Pointer gestures on the figure
- * turn the lantern (a flick keeps it spinning), toss an orb, or tap the
- * glass, which flares the light and knocks the orbs about. Left alone,
- * Kody has an idle moment now and then.
+ * the orbs, hands each frame to the scene to draw, and keeps the HTML orb
+ * buttons on the drawn orbs. Pointer gestures on the figure turn the
+ * lantern (a flick keeps it spinning), toss an orb, or tap the glass,
+ * which flares the light and knocks the orbs about. Left alone, the
+ * lantern has an idle moment now and then.
  *
  * The first frames are a warm-up (`stepLanternWarmup`): only once the
  * scene keeps up does `onShown` crossfade it in. Otherwise `onFail` hands
@@ -52,18 +51,12 @@ import {
  */
 
 /** The canvas box, as fractions of the figure (same aspect ratio). It
- *  overhangs the lantern so the halo is never clipped. */
-export const lanternView = { left: -0.061, top: -0.083, size: 1.122 } as const
-
-/** The globe's glow in landing-lantern-3d.gss; a tap flares both. */
-const flameCore = '#ffdf8e'
-const flameAmber = '#ffc24a'
-
-/** The light past the globe's rim, as in the scene. On a dark page a pale
- *  halo reads as fog, so it burns deeper there. */
-const rimGlow = {
-	light: { rim: '#f4c98c', halo: '#f6dcb8' },
-	dark: { rim: '#eaa555', halo: '#9a531f' },
+ *  overhangs the lantern, so the bloom is never clipped, and the scene's
+ *  camera lands the lantern on the still lantern's art. */
+export const lanternView = {
+	left: -0.1138,
+	top: -0.1052,
+	size: 1.2276,
 } as const
 
 const basis = lanternViewBasis()
@@ -76,11 +69,27 @@ const flickWindowMs = 90
 /** A lit orb's size springs past its target and back, like jelly. */
 const jellyStiffness = 260
 const jellyDamping = 14
-/** How far Kody dips his head for the nod that ends his idle moment. */
-const bowAngle = (11 * Math.PI) / 180
+
+/** What the scene draws: the turn, the light, and every orb in world
+ *  space. */
+export type LanternFrame = {
+	/** Seconds of motion; it holds still under reduced motion. */
+	time: number
+	yaw: number
+	/** The jar's light, 1 at rest. A tap or the idle moment flares it. */
+	light: number
+	/** The motes' brightness, 1 at rest. */
+	sparkle: number
+	orbs: ReadonlyArray<{
+		id: LandingPrimitiveId
+		position: Vec3
+		scale: number
+		glow: number
+	}>
+}
 
 export type LanternSceneView = {
-	set(name: string, value: string | number): void
+	draw(frame: LanternFrame): void
 }
 
 export type LanternEngine = {
@@ -139,7 +148,6 @@ export function startLanternEngine(options: {
 	const { figure, scene, signal } = options
 	const motionOk = matchMedia('(prefers-reduced-motion: no-preference)')
 	const narrow = matchMedia('(max-width: 800px)')
-	const dark = matchMedia('(prefers-color-scheme: dark)')
 	const buttons = new Map<LandingPrimitiveId, HTMLElement>()
 	let orbit = createLanternOrbit()
 	let bodies: Array<LanternOrbBody> = createLanternOrbBodies()
@@ -157,12 +165,9 @@ export function startLanternEngine(options: {
 	let raf: number | null = null
 	let framing = false
 	let visible = true
-	let frames = 0
 	let flare = 0
 	/** Seconds the lantern has sat untouched and in view. */
 	let rest = 0
-	let look = 0
-	let nod = 0
 	let followTimer: ReturnType<typeof setTimeout> | null = null
 	let swallowClick = false
 	let width = 0
@@ -170,15 +175,6 @@ export function startLanternEngine(options: {
 	const glow = perOrb(1)
 	const grow = perOrb(1)
 	const growVelocity = perOrb(0)
-	const written = new Map<string, string | number>()
-
-	const write = (name: string, value: string | number) => {
-		const rounded =
-			typeof value === 'number' ? Math.round(value * 10_000) / 10_000 : value
-		if (written.get(name) === rounded) return
-		written.set(name, rounded)
-		scene.set(name, rounded)
-	}
 
 	const measure = () => {
 		const rect = figure.getBoundingClientRect()
@@ -196,13 +192,6 @@ export function startLanternEngine(options: {
 		width: width * lanternView.size,
 		height: height * lanternView.size,
 	})
-
-	const writePage = () => {
-		write('--page', pageColor(figure))
-		const rim = dark.matches ? rimGlow.dark : rimGlow.light
-		write('--rim-glow', rim.rim)
-		write('--halo', rim.halo)
-	}
 
 	const ease = (from: number, to: number, dt: number, rate: number) =>
 		motionOk.matches ? from + (to - from) * (1 - Math.exp(-dt * rate)) : to
@@ -277,32 +266,23 @@ export function startLanternEngine(options: {
 						hold,
 					})
 				: createLanternOrbBodies()
-		write('--yaw', `${pose.yaw}rad`)
 		const blaze = flare + (moment?.flare ?? 0) * 0.6
-		const flame = motion ? flicker(time) : 0
-		const waver = motion ? (flame - 0.5) * 0.12 : 0
-		write('--core', mixHex(flameCore, '#ffffff', blaze * 0.7 + flame * 0.16))
-		write('--amber', mixHex(flameAmber, '#ffe3a1', blaze * 0.85 + flame * 0.1))
-		write('--flame', 1 + waver + blaze * 0.5)
-		// Through the warm-up, a change GSS cannot skip makes it draw every
-		// frame, even under reduced motion, where nothing else moves.
-		const probe = warmup.stage === 'done' ? 0 : (frames % 2) * 0.001
-		write('--sparkle', 1 + blaze * 1.6 + probe)
+		const shimmer = motion ? (flicker(time) - 0.5) * 0.08 : 0
 		const box = viewSize()
 		const depths: Array<{ id: LandingPrimitiveId; depth: number }> = []
-		const worlds: Array<Vec3> = []
+		const orbs: Array<LanternFrame['orbs'][number]> = []
 		for (const body of bodies) {
 			body.scale = grow[body.id]
 			const world = localToWorld(body.position, pose.yaw)
-			worlds.push(world)
-			write(`--${body.id}-x`, world.x)
-			write(`--${body.id}-y`, world.y)
-			write(`--${body.id}-z`, world.z)
-			write(`--${body.id}-scale`, body.scale)
 			// Idle orbs breathe, staggered, as the 2D orbs pulse.
 			const breath =
 				motion && !active ? 1 + 0.07 * Math.sin(time * 1.8 + body.phase) : 1
-			write(`--${body.id}-glow`, glow[body.id] * breath)
+			orbs.push({
+				id: body.id,
+				position: world,
+				scale: body.scale,
+				glow: glow[body.id] * breath,
+			})
 			const button = buttons.get(body.id)
 			if (!button || box.height === 0) continue
 			const point = projectLanternPoint(basis, world, box)
@@ -324,20 +304,16 @@ export function startLanternEngine(options: {
 			const button = buttons.get(id)
 			if (button) button.style.zIndex = String(index + 1)
 		})
-		const gaze = moment ? kodyGaze(alongSpiral(worlds, moment.focus)) : null
-		look = ease(look, (gaze?.look ?? 0) * (moment?.gaze ?? 0), dt, 6)
-		nod = ease(
-			nod,
-			(gaze?.nod ?? 0) * (moment?.gaze ?? 0) - (moment?.bow ?? 0) * bowAngle,
-			dt,
-			6,
-		)
-		write('--look', `${look}rad`)
-		write('--nod', `${nod}rad`)
+		scene.draw({
+			time,
+			yaw: pose.yaw,
+			light: 1 + shimmer + blaze * 0.45,
+			sparkle: 1 + blaze * 1.6,
+			orbs,
+		})
 		figure.dispatchEvent(
 			new CustomEvent(lanternOrbMotionEvent, { bubbles: true }),
 		)
-		frames += 1
 		if (warmup.stage === 'done') {
 			const nextResolution = stepLanternResolution(resolution, now)
 			if (nextResolution.scale !== resolution.scale) {
@@ -584,14 +560,6 @@ export function startLanternEngine(options: {
 	sight.observe(figure)
 	motionOk.addEventListener('change', wake, { signal })
 	narrow.addEventListener('change', wake, { signal })
-	dark.addEventListener(
-		'change',
-		() => {
-			writePage()
-			wake()
-		},
-		{ signal },
-	)
 	document.addEventListener(
 		'visibilitychange',
 		() => {
@@ -619,7 +587,6 @@ export function startLanternEngine(options: {
 	})
 
 	measure()
-	writePage()
 	wake()
 
 	return {
@@ -682,23 +649,7 @@ function perOrb(value: number) {
 	) as Record<LandingPrimitiveId, number>
 }
 
-/** A point down the spiral of orbs, which run in word-list order: `place`
- *  0 is the first orb, 1 the second, 0.5 halfway between them. */
-function alongSpiral(points: ReadonlyArray<Vec3>, place: number): Vec3 {
-	const last = points.length - 1
-	const from = Math.max(0, Math.min(Math.floor(place), last))
-	const a = points[from]
-	const b = points[Math.min(from + 1, last)]
-	if (!a || !b) return { x: 0, y: 0, z: 0 }
-	const t = Math.min(Math.max(place - from, 0), 1)
-	return {
-		x: a.x + (b.x - a.x) * t,
-		y: a.y + (b.y - a.y) * t,
-		z: a.z + (b.z - a.z) * t,
-	}
-}
-
-/** A candle's unsteady glow, 0 to 1: sines that never line up. */
+/** A lamp's unsteady glow, 0 to 1: sines that never line up. */
 function flicker(time: number) {
 	const wave =
 		Math.sin(time * 1.7) * 0.5 +
@@ -723,41 +674,4 @@ function yawFlick(samples: ReadonlyArray<{ yaw: number; t: number }>) {
 	if (!first || !last || last.t - first.t < 12) return 0
 	const speed = ((last.yaw - first.yaw) / (last.t - first.t)) * 1000
 	return Math.max(-maxSpin, Math.min(maxSpin, speed))
-}
-
-/** The page color behind the figure, so the scene's edge disappears. */
-function pageColor(node: Element) {
-	for (let el: Element | null = node; el; el = el.parentElement) {
-		const color = getComputedStyle(el).backgroundColor
-		if (color && !isClear(color)) return color
-	}
-	return '#e6e8ea'
-}
-
-function isClear(color: string) {
-	return (
-		color === 'transparent' ||
-		/rgba\([^)]*,\s*0\)$/.test(color) ||
-		/\/\s*0\)$/.test(color)
-	)
-}
-
-function mixHex(from: string, to: string, amount: number) {
-	const t = Math.min(Math.max(amount, 0), 1)
-	if (t === 0) return from
-	const a = hexChannels(from)
-	const b = hexChannels(to)
-	return `#${a
-		.map((channel, index) =>
-			Math.round(channel + (b[index]! - channel) * t)
-				.toString(16)
-				.padStart(2, '0'),
-		)
-		.join('')}`
-}
-
-function hexChannels(hex: string) {
-	return [1, 3, 5].map((start) =>
-		Number.parseInt(hex.slice(start, start + 2), 16),
-	)
 }

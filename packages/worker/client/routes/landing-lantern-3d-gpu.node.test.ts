@@ -5,23 +5,17 @@ afterEach(() => {
 	vi.unstubAllGlobals()
 })
 
-type AdapterInfo = {
-	vendor: string
-	architecture: string
-	device: string
-	description: string
-	isFallbackAdapter?: boolean
-}
-
-function stubWebgpu(adapter: { info?: AdapterInfo } | null) {
-	vi.stubGlobal('navigator', {
-		gpu: { requestAdapter: async () => adapter },
-	})
-}
-
-function stubWebgl(context: { renderer: string; unmasked?: string } | null) {
+function stubWebgl(
+	context: {
+		renderer: string
+		unmasked?: string
+		/** The float color extensions the context offers. */
+		floatColor?: Array<string>
+	} | null,
+) {
 	const requests: Array<unknown> = []
 	let lost = false
+	const floatColor = context?.floatColor ?? ['EXT_color_buffer_float']
 	const gl = context && {
 		RENDERER: 0x1f01,
 		getParameter(name: number) {
@@ -40,7 +34,7 @@ function stubWebgl(context: { renderer: string; unmasked?: string } | null) {
 					},
 				}
 			}
-			return null
+			return floatColor.includes(name) ? {} : null
 		},
 	}
 	vi.stubGlobal('document', {
@@ -80,45 +74,12 @@ test('software rasterizers are told apart from GPUs by name', () => {
 	expect(hardware.filter((name) => isSoftwareRenderer(name))).toEqual([])
 })
 
-test('a WebGPU adapter decides when the browser offers one', async () => {
-	const hardware = {
-		vendor: 'apple',
-		architecture: 'metal-3',
-		device: '',
-		description: '',
-		isFallbackAdapter: false,
-	}
-	stubWebgpu({ info: hardware })
-	const webgl = stubWebgl(null)
-	await expect(hasLanternGpu()).resolves.toBe(true)
-	// GSS will draw with WebGPU, so WebGL2 is not asked.
-	expect(webgl.requests).toHaveLength(0)
-
-	stubWebgpu({ info: { ...hardware, isFallbackAdapter: true } })
-	await expect(hasLanternGpu()).resolves.toBe(false)
-
-	stubWebgpu({
-		info: {
-			vendor: 'google',
-			architecture: 'swiftshader',
-			device: '',
-			description: '',
-		},
-	})
-	await expect(hasLanternGpu()).resolves.toBe(false)
-
-	// Browsers from before adapter info say nothing either way.
-	stubWebgpu({})
-	await expect(hasLanternGpu()).resolves.toBe(true)
-})
-
-test('without WebGPU, WebGL2 must be on a GPU', async () => {
-	vi.stubGlobal('navigator', {})
+test('the lantern needs WebGL2 on a GPU', () => {
 	let webgl = stubWebgl({
 		renderer:
 			'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)',
 	})
-	await expect(hasLanternGpu()).resolves.toBe(true)
+	expect(hasLanternGpu()).toBe(true)
 	expect(webgl.requests).toEqual([
 		{ type: 'webgl2', options: { failIfMajorPerformanceCaveat: true } },
 	])
@@ -127,20 +88,28 @@ test('without WebGPU, WebGL2 must be on a GPU', async () => {
 
 	// The browser refuses a context on a software or blocklisted GPU.
 	stubWebgl(null)
-	await expect(hasLanternGpu()).resolves.toBe(false)
+	expect(hasLanternGpu()).toBe(false)
 
 	// A masked renderer is read through the debug extension.
 	webgl = stubWebgl({
 		renderer: 'WebKit WebGL',
 		unmasked: 'Google SwiftShader',
 	})
-	await expect(hasLanternGpu()).resolves.toBe(false)
+	expect(hasLanternGpu()).toBe(false)
 	expect(webgl.lost()).toBe(true)
 	stubWebgl({ renderer: 'WebKit WebGL', unmasked: 'Apple GPU' })
-	await expect(hasLanternGpu()).resolves.toBe(true)
+	expect(hasLanternGpu()).toBe(true)
 
-	// WebGPU without an adapter (blocklisted) falls back the same way.
-	stubWebgpu(null)
 	stubWebgl({ renderer: 'llvmpipe (LLVM 15.0.7, 256 bits)' })
-	await expect(hasLanternGpu()).resolves.toBe(false)
+	expect(hasLanternGpu()).toBe(false)
+})
+
+test('the lantern needs half-float targets to glow past white', () => {
+	const gpu =
+		'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'
+	const webgl = stubWebgl({ renderer: gpu, floatColor: [] })
+	expect(hasLanternGpu()).toBe(false)
+	expect(webgl.lost()).toBe(true)
+	stubWebgl({ renderer: gpu, floatColor: ['EXT_color_buffer_half_float'] })
+	expect(hasLanternGpu()).toBe(true)
 })

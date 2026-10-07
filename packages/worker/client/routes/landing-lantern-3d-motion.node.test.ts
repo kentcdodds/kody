@@ -1,3 +1,4 @@
+import { Vector3 } from 'three'
 import { expect, test } from 'vitest'
 import { lanternView } from './landing-lantern-3d-engine.ts'
 import {
@@ -6,9 +7,8 @@ import {
 	createLanternResolution,
 	createLanternWarmup,
 	holdLanternOrbit,
-	kodyGaze,
 	lanternFlickVelocity,
-	lanternGlobeRadius,
+	lanternGlass,
 	lanternIdleDelay,
 	lanternIdleMoment,
 	lanternOrbRadius,
@@ -35,6 +35,7 @@ import {
 	type LanternWarmupVerdict,
 	type Vec3,
 } from './landing-lantern-3d-motion.ts'
+import { createLanternCamera } from './landing-lantern-3d-scene.ts'
 import {
 	landingLeaderOrbExit,
 	landingLeaderPath,
@@ -44,14 +45,8 @@ import {
 
 const frame = 1 / 60
 
-/** Under the cap and over the base plate in landing-lantern-3d.gss. */
-const capUnderside = 0.695
-const basePlate = -0.695
-
-/** Kody and the flame on his head in landing-lantern-3d.gss, swept round
- *  the lantern's axis: from under his chin to the flame's tip, ears and
- *  all. */
-const kodySweep = { bottom: -0.26, top: 0.32, radius: 0.2 }
+/** The capsule up the lantern's axis that the orbs ring. */
+const coreSweep = { bottom: -0.26, top: 0.32, radius: 0.2 }
 
 function length(v: Vec3) {
 	return Math.hypot(v.x, v.y, v.z)
@@ -62,21 +57,29 @@ function distance(a: Vec3, b: Vec3) {
 }
 
 function expectInsideLantern(bodies: ReadonlyArray<LanternOrbBody>) {
+	const across = lanternGlass.radius * lanternGlass.inner
+	const tall = lanternGlass.height * lanternGlass.inner
 	for (const body of bodies) {
 		const radius = lanternOrbRadius * body.scale
-		expect(length(body.position) + radius).toBeLessThan(lanternGlobeRadius)
-		expect(body.position.y + radius).toBeLessThan(capUnderside)
-		expect(body.position.y - radius).toBeGreaterThan(basePlate)
+		const { x, y, z } = body.position
+		// Inside the glass's inner face shrunk by the orb's radius: the
+		// orb's surface stays inside the spheroid.
+		expect(
+			Math.hypot(x, z) ** 2 / (across - radius) ** 2 +
+				y ** 2 / (tall - radius) ** 2,
+		).toBeLessThan(1)
+		expect(y + radius).toBeLessThan(lanternGlass.top)
+		expect(y - radius).toBeGreaterThan(lanternGlass.floor)
 	}
 }
 
-/** Room between an orb and Kody; negative when they overlap. */
-function roomFromKody(body: LanternOrbBody) {
+/** Room between an orb and the core; negative when they overlap. */
+function roomFromCore(body: LanternOrbBody) {
 	const { x, y, z } = body.position
-	const spine = Math.min(kodySweep.top, Math.max(kodySweep.bottom, y))
+	const spine = Math.min(coreSweep.top, Math.max(coreSweep.bottom, y))
 	return (
 		Math.hypot(x, y - spine, z) -
-		kodySweep.radius -
+		coreSweep.radius -
 		lanternOrbRadius * body.scale
 	)
 }
@@ -263,33 +266,46 @@ function crossingLeaders(
 	return pairs
 }
 
-test('the projection lands the globe and an orb where GSS draws them', () => {
-	// Measured from gss-lang 0.0.5 renders with the scene's camera on a
-	// 600 by 864 canvas: a 0.97 sphere at the pivot spans x 11.5% to 88.3%
-	// and y 28.1% to 81.6%; a 0.05 sphere at (0.5, 0.3, 0.4) spans x 69.0%
-	// to 73.3% and y 47.1% to 50.0%.
+test('the projection lands orbs where the scene camera draws them', () => {
 	const basis = lanternViewBasis()
 	const size = { width: 600, height: 864 }
+	const camera = createLanternCamera(size.width / size.height)
+	const drawn = (point: Vec3) => {
+		const ndc = new Vector3(point.x, point.y, point.z).project(camera)
+		return {
+			x: ((ndc.x + 1) / 2) * size.width,
+			y: ((1 - ndc.y) / 2) * size.height,
+		}
+	}
 	const pivot = { x: 0, y: 0, z: 0 }
-	const globe = projectLanternPoint(basis, pivot, size)
-	const globeRadius = projectedSphereRadius(
-		basis,
-		pivot,
-		lanternGlobeRadius,
-		size.height,
-	)
-	expect(globe.x / size.width).toBeCloseTo(0.499, 2)
-	expect(globe.y / size.height).toBeCloseTo(0.5485, 2)
-	expect(globeRadius / size.width).toBeCloseTo(0.384, 2)
-	expect(globeRadius / size.height).toBeCloseTo(0.2675, 2)
-
 	const orb = { x: 0.5, y: 0.3, z: 0.4 }
+	for (const point of [
+		pivot,
+		orb,
+		{ x: -0.62, y: -0.41, z: -0.5 },
+		{ x: 0.2, y: 0.66, z: 0.58 },
+	]) {
+		const projected = projectLanternPoint(basis, point, size)
+		expect(projected.x).toBeCloseTo(drawn(point).x, 6)
+		expect(projected.y).toBeCloseTo(drawn(point).y, 6)
+	}
+
+	// A small sphere's drawn radius, across the view at its depth.
+	const right = new Vector3()
+		.setFromMatrixColumn(camera.matrixWorld, 0)
+		.multiplyScalar(0.05)
+	const edge = drawn({
+		x: orb.x + right.x,
+		y: orb.y + right.y,
+		z: orb.z + right.z,
+	})
+	expect(projectedSphereRadius(basis, orb, 0.05, size.height)).toBeCloseTo(
+		Math.hypot(edge.x - drawn(orb).x, edge.y - drawn(orb).y),
+		0,
+	)
+
+	const globe = projectLanternPoint(basis, pivot, size)
 	const point = projectLanternPoint(basis, orb, size)
-	expect(point.x / size.width).toBeCloseTo(0.7115, 2)
-	expect(point.y / size.height).toBeCloseTo(0.4855, 2)
-	expect(
-		projectedSphereRadius(basis, orb, 0.05, size.height) / size.width,
-	).toBeCloseTo(0.0215, 2)
 	// Nearer the camera than the pivot, so drawn bigger per world unit.
 	expect(point.depth).toBeLessThan(globe.depth)
 	expect(point.scale).toBeGreaterThan(globe.scale)
@@ -311,8 +327,9 @@ test('the lantern frame turns the front toward the drag and round trips', () => 
 	const size = { width: 600, height: 864 }
 	const front = { x: 0, y: 0, z: 0.5 }
 	const centre = projectLanternPoint(basis, front, size)
-	// Dragging right turns the lantern the same way the bail turns in GSS:
-	// its front swings right, then round to the back (farther away).
+	// Dragging right turns the lantern the way the scene turns it
+	// (`rotation.y = yaw`): its front swings right, then round to the back
+	// (farther away).
 	const quarter = projectLanternPoint(
 		basis,
 		localToWorld(front, Math.PI / 4),
@@ -540,8 +557,8 @@ test('the sway leaves the orbs at rest, and a tap is busy until its swirl dies',
 		poseYaw = yaw
 	}
 
-	// Kody's idle moment and hover both wait for the orbs to rest, so the
-	// sway alone must not keep them busy.
+	// The idle moment and hover both wait for the orbs to rest, so the sway
+	// alone must not keep them busy.
 	let busy = 0
 	while (time < 60) {
 		step()
@@ -577,9 +594,9 @@ test('the sway leaves the orbs at rest, and a tap is busy until its swirl dies',
 	expect(settledApart).toBeLessThan(1e-6)
 })
 
-test('orbs keep out of Kody, even thrown straight at him', () => {
+test('orbs keep out of the core, even thrown straight at it', () => {
 	let bodies = createLanternOrbBodies()
-	for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+	for (const body of bodies) expect(roomFromCore(body)).toBeGreaterThan(0)
 
 	for (const id of landingPrimitiveIds) {
 		const { x, y, z } = bodies.find((body) => body.id === id)!.position
@@ -600,12 +617,12 @@ test('orbs keep out of Kody, even thrown straight at him', () => {
 		for (let t = 0; t < 2; t += frame) {
 			bodies = stepLanternOrbs(bodies, frame, { time: t, amplitude: 1 })
 			expectInsideLantern(bodies)
-			for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+			for (const body of bodies) expect(roomFromCore(body)).toBeGreaterThan(0)
 		}
 	}
 
-	// Dragged onto him from over the flame, under his chin, or head on, an
-	// orb stops beside him, still inside the glass.
+	// Dragged onto it from above, from below, or head on, an orb stops
+	// beside it, still inside the glass.
 	for (const position of [
 		{ x: 0, y: 0.6, z: 0 },
 		{ x: 0.02, y: -0.6, z: 0 },
@@ -617,7 +634,7 @@ test('orbs keep out of Kody, even thrown straight at him', () => {
 			hold: { id: 'memory', position, velocity: { x: 0, y: 0, z: 0 } },
 		})
 		expectInsideLantern(bodies)
-		for (const body of bodies) expect(roomFromKody(body)).toBeGreaterThan(0)
+		for (const body of bodies) expect(roomFromCore(body)).toBeGreaterThan(0)
 	}
 })
 
@@ -811,14 +828,14 @@ test('the warm-up shows a scene that keeps up and keeps the still otherwise', ()
 	expect(verdicts).toEqual(['show'])
 })
 
-test('Kody counts his marbles after ten quiet seconds, then only now and then', () => {
+test('the lantern counts its marbles after ten quiet seconds, then only now and then', () => {
 	expect(lanternIdleMoment(0)).toBeNull()
 	expect(lanternIdleMoment(lanternIdleDelay - 0.05)).toBeNull()
 	const start = lanternIdleMoment(lanternIdleDelay)!
-	expect(start.gaze).toBe(0)
+	expect(start.flare).toBe(0)
 	expect(Object.values(start.pop).every((pop) => pop === 0)).toBe(true)
 
-	// Each marble pops once, in the order of the word list, with his eyes on it.
+	// Each marble pops once, in the order of the word list.
 	const peaks = landingPrimitiveIds.map((id) => {
 		let peak = { t: 0, pop: 0 }
 		for (let t = 0; t < 4; t += 0.01) {
@@ -830,36 +847,23 @@ test('Kody counts his marbles after ten quiet seconds, then only now and then', 
 	peaks.forEach((peak, index) => {
 		expect(peak.pop).toBeGreaterThan(0.99)
 		if (index > 0) expect(peak.t).toBeGreaterThan(peaks[index - 1]!.t)
-		const moment = lanternIdleMoment(lanternIdleDelay + peak.t)!
-		expect(moment.gaze).toBeGreaterThan(0.9)
-		expect(moment.focus).toBeGreaterThanOrEqual(index - 0.01)
-		expect(moment.focus).toBeLessThan(index + 0.5)
 	})
 
-	// Then a nod as the flame flares, and everything is back at rest
-	// before the moment ends.
-	const last = peaks.at(-1)!.t
-	const after = (
-		pick: (moment: NonNullable<ReturnType<typeof lanternIdleMoment>>) => number,
-	) => {
-		let best = { t: 0, value: 0 }
-		for (let t = last; t < 4; t += 0.01) {
-			const moment = lanternIdleMoment(lanternIdleDelay + t)
-			const value = moment ? pick(moment) : 0
-			if (value > best.value) best = { t, value }
-		}
-		return best
+	// Then the flame flares, and everything is back at rest before the
+	// moment ends.
+	let flare = { t: 0, value: 0 }
+	for (let t = 0; t < 4; t += 0.01) {
+		const value = lanternIdleMoment(lanternIdleDelay + t)?.flare ?? 0
+		if (value > flare.value) flare = { t, value }
 	}
-	expect(after((moment) => moment.bow).value).toBeGreaterThan(0.99)
-	expect(after((moment) => moment.flare).value).toBeGreaterThan(0.99)
+	expect(flare.value).toBeGreaterThan(0.99)
+	expect(flare.t).toBeGreaterThan(peaks.at(-1)!.t)
 	const ending = lanternIdleMoment(lanternIdleDelay + 3.79)!
-	expect(ending.gaze).toBe(0)
-	expect(ending.bow).toBe(0)
 	expect(ending.flare).toBe(0)
 	expect(Object.values(ending.pop).every((pop) => pop === 0)).toBe(true)
 	expect(lanternIdleMoment(lanternIdleDelay + 3.85)).toBeNull()
 
-	// The page stays calm for a long while, then he counts again.
+	// The page stays calm for a long while, then it counts again.
 	for (let t = 4; t < 40; t += 0.25) {
 		expect(lanternIdleMoment(lanternIdleDelay + t)).toBeNull()
 	}
@@ -867,29 +871,4 @@ test('Kody counts his marbles after ten quiet seconds, then only now and then', 
 		1,
 		6,
 	)
-})
-
-test('Kody turns to look at a marble but never turns his back', () => {
-	const lookLimit = (32 * Math.PI) / 180
-	const nodLimit = (20 * Math.PI) / 180
-	// Right and up are positive, as rotate-y and rotate-x turn #kody in GSS.
-	const right = kodyGaze({ x: 0.4, y: -0.14, z: 0.3 })
-	expect(right.look).toBeGreaterThan(0.3)
-	expect(right.nod).toBeCloseTo(0, 9)
-	const above = kodyGaze({ x: 0, y: 0.3, z: 0.3 })
-	expect(above.look).toBeCloseTo(0, 9)
-	expect(above.nod).toBeGreaterThan(0.3)
-	expect(kodyGaze({ x: 0, y: -0.5, z: 0.4 }).nod).toBeLessThan(0)
-
-	// Behind him, he glances over his shoulder instead.
-	const behind = kodyGaze({ x: -0.5, y: 0.45, z: -0.45 })
-	expect(behind.look).toBeLessThan(0)
-	for (const body of [
-		{ position: { x: -0.5, y: 0.45, z: -0.45 } },
-		...createLanternOrbBodies(),
-	]) {
-		const gaze = kodyGaze(body.position)
-		expect(Math.abs(gaze.look)).toBeLessThanOrEqual(lookLimit)
-		expect(Math.abs(gaze.nod)).toBeLessThanOrEqual(nodLimit)
-	}
 })

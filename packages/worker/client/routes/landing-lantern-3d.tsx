@@ -8,7 +8,7 @@ import {
 } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbReleaseEvent } from '#client/routes/landing-lantern-motion.ts'
 import {
-	lanternGlobeRadius,
+	lanternGlass,
 	lanternViewBasis,
 	projectLanternPoint,
 	projectedSphereRadius,
@@ -18,6 +18,7 @@ import {
 	measureRefreshFps,
 	startLanternEngine,
 	type LanternEngine,
+	type LanternSceneView,
 } from '#client/routes/landing-lantern-3d-engine.ts'
 import { hasLanternGpu } from '#client/routes/landing-lantern-3d-gpu.ts'
 import { landingHomePrimitives } from '#universal/landing-home-copy.ts'
@@ -29,29 +30,26 @@ import {
 } from '#universal/landing-lantern.ts'
 
 /**
- * The primitives lantern in 3D: landing-lantern-3d.gss drawn by GSS, with
- * the same orb buttons, popovers, and leader lines as the 2D lantern. The
- * server and the first client render show the 2D lantern. Near the
- * viewport, the scene loads, mounts under the still, and crossfades in
- * once its warm-up shows the device keeps up. No WebGL2 or WebGPU, a
- * software renderer, a slow warm-up, a failed mount, or a lost GPU context
- * keep (or bring back) the 2D lantern.
+ * The primitives lantern in 3D, drawn with three.js by
+ * landing-lantern-3d-scene.ts, with the same orb buttons, popovers, and
+ * leader lines as the 2D lantern. The server and the first client render
+ * show the 2D lantern. Near the viewport, the scene loads, mounts under
+ * the still, and crossfades in once its warm-up shows the device keeps
+ * up. No WebGL2, a software renderer, a slow warm-up, a failed mount, or
+ * a lost GPU context keep (or bring back) the 2D lantern.
  *
  * Drag to turn the lantern; a flick keeps it spinning and the orbs lag
  * like marbles in a jar. Drag an orb to toss it. Tap the glass to flare
  * the light. Hover, focus, or the word list lights an orb and dims the
  * rest; keyboard focus and the word list turn the lantern to show that
  * orb, and the left and right arrow keys on an orb turn it. Reduced
- * motion drops the sway, drift, inertia, turns, and Kody's idle moment;
- * the sparks hold still.
+ * motion drops the sway, drift, inertia, turns, and the idle moment; the
+ * motes hold still.
  */
 
 type Phase = 'still' | 'mounting' | 'fading' | 'live'
 
-type LanternScene = {
-	set(name: string, value: string | number): void
-	destroy(): void
-}
+type LanternScene = LanternSceneView & { destroy(): void }
 
 type MountScene = (
 	canvas: HTMLCanvasElement,
@@ -66,7 +64,7 @@ function percent(fraction: number) {
 }
 
 /** Where the leader overlay should think the 2D glass is, so it finds the
- *  3D globe instead (see `leaderFollow`). */
+ *  3D glass instead (see `leaderFollow`). */
 const glassBox = (() => {
 	const aspect = landingLanternImage.height / landingLanternImage.width
 	const basis = lanternViewBasis()
@@ -76,7 +74,7 @@ const glassBox = (() => {
 	const radius = projectedSphereRadius(
 		basis,
 		pivot,
-		lanternGlobeRadius,
+		lanternGlass.radius,
 		size.height,
 	)
 	const share = radius / landingLanternGlass.r
@@ -116,12 +114,12 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 	async function load(signal: AbortSignal) {
 		try {
 			// Checked before the import, so a device that keeps the still
-			// never downloads the GSS runtime.
-			if (!(await hasLanternGpu())) return
+			// never downloads three.js.
+			if (!hasLanternGpu()) return
 			if (signal.aborted || failed) return
 			const fps = measureRefreshFps(signal)
-			// Dynamic import is intentional so the GSS runtime and the
-			// compiled shaders stay out of the homepage chunk.
+			// Dynamic import is intentional so three.js and the scene stay
+			// out of the homepage chunk.
 			const { mountLanternScene, preloadLanternTextures } =
 				await import('./landing-lantern-3d-scene.ts')
 			await preloadLanternTextures()

@@ -4,20 +4,21 @@ import {
 } from '#universal/landing-lantern.ts'
 
 /**
- * Motion for the 3D lantern (landing-lantern-3d.gss). Pure math, no DOM:
- * the camera projection that keeps the HTML orb buttons on the painted
- * orbs, the turntable orbit, the orbs floating inside the globe, Kody's
- * idle moment, and the frame-rate checks behind the warm-up and the
- * adaptive resolution.
+ * Motion for the 3D lantern (landing-lantern-3d-scene.ts). Pure math, no
+ * DOM: the camera projection that keeps the HTML orb buttons on the drawn
+ * orbs, the turntable orbit, the orbs floating inside the glass, the idle
+ * moment, and the frame-rate checks behind the warm-up and the adaptive
+ * resolution.
  *
  * Orbs live in the lantern's own frame (`local`), so they turn with it.
- * `localToWorld` applies the same turn the scene gives the bail
- * (`rotate-y: --yaw`), so an orb set from it turns exactly as the bail
- * does. Idle orbs drift like a lava lamp toward slow wander targets. A
- * grabbed orb follows the pointer and a flick tosses it: it coasts,
- * bounces off the glass, Kody, and the other orbs, then is drawn home.
+ * `localToWorld` applies the same turn the scene gives the lantern
+ * (`rotation.y = yaw`), so an orb set from it turns exactly as the
+ * handle does. Idle orbs drift like a lava lamp toward slow wander
+ * targets. A grabbed orb follows the pointer and a flick tosses it: it
+ * coasts, bounces off the glass, the core, and the other orbs, then is
+ * drawn home.
  *
- * The homes step down the globe in the order of the word list, so from
+ * The homes step down the glass in the order of the word list, so from
  * every side the orbs keep that order down the screen and the leader lines
  * to the words never cross. The lantern only turns about its axis: a tilt
  * would shuffle that order. For the same reason a turn or a tap carries
@@ -29,8 +30,9 @@ export type Vec3 = { x: number; y: number; z: number }
 
 const degrees = Math.PI / 180
 
-/** The scene camera in landing-lantern-3d.gss. GSS shoots each ray along
- *  `uv.x * right + uv.y * up + zoom * forward`, uv in canvas heights. */
+/** The scene camera: each ray leaves along `uv.x * right + uv.y * up +
+ *  zoom * forward`, uv in canvas heights. That is a perspective camera
+ *  whose vertical field of view is `2 * atan(1 / (2 * zoom))`. */
 const lanternCamera = {
 	yaw: 0,
 	pitch: 10 * degrees,
@@ -39,28 +41,31 @@ const lanternCamera = {
 	zoom: 1.5,
 } as const
 
-/** Glass globe, centered on the pivot. Matches the glow and rim in the scene. */
-export const lanternGlobeRadius = 0.97
+/** The glass jar, centered on the pivot: a spheroid `radius` wide at the
+ *  equator and `height` from the centre to either pole, its inner face
+ *  `inner` of that. The cap closes it at `top` and its floor, on the
+ *  base, is at `floor`. */
+export const lanternGlass = {
+	radius: 1.04,
+	height: 0.95,
+	inner: 0.975,
+	top: 0.777,
+	floor: -0.664,
+} as const
 
-/** Orb radius before hover scaling (`.ball` in the scene). */
+/** Orb radius before hover scaling. */
 export const lanternOrbRadius = 0.175
 
 /** Room the orbs swim in: inside the glass, between the cap and the base. */
 const cavity = { radius: 0.86, top: 0.66, bottom: -0.64 } as const
 
-/** Kody and his flame (`#kody` and `#flame` in the scene): a capsule up the
- *  lantern's axis. He never turns, but on the axis the same capsule holds
- *  in the lantern's frame at every turn. */
-const kody = { bottom: -0.26, top: 0.32, radius: 0.2 } as const
+/** A capsule up the lantern's axis that the orbs keep out of, so they
+ *  ring the jar instead of crowding its middle, where they would hide one
+ *  another's glyphs. On the axis it holds at every turn. */
+const core = { bottom: -0.26, top: 0.32, radius: 0.2 } as const
 
-/** Kody's head, which his gaze turns about. */
-const kodyHead = { x: 0, y: -0.14, z: 0.04 } as const
-
-/** Top to bottom in the order of the word list, in a ring round Kody. The
- *  orbs to the left of him sit over his flame or under his chin, so the
- *  leaders from them pass him by, and through the sway no orb hides his
- *  face or another orb's glyph, and none sits behind the flame. Matches
- *  the initial orb positions in landing-lantern-3d.gss. */
+/** Top to bottom in the order of the word list, in a ring round the core.
+ *  Through the sway no orb hides another orb's glyph. */
 const lanternOrbHomes: Record<LandingPrimitiveId, Vec3> = {
 	memory: { x: -0.38, y: 0.475, z: -0.011 },
 	secrets: { x: 0.322, y: 0.355, z: -0.39 },
@@ -411,10 +416,10 @@ export function stepLanternOrbs(
 	return next
 }
 
-/** The way from `from` to `to` that goes round the lantern's axis, where
- *  Kody stands, rather than through him: straight up or down and in or
- *  out, and along the arc round him. */
-function offsetRoundKody(from: Vec3, to: Vec3): Vec3 {
+/** The way from `from` to `to` that goes round the lantern's axis, and
+ *  the core on it, rather than through: straight up or down and in or
+ *  out, and along the arc round the axis. */
+function offsetRoundCore(from: Vec3, to: Vec3): Vec3 {
 	const fromOut = Math.hypot(from.x, from.z)
 	const toOut = Math.hypot(to.x, to.z)
 	if (fromOut < 1e-6 || toOut < 1e-6) return sub(to, from)
@@ -463,8 +468,8 @@ export function lanternOrbSettledPosition(body: LanternOrbBody): Vec3 {
 		: rotateAboutY(body.position, -body.swirl)
 }
 
-/** A tap on the glass sets the orbs swirling round Kody, one way or the
- *  other, all together so they keep their order. */
+/** A tap on the glass sets the orbs swirling round the axis, one way or
+ *  the other, all together so they keep their order. */
 export function pokeLanternOrbs(
 	bodies: ReadonlyArray<LanternOrbBody>,
 	random: () => number = Math.random,
@@ -477,7 +482,8 @@ export function pokeLanternOrbs(
 	}))
 }
 
-/** Keep a centre inside the glass, clear of the cap, the base, and Kody. */
+/** Keep a centre inside the glass, clear of the cap, the base, and the
+ *  core. */
 function clampToLanternCavity(point: Vec3, radius: number): Vec3 {
 	const limit = cavity.radius - radius - wallSkin
 	const distance = length(point)
@@ -486,16 +492,16 @@ function clampToLanternCavity(point: Vec3, radius: number): Vec3 {
 	const top = cavity.top - radius - wallSkin
 	const bottom = cavity.bottom + radius + wallSkin
 	next = { ...next, y: Math.min(top, Math.max(bottom, next.y)) }
-	return pushOffKody(next, radius)?.point ?? next
+	return pushOffCore(next, radius)?.point ?? next
 }
 
-/** A centre inside Kody's capsule, moved straight out from the axis to its
+/** A centre inside the core, moved straight out from the axis to its
  *  surface along `normal`. Out from the axis, never up or down, so an orb
- *  over the flame or under his chin is not pushed into the cap or the
- *  base. Null when the orb is clear of him. */
-function pushOffKody(point: Vec3, radius: number) {
-	const clear = kody.radius + radius + wallSkin
-	const beyond = Math.max(point.y - kody.top, kody.bottom - point.y, 0)
+ *  over or under the core is not pushed into the cap or the base. Null
+ *  when the orb is clear of it. */
+function pushOffCore(point: Vec3, radius: number) {
+	const clear = core.radius + radius + wallSkin
+	const beyond = Math.max(point.y - core.top, core.bottom - point.y, 0)
 	if (beyond >= clear) return null
 	const reach = Math.sqrt(clear * clear - beyond * beyond)
 	const out = Math.hypot(point.x, point.z)
@@ -552,7 +558,7 @@ function integrateCoast(
 ) {
 	const homing = smooth(clamp(1 - length(body.velocity) / homingSpeed, 0, 1))
 	if (homing > 0) {
-		const offset = offsetRoundKody(
+		const offset = offsetRoundCore(
 			body.position,
 			wanderTarget(body, time, amplitude),
 		)
@@ -653,7 +659,7 @@ function containOrbs(
 			body.position = { ...body.position, y: bottom }
 			body.velocity = bounce(body, { x: 0, y: -1, z: 0 })
 		}
-		const pushed = pushOffKody(body.position, radius)
+		const pushed = pushOffCore(body.position, radius)
 		if (pushed) {
 			body.position = pushed.point
 			body.velocity = bounce(body, scaleVec(pushed.normal, -1))
@@ -669,7 +675,7 @@ function bounce(body: LanternOrbBody, normal: Vec3): Vec3 {
 	return sub(body.velocity, scaleVec(normal, outward * keep))
 }
 
-/** Seconds the lantern sits untouched before Kody's idle moment, and
+/** Seconds the lantern sits untouched before its idle moment, and
  *  between moments after that. */
 export const lanternIdleDelay = 10
 const idleRepeat = 40
@@ -679,27 +685,20 @@ const idleFirstPop = 0.7
 const idlePopStep = 0.36
 const idlePopHalf = 0.3
 const idleFlareAt = 3.05
-const idleBowAt = 3.1
 
 export type LanternIdleMoment = {
-	/** How far Kody's gaze is on the orbs, 0 to 1. */
-	gaze: number
-	/** The orb he looks at, as a place down the spiral: 0 is the first
-	 *  word's orb, 5 the last's, 2.5 halfway between the third and fourth. */
-	focus: number
 	/** Each orb's pop, 0 to 1. */
 	pop: Record<LandingPrimitiveId, number>
-	/** The flame's flare once he is done, 0 to 1. */
+	/** The jar's flare once the last orb has popped, 0 to 1. */
 	flare: number
-	/** His satisfied nod at the end, 0 to 1. */
-	bow: number
 }
 
 /**
- * Kody's idle moment `restSeconds` into a rest, or null between moments.
- * Left alone a while, he counts his marbles: his gaze runs down the spiral
- * as each orb pops in turn, then he nods and the flame flares. It comes
- * once after `lanternIdleDelay`, then rarely, so the page stays calm.
+ * The idle moment `restSeconds` into a rest, or null between moments.
+ * Left alone a while, the lantern counts its marbles: each orb pops in
+ * turn down the spiral, in word-list order, then the light flares. It
+ * comes once after `lanternIdleDelay`, then rarely, so the page stays
+ * calm.
  */
 export function lanternIdleMoment(
 	restSeconds: number,
@@ -707,43 +706,13 @@ export function lanternIdleMoment(
 	if (restSeconds < lanternIdleDelay) return null
 	const t = (restSeconds - lanternIdleDelay) % idleRepeat
 	if (t >= idleLength) return null
-	const last = landingPrimitiveIds.length - 1
 	const pop = Object.fromEntries(
 		landingPrimitiveIds.map((id, index) => [
 			id,
 			bump(t, idleFirstPop + index * idlePopStep, idlePopHalf),
 		]),
 	) as Record<LandingPrimitiveId, number>
-	return {
-		gaze:
-			smooth(clamp(t / 0.6, 0, 1)) *
-			(1 - smooth(clamp((t - (idleLength - 1)) / 0.8, 0, 1))),
-		// A beat ahead of each pop: eyes lead.
-		focus: clamp((t - idleFirstPop + 0.12) / idlePopStep, 0, last),
-		pop,
-		flare: bump(t, idleFlareAt, 0.6),
-		bow: bump(t, idleBowAt, 0.24),
-	}
-}
-
-const gazeLookLimit = 32 * degrees
-const gazeNodLimit = 20 * degrees
-
-/** The look (`rotate-y`, right is positive) and nod (`rotate-x`, up is
- *  positive) that point Kody's face at a world point. He cannot look
- *  behind himself: a point behind him gets a glance to that side. */
-export function kodyGaze(target: Vec3) {
-	const dx = target.x - kodyHead.x
-	const dy = target.y - kodyHead.y
-	const ahead = Math.max(target.z - kodyHead.z, 0) + 0.3
-	return {
-		look: clamp(Math.atan2(dx, ahead), -gazeLookLimit, gazeLookLimit),
-		nod: clamp(
-			Math.atan2(dy, Math.hypot(dx, ahead)),
-			-gazeNodLimit,
-			gazeNodLimit,
-		),
-	}
+	return { pop, flare: bump(t, idleFlareAt, 0.6) }
 }
 
 /**
@@ -885,8 +854,8 @@ const resolutionSettleMs = 1500
 const resolutionClimbMs = 3000
 const resolutionRetryMs = 20_000
 
-/** GSS sizes the canvas at up to 2 device pixels per CSS pixel. Never drop
- *  under 0.75 device pixels per CSS pixel, or under half of what GSS
+/** The scene draws at up to 2 device pixels per CSS pixel. Never drop
+ *  under 0.75 device pixels per CSS pixel, or under half of what it
  *  draws: past that the lantern reads as blurred, not as a lighter frame. */
 function lanternResolutionFloor(devicePixelRatio: number) {
 	const density = Math.min(Math.max(devicePixelRatio, 1), 2)
