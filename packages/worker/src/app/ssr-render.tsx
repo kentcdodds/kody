@@ -1,5 +1,6 @@
 /** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
+import * as Sentry from '@sentry/cloudflare'
 import { renderToStream } from 'remix/component/server'
 import { type RemixNode } from 'remix/component'
 import { buildStylesheetHref, getClientBuildId } from '#app/client-build-id.ts'
@@ -186,6 +187,16 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				},
 				onError(error) {
 					console.error('SSR render error:', error)
+					try {
+						Sentry.captureException(error, {
+							tags: {
+								surface: 'ssr-render',
+								pathname: requestUrl.pathname,
+							},
+						})
+					} catch {
+						// Sentry must never break the SSR error path.
+					}
 				},
 			},
 		)

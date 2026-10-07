@@ -1,9 +1,19 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { firstPartySecurityHeaders } from './security-headers.ts'
 import { getEnv } from './env.ts'
 import { handleRequest } from './handler.ts'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
+
+const captureException = vi.fn()
+
+vi.mock('@sentry/cloudflare', async () => {
+	const stub = await import('#worker/test-support/sentry-cloudflare-stub.ts')
+	return {
+		...stub,
+		captureException: (...args: Array<unknown>) => captureException(...args),
+	}
+})
 
 function createEnv(overrides: Record<string, unknown> = {}) {
 	return {
@@ -68,6 +78,7 @@ test('uncaught handler failures return an illustrated HTML 500 with a document t
 		'Remix server handler failed:',
 		'Illustrated 500 shell failed:',
 	])
+	captureException.mockClear()
 	const response = await handleRequest(
 		new Request('https://example.com/health'),
 		createEnv({ SENTRY_ENVIRONMENT: 'production' }),
@@ -85,5 +96,15 @@ test('uncaught handler failures return an illustrated HTML 500 with a document t
 	expect(body).toContain('href="/"')
 	expect(response.headers.get('Content-Security-Policy')).toBe(
 		firstPartySecurityHeaders['Content-Security-Policy'],
+	)
+	expect(captureException).toHaveBeenCalledTimes(1)
+	expect(captureException).toHaveBeenCalledWith(
+		expect.any(Error),
+		expect.objectContaining({
+			tags: expect.objectContaining({
+				surface: 'app-router',
+				pathname: '/health',
+			}),
+		}),
 	)
 })
