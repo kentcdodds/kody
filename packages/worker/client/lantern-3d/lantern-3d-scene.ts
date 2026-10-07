@@ -130,7 +130,10 @@ export type LanternScene = {
 	dispose: () => void
 }
 
-const fov = 24
+/** A long lens, as the still was shot. Close up, the front of the lantern
+ *  would loom: the cap's rim would flatten, the base would stretch, and
+ *  the lid's top would drop out of sight. */
+const fov = 10
 
 /** Device pixels the canvas may draw, so a big screen cannot ask for 4K. */
 const maxPixels = 2_600_000

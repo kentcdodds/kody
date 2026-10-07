@@ -121,7 +121,7 @@ export type LanternModel = {
 export type LanternStep = <T>(work: () => T | PromiseLike<T>) => Promise<T>
 
 /** Above the still's horizon, as its cap and base rims show. */
-const lanternViewPitch = 0.1
+const lanternViewPitch = 0.12
 
 /** Hinge height of the handle, on top of the cap ring. */
 const hingeY = lanternShape.capTop + 0.02
