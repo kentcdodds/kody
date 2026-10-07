@@ -592,7 +592,9 @@ function createBackWallMaterial(uniforms: LanternUniforms, grain: Texture) {
 				float web = weights.x * texture2D(grainMap, p.zy).b +
 					weights.y * texture2D(grainMap, p.xz).b +
 					weights.z * texture2D(grainMap, p.xy).b;
-				k += web * 0.32;
+				// Whole, the cell borders read as a honeycomb. Kept only
+				// where the haze runs bright, they break into filaments.
+				k += web * smoothstep(0.8, 1.1, haze) * 0.3;
 				gl_FragColor = vec4(${glslAmber} * k * light, 1.0);
 			}
 		`,
