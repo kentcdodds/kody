@@ -157,7 +157,10 @@ export function AdminSystemEmailRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to delete system email.')
 			}
-			appliedPayload = payload
+			// Do not assign appliedPayload here: while href is still the detail
+			// URL, the next render would treat the cached GET snapshot as new
+			// and restore selectedMessage (clearing the success state). Same
+			// pattern as account-email delete.
 			data = payload
 			deleteState = 'idle'
 			deleteMessageCheck.reset()
