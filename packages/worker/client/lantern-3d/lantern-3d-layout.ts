@@ -46,7 +46,9 @@ export const lanternShape = {
 	baseTop: atHeight(0.8),
 	baseBottom: atHeight(0.97),
 	baseRadius: ofWidth(0.44),
-	baseFoot: ofWidth(0.4),
+	/** Where the base's side turns in toward its foot. */
+	baseWaist: atHeight(0.9),
+	baseFoot: ofWidth(0.304),
 } as const
 
 export const lanternOrbRadius = ofWidth(landingLanternOrbs[0]!.size / 200)

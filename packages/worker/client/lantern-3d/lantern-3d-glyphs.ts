@@ -33,14 +33,15 @@ const stroke = 0.052
 /** How far the keyline reaches past the face, in glyph units. */
 const keylineWidth = 0.065
 
-/** Glyphs draw at a few dozen pixels, so the curves stay coarse. */
+/** The bevels catch the key light, so they and the curves get enough
+ *  segments that the highlight rolls rather than steps. */
 const extrusion = {
 	depth: 0.1,
 	bevelEnabled: true,
 	bevelThickness: 0.03,
 	bevelSize: 0.024,
-	bevelSegments: 2,
-	curveSegments: 6,
+	bevelSegments: 4,
+	curveSegments: 12,
 } as const
 
 /** Strokes run through the middle of the extrusions' depth. */
@@ -122,7 +123,7 @@ function brain(grow: number) {
 		)
 	}
 	return [
-		new TubeGeometry(new CatmullRomCurve3(outline, true), 140, line, 8, true),
+		new TubeGeometry(new CatmullRomCurve3(outline, true), 200, line, 12, true),
 		...polyline(
 			[
 				[0, 0.36],
@@ -201,7 +202,7 @@ function padlock(grow: number) {
 	arch.push(new Vector3(0.2, 0.14, middle), new Vector3(0.2, 0.04, middle))
 	return [
 		extrude(body, grow),
-		new TubeGeometry(new CatmullRomCurve3(arch), 40, 0.066 + grow, 10, false),
+		new TubeGeometry(new CatmullRomCurve3(arch), 64, 0.066 + grow, 16, false),
 	]
 }
 
@@ -324,7 +325,7 @@ function polyline(points: ReadonlyArray<Point>, radius: number) {
 	const up = new Vector3(0, 1, 0)
 	for (let i = 0; i < points.length; i++) {
 		const [x, y] = points[i]!
-		const joint = new SphereGeometry(radius, 10, 6)
+		const joint = new SphereGeometry(radius, 16, 12)
 		joint.translate(x, y, z)
 		parts.push(joint)
 		const next = points[i + 1]
@@ -336,7 +337,7 @@ function polyline(points: ReadonlyArray<Point>, radius: number) {
 			radius,
 			radius,
 			direction.length(),
-			10,
+			16,
 			1,
 			true,
 		)
@@ -351,7 +352,7 @@ function polyline(points: ReadonlyArray<Point>, radius: number) {
 }
 
 function ring([x, y]: Point, grow: number) {
-	const geometry = new TorusGeometry(0.055, stroke * 0.8 + grow, 8, 20)
+	const geometry = new TorusGeometry(0.055, stroke * 0.8 + grow, 12, 40)
 	geometry.translate(x, y, middle)
 	return geometry
 }

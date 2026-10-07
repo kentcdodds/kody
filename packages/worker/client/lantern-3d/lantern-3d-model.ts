@@ -1,26 +1,21 @@
 import {
 	BufferAttribute,
 	BufferGeometry,
-	CapsuleGeometry,
 	CatmullRomCurve3,
 	CircleGeometry,
 	Color,
-	CylinderGeometry,
 	DirectionalLight,
 	Group,
 	HemisphereLight,
-	InstancedMesh,
 	LatheGeometry,
 	Mesh,
 	type MeshBasicMaterial,
 	type MeshStandardMaterial,
-	Object3D,
 	PlaneGeometry,
 	PointLight,
 	Points,
 	type ShaderMaterial,
 	SphereGeometry,
-	SplineCurve,
 	Sprite,
 	type SpriteMaterial,
 	TorusGeometry,
@@ -61,8 +56,6 @@ import {
 	createShadowMaterial,
 	createSparkleMaterial,
 	createThreadMaterial,
-	createTrimMaterial,
-	createVentMaterial,
 	lanternAmber,
 } from './lantern-3d-materials.ts'
 
@@ -135,30 +128,51 @@ const hingeY = lanternShape.capTop + 0.02
 /** The base's top inside the glass, tucked under the metal lip. */
 const floorRadius = 0.83
 
-/** Profile of the glass as radius and height, traced from the still's
- *  frame opening. The ends tuck into the cap and the base. */
-const glassProfile: ReadonlyArray<readonly [number, number]> = [
-	[0.78, lanternShape.baseTop - 0.07],
-	[0.8, lanternShape.baseTop],
-	[0.806, -0.757],
-	[0.818, -0.69],
-	[0.872, -0.629],
-	[0.932, -0.551],
-	[0.986, -0.45],
-	[1.026, -0.33],
-	[1.045, -0.2],
-	[1.048, 0],
-	[1.042, 0.16],
-	[0.998, 0.294],
-	[0.958, 0.369],
-	[0.866, 0.507],
-	[0.776, 0.601],
-	[0.733, 0.638],
-	[0.652, 0.69],
-	[0.596, 0.726],
-	[0.562, lanternShape.capBottom],
-	[0.54, lanternShape.capBottom + 0.04],
+/**
+ * The glass outline as radius and height: control points of a uniform
+ * cubic B-spline fitted to the still's frame opening, least squares with a
+ * bending penalty. A spline through the traced points themselves carries
+ * every wobble of the trace, and reflections show each one as a crease;
+ * this one stays within 0.02 of the trace and its curvature never jumps.
+ * The ends tuck into the cap and the base.
+ */
+const glassOutline: ReadonlyArray<readonly [number, number]> = [
+	[0.764, -1.145],
+	[0.764, -0.86],
+	[0.86, -0.621],
+	[1.033, -0.408],
+	[1.056, -0.112],
+	[1.051, 0.177],
+	[0.946, 0.435],
+	[0.743, 0.629],
+	[0.524, 0.791],
+	[0.398, 1.044],
 ]
+
+/** Points along the glass outline, base to cap. */
+function glassProfile(samples: number) {
+	const spans = glassOutline.length - 3
+	return Array.from({ length: samples + 1 }, (_, index) => {
+		const at = (index / samples) * spans
+		const span = Math.min(Math.floor(at), spans - 1)
+		const u = at - span
+		const weights = [
+			(1 - u) ** 3,
+			3 * u ** 3 - 6 * u ** 2 + 4,
+			-3 * u ** 3 + 3 * u ** 2 + 3 * u + 1,
+			u ** 3,
+		]
+		const point = new Vector2()
+		for (const [k, weight] of weights.entries()) {
+			const [radius, y] = glassOutline[span + k]!
+			point.x += (weight * radius) / 6
+			point.y += (weight * y) / 6
+		}
+		return point
+	})
+}
+
+const glassPoints = glassProfile(240)
 
 /** Built a part per `step`. */
 export async function createLanternModel(options: {
@@ -179,11 +193,10 @@ export async function createLanternModel(options: {
 
 	const glowTexture = keep(createGlowTexture())
 	const metal = keep(createMetalMaterial(keep(createBrushedTexture())))
-	const trim = keep(createTrimMaterial())
 	const litEdge = keep(createLitEdgeMaterial())
 
 	const { glassInterior, glassFloor, handle } = await step(() =>
-		buildLantern({ lantern, metal, trim, litEdge, keep }),
+		buildLantern({ lantern, metal, litEdge, keep }),
 	)
 
 	const fluid = new Group()
@@ -194,7 +207,7 @@ export async function createLanternModel(options: {
 	fluid.add(sparkles)
 	root.add(fluid)
 
-	const orbSphere = keep(new SphereGeometry(1, 40, 28))
+	const orbSphere = keep(new SphereGeometry(1, 64, 48))
 	const orbs: Array<LanternOrbView> = []
 	for (const [index, id] of landingPrimitiveIds.entries()) {
 		const orb = await step(() =>
@@ -290,19 +303,11 @@ type Keep = <T extends { dispose: () => void }>(item: T) => T
 function buildLantern(parts: {
 	lantern: Group
 	metal: MeshStandardMaterial
-	trim: MeshStandardMaterial
 	litEdge: MeshBasicMaterial
 	keep: Keep
 }) {
-	const { lantern, metal, trim, litEdge, keep } = parts
-	const glassGeometry = keep(
-		new LatheGeometry(
-			new SplineCurve(
-				glassProfile.map(([radius, y]) => new Vector2(radius, y)),
-			).getPoints(64),
-			96,
-		),
-	)
+	const { lantern, metal, litEdge, keep } = parts
+	const glassGeometry = keep(new LatheGeometry(glassPoints, 192))
 	const glassInterior = keep(
 		createGlassInteriorMaterial({
 			top: lanternShape.capBottom,
@@ -317,42 +322,18 @@ function buildLantern(parts: {
 
 	lantern.add(new Mesh(keep(capGeometry()), metal))
 	const capSeam = new Mesh(
-		keep(new TorusGeometry(0.585, 0.014, 6, 96)),
+		keep(new TorusGeometry(0.585, 0.014, 16, 192)),
 		litEdge,
 	)
 	capSeam.rotation.x = Math.PI / 2
 	capSeam.position.y = lanternShape.capBottom
 	const baseSeam = new Mesh(
-		keep(new TorusGeometry(0.8, 0.018, 6, 112)),
+		keep(new TorusGeometry(0.8, 0.018, 16, 224)),
 		litEdge,
 	)
 	baseSeam.rotation.x = Math.PI / 2
 	baseSeam.position.y = lanternShape.baseTop + 0.004
 	lantern.add(capSeam, baseSeam)
-
-	const { capRadius, capBottom, capTop, lidRadius, lidTop } = lanternShape
-	const { baseRadius, baseTop } = lanternShape
-	for (const [radius, y, tube] of [
-		[capRadius - 0.006, capBottom + 0.02, 0.017],
-		[capRadius - 0.006, capTop - 0.02, 0.015],
-		[lidRadius + 0.006, capTop + 0.008, 0.01],
-		[lidRadius - 0.006, lidTop - 0.012, 0.012],
-		[baseRadius - 0.008, baseTop - 0.02, 0.017],
-	] as const) {
-		const bead = new Mesh(keep(new TorusGeometry(radius, tube, 10, 128)), trim)
-		bead.rotation.x = Math.PI / 2
-		bead.position.y = y
-		lantern.add(bead)
-	}
-	lantern.add(keep(buildVents(keep)))
-
-	const pin = keep(new CylinderGeometry(0.05, 0.05, 0.1, 16))
-	for (const side of [-1, 1]) {
-		const mesh = new Mesh(pin, trim)
-		mesh.rotation.z = Math.PI / 2
-		mesh.position.set(side * handleLegX(), hingeY + 0.012, 0)
-		lantern.add(mesh)
-	}
 
 	const handle = new Group()
 	handle.position.y = hingeY
@@ -361,49 +342,12 @@ function buildLantern(parts: {
 
 	lantern.add(new Mesh(keep(baseGeometry()), metal))
 	const glassFloor = keep(createGlassFloorMaterial(floorRadius))
-	const floor = new Mesh(keep(new CircleGeometry(floorRadius, 96)), glassFloor)
+	const floor = new Mesh(keep(new CircleGeometry(floorRadius, 192)), glassFloor)
 	floor.rotation.x = -Math.PI / 2
 	floor.position.y = lanternShape.baseTop + 0.002
 	lantern.add(floor)
 
 	return { glassInterior, glassFloor, handle }
-}
-
-/** Slots round the cap ring, lit by the globe under them: hottest at the
- *  foot, through vertex colors. One draw for all of them. */
-function buildVents(keep: Keep) {
-	const count = 16
-	const radius = 0.014
-	const length = 0.09
-	const geometry = keep(new CapsuleGeometry(radius, length, 4, 8))
-	const position = geometry.getAttribute('position')
-	const colors = new Float32Array(position.count * 3)
-	const foot = lanternAmber.hot.clone().multiplyScalar(2.6)
-	const head = lanternAmber.bright.clone().multiplyScalar(1.3)
-	const half = length / 2 + radius
-	const color = new Color()
-	for (let i = 0; i < position.count; i++) {
-		color.copy(foot).lerp(head, (position.getY(i) + half) / (2 * half))
-		colors.set([color.r, color.g, color.b], i * 3)
-	}
-	geometry.setAttribute('color', new BufferAttribute(colors, 3))
-
-	const vents = new InstancedMesh(geometry, keep(createVentMaterial()), count)
-	const { capRadius, capBottom, capTop } = lanternShape
-	const place = new Object3D()
-	for (let i = 0; i < count; i++) {
-		const angle = (i / count) * Math.PI * 2
-		place.position.set(
-			Math.sin(angle) * (capRadius - 0.006),
-			(capBottom + capTop) / 2,
-			Math.cos(angle) * (capRadius - 0.006),
-		)
-		place.rotation.set(0, angle, 0)
-		place.scale.set(1, 1, 0.55)
-		place.updateMatrix()
-		vents.setMatrixAt(i, place.matrix)
-	}
-	return vents
 }
 
 /** One orb: a glowing core, a glass shell, its glyph, and a halo. */
@@ -476,66 +420,91 @@ function handleLegX() {
 	return lanternShape.handleReach - lanternShape.handleBand / 2
 }
 
-/** Cap ring and the lid on top of it, with a shallow dome. */
+/** Segments round every turned part: enough that no highlight steps. */
+const turnSegments = 192
+
+/**
+ * A turned profile, radius and height, through `corners`, each corner
+ * rounded off with an arc of its fillet radius. A rounded edge catches a
+ * highlight that rolls round it; a sharp one shows a facet that flashes.
+ * The profile runs bottom, side, then top, so its normals face out.
+ */
+function filleted(
+	corners: ReadonlyArray<readonly [radius: number, y: number, fillet?: number]>,
+) {
+	const points: Array<Vector2> = []
+	for (const [index, [x, y, fillet = 0]] of corners.entries()) {
+		const previous = corners[index - 1]
+		const next = corners[index + 1]
+		const corner = new Vector2(x, y)
+		if (!previous || !next || fillet === 0) {
+			points.push(corner)
+			continue
+		}
+		const back = new Vector2(previous[0], previous[1]).sub(corner).normalize()
+		const ahead = new Vector2(next[0], next[1]).sub(corner).normalize()
+		const half = Math.acos(Math.min(Math.max(back.dot(ahead), -1), 1)) / 2
+		const centre = corner
+			.clone()
+			.addScaledVector(
+				back.clone().add(ahead).normalize(),
+				fillet / Math.sin(half),
+			)
+		const enter = corner.clone().addScaledVector(back, fillet / Math.tan(half))
+		const leave = corner.clone().addScaledVector(ahead, fillet / Math.tan(half))
+		const from = Math.atan2(enter.y - centre.y, enter.x - centre.x)
+		let sweep = Math.atan2(leave.y - centre.y, leave.x - centre.x) - from
+		if (sweep > Math.PI) sweep -= Math.PI * 2
+		if (sweep < -Math.PI) sweep += Math.PI * 2
+		const steps = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 32)))
+		for (let step = 0; step <= steps; step++) {
+			const angle = from + (sweep * step) / steps
+			points.push(
+				new Vector2(
+					centre.x + Math.cos(angle) * fillet,
+					centre.y + Math.sin(angle) * fillet,
+				),
+			)
+		}
+	}
+	return points
+}
+
+/** Cap ring, narrowing a little toward the top as in the still, and the
+ *  lid on it with a raised plate on top. */
 function capGeometry() {
-	const bottom = lanternShape.capBottom
-	const top = lanternShape.capTop
-	const lid = lanternShape.lidTop
-	const r = lanternShape.capRadius
-	const lr = lanternShape.lidRadius
-	const profile: Array<readonly [number, number]> = [
-		[0, bottom],
-		[r - 0.05, bottom],
-		[r - 0.018, bottom + 0.006],
-		[r - 0.004, bottom + 0.024],
-		[r, bottom + 0.055],
-		[r, top - 0.05],
-		[r - 0.006, top - 0.022],
-		[r - 0.024, top - 0.006],
-		[r - 0.055, top],
-		[lr + 0.02, top],
-		[lr + 0.004, top + 0.008],
-		[lr, top + 0.026],
-		[lr, lid - 0.022],
-		[lr - 0.008, lid - 0.007],
-		[lr - 0.03, lid],
-		[lr * 0.72, lid],
-		[lr * 0.68, lid + 0.006],
-		[lr * 0.4, lid + 0.014],
-		[0, lid + 0.017],
-	]
+	const { capBottom, capTop, lidTop, capRadius, lidRadius } = lanternShape
+	const plate = lidRadius * 0.74
 	return new LatheGeometry(
-		profile.map(([x, y]) => new Vector2(x, y)),
-		96,
+		filleted([
+			[0, capBottom],
+			[capRadius, capBottom, 0.026],
+			[capRadius - 0.014, capTop, 0.036],
+			[lidRadius, capTop, 0.008],
+			[lidRadius, lidTop, 0.026],
+			[plate, lidTop, 0.004],
+			[plate, lidTop + 0.014, 0.007],
+			[0, lidTop + 0.018],
+		]),
+		turnSegments,
 	)
 }
 
-/** A puck: rounded top edge, the side tapering in to the foot. Inside the
- *  glass it stops at the lit floor. */
+/** A puck: rounded top edge, a side that flares a touch on the way down,
+ *  then a waist where it turns in to a narrower foot, as in the still.
+ *  Inside the glass it stops at the lit floor. */
 function baseGeometry() {
-	const top = lanternShape.baseTop
-	const bottom = lanternShape.baseBottom
-	const r = lanternShape.baseRadius
-	const foot = lanternShape.baseFoot
-	const profile: Array<readonly [number, number]> = [
-		[0, bottom],
-		[foot - 0.09, bottom],
-		[foot - 0.035, bottom + 0.008],
-		[foot - 0.006, bottom + 0.03],
-		[foot + 0.01, bottom + 0.07],
-		[foot + 0.035, bottom + 0.2],
-		[r - 0.02, top - 0.17],
-		[r - 0.002, top - 0.075],
-		[r, top - 0.045],
-		[r - 0.012, top - 0.016],
-		[r - 0.04, top - 0.002],
-		[r - 0.09, top + 0.004],
-		[0.86, top + 0.006],
-		[floorRadius - 0.01, top + 0.002],
-	]
+	const { baseTop, baseBottom, baseRadius, baseWaist, baseFoot } = lanternShape
 	return new LatheGeometry(
-		profile.map(([x, y]) => new Vector2(x, y)),
-		96,
+		filleted([
+			[0, baseBottom],
+			[baseFoot, baseBottom, 0.06],
+			[baseRadius - 0.005, baseWaist, 0.06],
+			[baseRadius - 0.029, baseTop, 0.05],
+			[0.86, baseTop + 0.006, 0.006],
+			[floorRadius - 0.01, baseTop + 0.002],
+		]),
+		turnSegments,
 	)
 }
 
@@ -563,9 +532,9 @@ function handleGeometry() {
 	points.push(new Vector3(legX, shoulder * 0.5, 0), new Vector3(legX, -0.04, 0))
 	const tube = new TubeGeometry(
 		new CatmullRomCurve3(points, false, 'centripetal'),
-		112,
+		256,
 		lanternShape.handleBand / 2,
-		14,
+		32,
 		false,
 	)
 	// A band rather than a rod, like the still's handle.
@@ -585,16 +554,16 @@ function seeded(seed: number) {
 	}
 }
 
-/** Radius of the glass at height `y`, from the traced profile. */
+/** Radius of the glass at height `y`. */
 function glassRadiusAt(y: number) {
-	for (let i = 1; i < glassProfile.length; i++) {
-		const [r1, y1] = glassProfile[i]!
-		if (y > y1) continue
-		const [r0, y0] = glassProfile[i - 1]!
-		const share = (y - y0) / (y1 - y0)
-		return r0 + (r1 - r0) * Math.min(Math.max(share, 0), 1)
+	for (let i = 1; i < glassPoints.length; i++) {
+		const upper = glassPoints[i]!
+		if (y > upper.y) continue
+		const lower = glassPoints[i - 1]!
+		const share = (y - lower.y) / (upper.y - lower.y)
+		return lower.x + (upper.x - lower.x) * Math.min(Math.max(share, 0), 1)
 	}
-	return glassProfile[glassProfile.length - 1]![0]
+	return glassPoints[glassPoints.length - 1]!.x
 }
 
 function sparkleGeometry() {

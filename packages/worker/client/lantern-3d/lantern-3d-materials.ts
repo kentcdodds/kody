@@ -25,7 +25,7 @@ import {
  * far wall glows brightest where your line of sight passes nearest the
  * heart of the globe and deepens to amber toward the glass, light ripples
  * over the floor, and the outside adds crisp edges and the studio's
- * windows on top. The metal is brushed dark bronze with brass bevels.
+ * windows on top. The metal is brushed dark bronze.
  * Each orb is a marble in three layers: a colored core seen from inside,
  * the glyph, and a glossy shell.
  *
@@ -70,11 +70,9 @@ export const lanternAmber = {
 	glow: new Color(0.95, 0.6, 0.14),
 } as const
 
-/** Linear sRGB for the frame: dark bronze, brushed, with brass where an
- *  edge is turned. */
+/** Linear sRGB for the frame: dark bronze, brushed. */
 const lanternMetal = {
 	bronze: new Color(0.05, 0.032, 0.02),
-	brass: new Color(0.56, 0.34, 0.1),
 } as const
 
 /** Bright lines where two warped sine lattices cancel: light through the
@@ -325,27 +323,11 @@ export function createMetalMaterial(grain: Texture) {
 	})
 }
 
-/** Polished brass on the turned edges, the hinge pins, and the trims. */
-export function createTrimMaterial() {
-	return new MeshStandardMaterial({
-		color: lanternMetal.brass.clone(),
-		metalness: 1,
-		roughness: 0.3,
-		envMapIntensity: 1.5,
-	})
-}
-
 /** Where the glass meets the cap and the base. */
 export function createLitEdgeMaterial() {
 	return new MeshBasicMaterial({
 		color: lanternAmber.hot.clone().multiplyScalar(2.4),
 	})
-}
-
-/** The slots round the cap, lit from inside: hottest at the foot, nearest
- *  the light, through vertex colors. */
-export function createVentMaterial() {
-	return new MeshBasicMaterial({ vertexColors: true })
 }
 
 const hashChunk = /* glsl */ `
