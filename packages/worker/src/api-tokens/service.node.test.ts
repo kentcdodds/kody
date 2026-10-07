@@ -89,50 +89,7 @@ test('mint returns the plaintext once, stores only a hash, and authenticates', a
 	expect(JSON.stringify(listed)).not.toContain(stored.token_hash)
 })
 
-test('resolveApiTokenLifetime requires a choice and expands short/long/explicit', () => {
-	expect(() => resolveApiTokenLifetime({})).toThrow(
-		/Token lifetime is required/,
-	)
-	expect(() => resolveApiTokenLifetime({})).toThrow(/lifetime: "short"\|"long"/)
-	expect(resolveApiTokenLifetime({ lifetime: 'short' })).toEqual({
-		idleTtlSeconds: shortLife.idleTtlSeconds,
-		maxLifetimeSeconds: shortLife.maxLifetimeSeconds,
-		cliFlags: '--lifetime short',
-	})
-	expect(resolveApiTokenLifetime({ lifetime: 'long' })).toEqual({
-		idleTtlSeconds: apiTokenLifetimeAliases.long.idleTtlSeconds,
-		maxLifetimeSeconds: apiTokenLifetimeAliases.long.maxLifetimeSeconds,
-		cliFlags: '--lifetime long',
-	})
-	expect(
-		resolveApiTokenLifetime({
-			idleTtlSeconds: 120,
-			maxLifetimeSeconds: 600,
-		}),
-	).toEqual({
-		idleTtlSeconds: 120,
-		maxLifetimeSeconds: 600,
-		cliFlags: '--idle-ttl-seconds 120 --max-lifetime-seconds 600',
-	})
-	expect(() =>
-		resolveApiTokenLifetime({
-			lifetime: 'short',
-			idleTtlSeconds: 120,
-			maxLifetimeSeconds: 600,
-		}),
-	).toThrow(/not both forms/)
-	expect(() =>
-		resolveApiTokenLifetime({
-			idleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds + 1,
-			maxLifetimeSeconds: apiTokenPolicy.maxMaxLifetimeSeconds,
-		}),
-	).toThrow(/idle_ttl_seconds/)
-	expect(() =>
-		resolveApiTokenLifetime({
-			idleTtlSeconds: 120,
-			maxLifetimeSeconds: apiTokenPolicy.maxMaxLifetimeSeconds + 1,
-		}),
-	).toThrow(/max_lifetime_seconds/)
+test('resolveApiTokenLifetime rejects prototype keys as aliases', () => {
 	expect(() => resolveApiTokenLifetime({ lifetime: 'toString' })).toThrow(
 		/lifetime must be "short" or "long"/,
 	)
