@@ -501,6 +501,9 @@ instead of one RPC per resource:
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
 - `usageGet` MCP capability
+- `usageTrendGet` MCP / Open API capability (`GET /v1/account/usage/trend`) —
+  signed-in daily UserMeter series (`readDailyTrend`) plus a cheap
+  `usage_rollups` monthly series for hosted execute and unique Worker days
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts` (via
   `readAdminEntitlementConsumption` in

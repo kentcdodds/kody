@@ -10,6 +10,7 @@ only the page the task needs.
 | [Delete what is off the common path](./delete-off-the-common-path.md)       | Keeping a shim, flag, field, or doc for a path the product does not take                                  |
 | [Cleanup](./cleanup.md)                                                     | A migration left the old lane beside the new one, or leftovers still name the old way                     |
 | [Fail loudly at the right layer](./fail-loudly.md)                          | An error could be swallowed so a partial result continues                                                 |
+| [Fix the root bottleneck](./fix-the-root-bottleneck.md)                     | Masking slowness with timeouts, fallbacks, or a quieter path                                              |
 | [Two-way and one-way doors](./two-way-doors.md)                             | Deciding how much review a change needs                                                                   |
 | [Examples over prose](./examples-over-prose.md)                             | Writing docs, skills, or a multi-step procedure                                                           |
 | [Keep agent context lean](./lean-agent-context.md)                          | Editing `AGENTS.md`, agent skills, or deciding where guidance belongs                                     |

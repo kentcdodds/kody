@@ -18,3 +18,7 @@ if (scanned.manifestLoadFailures > 0) {
 
 The next wake rescans
 (`packages/worker/src/package-invocations/subscription-topic-cache.ts`).
+
+## Related
+
+- [Fix the root bottleneck](./fix-the-root-bottleneck.md)

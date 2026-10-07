@@ -378,10 +378,11 @@ or package source.
 
 The hourly `usage_entitlement_alert` lane sweeps the top ~15 active accounts
 this UTC month (scored against each account's effective plan, including
-temporary Pro gift / referral overlays) and fans `fleet.entitlement.crossed` to
-packages saved by users who hold the admin role at dispatch time. A non-admin
-package may declare the topic, but it never receives the event. Role revocation
-stops delivery on the next crossing.
+temporary Pro gift / referral overlays; inbound `email_receives_per_day` uses
+the base plan, matching inbound mail enforcement) and fans
+`fleet.entitlement.crossed` to packages saved by users who hold the admin role
+at dispatch time. A non-admin package may declare the topic, but it never
+receives the event. Role revocation stops delivery on the next crossing.
 
 One event fires per crossing of 80% (`approaching`) or 100% (`reached`) on a
 specific entitlement, when a non-admin account first exceeds 24h of combined

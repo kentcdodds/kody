@@ -742,11 +742,13 @@ GROUP BY stage
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound, scored against each account's **effective** plan
-  (including temporary Pro gift / referral overlays). Emits
-  `fleet.entitlement.crossed` to admin-owned packages once when a swept account
-  first crosses 80% or 100% of a plan-limit resource, when a non-admin account's
-  combined execute, job_run, and workflow_run duration for the month first
-  exceeds `fleetRuntimeDurationAlertThresholdMs` (24h), when a non-admin
+  (including temporary Pro gift / referral overlays). Inbound
+  `email_receives_per_day` is the exception: inbound mail enforces that cap
+  against the base (manual + Stripe) plan, so the sweep scores it the same way.
+  Emits `fleet.entitlement.crossed` to admin-owned packages once when a swept
+  account first crosses 80% or 100% of a plan-limit resource, when a non-admin
+  account's combined execute, job_run, and workflow_run duration for the month
+  first exceeds `fleetRuntimeDurationAlertThresholdMs` (24h), when a non-admin
   account's unique Dynamic Worker cost for the month first reaches the
   plan-aware threshold (Free $2 / 1,000 unique days, Standard
   $12, Pro $49), or

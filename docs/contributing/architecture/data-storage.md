@@ -824,7 +824,10 @@ Write-lease rows clear on release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
-or day index. `adminUserMeterParity` reports meter-only daily counts. See
+or day index. `adminUserMeterParity` reports meter-only daily counts.
+`readDailyTrend` returns one compact RPC of daily counters and unique-worker-day
+counts for that retention window; `readAccountUsageTrend` / `usageTrendGet`
+zero-fill missing days and attach a cheap `usage_rollups` monthly series. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -1190,10 +1193,9 @@ script owns no Durable Object classes.
   stable user id and read only through role-gated platform aggregates)
 - `MCP_PROTOCOL_EVENTS` (Analytics Engine dataset, production/preview only; one
   point per authenticated `/mcp` request recording which protocol lane served it
-  — legacy sessionful vs stateless 2026-07-28 — for legacy-lane retirement, plus
-  blob8 package-identity param class (`kody_id` / `package_id` / `name` / `both`
-  / `none`) on `tools/call` for the public MCP `kody_id` alias gate; see
-  `packages/worker/src/mcp/protocol-metrics.ts`)
+  (sessionful Durable Object vs stateless SDK) and, on `tools/call`, blob8
+  package-identity param class (`kody_id` / `package_id` / `name` / `both` /
+  `none`); see `packages/worker/src/mcp/protocol-metrics.ts`)
 - `EXECUTE_INTERPRETABLE_EVENTS` (Analytics Engine dataset, production/preview
   only; one point per MCP execute-tool module classifying whether it is
   interpretable pure glue for fleet `q`; see
