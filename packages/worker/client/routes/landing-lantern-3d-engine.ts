@@ -315,7 +315,11 @@ export function startLanternEngine(options: {
 			new CustomEvent(lanternOrbMotionEvent, { bubbles: true }),
 		)
 		if (warmup.stage === 'done') {
-			const nextResolution = stepLanternResolution(resolution, now)
+			const nextResolution = stepLanternResolution(
+				resolution,
+				now,
+				window.devicePixelRatio || 1,
+			)
 			if (nextResolution.scale !== resolution.scale) {
 				options.onResolution(nextResolution.scale)
 			}

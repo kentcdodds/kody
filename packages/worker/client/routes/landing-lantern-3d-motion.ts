@@ -882,12 +882,29 @@ export function createLanternResolution(
 	}
 }
 
-/** Count one frame drawn at `now`. Does not mutate `state`. */
+/** Count one frame drawn at `now`, at the screen's current device pixel
+ *  ratio: it changes as the window moves between screens or zooms. Does
+ *  not mutate `state`. */
 export function stepLanternResolution(
 	state: LanternResolution,
 	now: number,
+	devicePixelRatio: number,
 ): LanternResolution {
-	const next = { ...state }
+	const floor = lanternResolutionFloor(devicePixelRatio)
+	if (state.scale < floor) {
+		// On a screen with fewer device pixels, the old floor blurs it.
+		return {
+			...state,
+			floor,
+			scale: floor,
+			windowStart: now,
+			frames: 0,
+			lastFrame: now,
+			calmSince: now,
+			settleUntil: Math.max(state.settleUntil, now + resolutionWindowMs),
+		}
+	}
+	const next = { ...state, floor }
 	if (now - state.lastFrame > resolutionGapMs) {
 		next.windowStart = now
 		next.frames = 0
@@ -910,11 +927,11 @@ export function stepLanternResolution(
 	next.frames = 0
 	if (fps < state.targetFps * 0.75) {
 		next.calmSince = now
-		if (state.scale <= state.floor) return next
+		if (state.scale <= floor) return next
 		// Pixels cost linearly, so scale each side by the root of the shortfall.
 		const wanted = state.scale * Math.sqrt(fps / (state.targetFps * 0.9))
 		next.scale = Math.max(
-			state.floor,
+			floor,
 			Math.min(
 				state.scale - resolutionStep,
 				Math.floor(wanted / resolutionStep) * resolutionStep,

@@ -111,10 +111,12 @@ function gpu(fullMs: number, refreshFps = 60) {
 	return (scale: number) => Math.max(1000 / refreshFps, fullMs * scale * scale)
 }
 
+/** Draw for `seconds` on a screen of `devicePixelRatio`. */
 function runResolution(
 	state: LanternResolution,
 	frameMs: (scale: number) => number,
 	seconds: number,
+	devicePixelRatio = 2,
 ) {
 	let next = state
 	let lowest = state.scale
@@ -122,7 +124,7 @@ function runResolution(
 	const end = now + seconds * 1000
 	while (now < end) {
 		now += frameMs(next.scale)
-		next = stepLanternResolution(next, now)
+		next = stepLanternResolution(next, now, devicePixelRatio)
 		lowest = Math.min(lowest, next.scale)
 	}
 	return { state: next, lowest }
@@ -750,6 +752,7 @@ test('adaptive resolution settles at the sharpest level the GPU holds', () => {
 	const paused = stepLanternResolution(
 		smooth.state,
 		smooth.state.lastFrame + 2000,
+		2,
 	)
 	expect(runResolution(paused, gpu(8), 3).lowest).toBe(1)
 
@@ -766,9 +769,22 @@ test('adaptive resolution settles at the sharpest level the GPU holds', () => {
 
 	// Far too slow: a 2x screen drops to 1x, a 1x screen keeps at least
 	// 0.75 device pixels per CSS pixel.
-	expect(runResolution(fresh, gpu(200), 10).lowest).toBe(0.5)
+	const dropped = runResolution(fresh, gpu(200), 10)
+	expect(dropped.lowest).toBe(0.5)
 	const plain = createLanternResolution(60, 1, 0)
-	expect(runResolution(plain, gpu(200), 10).lowest).toBe(0.75)
+	expect(runResolution(plain, gpu(200), 10, 1).lowest).toBe(0.75)
+
+	// The window moves from that 2x screen to a 1x one: it comes back up
+	// to 0.75 on the next frame and stays there.
+	const moved = stepLanternResolution(
+		dropped.state,
+		dropped.state.lastFrame + 16,
+		1,
+	)
+	expect(moved.scale).toBe(0.75)
+	expect(runResolution(moved, gpu(200), 10, 1).lowest).toBe(0.75)
+	// And back to the 2x screen, where it may drop to 0.5 again.
+	expect(runResolution(moved, gpu(200), 10, 2).lowest).toBe(0.5)
 
 	// A 30 Hz display drawing every frame is not slow.
 	const saver = createLanternResolution(30, 2, 0)
