@@ -343,29 +343,31 @@ test('bootstrap respects parent token scopes', async () => {
 
 test('bootstrap long lifetime clamps absolute max to a shorter API-token parent', async () => {
 	const { db } = createDb()
-	const parentRemainingSeconds = 6 * 24 * 60 * 60
+	const parentRemainingSeconds = 30 * 24 * 60 * 60
 	const minted = await mintCliCredentialBootstrap({
 		db,
 		userId,
-		lifetime: 'short',
+		lifetime: 'long',
 		parent: {
 			scopes: ['tokens:write', 'local-execute', 'account:read'],
 			maxExpiresAt: at(parentRemainingSeconds).toISOString(),
 		},
 		now: start,
 	})
-	expect(minted.idle_ttl_seconds).toBe(shortLife.idleTtlSeconds)
-	expect(minted.max_lifetime_seconds).toBe(shortLife.maxLifetimeSeconds)
+	expect(minted.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
+	expect(minted.max_lifetime_seconds).toBe(parentRemainingSeconds)
+	expect(minted.max_lifetime_seconds).toBeLessThan(longLife.maxLifetimeSeconds)
 
 	const redeemed = await redeemCliCredentialBootstrap({
 		db,
 		code: minted.bootstrap_code,
-		lifetime: 'short',
+		idleTtlSeconds: longLife.idleTtlSeconds,
+		maxLifetimeSeconds: parentRemainingSeconds,
 		now: start,
 	})
-	expect(redeemed.token.idle_ttl_seconds).toBe(shortLife.idleTtlSeconds)
+	expect(redeemed.token.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
 	expect(redeemed.token.max_expires_at).toBe(
-		at(shortLife.maxLifetimeSeconds).toISOString(),
+		at(parentRemainingSeconds).toISOString(),
 	)
 })
 
