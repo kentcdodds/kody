@@ -18,6 +18,23 @@ export function isPublishedSourceWithinNpmBundleRebuildWindow(input: {
 	)
 }
 
+/**
+ * Keep the previous npm runtime bundle when one exists and the publish
+ * finalize clock is still inside the rebuild window — or is unknown.
+ *
+ * `snapshotCreatedAt` is null after `published_commit` flips and before
+ * `writePublishedSourceSnapshot`, and on Artifacts backfill (backfill is
+ * not a publish clock). A missing clock is not "outside the window".
+ * Brand-new exports with no previous artifact still 503 until rebuild.
+ */
+export function canKeepPreviousNpmBundleDuringRebuild(input: {
+	publishedAt: string | null | undefined
+	nowMs?: number
+}) {
+	if (!input.publishedAt) return true
+	return isPublishedSourceWithinNpmBundleRebuildWindow(input)
+}
+
 function getDeclaredPackageDependencies(sourceFiles: Record<string, string>) {
 	const packageJson = sourceFiles[packageManifestPath]
 	if (!packageJson) return []
