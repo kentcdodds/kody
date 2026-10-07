@@ -47,7 +47,7 @@ import {
  * Kody has an idle moment now and then.
  *
  * The first frames are a warm-up (`stepLanternWarmup`): only once the
- * scene keeps up does `onShown` crossfade it in. Otherwise `onSlow` hands
+ * scene keeps up does `onShown` crossfade it in. Otherwise `onFail` hands
  * the page back to the still lantern.
  */
 
@@ -129,8 +129,9 @@ export function startLanternEngine(options: {
 	activeId: () => LandingPrimitiveId | null
 	/** The scene drew its warm-up and keeps up. */
 	onShown: () => void
-	/** The warm-up was too slow: this device should keep the still. */
-	onSlow: () => void
+	/** The warm-up was too slow, or a frame threw: this device should keep
+	 *  the still. */
+	onFail: () => void
 	/** Adaptive resolution picked a new share of the device pixel ratio. */
 	onResolution: (scale: number) => void
 	signal: AbortSignal
@@ -209,8 +210,15 @@ export function startLanternEngine(options: {
 	const frame = (now: number) => {
 		raf = null
 		framing = true
-		const going = step(now)
-		framing = false
+		let going = false
+		try {
+			going = step(now)
+		} catch (error) {
+			console.error('The 3D lantern stopped on an error.', error)
+			options.onFail()
+		} finally {
+			framing = false
+		}
 		if (going && keepGoing()) schedule()
 	}
 
@@ -359,7 +367,7 @@ export function startLanternEngine(options: {
 				options.onShown()
 				return true
 			case 'slow':
-				options.onSlow()
+				options.onFail()
 				return false
 			default: {
 				const unhandled: never = warm.verdict
@@ -568,8 +576,8 @@ export function startLanternEngine(options: {
 	})
 	resize.observe(figure)
 	// The idle moment rewards watching, so looking away starts the wait over.
-	const sight = new IntersectionObserver(([entry]) => {
-		visible = entry?.isIntersecting ?? true
+	const sight = new IntersectionObserver((entries) => {
+		visible = entries.at(-1)?.isIntersecting ?? true
 		if (!visible) rest = 0
 		wake()
 	})
@@ -587,8 +595,16 @@ export function startLanternEngine(options: {
 	document.addEventListener(
 		'visibilitychange',
 		() => {
-			if (document.visibilityState === 'hidden') rest = 0
-			wake()
+			if (document.visibilityState === 'visible') {
+				wake()
+				return
+			}
+			rest = 0
+			// A hidden tab runs no frames, so a booked one would run on the
+			// return with the whole time away as its gap, a stall to the
+			// warm-up. Dropped, it leaves `wake` to resume the warm-up.
+			if (raf != null) cancelAnimationFrame(raf)
+			raf = null
 		},
 		{ signal },
 	)

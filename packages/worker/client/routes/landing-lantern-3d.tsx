@@ -188,7 +188,7 @@ export function LandingLantern3D(handle: Handle<LandingLanternProps>) {
 					refreshFps,
 					activeId: () => handle.props.activeId,
 					onShown: () => shown(node),
-					onSlow: fail,
+					onFail: fail,
 					onResolution(scale) {
 						resolution = scale
 						handle.update()
