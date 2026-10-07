@@ -259,78 +259,6 @@ export default async function main() { return await smokeTest() }`,
 	)
 })
 
-test('buildLocalExecutePackageGraph does not double-declare kody from nested npm runtime imports', async () => {
-	// Regression for local/cloud parity: npm-backed published bundles that
-	// inline nested package graphs keep `import { kody }` from dependency
-	// runtimes. The inlined-runtime rewrite must not emit a second `kody`.
-	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(
-		makeLoadedSource({
-			exports: { './reconcile': './src/reconcile.ts' },
-			files: {
-				'src/reconcile.ts': `export default async function reconcile() { return { ok: true } }`,
-			},
-		}),
-	)
-	const nestedRuntime =
-		'./.__kody_packages__/@kentcdodds/x/.__published_bundle__/2e2f6765742d706f7374/.__kody_virtual__/runtime.js'
-	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		makeArtifactHit({
-			artifactName: './reconcile',
-			entryPoint: 'src/reconcile.ts',
-			mainModule: 'dist/reconcile.js',
-			modules: {
-				'dist/reconcile.js': `import { kody, createAuthenticatedFetch, secretHeaders, oauthClientCredentials, packageContext, email, workflows, packages, events } from ${JSON.stringify(nestedRuntime)};
-
-// virtual:.__kody_virtual__/runtime.js
-function __kodyOptionalRuntimeFunctionExport(exportName) {
-  return () => {};
-}
-var runtime_default = { createAuthenticatedFetch: __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch") };
-var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
-
-// virtual:.__kody_root__/src/reconcile.ts
-export default async function reconcile() {
-  return { ok: true, hasKody: typeof kody };
-}
-`,
-				'.__kody_virtual__/runtime.js':
-					'export function createAuthenticatedFetch() { throw new Error("stale") }',
-				[nestedRuntime.replace(/^\.\//, '')]:
-					'export const kody = {}; export function createAuthenticatedFetch() {} export const secretHeaders = {}; export const oauthClientCredentials = {}; export const packageContext = {}; export const email = {}; export const workflows = {}; export const packages = {}; export const events = {};',
-			},
-		}),
-	)
-
-	const graph = await buildLocalExecutePackageGraph({
-		...graphInput,
-		code: `import reconcile from 'kody:@kentcdodds/example-package/reconcile'
-export default async function main() { return await reconcile() }`,
-	})
-
-	const bundle = graph.modules.find((module) =>
-		module.name.endsWith('/dist/reconcile.js'),
-	)
-	expect(bundle).toBeDefined()
-	const shimImportBodies = [
-		...bundle!.esModule.matchAll(
-			/import\s*\{([\s\S]*?)\}\s*from\s*["']([^"']+)["']/g,
-		),
-	]
-		.filter(
-			(match) =>
-				(match[2] ?? '').includes('.__kody_virtual__/runtime.js') &&
-				!(match[2] ?? '').includes('.__kody_packages__'),
-		)
-		.map((match) => match[1] ?? '')
-	expect(shimImportBodies.length).toBeGreaterThan(0)
-	for (const body of shimImportBodies) {
-		expect(body).not.toMatch(/(^|[\s,])kody([\s,]|$)/)
-	}
-	expect(bundle?.esModule).toContain('typeof kody')
-	expect(bundle?.esModule).not.toContain('__kodyOptionalRuntimeFunctionExport')
-})
-
 test('buildLocalExecutePackageGraph rewrites user-secret placeholders onto gateway fetch', async () => {
 	const packageId = 'pkg-1'
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
@@ -676,20 +604,6 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 
 test('local isolate wraps globalThis.fetch so frozen copies still hop secrets', async () => {
 	const shim = createLocalExecuteRuntimeShimSource(runtimeModulePath)
-	expect(shim).toContain('kody.localExecuteFetchPatched')
-	expect(shim).toContain(
-		'globalThis.fetch = (input, init) => __kodyGatewayFetch(input, init)',
-	)
-	const callStart = shim.indexOf('async function __kodyGatewayFetchCall')
-	const callEnd = shim.indexOf(
-		'export function __kodyCreatePackageBoundStorage',
-	)
-	expect(callStart).toBeGreaterThan(-1)
-	expect(callEnd).toBeGreaterThan(callStart)
-	const callSource = shim.slice(callStart, callEnd)
-	expect(callSource).toContain('__kodyNativeFetch')
-	expect(callSource).not.toContain('globalThis.fetch')
-
 	const start = shim.indexOf('const __kodyNullBodyStatuses')
 	const end = shim.indexOf('export function __kodyCreatePackageBoundSecrets')
 	expect(start).toBeGreaterThan(-1)

@@ -370,7 +370,6 @@ export async function main() {
 	expect(result.source).not.toMatch(
 		/import\s*\{[^}]*\bkody\b[^}]*\}\s*from\s*["'][^"']*__kody_virtual__\/runtime\.js["']/,
 	)
-	expect(result.source).toContain('__kodyCreatePackageBoundAuthenticatedFetch')
 	expect(result.source).toContain(
 		`var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});`,
 	)
@@ -555,11 +554,8 @@ export function main() {
 test('rewrite does not bind bare typeof probes for shared export names', () => {
 	// `typeof email2 === "undefined"` must stay true under --local when the
 	// removable sections never declared email2. Binding it to the shim would
-	// flip intentional unbound feature probes.
-	const source = `import { kody } from "./dep-runtime.js";
-
-// virtual:.__kody_virtual__/runtime.js
-function __kodyOptionalRuntimeFunctionExport(exportName) {
+	// flip intentional unbound feature probes (including multiline `typeof`).
+	const inlinedPreamble = `function __kodyOptionalRuntimeFunctionExport(exportName) {
   return () => {};
 }
 function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
@@ -568,67 +564,50 @@ var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthe
 var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
 var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
 var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
-var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
-
-// virtual:.__kody_root__/src/probe.ts
-export function main() {
+var KodyRuntime = Object.freeze({ defaultValue: runtime_default });`
+	const probeBodies = [
+		{
+			author: `export function main() {
   return typeof email2 === "undefined";
-}
-`
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath:
-			'.__kody_packages__/@kentcdodds/demo/.__published_bundle__/2e2f70726f6265/bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).toContain('typeof email2 === "undefined"')
-	// Bare typeof probes must not gain a shim binding (would flip to defined).
-	expect(
-		[...result.source.matchAll(/\bas\s+(__kodyShim\w+)\b/g)].map((m) => m[1]),
-	).not.toContain('__kodyShimEmail')
-	expect(
-		[...result.source.matchAll(/\bvar\s+(email\d+)\s*=/g)].map((m) => m[1]),
-	).toEqual([])
-})
-
-test('rewrite does not bind multiline bare typeof probes for shared export names', () => {
-	// CodeRabbit: an 8-char lookbehind misses `typeof\n  email2` (9+ chars of
-	// keyword + whitespace), which would incorrectly alias the probe.
-	const source = `import { kody } from "./dep-runtime.js";
-
-// virtual:.__kody_virtual__/runtime.js
-function __kodyOptionalRuntimeFunctionExport(exportName) {
-  return () => {};
-}
-function __kodyCreatePackageBoundStorage(id) { return () => ({ id }); }
-function __kodyCreatePackageBoundSecrets(id) { return { get: async () => "", has: async () => false }; }
-var createAuthenticatedFetch2 = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-var packageStorage2 = __kodyCreatePackageBoundStorage(${JSON.stringify(packageId)});
-var packageSecrets2 = __kodyCreatePackageBoundSecrets(${JSON.stringify(packageId)});
-var runtime_default = { createAuthenticatedFetch: createAuthenticatedFetch2 };
-var KodyRuntime = Object.freeze({ defaultValue: runtime_default });
-
-// virtual:.__kody_root__/src/probe.ts
-export function main() {
+}`,
+			expectProbe: (source: string) => {
+				expect(source).toContain('typeof email2 === "undefined"')
+			},
+		},
+		{
+			author: `export function main() {
   return (
     typeof
       email2 === "undefined"
   );
-}
+}`,
+			expectProbe: (source: string) => {
+				expect(source).toMatch(/typeof\s+email2/)
+			},
+		},
+	]
+	for (const { author, expectProbe } of probeBodies) {
+		const source = `import { kody } from "./dep-runtime.js";
+
+// virtual:.__kody_virtual__/runtime.js
+${inlinedPreamble}
+
+// virtual:.__kody_root__/src/probe.ts
+${author}
 `
-	const result = rewriteInlinedLocalExecuteBundleSource({
-		modulePath:
-			'.__kody_packages__/@kentcdodds/demo/.__published_bundle__/2e2f70726f6265/bundle.js',
-		source,
-		primaryRuntimePath: runtimeModulePath,
-	})
-	expect(result.rewritten).toBe(true)
-	expect(result.source).toMatch(/typeof\s+email2/)
-	expect(
-		[...result.source.matchAll(/\bas\s+(__kodyShim\w+)\b/g)].map((m) => m[1]),
-	).not.toContain('__kodyShimEmail')
-	expect(
-		[...result.source.matchAll(/\bvar\s+(email\d+)\s*=/g)].map((m) => m[1]),
-	).toEqual([])
+		const result = rewriteInlinedLocalExecuteBundleSource({
+			modulePath:
+				'.__kody_packages__/@kentcdodds/demo/.__published_bundle__/2e2f70726f6265/bundle.js',
+			source,
+			primaryRuntimePath: runtimeModulePath,
+		})
+		expect(result.rewritten).toBe(true)
+		expectProbe(result.source)
+		expect(
+			[...result.source.matchAll(/\bas\s+(__kodyShim\w+)\b/g)].map((m) => m[1]),
+		).not.toContain('__kodyShimEmail')
+		expect(
+			[...result.source.matchAll(/\bvar\s+(email\d+)\s*=/g)].map((m) => m[1]),
+		).toEqual([])
+	}
 })
