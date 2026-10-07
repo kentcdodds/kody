@@ -2,7 +2,11 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { creditAttributionForPackage } from '#universal/credit-attribution.ts'
+import {
+	creditAttributionForPackage,
+	type CreditAttributionRow,
+} from '#universal/credit-attribution.ts'
+import { routes } from '#universal/routes.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
@@ -125,11 +129,56 @@ export const usageByPackageGetCapability = defineDomainCapability(
 			const packageId = args.packageId?.trim()
 			if (!packageId) return breakdown
 			const row = creditAttributionForPackage(breakdown, packageId)
+			if (!row) {
+				return {
+					month: breakdown.month,
+					totalCreditsMicroUsd: breakdown.totalCreditsMicroUsd,
+					rows: [],
+				}
+			}
 			return {
 				month: breakdown.month,
 				totalCreditsMicroUsd: breakdown.totalCreditsMicroUsd,
-				rows: row ? [row] : [],
+				rows: [
+					await enrichUnspentPackageAttributionRow({
+						db,
+						stableUserId: user.userId,
+						username,
+						row,
+					}),
+				],
 			}
 		},
 	},
 )
+
+/**
+ * Zero-spend package slices from {@link creditAttributionForPackage} use the
+ * raw package id as the name and a null href. Restore the saved package label
+ * and community link the same way the package settings page does.
+ */
+async function enrichUnspentPackageAttributionRow(input: {
+	db: D1Database
+	stableUserId: string
+	username: string
+	row: CreditAttributionRow
+}): Promise<CreditAttributionRow> {
+	const { row } = input
+	if (row.isAdHoc) return row
+	if (row.name !== row.packageId && row.href) return row
+	const saved = await input.db
+		.prepare(
+			`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+		)
+		.bind(row.packageId, input.stableUserId)
+		.first<{ kody_id: string; name: string }>()
+	if (!saved) return row
+	return {
+		...row,
+		name: saved.name?.trim() || saved.kody_id,
+		href: routes.communityPackage.href({
+			username: input.username,
+			kodyId: saved.kody_id,
+		}),
+	}
+}

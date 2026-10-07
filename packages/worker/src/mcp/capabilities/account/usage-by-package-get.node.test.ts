@@ -227,4 +227,20 @@ test('usageByPackageGet packageId returns that package slice of the period', asy
 		share: 0,
 		isAdHoc: false,
 	})
+
+	const unspentOwned = await usageByPackageGetCapability.handler(
+		{ packageId: 'pkg-alpha' },
+		{
+			env: createAttributionEnv().env,
+			callerContext: callerContext(testStableUserIdFromEmail(email)),
+		},
+	)
+	expect(unspentOwned.rows).toHaveLength(1)
+	expect(unspentOwned.rows[0]).toMatchObject({
+		packageId: 'pkg-alpha',
+		name: 'Alpha Bot',
+		href: `/@${username}/alpha-bot`,
+		creditsMicroUsd: 0,
+		isAdHoc: false,
+	})
 })
