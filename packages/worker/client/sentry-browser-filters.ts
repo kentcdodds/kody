@@ -1437,10 +1437,22 @@ function isSentryReplayIframeInstrumentationStackFunction(name: string) {
 	)
 }
 
+/**
+ * Parse function names out of an `Error.stack` string (V8 `at name (url)` /
+ * SpiderMonkey `name@url`). Do not substring-match tokens against full stack
+ * text — a URL like `onIframeLoad-helper.js` must not count.
+ */
 function stackTextMentionsReplayIframeInstrumentation(stack: string) {
-	return sentryReplayIframeInstrumentationStackFunctions.some((token) =>
-		stack.includes(token),
-	)
+	for (const line of stack.split('\n')) {
+		const trimmed = line.trim()
+		const v8 = /^at\s+([^\s(]+)/.exec(trimmed)
+		const spidermonkey = /^([^@\s]+)@/.exec(trimmed)
+		const name = v8?.[1] ?? spidermonkey?.[1]
+		if (name && isSentryReplayIframeInstrumentationStackFunction(name)) {
+			return true
+		}
+	}
+	return false
 }
 
 function framesMentionReplayIframeInstrumentation(
