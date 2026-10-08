@@ -411,8 +411,10 @@ user-scoped email capabilities and the `kody:runtime` `email` helper cannot read
 the system message. Use the metadata for routing and notifications (for example
 a Discord report), and follow `admin_url` (or the admin `adminSystemEmailGet`
 capability) for full contents. Admins can remove unwanted system mail with
-`adminSystemEmailDelete({ message_id })` (attachments, delivery rows, blobs, and
-an empty parent thread included).
+`adminSystemEmailDelete({ message_id })` (attachments, charged delivery rows,
+blobs, and an empty parent thread included). The inbound fingerprint pointer is
+tombstoned as rejected until the 48-hour dedupe window expires, so provider
+retries do not recreate the message.
 
 ## `email.system-message.sent` package subscription (admins)
 

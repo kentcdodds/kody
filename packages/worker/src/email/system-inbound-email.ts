@@ -31,6 +31,7 @@ import {
 	reconcileSystemStaleInboundDeliveries,
 	releaseSystemInboundDeliveryStorage,
 } from './system-inbound-delivery-store.ts'
+import { systemInboundDeletedRejectionReason } from './system-inbound-dedupe.ts'
 import { storeIdempotentSystemInboundEmail } from './system-email-service.ts'
 import { recordBoundedEmailRejectionEvent } from './service.ts'
 import {
@@ -193,6 +194,12 @@ export async function handleSystemInboundEmail(input: {
 		fingerprint: candidateDelivery.fingerprint,
 		now: quotaNow,
 	})
+	if (activeWindow?.state === 'rejected') {
+		input.message.setReject(
+			activeWindow.rejectionReason ?? systemInboundDeletedRejectionReason,
+		)
+		return
+	}
 	let delivery = activeWindow ?? candidateDelivery
 	let existingDelivery = await getSystemInboundDelivery({
 		db: input.env.APP_DB,
@@ -242,6 +249,12 @@ export async function handleSystemInboundEmail(input: {
 			delivery: candidateDelivery,
 			now: quotaNow,
 		})
+		if (delivery.state === 'rejected') {
+			input.message.setReject(
+				delivery.rejectionReason ?? systemInboundDeletedRejectionReason,
+			)
+			return
+		}
 		if (
 			!existingDelivery ||
 			existingDelivery.deliveryId !== delivery.deliveryId

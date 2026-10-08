@@ -395,8 +395,22 @@ test('adminSystemEmailDelete removes system mail graph rows and blobs, refuses n
 	t.sqlite
 		.prepare(
 			`INSERT INTO system_email_delivery_events (
-				id, message_id, event_type, provider, detail_json, created_at
-			) VALUES ('system-event-delete', ?, 'received', 'test', '{}', ?)`,
+				id, message_id, event_type, provider, fingerprint, detail_json,
+				state, created_at
+			) VALUES ('system-event-delete', ?, 'received', 'test', 'fp-delete', '{}',
+				'received', ?)`,
+		)
+		.run(messageId, '2026-01-03T00:00:00.000Z')
+	t.sqlite
+		.prepare(
+			`INSERT INTO system_email_delivery_events (
+				id, message_id, event_type, provider, fingerprint, detail_json,
+				state, created_at
+			) VALUES (
+				'email-inbound-dedupe:fp-delete', NULL, 'receive_started',
+				'cloudflare-email-routing-dedupe', 'fp-delete',
+				json_object('messageId', ?), 'pending', ?
+			)`,
 		)
 		.run(messageId, '2026-01-03T00:00:00.000Z')
 
@@ -450,6 +464,19 @@ test('adminSystemEmailDelete removes system mail graph rows and blobs, refuses n
 			)
 			.all(messageId),
 	).toEqual([])
+	expect(
+		t.sqlite
+			.prepare(
+				`SELECT state, event_type, message_id
+				FROM system_email_delivery_events
+				WHERE id = 'email-inbound-dedupe:fp-delete'`,
+			)
+			.get(),
+	).toEqual({
+		state: 'rejected',
+		event_type: 'rejected',
+		message_id: null,
+	})
 	expect(
 		t.sqlite
 			.prepare(`SELECT id FROM system_email_threads WHERE id = ?`)

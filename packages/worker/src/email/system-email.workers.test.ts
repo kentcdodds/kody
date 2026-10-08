@@ -4,7 +4,11 @@ import { handleInboundEmail } from './inbound.ts'
 import { maxSurvivableInboundRawBytes } from './parser.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { listEmailInboxesForUser } from './repo.ts'
-import { listSystemEmailMessages } from './system-email-graph-store.ts'
+import {
+	deleteSystemEmailMessageById,
+	listSystemEmailMessages,
+} from './system-email-graph-store.ts'
+import { systemInboundDeletedRejectionReason } from './system-inbound-dedupe.ts'
 import { loadSystemEmailHealth } from './system-email-health.ts'
 import {
 	maxDetailedEmailRejectionEventsPerDay,
@@ -394,6 +398,73 @@ test('system inbox R2/D1 failures and retries keep one durable quota charge', as
 		expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
 		expect(await listSystemMessages()).toHaveLength(1)
 	}
+})
+
+test('admin delete tombstones the inbound fingerprint so SMTP redelivery stays discarded', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const input = {
+		to: `abuse@${systemDomain}`,
+		messageId: 'system-delete-tombstone',
+	}
+	expect(await deliver(input)).toBeNull()
+	const stored = await listSystemMessages()
+	expect(stored).toHaveLength(1)
+	const pointer = await env.APP_DB.prepare(
+		`SELECT id, state, message_id, fingerprint
+		FROM system_email_delivery_events
+		WHERE provider = 'cloudflare-email-routing-dedupe'
+		LIMIT 1`,
+	).first<{
+		id: string
+		state: string
+		message_id: string | null
+		fingerprint: string
+	}>()
+	expect(pointer).toMatchObject({
+		state: 'pending',
+		message_id: null,
+	})
+	expect(pointer?.id).toBe(`email-inbound-dedupe:${pointer?.fingerprint}`)
+
+	await deleteSystemEmailMessageById({
+		db: env.APP_DB,
+		blobs: env.EMAIL_BLOBS,
+		messageId: stored[0]!.id,
+	})
+	expect(await listSystemMessages()).toEqual([])
+	const tombstone = await env.APP_DB.prepare(
+		`SELECT state, event_type, message_id, detail_json
+		FROM system_email_delivery_events
+		WHERE id = ?`,
+	)
+		.bind(pointer!.id)
+		.first<{
+			state: string
+			event_type: string
+			message_id: string | null
+			detail_json: string
+		}>()
+	expect(tombstone).toMatchObject({
+		state: 'rejected',
+		event_type: 'rejected',
+		message_id: null,
+	})
+	expect(JSON.parse(tombstone?.detail_json ?? '{}')).toMatchObject({
+		state: 'rejected',
+		rejectionReason: systemInboundDeletedRejectionReason,
+	})
+	expect(
+		await countRows(
+			`SELECT COUNT(*) AS count FROM system_email_delivery_events
+			WHERE message_id IS NOT NULL`,
+		),
+	).toBe(0)
+	expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
+
+	expect(await deliver(input)).toBe(systemInboundDeletedRejectionReason)
+	expect(await listSystemMessages()).toEqual([])
+	expect(await readSystemDailyReceiveCount('abuse')).toBe(1)
 })
 
 test('system inbox ambiguous quota batch response charges once across retry', async () => {

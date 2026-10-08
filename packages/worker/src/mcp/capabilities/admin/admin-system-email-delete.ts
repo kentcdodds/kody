@@ -34,7 +34,7 @@ export const adminSystemEmailDeleteCapability = defineDomainCapability(
 		destructive: true,
 		name: 'adminSystemEmailDelete',
 		description:
-			'Delete one operator-owned system inbox message, including stored attachments, delivery-event rows, raw MIME / attachment blobs, and an empty parent thread. Admin-only; never deletes user-owned email.',
+			'Delete one operator-owned system inbox message, including stored attachments, charged delivery-event rows, raw MIME / attachment blobs, and an empty parent thread. Matching SMTP redeliveries stay discarded until the inbound dedupe window expires. Admin-only; never deletes user-owned email.',
 		keywords: [
 			'admin',
 			'system email',

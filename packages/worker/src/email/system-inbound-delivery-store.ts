@@ -24,6 +24,11 @@ import {
 	commitSystemInboundEventMutation,
 	commitSystemInboundEventMutations,
 } from './system-inbound-delivery-transaction.ts'
+import {
+	systemInboundDedupePointerId,
+	systemInboundDedupeProvider,
+	systemInboundProvider,
+} from './system-inbound-dedupe.ts'
 
 export {
 	claimSystemInboundSubscriptionEffect,
@@ -34,9 +39,13 @@ export {
 	recordSystemInboundUsageEffect,
 } from './system-inbound-effect-store.ts'
 export { recordBoundedSystemEmailRejection } from './system-inbound-rejection-store.ts'
+export {
+	systemInboundDeletedRejectionReason,
+	systemInboundDedupePointerId,
+	systemInboundDedupeProvider,
+	systemInboundProvider,
+} from './system-inbound-dedupe.ts'
 
-export const systemInboundProvider = 'cloudflare-email-routing'
-export const systemInboundDedupeProvider = 'cloudflare-email-routing-dedupe'
 const staleBatchSize = 20
 
 type DeliveryRow = {
@@ -90,7 +99,7 @@ export async function getSystemInboundDeliveryWindow(input: {
 			LIMIT 1`,
 		)
 		.bind(
-			`email-inbound-dedupe:${input.fingerprint}`,
+			systemInboundDedupePointerId(input.fingerprint),
 			systemInboundDedupeProvider,
 			input.now.toISOString(),
 		)
@@ -104,7 +113,7 @@ export async function claimSystemInboundDeliveryWindow(input: {
 	now: Date
 }) {
 	await assertSystemDelivery(input.db, input.delivery)
-	const pointerId = `email-inbound-dedupe:${input.delivery.fingerprint}`
+	const pointerId = systemInboundDedupePointerId(input.delivery.fingerprint)
 	try {
 		await commitSystemInboundEventMutation({
 			db: input.db,
@@ -195,6 +204,15 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 		deliveryId: input.delivery.deliveryId,
 	})
 	if (existing) return { delivery: existing, overLimit: false as const }
+	const refusedWindow = await getSystemInboundDeliveryWindow({
+		db: input.db,
+		fingerprint: input.delivery.fingerprint,
+		now: input.now,
+	})
+	if (refusedWindow?.state === 'rejected') {
+		return { delivery: refusedWindow, overLimit: false as const }
+	}
+	const pointerId = systemInboundDedupePointerId(input.delivery.fingerprint)
 	const operationToken = crypto.randomUUID()
 	const operationTimestamp = input.now.toISOString()
 	try {
@@ -213,6 +231,10 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 				WHERE count + 1 <= ?
 					AND NOT EXISTS (
 						SELECT 1 FROM system_email_delivery_events WHERE id = ?
+					)
+					AND NOT EXISTS (
+						SELECT 1 FROM system_email_delivery_events
+						WHERE id = ? AND provider = ? AND state = 'rejected'
 					)`,
 					)
 					.bind(
@@ -222,6 +244,8 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 						operationToken,
 						input.limit,
 						input.delivery.deliveryId,
+						pointerId,
+						systemInboundDedupeProvider,
 					),
 			],
 			dedicated: input.db
@@ -235,6 +259,10 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 				WHERE EXISTS (
 					SELECT 1 FROM system_email_daily_counters
 					WHERE local_part = ? AND day = ? AND operation_token = ?
+				)
+				AND NOT EXISTS (
+					SELECT 1 FROM system_email_delivery_events
+					WHERE id = ? AND provider = ? AND state = 'rejected'
 				)`,
 				)
 				.bind(
@@ -250,6 +278,8 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 					input.localPart,
 					input.delivery.quotaDay,
 					operationToken,
+					pointerId,
+					systemInboundDedupeProvider,
 				),
 		})
 	} catch (error) {
@@ -264,9 +294,16 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
 	})
-	return committed
-		? { delivery: committed, overLimit: false as const }
-		: { delivery: null, overLimit: true as const }
+	if (committed) return { delivery: committed, overLimit: false as const }
+	const refused = await getSystemInboundDeliveryWindow({
+		db: input.db,
+		fingerprint: input.delivery.fingerprint,
+		now: input.now,
+	})
+	if (refused?.state === 'rejected') {
+		return { delivery: refused, overLimit: false as const }
+	}
+	return { delivery: null, overLimit: true as const }
 }
 
 export async function claimSystemInboundDeliveryStorage(input: {

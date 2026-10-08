@@ -23,6 +23,7 @@ import {
 	systemEmailMessageColumns,
 	systemEmailThreadColumns,
 } from './system-email-graph-columns.ts'
+import { systemInboundDedupeTombstoneStatements } from './system-inbound-dedupe.ts'
 
 type DeleteSystemEmailMessageByIdResult = {
 	messageFound: boolean
@@ -625,7 +626,12 @@ export async function deleteSystemEmailMessageById(input: {
 			'System email blob deletion failed before authoritative row delete.',
 		)
 	}
+	const tombstones = await systemInboundDedupeTombstoneStatements({
+		db: input.db,
+		messageIds: [input.messageId],
+	})
 	const statements: Array<D1PreparedStatement> = [
+		...tombstones,
 		...attachments.map((attachment) =>
 			input.db
 				.prepare(`DELETE FROM system_email_attachments WHERE id = ?`)
