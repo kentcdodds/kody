@@ -79,6 +79,14 @@ export function mcpOAuthRefreshFamilySnapshotKey(
 	return `${refreshFamilySnapshotKeyPrefix}${userId}:${grantId}`
 }
 
+/** Every refresh-family snapshot and replay key the user owns (account deletion). */
+export function mcpOAuthRefreshFamilyUserKvPrefixes(userId: string) {
+	return [
+		`${refreshFamilySnapshotKeyPrefix}${userId}:`,
+		`${refreshFamilyReplayKeyPrefix}${userId}:`,
+	]
+}
+
 export function mcpOAuthRefreshFamilyReplayKey(
 	userId: string,
 	grantId: string,

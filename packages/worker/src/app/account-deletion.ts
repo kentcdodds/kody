@@ -36,6 +36,8 @@ import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { clearRunRecords } from '#worker/run-records/service.ts'
+import { cancelActiveWorkflowRunsForUser } from '#worker/package-runtime/package-workflows.ts'
+import { mcpOAuthRefreshFamilyUserKvPrefixes } from '#worker/oauth-refresh-family.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -978,6 +980,23 @@ async function clearStorageRunners(input: {
 	return cleared
 }
 
+async function cancelActiveWorkflowRuns(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}) {
+	try {
+		await cancelActiveWorkflowRunsForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch (error) {
+		input.warnings.push(
+			`Workflow run cancellation failed: ${getErrorMessage(error)}`,
+		)
+	}
+}
+
 async function clearRunLog(input: {
 	env: Env
 	userId: string
@@ -1560,6 +1579,14 @@ export async function deleteUserAccount(input: {
 		}
 	}
 
+	// Stop running package workflows before purging the storage their steps
+	// write to. RunLog holds the only index of the user's workflow instances.
+	await cancelActiveWorkflowRuns({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+
 	result.deletedVectors = await deleteVectorsByIds({
 		env: input.env,
 		ids: inventory.vectorIds,
@@ -1648,6 +1675,8 @@ export async function deleteUserAccount(input: {
 				// deleted separately; purge the orphaned revert trees here rather
 				// than waiting on the 90-day TTL.
 				`package-codemod-revert:${input.mcpUserId}:`,
+				// Encrypted copies of the user's MCP OAuth tokens.
+				...mcpOAuthRefreshFamilyUserKvPrefixes(input.mcpUserId),
 			],
 			warnings,
 		})

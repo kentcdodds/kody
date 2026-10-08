@@ -552,6 +552,10 @@ export function createSuccessfulDeletionEnv(
 			get: () => ({
 				clearAll: async () => ({ ok: true as const }),
 				listStorageIds: async () => [] as Array<string>,
+				listWorkflowProjections: async () => ({
+					projections: [],
+					nextCursor: null,
+				}),
 			}),
 		},
 		USER_METER: userMeter.env.USER_METER,

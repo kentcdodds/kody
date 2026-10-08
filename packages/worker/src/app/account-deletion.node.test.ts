@@ -411,6 +411,9 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
 		`package-codemod-revert:${userBbb}:item-other`,
+		`derived-cache:v1:mcp-oauth-refresh-family:${userAaa}:grant-1`,
+		`derived-cache:v1:mcp-oauth-refresh-replay:${userAaa}:grant-1:hash-1`,
+		`derived-cache:v1:mcp-oauth-refresh-family:${userBbb}:grant-9`,
 		'package-retriever-manifest:v1:user-aaa:pkg-1:abc123',
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
@@ -565,6 +568,10 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			get: () => ({
 				clearAll: clearRunLogMock,
 				listStorageIds: async () => [] as Array<string>,
+				listWorkflowProjections: async () => ({
+					projections: [],
+					nextCursor: null,
+				}),
 			}),
 		},
 		USER_METER: {
@@ -768,6 +775,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v3:listing-1:commit-1',
 		'derived-cache:v1:identity-icon:v1:repo-src-1:abc123',
 		'derived-cache:v1:identity-icon:v1:repo-src-1:old',
+		`derived-cache:v1:mcp-oauth-refresh-family:${userAaa}:grant-1`,
+		`derived-cache:v1:mcp-oauth-refresh-replay:${userAaa}:grant-1:hash-1`,
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
@@ -801,7 +810,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		platform_feedback: 1,
 	})
 	expect(result).toMatchObject({
-		deletedKvKeys: 20,
+		deletedKvKeys: 22,
 		deletedCommunityAssets: 9,
 		deletedEmailBlobs: 2,
 		deletedVectors: 5,

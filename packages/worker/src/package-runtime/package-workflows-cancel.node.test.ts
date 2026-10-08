@@ -6,6 +6,7 @@ import {
 	createWorkflowRunsDatabase,
 } from '#worker/test-support/package-workflows.ts'
 import {
+	cancelActiveWorkflowRunsForUser,
 	cancelWorkflowRunForUser,
 	createDynamicCallableWorkflow,
 	dynamicCallableWorkflowsBindingName,
@@ -348,4 +349,35 @@ test('cancelling a run whose engine instance is missing projects cancelled unles
 		status: creatingWorkflowProjectionStatus,
 		completedAt: null,
 	})
+})
+
+test('cancelActiveWorkflowRunsForUser terminates every active run for one user only', async () => {
+	const { env, binding, createInline, seedProjection } = createCancelTestEnv()
+	const queued = await createInline('delete-active-queued')
+	await seedProjection('retained-running', 'delete-retained-running', 'running')
+	await seedProjection('already-complete', 'delete-complete', 'complete')
+	await runRecordMocks.upsertWorkflowProjection({
+		env,
+		userId: 'user-2',
+		projection: {
+			id: 'other-user-queued',
+			bindingName: dynamicCallableWorkflowsBindingName,
+			sourceType: 'inline',
+			workflowName: 'inline-code',
+			idempotencyKey: 'other-user-queued',
+			runAt: '2026-05-03T12:34:56.000Z',
+			status: 'queued',
+		},
+	})
+
+	expect(await cancelActiveWorkflowRunsForUser({ env, userId: 'user-1' })).toBe(
+		2,
+	)
+	expect(binding.terminateCalls).toEqual([queued.id])
+	expect(findRun(queued.id)?.status).toBe('cancelled')
+	expect(findRun('retained-running')?.status).toBe('cancelled')
+	expect(findRun('already-complete')?.status).toBe('complete')
+	expect(runRecordMocks.listForUser('user-2')).toEqual([
+		expect.objectContaining({ id: 'other-user-queued', status: 'queued' }),
+	])
 })

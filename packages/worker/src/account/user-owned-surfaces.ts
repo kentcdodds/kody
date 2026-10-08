@@ -52,6 +52,9 @@ export type UserOwnedKvKeyScheme = {
 		| 'package_retriever_index_prefix'
 		| 'package_skills_index'
 		| 'webhook_dispatch_payload'
+		| 'package_codemod_revert'
+		| 'mcp_oauth_refresh_family_snapshot'
+		| 'mcp_oauth_refresh_family_replay'
 	binding: 'BUNDLE_ARTIFACTS_KV'
 	sourceTable?: string
 	sourceColumn?: string
@@ -73,6 +76,13 @@ export type UserOwnedR2Surface = {
 	keyTemplate?: string
 	export: 'chunked_bytes'
 	notes?: string
+}
+
+export type UserOwnedWorkflowSurface = {
+	id: 'dynamic_callable_workflow'
+	binding: 'DYNAMIC_CALLABLE_WORKFLOWS'
+	retention: string
+	notes: string
 }
 
 export type UserOwnedArtifactSurface = {
@@ -275,6 +285,31 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 			notes:
 				'Short-lived ack-mode webhook body spill so Cloudflare Queue messages stay under 128 KB. Immediate account-deletion cleanup is optional because KV enforces the TTL. The consumer deletes the key after a terminal delivery.',
 		},
+		{
+			id: 'package_codemod_revert',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'package-codemod-revert:{userId}:',
+			retention: 'Expires through the KV expirationTtl written at apply time.',
+			notes: 'Account deletion prefix-deletes the user namespace.',
+		},
+		{
+			id: 'mcp_oauth_refresh_family_snapshot',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:mcp-oauth-refresh-family:{userId}:',
+			retention:
+				'Expires through the KV expirationTtl written at refresh time (two hours).',
+			notes:
+				'Encrypted MCP OAuth token snapshot. Account deletion prefix-deletes the user namespace; the TTL backstops a refresh racing deletion.',
+		},
+		{
+			id: 'mcp_oauth_refresh_family_replay',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:mcp-oauth-refresh-replay:{userId}:',
+			retention:
+				'Expires through the KV expirationTtl written at refresh time (one hour).',
+			notes:
+				'Encrypted MCP OAuth token replay copy. Account deletion prefix-deletes the user namespace; the TTL backstops a refresh racing deletion.',
+		},
 	] as const
 
 export const accountUserOwnedR2Surfaces: ReadonlyArray<UserOwnedR2Surface> = [
@@ -337,6 +372,18 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 		},
 	] as const
 
+export const accountUserOwnedWorkflowSurfaces: ReadonlyArray<UserOwnedWorkflowSurface> =
+	[
+		{
+			id: 'dynamic_callable_workflow',
+			binding: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			retention:
+				'Cloudflare retains finished instance params and step output for the 30-day successRetention/errorRetention set at create; there is no API to delete a finished instance early.',
+			notes:
+				'RunLog workflow_projections is the only per-user index. Account deletion terminates every active instance through cancelActiveWorkflowRunsForUser before clearing RunLog. Instance ids hash the owner stable id, so a later account never reattaches to a retained instance.',
+		},
+	] as const
+
 const accountExportExcludedDurableObjectDisplayNames: Readonly<
 	Record<
 		'mcp' | 'repo_session' | 'package_realtime_session' | 'stripe_plan_refresh',
@@ -388,6 +435,7 @@ export function getAccountUserOwnedSurfaceCoverage(): {
 	kvSchemeIds: ReadonlySet<string>
 	r2SurfaceIds: ReadonlySet<string>
 	artifactSurfaceIds: ReadonlySet<string>
+	workflowSurfaceIds: ReadonlySet<string>
 } {
 	return {
 		durableObjectIds: new Set(
@@ -404,6 +452,9 @@ export function getAccountUserOwnedSurfaceCoverage(): {
 		),
 		artifactSurfaceIds: new Set(
 			accountUserOwnedArtifactSurfaces.map((surface) => surface.id),
+		),
+		workflowSurfaceIds: new Set(
+			accountUserOwnedWorkflowSurfaces.map((surface) => surface.id),
 		),
 	}
 }

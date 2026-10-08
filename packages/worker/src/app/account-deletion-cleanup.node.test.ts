@@ -402,6 +402,10 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 					return {
 						listStorageIds: async () =>
 							(state?.runs ?? []).map((run) => run.storageId),
+						listWorkflowProjections: async () => ({
+							projections: [],
+							nextCursor: null,
+						}),
 						clearAll: async () => {
 							if (state) {
 								state.runs = []
@@ -451,4 +455,71 @@ test('account deletion purges a StorageRunner known only via user_storage_bucket
 	expect(idFromName).toHaveBeenCalledWith(
 		JSON.stringify([userId, 'exec:adhoc-only']),
 	)
+})
+
+test('account deletion terminates running package workflows before purging the run log', async () => {
+	const projections = new Map<string, Record<string, unknown>>([
+		[
+			'wf-running',
+			{
+				id: 'wf-running',
+				bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+				sourceType: 'inline',
+				workflowName: 'inline-code',
+				idempotencyKey: 'wf-running-key',
+				runAt: '2026-05-03T12:34:56.000Z',
+				status: 'running',
+				createdAt: '2026-05-03T12:34:56.000Z',
+				updatedAt: '2026-05-03T12:34:56.000Z',
+				completedAt: null,
+			},
+		],
+	])
+	const events: Array<string> = []
+	const { db } = createTestDb({ users: [userA] })
+	await deleteUserA(
+		createSuccessfulDeletionEnv(db, {
+			DYNAMIC_CALLABLE_WORKFLOWS: {
+				get: async (id: string) => ({
+					id,
+					status: async () => ({ status: 'running' }),
+					terminate: async () => {
+						events.push(`terminate:${id}`)
+					},
+				}),
+			} as unknown as Workflow,
+			RUN_LOG: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({
+					listStorageIds: async () => [] as Array<string>,
+					listWorkflowProjections: async (input: {
+						status: string | null
+					}) => ({
+						projections: [...projections.values()].filter(
+							(row) => row['status'] === input.status,
+						),
+						nextCursor: null,
+					}),
+					getWorkflowProjection: async (input: { id: string }) =>
+						projections.get(input.id) ?? null,
+					upsertWorkflowProjection: async (
+						projection: Record<string, unknown> & { id: string },
+					) => {
+						projections.set(projection.id, {
+							...projections.get(projection.id),
+							...projection,
+						})
+						return { ok: true as const }
+					},
+					clearAll: async () => {
+						events.push('clearAll')
+						projections.clear()
+						return { ok: true as const }
+					},
+				}),
+			},
+		}),
+	)
+
+	expect(events).toEqual(['terminate:wf-running', 'clearAll'])
 })

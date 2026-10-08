@@ -46,8 +46,10 @@ import {
 import {
 	creatingWorkflowProjectionStatus,
 	isWorkflowBindingName,
+	workflowProjectionReservationStatuses,
 	type WorkflowBindingName,
 } from '#worker/run-records/workflow-projection.ts'
+import { runRecordMaxPageSize } from '#worker/run-records/types.ts'
 import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
 import { inlineWorkflowNameFallback } from '#universal/workflow-display.ts'
@@ -1273,6 +1275,42 @@ export async function cancelWorkflowRunForUser(input: {
 		outcome: 'cancelled',
 		run: { ...projectedRun, status: 'cancelled' },
 	}
+}
+
+/**
+ * Terminate every non-terminal workflow run the user owns (account deletion).
+ * Each run goes through {@link cancelWorkflowRunForUser}, so a run that is
+ * still `creating` throws and the caller retries instead of leaving an engine
+ * instance running after the account's storage is purged.
+ */
+export async function cancelActiveWorkflowRunsForUser(input: {
+	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
+	userId: string
+}): Promise<number> {
+	const env = input.env as Env
+	let cancelled = 0
+	for (const status of workflowProjectionReservationStatuses) {
+		let cursor: string | null = null
+		do {
+			const page = await listWorkflowProjections({
+				env,
+				userId: input.userId,
+				status,
+				cursor,
+				limit: runRecordMaxPageSize,
+			})
+			for (const projection of page.projections) {
+				const result = await cancelWorkflowRunForUser({
+					env,
+					userId: input.userId,
+					workflowRunId: projection.id,
+				})
+				if (result.outcome === 'cancelled') cancelled += 1
+			}
+			cursor = page.nextCursor
+		} while (cursor)
+	}
+	return cancelled
 }
 
 export async function listWorkflowRunsForUser(input: {

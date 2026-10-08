@@ -60,7 +60,17 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect([...coverage.r2SurfaceIds]).toEqual(
 		expect.arrayContaining(['email_raw_mime', 'user_avatar', 'identity_icon']),
 	)
-	expect([...coverage.kvSchemeIds]).toContain('identity_icon_derived_cache')
+	expect([...coverage.kvSchemeIds]).toEqual(
+		expect.arrayContaining([
+			'identity_icon_derived_cache',
+			'package_codemod_revert',
+			'mcp_oauth_refresh_family_snapshot',
+			'mcp_oauth_refresh_family_replay',
+		]),
+	)
+	expect([...coverage.workflowSurfaceIds]).toEqual([
+		'dynamic_callable_workflow',
+	])
 	expect([...coverage.durableObjectIds]).toEqual(
 		expect.arrayContaining(['user_meter', 'mailbox', 'repo_session_index']),
 	)
@@ -130,6 +140,8 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		'deleteAccountCommunityAssetPrefixes',
 		'source-snapshot:v1:',
 		'source-manifest-snapshot:v1:',
+		'cancelActiveWorkflowRunsForUser',
+		'mcpOAuthRefreshFamilyUserKvPrefixes',
 		...deletionResultKeys,
 	]) {
 		expect(accountDeletionSource).toContain(snippet)
