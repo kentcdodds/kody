@@ -64,7 +64,9 @@ export function CopyCodeBlock(handle: Handle<CopyCodeBlockProps>) {
 						aria-label="Copy code to clipboard"
 						mix={[css(copyButtonCss), on('click', () => void copy())]}
 					>
-						{renderIcon(copyButtonIcon(copyState), { size: '1rem' })}
+						{renderIcon(copyButtonIcon(copyState), {
+							size: copyButtonIconSize,
+						})}
 					</button>
 				) : null}
 				{showCopy ? (
@@ -107,6 +109,13 @@ function copyStatusText(state: CopyState) {
 	}
 }
 
+// Half the previous 2rem control. The glyph stays half the button so the
+// copied check still reads inside the corner without covering the code.
+const copyButtonSize = '1rem'
+const copyButtonIconSize = '0.5rem'
+const copyButtonInset = '0.45rem'
+const copyCodeEndMargin = '1.35rem'
+
 const wrapperCss = {
 	position: 'relative' as const,
 	minWidth: 0,
@@ -120,14 +129,14 @@ const wrapperCss = {
 	// The icon sits in the corner of the card. Scroll the snippet in a box
 	// that stops before that column so a long line never runs underneath it.
 	'&[data-copy-code] pre': {
-		paddingInlineEnd: '0.45rem',
+		paddingInlineEnd: copyButtonInset,
 		overflowX: 'hidden' as const,
 	},
 	'&[data-copy-code] pre code': {
 		display: 'block',
 		minWidth: 0,
 		overflowX: 'auto' as const,
-		marginInlineEnd: '2.35rem',
+		marginInlineEnd: copyCodeEndMargin,
 	},
 }
 
@@ -136,17 +145,17 @@ const wrapperCss = {
 const copyButtonCss = {
 	position: 'absolute' as const,
 	zIndex: 1,
-	top: '0.45rem',
-	right: '0.45rem',
+	top: copyButtonInset,
+	right: copyButtonInset,
 	display: 'inline-flex',
 	alignItems: 'center',
 	justifyContent: 'center',
-	width: '2rem',
-	height: '2rem',
+	width: copyButtonSize,
+	height: copyButtonSize,
 	padding: 0,
 	flex: 'none',
 	appearance: 'none' as const,
-	borderRadius: radius.md,
+	borderRadius: radius.sm,
 	border: `1px solid ${colors.border}`,
 	backgroundColor: colors.surface,
 	color: colors.textMuted,

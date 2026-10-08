@@ -13,6 +13,12 @@ test('code block copy control is an icon button beside the snippet', async () =>
 	expect(html).toMatch(/<div[^>]*\sdata-copy-code=""/)
 	expect(html).toContain('aria-label="Copy code to clipboard"')
 	expect(html).toContain('data-icon="copy"')
+	expect(html).toContain('width="0.5rem"')
+	expect(html).toContain('height="0.5rem"')
+	expect(html).toContain('width: 1rem')
+	expect(html).toContain('height: 1rem')
+	expect(html).toContain('margin-inline-end: 1.35rem')
+	expect(html).not.toContain('2rem')
 	expect(html).toContain('role="status"')
 	expect(html).toContain(snippet)
 
