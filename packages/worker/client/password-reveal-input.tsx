@@ -1,4 +1,4 @@
-import { type Handle, css, type CSSMixinDescriptor } from 'remix/component'
+import { type Handle, css, ref, type CSSMixinDescriptor } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 
@@ -41,13 +41,15 @@ export type PasswordRevealInputProps = {
 /**
  * Password (or secret-value) input with an accessible Show/Hide toggle.
  *
- * One `<input>` keeps its DOM identity across toggles so uncontrolled login
- * fields do not lose typed text, and password-manager autocomplete attributes
- * stay on the same element. The toggle is `type="button"` so it never
- * submits; without JS it is inert and the field stays `type="password"`.
+ * Uncontrolled callers (login) stay uncontrolled: flipping `type` can clear
+ * the DOM value, so the toggle snapshots and restores it via a ref instead of
+ * switching the field to a controlled `value` (which broke FormData login).
+ * The toggle is `type="button"` so it never submits; without JS it is inert
+ * and the field stays `type="password"`.
  */
 export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 	let internalRevealed = false
+	let inputEl: HTMLInputElement | null = null
 
 	return () => {
 		const {
@@ -74,7 +76,16 @@ export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 					{...({
 						...inputProps,
 						type: inputType,
-						mix: [inputPadCss, inputMix],
+						mix: [
+							ref((node, signal) => {
+								inputEl = node instanceof HTMLInputElement ? node : null
+								signal.addEventListener('abort', () => {
+									if (inputEl === node) inputEl = null
+								})
+							}),
+							inputPadCss,
+							inputMix,
+						],
 					} as Record<string, unknown>)}
 				/>
 				<button
@@ -85,6 +96,7 @@ export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 					mix={[
 						on('click', (event) => {
 							event.preventDefault()
+							const snapshot = inputEl?.value ?? ''
 							const next = !revealed
 							onRevealedChange?.(next)
 							// Controlled parents own the re-render. Updating here
@@ -93,6 +105,13 @@ export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 								internalRevealed = next
 								handle.update()
 							}
+							// Restore after the type attribute paints — flipping
+							// password↔text can clear the DOM value.
+							handle.queueTask(() => {
+								if (inputEl && inputProps.value === undefined) {
+									inputEl.value = snapshot
+								}
+							})
 						}),
 						css(toggleButtonCss),
 					]}
