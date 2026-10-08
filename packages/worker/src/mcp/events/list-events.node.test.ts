@@ -43,6 +43,7 @@ function savedPackage(id: string, kodyId: string): SavedPackageRecord {
 		searchText: null,
 		sourceId: `source-${id}`,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,
