@@ -8,8 +8,10 @@ test('only public marketing paths on the production host are eligible', () => {
 		'/',
 		'/pricing',
 		'/faq',
+		'/community',
 		'/blog/kody-vs-executor',
 		'/docs/memory',
+		'/docs/connect',
 	]) {
 		expect(scarfPageUrl(`https://kody.codes${path}?token=private#secret`)).toBe(
 			`https://kody.codes${path}`,
@@ -25,8 +27,11 @@ test('only public marketing paths on the production host are eligible', () => {
 		'/mcp',
 		'/docs.md',
 		'/docs/memory.md',
+		'/docs/admin-events',
 		'/@kentcdodds',
+		'/community/some-listing-id',
 		'/blog/private/data',
+		'/blog/does-not-exist',
 	]) {
 		expect(scarfPageUrl(`https://kody.codes${path}`)).toBeNull()
 	}

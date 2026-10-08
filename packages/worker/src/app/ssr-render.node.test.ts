@@ -706,7 +706,7 @@ test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', 
 	expectHtml(withFathom.headers.get('Content-Security-Policy') ?? '', [
 		"script-src 'self' 'sha256-",
 		'https://cdn.usefathom.com https://static.cloudflareinsights.com',
-		"img-src 'self' data: blob: https://cdn.usefathom.com",
+		"img-src 'self' data: blob: https://cdn.usefathom.com https://static.scarf.sh",
 		"connect-src 'self' https://cdn.usefathom.com https://cloudflareinsights.com",
 	])
 })

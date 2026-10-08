@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { blogPostSlugs } from '#universal/blog-post-slugs.ts'
 import { caseStudies } from '#universal/case-studies.ts'
 import {
 	getBlogPost,
@@ -120,6 +121,11 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		expect(post.body.length).toBeGreaterThan(0)
 		expect(getBlogPost(post.slug)).toEqual(post)
 	}
+
+	// Client-safe scarf allowlist must stay in lockstep with the catalog.
+	expect([...blogPostSlugs].sort()).toEqual(
+		posts.map((post) => post.slug).sort(),
+	)
 
 	expectPost(
 		'early-kody-users',

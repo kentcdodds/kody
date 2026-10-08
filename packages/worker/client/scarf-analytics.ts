@@ -1,3 +1,4 @@
+import { blogPostSlugs } from '#universal/blog-post-slugs.ts'
 import { listDocsNavSlugs } from '#universal/docs-nav.ts'
 
 // Public pixel owned by the Kody organization. Never load on preview hosts.
@@ -7,19 +8,20 @@ const publicPaths = new Set([
 	'/pricing',
 	'/faq',
 	'/case-studies',
+	'/community',
 	'/blog',
 	'/docs',
+	// Provider index is public docs chrome, not a catalog slug.
+	'/docs/connect',
 	...listDocsNavSlugs({ includeAdmin: false }).map((slug) => `/docs/${slug}`),
+	// Catalog slugs only — unknown /blog/:slug shapes (including 404s) stay out.
+	...blogPostSlugs.map((slug) => `/blog/${slug}`),
 ])
 
 export function scarfPageUrl(href: string): string | null {
 	const url = new URL(href)
 	if (url.origin !== 'https://kody.codes') return null
-	if (
-		!publicPaths.has(url.pathname) &&
-		!/^\/blog\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(url.pathname)
-	)
-		return null
+	if (!publicPaths.has(url.pathname)) return null
 	// Never send query strings, fragments, referrers, account IDs, or content.
 	return `${url.origin}${url.pathname}`
 }
