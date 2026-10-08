@@ -1582,13 +1582,17 @@ export async function deleteUserAccount(input: {
 	}
 
 	// Stop running package workflows before purging the storage their steps
-	// write to. RunLog holds the only index of the user's workflow instances,
-	// so it is kept when cancellation fails so a retry can still find them.
+	// write to. On failure, stop with the deletion fence held and nothing
+	// purged: RunLog is the only index of the user's workflow instances, so a
+	// retry needs it to find and terminate them.
 	const workflowRunsCancelled = await cancelActiveWorkflowRuns({
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,
 	})
+	if (!workflowRunsCancelled) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
 
 	result.deletedVectors = await deleteVectorsByIds({
 		env: input.env,
@@ -1643,13 +1647,11 @@ export async function deleteUserAccount(input: {
 		storageIds: inventory.storageIds,
 		warnings,
 	})
-	result.clearedDurableObjects.runLogs = workflowRunsCancelled
-		? await clearRunLog({
-				env: input.env,
-				userId: input.mcpUserId,
-				warnings,
-			})
-		: 0
+	result.clearedDurableObjects.runLogs = await clearRunLog({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
 	result.clearedDurableObjects.userMeters = await purgeUserMeter({
 		env: input.env,
 		userId: input.mcpUserId,

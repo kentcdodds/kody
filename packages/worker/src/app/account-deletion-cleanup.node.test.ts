@@ -478,8 +478,17 @@ function createRunningWorkflowDeletionEnv(input: {
 			},
 		],
 	])
-	const { db } = createTestDb({ users: [userA] })
-	return createSuccessfulDeletionEnv(db, {
+	const { db, rows } = createTestDb({ users: [userA] })
+	const env = createSuccessfulDeletionEnv(db, {
+		STORAGE_RUNNER: {
+			idFromName: (name: string) => name as unknown as DurableObjectId,
+			get: () => ({
+				clearStorage: async () => {
+					input.events.push('clearStorage')
+					return { ok: true as const }
+				},
+			}),
+		},
 		DYNAMIC_CALLABLE_WORKFLOWS: {
 			get: async (id: string) => ({
 				id,
@@ -492,7 +501,7 @@ function createRunningWorkflowDeletionEnv(input: {
 		RUN_LOG: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({
-				listStorageIds: async () => [] as Array<string>,
+				listStorageIds: async () => ['storage-1'],
 				listWorkflowProjections: async (query: { status: string | null }) => ({
 					projections: [...projections.values()].filter(
 						(row) => row['status'] === query.status,
@@ -518,38 +527,36 @@ function createRunningWorkflowDeletionEnv(input: {
 			}),
 		},
 	})
+	return { env, rows }
 }
 
 test('account deletion terminates running package workflows before purging the run log', async () => {
 	const events: Array<string> = []
-	await deleteUserA(
-		createRunningWorkflowDeletionEnv({
-			events,
-			terminate: async (id) => {
-				events.push(`terminate:${id}`)
-			},
-		}),
-	)
+	const { env } = createRunningWorkflowDeletionEnv({
+		events,
+		terminate: async (id) => {
+			events.push(`terminate:${id}`)
+		},
+	})
+	await deleteUserA(env)
 
-	expect(events).toEqual(['terminate:wf-running', 'clearAll'])
+	expect(events).toEqual(['terminate:wf-running', 'clearStorage', 'clearAll'])
 })
 
-test('account deletion keeps the run log when workflow termination fails so a retry can still terminate it', async () => {
+test('account deletion stops before purging anything when workflow termination fails', async () => {
 	const events: Array<string> = []
-	await expect(
-		deleteUserA(
-			createRunningWorkflowDeletionEnv({
-				events,
-				terminate: async () => {
-					throw new Error('terminate unavailable')
-				},
-			}),
-		),
-	).rejects.toMatchObject({
+	const { env, rows } = createRunningWorkflowDeletionEnv({
+		events,
+		terminate: async () => {
+			throw new Error('terminate unavailable')
+		},
+	})
+	await expect(deleteUserA(env)).rejects.toMatchObject({
 		name: 'AccountDeletionCleanupError',
-		cleanupErrors: expect.arrayContaining([
+		cleanupErrors: [
 			expect.stringContaining('Workflow run cancellation failed'),
-		]),
+		],
 	})
 	expect(events).toEqual([])
+	expect(rows.users).toEqual([fencedUser])
 })

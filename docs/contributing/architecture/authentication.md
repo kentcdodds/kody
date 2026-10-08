@@ -352,8 +352,10 @@ Both are opt-in and adapted from the Epic Stack.
   [the admin events guide](../../guides/admin-events.md#user-created-and-deleted-admins).
 - On success, runs a full per-user cascade across:
   - the user's active package workflow instances, terminated first so no step
-    writes after the purge (finished instances stay in Cloudflare for their
-    30-day retention; see `accountUserOwnedWorkflowSurfaces`),
+    writes after the purge; if any termination fails, deletion stops before
+    purging anything and keeps the account fenced so a retry can still find the
+    runs (finished instances stay in Cloudflare for their 30-day retention; see
+    `accountUserOwnedWorkflowSurfaces`),
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and
     saved-package entries by id,
