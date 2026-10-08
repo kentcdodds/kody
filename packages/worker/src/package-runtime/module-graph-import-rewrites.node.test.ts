@@ -347,14 +347,14 @@ test.each([
 		expected: { ok: true, tool: 'secretList', input: { scope: 'user' } },
 	},
 	{
-		name: 'export package invocation token list',
-		call: 'kody.packageInvocationTokenList({})',
+		name: 'export webhook list',
+		call: 'kody.webhookList({})',
 		kody: {
-			async packageInvocationTokenList(input: unknown) {
-				return { ok: true, tool: 'packageInvocationTokenList', input }
+			async webhookList(input: unknown) {
+				return { ok: true, tool: 'webhookList', input }
 			},
 		},
-		expected: { ok: true, tool: 'packageInvocationTokenList', input: {} },
+		expected: { ok: true, tool: 'webhookList', input: {} },
 	},
 ])(
 	'buildKodyModuleBundle keeps kody available for a preloaded package $name runtime',

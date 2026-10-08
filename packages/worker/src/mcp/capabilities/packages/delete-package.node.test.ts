@@ -71,7 +71,7 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.deleteSavedPackageProjection.mockResolvedValue(undefined)
 	const expectedError =
-		'This permanently deletes "@user/notes". It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos. Existing forks keep their copies. This cannot be undone. Hiding or making the package private is not deletion. Do not call this unless the owner explicitly asked to delete this package and typed its name. Then pass confirm_name: "@user/notes" (the package name).'
+		'This permanently deletes "@user/notes". It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos. Existing forks keep their copies. This cannot be undone. Hiding or making the package private is not deletion. Do not call this unless the owner explicitly asked to delete this package and typed its name. Then pass confirm_name: "@user/notes" (the package name).'
 
 	const missingName = await deletePackageCapability
 		.handler({ package_id: 'pkg-1' }, createCtx())

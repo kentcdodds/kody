@@ -1718,16 +1718,6 @@ export type AccountMcpServersLoaderData = {
 	savedPackages: Array<{ id: string; kodyId: string }>
 }
 
-export type AccountPackageToken = {
-	id: string
-	name: string
-	exportNames: Array<string>
-	createdAt: string
-	updatedAt: string
-	lastUsedAt: string | null
-	revokedAt: string | null
-}
-
 export type AccountPackageListingAhead = {
 	listingId: string
 	listingName: string
@@ -1773,7 +1763,6 @@ export type AccountPackageCommunityFork = {
 export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
-	tokens: Array<AccountPackageToken>
 	publishedCommit: string | null
 	/** Null for self-authored packages (no `community_forks` row). */
 	communityFork: AccountPackageCommunityFork | null

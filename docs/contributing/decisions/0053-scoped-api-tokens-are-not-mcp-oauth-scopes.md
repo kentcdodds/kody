@@ -35,9 +35,9 @@ device login. Kody does not push work from the cloud to a local venue.
   `packages/worker/src/open-api/`), not by the MCP registry. The MCP `api` tool
   runs with the session's full grant, so scopes do not apply to it.
 - Do not add scopes to MCP OAuth, and do not accept `kody_at_` tokens on `/mcp`.
-- Do not reuse package invocation tokens or webhook handles as account bearers
-  ([0026](./0026-package-owned-invocation-tokens.md),
-  [0048](./0048-webhooks-replace-invocation-tokens.md)).
+- Do not reuse webhook handles as account bearers
+  ([0048](./0048-webhooks-replace-invocation-tokens.md)). HTTP package
+  invocation tokens were removed.
 - **Amended by [0055](./0055-cli-mcp-oauth-local-execute-http.md):** CLI-owned
   `kody login` MCP OAuth may authenticate CapabilityProxy and package-graph only
   (full MCP grant). Other Open API routes stay `kody_at_`-only; the CLI still

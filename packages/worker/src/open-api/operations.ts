@@ -118,8 +118,8 @@ const capabilityProxyRoute = {
  *
  * Deliberately absent: `execute` (use MCP or local execute), secret
  * plaintext reads, inbound webhook receive, package-app HTTP/WebSocket
- * traffic, admin, and runtime-only capabilities (values, invocation tokens,
- * package-app fetch, synthetic dispatch).
+ * traffic, admin, and runtime-only capabilities (values, package-app fetch,
+ * synthetic dispatch).
  */
 export const apiOperations: ReadonlyArray<ApiOperation> = [
 	...capabilityRoutes('account', [

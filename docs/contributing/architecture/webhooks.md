@@ -6,13 +6,11 @@ bound saved-package export. End-user setup lives in
 
 ## Why this exists
 
-Package-invocation HTTP endpoints require `Authorization: Bearer`. Many webhook
-providers cannot set custom Authorization headers. Webhook endpoints are the
-external HTTP knock: credential-in-URL sibling of per-user
+Many webhook providers cannot set custom Authorization headers. Webhook
+endpoints are the external HTTP knock: credential-in-URL sibling of per-user
 [email](../../use/email-primitives.md) inboxes, declared alongside other package
 surfaces in `package.json#kody.webhooks` (same family as `kody.subscriptions`).
-First-party trusted clients use the same path (URL secret, no Bearer).
-Invocation tokens are an unadvertised drain; see
+First-party trusted clients use the same path (URL secret, no Bearer). See
 [0048](../decisions/0048-webhooks-replace-invocation-tokens.md).
 
 ## Manifest contract

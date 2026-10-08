@@ -6,7 +6,7 @@ test('0003 rewrites full legacy origins and preserves boundaries', () => {
 		'index.ts': [
 			"const site = 'https://heykody.app'",
 			"const mcp = 'https://heykody.dev/mcp'",
-			"const invoke = 'https://heykody.app/@user/api/package-invocations/demo/run?x=1'",
+			"const invoke = 'https://heykody.app/@user/webhooks/demo/sentry/secret?x=1'",
 			'',
 		].join('\n'),
 		'README.md': 'Docs: visit https://heykody.app.\n',
@@ -19,7 +19,7 @@ test('0003 rewrites full legacy origins and preserves boundaries', () => {
 		[
 			"const site = 'https://kody.codes'",
 			"const mcp = 'https://kody.codes/mcp'",
-			"const invoke = 'https://kody.codes/@user/api/package-invocations/demo/run?x=1'",
+			"const invoke = 'https://kody.codes/@user/webhooks/demo/sentry/secret?x=1'",
 			'',
 		].join('\n'),
 	)

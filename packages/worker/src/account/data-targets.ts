@@ -182,12 +182,22 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * cascades are disabled. Tables with no `user_id` column (e.g. global mock
  * tables) are not represented.
  */
+
+/**
+ * Tables still present in D1 after their product surface is gone. Rows are
+ * purged (`0084-purge-package-invocation-tokens.sql`). DROP TABLE ships in a
+ * follow-up migration after this worker is live, so deletion/export do not
+ * inventory these leftovers.
+ */
+export const accountUserDataPendingDropTables = [
+	'package_invocation_tokens',
+] as const
+
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },
 	{ kind: 'user_id', table: 'connection_profiles' },
 	{ kind: 'user_id', table: 'mcp_event_subscriptions' },
 	{ kind: 'user_id', table: 'cli_credential_bootstrap_codes' },
-	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'usage_attribution_daily' },
@@ -789,7 +799,6 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
 	mcp_event_subscriptions: ['secret_encrypted', 'previous_secret_encrypted'],
-	package_invocation_tokens: ['token_hash'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
 	pending_email_claim_releases: ['token_hash'],

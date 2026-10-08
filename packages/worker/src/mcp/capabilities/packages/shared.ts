@@ -236,31 +236,6 @@ export const packageExportSurfaceSchema = z.object({
 		),
 })
 
-export const packageInvocationTokenMetadataSchema = z.object({
-	token_id: z
-		.string()
-		.describe(
-			'Package invocation token record id. This is not a bearer token.',
-		),
-	name: z.string().describe('Human-readable token record name.'),
-	package_id: z.string().describe('Saved package id this token belongs to.'),
-	export_names: z
-		.array(z.string())
-		.describe(
-			'Normalized package export scopes allowed by this token record, including * when all exports on this package are allowed.',
-		),
-	created_at: z.string(),
-	updated_at: z.string(),
-	last_used_at: z
-		.string()
-		.nullable()
-		.describe('Most recent successful bearer-token use, when tracked.'),
-	revoked_at: z
-		.string()
-		.nullable()
-		.describe('Revocation timestamp, or null when the token record is active.'),
-})
-
 export const packageDetailSchema =
 	packageSummaryWithCommunityProvenanceSchema.extend({
 		exports: z.array(packageExportSurfaceSchema),
@@ -270,25 +245,3 @@ export const packageDetailSchema =
 				'FYI metadata for package-scoped secrets owned by this package, including package_id. Never plaintext values. These are not execute-usable via search; using them still requires package context.',
 			),
 	})
-
-export function toPackageInvocationTokenMetadata(token: {
-	id: string
-	name: string
-	package_id: string
-	exportNames: Array<string>
-	created_at: string
-	updated_at: string
-	last_used_at: string | null
-	revoked_at: string | null
-}) {
-	return {
-		token_id: token.id,
-		name: token.name,
-		package_id: token.package_id,
-		export_names: token.exportNames,
-		created_at: token.created_at,
-		updated_at: token.updated_at,
-		last_used_at: token.last_used_at,
-		revoked_at: token.revoked_at,
-	}
-}

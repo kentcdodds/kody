@@ -74,8 +74,7 @@ a method or path, or remove an operation without a new version.
 
 Never in the Open API: `execute`, secret plaintext, the inbound webhook receive
 path, package-app HTTP/WebSocket/realtime traffic, admin capabilities, and
-runtime-only capabilities (values, invocation tokens, package-app fetch,
-synthetic dispatch).
+runtime-only capabilities (values, package-app fetch, synthetic dispatch).
 
 Plain API reads and token mints need no execute entitlement and never start a
 Dynamic Worker. Writes hold the account write lease, like MCP tool calls.

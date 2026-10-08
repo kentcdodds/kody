@@ -1,6 +1,5 @@
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
-import { ensurePackageInvocationTokensTestSchema } from '#worker/package-invocations/test-schema.ts'
 import { ensureSecretBucketsTestSchema } from '#worker/secrets-test-schema.ts'
 import { communityForksDeleteCascadeStatements } from './community-forks-delete-cascade.ts'
 
@@ -22,7 +21,6 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		],
 	})
 	await ensureUserStorageBucketsTestSchema(db)
-	await ensurePackageInvocationTokensTestSchema(db)
 	await ensureSecretBucketsTestSchema(db)
 	const statements = [
 		`CREATE TABLE IF NOT EXISTS saved_packages (

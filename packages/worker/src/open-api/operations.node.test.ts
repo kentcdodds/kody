@@ -15,13 +15,7 @@ import {
  * an included domain must have an operation, so a new capability cannot
  * silently skip the API.
  */
-const excludedDomains = new Set([
-	'admin',
-	'apps',
-	'coding',
-	'invocationTokens',
-	'values',
-])
+const excludedDomains = new Set(['admin', 'apps', 'coding', 'values'])
 const excludedCapabilities = new Set([
 	'execute',
 	'metaListCapabilities',

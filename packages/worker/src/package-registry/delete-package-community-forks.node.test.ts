@@ -149,16 +149,6 @@ function createDeleteForkDb() {
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, old_slug)
 		);
-		CREATE TABLE package_invocation_tokens (
-			id TEXT PRIMARY KEY NOT NULL,
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			token_hash TEXT NOT NULL,
-			name TEXT NOT NULL,
-			export_names_json TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
 			storage_id TEXT NOT NULL,

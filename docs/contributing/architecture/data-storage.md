@@ -243,10 +243,9 @@ Secret values are **never** exported. `secret_entries` rows are metadata-only:
 name, description, bucket, allowed hosts, allowed kody, allowed packages, and
 timestamps. The encrypted payload (`encrypted_value`) and lookup hash
 (`lookup_hash`) are omitted. The same redaction rule is applied to other
-credential-equivalent fields such as password hashes, password/email reset token
-hashes, and package invocation token hashes. The manifest states these
-redactions explicitly so a partial or intentionally redacted export is not
-mistaken for a complete secret backup.
+credential-equivalent fields such as password hashes and password/email reset
+token hashes. The manifest states these redactions explicitly so a partial or
+intentionally redacted export is not mistaken for a complete secret backup.
 
 The browser route `GET /account/export.json` downloads a bounded metadata
 manifest for the signed-in user and identifies the MCP capabilities required for
@@ -1429,13 +1428,12 @@ on write unless a migration backfills existing rows.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
-- `package_invocation_tokens.export_names_json`
-  (`0019-drop-invocation-token-sources.sql`) stores per-package invocation-token
-  export-scope projections. Each token row also has a required `package_id`.
-  Request JSON `source` is an optional log label, not a stored allowlist. Keyed
-  invocation replay lives in the RunLog Durable Object ledger (see
-  [Run records](./run-records.md)); the current D1 schema has no
-  `package_invocations` table.
+- HTTP package invocation tokens are gone.
+  `0084-purge-package-invocation-tokens.sql` deletes leftover
+  `package_invocation_tokens` rows; the table drop ships in a follow-up
+  migration after this code is live. Keyed invocation replay lives in the RunLog
+  Durable Object ledger (see [Run records](./run-records.md)); the current D1
+  schema has no `package_invocations` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
   `0057-webhook-url-secret-encrypted.sql`,
   `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for

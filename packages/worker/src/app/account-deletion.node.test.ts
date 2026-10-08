@@ -6,7 +6,10 @@ import {
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
-import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
+import {
+	accountUserDataExcludedOwnerIds,
+	accountUserDataPendingDropTables,
+} from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
@@ -72,6 +75,13 @@ test('account deletion coverage matches the migrated APP_DB schema', () => {
 		const columns = db
 			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table)})`)
 			.all() as Array<{ name: string }>
+		if (
+			(accountUserDataPendingDropTables as ReadonlyArray<string>).includes(
+				table,
+			)
+		) {
+			continue
+		}
 		for (const column of columns) {
 			if (column.name === 'user_id' || column.name.endsWith('_user_id')) {
 				liveUserColumns.add(`${table}.${column.name}`)
@@ -314,7 +324,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 2, type: '2fa', target: '2' },
 		],
 		mcp_user_server_instructions: [{ user_id: userAaa }],
-		package_invocation_tokens: [{ id: 'pit-1', user_id: userAaa }],
 		agent_package_conversation_uses: [
 			{ user_id: userAaa, package_id: 'pkg-1', conversation_id: 'conv-1' },
 		],

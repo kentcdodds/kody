@@ -29,10 +29,6 @@ import {
 import { handleMcpClientIdMetadataRequest } from './mcp-client/client-id-metadata.ts'
 import { handleCliClientIdMetadataRequest } from './cli-client-metadata.ts'
 import {
-	handlePackageInvocationApiRequest,
-	isPackageInvocationApiRequest,
-} from './package-invocations/http.ts'
-import {
 	handleWebhookIngressRequest,
 	isWebhookIngressRequest,
 } from './webhooks/http.ts'
@@ -72,10 +68,7 @@ import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
 import { fetchPreservingWebSocketUpgrade } from '#worker/package-runtime/websocket-upgrade.ts'
-import {
-	isNamespacedAppEndpointPath,
-	isNamespacedPackageInvocationEndpointPath,
-} from '#worker/user-namespace-routes.ts'
+import { isNamespacedAppEndpointPath } from '#worker/user-namespace-routes.ts'
 import { handleOpenIdConfigurationRequest } from '#worker/oidc/discovery.ts'
 import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
@@ -370,10 +363,7 @@ const appHandler = withCors({
 			return handlePackageAppRequest(request, env)
 		}
 
-		if (
-			isNamespacedAppEndpointPath(url.pathname) ||
-			isNamespacedPackageInvocationEndpointPath(url.pathname)
-		) {
+		if (isNamespacedAppEndpointPath(url.pathname)) {
 			return new Response('Not Found', { status: 404 })
 		}
 
@@ -874,22 +864,14 @@ async function handleOriginAppFetch(
 	)
 	if (packageAppOriginResponse) return packageAppOriginResponse
 
-	if (isPackageInvocationApiRequest(url.pathname)) {
-		return handlePackageInvocationApiRequest(request, env, ctx)
-	}
 	if (isWebhookIngressRequest(url.pathname)) {
 		return handleWebhookIngressRequest(request, env, ctx)
 	}
 
-	if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
-		return new Response('Not Found', { status: 404 })
-	}
-
 	// Domain-migration redirect for safe browser navigation from legacy app
-	// hosts. Runs after the API-shaped surfaces (package apps, invocation
-	// API, webhooks) so those keep serving on every attached
-	// host, and skips MCP/OAuth/auth/health paths itself. No-op unless
-	// APP_LEGACY_REDIRECT is enabled.
+	// hosts. Runs after the API-shaped surfaces (package apps, webhooks) so
+	// those keep serving on every attached host, and skips MCP/OAuth/auth/
+	// health paths itself. No-op unless APP_LEGACY_REDIRECT is enabled.
 	const legacyHostRedirect = getLegacyHostRedirectResponse({ request, env })
 	if (legacyHostRedirect) return legacyHostRedirect
 

@@ -402,11 +402,11 @@ close the metering → enforcement loop for the compute surfaces
 - **Automation invocations** are consumed in `runSavedPackageModuleOnce`
   (`packages/worker/src/package-invocations/module-execution.ts`) after artifact
   prep and before sandbox work for top-level always-on entrypoints: inbound
-  webhooks, HTTP package-export invocations, package subscriptions, and
-  package-backed workflow steps. Nested invokes from MCP execute or package
-  runtime do not consume again. This meter is a sibling of execute and jobs —
-  webhook floods do not burn `execute_calls_per_day`, and MCP execute does not
-  burn `automation_invocations_per_day`. Public Free sits modestly above
+  webhooks, package subscriptions, and package-backed workflow steps. Nested
+  invokes from MCP execute or package runtime do not consume again. This meter
+  is a sibling of execute and jobs — webhook floods do not burn
+  `execute_calls_per_day`, and MCP execute does not burn
+  `automation_invocations_per_day`. Public Free sits modestly above
   `job_runs_per_day`. Public Standard, Pro, and `max` are burst-friendly above
   job runs. Legacy Standard/Pro stay at the job-matched ceilings.
 - **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies to free and

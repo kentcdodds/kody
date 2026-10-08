@@ -11,7 +11,6 @@ import {
 	visibleDocsNav,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
-import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import adminEvents from '../../../../docs/guides/admin-events.md'
 import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
@@ -130,10 +129,6 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'platform-friction', raw: platformFriction },
 	{ slug: 'admin-events', raw: adminEvents },
 	{ slug: 'values', raw: values },
-	{
-		slug: 'account-package-invocation-token-setup',
-		raw: accountPackageInvocationTokenSetup,
-	},
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {

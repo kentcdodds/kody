@@ -121,9 +121,6 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
-- [Invocation-token retirement runbook](./invocation-token-retirement-runbook.md):
-  drain HTTP invocation tokens after inbound webhooks cover first-party callers
-  ([ADR 0048](../decisions/0048-webhooks-replace-invocation-tokens.md)).
 - [Cleanup after migrations](../cleanup-after-migrations.md): drop leftovers in
   the same change when safe; otherwise open a GitHub issue.
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and

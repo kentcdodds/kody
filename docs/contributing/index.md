@@ -74,9 +74,7 @@ style, tests, MCP capabilities, and runtime architecture.
   (stamp/grant model under fork-only official packages)
 - [Package codemods](./package-codemods.md)
 - [Public packages](./community-packages.md)
-- [External package invocation API](./package-invocation-api.md) (unadvertised
-  drain; first-party HTTP is [inbound webhooks](../use/webhooks.md))
-- [Invocation-token retirement runbook](./architecture/invocation-token-retirement-runbook.md)
+- [Inbound webhooks](../use/webhooks.md) (external HTTP knock)
 - [Adding capabilities](./adding-capabilities.md)
 - [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,
   result/detail unions, list markdown, detail routing, public type lists)

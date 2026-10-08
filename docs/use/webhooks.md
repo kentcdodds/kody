@@ -11,8 +11,6 @@ package export.
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
 first-party trusted clients (gateway proxies, CLIs) both POST to a minted URL.
-[Package invocation bearer tokens](../contributing/package-invocation-api.md)
-are an unadvertised drain; new callers use webhooks.
 
 There is no `*` / multi-export URL. One declared webhook name binds one export.
 

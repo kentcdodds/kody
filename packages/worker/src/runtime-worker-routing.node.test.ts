@@ -48,15 +48,6 @@ test('runtime-owned requests include package-app apex, user subdomains, and app-
 	).toBe(true)
 	expect(
 		isRuntimeWorkerOwnedRequest(
-			request(
-				'https://heykody.app/@kentcdodds/api/package-invocations/demo/run',
-			),
-			production,
-		),
-	).toBe(true)
-
-	expect(
-		isRuntimeWorkerOwnedRequest(
 			request('https://heykody.app/account'),
 			production,
 		),

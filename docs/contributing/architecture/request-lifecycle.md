@@ -122,11 +122,8 @@ Requests are handled in this order:
      Isolate kills are outside this catch.
 7. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
-   work). Production forwards package-invocation and package-app paths to
-   `kody-runtime` via `RUNTIME_WORKER`; webhook ingress stays on origin:
-   - `POST /@{username}/api/package-invocations/:kodyId/:exportName` —
-     unadvertised bearer-token drain (see
-     [package invocation API](../package-invocation-api.md))
+   work). Production forwards package-app paths to `kody-runtime` via
+   `RUNTIME_WORKER`; webhook ingress stays on origin:
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
    - Retired `/@{username}/connectors/...` paths return `404`. Use outbound MCP

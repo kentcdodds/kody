@@ -13,7 +13,7 @@ import { deleteSavedPackageProjection } from '#worker/package-registry/service.t
 function createPackageDeleteConfirmNameError(packageName: string) {
 	return [
 		`This permanently deletes "${packageName}".`,
-		'It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos.',
+		'It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos.',
 		'Existing forks keep their copies.',
 		'This cannot be undone.',
 		'Hiding or making the package private is not deletion.',
@@ -27,7 +27,7 @@ export const deletePackageCapability = defineDomainCapability(
 	{
 		name: 'packageDelete',
 		description:
-			'Permanently delete a saved package the signed-in user owns. This cannot be undone. It removes the package from the account and from /community if it was public, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, and best-effort deletes Artifacts repos. Existing forks keep their copies. Hiding (`packageUpdate` hidden) or making a package private is not deletion. Do not call this because a package is unused, failing, or over quota unless the owner explicitly asked to delete that specific package. Load it with packageGet or packageList, show the owner the package name and what will be destroyed, wait for them to type that name, then pass package_id and confirm_name matching the package name exactly.',
+			'Permanently delete a saved package the signed-in user owns. This cannot be undone. It removes the package from the account and from /community if it was public, stops its jobs, clears package storage and package-scoped secrets, and best-effort deletes Artifacts repos. Existing forks keep their copies. Hiding (`packageUpdate` hidden) or making a package private is not deletion. Do not call this because a package is unused, failing, or over quota unless the owner explicitly asked to delete that specific package. Load it with packageGet or packageList, show the owner the package name and what will be destroyed, wait for them to type that name, then pass package_id and confirm_name matching the package name exactly.',
 		keywords: [
 			'package',
 			'delete',

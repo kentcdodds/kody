@@ -24,8 +24,8 @@ Authors do not get `packages.invoke`.
   ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 - Exactly-once → workflows. Do not keep a keyed invoke beside them.
 - External callers → inbound webhooks. HTTP invocation tokens
-  (`POST /@:user/api/package-invocations/…`) remain only as an unadvertised
-  drain. That path is not `packages.invoke`. See
+  (`POST /@:user/api/package-invocations/…`) were an unadvertised drain and are
+  now fully removed. That path was not `packages.invoke`. See
   [0048](./0048-webhooks-replace-invocation-tokens.md).
 
 The `kody:runtime` helper is deleted and no longer bound. `packages` remains an
@@ -47,3 +47,8 @@ invokes stay `needsManual` for workflows). Interactive MCP
 
 Revisit only if computed `import(specifier)` cannot stand in for caller-owned
 name-as-data loads now that the helper is deleted.
+
+## LATER-NOTE (2026-10-08)
+
+The unadvertised HTTP invocation-token drain is gone. External HTTP is webhooks
+only ([0048](./0048-webhooks-replace-invocation-tokens.md)).

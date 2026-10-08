@@ -77,12 +77,11 @@ import { wantsJson } from '#worker/utils.ts'
  * origin, so a browser that refuses the cookie fails visibly instead of
  * bouncing between hosts.
  *
- * `/@{username}/api/package-invocations/*` and `/@{username}/webhooks/*`
- * deliberately stay on the app origin: they are machine APIs authenticated by
- * their own bearer tokens or shared secrets, they are never called by package
- * browser code, and moving them would widen the package-app domain's surface
- * for no benefit. They 404 here. Retired `/@{username}/connectors/*` paths also
- * 404 here.
+ * `/@{username}/webhooks/*` deliberately stays on the app origin: it is a
+ * machine API authenticated by its own URL secret, it is never called by
+ * package browser code, and moving it would widen the package-app domain's
+ * surface for no benefit. It 404s here. Retired
+ * `/@{username}/connectors/*` paths also 404 here.
  */
 
 function withoutHandoffToken(url: URL) {

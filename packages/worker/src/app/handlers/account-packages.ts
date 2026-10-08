@@ -3,7 +3,6 @@ import { type Action } from 'remix/router'
 import { handleAccountPackageAdoptAction } from '#app/account-package-adopt.ts'
 import { handleAccountPackageDeleteAction } from '#app/account-package-delete.ts'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
-import { handleAccountPackageTokenAction } from '#app/account-package-tokens.ts'
 import { handleAccountPackageVisibilityAction } from '#app/account-package-visibility.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -98,14 +97,6 @@ export function createAccountPackagesApiHandler(env: Env) {
 			if (!body || typeof body !== 'object' || Array.isArray(body)) {
 				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
 			}
-
-			const tokenResponse = await handleAccountPackageTokenAction({
-				env,
-				request,
-				user,
-				body,
-			})
-			if (tokenResponse) return tokenResponse
 
 			const publishLockResponse = await handleAccountPackagePublishLockAction({
 				env,

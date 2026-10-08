@@ -19,7 +19,6 @@ const SHARED_LOADER_DATA_TYPE_NAMES = new Set([
 	'AccountSecretListItem',
 	'AccountSecretDetail',
 	'AccountSecretsLoaderData',
-	'AccountPackageToken',
 	'AccountPackagesLoaderData',
 	'AccountIntegrationsLoaderData',
 	'AccountIntegrationListItem',

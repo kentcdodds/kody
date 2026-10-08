@@ -992,9 +992,6 @@ function createEntitlementsDatabase(input: {
 							) {
 								return { meta: { changes: 0 } }
 							}
-							if (query.includes('DELETE FROM package_invocation_tokens')) {
-								return { meta: { changes: 0 } }
-							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 						async first<T>() {

@@ -18,6 +18,7 @@ import {
 	insertTestUser,
 	rawMimeReference,
 } from '#worker/test-support/account-export.ts'
+import { accountUserDataPendingDropTables } from '#worker/account/data-targets.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 
 const exportFor = (env: Env, dbUserId = 1, mcpUserId = 'user-aaa') =>
@@ -53,6 +54,13 @@ test('account export D1 coverage includes every live user-owned schema column', 
 		.all() as Array<{ name: string }>
 	const liveUserColumns = new Set<string>()
 	for (const table of tables) {
+		if (
+			(accountUserDataPendingDropTables as ReadonlyArray<string>).includes(
+				table.name,
+			)
+		) {
+			continue
+		}
 		const columns = db
 			.prepare(`PRAGMA table_info(${quoteSqlIdentifier(table.name)})`)
 			.all() as Array<{ name: string }>
@@ -348,13 +356,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		INSERT INTO value_entries (bucket_id, name, description, value, created_at, updated_at)
 		VALUES ('value-bucket-a', 'timezone', 'Preferred timezone', 'America/Denver', '2026-07-05', '2026-07-05');
 
-		INSERT INTO package_invocation_tokens (
-			id, user_id, package_id, name, token_hash, created_at, updated_at
-		) VALUES (
-			'token-a', 'user-aaa', 'pkg-a', 'Migration token', 'token-hash-a',
-			'2026-07-05', '2026-07-05'
-		);
-
 		INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
 		VALUES (1, 1, 'reset-token-hash-a', 2000000000, '2026-07-05');
 
@@ -392,9 +393,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(d1Table(accountExport, 'secret_entries').rows[0]).not.toHaveProperty(
 		'lookup_hash',
 	)
-	expect(
-		d1Table(accountExport, 'package_invocation_tokens').rows[0],
-	).not.toHaveProperty('token_hash')
 	expect(d1Table(accountExport, 'password_resets').rows[0]).not.toHaveProperty(
 		'token_hash',
 	)

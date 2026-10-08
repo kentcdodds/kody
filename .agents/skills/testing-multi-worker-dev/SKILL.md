@@ -104,8 +104,6 @@ not export.
 - Unauthenticated `GET /@<user>/packages/<anything>` on the main port: 302 →
   `/login` proves the runtime lane handled it (broken binding gives 503
   instead).
-- `POST /@<user>/api/package-invocations/x/y` without bearer → 401
-  `{"ok":false,"error":{"code":"unauthorized"}}` from the runtime worker.
 - Binding status line in dev output:
   `env.RUNTIME_WORKER (...) Worker local [connected]` vs `[not connected]`.
 - Beware: logged-in package-app requests redirect to the real `https://kody.run`

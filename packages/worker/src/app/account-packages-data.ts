@@ -8,7 +8,6 @@ import {
 	type AccountPackageListItem,
 	type AccountPackageForkAhead,
 	type AccountPackageListingAhead,
-	type AccountPackageToken,
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
 	type AccountPackagesSort,
@@ -28,10 +27,6 @@ import {
 } from '#worker/entitlements/service.ts'
 import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
 import { routes } from '#universal/routes.ts'
-import {
-	listPackageInvocationTokensByPackageId,
-	type PackageInvocationTokenRecord,
-} from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
 import {
@@ -195,18 +190,6 @@ function toListItem(
 	}
 }
 
-function toToken(token: PackageInvocationTokenRecord): AccountPackageToken {
-	return {
-		id: token.id,
-		name: token.name,
-		exportNames: token.exportNames,
-		createdAt: token.created_at,
-		updatedAt: token.updated_at,
-		lastUsedAt: token.last_used_at,
-		revokedAt: token.revoked_at,
-	}
-}
-
 async function loadPackageExportNames(input: {
 	env: Env
 	requestUrl: string
@@ -237,13 +220,8 @@ async function toDetail(input: {
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 }): Promise<AccountPackageDetail> {
-	const [tokens, exports, source, communityFork, creditAttribution] =
-		await Promise.all([
-			listPackageInvocationTokensByPackageId({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				packageId: input.record.id,
-			}),
+	const [exports, source, communityFork, creditAttribution] = await Promise.all(
+		[
 			loadPackageExportNames({
 				env: input.env,
 				requestUrl: input.requestUrl,
@@ -263,7 +241,8 @@ async function toDetail(input: {
 				username: input.username ?? '',
 				packageId: input.record.id,
 			}),
-		])
+		],
+	)
 	return {
 		...toListItem(
 			input.record,
@@ -273,7 +252,6 @@ async function toDetail(input: {
 		hasCommunityListing: input.hasCommunityListing,
 		searchText: input.record.searchText,
 		exports,
-		tokens: tokens.map(toToken),
 		publishedCommit:
 			source?.user_id === input.userId
 				? (source.published_commit ?? null)
@@ -404,7 +382,7 @@ export async function loadAccountPackageDetail(input: {
 }
 
 /**
- * The listing lookup and the detail reads (tokens, manifest, source row) are
+ * The listing lookup and the detail reads (manifest, source row) are
  * independent D1/KV round trips; run them together.
  */
 async function toDetailWithListingState(input: {

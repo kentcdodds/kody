@@ -26,10 +26,9 @@ an unadvertised drain after webhooks cover the invoke jobs (caller
 documented max). Do not add `*` / multi-export webhook URLs. Do not delete token
 tables, UI, or MCP token copy in the same change that makes webhooks capable.
 
-The
-[invocation-token retirement runbook](../architecture/invocation-token-retirement-runbook.md)
-is the executable plan: values-style soak, then drop when leftover token rows
-are 0.
+The invocation-token retirement runbook was the executable plan (values-style
+soak, then drop when leftover token rows are 0). That runbook is retired; the
+HTTP token path is gone.
 
 ## Consequences
 
@@ -43,6 +42,10 @@ its invoke shape as one webhook per export plus the params/idempotency contract.
 
 Token UI, MCP guides, `packageGet.tokens`, and setup URLs are unadvertised.
 `packageInvocationTokenList` / `packageInvocationTokenGet` remain as an
-unadvertised drain. The HTTP bearer path stays until leftover rows are 0. See
-the
-[invocation-token retirement runbook](../architecture/invocation-token-retirement-runbook.md).
+unadvertised drain. The HTTP bearer path stays until leftover rows are 0.
+
+## LATER-NOTE (2026-10-08)
+
+Completed 2026-10-08: HTTP invocation tokens fully removed from code; rows
+purged; table drop in follow-up migration after deploy. The drain path and
+retirement runbook are retired. Webhooks remain the only external HTTP knock.

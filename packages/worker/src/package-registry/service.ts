@@ -36,7 +36,6 @@ import {
 } from './types.ts'
 import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
-import { deletePackageInvocationTokensForPackage } from '#worker/package-invocations/repo.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
@@ -727,11 +726,6 @@ export async function deleteSavedPackageProjection(input: {
 			}
 			await deleteAllPackageScopedSecrets({
 				env: input.env,
-				userId: input.userId,
-				packageId: input.packageId,
-			})
-			await deletePackageInvocationTokensForPackage({
-				db: input.env.APP_DB,
 				userId: input.userId,
 				packageId: input.packageId,
 			})

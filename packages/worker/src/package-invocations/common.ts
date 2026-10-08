@@ -30,7 +30,7 @@ export type PackageInvocationRequest = {
 	/**
 	 * `null` selects the key-less (lean/ephemeral) path for runtime callers:
 	 * no idempotency ledger row, no account write lease, run records on
-	 * failure only. External HTTP token invocations still require a key.
+	 * failure only. External webhook invocations still require a key.
 	 */
 	idempotencyKey: string | null
 	/**

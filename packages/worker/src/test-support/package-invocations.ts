@@ -484,6 +484,7 @@ export function createEnvWithUserMeter(
 	}
 }
 
+/** In-memory synthetic invoke scope for tests (not a D1 token row). */
 export function createToken(
 	overrides: Partial<{
 		packageId: string

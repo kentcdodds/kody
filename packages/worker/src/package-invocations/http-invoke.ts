@@ -65,7 +65,7 @@ export async function invokePackageExportWithToolFactories(input: {
 	if (isSealedSecretProviderExport(exportName)) {
 		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
 	}
-	// External HTTP token invocations stay keyed-only: providers retry
+	// External webhook invocations stay keyed-only: providers retry
 	// deliveries, so exactly-once is the point of this surface. Workflow
 	// step retries pass ephemeral: true and run key-less instead.
 	const idempotencyKey = input.ephemeral

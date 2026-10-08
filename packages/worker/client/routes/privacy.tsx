@@ -65,13 +65,12 @@ export function PrivacyRoute(_handle: Handle) {
 					name when known, last-active day stamps used for return metrics,
 					secrets, memories, packages and their source, jobs, email inboxes and
 					messages, durable storage, MCP server configuration, OAuth grants,
-					package invocation tokens, short-lived execution history, stored
-					community activity events, and any platform feedback you approve for
-					submission. All of this remains scoped to your account except for
-					content you deliberately make public (public packages published to
-					Community and a public profile), the narrow admin review of approved
-					platform feedback, and the community activity metadata described
-					below.
+					short-lived execution history, stored community activity events, and
+					any platform feedback you approve for submission. All of this remains
+					scoped to your account except for content you deliberately make public
+					(public packages published to Community and a public profile), the
+					narrow admin review of approved platform feedback, and the community
+					activity metadata described below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
@@ -277,7 +276,6 @@ export function PrivacyRoute(_handle: Handle) {
 				</p>
 				<ul mix={css(listCss)}>
 					<li>Secret values or secret metadata (names, scopes, allowlists)</li>
-					<li>Package invocation tokens</li>
 					<li>Memories</li>
 					<li>Private packages and their source</li>
 					<li>Jobs</li>

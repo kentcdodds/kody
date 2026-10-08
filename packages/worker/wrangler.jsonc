@@ -304,7 +304,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",
@@ -791,7 +790,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",
@@ -1104,7 +1102,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",

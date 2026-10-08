@@ -1,7 +1,7 @@
 /**
  * The `/@owner/…` namespace is shared by machine surfaces (package apps,
- * webhook ingress, the invocation API) and by the canonical public package
- * URL `/@owner/kody-id`, which the worker hands to Remix.
+ * webhook ingress) and by the canonical public package URL
+ * `/@owner/kody-id`, which the worker hands to Remix.
  *
  * `connectors` remains listed only so retired `/@owner/connectors/…` paths
  * still 404 as machine surfaces instead of falling through to public package
@@ -17,11 +17,6 @@ const userNamespaceSegments = new Set(['packages', 'connectors', 'webhooks'])
 function splitUserNamespacePath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
 	return parts[0]?.startsWith('@') ? parts : null
-}
-
-export function isNamespacedPackageInvocationEndpointPath(pathname: string) {
-	const parts = splitUserNamespacePath(pathname)
-	return parts?.[1] === 'api' && parts[2] === 'package-invocations'
 }
 
 export function isNamespacedAppEndpointPath(pathname: string) {

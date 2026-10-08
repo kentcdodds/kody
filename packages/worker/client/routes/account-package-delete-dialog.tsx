@@ -125,9 +125,9 @@ export function AccountPackageDeleteDialog(
 					data-testid="package-delete-controls"
 				>
 					<p mix={css(accountFieldNoteCss)}>
-						Permanently delete this package, its jobs, storage, secrets, tokens,
-						and public listing if it has one. Existing forks keep their copies.
-						This cannot be undone.
+						Permanently delete this package, its jobs, storage, secrets, and
+						public listing if it has one. Existing forks keep their copies. This
+						cannot be undone.
 					</p>
 					<div mix={css(accountActionsCss)}>
 						<button

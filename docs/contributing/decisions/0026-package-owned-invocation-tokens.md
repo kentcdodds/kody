@@ -1,6 +1,6 @@
 # 0026: Package-owned invocation tokens
 
-- **Status:** accepted
+- **Status:** superseded by [0048](./0048-webhooks-replace-invocation-tokens.md)
 - **Date:** 2026-08-19
 
 ## Context
@@ -53,3 +53,10 @@ production until the new worker is deployed: older workers still read the grant
 columns. Cross-package HTTP launchers call a named orchestrator export over the
 package's HTTP surface; composition inside Kody uses static imports or
 `import(specifier)` ([0037](./0037-no-author-packages-invoke.md)).
+
+## LATER-NOTE (2026-10-08)
+
+The HTTP invocation-token mechanism was fully removed. Webhooks are the only
+external HTTP knock ([0048](./0048-webhooks-replace-invocation-tokens.md)).
+Token rows were purged; the table drop ships in a follow-up migration after that
+code is live.

@@ -335,6 +335,10 @@
 		{
 			"filename": "0083-mcp-event-subscriptions.sql",
 			"sha256": "b08ca0deacf3b0b3225b60d5b6979dfce0ed4ffee86af3a1819e09283c9c9aff"
+		},
+		{
+			"filename": "0084-purge-package-invocation-tokens.sql",
+			"sha256": "511e40ba0254f1c7ffd121c0956ff63bd912261fcf35dd7192dff6c64a92ce84"
 		}
 	]
 }

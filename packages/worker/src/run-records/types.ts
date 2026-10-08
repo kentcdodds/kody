@@ -72,7 +72,7 @@ export const runRecordPlatformInterruptedErrorMessage =
 
 /**
  * Idempotent unattended deliveries are retried by their owning scheduler,
- * queue, or invocation token, so retain their interrupted attempt as ignored
+ * queue, or webhook delivery, so retain their interrupted attempt as ignored
  * history instead of an open user-facing failure. Interactive and
  * non-idempotent attempts stay open.
  */

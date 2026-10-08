@@ -630,9 +630,9 @@ Use:
   is missing or wrong.
 
 Delete removes the package from discovery, stops its jobs, clears package
-storage and package-scoped secrets, drops invocation tokens, and unlists a
-public catalog entry if one exists. Artifact repos are cleaned up best-effort.
-Existing forks keep their copies.
+storage and package-scoped secrets, and unlists a public catalog entry if one
+exists. Artifact repos are cleaned up best-effort. Existing forks keep their
+copies.
 
 Hiding and making a package private are not deletion. Use those when the package
 should stay saved.

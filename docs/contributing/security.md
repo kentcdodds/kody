@@ -282,12 +282,11 @@ in the Worker `fetch` handler:
 - **Package-app apex** (`kody.run`): serves no package code. `/` redirects to
   the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
   (`302`/`307`) to the owning user's subdomain. Everything else — including
-  `/account/*`, `/login`, `/mcp`, and the
-  `/@{username}/api/package-invocations/*` and `/webhooks/*` machine APIs — is
-  `404`. Those APIs stay on the app origin on purpose: they are authenticated by
-  their own bearer tokens or URL secrets, they are never called by package
-  browser code, and hosting them on the package-app domain would only widen its
-  surface. Retired `/@{username}/connectors/*` paths also 404.
+  `/account/*`, `/login`, `/mcp`, and the `/webhooks/*` machine API — is `404`.
+  Webhook ingress stays on the app origin on purpose: it is authenticated by its
+  own URL secret, it is never called by package browser code, and hosting it on
+  the package-app domain would only widen its surface. Retired
+  `/@{username}/connectors/*` paths also 404.
 - **Per-user package-app subdomain** (`{username}.kody.run`): serves only
   `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
   the app origin; every other path is `404`.

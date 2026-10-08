@@ -24,7 +24,6 @@ const packageDetail: AccountPackageDetail = {
 	forkAhead: null,
 	searchText: null,
 	exports: null,
-	tokens: [],
 	publishedCommit: null,
 	communityFork: null,
 }

@@ -268,7 +268,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 				'/login',
 				'/mcp',
 				'/session',
-				`/@${ownerUsername}/api/package-invocations/demo`,
+				`/@${ownerUsername}/webhooks/demo/sentry/secret`,
 				`/@${ownerUsername}/connectors/home/instance`,
 			].map((path) => `${origin}${path}`),
 		),

@@ -58,11 +58,11 @@ Open these before proposing a new primitive, surface, or storage home.
   — supersedes 0035 and the remaining execute-live half of 0014; fork, then use
   the copy
 - [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
-  — static import, `import(specifier)`, or workflows; HTTP-token ingress is
+  — static import, `import(specifier)`, or workflows; external HTTP is
   [0048](./0048-webhooks-replace-invocation-tokens.md)
 - [0048 — Inbound HTTP is webhooks; invocation tokens drain](./0048-webhooks-replace-invocation-tokens.md)
-  — no `*` webhook URLs; token surfaces unadvertise after the soak; the HTTP
-  token path drains until leftover rows are 0
+  — no `*` webhook URLs; HTTP invocation tokens fully removed (rows purged;
+  table drop follows after deploy)
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
 - [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
@@ -73,8 +73,6 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0032 — No unattached jobs; schedules belong to packages or workflows](./0032-no-unattached-jobs.md)
 - [0033 — No user-as-conversation, MCP session, or user-global memory hide](./0033-no-user-as-conversation.md)
   ([lab](./0033-memory-auto-surface-lab.md))
-- [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
-- [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
 - [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
   — platform classes live on `kody-platform`; do not put them on origin,
   runtime, or jobs, and do not add a second origin-facing content worker
@@ -172,6 +170,10 @@ Do not treat this list as homework. History stays; it is not silently deleted.
   — superseded by 0040
 - [0040 — Same-repo writers may PUT the Nx cache; fork PRs may not](./0040-same-repo-writers-may-put-nx-cache.md)
   — push access already implies the local write token
+- [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
+  — superseded by 0048; HTTP tokens fully removed
+- [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+  — superseded by 0048; HTTP tokens fully removed
 - [0028 — List/detail records expand inside the table](./0028-list-detail-expand.md)
   — UI mode assignment (supersedes 0010)
 - [0029 — Discord social login and official guild role](./0029-discord-social-login-and-guild-role.md)
