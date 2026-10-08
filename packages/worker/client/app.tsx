@@ -59,6 +59,7 @@ import {
 	clearStoredFirstTouchAttribution,
 } from './first-touch-attribution.ts'
 import { persistReferralCookieFromLocation } from './referral-cookie.ts'
+import { createScarfPageTracker } from './scarf-analytics.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -178,6 +179,15 @@ export function App(handle: Handle<AppProps>) {
 
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
+		const trackScarfPage = createScarfPageTracker()
+		if (
+			!handle.props.notFound &&
+			!handle.props.unauthorized &&
+			!handle.props.internalError
+		) {
+			trackScarfPage()
+		}
+		listenToRouterNavigationEnd(handle, trackScarfPage)
 		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
 		// Referral share links write a last-wins one-week cookie separately.
 		captureFirstTouchAttributionFromLocation()

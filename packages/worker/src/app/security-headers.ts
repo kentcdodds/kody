@@ -54,7 +54,7 @@ const contentSecurityPolicy = [
 	"object-src 'none'",
 	"frame-ancestors 'none'",
 	"form-action 'self'",
-	"img-src 'self' data: blob: https://cdn.usefathom.com",
+	"img-src 'self' data: blob: https://cdn.usefathom.com https://static.scarf.sh",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
 	`script-src 'self' ${scrollRestorationInlineScriptCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,

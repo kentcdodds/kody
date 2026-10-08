@@ -367,6 +367,13 @@ export function PrivacyRoute(_handle: Handle) {
 						Sentry — application error reporting and operational diagnostics
 					</li>
 					<li>Fathom — privacy-focused website traffic analytics</li>
+					<li>
+						Scarf, company-level analytics on public marketing pages and docs.
+						We send the public page path, without query strings or fragments.
+						Scarf uses the request IP address to identify companies, discards
+						the raw IP address, and does not set cookies. We skip these requests
+						when your browser sends Global Privacy Control or Do Not Track.
+					</li>
 				</ul>
 				<p mix={css(descriptionCss)}>
 					The only cookies are the session cookie (<code>kody_session</code>),
