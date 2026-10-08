@@ -23,7 +23,11 @@ import {
 	systemEmailMessageColumns,
 	systemEmailThreadColumns,
 } from './system-email-graph-columns.ts'
-import { systemInboundDedupeTombstoneStatements } from './system-inbound-dedupe.ts'
+import {
+	systemInboundDedupeProvider,
+	systemInboundDedupeTombstoneStatements,
+	systemInboundProvider,
+} from './system-inbound-dedupe.ts'
 
 type DeleteSystemEmailMessageByIdResult = {
 	messageFound: boolean
@@ -183,23 +187,14 @@ export async function createSystemEmailThread(input: {
 				${systemEmailThreadColumns.join(', ')}
 			) SELECT ${placeholders}
 			WHERE ${ownerFence}
-				AND ${
-					fence
-						? `EXISTS (
-							SELECT 1 FROM system_email_delivery_events
-							WHERE id = ?
-								AND state = 'storing'
-								AND storage_lease = ?
-						)`
-						: '1'
-				}`,
+				AND ${fence ? systemInboundDeliveryFenceSql() : '1'}`,
 		)
 		.bind(
 			...values,
 			row.inbox_id,
 			row.inbox_id,
 			systemEmailOwnerId,
-			...(fence ? [fence.deliveryId, fence.storageLease] : []),
+			...(fence ? systemInboundDeliveryFenceBinds(fence) : []),
 		)
 	const [insertResult] = await commitSystemEmailAuthorityBatch({
 		db: input.db,
@@ -226,6 +221,27 @@ export async function createSystemEmailThread(input: {
 }
 
 type SystemInboundDeliveryFence = Omit<EmailInboundDeliveryFence, 'userId'>
+
+/** Delivery-event fence that also refuses a rejected inbound fingerprint pointer. */
+function systemInboundDeliveryFenceSql() {
+	return `EXISTS (
+		SELECT 1 FROM system_email_delivery_events
+		WHERE id = ? AND state = 'storing' AND storage_lease = ?
+			AND NOT EXISTS (
+				SELECT 1 FROM system_email_delivery_events AS pointer
+				WHERE pointer.provider = ?
+					AND pointer.state = 'rejected'
+					AND pointer.id = (
+						'email-inbound-dedupe:' ||
+						system_email_delivery_events.fingerprint
+					)
+			)
+	)`
+}
+
+function systemInboundDeliveryFenceBinds(fence: SystemInboundDeliveryFence) {
+	return [fence.deliveryId, fence.storageLease, systemInboundDedupeProvider]
+}
 
 type SystemInboundMessageInput = {
 	id?: string
@@ -305,12 +321,7 @@ export async function insertSystemEmailMessage(input: {
 	const values = columns.map((column) => row[column])
 	const placeholders = columns.map(() => '?').join(', ')
 	const fence = input.inboundDeliveryFence
-	const deliveryFenceSql = fence
-		? `EXISTS (
-				SELECT 1 FROM system_email_delivery_events
-				WHERE id = ? AND state = 'storing' AND storage_lease = ?
-			)`
-		: '1'
+	const deliveryFenceSql = fence ? systemInboundDeliveryFenceSql() : '1'
 	const sharedReferenceFenceSql = `(? IS NULL OR EXISTS (
 			SELECT 1 FROM email_inboxes WHERE id = ? AND user_id = ?
 		))
@@ -340,7 +351,7 @@ export async function insertSystemEmailMessage(input: {
 			...sharedReferenceValues,
 			row.thread_id,
 			row.thread_id,
-			...(fence ? [fence.deliveryId, fence.storageLease] : []),
+			...(fence ? systemInboundDeliveryFenceBinds(fence) : []),
 		)
 	const [insertResult] = await commitSystemEmailAuthorityBatch({
 		db: input.db,
@@ -380,12 +391,7 @@ export async function insertSystemEmailAttachments(input: {
 	const timestamp = nowIso()
 	const prefix = input.ignoreConflicts ? 'INSERT OR IGNORE' : 'INSERT'
 	const fence = input.inboundDeliveryFence
-	const deliveryFenceSql = fence
-		? `EXISTS (
-				SELECT 1 FROM system_email_delivery_events
-				WHERE id = ? AND state = 'storing' AND storage_lease = ?
-			)`
-		: '1'
+	const deliveryFenceSql = fence ? systemInboundDeliveryFenceSql() : '1'
 	const statements: Array<D1PreparedStatement> = []
 	const attachmentIds: Array<string> = []
 	for (const attachment of input.attachments) {
@@ -415,7 +421,7 @@ export async function insertSystemEmailAttachments(input: {
 			.bind(
 				...values,
 				input.messageId,
-				...(fence ? [fence.deliveryId, fence.storageLease] : []),
+				...(fence ? systemInboundDeliveryFenceBinds(fence) : []),
 			)
 		statements.push(dedicated)
 	}
@@ -596,9 +602,19 @@ export async function deleteSystemEmailMessageById(input: {
 		}
 	}
 	const attachments = await listSystemEmailAttachments(input)
+	// Include unlinked charged events (message_id still NULL until
+	// markSystemInboundDeliveryReceived) so an in-flight retry cannot reuse them
+	// after the message row is gone. Dedupe pointers stay for tombstoning.
 	const deliveryEvents = await input.db
-		.prepare(`SELECT id FROM system_email_delivery_events WHERE message_id = ?`)
-		.bind(input.messageId)
+		.prepare(
+			`SELECT id FROM system_email_delivery_events
+			WHERE provider = ?
+				AND (
+					message_id = ?
+					OR json_extract(detail_json, '$.messageId') = ?
+				)`,
+		)
+		.bind(systemInboundProvider, input.messageId, input.messageId)
 		.all<{ id: string }>()
 	const inventory = [
 		{

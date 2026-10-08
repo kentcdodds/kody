@@ -6,44 +6,52 @@ export function systemInboundDedupePointerId(fingerprint: string) {
 	return `email-inbound-dedupe:${fingerprint}`
 }
 
+/**
+ * Pointer ids currently owned by these messages (`detail_json.messageId`).
+ * Do not derive ids from historical charged fingerprints: after the 48h window
+ * expires, the same fingerprint pointer can be claimed by a newer delivery.
+ */
 export async function listSystemInboundDedupePointerIdsForMessages(input: {
 	db: D1Database
 	messageIds: ReadonlyArray<string>
 }): Promise<Array<string>> {
-	const ids = new Set<string>()
-	for (const messageId of input.messageIds) {
-		const charged = await input.db
-			.prepare(
-				`SELECT DISTINCT fingerprint
-				FROM system_email_delivery_events
-				WHERE message_id = ?
-					AND fingerprint IS NOT NULL
-					AND fingerprint != ''`,
-			)
-			.bind(messageId)
-			.all<{ fingerprint: string }>()
-		const pointers = await input.db
+	const owned = await listSystemInboundDedupePointersOwnedByMessages(input)
+	return [...new Set(owned.map((row) => row.pointerId))]
+}
+
+async function listSystemInboundDedupePointersOwnedByMessages(input: {
+	db: D1Database
+	messageIds: ReadonlyArray<string>
+}): Promise<Array<{ pointerId: string; messageId: string }>> {
+	if (input.messageIds.length === 0) return []
+	const statements = input.messageIds.map((messageId) =>
+		input.db
 			.prepare(
 				`SELECT id
 				FROM system_email_delivery_events
 				WHERE provider = ?
 					AND json_extract(detail_json, '$.messageId') = ?`,
 			)
-			.bind(systemInboundDedupeProvider, messageId)
-			.all<{ id: string }>()
-		for (const row of charged.results ?? []) {
-			ids.add(systemInboundDedupePointerId(row.fingerprint))
-		}
-		for (const row of pointers.results ?? []) {
-			ids.add(row.id)
+			.bind(systemInboundDedupeProvider, messageId),
+	)
+	const batches = await input.db.batch(statements)
+	const owned: Array<{ pointerId: string; messageId: string }> = []
+	for (let index = 0; index < input.messageIds.length; index += 1) {
+		const messageId = input.messageIds[index]
+		if (!messageId) continue
+		for (const row of (batches[index]?.results ?? []) as Array<{
+			id: string
+		}>) {
+			owned.push({ pointerId: row.id, messageId })
 		}
 	}
-	return [...ids]
+	return owned
 }
 
 export function tombstoneSystemInboundDedupePointerStatement(input: {
 	db: D1Database
 	pointerId: string
+	messageId: string
 	now: string
 }) {
 	return input.db
@@ -55,13 +63,15 @@ export function tombstoneSystemInboundDedupePointerStatement(input: {
 					detail_json, '$.state', 'rejected', '$.rejectionReason', ?
 				),
 				updated_at = ?
-			WHERE id = ? AND provider = ?`,
+			WHERE id = ? AND provider = ?
+				AND json_extract(detail_json, '$.messageId') = ?`,
 		)
 		.bind(
 			systemInboundDeletedRejectionReason,
 			input.now,
 			input.pointerId,
 			systemInboundDedupeProvider,
+			input.messageId,
 		)
 }
 
@@ -70,13 +80,14 @@ export async function systemInboundDedupeTombstoneStatements(input: {
 	messageIds: ReadonlyArray<string>
 	now?: Date
 }): Promise<Array<D1PreparedStatement>> {
-	const pointerIds = await listSystemInboundDedupePointerIdsForMessages(input)
-	if (pointerIds.length === 0) return []
+	const owned = await listSystemInboundDedupePointersOwnedByMessages(input)
+	if (owned.length === 0) return []
 	const now = (input.now ?? new Date()).toISOString()
-	return pointerIds.map((pointerId) =>
+	return owned.map(({ pointerId, messageId }) =>
 		tombstoneSystemInboundDedupePointerStatement({
 			db: input.db,
 			pointerId,
+			messageId,
 			now,
 		}),
 	)
