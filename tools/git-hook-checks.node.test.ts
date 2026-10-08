@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
+	gitHookScriptEnv,
 	hookScripts,
 	isDocsOnlyHookPath,
 	listHookPaths,
@@ -402,6 +403,32 @@ test('a real docs follow-up skips unit tests and a source rename still typecheck
 		expect(renamedCommit.stdout).toContain(
 			'pre-commit: running install:check, typecheck, and migrations:check (src/app.ts)',
 		)
+	} finally {
+		await rm(root, { recursive: true, force: true })
+	}
+})
+
+test('hook scripts can create foreign repositories without inherited worktree state', async () => {
+	const root = await mkdtemp(join(tmpdir(), 'hook-env-'))
+	try {
+		const env = gitHookScriptEnv({
+			...process.env,
+			GIT_DIR: join(root, 'wrong.git'),
+			GIT_WORK_TREE: join(root, 'wrong-worktree'),
+			GIT_INDEX_FILE: join(root, 'wrong-index'),
+			KODY_HOOK_TEST: 'preserved',
+		})
+		expect(env.KODY_HOOK_TEST).toBe('preserved')
+		const target = join(root, 'fixture')
+		const init = spawnSync('git', ['init', target], { env, encoding: 'utf8' })
+		expect(init.status, init.stderr).toBe(0)
+		const top = spawnSync('git', ['rev-parse', '--show-toplevel'], {
+			cwd: target,
+			env,
+			encoding: 'utf8',
+		})
+		expect(top.status, top.stderr).toBe(0)
+		expect(top.stdout.trim()).toBe(await realpath(target))
 	} finally {
 		await rm(root, { recursive: true, force: true })
 	}

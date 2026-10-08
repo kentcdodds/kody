@@ -353,9 +353,24 @@ function defaultGit(args: ReadonlyArray<string>): GitCommandResult {
 	}
 }
 
+export function gitHookScriptEnv(source: NodeJS.ProcessEnv = process.env) {
+	const result = defaultGit(['rev-parse', '--local-env-vars'])
+	if (result.status !== 0) {
+		throw new Error(
+			'Could not isolate Git hook checks from repository environment',
+		)
+	}
+	const env = { ...source }
+	// Tests create foreign repositories. Inherited worktree variables would
+	// redirect their Git commands back into the repository being pushed.
+	for (const name of result.stdout.trim().split(/\s+/)) delete env[name]
+	return env
+}
+
 function runNpmScript(script: string) {
 	const result = spawnSync(resolveNpmCommand(), ['run', script], {
 		stdio: 'inherit',
+		env: gitHookScriptEnv(),
 	})
 	if (result.error) {
 		console.error(result.error.message)
