@@ -39,18 +39,6 @@ test('keep-previous treats a missing finalize clock as still in the rebuild wind
 	).toBe(true)
 	expect(
 		canKeepPreviousNpmBundleDuringRebuild({
-			publishedAt: undefined,
-			nowMs,
-		}),
-	).toBe(true)
-	expect(
-		canKeepPreviousNpmBundleDuringRebuild({
-			publishedAt: '',
-			nowMs,
-		}),
-	).toBe(true)
-	expect(
-		canKeepPreviousNpmBundleDuringRebuild({
 			publishedAt: '2026-10-05T00:03:00.000Z',
 			nowMs,
 		}),

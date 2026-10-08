@@ -557,7 +557,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(9)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',

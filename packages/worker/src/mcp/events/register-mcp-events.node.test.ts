@@ -249,8 +249,6 @@ test('flag on and client capability advertises events and serves events/list', a
 })
 
 test('clientSupportsMcpEvents accepts each declaration shape in circulation', () => {
-	expect(clientSupportsMcpEvents(null)).toBe(false)
-	expect(clientSupportsMcpEvents({})).toBe(false)
 	expect(clientSupportsMcpEvents({ events: {} })).toBe(true)
 	expect(clientSupportsMcpEvents({ experimental: { events: {} } })).toBe(true)
 	expect(

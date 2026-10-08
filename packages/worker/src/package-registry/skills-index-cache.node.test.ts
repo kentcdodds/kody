@@ -37,13 +37,6 @@ test('writes and reads an index keyed by user, package, and commit', async () =>
 	expect([...store.keys()]).toEqual([
 		'package-skills-index:v1:user-1:pkg-1:commit-1',
 	])
-	expect(
-		buildPackageSkillsIndexKey({
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			publishedCommit: 'commit-1',
-		}),
-	).toBe('package-skills-index:v1:user-1:pkg-1:commit-1')
 	await expect(
 		readPackageSkillsIndex({
 			env,

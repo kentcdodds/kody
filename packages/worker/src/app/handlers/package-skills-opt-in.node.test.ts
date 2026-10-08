@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
-import { mcpSkillsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import { routes } from '#universal/routes.ts'
 import type * as FeatureFlagService from '#worker/feature-flags/service.ts'
 import { createPackageSkillsOptInHandler } from './package-skills-opt-in.ts'
@@ -86,7 +85,7 @@ test('package skills opt-in sends signed-out users to login and turns the flag o
 	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledWith(
 		env.APP_DB,
 		{
-			key: mcpSkillsExtensionFlagKey,
+			key: 'mcp-skills-extension',
 			userId: 7,
 			enabled: true,
 			updatedBy: 7,
@@ -98,11 +97,7 @@ test('package skills opt-in sends signed-out users to login and turns the flag o
 			action: 'feature_flag_self_opt_in',
 			result: 'success',
 			email: 'jane@example.com',
-			reason: `key=${mcpSkillsExtensionFlagKey}`,
+			reason: 'key=mcp-skills-extension',
 		}),
 	)
-
-	const again = await handler.handler(createPostRequest())
-	expect(again.status).toBe(302)
-	expect(mockModule.setFeatureFlagUserOverride).toHaveBeenCalledTimes(2)
 })

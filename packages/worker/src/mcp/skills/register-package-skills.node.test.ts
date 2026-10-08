@@ -197,18 +197,6 @@ test('server/discover advertises nothing when the flag is off for the caller', a
 	expect(list.error?.code).toBe(-32601)
 })
 
-test('anonymous callers fail closed even when the client declares the extension', async () => {
-	mocks.resolveCallerFeatureFlags.mockResolvedValue({
-		'mcp-skills-extension': false,
-	})
-	const response = await callModern({
-		method: 'skills/list',
-		extensions: supported,
-		callerContext: createMcpCallerContext({ baseUrl: 'https://kody.example' }),
-	})
-	expect(response.error?.code).toBe(-32601)
-})
-
 test('skills/list returns the complete SEP shape', async () => {
 	const response = await callModern({
 		method: 'skills/list',

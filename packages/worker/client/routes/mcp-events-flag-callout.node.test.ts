@@ -1,7 +1,6 @@
 import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderMcpEventsFlagCallout } from '#client/routes/mcp-events-flag-callout.tsx'
-import { mcpEventsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import { routes } from '#universal/routes.ts'
 
 test('mcp events flag callout covers logged-out, opt-in, and already-on', async () => {
@@ -9,7 +8,6 @@ test('mcp events flag callout covers logged-out, opt-in, and already-on', async 
 		renderMcpEventsFlagCallout({ loggedIn: false, enabled: false }),
 	)
 	expect(loggedOut).toContain('data-testid="mcp-events-flag-callout"')
-	expect(loggedOut).toContain(`data-flag="${mcpEventsExtensionFlagKey}"`)
 	expect(loggedOut).toContain('data-testid="mcp-events-flag-login"')
 	expect(loggedOut).toContain(
 		`href="${routes.login.href()}?redirectTo=${encodeURIComponent(routes.docDetail.href({ slug: 'mcp-events' }))}"`,

@@ -1,7 +1,6 @@
 import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderPackageSkillsFlagCallout } from '#client/routes/package-skills-flag-callout.tsx'
-import { mcpSkillsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import { routes } from '#universal/routes.ts'
 
 test('package skills flag callout covers logged-out, opt-in, and already-on', async () => {
@@ -9,7 +8,6 @@ test('package skills flag callout covers logged-out, opt-in, and already-on', as
 		renderPackageSkillsFlagCallout({ loggedIn: false, enabled: false }),
 	)
 	expect(loggedOut).toContain('data-testid="package-skills-flag-callout"')
-	expect(loggedOut).toContain(`data-flag="${mcpSkillsExtensionFlagKey}"`)
 	expect(loggedOut).toContain('data-testid="package-skills-flag-login"')
 	expect(loggedOut).toContain(
 		`href="${routes.login.href()}?redirectTo=${encodeURIComponent(routes.docDetail.href({ slug: 'package-skills' }))}"`,

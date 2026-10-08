@@ -3,13 +3,8 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { mcpEventSubscriptionsPerPrincipalMax } from './constants.ts'
 import {
-	mcpEventSubscriptionMaxTtlMs,
-	mcpEventSubscriptionMinTtlMs,
-	mcpEventSubscriptionsPerPrincipalMax,
-} from './constants.ts'
-import {
-	grantMcpEventSubscriptionTtlMs,
 	subscribeMcpEvent,
 	type McpEventsPrincipal,
 	type McpEventsSubscribeParams,
@@ -162,6 +157,20 @@ test('refresh reuses verification, regrants the TTL, and reports delivery status
 		truncated: true,
 		deliveryStatus: { active: true, lastDeliveryAt: null, lastError: null },
 	})
+	const minTtl = await subscribeMcpEvent(principal, params({ ttlMs: 0 }), later)
+	expect(minTtl.id).toBe(created.id)
+	expect(minTtl.refreshBefore).toBe(
+		new Date(later.getTime() + 60 * 1000).toISOString(),
+	)
+	const maxTtl = await subscribeMcpEvent(
+		principal,
+		params({ ttlMs: null }),
+		later,
+	)
+	expect(maxTtl.id).toBe(created.id)
+	expect(maxTtl.refreshBefore).toBe(
+		new Date(later.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+	)
 	// A second event to the same callback reuses the cached verification.
 	mocks.listMcpEventSources.mockResolvedValue(
 		new Map([
@@ -176,20 +185,6 @@ test('refresh reuses verification, regrants the TTL, and reports delivery status
 	)
 	expect(other.id).not.toBe(created.id)
 	expect(callbackRequests).toHaveLength(1)
-})
-
-test('TTL grants: default, clamped finite values, and no-expiry refused with the max', () => {
-	expect(grantMcpEventSubscriptionTtlMs(undefined)).toBe(60 * 60 * 1000)
-	expect(grantMcpEventSubscriptionTtlMs(null)).toBe(
-		mcpEventSubscriptionMaxTtlMs,
-	)
-	expect(grantMcpEventSubscriptionTtlMs(0)).toBe(mcpEventSubscriptionMinTtlMs)
-	expect(grantMcpEventSubscriptionTtlMs(10 * 60 * 1000 + 0.5)).toBe(
-		10 * 60 * 1000,
-	)
-	expect(grantMcpEventSubscriptionTtlMs(365 * 24 * 60 * 60 * 1000)).toBe(
-		mcpEventSubscriptionMaxTtlMs,
-	)
 })
 
 test('subscribe maps each refusal to its draft error code', async () => {

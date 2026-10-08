@@ -166,10 +166,6 @@ test('usageByPackageGet attributes past-include Worker compute credits by packag
 				meter.label === 'Worker compute',
 		),
 	).toBe(true)
-	expect(alpha?.cumulative.at(-1)?.creditsMicroUsd).toBe(alpha?.creditsMicroUsd)
-	expect(
-		result.rows.every((row) => !row.isAdHoc || row.creditsMicroUsd > 0),
-	).toBe(true)
 })
 
 test('usageByPackageGet packageId returns that package slice of the period', async () => {

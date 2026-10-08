@@ -74,7 +74,7 @@ export type McpEventsPrincipal = {
  * [min, max]; `null` (no expiry) is refused with the max finite grant,
  * which the draft allows (`refreshBefore: null` only when granting it).
  */
-export function grantMcpEventSubscriptionTtlMs(
+function grantMcpEventSubscriptionTtlMs(
 	ttlMs: number | null | undefined,
 ): number {
 	if (ttlMs === undefined) return mcpEventSubscriptionDefaultTtlMs
