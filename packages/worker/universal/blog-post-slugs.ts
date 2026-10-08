@@ -18,5 +18,3 @@ export const blogPostSlugs = [
 	'openclaw-2-needs-a-home',
 	'how-to-turn-agent-work-into-software-you-own',
 ] as const
-
-export type BlogPostSlug = (typeof blogPostSlugs)[number]
