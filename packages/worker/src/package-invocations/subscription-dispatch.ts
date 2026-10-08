@@ -190,13 +190,41 @@ export async function deliverPackageEventWithToolFactories(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageEventDeliveryResult> {
 	const message = input.message
-	const subscriptions = await loadMatchingPackageEventSubscriptions({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: message.userId,
-		topic: message.topic,
-		payload: message.payload,
-	})
+	// MCP fan-out is independent of package-subscriber discovery: a broken
+	// package manifest must not hold webhook delivery hostage (queue retries
+	// and inline dispatch both reach this path).
+	const fanOutMcp = async () => {
+		try {
+			await fanOutPackageEventToMcpSubscriptions({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				message,
+			})
+		} catch (error) {
+			console.error('mcp-events-fan-out-failed', {
+				topic: message.topic,
+				sourcePackageId: message.source.packageId,
+				error,
+			})
+		}
+	}
+
+	let subscriptions: Awaited<
+		ReturnType<typeof loadMatchingPackageEventSubscriptions>
+	>
+	try {
+		subscriptions = await loadMatchingPackageEventSubscriptions({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: message.userId,
+			topic: message.topic,
+			payload: message.payload,
+		})
+	} catch (discoveryError) {
+		await fanOutMcp()
+		throw discoveryError
+	}
+
 	const envelope = stripUntrustedSubscriptionEnvelopeFields({
 		event: message.topic,
 		source: {
@@ -261,18 +289,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 	// Runs before the incomplete-dispatch throw so MCP subscribers are not
 	// held hostage by a package subscriber's infrastructure retry; a queue
 	// redelivery re-sends with the same eventId for receiver dedupe.
-	try {
-		await fanOutPackageEventToMcpSubscriptions({
-			env: input.env,
-			message,
-		})
-	} catch (error) {
-		console.error('mcp-events-fan-out-failed', {
-			topic: message.topic,
-			sourcePackageId: message.source.packageId,
-			error,
-		})
-	}
+	await fanOutMcp()
 	if (retryableInfrastructureErrors.length > 0) {
 		throw new Error('Package event dispatch was incomplete.', {
 			cause: retryableInfrastructureErrors[0],

@@ -180,9 +180,9 @@ client does not declare events), none of that is registered, and existing
 subscriptions stop receiving deliveries. Signed-in users can also turn it on
 from `/docs/mcp-events` (a per-user on override). The declared `successMetric`
 is `execute` event count, goal increase: event-driven clients follow deliveries
-with execute calls. Exposures are recorded at the MCP evaluation chokepoint,
-only for requests whose client declares events support. Enable for experiment
-members with
+with execute calls. Exposures use `exposureRecording: mcp-events-clients`
+(dedicated write from `registerMcpEvents` only), so execute and other non-events
+MCP callers stay out of the on/off cohorts. Enable for experiment members with
 `adminFeatureFlagSet({ key: "mcp-events-extension", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 

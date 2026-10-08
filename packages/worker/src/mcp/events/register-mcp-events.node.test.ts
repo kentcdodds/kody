@@ -15,13 +15,19 @@ import {
 } from './register-mcp-events.ts'
 
 const mocks = vi.hoisted(() => ({
-	resolveCallerFeatureFlags: vi.fn(),
+	resolveCallerFeatureFlagEvaluations: vi.fn(),
+	recordMcpEventsClientsFlagExposure: vi.fn(),
 	listMcpEventSources: vi.fn(),
 }))
 
 vi.mock('#mcp/capabilities/access-control.ts', () => ({
-	resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-		mocks.resolveCallerFeatureFlags(...args),
+	resolveCallerFeatureFlagEvaluations: (...args: Array<unknown>) =>
+		mocks.resolveCallerFeatureFlagEvaluations(...args),
+}))
+
+vi.mock('#worker/feature-flags/mcp-events-clients-exposure.ts', () => ({
+	recordMcpEventsClientsFlagExposure: (...args: Array<unknown>) =>
+		mocks.recordMcpEventsClientsFlagExposure(...args),
 }))
 
 vi.mock('./list-events.ts', async (importOriginal) => ({
@@ -47,15 +53,16 @@ const eventsListResultSchema = z.object({
 	events: z.array(z.object({ name: z.string() }).loose()),
 })
 
-function flags(enabled: boolean): Record<FeatureFlagKey, boolean> {
+function evaluations(enabled: boolean) {
 	return {
-		'demo-indicator': false,
-		'package-share-grants': false,
-		'jev-search-rerank': false,
-		'execute-invoke': false,
-		'connection-profiles': false,
-		'mcp-events-extension': enabled,
-	}
+		'demo-indicator': { enabled: false, source: 'default' },
+		'package-share-grants': { enabled: false, source: 'default' },
+		'jev-search-rerank': { enabled: false, source: 'default' },
+		'execute-invoke': { enabled: false, source: 'default' },
+		'connection-profiles': { enabled: false, source: 'default' },
+		'mcp-skills-extension': { enabled: false, source: 'default' },
+		'mcp-events-extension': { enabled, source: 'default' },
+	} as Record<FeatureFlagKey, { enabled: boolean; source: 'default' }>
 }
 
 async function connectModernClient(input: {
@@ -136,12 +143,15 @@ async function expectMethodNotFound(promise: Promise<unknown>) {
 }
 
 afterEach(() => {
-	mocks.resolveCallerFeatureFlags.mockReset()
+	mocks.resolveCallerFeatureFlagEvaluations.mockReset()
+	mocks.recordMcpEventsClientsFlagExposure.mockReset()
 	mocks.listMcpEventSources.mockReset()
 })
 
 test('flag off: no events capability and events/* methods are not found', async () => {
-	mocks.resolveCallerFeatureFlags.mockResolvedValue(flags(false))
+	mocks.resolveCallerFeatureFlagEvaluations.mockResolvedValue(
+		evaluations(false),
+	)
 	await using connection = await connectModernClient({
 		clientCapabilities: eventsExtensionCapabilities,
 	})
@@ -153,10 +163,11 @@ test('flag off: no events capability and events/* methods are not found', async 
 	}
 	await expectMethodNotFound(connection.listEvents())
 	expect(mocks.listMcpEventSources).not.toHaveBeenCalled()
+	expect(mocks.recordMcpEventsClientsFlagExposure).not.toHaveBeenCalled()
 })
 
 test('flag on without a client events capability registers nothing and skips the flag lookup', async () => {
-	mocks.resolveCallerFeatureFlags.mockResolvedValue(flags(true))
+	mocks.resolveCallerFeatureFlagEvaluations.mockResolvedValue(evaluations(true))
 	await using connection = await connectModernClient({})
 
 	expect(connection.registered.every((value) => value === false)).toBe(true)
@@ -165,11 +176,11 @@ test('flag on without a client events capability registers nothing and skips the
 		expect(capabilities).not.toHaveProperty('events')
 	}
 	await expectMethodNotFound(connection.listEvents())
-	expect(mocks.resolveCallerFeatureFlags).not.toHaveBeenCalled()
+	expect(mocks.resolveCallerFeatureFlagEvaluations).not.toHaveBeenCalled()
 })
 
 test('flag on with a non-OAuth caller registers nothing', async () => {
-	mocks.resolveCallerFeatureFlags.mockResolvedValue(flags(true))
+	mocks.resolveCallerFeatureFlagEvaluations.mockResolvedValue(evaluations(true))
 	await using connection = await connectModernClient({
 		clientCapabilities: eventsExtensionCapabilities,
 		oauthClientId: null,
@@ -180,7 +191,7 @@ test('flag on with a non-OAuth caller registers nothing', async () => {
 })
 
 test('flag on and client capability advertises events and serves events/list', async () => {
-	mocks.resolveCallerFeatureFlags.mockResolvedValue(flags(true))
+	mocks.resolveCallerFeatureFlagEvaluations.mockResolvedValue(evaluations(true))
 	mocks.listMcpEventSources.mockResolvedValue(
 		new Map([
 			[
@@ -229,6 +240,12 @@ test('flag on and client capability advertises events and serves events/list', a
 		env: expect.anything(),
 		callerContext,
 	})
+	expect(mocks.recordMcpEventsClientsFlagExposure).toHaveBeenCalledWith(
+		expect.objectContaining({
+			stableUserId: 'stable-user-1',
+			evaluation: expect.objectContaining({ enabled: true }),
+		}),
+	)
 })
 
 test('clientSupportsMcpEvents accepts each declaration shape in circulation', () => {

@@ -10,7 +10,8 @@
  * with one get exposure recording and an on/off cohort readout on the admin
  * surfaces (see `docs/contributing/architecture/feature-flags.md`). Optional
  * `exposureRecording` selects the write site (`evaluation` chokepoints by
- * default, or `paid-ranked-search` for the Jev experiment frame). The
+ * default, `paid-ranked-search` for the Jev experiment frame, or
+ * `mcp-events-clients` for events-capable MCP clients only). The
  * `successMetric` field stays optional for flags that are genuinely
  * unmeasurable (such as the permanent `demo-indicator`), and the admin UI and
  * MCP list surface a notice strongly recommending one everywhere else.
@@ -44,8 +45,13 @@ export type FeatureFlagSuccessMetric = {
  * - `evaluation` (default): app session cache + MCP caller flag resolver.
  * - `paid-ranked-search`: only from paid list-mode ranked search (Jev frame);
  *   free/anonymous never enter the on/off cohorts for that flag.
+ * - `mcp-events-clients`: only from `registerMcpEvents` after the client
+ *   declares events support; execute and other MCP callers stay out.
  */
-export type FeatureFlagExposureRecording = 'evaluation' | 'paid-ranked-search'
+export type FeatureFlagExposureRecording =
+	| 'evaluation'
+	| 'paid-ranked-search'
+	| 'mcp-events-clients'
 
 export type FeatureFlagDefinition = {
 	key: string
@@ -144,6 +150,7 @@ export const featureFlagDefinitions = [
 		defaultAudience: 'experiments_opt_in',
 		description:
 			'MCP Events extension (draft, webhook delivery only) on the stateless /mcp lane: advertise the events capability and serve events/list, events/subscribe, and events/unsubscribe for package kody.emits topics that opt in with mcp: true. Only for clients that declare events support. Off by default; enable with audience experiments_opt_in. Signed-in users can also turn it on from /docs/mcp-events. Delete the flag and gate sites when the experiment ends.',
+		exposureRecording: 'mcp-events-clients',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',

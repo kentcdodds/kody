@@ -19,6 +19,36 @@ vi.mock('./constants.ts', async (importOriginal) => ({
 	mcpEventDeliveryRetryDelaysMs: [0, 0],
 }))
 
+const liveMcpMocks = vi.hoisted(() => ({
+	stillExposes: true as boolean,
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: vi.fn(async () =>
+		liveMcpMocks.stillExposes
+			? { id: 'pkg-gateway', sourceId: 'src-1', kodyId: 'discord-gateway' }
+			: null,
+	),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: vi.fn(async () => ({
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			kody: {
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						description: 'Discord message',
+						mcp: liveMcpMocks.stillExposes,
+					},
+				},
+			},
+		},
+	})),
+}))
+
+const baseUrl = 'https://kody.example'
+
 const topic = '@kentcdodds/discord.message.created'
 const stableUserId = 'stable-user-1'
 const now = new Date('2026-10-07T12:00:00.000Z')
@@ -47,6 +77,7 @@ const network = createMswNodeServer()
 beforeEach(() => {
 	received.length = 0
 	flakyAttempts = 0
+	liveMcpMocks.stillExposes = true
 	network.use(
 		http.post('https://hooks.example.com/ok', async ({ request }) => {
 			await record(request)
@@ -130,6 +161,7 @@ async function subscribe(
 	const key = {
 		userId: stableUserId,
 		oauthClientId: input.oauthClientId ?? 'client-a',
+		connectionProfileName: input.connectionProfileName ?? null,
 		eventName: input.eventName ?? topic,
 		arguments: {},
 		callbackUrl: input.callbackUrl,
@@ -204,6 +236,7 @@ test('fan-out signs one occurrence per allowed subscription and records outcomes
 
 	const result = await fanOutPackageEventToMcpSubscriptions({
 		env,
+		baseUrl,
 		message: message(),
 		now,
 	})
@@ -277,10 +310,21 @@ test('fan-out signs one occurrence per allowed subscription and records outcomes
 test('queue redelivery re-sends with the same webhook-id for receiver dedupe', async () => {
 	const { env } = createEnv()
 	await subscribe(env, { callbackUrl: 'https://hooks.example.com/ok' })
-	await fanOutPackageEventToMcpSubscriptions({ env, message: message(), now })
-	await fanOutPackageEventToMcpSubscriptions({ env, message: message(), now })
 	await fanOutPackageEventToMcpSubscriptions({
 		env,
+		baseUrl,
+		message: message(),
+		now,
+	})
+	await fanOutPackageEventToMcpSubscriptions({
+		env,
+		baseUrl,
+		message: message(),
+		now,
+	})
+	await fanOutPackageEventToMcpSubscriptions({
+		env,
+		baseUrl,
 		message: message({ idempotencyKey: 'discord:message-create:456' }),
 		now,
 	})
@@ -295,12 +339,18 @@ test('fan-out is a no-op without mcp: true, without subscriptions, or with the f
 	await expect(
 		fanOutPackageEventToMcpSubscriptions({
 			env,
+			baseUrl,
 			message: message({ mcp: undefined }),
 			now,
 		}),
 	).resolves.toMatchObject({ status: 'skipped_not_mcp' })
 	await expect(
-		fanOutPackageEventToMcpSubscriptions({ env, message: message(), now }),
+		fanOutPackageEventToMcpSubscriptions({
+			env,
+			baseUrl,
+			message: message(),
+			now,
+		}),
 	).resolves.toMatchObject({ status: 'no_subscriptions' })
 
 	const flagOff = createEnv({ flagEnabled: false }).env
@@ -308,6 +358,7 @@ test('fan-out is a no-op without mcp: true, without subscriptions, or with the f
 	await expect(
 		fanOutPackageEventToMcpSubscriptions({
 			env: flagOff,
+			baseUrl,
 			message: message(),
 			now,
 		}),
@@ -323,9 +374,25 @@ test('fan-out is a no-op without mcp: true, without subscriptions, or with the f
 	await expect(
 		fanOutPackageEventToMcpSubscriptions({
 			env: expiredEnv,
+			baseUrl,
 			message: message(),
 			now: new Date(now.getTime() + 2 * 60 * 60 * 1000),
 		}),
 	).resolves.toMatchObject({ status: 'no_subscriptions' })
+	expect(received).toHaveLength(0)
+})
+
+test('fan-out skips when the live package no longer declares mcp: true', async () => {
+	const { env } = createEnv()
+	await subscribe(env, { callbackUrl: 'https://hooks.example.com/ok' })
+	liveMcpMocks.stillExposes = false
+	await expect(
+		fanOutPackageEventToMcpSubscriptions({
+			env,
+			baseUrl,
+			message: message(),
+			now,
+		}),
+	).resolves.toMatchObject({ status: 'skipped_not_mcp', delivered: 0 })
 	expect(received).toHaveLength(0)
 })

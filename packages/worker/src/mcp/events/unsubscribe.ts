@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { readCallerConnectionProfileName } from '#worker/connection-profiles/access.ts'
 import { requireMcpEventsUserId, type McpEventsPrincipal } from './subscribe.ts'
 import {
 	buildMcpEventSubscriptionId,
@@ -39,6 +40,9 @@ export async function unsubscribeMcpEvent(
 	const id = await buildMcpEventSubscriptionId({
 		userId,
 		oauthClientId: principal.oauthClientId,
+		connectionProfileName: readCallerConnectionProfileName(
+			principal.callerContext,
+		),
 		eventName: params.name,
 		arguments: params.arguments ?? {},
 		callbackUrl,

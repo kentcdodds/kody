@@ -359,6 +359,12 @@ export async function revokeUserMcpOauthClient(input: {
 		return { ok: false, error: 'OAuth client not found.', status: 404 }
 	}
 	if (row.revoked_at) {
+		// Retry cleanup: a prior revoke may have marked the client revoked
+		// before subscription rows were deleted.
+		await deleteMcpEventSubscriptionsForOauthClient({
+			db: input.db,
+			oauthClientId: row.client_id,
+		})
 		return { ok: false, error: 'OAuth client is already revoked.', status: 400 }
 	}
 

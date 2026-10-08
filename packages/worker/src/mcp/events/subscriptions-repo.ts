@@ -11,13 +11,16 @@ import {
 } from './constants.ts'
 
 /**
- * Subscription identity per the draft: (principal, delivery.url, name,
- * arguments). Kody's principal is the stable user id plus the OAuth client
- * the grant was issued to, so two connected clients never share a row.
+ * Subscription identity: draft (principal, delivery.url, name, arguments)
+ * plus the connection profile that granted subscribe. Kody's principal is
+ * the stable user id plus the OAuth client the grant was issued to. Profile
+ * is part of the id so a refresh from a different (or unrestricted) grant
+ * cannot overwrite another grant's stored limits.
  */
 export type McpEventSubscriptionKey = {
 	userId: string
 	oauthClientId: string
+	connectionProfileName: string | null
 	eventName: string
 	arguments: Record<string, unknown>
 	callbackUrl: string
@@ -116,6 +119,7 @@ export async function buildMcpEventSubscriptionId(
 			canonicalJsonStringify({
 				userId: key.userId,
 				oauthClientId: key.oauthClientId,
+				connectionProfileName: key.connectionProfileName,
 				eventName: key.eventName,
 				arguments: key.arguments,
 				callbackUrl: key.callbackUrl,
@@ -158,22 +162,26 @@ export async function countLiveMcpEventSubscriptionsForPrincipal(input: {
 }
 
 /**
- * Verification is cached per (principal, url): the latest `verified_at` of
- * any subscription of this principal to the same callback since
- * `verifiedSince`, or null when a fresh challenge is required.
+ * Verification is cached per (principal, url, secret): a recent row for
+ * this principal and callback whose current signing secret matches
+ * `secret`. Secret rotation must re-challenge; URL-only cache hits would
+ * skip proving the receiver still accepts the new secret.
  */
 export async function findRecentMcpEventCallbackVerification(input: {
 	db: D1Database
+	env: Pick<Env, 'SECRET_STORE_KEY'>
 	userId: string
 	oauthClientId: string
 	callbackUrl: string
+	secret: string
 	verifiedSince: Date
 }): Promise<string | null> {
-	const row = await input.db
+	const rows = await input.db
 		.prepare(
-			`SELECT MAX(verified_at) AS verified_at FROM mcp_event_subscriptions
+			`SELECT id, secret_encrypted, verified_at FROM mcp_event_subscriptions
 			 WHERE user_id = ? AND oauth_client_id = ? AND callback_url = ?
-			   AND verified_at IS NOT NULL AND verified_at > ?`,
+			   AND verified_at IS NOT NULL AND verified_at > ?
+			 ORDER BY verified_at DESC`,
 		)
 		.bind(
 			input.userId,
@@ -181,8 +189,24 @@ export async function findRecentMcpEventCallbackVerification(input: {
 			input.callbackUrl,
 			input.verifiedSince.toISOString(),
 		)
-		.first<{ verified_at: string | null }>()
-	return row?.verified_at ?? null
+		.all<{
+			id: string
+			secret_encrypted: string
+			verified_at: string
+		}>()
+	for (const row of rows.results ?? []) {
+		try {
+			const stored = await decryptMcpEventSubscriptionSecret(
+				input.env,
+				row.secret_encrypted,
+				userMcpEventSubscriptionSecretContext(input.userId, row.id),
+			)
+			if (stored === input.secret) return row.verified_at
+		} catch {
+			// Corrupt or foreign ciphertext cannot prove this secret; keep looking.
+		}
+	}
+	return null
 }
 
 /**
@@ -326,6 +350,30 @@ export async function listDeliverableMcpEventSubscriptions(input: {
 		.bind(input.userId, input.eventName, input.now.toISOString())
 		.all<McpEventSubscriptionRow>()
 	return (result.results ?? []).map(toRecord)
+}
+
+/** True when the stored current secret decrypts to `secret`. */
+export async function mcpEventSubscriptionSecretMatches(input: {
+	db: D1Database
+	env: Pick<Env, 'SECRET_STORE_KEY'>
+	userId: string
+	id: string
+	secret: string
+}): Promise<boolean> {
+	const row = await input.db
+		.prepare(
+			`SELECT secret_encrypted FROM mcp_event_subscriptions
+			 WHERE user_id = ? AND id = ?`,
+		)
+		.bind(input.userId, input.id)
+		.first<{ secret_encrypted: string }>()
+	if (!row) return false
+	const stored = await decryptMcpEventSubscriptionSecret(
+		input.env,
+		row.secret_encrypted,
+		userMcpEventSubscriptionSecretContext(input.userId, input.id),
+	)
+	return stored === input.secret
 }
 
 /**

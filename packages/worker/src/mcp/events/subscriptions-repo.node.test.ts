@@ -37,6 +37,7 @@ function key(
 	return {
 		userId: 'user-1',
 		oauthClientId: 'client-a',
+		connectionProfileName: null,
 		eventName: '@kentcdodds/discord.message.created',
 		arguments: {},
 		callbackUrl: 'https://hooks.example.com/kody',
@@ -55,14 +56,21 @@ async function save(
 		connectionProfileName?: string | null
 	} = {},
 ) {
-	const id = await buildMcpEventSubscriptionId(subscriptionKey)
+	const keyWithProfile: McpEventSubscriptionKey = {
+		...subscriptionKey,
+		connectionProfileName:
+			options.connectionProfileName !== undefined
+				? options.connectionProfileName
+				: subscriptionKey.connectionProfileName,
+	}
+	const id = await buildMcpEventSubscriptionId(keyWithProfile)
 	const at = options.at ?? now
 	return await upsertMcpEventSubscription({
 		db,
 		env,
 		id,
-		key: subscriptionKey,
-		connectionProfileName: options.connectionProfileName ?? null,
+		key: keyWithProfile,
+		connectionProfileName: keyWithProfile.connectionProfileName,
 		secret: options.secret ?? secretA,
 		refreshBefore: options.refreshBefore ?? new Date(at.getTime() + hourMs),
 		verifiedAt: options.verifiedAt ?? at.toISOString(),
@@ -81,17 +89,18 @@ test('subscription ids are deterministic over the full key and argument order', 
 		[
 			key({ userId: 'user-2' }),
 			key({ oauthClientId: 'client-b' }),
+			key({ connectionProfileName: 'work' }),
 			key({ eventName: 'other.topic' }),
 			key({ arguments: { a: 1 } }),
 			key({ callbackUrl: 'https://hooks.example.com/other' }),
 		].map(buildMcpEventSubscriptionId),
 	)
-	expect(new Set([base, ...variants]).size).toBe(6)
+	expect(new Set([base, ...variants]).size).toBe(7)
 })
 
 test('upsert stores an encrypted secret and refreshes in place', async () => {
 	const { sqlite, db } = createDb()
-	const created = await save(db, key(), { connectionProfileName: 'work' })
+	const created = await save(db, key({ connectionProfileName: 'work' }))
 	expect(created).toMatchObject({
 		userId: 'user-1',
 		oauthClientId: 'client-a',
@@ -111,7 +120,7 @@ test('upsert stores an encrypted secret and refreshes in place', async () => {
 	expect(stored.secret_encrypted).not.toContain(secretA.slice(6))
 
 	const later = new Date(now.getTime() + 10 * 60 * 1000)
-	const refreshed = await save(db, key(), {
+	const refreshed = await save(db, key({ connectionProfileName: 'work' }), {
 		at: later,
 		refreshBefore: new Date(later.getTime() + 2 * hourMs),
 	})
@@ -119,12 +128,18 @@ test('upsert stores an encrypted secret and refreshes in place', async () => {
 	expect(refreshed.refreshBefore).toBe(
 		new Date(later.getTime() + 2 * hourMs).toISOString(),
 	)
-	expect(refreshed.connectionProfileName).toBeNull()
+	expect(refreshed.connectionProfileName).toBe('work')
+	// A different profile is a different subscription id, so it cannot erase
+	// the original grant's stored profile binding.
+	const otherProfile = await save(db, key({ connectionProfileName: null }), {
+		at: later,
+	})
+	expect(otherProfile.id).not.toBe(created.id)
 	expect(
 		sqlite
 			.prepare(`SELECT COUNT(*) AS count FROM mcp_event_subscriptions`)
 			.get(),
-	).toEqual({ count: 1 })
+	).toEqual({ count: 2 })
 	await expect(
 		readMcpEventSubscriptionSigningSecrets({
 			db,
@@ -218,20 +233,26 @@ test('deliverable listing excludes expired, unverified, inactive, and other-topi
 	).toEqual({ count: 4 })
 })
 
-test('callback verification is cached per principal and url', async () => {
+test('callback verification is cached per principal, url, and secret', async () => {
 	const { db } = createDb()
 	const verifiedAt = new Date(now.getTime() - hourMs).toISOString()
 	await save(db, key(), { verifiedAt })
-	const lookup = (overrides: Partial<McpEventSubscriptionKey>, since: Date) =>
+	const lookup = (
+		overrides: Partial<McpEventSubscriptionKey> & { secret?: string },
+		since: Date,
+	) =>
 		findRecentMcpEventCallbackVerification({
 			db,
+			env,
 			userId: overrides.userId ?? 'user-1',
 			oauthClientId: overrides.oauthClientId ?? 'client-a',
 			callbackUrl: overrides.callbackUrl ?? 'https://hooks.example.com/kody',
+			secret: overrides.secret ?? secretA,
 			verifiedSince: since,
 		})
 	const dayAgo = new Date(now.getTime() - 24 * hourMs)
 	await expect(lookup({}, dayAgo)).resolves.toBe(verifiedAt)
+	await expect(lookup({ secret: secretB }, dayAgo)).resolves.toBeNull()
 	await expect(lookup({}, now)).resolves.toBeNull()
 	await expect(
 		lookup({ oauthClientId: 'client-b' }, dayAgo),

@@ -24,6 +24,7 @@ import {
 	deleteExpiredMcpEventSubscriptions,
 	getMcpEventSubscription,
 	findRecentMcpEventCallbackVerification,
+	mcpEventSubscriptionSecretMatches,
 	upsertMcpEventSubscription,
 	type McpEventSubscriptionKey,
 } from './subscriptions-repo.ts'
@@ -156,9 +157,13 @@ export async function subscribeMcpEvent(
 		})
 	}
 
+	const connectionProfileName = readCallerConnectionProfileName(
+		principal.callerContext,
+	)
 	const key: McpEventSubscriptionKey = {
 		userId,
 		oauthClientId: principal.oauthClientId,
+		connectionProfileName,
 		eventName: params.name,
 		arguments: subscriptionArguments,
 		callbackUrl,
@@ -185,8 +190,18 @@ export async function subscribeMcpEvent(
 	const verifiedSince = new Date(
 		now.getTime() - mcpEventCallbackVerificationTtlMs,
 	)
+	const existingSecretMatches = existing
+		? await mcpEventSubscriptionSecretMatches({
+				db,
+				env: principal.env,
+				userId,
+				id,
+				secret,
+			})
+		: false
 	let verifiedAt: string
 	if (
+		existingSecretMatches &&
 		existing?.verifiedAt &&
 		existing.verifiedAt > verifiedSince.toISOString()
 	) {
@@ -194,9 +209,11 @@ export async function subscribeMcpEvent(
 	} else {
 		const cachedVerifiedAt = await findRecentMcpEventCallbackVerification({
 			db,
+			env: principal.env,
 			userId,
 			oauthClientId: principal.oauthClientId,
 			callbackUrl,
+			secret,
 			verifiedSince,
 		})
 		if (cachedVerifiedAt) {
@@ -226,9 +243,7 @@ export async function subscribeMcpEvent(
 		env: principal.env,
 		id,
 		key,
-		connectionProfileName: readCallerConnectionProfileName(
-			principal.callerContext,
-		),
+		connectionProfileName,
 		secret,
 		refreshBefore,
 		verifiedAt,

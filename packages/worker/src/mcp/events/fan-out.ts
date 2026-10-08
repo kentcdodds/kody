@@ -7,6 +7,9 @@ import {
 } from '#worker/connection-profiles/repo.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
+import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { mcpEventDeliveryConcurrency } from './constants.ts'
 import {
 	buildMcpEventId,
@@ -46,19 +49,73 @@ async function isMcpEventsExtensionEnabledForUser(input: {
 }
 
 /**
+ * Re-check the live package manifest so a topic that withdrew `mcp: true`
+ * after enqueue does not still reach webhooks. Fail closed on load errors.
+ */
+async function sourcePackageStillExposesTopicOverMcp(input: {
+	env: Env
+	baseUrl: string
+	message: PackageEventsDispatchQueueMessage
+}): Promise<boolean> {
+	try {
+		const saved = await getSavedPackageById(input.env.APP_DB, {
+			userId: input.message.userId,
+			packageId: input.message.source.packageId,
+		})
+		if (!saved) return false
+		const loaded = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.message.userId,
+			sourceId: saved.sourceId,
+		})
+		return listPackageEmittedEvents(loaded.manifest).some(
+			(event) => event.topic === input.message.topic && event.mcp === true,
+		)
+	} catch (error) {
+		console.warn('mcp-events-live-mcp-check-failed', {
+			packageId: input.message.source.packageId,
+			topic: input.message.topic,
+			error,
+		})
+		return false
+	}
+}
+
+/**
+ * Owned OAuth clients that were revoked must not receive deliveries even when
+ * subscription cleanup lagged. Third-party clients (no ownership row) stay
+ * eligible; revoke paths delete those rows and retry on already-revoked.
+ */
+async function isOwnedOauthClientRevoked(input: {
+	db: D1Database
+	oauthClientId: string
+}): Promise<boolean> {
+	const row = await input.db
+		.prepare(
+			`SELECT revoked_at FROM user_mcp_oauth_clients WHERE client_id = ?`,
+		)
+		.bind(input.oauthClientId)
+		.first<{ revoked_at: string | null }>()
+	return Boolean(row?.revoked_at)
+}
+
+/**
  * MCP Events leg of package event delivery. Runs inside the same
  * `kody-package-events-dispatch` consumer message as package subscribers
  * (`deliverPackageEventWithToolFactories`), so there is one dispatch path.
  *
- * Delivery-time re-checks: the emitter declared `mcp: true` (stamped on the
- * message at dispatch), the user still has the flag, the subscription is
- * live and verified, and its connection profile still grants `read` on the
- * emitting package. Per-subscription failures are recorded as `last_error`
- * and never thrown, so a dead callback cannot force a queue redelivery that
- * would replay every other subscriber.
+ * Delivery-time re-checks: the emitter still declares `mcp: true` on the live
+ * manifest (not only the enqueue stamp), the user still has the flag, the
+ * subscription is live and verified, its OAuth client is not an owned revoked
+ * client, and its connection profile still grants `read` on the emitting
+ * package. Per-subscription failures are recorded as `last_error` and never
+ * thrown, so a dead callback cannot force a queue redelivery that would
+ * replay every other subscriber.
  */
 export async function fanOutPackageEventToMcpSubscriptions(input: {
 	env: Env
+	baseUrl: string
 	message: PackageEventsDispatchQueueMessage
 	now?: Date
 }): Promise<McpEventFanOutResult> {
@@ -70,6 +127,15 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 		denied: 0,
 	}
 	if (message.mcp !== true) return result
+	if (
+		!(await sourcePackageStillExposesTopicOverMcp({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			message,
+		}))
+	) {
+		return result
+	}
 
 	const db = input.env.APP_DB
 	const now = input.now ?? new Date()
@@ -97,8 +163,21 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 		string,
 		Promise<ReadonlyArray<ConnectionProfileGrant>>
 	>()
+	const revokedClientCache = new Map<string, Promise<boolean>>()
 	const allowed: Array<McpEventSubscriptionRecord> = []
 	for (const subscription of subscriptions) {
+		let revokedPending = revokedClientCache.get(subscription.oauthClientId)
+		if (!revokedPending) {
+			revokedPending = isOwnedOauthClientRevoked({
+				db,
+				oauthClientId: subscription.oauthClientId,
+			})
+			revokedClientCache.set(subscription.oauthClientId, revokedPending)
+		}
+		if (await revokedPending) {
+			result.denied += 1
+			continue
+		}
 		const profileName = subscription.connectionProfileName
 		let grants: ReadonlyArray<ConnectionProfileGrant> | null = null
 		if (profileName) {

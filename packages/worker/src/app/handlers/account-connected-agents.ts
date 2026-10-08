@@ -198,6 +198,13 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 				env,
 			})
 			if ('error' in revoked) {
+				// Retry cleanup when grants are already gone but subscription
+				// rows may have survived a prior partial revoke.
+				await deleteMcpEventSubscriptionsForOauthClient({
+					db: env.APP_DB,
+					oauthClientId: parsed.value.clientId.trim(),
+					userId: user.mcpUser.userId,
+				})
 				return jsonResponse(
 					{ ok: false, error: 'Connected agent not found.' },
 					404,

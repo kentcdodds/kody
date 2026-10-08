@@ -6,7 +6,8 @@ import {
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { mcpEventsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import { resolveCallerFeatureFlagEvaluations } from '#mcp/capabilities/access-control.ts'
+import { recordMcpEventsClientsFlagExposure } from '#worker/feature-flags/mcp-events-clients-exposure.ts'
 import {
 	mcpEventsExtensionId,
 	mcpEventsListMethod,
@@ -103,8 +104,19 @@ export async function registerMcpEvents(input: {
 }): Promise<boolean> {
 	if (!clientSupportsMcpEvents(input.clientCapabilities)) return false
 	if (!input.callerContext.user?.userId || !input.oauthClientId) return false
-	const flags = await resolveCallerFeatureFlags(input.env, input.callerContext)
-	if (flags[mcpEventsExtensionFlagKey] !== true) return false
+	// Dedicated exposure site: do not use resolveCallerFeatureFlags (evaluation
+	// chokepoint) so execute and other non-events clients stay out of cohorts.
+	const evaluations = await resolveCallerFeatureFlagEvaluations(
+		input.env,
+		input.callerContext,
+	)
+	const evaluation = evaluations?.[mcpEventsExtensionFlagKey]
+	if (!evaluation?.enabled) return false
+	await recordMcpEventsClientsFlagExposure({
+		env: input.env,
+		stableUserId: input.callerContext.user.userId,
+		evaluation,
+	})
 
 	const principal: McpEventsPrincipal = {
 		env: input.env,

@@ -298,6 +298,7 @@ test('package event delivery fans out to MCP subscriptions on the same consumer 
 	expect(fanOutMocks.fanOutPackageEventToMcpSubscriptions).toHaveBeenCalledWith(
 		{
 			env: expect.anything(),
+			baseUrl: expect.any(String),
 			message,
 		},
 	)
