@@ -423,13 +423,14 @@ async function deleteSystemEmailMessagesByIds(input: {
 				input.db
 					.prepare(
 						`DELETE FROM system_email_delivery_events
-						WHERE provider = ?
-							AND (
-								message_id IN (${placeholders})
-								OR json_extract(detail_json, '$.messageId') IN (${placeholders})
+						WHERE message_id IN (${placeholders})
+							OR (
+								provider = '${systemInboundProvider}'
+								AND json_extract(detail_json, '$.messageId')
+									IN (${placeholders})
 							)`,
 					)
-					.bind(systemInboundProvider, ...deletableIds, ...deletableIds),
+					.bind(...deletableIds, ...deletableIds),
 				input.db
 					.prepare(
 						`DELETE FROM system_email_messages
