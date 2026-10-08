@@ -28,7 +28,6 @@ import { writeArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapsh
 import { getArtifactsBinding } from '#worker/repo/artifacts.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createArtifactsMswHandlers } from '#worker/test-support/artifacts-msw-handlers.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type CommunityActivityDispatchQueueMessage } from './activity-dispatch-queue-producer.ts'
@@ -39,6 +38,7 @@ import {
 } from './listing-published-dispatch-queue-producer.ts'
 import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockAccountId = 'cf_account_mock_123'
 const artifactsApiBaseUrl = 'https://artifacts-mock.test'
@@ -62,7 +62,7 @@ async function insertTestUser(input: {
 	username: string
 }): Promise<TestUser> {
 	await ensureCommunityFlowSchema(env.APP_DB)
-	const userId = await createStableUserIdFromEmail(input.email)
+	const userId = testStableUserIdFromEmail(input.email)
 	await runSql(
 		`INSERT INTO users
 			(username, email, stable_user_id, password_hash, plan, account_type)

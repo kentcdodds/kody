@@ -9,13 +9,17 @@ import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
  */
 
 /**
- * Node-sync equivalent of the worker's `createStableUserIdFromEmail`
- * (`packages/worker/src/user-id.ts`): sha256 hex of the trimmed lowercase
- * email. Seeded users must carry the same derived id as the signup path so
- * fixtures match production identity semantics.
+ * Deterministic fixture `stable_user_id` for local seed accounts so re-seeding
+ * and dependent seed rows (packages, integrations) resolve the same owner.
+ * Production signup mints random ids (`createStableUserId`); never use this
+ * outside local fixtures.
  */
-export function stableUserIdFromEmail(email: string) {
+export function seedStableUserIdFromEmail(email: string) {
 	return createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
+}
+
+function storedStableUserIdSql(email: string) {
+	return `(SELECT stable_user_id FROM users WHERE email = ${quoteSqlString(email)})`
 }
 
 /**
@@ -26,7 +30,7 @@ export function seedSavedPackageIds(input: { email: string; index: number }): {
 	packageId: string
 	sourceId: string
 } {
-	const userId = stableUserIdFromEmail(input.email)
+	const userId = seedStableUserIdFromEmail(input.email)
 	const packageId = createHash('sha256')
 		.update(`seed-saved-package:${userId}:${input.index}`)
 		.digest('hex')
@@ -45,7 +49,7 @@ export function buildSeedSavedPackagesSql(input: {
 	email: string
 	count: number
 }) {
-	const userId = quoteSqlString(stableUserIdFromEmail(input.email))
+	const userId = storedStableUserIdSql(input.email)
 	const statements: Array<string> = []
 	for (let index = 1; index <= input.count; index += 1) {
 		const { packageId, sourceId } = seedSavedPackageIds({
@@ -127,7 +131,7 @@ export function buildSeedUserSql(input: {
 
 	return `
 INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP, ${quoteSqlString(stableUserIdFromEmail(input.email))}, 'free')
+VALUES (${quoteSqlString(input.username)}, ${quoteSqlString(input.email)}, ${quoteSqlString(input.passwordHash)}, CURRENT_TIMESTAMP, ${quoteSqlString(seedStableUserIdFromEmail(input.email))}, 'free')
 ON CONFLICT(email) DO UPDATE SET
   username = excluded.username,
   password_hash = excluded.password_hash,
@@ -143,7 +147,7 @@ ${roleSql}`.trim()
  * can exercise Disconnect and Delete integration without a live OAuth dance.
  */
 export function buildSeedIntegrationSql(email: string) {
-	const userId = quoteSqlString(stableUserIdFromEmail(email))
+	const userId = storedStableUserIdSql(email)
 	return `
 INSERT INTO user_oauth_apps (
 	user_id, slug, provider, label, client_id,

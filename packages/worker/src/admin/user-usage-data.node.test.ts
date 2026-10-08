@@ -5,9 +5,9 @@ import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { type DailyEntitlementResource } from '#worker/entitlements/user-meter-do.ts'
 import { type RepoSessionRow } from '#worker/repo/types.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type UserRow = {
 	id: number
@@ -218,7 +218,7 @@ async function setupUsageUser(input: {
 	wrapDb?: (db: D1Database) => D1Database
 	extraEnv?: Record<string, unknown>
 }) {
-	const usageUserId = await createStableUserIdFromEmail(
+	const usageUserId = testStableUserIdFromEmail(
 		`${input.plan}-${crypto.randomUUID()}@example.com`,
 	)
 	const resourceCounts = { [usageUserId]: input.resourceCounts ?? {} }

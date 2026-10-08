@@ -1,5 +1,5 @@
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 /**
  * Explicit-import factories for `*.workers.test.ts` suites that need a local
@@ -131,7 +131,7 @@ export async function seedAccount(input: {
 	stableUserId?: string
 }): Promise<number> {
 	const stableUserId =
-		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+		input.stableUserId ?? testStableUserIdFromEmail(input.email)
 	const emailVerifiedAt =
 		input.emailVerifiedAt === undefined
 			? new Date().toISOString()

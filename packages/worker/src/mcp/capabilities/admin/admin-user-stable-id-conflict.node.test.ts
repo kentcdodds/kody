@@ -8,8 +8,8 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { adminUserStableIdConflictCapability } from './admin-user-stable-id-conflict.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function createMigratedDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -95,7 +95,7 @@ test('adminUserStableIdConflict reports collisions without content and denies no
 	seedUser(sqlite, {
 		email: sameEmail,
 		username: 'same-user',
-		stableUserId: await createStableUserIdFromEmail(sameEmail),
+		stableUserId: testStableUserIdFromEmail(sameEmail),
 		emailVerified: true,
 		createdAt: sameCreatedAt,
 	})
@@ -107,7 +107,7 @@ test('adminUserStableIdConflict reports collisions without content and denies no
 
 	const victimEmail = 'victim@example.com'
 	const squatterCreatedAt = '2026-03-04T05:06:07.000Z'
-	const squatterStableUserId = await createStableUserIdFromEmail(victimEmail)
+	const squatterStableUserId = testStableUserIdFromEmail(victimEmail)
 	seedUser(sqlite, {
 		email: 'attacker@example.com',
 		username: 'squatter',

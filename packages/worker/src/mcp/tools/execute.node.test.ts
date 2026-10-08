@@ -10,7 +10,6 @@ import {
 	entitlementLimitErrorCode,
 	jobIntervalFloorErrorCode,
 } from '#worker/entitlements/errors.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	defaultMcpContentLimitBytes,
 	maxMcpContentBlockCount,
@@ -26,6 +25,7 @@ import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const heartbeatMock = vi.hoisted(() => ({
 	scheduleFleetExecuteLastSuccess: vi.fn(),
@@ -913,7 +913,7 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
 
 	const quotaEmail = 'quota-metadata@example.com'
-	const quotaUserId = await createStableUserIdFromEmail(quotaEmail)
+	const quotaUserId = testStableUserIdFromEmail(quotaEmail)
 	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
 	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day', 'free')
 	await userMeter.seed({
@@ -1020,7 +1020,7 @@ export default async function main(params) {
 })
 
 test('execute does not consume daily entitlement when live flag resolution fails', async () => {
-	const userId = await createStableUserIdFromEmail('flag-fail@example.com')
+	const userId = testStableUserIdFromEmail('flag-fail@example.com')
 	const handler = await getExecuteHandler({
 		baseUrl: 'https://example.com',
 		user: {

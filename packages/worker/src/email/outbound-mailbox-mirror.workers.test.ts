@@ -7,7 +7,7 @@ import { rpcFor } from './mailbox-test-helpers.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
@@ -18,7 +18,7 @@ const platformDomain = 'inbox.kody.example.com'
 
 async function seedVerifiedAccount(input: { email: string }) {
 	const username = `sender-${crypto.randomUUID().slice(0, 8)}`
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
 			VALUES (?, ?, ?, ?, 'max', ?)`,
@@ -38,7 +38,7 @@ test('sendOutboundEmail mirrors outbound message graph into Mailbox on success',
 	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `mailbox-sent-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+	const userId = testStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
 	const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46])
 	const sendEnv = {
@@ -113,7 +113,7 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 	silenceIncidentalRuntimeWarnings(['cloudflare-email-api-failed'])
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `mailbox-fail-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+	const userId = testStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
 
 	using _server = createMswWorkerServer(

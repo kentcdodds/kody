@@ -10,7 +10,6 @@ import { createAccountMcpOauthClientsApiHandler } from '#app/handlers/account-mc
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -20,7 +19,7 @@ async function seedUser(
 	input: { id: number; email: string; username: string; verified?: boolean },
 ) {
 	const passwordHash = await createPasswordHash('test-password')
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	const verifiedSql = input.verified === false ? 'NULL' : 'CURRENT_TIMESTAMP'
 	sqlite.exec(`
 		INSERT INTO users (

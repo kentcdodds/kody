@@ -3,11 +3,11 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	packageRealtimeSessionRpc,
 	PackageRealtimeSession,
 } from './realtime-session.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function createBinding(
 	overrides?: Partial<{
@@ -236,7 +236,7 @@ test('package realtime session closes open sockets without running hooks once th
 		columns: ['email_verified_at'],
 	})
 	const email = `realtime-suspended-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,

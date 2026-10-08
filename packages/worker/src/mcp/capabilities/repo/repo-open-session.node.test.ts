@@ -4,12 +4,12 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as RepoSessions from '#worker/repo/repo-sessions.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { buildSourceRecoveryProblemMessage } from '#worker/repo/source-safety-policy.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { cloudflareOpaqueInternalErrorMessage } from '#worker/sentry-options.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { repoOpenSessionInputSchema } from './repo-shared.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
@@ -140,7 +140,7 @@ async function setup({
 	activeSessions?: number | null
 }) {
 	for (const mock of Object.values(mockModule)) mock.mockReset()
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	mockModule.countActiveRepoSessions.mockResolvedValue(activeSessions ?? 0)
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValue(null)
 	mockModule.resolveSavedPackageRef.mockResolvedValue(

@@ -5,8 +5,8 @@ import {
 	isPackageInvocationApiRequest,
 } from './http.ts'
 import { hashPackageInvocationBearerToken } from './repo.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const invocationMockModule = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
@@ -34,7 +34,7 @@ async function createEnv(
 		retiredSlugs?: Array<string>
 	} = {},
 ) {
-	const tokenUserId = await createStableUserIdFromEmail('me@example.com')
+	const tokenUserId = testStableUserIdFromEmail('me@example.com')
 	const packageId = options.tokenRow?.package_id ?? 'pkg-discord-gateway'
 	const tokenRows = [
 		{
@@ -340,7 +340,7 @@ test('package invocation API validates requests and invokes exports with scoped 
 		baseUrl: 'https://example.com',
 		token: {
 			tokenId: 'token-1',
-			userId: await createStableUserIdFromEmail('me@example.com'),
+			userId: testStableUserIdFromEmail('me@example.com'),
 			email: 'me@example.com',
 			packageId: 'pkg-discord-gateway',
 			exportNames: ['./dispatch-message-created'],

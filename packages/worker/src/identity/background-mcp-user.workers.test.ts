@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	assignAdminRole,
@@ -12,13 +11,14 @@ import {
 	accountSuspendedMessage,
 } from '#worker/account/account-suspension.ts'
 import { resolveBackgroundMcpUser } from './background-mcp-user.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 test('resolveBackgroundMcpUser loads admin roles only for assigned accounts', async () => {
 	await ensureUsersTestSchema({ db: env.APP_DB })
 	await ensureRbacTestSchema(env.APP_DB)
 
 	const adminEmail = `bg-admin-${crypto.randomUUID()}@example.com`
-	const adminStableUserId = await createStableUserIdFromEmail(adminEmail)
+	const adminStableUserId = testStableUserIdFromEmail(adminEmail)
 	const adminAccountId = await seedAccount({
 		db: env.APP_DB,
 		email: adminEmail,
@@ -36,7 +36,7 @@ test('resolveBackgroundMcpUser loads admin roles only for assigned accounts', as
 	})
 
 	const userEmail = `bg-user-${crypto.randomUUID()}@example.com`
-	const userStableUserId = await createStableUserIdFromEmail(userEmail)
+	const userStableUserId = testStableUserIdFromEmail(userEmail)
 	await seedAccount({
 		db: env.APP_DB,
 		email: userEmail,
@@ -55,7 +55,7 @@ test('resolveBackgroundMcpUser fails closed for suspended accounts and recovers 
 	await ensureRbacTestSchema(env.APP_DB)
 
 	const email = `bg-suspended-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,

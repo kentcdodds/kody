@@ -8,9 +8,9 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { adminPackageScopeGrantCreateCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-create.ts'
 import { adminPackageScopeGrantListCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-list.ts'
 import { adminPackageScopeGrantRevokeCapability } from '#mcp/capabilities/admin/admin-package-scope-grant-revoke.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { insertPackageScopeGrant } from '#worker/package-registry/scope-grants.ts'
 import { ensurePackageScopeGrantsTestSchema } from '#worker/package-registry/test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function reservedPlatformUsername() {
 	return `kody-r-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`
@@ -26,7 +26,7 @@ async function seedPersonUser(input: {
 	stableUserId?: string
 }) {
 	const stableUserId =
-		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+		input.stableUserId ?? testStableUserIdFromEmail(input.email)
 	const result = await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type, plan)
 		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person', 'max')`,

@@ -1824,9 +1824,8 @@ export async function deleteUserAccount(input: {
 		throw new AccountDeletionCleanupError(warnings, result)
 	}
 
-	// The D1 user row is gone, so a later signup with the same email is a new
-	// account. Drop the UserMeter tombstone `purge()` restored; leaving it
-	// would fence every write (including `/mcp`) for that hashed stable id.
+	// The D1 user row is gone. Drop the UserMeter tombstone `purge()` restored
+	// so the purged object keeps no state for this stable id.
 	try {
 		await clearUserMeterDeletionTombstone({
 			env: input.env,

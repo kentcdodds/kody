@@ -13,7 +13,7 @@ import {
 	formerEmailClaimedSignupCode,
 	formerEmailClaimedSignupMessage,
 } from '#universal/email-claim-errors.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -82,7 +82,7 @@ beforeAll(() => {
 
 test('signup returns 409 when sha256(email) collides with an existing stable_user_id', async () => {
 	const victimEmail = 'victim@example.com'
-	const victimStableUserId = await createStableUserIdFromEmail(victimEmail)
+	const victimStableUserId = testStableUserIdFromEmail(victimEmail)
 	const { sqlite, db } = createMigratedDb()
 	seedSquattingAccount(sqlite, {
 		email: 'attacker@example.com',

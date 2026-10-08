@@ -9,13 +9,13 @@ import {
 	ensureRbacTestSchema,
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { platformFeedbackContentWarning } from './content-warning.ts'
 import { dispatchPlatformFeedbackSubmittedSubscriptionEvent } from './package-subscriptions.ts'
 import {
 	buildPlatformFeedbackSubmittedEvent,
 	platformFeedbackSubmittedTopic,
 } from './subscription-event.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 
@@ -61,7 +61,7 @@ async function ensurePlatformFeedbackTestSchema(db: D1Database) {
 async function seedUser(prefix: string) {
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const username = `${prefix.replace(/-/g, '')}-${crypto.randomUUID().slice(0, 8)}`
-	const stableId = await createStableUserIdFromEmail(email)
+	const stableId = testStableUserIdFromEmail(email)
 	const accountId = await seedAccount({ db: env.APP_DB, email, username })
 	return { email, username, stableId, accountId }
 }

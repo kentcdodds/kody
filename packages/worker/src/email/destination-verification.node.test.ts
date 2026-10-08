@@ -5,7 +5,6 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { hashVerificationToken } from '#worker/identity/email-verification-tokens.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	addEmailNotificationDestination,
 	type EmailDestinationError,
@@ -15,12 +14,13 @@ import {
 	emailDestinationRateLimitConfig,
 	verifyEmailDestinationToken,
 } from './destination-verification.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function makeOwner() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
-	const stableUserId = await createStableUserIdFromEmail('owner@example.com')
+	const stableUserId = testStableUserIdFromEmail('owner@example.com')
 	sqlite.exec(`
 		INSERT INTO users (
 			id, username, email, stable_user_id, password_hash, email_verified_at

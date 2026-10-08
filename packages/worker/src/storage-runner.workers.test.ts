@@ -14,7 +14,6 @@ import {
 } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { withPatchedDbPrepare } from '#worker/test-support/user-meter.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
@@ -28,6 +27,7 @@ import {
 	storageRunnerRpc,
 	storageValueNotCloneableMessage,
 } from './storage-runner.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function ensureStorageRunnerTestSchema() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
@@ -48,7 +48,7 @@ async function seedPlannedStorageUser(
 	await ensureEntitlementTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, plan, stable_user_id

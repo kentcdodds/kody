@@ -5,8 +5,8 @@ import {
 	createAccountWebhooksHandler,
 } from '#app/handlers/account-webhooks.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AccountWebhooksLoaderData } from '#universal/loader-data.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -148,7 +148,7 @@ const owner = {
 }
 
 test('account webhooks page embeds every package’s declared webhooks (never a URL) and redirects anonymous visitors', async () => {
-	const userId = await createStableUserIdFromEmail(owner.email)
+	const userId = testStableUserIdFromEmail(owner.email)
 	const handler = createAccountWebhooksHandler(createEnv())
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
 		...owner,
@@ -187,7 +187,7 @@ test('account webhooks page embeds every package’s declared webhooks (never a 
 })
 
 test('account webhooks API lists across packages and is read-only: mutations belong to the package API', async () => {
-	const userId = await createStableUserIdFromEmail(owner.email)
+	const userId = testStableUserIdFromEmail(owner.email)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		...owner,
 		mcpUser: { userId },

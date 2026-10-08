@@ -2,12 +2,12 @@ import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import type * as UserLookupModule from '#worker/identity/user-lookup.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
@@ -65,7 +65,7 @@ test(
 		await ensureUsageRollupsTestSchema(env.APP_DB)
 
 		const otherEmail = `other-plan-${crypto.randomUUID()}@example.com`
-		const otherUserId = await createStableUserIdFromEmail(otherEmail)
+		const otherUserId = testStableUserIdFromEmail(otherEmail)
 		const otherUsername = `other-${crypto.randomUUID().slice(0, 8)}`
 		await seedAccount({
 			username: otherUsername,
@@ -76,7 +76,7 @@ test(
 		})
 
 		const recipientEmail = `recipient-${crypto.randomUUID()}@example.com`
-		const recipientUserId = await createStableUserIdFromEmail(recipientEmail)
+		const recipientUserId = testStableUserIdFromEmail(recipientEmail)
 		const recipientUsername = `recv-${crypto.randomUUID().slice(0, 8)}`
 		await seedAccount({
 			username: recipientUsername,

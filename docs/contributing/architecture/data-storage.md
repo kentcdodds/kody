@@ -348,16 +348,20 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, with a NOT NULL unique index in
-  `0001-squashed-init.sql`; initially SHA-256 of the normalized email at signup
-  via `createStableUserIdFromEmail`, then preserved across email changes).
-  Emails are claims on that identity (`user_email_claims`): changing email keeps
-  the previous verified address claimed so it cannot open a second account until
-  the owner re-verifies and releases it. A released address can sign up as a new
-  account with a newly minted unique `stable_user_id`; the original account's id
-  is never reminted. Email change requires a verified current address
+  `0001-squashed-init.sql`). Signup mints it as 32 random bytes in hex
+  (`createStableUserId`); it is opaque, never derived from the email, and never
+  reminted. Accounts created before random minting carry SHA-256 of their signup
+  email, so a stored id can reveal or confirm an email address: never expose
+  stable ids publicly, and never recompute one from an email. Emails are claims
+  on that identity (`user_email_claims`): changing email keeps the previous
+  verified address claimed so it cannot open a second account until the owner
+  re-verifies and releases it. A released address can sign up as a new account
+  with its own new random id. Email change requires a verified current address
   (`users.email_verified_at` is non-null). A former-email claim collision at
   signup is a controlled 409 (`former_email_claimed`) that does not leak the
-  account's current email; operators inspect leftover implicit sha256 collisions
+  account's current email. Legacy accounts that changed email before
+  `user_email_claims` existed still reserve their signup address only through
+  the email-hash id (`findLegacyEmailHashReservation`); operators inspect those
   with `adminUserStableIdConflict` (returns stable user id, username,
   `created_at`, and email-verified state — never content). Optional community
   profile fields are `display_name`, `bio`, and `profile_visibility` (default
@@ -807,9 +811,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   supply `USER_METER`. D1 `account_write_lease_repairs` is the repair audit log
   and `users.deleting_at` remains the permanent point gate. `purge()` preserves
   an existing deleting tombstone across `deleteAll` while cleanup still has a D1
-  user row. After that row is deleted, origin clears the tombstone so the
-  email-derived `stable_user_id` can be reused by a later signup. Account export
-  emits a sanitized `deletionState` without raw token/holder.
+  user row. After that row is deleted, origin clears the tombstone so the purged
+  object keeps no state. Account export emits a sanitized `deletionState`
+  without raw token/holder.
 - `dynamic_worker_days` — first-seen Dynamic Worker ids per UTC day
   (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used to emit one
   `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
@@ -845,8 +849,9 @@ D1 for enforcement.
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, storage bytes, write leases, and inbound
 MCP last-used rows while preserving an existing deleting tombstone during
-cleanup). After the D1 user row is removed, origin drops that tombstone so a
-later signup with the same email can use the hashed `stable_user_id` again.
+cleanup). After the D1 user row is removed, origin drops that tombstone so the
+purged object keeps no state. A later signup with the same email gets a new
+random `stable_user_id` and never reattaches to the deleted account's storage.
 Account export pages `UserMeter.exportCounters` through the `user_meter`
 manifest section / `accountExportSection` (daily counters plus authoritative
 `storageBytesState`, sanitized `deletionState`, and `inboundConnectionLastUsed`

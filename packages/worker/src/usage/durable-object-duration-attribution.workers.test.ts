@@ -5,7 +5,6 @@ import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	runLogDurableObjectName,
 	storageRunnerDurableObjectName,
@@ -14,6 +13,7 @@ import {
 	buildDurableObjectOwnerMap,
 	runDurableObjectDurationAttribution,
 } from './durable-object-duration-attribution.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const credentialedEnv = {
 	...env,
@@ -81,7 +81,7 @@ async function ensureSchema() {
 
 async function seedUser() {
 	const email = `do-duration-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, stable_user_id)
 		 VALUES (?, ?, 'hash', ?)`,

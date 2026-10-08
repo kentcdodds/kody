@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -24,6 +23,7 @@ import {
 	updateUserSecretsForPackageAtomically,
 } from './service.ts'
 import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 const userId = 'user-123'
@@ -39,7 +39,7 @@ async function createSecretEnv(
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	if (input.email) {
-		const stableUserId = await createStableUserIdFromEmail(input.email)
+		const stableUserId = testStableUserIdFromEmail(input.email)
 		sqlite
 			.prepare(
 				`INSERT INTO users (id, username, email, password_hash, stable_user_id, plan)
@@ -382,7 +382,7 @@ test('package writes to user secrets require every package approval and apply at
 
 test('saveSecret enforces plan secret quotas including updates and max ceiling', async () => {
 	const email = 'planned@example.com'
-	const plannedUserId = await createStableUserIdFromEmail(email)
+	const plannedUserId = testStableUserIdFromEmail(email)
 	const { env } = await createSecretEnv({ email, plan: 'pro' })
 	const limit = planLimits.pro.maxSecrets
 	if (limit === null) throw new Error('Expected a numeric pro secret limit.')

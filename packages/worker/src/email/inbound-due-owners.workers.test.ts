@@ -1,7 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	hintInboundDueOwner,
 	listDueInboundOwners,
@@ -16,6 +15,7 @@ import {
 } from './mailbox-test-helpers.ts'
 import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const now = new Date('2026-08-03T12:00:00.000Z')
 const sweepEnv = { ...env, APP_BASE_URL: 'https://kody.example.com' }
@@ -24,7 +24,7 @@ async function seedUsers(labels: Array<string>) {
 	const userIds: Array<string> = []
 	for (const label of labels) {
 		const email = `${label}-${crypto.randomUUID()}@example.test`
-		const userId = await createStableUserIdFromEmail(email)
+		const userId = testStableUserIdFromEmail(email)
 		await env.APP_DB.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)
 			VALUES (?, ?, 'hash', ?)`,

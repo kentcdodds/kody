@@ -9,7 +9,7 @@ import { loadAccountUsageStory } from '#app/account-usage-story.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import { applyCreditPayment } from '#worker/billing/credit-wallet.ts'
 import { ensureCreditWalletTestSchema } from '#worker/billing/test-schema.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const now = new Date('2026-09-27T12:00:00.000Z')
 const month = utcMonthKey(now)
@@ -21,7 +21,7 @@ async function seedUser(input: {
 	creditsEligible?: boolean
 }) {
 	const email = `${input.label}-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	const result = await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,

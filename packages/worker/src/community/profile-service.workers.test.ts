@@ -4,7 +4,6 @@ import {
 	getCommunityPublicCacheVersion,
 	invalidateCommunityPublicCache,
 } from '#app/data-cache.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
@@ -15,6 +14,7 @@ import {
 	listPublicProfilePackages,
 	updateCommunityProfile,
 } from './profile-service.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const fixedNow = '2026-07-01T00:00:00.000Z'
 
@@ -33,7 +33,7 @@ async function insertUser(
 	await ensureCommunityFlowSchema(env.APP_DB)
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const username = `${prefix}${crypto.randomUUID().slice(0, 8)}`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await runSql(
 		`INSERT INTO users (
 			username, email, stable_user_id, display_name, profile_visibility, password_hash, plan

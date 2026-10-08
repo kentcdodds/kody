@@ -23,7 +23,6 @@ import {
 	signupWelcomeCreditLedgerId,
 } from '#universal/credits.ts'
 import { loadAccountCreditsUser } from '#app/account-credits-data.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { runCreditDebits, settleCreditDebitMonth } from './credit-debits.ts'
 import {
@@ -34,6 +33,7 @@ import {
 } from './credit-wallet.ts'
 import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const now = new Date('2026-09-27T12:00:00.000Z')
 const month = utcMonthKey(now)
@@ -51,7 +51,7 @@ async function seedUser(input: {
 }): Promise<SeededUser> {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${input.label}-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,

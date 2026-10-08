@@ -6,7 +6,6 @@ import {
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -30,7 +29,7 @@ async function seedUser(
 	input: { verified?: boolean } = {},
 ) {
 	const email = 'owner@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id, username, email, stable_user_id, password_hash, email_verified_at

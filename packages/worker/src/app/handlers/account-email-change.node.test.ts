@@ -8,7 +8,6 @@ import {
 } from '#app/auth-session.ts'
 import { verifyEmailChangeToken } from '#app/email-change.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
@@ -47,7 +46,7 @@ async function seedUser(
 	},
 ) {
 	const passwordHash = await createPasswordHash(input.password)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id,

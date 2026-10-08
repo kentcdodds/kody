@@ -8,7 +8,6 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountPasswordHandler } from './account-password.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -42,7 +41,7 @@ async function seedUser(
 ) {
 	const passwordHash =
 		input.passwordHash ?? (await createPasswordHash(input.password ?? ''))
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id,

@@ -11,7 +11,6 @@ import {
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
 import { type PackageWebhookManifestEntry } from '#worker/package-registry/manifest.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	buildWebhookTimestampBodyPayload,
 	computeWebhookHmacSignature,
@@ -21,6 +20,7 @@ import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { retirePackageSlug } from '#worker/community/package-url.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 import { webhookRateLimitConfig } from './types.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mocks = vi.hoisted(() => ({
 	enqueueWebhookDispatch: vi.fn(),
@@ -233,7 +233,7 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	]) {
 		await env.APP_DB.prepare(`DELETE FROM ${table}`).run()
 	}
-	const userId = await createStableUserIdFromEmail('alice@example.com')
+	const userId = testStableUserIdFromEmail('alice@example.com')
 	await env.APP_DB.prepare(
 		`INSERT OR REPLACE INTO users (username, email, password_hash, stable_user_id)
 		VALUES ('alice', 'alice@example.com', 'hash', ?)`,

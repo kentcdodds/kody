@@ -1,12 +1,11 @@
 import { expect, test, vi } from 'vitest'
 
-import { toHex } from '../packages/shared/src/hex.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	buildSeedFeatureFlagOverrideSql,
 	buildSeedSavedPackagesSql,
 	seedSavedPackageIds,
-	stableUserIdFromEmail,
+	seedStableUserIdFromEmail,
 } from './seed-sql.ts'
 import {
 	buildSeedSql,
@@ -98,20 +97,20 @@ test('buildSeedSql seeds each account with its roles', () => {
 		`WHERE u.email = 'kody@example.com' AND r.name = 'admin'`,
 	)
 	expect(sql).toContain(`'google-work'`)
-	expect(sql).toContain(stableUserIdFromEmail('kody@example.com'))
-	expect(sql).toContain(stableUserIdFromEmail('jane@example.com'))
+	expect(sql).toContain(
+		`(SELECT stable_user_id FROM users WHERE email = 'kody@example.com')`,
+	)
+	expect(sql).toContain(seedStableUserIdFromEmail('kody@example.com'))
+	expect(sql).toContain(seedStableUserIdFromEmail('jane@example.com'))
 })
 
-test('seeded users carry the same stable id the signup path derives', async () => {
-	const email = 'Kody+Mixed.Case@Example.com '
-	// Reference implementation mirroring the worker's async derivation in
-	// `packages/worker/src/user-id.ts` (`createStableUserIdFromEmail`): the
-	// sync seeding helper must stay byte-identical so fixtures match signup.
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(email.trim().toLowerCase()),
+test('seeded users keep a stored stable id and use a deterministic fixture id', () => {
+	expect(seedStableUserIdFromEmail('Kody@Example.com ')).toBe(
+		seedStableUserIdFromEmail('kody@example.com'),
 	)
-	expect(stableUserIdFromEmail(email)).toBe(toHex(new Uint8Array(digest)))
+	expect(seedStableUserIdFromEmail('kody@example.com')).toMatch(
+		/^[a-f0-9]{64}$/,
+	)
 	const sql = buildSeedSql([
 		{
 			email: 'kody@example.com',
@@ -120,7 +119,10 @@ test('seeded users carry the same stable id the signup path derives', async () =
 			admin: true,
 		},
 	])
-	expect(sql).toContain(stableUserIdFromEmail('kody@example.com'))
+	expect(sql).toContain(seedStableUserIdFromEmail('kody@example.com'))
+	expect(sql).toContain(
+		'stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)',
+	)
 })
 
 test('companion fixture account is local-only', () => {

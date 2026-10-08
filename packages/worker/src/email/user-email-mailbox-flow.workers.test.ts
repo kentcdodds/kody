@@ -10,13 +10,13 @@ import {
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
@@ -202,7 +202,7 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	const username = `mailbox-flow-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+	const userId = testStableUserIdFromEmail(accountEmail)
 	await seedAccount({
 		db: env.APP_DB,
 		email: accountEmail,

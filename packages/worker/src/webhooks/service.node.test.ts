@@ -5,7 +5,6 @@ import {
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
@@ -19,6 +18,7 @@ import {
 	rotateWebhookUrlForUser,
 	setWebhookEnabledForUser,
 } from './service.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.mock('#mcp/secrets/service.ts', () => ({
 	resolveSecret: vi.fn(async () => ({
@@ -139,7 +139,7 @@ function createEnv() {
 const sentryHook = { kodyId: 'sentry-bridge', webhookName: 'sentry' }
 
 async function setupOwner(email: string, username: string) {
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const { env, db } = createEnv()
 	await db
 		.prepare(
@@ -174,7 +174,7 @@ const urlSecretOf = (url: string) => url.slice(url.lastIndexOf('/') + 1)
 test('mint/list/rotate/enable/disable webhooks are package-centered and user-scoped', async () => {
 	const owner = await setupOwner('owner@example.com', 'owner')
 	const { env, userId } = owner
-	const otherUserId = await createStableUserIdFromEmail('other@example.com')
+	const otherUserId = testStableUserIdFromEmail('other@example.com')
 
 	const listedBefore = await owner.list()
 	expect(listedBefore).toHaveLength(1)
@@ -336,7 +336,7 @@ test('clearing rotate overlap ignores a stale current-hash snapshot', async () =
 })
 
 test('first mint that loses the id race retries with the persisted endpoint id', async () => {
-	const userId = await createStableUserIdFromEmail('race@example.com')
+	const userId = testStableUserIdFromEmail('race@example.com')
 	const { env, db } = createEnv()
 	const winnerId = '11111111-1111-1111-1111-111111111111'
 	await db
@@ -408,7 +408,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 })
 
 test('concurrent first mints converge on one handle', async () => {
-	const userId = await createStableUserIdFromEmail('parallel@example.com')
+	const userId = testStableUserIdFromEmail('parallel@example.com')
 	const { env } = createEnv()
 	const mint = () =>
 		mintWebhookUrlForUser({ env, userId, username: 'parallel', ...sentryHook })
@@ -419,7 +419,7 @@ test('concurrent first mints converge on one handle', async () => {
 })
 
 test('listing webhooks loads package manifests concurrently', async () => {
-	const userId = await createStableUserIdFromEmail('many@example.com')
+	const userId = testStableUserIdFromEmail('many@example.com')
 	const { env } = createEnv()
 	const kodyIdFor = (index: number) => `many-${String(index).padStart(2, '0')}`
 	const packages = Array.from({ length: 20 }, (_, index) => ({

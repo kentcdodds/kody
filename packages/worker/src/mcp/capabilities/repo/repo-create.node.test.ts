@@ -2,8 +2,8 @@ import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -102,7 +102,7 @@ function createDatabase(
 }
 
 const userEmail = 'repo-create@test.invalid'
-const stableUserId = await createStableUserIdFromEmail(userEmail)
+const stableUserId = testStableUserIdFromEmail(userEmail)
 
 test('repoCreate creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
 	mockModule.ensureEntitySource.mockResolvedValue({

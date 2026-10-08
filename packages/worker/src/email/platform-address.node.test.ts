@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	buildPlatformEmailAddress,
@@ -11,6 +10,7 @@ import {
 	getSystemEmailDomain,
 	resolveUserPlatformSender,
 } from './platform-address.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 test('getPlatformEmailDomain derives inbox.<hostname> and prefers a valid USER_EMAIL_DOMAIN override', () => {
 	const cases: Array<
@@ -127,7 +127,7 @@ test('resolveUserPlatformSender sends from an unreserved built-in username and b
 
 	const seedUser = async (username: string) => {
 		const email = `${username}-holder@example.com`
-		const userId = await createStableUserIdFromEmail(email)
+		const userId = testStableUserIdFromEmail(email)
 		await db
 			.prepare(
 				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)

@@ -25,7 +25,7 @@ import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
@@ -52,7 +52,7 @@ async function seedAccount(
 ) {
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `account-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+	const userId = testStableUserIdFromEmail(accountEmail)
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)

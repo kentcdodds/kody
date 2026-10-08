@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
@@ -37,6 +36,7 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
 import { type DailyEntitlementResource } from './user-meter-do.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type TestUser = {
 	email: string
@@ -138,7 +138,7 @@ async function createPlannedUserDb(
 	plan: string | null,
 	extra: Partial<TestUser> = {},
 ) {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const userId = testStableUserIdFromEmail(plannedEmail)
 	const users = [
 		{ email: plannedEmail, plan, stable_user_id: userId, ...extra },
 	]
@@ -345,9 +345,9 @@ test('storage byte entry estimates support net-positive upsert deltas', () => {
 })
 
 test('getUserPlan resolves plans, defaults unresolved contexts to free, and rejects invalid stored plans', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const userId = testStableUserIdFromEmail(plannedEmail)
 	const unknownPlanEmail = 'unknown-plan@example.com'
-	const unknownPlanUserId = await createStableUserIdFromEmail(unknownPlanEmail)
+	const unknownPlanUserId = testStableUserIdFromEmail(unknownPlanEmail)
 	const { db, queries } = createEntitlementsTestDb({
 		users: [
 			{ email: plannedEmail, plan: 'pro', stable_user_id: userId },
@@ -618,10 +618,10 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 	const legacyEmail = 'weekly-legacy@example.com'
 	const maxEmail = 'weekly-max@example.com'
 	const dailyEmail = 'daily-first@example.com'
-	const freeUserId = await createStableUserIdFromEmail(freeEmail)
-	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
-	const maxUserId = await createStableUserIdFromEmail(maxEmail)
-	const dailyUserId = await createStableUserIdFromEmail(dailyEmail)
+	const freeUserId = testStableUserIdFromEmail(freeEmail)
+	const legacyUserId = testStableUserIdFromEmail(legacyEmail)
+	const maxUserId = testStableUserIdFromEmail(maxEmail)
+	const dailyUserId = testStableUserIdFromEmail(dailyEmail)
 	const { db } = createEntitlementsTestDb({
 		users: [
 			{ email: freeEmail, plan: 'free', stable_user_id: freeUserId },
@@ -937,7 +937,7 @@ test('readCurrentEntitlementResourceUsage for storage_bytes reads UserMeter with
 	})
 	expect(await read(db, userId)).toBe(750)
 
-	const missingUserId = await createStableUserIdFromEmail('missing@example.com')
+	const missingUserId = testStableUserIdFromEmail('missing@example.com')
 	expect(
 		await read(createEntitlementsTestDb({ users: [] }).db, missingUserId),
 	).toBe(0)
@@ -953,7 +953,7 @@ test('entitlement enforcement stops when a stored plan violates the schema contr
 		'unlimited',
 	].entries()) {
 		const email = `invalid-stored-plan-${index}@example.com`
-		const userId = await createStableUserIdFromEmail(email)
+		const userId = testStableUserIdFromEmail(email)
 		const { db, queries } = createEntitlementsTestDb({
 			users: [{ email, plan, stable_user_id: userId }],
 			counts: { jobs: planLimits.max.maxScheduledJobs },
@@ -984,7 +984,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	const users: Array<TestUser> = []
 	for (const [index, [plan, extra]] of cases.entries()) {
 		const email = `effective-plan-${index}@example.com`
-		const stable_user_id = await createStableUserIdFromEmail(email)
+		const stable_user_id = testStableUserIdFromEmail(email)
 		users.push({ email, plan, stable_user_id, ...extra })
 	}
 	const { db } = createEntitlementsTestDb({ users })
@@ -1013,7 +1013,7 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 					plan: 'free',
 					stripe_plan: 'standard',
 					entitlement_ladder: name === 'legacy' ? 'legacy' : 'public',
-					stable_user_id: await createStableUserIdFromEmail(email),
+					stable_user_id: testStableUserIdFromEmail(email),
 				}
 			},
 		),
@@ -1075,7 +1075,7 @@ test('legacy Pro and manual Pro grants keep pre-cut scheduled-job ceilings', asy
 			plan,
 			stripe_plan,
 			entitlement_ladder: 'legacy',
-			stable_user_id: await createStableUserIdFromEmail(email),
+			stable_user_id: testStableUserIdFromEmail(email),
 		})
 	}
 	const { db } = createEntitlementsTestDb({ users })

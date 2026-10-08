@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import {
@@ -13,12 +12,13 @@ import { baseMessage } from './mailbox-test-helpers.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 
 async function seedVerifiedAccount(label: string) {
 	const email = `${label}-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
 			VALUES (?, ?, 'test-password-hash', ?, 'max', ?)`,

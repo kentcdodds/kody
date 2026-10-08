@@ -3,23 +3,12 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 const stableUserIdPattern = /^[a-f0-9]{64}$/
 
 /**
- * Initial stable MCP user id for a new account: SHA-256 hex of the trimmed
- * lowercase email. After signup the stored `users.stable_user_id` is
- * authoritative and must not be recomputed when the account email changes.
+ * Mint the opaque `users.stable_user_id` for a new account: 32 random bytes as
+ * 64 lowercase hex. Never derive it from the email or any other attribute.
+ * Accounts created before random minting carry SHA-256(email) ids, so stored
+ * ids must never be exposed publicly.
  */
-export async function createStableUserIdFromEmail(email: string) {
-	const normalized = email.trim().toLowerCase()
-	const data = new TextEncoder().encode(normalized)
-	const hash = await crypto.subtle.digest('SHA-256', data)
-	return toHex(new Uint8Array(hash))
-}
-
-/**
- * Random 64-hex id in the same shape as `createStableUserIdFromEmail`.
- * Used only for a *new* account when the email-hash id is still held by the
- * original account after that email claim was released.
- */
-export function createRandomStableUserId() {
+export function createStableUserId() {
 	const bytes = new Uint8Array(32)
 	crypto.getRandomValues(bytes)
 	return toHex(bytes)

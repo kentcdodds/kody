@@ -6,8 +6,8 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { buildMcpUserContextFromGrantProps } from '#worker/mcp-auth-user-context.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { apiToolOutputSchema, registerApiTool } from './api.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 
@@ -26,7 +26,7 @@ async function createAgent() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	const email = 'api-tool@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	sqlite
 		.prepare(
 			`INSERT INTO users (id, username, email, password_hash, stable_user_id, email_verified_at)

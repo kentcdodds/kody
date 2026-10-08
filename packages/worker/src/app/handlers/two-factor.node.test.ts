@@ -22,7 +22,6 @@ import {
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
 import { twoFactorVerifyRateLimitConfig } from '#app/rate-limit.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
 	auditEventSummaries,
@@ -94,7 +93,7 @@ async function setupTwoFactor({ seedUser = true } = {}) {
 	const db = createD1FromSqlite(sqlite)
 	if (seedUser) {
 		const passwordHash = await createPasswordHash('ilikecode')
-		const stableUserId = await createStableUserIdFromEmail('kody@example.com')
+		const stableUserId = testStableUserIdFromEmail('kody@example.com')
 		sqlite.exec(`
 			INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
 			VALUES (1, 'kody', 'kody@example.com', ${quoteSqlString(stableUserId)},

@@ -8,7 +8,6 @@ import { planLimits } from '#universal/plans.ts'
 import { activeWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	DynamicCallableWorkflowBase,
 	cancelWorkflowRunForUser,
@@ -25,6 +24,7 @@ import {
 	createStatefulWorkflowBinding,
 	createWorkflowRunsDatabase,
 } from '#worker/test-support/package-workflows.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (
@@ -608,7 +608,7 @@ test('createDynamicCallableWorkflow enforces concurrent workflow entitlements ac
 	expect(activeWorkflowStatusValues).toContain('queued')
 
 	const email = 'plan-user@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const planEnv = (plan: string) =>
 		createWorkflowEnv(
 			createStatefulWorkflowBinding(),

@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts'
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
 import { readCreditWallet } from './credit-wallet.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const webhookSecret = 'whsec_test_workers_secret'
 const now = new Date('2026-07-25T12:00:00.000Z')
@@ -40,7 +40,7 @@ async function seedUser(input: {
 	stripePlan?: string | null
 }) {
 	await ensureCreditWalletTestSchema(env.APP_DB)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,

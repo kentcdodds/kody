@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	allocateSignupIdentity,
 	claimAccountEmail,
@@ -12,6 +11,7 @@ import {
 	releaseAccountEmailClaim,
 	resolveReleasableEmailClaim,
 } from './email-claims.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function createMigratedDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -29,7 +29,7 @@ async function insertUser(
 	},
 ) {
 	const stableUserId =
-		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+		input.stableUserId ?? testStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (id, username, email, stable_user_id, password_hash)
 		VALUES (
@@ -112,7 +112,7 @@ test('implicit sha256 reservation is releasable before a claim row exists', asyn
 		id: 2,
 		email: 'now@example.com',
 		username: 'legacy',
-		stableUserId: await createStableUserIdFromEmail(originalEmail),
+		stableUserId: testStableUserIdFromEmail(originalEmail),
 	})
 
 	expect(await isEmailReservedForOtherAccount(db, originalEmail)).toBe(true)
@@ -129,4 +129,35 @@ test('implicit sha256 reservation is releasable before a claim row exists', asyn
 			email: originalEmail,
 		}),
 	).toEqual({ ok: true, email: originalEmail })
+})
+
+test('signup identity is random and never the email hash', async () => {
+	const { db } = createMigratedDb()
+	const email = 'fresh@example.com'
+	const first = await allocateSignupIdentity(db, email)
+	const second = await allocateSignupIdentity(db, email)
+	if (!first.ok || !second.ok) throw new Error('expected allocation')
+	expect(first.stableUserId).toMatch(/^[a-f0-9]{64}$/)
+	expect(first.stableUserId).not.toBe(testStableUserIdFromEmail(email))
+	expect(second.stableUserId).not.toBe(first.stableUserId)
+})
+
+test('re-signup after a legacy account is deleted never reuses its email-hash id', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const email = 'returning@example.com'
+	const legacyStableUserId = await insertUser(sqlite, {
+		id: 3,
+		email,
+		username: 'returning',
+	})
+	expect(legacyStableUserId).toBe(testStableUserIdFromEmail(email))
+	expect(await allocateSignupIdentity(db, email)).toEqual({
+		ok: false,
+		reason: 'current_email',
+	})
+
+	sqlite.exec(`DELETE FROM users WHERE id = 3`)
+	const allocated = await allocateSignupIdentity(db, email)
+	if (!allocated.ok) throw new Error('expected allocation')
+	expect(allocated.stableUserId).not.toBe(legacyStableUserId)
 })

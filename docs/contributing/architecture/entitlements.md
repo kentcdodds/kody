@@ -609,10 +609,10 @@ each so paged consumers never double-count them. `UserMeter.purge()` clears
 counters, inbound delivery claims, storage state, write leases, and inbound MCP
 last-used rows via `deleteAll`, then restores an existing deletion tombstone so
 in-flight cleanup stays fenced. After the D1 `users` row is deleted, origin
-calls `clearUserMeterDeletionTombstone` so the next signup with the same email
-(same SHA-256 `stable_user_id`) can acquire write leases. A live D1 row that
-collides with a leftover DO tombstone also clears that tombstone on the next
-`withAccountWriteLease` acquire.
+calls `clearUserMeterDeletionTombstone` so the purged object keeps no state. New
+signups get random ids, but a legacy email-hash id may already have been
+re-signed up before random minting: a live D1 row that collides with a leftover
+DO tombstone clears that tombstone on the next `withAccountWriteLease` acquire.
 
 ### Account-deletion write fencing
 
@@ -657,14 +657,13 @@ closed.
 **Account export / purge:** first-page sanitized `deletionState` omits raw
 token/holder (count and `acquiredAt` only). `purge()` clears leases and counters
 via `deleteAll` then restores any deleting tombstone while the D1 user row still
-exists. After that row is deleted, origin drops the restored tombstone so a
-later account with the same email-derived `stable_user_id` is writable. Live D1
-plus a leftover meter tombstone heals on the next write-lease acquire (D1 is
-re-checked before the clear so an in-progress deletion keeps its fence, and
-again after the clear so a deletion that started in that window restores the
-tombstone and fails closed). D1 `deleting_at` remains the gate. Post-write held
-checks treat pending repair as held until finalize, then surface
-`AccountWriteLeaseLostError`.
+exists. After that row is deleted, origin drops the restored tombstone so the
+purged object keeps no state. Live D1 plus a leftover meter tombstone heals on
+the next write-lease acquire (D1 is re-checked before the clear so an
+in-progress deletion keeps its fence, and again after the clear so a deletion
+that started in that window restores the tombstone and fails closed). D1
+`deleting_at` remains the gate. Post-write held checks treat pending repair as
+held until finalize, then surface `AccountWriteLeaseLostError`.
 
 **Current UserMeter authority:** all write leases (including email) and storage
 bytes are authoritative in UserMeter. See the storage and write-fencing sections
@@ -798,10 +797,10 @@ when a manual plan is set.
 ## Plan lookup
 
 The MCP `userId` is the account's stored `users.stable_user_id` (NOT NULL,
-unique index; initially from `createStableUserIdFromEmail` at signup, then
-preserved across email changes). `getUserEntitlement` returns
-`{ plan, ladder }`. `getUserPlan(db, { userId, email })` is the plan-only
-wrapper and always returns a `PlanName`:
+unique index; minted randomly at signup by `createStableUserId`, then preserved
+across email changes). `getUserEntitlement` returns `{ plan, ladder }`.
+`getUserPlan(db, { userId, email })` is the plan-only wrapper and always returns
+a `PlanName`:
 
 1. Returns `free` when `userId` is absent (no warn).
 2. Returns `free` without touching D1 when `userId` is not a 64-char hex string
@@ -1098,8 +1097,8 @@ workflows via RunLog, and similar).
    in `service.ts` when it is D1-countable.
 5. Test both sides: a plan user at the limit is denied with
    `details.code === 'entitlement_limit_exceeded'` (assert `resource`, `plan`,
-   `limit`, `current`). Build the test user's id with
-   `createStableUserIdFromEmail(email)` (or any stored `stable_user_id`) and
+   `limit`, `current`). Seed the test user's id with
+   `testStableUserIdFromEmail(email)` (or any stored `stable_user_id`) and
    assert plan lookup against the email + stable-id pair; a mismatched pair must
    resolve as `free`.
 

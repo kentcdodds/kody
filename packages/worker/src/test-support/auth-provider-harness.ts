@@ -3,9 +3,9 @@ import { expect } from 'vitest'
 import { createAuthProviderStartHandler } from '#app/handlers/auth-provider.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 export const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -35,7 +35,7 @@ export async function seedUser(
 ) {
 	const passwordHash = await createPasswordHash('test-password')
 	const stableUserId =
-		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+		input.stableUserId ?? testStableUserIdFromEmail(input.email)
 	const verifiedAt = input.emailVerified ? 'CURRENT_TIMESTAMP' : 'NULL'
 	sqlite.exec(`
 		INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)

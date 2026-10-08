@@ -13,7 +13,7 @@ const inputSchema = z.object({
 		.string()
 		.email()
 		.describe(
-			'Email whose sha256 may already be stored as another account stable_user_id.',
+			'Email that a legacy account may still reserve because its stable_user_id is sha256 of that email.',
 		),
 })
 
@@ -34,7 +34,7 @@ export const adminUserStableIdConflictCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminUserStableIdConflict',
 		description:
-			'Report whether sha256 of an email is already stored as stable_user_id on an account whose current email is different. Admin-only metadata; never returns user content.',
+			'Report whether a legacy account (created before random stable ids) still reserves an email because its stable_user_id is sha256 of that email while its current email differs. New accounts get random ids and never collide. Admin-only metadata; never returns user content.',
 		keywords: [
 			'admin',
 			'user',

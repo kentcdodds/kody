@@ -26,13 +26,13 @@ import {
 	oauthEmailVerificationRequiredMessage,
 	oauthScopes,
 } from './oauth-handlers.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import {
 	TEST_OIDC_SIGNING_KEY_ID,
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 } from '#worker/oidc/test-signing-key.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const callbackUri = 'https://example.com/callback'
 const mcpResource = 'https://heykody.dev/mcp'
@@ -181,7 +181,7 @@ async function createDatabase(
 ) {
 	const passwordHash = await createPasswordHash(password)
 	const email = 'user@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	const emailVerifiedAt =
 		options.emailVerifiedAt === undefined
 			? new Date(0).toISOString()
@@ -373,7 +373,7 @@ async function sessionCookie(
 	setAuthSessionSecret(cookieSecret)
 	return createAuthCookie(
 		{
-			stableUserId: await createStableUserIdFromEmail(stableUserEmail),
+			stableUserId: testStableUserIdFromEmail(stableUserEmail),
 			email,
 			rememberMe: false,
 		},
@@ -677,7 +677,7 @@ test('session approval uses stable user id when cookie email is stale', async ()
 		),
 	).resolves.toMatchObject({
 		session: {
-			stableUserId: await createStableUserIdFromEmail(currentEmail),
+			stableUserId: testStableUserIdFromEmail(currentEmail),
 			email: currentEmail,
 		},
 	})
@@ -1234,7 +1234,7 @@ function resetSucceeded(
 }
 
 test("reset client revokes only this user's matching grants and deletes only owned client registrations", async () => {
-	const userId = await createStableUserIdFromEmail('user@example.com')
+	const userId = testStableUserIdFromEmail('user@example.com')
 	const sharedClientWrites: Array<{ query: string; bound: Array<unknown> }> = []
 	const sharedClientDb = await createDatabase('password123', {
 		writes: sharedClientWrites,

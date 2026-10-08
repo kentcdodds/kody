@@ -8,8 +8,8 @@ import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { handleOpenApiRequest } from './http-handler.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type ApiResponseBody = Record<string, unknown> & {
 	error?: { code: string; message: string; details?: unknown }
@@ -37,7 +37,7 @@ async function createApi(
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	const email = 'api-user@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	sqlite
 		.prepare(
 			`INSERT INTO users (id, username, email, password_hash, stable_user_id, email_verified_at, suspended_at)

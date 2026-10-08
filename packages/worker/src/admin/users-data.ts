@@ -41,12 +41,8 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
-import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import {
-	createStableUserIdFromEmail,
-	isStableUserId,
-	normalizeStableUserId,
-} from '#worker/user-id.ts'
+import { findLegacyEmailHashReservation } from '#worker/identity/email-claims.ts'
+import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
@@ -634,30 +630,13 @@ export async function findStableUserIdConflictByEmail(
 	db: D1Database,
 	email: string,
 ): Promise<StableUserIdConflict | null> {
-	const normalizedEmail = normalizeEmail(email)
-	if (!normalizedEmail) return null
-	const stableUserId = await createStableUserIdFromEmail(normalizedEmail)
-	const row = await db
-		.prepare(
-			`SELECT stable_user_id, username, email, created_at, email_verified_at
-			 FROM users
-			 WHERE stable_user_id = ?`,
-		)
-		.bind(stableUserId)
-		.first<{
-			stable_user_id: string
-			username: string
-			email: string
-			created_at: string
-			email_verified_at: string | null
-		}>()
-	if (!row) return null
-	if (normalizeEmail(row.email) === normalizedEmail) return null
+	const reservation = await findLegacyEmailHashReservation(db, email)
+	if (!reservation) return null
 	return {
-		stableUserId: row.stable_user_id,
-		username: row.username,
-		created_at: row.created_at,
-		email_verified: Boolean(row.email_verified_at),
+		stableUserId: reservation.stableUserId,
+		username: reservation.username,
+		created_at: reservation.createdAt,
+		email_verified: Boolean(reservation.emailVerifiedAt),
 	}
 }
 

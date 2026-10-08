@@ -3,7 +3,6 @@ import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { EntitlementLimitError } from './errors.ts'
 import { planLimits } from '#universal/plans.ts'
@@ -17,13 +16,14 @@ import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
 import { withPatchedDbPrepare } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type DailyResource = Parameters<typeof consumeDailyEntitlement>[0]['resource']
 
 async function seedFreeUser(emailPrefix: string) {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const email = `${emailPrefix}-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,

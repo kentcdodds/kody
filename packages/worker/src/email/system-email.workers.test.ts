@@ -26,7 +26,7 @@ import { ensureEmailTestSchema } from './test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type InboundEnv = Parameters<typeof handleInboundEmail>[1]
 
@@ -92,7 +92,7 @@ function proxyWith<T extends object>(
 
 async function seedVerifiedAccount(username: string) {
 	const email = `${username}-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
 		 VALUES (?, ?, ?, ?, ?, ?)

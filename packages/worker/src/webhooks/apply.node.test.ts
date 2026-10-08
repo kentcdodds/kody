@@ -5,7 +5,6 @@ import {
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	applyWebhookUrlForUser,
@@ -13,6 +12,7 @@ import {
 	revealWebhookUrlForWebsite,
 } from './service.ts'
 import { parseWebhookUrlHandle } from './handle.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const integrationMocks = vi.hoisted(() => ({
 	getJoinedIntegration: vi.fn(),
@@ -224,7 +224,7 @@ async function setupOwner(
 			},
 		},
 	} as never)
-	const userId = await createStableUserIdFromEmail('owner@example.com')
+	const userId = testStableUserIdFromEmail('owner@example.com')
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE webhook_endpoints (

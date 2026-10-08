@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 
 /**
- * Node-sync equivalent of `createStableUserIdFromEmail` for pure test mocks
- * that cannot await `crypto.subtle`. Matches signup/seed semantics.
+ * Deterministic fixture id for seeding test accounts by email. Production mints
+ * random ids (`createStableUserId`); this matches the legacy email-hash shape so
+ * tests can also seed pre-random-id accounts and legacy email reservations.
  */
 export function testStableUserIdFromEmail(email: string) {
 	return createHash('sha256').update(email.trim().toLowerCase()).digest('hex')

@@ -6,11 +6,11 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const { mockModule, pickMocks } = vi.hoisted(() => {
 	const mockModule = {
@@ -578,7 +578,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 test('refreshSavedPackageProjection enforces the saved packages entitlement on insert but not on update', async () => {
 	setupDefaultMocks()
 	const email = 'planned@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxSavedPackages
 	if (limit === null) throw new Error('Expected a numeric pro package limit.')
 	const env = createEnv(userId, {

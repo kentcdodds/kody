@@ -6,7 +6,6 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { syncPackageJobsForPackage, updateJob } from './service.ts'
 import {
@@ -25,6 +24,7 @@ import {
 	insertLeftoverJob,
 	syncSinglePackageJob,
 } from '#worker/test-support/jobs-service.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.mock('#worker/repo/source-service.ts', async () =>
 	(
@@ -288,7 +288,7 @@ test('package job sync preserves a runtime-enabled job when the manifest still s
 
 test('package job sync preflights the full addition set without partial inserts', async () => {
 	const email = 'package-sync-free@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const now = '2026-08-08T12:00:00.000Z'
 	const existingJobCount = planLimits.free.maxScheduledJobs - 1
 	const db = createDatabase({
@@ -355,12 +355,11 @@ test('package job sync preflights the full addition set without partial inserts'
 
 test('free and public Standard plans reject new or changed schedules faster than 15 minutes, preflight whole manifests, and grandfather existing jobs', async () => {
 	const email = 'interval-floor@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const publicStandardEmail = 'public-standard-interval@example.com'
-	const publicStandardUserId =
-		await createStableUserIdFromEmail(publicStandardEmail)
+	const publicStandardUserId = testStableUserIdFromEmail(publicStandardEmail)
 	const paidEmail = 'interval-floor-paid@example.com'
-	const paidUserId = await createStableUserIdFromEmail(paidEmail)
+	const paidUserId = testStableUserIdFromEmail(paidEmail)
 	mockBackgroundEmails({
 		[userId]: email,
 		[publicStandardUserId]: publicStandardEmail,
@@ -474,9 +473,9 @@ test('free and public Standard plans reject new or changed schedules faster than
 
 test('syncPackageJobsForPackage enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
 	const plannedEmail = 'planned@example.com'
-	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
+	const plannedUserId = testStableUserIdFromEmail(plannedEmail)
 	const maxEmail = 'max@example.com'
-	const maxUserId = await createStableUserIdFromEmail(maxEmail)
+	const maxUserId = testStableUserIdFromEmail(maxEmail)
 	mockBackgroundEmails({
 		[plannedUserId]: plannedEmail,
 		[maxUserId]: maxEmail,
@@ -542,7 +541,7 @@ test('syncPackageJobsForPackage enforces scheduled job entitlements for plan use
 
 test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
 	const email = 'package-owner@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const meter = createInMemoryUserMeterEnv()
 	const db = createDatabase({
 		users: [{ email, plan: 'max', stable_user_id: userId }],

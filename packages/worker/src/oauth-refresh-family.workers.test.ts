@@ -2,8 +2,8 @@ import { expect, test } from 'vitest'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { originWorkerHandler } from './origin-handler.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type TokenPayload = {
 	access_token: string
@@ -53,7 +53,7 @@ async function createS256CodeChallenge(verifier: string) {
 
 async function seedWorkerUser(email: string, password: string) {
 	const passwordHash = await createPasswordHash(password)
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

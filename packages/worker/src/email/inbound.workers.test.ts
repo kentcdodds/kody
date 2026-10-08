@@ -4,7 +4,6 @@ import { AccountDeletionInProgressError } from '#worker/account/deletion-state.t
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { maxPlanEmailLimits, planLimits } from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
@@ -24,6 +23,7 @@ import {
 	inboundInlinePngFilename,
 } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformDomain = 'inbox.kody.example.com'
 
@@ -32,7 +32,7 @@ async function seedAccount(label: string, input: { verified?: boolean } = {}) {
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
 	const email = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan

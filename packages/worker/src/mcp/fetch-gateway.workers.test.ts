@@ -12,7 +12,7 @@ import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-n
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function seedOutboundFetchCounter(userId: string, count: number) {
 	const day = utcDayKey()
@@ -42,7 +42,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	silenceIncidentalRuntimeWarnings()
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const email = `fetcher-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,

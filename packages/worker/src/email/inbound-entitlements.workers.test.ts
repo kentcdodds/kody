@@ -9,7 +9,6 @@ import {
 } from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
@@ -20,13 +19,14 @@ import { stubFor } from './mailbox-test-helpers.ts'
 import { maxDetailedEmailRejectionEventsPerDay } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const appBaseUrl = 'https://kody.example.com'
 
 async function seedAccount(label: string, plan: PlanName) {
 	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
 	const email = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan

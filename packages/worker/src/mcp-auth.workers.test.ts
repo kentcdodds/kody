@@ -14,10 +14,10 @@ import {
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
-import { createStableUserIdFromEmail } from './user-id.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const origin = 'https://example.com'
 const epoch = new Date(0).toISOString()
@@ -756,7 +756,7 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 
 	// Indexed stable-user-id lookup verifies accounts when grant props lack email.
 	const fallbackEmail = 'fallback@example.com'
-	const stableUserId = await createStableUserIdFromEmail(fallbackEmail)
+	const stableUserId = testStableUserIdFromEmail(fallbackEmail)
 	const fallbackUserSelects: Array<string> = []
 	const fallbackResponse = await callMcp(
 		request,

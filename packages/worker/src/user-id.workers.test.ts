@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
-	createStableUserIdFromEmail,
+	createStableUserId,
 	normalizeStableUserId,
 	resolveUserStableId,
 } from './user-id.ts'
@@ -71,8 +71,7 @@ async function findUserByStableUserId(
 
 test('indexed stable ids resolve and email-change ids stay authoritative', async () => {
 	await recreateUsersTable(env.APP_DB)
-	// A stored id that differs from the email hash (the email changed after
-	// signup) must stay authoritative.
+	// The stored id stays authoritative regardless of the current email.
 	const email = `changed-${crypto.randomUUID()}@example.com`
 	const storedStableUserId = crypto.randomUUID().replaceAll('-', '')
 	await seedUser({
@@ -85,17 +84,18 @@ test('indexed stable ids resolve and email-change ids stay authoritative', async
 	expect(row?.email).toBe(email)
 	expect(row?.stable_user_id).toBe(storedStableUserId)
 	expect(resolveUserStableId(row!)).toBe(storedStableUserId)
-	expect(await createStableUserIdFromEmail(email)).not.toBe(storedStableUserId)
 
 	expect(
 		await findUserByStableUserId(env.APP_DB, `missing-${storedStableUserId}`),
 	).toBeNull()
 })
 
-test('signup-derived stable ids resolve via the unique index', async () => {
+test('minted stable ids are random 64-hex and resolve via the unique index', async () => {
 	await recreateUsersTable(env.APP_DB)
 	const email = `signup-${crypto.randomUUID()}@example.com`
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = createStableUserId()
+	expect(stableUserId).toMatch(/^[a-f0-9]{64}$/)
+	expect(createStableUserId()).not.toBe(stableUserId)
 	await seedUser({ db: env.APP_DB, email, stableUserId })
 
 	const row = await findUserByStableUserId(env.APP_DB, stableUserId)

@@ -4,11 +4,11 @@ import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	type PackageWebhooksActionPayload,
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -91,7 +91,7 @@ const ownerParams = { username: 'owner', kodyId: 'sentry-bridge' }
 const otherParams = { username: 'someone-else', kodyId: 'sentry-bridge' }
 
 async function setup(sessionUsername = 'owner') {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
+	const userId = testStableUserIdFromEmail('owner@example.com')
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'owner@example.com',
 		username: sessionUsername,

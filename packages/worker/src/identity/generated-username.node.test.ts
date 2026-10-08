@@ -3,9 +3,9 @@ import { expect, test } from 'vitest'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { getAvailableUsernameFromBase } from './generated-username.ts'
 import { getUsernameValidationError } from './username.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function createMigratedDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -16,7 +16,7 @@ function createMigratedDb() {
 test('generated usernames suffix taken claimable bases and redraw reserved bases', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const takenEmail = 'alice@example.com'
-	const takenStableId = await createStableUserIdFromEmail(takenEmail)
+	const takenStableId = testStableUserIdFromEmail(takenEmail)
 	sqlite.exec(`
 		INSERT INTO users (username, email, stable_user_id, password_hash)
 		VALUES (

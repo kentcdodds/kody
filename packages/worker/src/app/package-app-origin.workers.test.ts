@@ -17,7 +17,7 @@ import {
 	ensureRbacTestSchema,
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 // Different ports on purpose: swapping origins by mutating a `URL` keeps the
 // original port, and identical ports would hide that.
@@ -89,7 +89,7 @@ async function seedOwnerSessionCookie() {
 	setAuthSessionSecret(env.COOKIE_SECRET)
 	const setCookie = await createAuthCookie(
 		{
-			stableUserId: await createStableUserIdFromEmail(ownerEmail),
+			stableUserId: testStableUserIdFromEmail(ownerEmail),
 			email: ownerEmail,
 			rememberMe: false,
 		},
@@ -211,7 +211,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 
 	// 4. The package-app session is re-checked against the account on every
 	// request, so suspension and password changes revoke package-app access too.
-	const ownerStableUserId = await createStableUserIdFromEmail(ownerEmail)
+	const ownerStableUserId = testStableUserIdFromEmail(ownerEmail)
 	for (const [column, value] of [
 		['suspended_at', new Date().toISOString()],
 		['password_changed_at', new Date(Date.now() + 1000).toISOString()],
@@ -334,7 +334,7 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 test('package apps stay inline on the app origin when no package-app origin is configured', async () => {
 	configureOrigins({ packageAppBaseUrl: undefined, runtime: 'preview' })
 	invalidatePackageAppOwnerCache({
-		stableUserId: await createStableUserIdFromEmail(ownerEmail),
+		stableUserId: testStableUserIdFromEmail(ownerEmail),
 	})
 	const sessionCookie = await seedOwnerSessionCookie()
 

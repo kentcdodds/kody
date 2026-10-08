@@ -7,10 +7,10 @@ import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
 import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
@@ -278,7 +278,7 @@ async function setup({
 	mockModule.deleteEntitySource.mockResolvedValue(true)
 	mockModule.loadPriorPackageManifestContent.mockResolvedValue(null)
 
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const seedRows = savedPackages(userId)
 	const { db, sqlite } = createDatabase(
 		[{ email, plan, username, stable_user_id: userId }],

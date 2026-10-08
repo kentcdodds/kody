@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -25,7 +26,6 @@ import {
 	testCookieSecret,
 } from '#worker/test-support/auth-provider-harness.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const msw = createMswNodeServer()
 
@@ -122,7 +122,7 @@ async function sessionCookieFor(email: string) {
 	return getCookiePair(
 		await createAuthCookie(
 			{
-				stableUserId: await createStableUserIdFromEmail(email),
+				stableUserId: testStableUserIdFromEmail(email),
 				email,
 				rememberMe: false,
 			},

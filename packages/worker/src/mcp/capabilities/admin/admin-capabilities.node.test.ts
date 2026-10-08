@@ -502,11 +502,15 @@ test('adminSystemEmailDelete removes system mail graph rows and blobs, refuses n
 
 test('adminUserCreate records audit metadata and assigns the default role', async () => {
 	const t = createAdminCapabilityTest([admin])
-	const stableUserId = testStableUserIdFromEmail('person+launch@example.com')
 
 	const result = await adminUserCreateCapability.handler(
 		{ email: 'Person+Launch@Example.com' },
 		t.ctx,
+	)
+	const stableUserId = result.createdUser.stableUserId
+	expect(stableUserId).toMatch(/^[a-f0-9]{64}$/)
+	expect(stableUserId).not.toBe(
+		testStableUserIdFromEmail('person+launch@example.com'),
 	)
 
 	expect(result.createdUser).toMatchObject({

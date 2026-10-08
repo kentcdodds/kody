@@ -14,7 +14,7 @@ import {
 	ensureRbacTestSchema,
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 const systemDomain = 'kody.example.com'
@@ -127,7 +127,7 @@ async function seedMaxAccount(prefix: string) {
 		username: `${prefix}-${crypto.randomUUID().slice(0, 8)}`,
 		plan: 'max',
 	})
-	return { accountId, stableUserId: await createStableUserIdFromEmail(email) }
+	return { accountId, stableUserId: testStableUserIdFromEmail(email) }
 }
 
 function useBundleKv(bundleKv: Map<string, string>) {

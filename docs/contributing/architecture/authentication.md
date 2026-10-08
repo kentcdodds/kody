@@ -385,10 +385,9 @@ Both are opt-in and adapted from the Epic Stack.
   `accountExportSection` served from the platform `MCP` Durable Object include
   grant metadata too.
 - After the user row is gone, origin clears the UserMeter deletion tombstone
-  `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
-  a later account with that email reuses the same Durable Object id and must not
-  inherit the previous deletion fence. Username reuse with a different email is
-  a different `stable_user_id` and does not share that object.
+  `purge()` restored so the purged object keeps no state. A later signup with
+  the same email or username gets a new random `stable_user_id`, so it never
+  shares the deleted account's Durable Objects, storage prefixes, or secrets.
 - Returns a structured
   `{ ok, deletedRowCounts, deletedKvKeys, revokedOAuthGrants, clearedDurableObjects, deletedVectors, warnings }`
   payload alongside a `Set-Cookie` that destroys the session.

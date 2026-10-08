@@ -1,6 +1,5 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import {
 	deletePackageSlugRedirects,
@@ -10,6 +9,7 @@ import {
 	retirePackageSlug,
 	retireUsername,
 } from './package-url.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 type Owner = { userId: string; username: string }
 
@@ -26,7 +26,7 @@ function uniqueSuffix() {
 async function insertUser(username: string): Promise<Owner> {
 	await ensureCommunityFlowSchema(env.APP_DB)
 	const email = `${username}-${uniqueSuffix()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await runSql(
 		`INSERT INTO users (
 			username, email, stable_user_id, profile_visibility, password_hash, plan

@@ -28,7 +28,10 @@ import {
 	registerOAuthClient,
 	type AppAuthUser,
 } from './mcp-oauth-client.ts'
-import { buildRoleAssignmentSql, stableUserIdFromEmail } from './seed-sql.ts'
+import {
+	buildRoleAssignmentSql,
+	seedStableUserIdFromEmail,
+} from './seed-sql.ts'
 
 const projectRoot = process.cwd()
 const primaryUserEmail = 'kody@example.com'
@@ -270,7 +273,7 @@ ON CONFLICT(email) DO UPDATE SET
 			user.username,
 			user.email,
 			passwordHash,
-			stableUserIdFromEmail(user.email),
+			seedStableUserIdFromEmail(user.email),
 		)
 		.run()
 	await db

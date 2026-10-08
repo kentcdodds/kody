@@ -3,6 +3,7 @@ import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -20,7 +21,6 @@ const {
 	createAuthProvidersApiHandler,
 } = await import('#app/handlers/auth-provider.ts')
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -93,7 +93,7 @@ async function sessionCookieFor(email: string) {
 	return getCookiePair(
 		await createAuthCookie(
 			{
-				stableUserId: await createStableUserIdFromEmail(email),
+				stableUserId: testStableUserIdFromEmail(email),
 				email,
 				rememberMe: false,
 			},
@@ -318,7 +318,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		env: expect.anything(),
 		source: 'oauth',
 		user: {
-			id: await createStableUserIdFromEmail('octo@example.com'),
+			id: user.stable_user_id,
 			username: 'octo-cat',
 			email: 'octo@example.com',
 		},
@@ -1008,7 +1008,7 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 		id: 1,
 		email: 'attacker-oauth@example.com',
 		username: 'attacker-oauth',
-		stableUserId: await createStableUserIdFromEmail(victimEmail),
+		stableUserId: testStableUserIdFromEmail(victimEmail),
 	})
 	mockGithubProfileExchange(victimEmail)
 

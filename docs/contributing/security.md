@@ -89,9 +89,11 @@ package-app surfaces:
     address from Account settings — never leaking the current email). The owner
     re-verifies the former address (`POST /account/email-claim-release.json`
     plus `/verify-email-claim-release`) to drop the claim; that path is rate
-    limited. Operators inspect leftover implicit sha256 collisions with
+    limited. New accounts get random `stable_user_id` values; legacy accounts
+    that changed email before claims existed still reserve their signup address
+    through their email-hash id, which operators inspect with
     `adminUserStableIdConflict` (metadata only). `users.stable_user_id` is never
-    recomputed for an existing account.
+    recomputed from an email.
 12. **Unverified accounts are reclaimed on a provider-verified social match.**
     When a social login profile presents a verified email that matches
     `users.email` and `email_verified_at` is null, treat the row as a possible

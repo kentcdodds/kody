@@ -2,6 +2,7 @@ import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import type * as signupWelcomeCredits from '#worker/billing/signup-welcome-credits.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -51,7 +52,6 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -305,7 +305,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			username,
 			password_hash: await createPasswordHash(password),
 			plan: 'free',
-			stable_user_id: await createStableUserIdFromEmail(email),
+			stable_user_id: testStableUserIdFromEmail(email),
 			...Object.fromEntries(utmColumns.map((column) => [column, null])),
 		} as TestUser
 		nextId += 1
@@ -516,11 +516,14 @@ test('password signup schedules user.created with first-touch attribution and pe
 
 	const plainEmail = 'newbie@example.com'
 	expect((await context.signup(plainEmail, 'newbie')).status).toBe(200)
+	const plainStableUserId = context.testDb.users.get(plainEmail)?.stable_user_id
+	expect(plainStableUserId).toMatch(/^[a-f0-9]{64}$/)
+	expect(plainStableUserId).not.toBe(testStableUserIdFromEmail(plainEmail))
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'signup',
 		user: {
-			id: await createStableUserIdFromEmail(plainEmail),
+			id: plainStableUserId,
 			username: 'newbie',
 			email: plainEmail,
 		},
@@ -538,7 +541,7 @@ test('password signup schedules user.created with first-touch attribution and pe
 		welcomeCreditMocks.maybeGrantSignupWelcomeCredits,
 	).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: await createStableUserIdFromEmail(plainEmail),
+		userId: plainStableUserId,
 	})
 
 	const email = 'attributed@example.com'

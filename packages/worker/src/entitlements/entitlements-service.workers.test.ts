@@ -3,12 +3,12 @@ import { expect, test } from 'vitest'
 import { findUserAccountByStableUserId } from '#worker/entitlements/service.ts'
 import { ensureEmailTestSchema } from '#worker/email/test-schema.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 test('findUserAccountByStableUserId resolves accounts via indexed stable id and recovers from deletions', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const email = `reverse-lookup-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,
