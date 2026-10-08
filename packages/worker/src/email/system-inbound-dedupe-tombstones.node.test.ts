@@ -467,3 +467,113 @@ test('charge on a fresh quota day does not consume quota for a rejected pointer'
 		}),
 	).toBeNull()
 })
+
+test('deleting a newer copy does not block storage claim for an older incomplete delivery', async () => {
+	using sqlite = createDedicatedDatabase()
+	const db = createD1FromSqlite(sqlite)
+	const monday = new Date('2026-10-05T12:00:00.000Z')
+	const thursday = new Date('2026-10-08T12:00:00.000Z')
+	const fingerprint = 'fingerprint-older-recovery'
+	const older = delivery(monday, {
+		fingerprint,
+		deliveryId: 'delivery-older-incomplete',
+		messageId: 'message-older-incomplete',
+		rawMimeKey: 'email-raw:v1:system:email/message-older-incomplete',
+		dedupeExpiresAt: new Date(
+			monday.getTime() + 48 * 60 * 60 * 1000,
+		).toISOString(),
+	})
+	const olderClaimed = await storeThroughMessageInsert({
+		db,
+		target: older,
+		now: monday,
+	})
+	// Leave the older delivery in storing with an expired lease (stale recovery).
+	sqlite
+		.prepare(
+			`UPDATE system_email_delivery_events
+			SET storage_lease_at = ?
+			WHERE id = ?`,
+		)
+		.run(
+			new Date(thursday.getTime() - 60 * 60 * 1000).toISOString(),
+			older.deliveryId,
+		)
+	sqlite
+		.prepare(
+			`UPDATE system_email_delivery_events
+			SET dedupe_expires_at = ?
+			WHERE id = ? AND provider = ?`,
+		)
+		.run(
+			new Date(thursday.getTime() - 1).toISOString(),
+			systemInboundDedupePointerId(fingerprint),
+			systemInboundDedupeProvider,
+		)
+
+	const newer = delivery(thursday, {
+		fingerprint,
+		deliveryId: 'delivery-newer-deleted',
+		messageId: 'message-newer-deleted',
+		rawMimeKey: 'email-raw:v1:system:email/message-newer-deleted',
+		quotaDay: thursday.toISOString().slice(0, 10),
+		dedupeExpiresAt: new Date(
+			thursday.getTime() + 48 * 60 * 60 * 1000,
+		).toISOString(),
+	})
+	await storeThroughReceived({ db, target: newer, now: thursday })
+	await deleteSystemEmailMessageById({
+		db,
+		blobs: { delete: async () => undefined } as unknown as R2Bucket,
+		messageId: newer.messageId,
+	})
+
+	const recovered = await claimSystemInboundDeliveryStorage({
+		db,
+		delivery: olderClaimed,
+		expectedAttachmentCount: 0,
+		now: thursday,
+	})
+	expect(recovered.claimed).toBe(true)
+	expect(recovered.delivery).toMatchObject({
+		deliveryId: older.deliveryId,
+		messageId: older.messageId,
+		state: 'storing',
+	})
+})
+
+test('admin delete removes linked delivery events from any provider', async () => {
+	using sqlite = createDedicatedDatabase()
+	const db = createD1FromSqlite(sqlite)
+	const now = new Date('2026-10-08T00:00:00.000Z')
+	const target = delivery(now, {
+		deliveryId: 'delivery-linked-any-provider',
+		messageId: 'message-linked-any-provider',
+		rawMimeKey: 'email-raw:v1:system:email/message-linked-any-provider',
+	})
+	await storeThroughReceived({ db, target, now })
+	sqlite
+		.prepare(
+			`INSERT INTO system_email_delivery_events (
+				id, message_id, event_type, provider, detail_json, created_at
+			) VALUES (?, ?, 'received', 'test', '{}', ?)`,
+		)
+		.run('linked-test-event', target.messageId, now.toISOString())
+
+	await deleteSystemEmailMessageById({
+		db,
+		blobs: { delete: async () => undefined } as unknown as R2Bucket,
+		messageId: target.messageId,
+	})
+
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM system_email_delivery_events WHERE id = ?`)
+			.get('linked-test-event'),
+	).toBeUndefined()
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM system_email_messages WHERE id = ?`)
+			.get(target.messageId),
+	).toBeUndefined()
+})

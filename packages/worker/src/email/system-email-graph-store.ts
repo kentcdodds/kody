@@ -235,6 +235,10 @@ function systemInboundDeliveryFenceSql() {
 						'email-inbound-dedupe:' ||
 						system_email_delivery_events.fingerprint
 					)
+					AND json_extract(pointer.detail_json, '$.messageId') =
+						json_extract(
+							system_email_delivery_events.detail_json, '$.messageId'
+						)
 			)
 	)`
 }
@@ -602,19 +606,19 @@ export async function deleteSystemEmailMessageById(input: {
 		}
 	}
 	const attachments = await listSystemEmailAttachments(input)
-	// Include unlinked charged events (message_id still NULL until
-	// markSystemInboundDeliveryReceived) so an in-flight retry cannot reuse them
-	// after the message row is gone. Dedupe pointers stay for tombstoning.
+	// Linked rows (any provider) plus unlinked system-inbound charged events
+	// (message_id still NULL until markSystemInboundDeliveryReceived). Dedupe
+	// pointers stay for tombstoning.
 	const deliveryEvents = await input.db
 		.prepare(
 			`SELECT id FROM system_email_delivery_events
-			WHERE provider = ?
-				AND (
-					message_id = ?
-					OR json_extract(detail_json, '$.messageId') = ?
+			WHERE message_id = ?
+				OR (
+					provider = ?
+					AND json_extract(detail_json, '$.messageId') = ?
 				)`,
 		)
-		.bind(systemInboundProvider, input.messageId, input.messageId)
+		.bind(input.messageId, systemInboundProvider, input.messageId)
 		.all<{ id: string }>()
 	const inventory = [
 		{

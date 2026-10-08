@@ -204,13 +204,19 @@ export async function chargeSystemInboundDeliveryOnce(input: {
 		fingerprint: input.delivery.fingerprint,
 		now: input.now,
 	})
-	if (refusedWindow?.state === 'rejected') {
-		return { delivery: refusedWindow, overLimit: false as const }
-	}
 	const existing = await getSystemInboundDelivery({
 		db: input.db,
 		deliveryId: input.delivery.deliveryId,
 	})
+	if (refusedWindow?.state === 'rejected') {
+		// A rejected pointer blocks new charges and the deleted message's own
+		// delivery. An older charged row for the same fingerprint (window was
+		// reused then the newer copy deleted) may still resume.
+		const refusedOwnsThis = refusedWindow.messageId === input.delivery.messageId
+		if (refusedOwnsThis || !existing) {
+			return { delivery: refusedWindow, overLimit: false as const }
+		}
+	}
 	if (existing) return { delivery: existing, overLimit: false as const }
 	const pointerId = systemInboundDedupePointerId(input.delivery.fingerprint)
 	const operationToken = crypto.randomUUID()
@@ -365,6 +371,7 @@ export async function claimSystemInboundDeliveryStorage(input: {
 				AND NOT EXISTS (
 					SELECT 1 FROM system_email_delivery_events
 					WHERE id = ? AND provider = ? AND state = 'rejected'
+						AND json_extract(detail_json, '$.messageId') = ?
 				)`,
 			)
 			.bind(
@@ -381,6 +388,7 @@ export async function claimSystemInboundDeliveryStorage(input: {
 				expiredBefore,
 				systemInboundDedupePointerId(input.delivery.fingerprint),
 				systemInboundDedupeProvider,
+				input.delivery.messageId,
 			),
 	})
 	const delivery = await getSystemInboundDelivery({
