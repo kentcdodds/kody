@@ -136,9 +136,11 @@ X-MCP-Subscription-Id: sub_…
 }
 ```
 
-Subscriptions are cleaned up when the OAuth client is revoked, the password
-changes, or the TTL expires without refresh. Same-user scoping is unchanged:
-events never cross accounts.
+Subscriptions stop delivering when the OAuth client is revoked, the password
+changes, or the TTL expires without refresh. Revoke and password-change paths
+delete the rows immediately; an expired TTL only stops delivery until a later
+`events/subscribe` from that principal prunes the stale row. Same-user scoping
+is unchanged: events never cross accounts.
 
 ## Try it
 
