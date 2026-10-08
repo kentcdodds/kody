@@ -64,6 +64,7 @@ const mockModule = vi.hoisted(() => ({
 		) => ({
 			'execute-invoke': false,
 			'connection-profiles': false,
+			'mcp-skills-extension': false,
 		}),
 	),
 	consumeDailyEntitlement: vi.fn(),
@@ -252,6 +253,7 @@ async function getExecuteRegistration(
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': agentExtras.invokeEnabled === true,
 		'connection-profiles': false,
+		'mcp-skills-extension': false,
 	})
 	const registerTool = vi.fn()
 
@@ -1003,6 +1005,7 @@ export default async function main(params) {
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': false,
 		'connection-profiles': false,
+		'mcp-skills-extension': false,
 	})
 	const killed = await onHandler({
 		invoke: 'kody:@acme/github/listRepos',

@@ -124,6 +124,20 @@ export const featureFlagDefinitions = [
 				'Experimenters with connection profiles create restricted agent connections and keep executing against granted packages.',
 		},
 	},
+	{
+		key: 'mcp-skills-extension',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Skills-over-MCP (SEP-2640) for package-shipped Agent Skills: packages may ship `skills/<name>/SKILL.md`, and when an MCP client advertises the skills extension Kody exposes those skills via skills/list, skills/get, and resources/read as a progressive enhancement. Signed-in users can opt in from /docs/package-skills; enable for experimenters via admin (adminFeatureFlagSet with audience experiments_opt_in). Off by default. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Skill-aware hosts that load package skills over MCP then act via execute, so experimenters with the extension on run more execute calls against skill-guided packages.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -138,6 +152,9 @@ export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
 
 export const connectionProfilesFlagKey =
 	'connection-profiles' satisfies FeatureFlagKey
+
+export const mcpSkillsExtensionFlagKey =
+	'mcp-skills-extension' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

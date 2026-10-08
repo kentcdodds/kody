@@ -32,8 +32,12 @@ import {
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
+import { renderPackageSkillsFlagCallout } from '#client/routes/package-skills-flag-callout.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
+import {
+	mcpSkillsExtensionFlagKey,
+	packageShareGrantsFlagKey,
+} from '#universal/feature-flags/registry.ts'
 import { extractDocWatchMarkdown } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import { userHasRole } from '#universal/permissions.ts'
@@ -318,6 +322,16 @@ export function DocDetailRoute(handle: Handle) {
 								enabled: isFeatureFlagEnabled(
 									session,
 									packageShareGrantsFlagKey,
+								),
+							})
+						: null}
+
+					{doc.slug === 'package-skills'
+						? renderPackageSkillsFlagCallout({
+								loggedIn: Boolean(session),
+								enabled: isFeatureFlagEnabled(
+									session,
+									mcpSkillsExtensionFlagKey,
 								),
 							})
 						: null}

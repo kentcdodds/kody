@@ -146,6 +146,7 @@ const checkSchema = z.object({
 	kind: z.enum([
 		'manifest',
 		'docs',
+		'skills',
 		'dependencies',
 		'bundle',
 		'typecheck',

@@ -209,6 +209,7 @@ const demoPackage: SavedPackageRecord = {
 	searchText: null,
 	sourceId: 'source-1',
 	hasApp: false,
+	hasSkills: false,
 	hidden: false,
 	isPrivate: false,
 	lockedAt: null,

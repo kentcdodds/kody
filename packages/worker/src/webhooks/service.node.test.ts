@@ -432,6 +432,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 		searchText: null,
 		sourceId: `src-many-${index}`,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: true,
 		lockedAt: null,

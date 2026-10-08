@@ -33,7 +33,9 @@ Owner controls (lock, visibility, share, webhooks, delete) live at
 `/@username/:name/settings`. Public listings also expose a read-only
 [`.git` clone URL](./community-packages.md#clone-a-public-package-read-only-git).
 Inbound HTTP uses [webhooks](./webhooks.md). To let another paid account use a
-package without getting a copy, [share it](../guides/package-sharing.md).
+package without getting a copy, [share it](../guides/package-sharing.md). To
+ship Agent Skills with a package, see
+[package skills](../guides/package-skills.md).
 
 ## Package state model
 

@@ -398,6 +398,7 @@ test('locked package finishes checks then withholds published_commit unless allo
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: '2026-08-28T12:00:00.000Z',

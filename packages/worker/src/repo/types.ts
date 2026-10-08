@@ -273,6 +273,7 @@ export type RepoSessionCheckStatus = {
 		kind:
 			| 'manifest'
 			| 'docs'
+			| 'skills'
 			| 'dependencies'
 			| 'bundle'
 			| 'typecheck'
@@ -289,6 +290,7 @@ export type RepoSessionCheckRun = {
 		kind:
 			| 'manifest'
 			| 'docs'
+			| 'skills'
 			| 'dependencies'
 			| 'bundle'
 			| 'typecheck'

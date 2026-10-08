@@ -44,6 +44,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			search_text TEXT,
 			source_id TEXT NOT NULL,
 			has_app INTEGER NOT NULL DEFAULT 0,
+			has_skills INTEGER NOT NULL DEFAULT 0,
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
 			locked_at TEXT,

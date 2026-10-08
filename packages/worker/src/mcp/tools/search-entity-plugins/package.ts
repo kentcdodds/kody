@@ -830,12 +830,29 @@ export const packageSearchEntityPlugin = {
 			`- Package name: \`${detail.record.name}\``,
 			`- Tags: ${detail.record.tags.length > 0 ? detail.record.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
+			`- Has skills: ${detail.record.hasSkills ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.record.hidden ? 'yes' : 'no'}`,
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 			...(listingAhead
 				? [`- Listing ahead: yes — ${listingAheadSearchNotice}`]
 				: []),
 		]
+		const skillManifestPaths = Object.keys(detail.files)
+			.filter((path) => /^skills\/[^/]+\/SKILL\.md$/u.test(path))
+			.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+		if (skillManifestPaths.length > 0) {
+			lines.push(
+				'',
+				'## Skills',
+				'',
+				'Agent Skills shipped in this package (`skills/<name>/SKILL.md`). Open a skill file with search entity detail, or use Skills-over-MCP when the client and `mcp-skills-extension` flag support it.',
+				'',
+				...skillManifestPaths.map((path) => {
+					const skillName = path.slice('skills/'.length, -'/SKILL.md'.length)
+					return `- \`${skillName}\` — \`search({ entity: "package:${detail.record.kodyId}#${path}" })\``
+				}),
+			)
+		}
 		if (exportDetails.length > 0) {
 			lines.push('', '## Exports', '', '| Subpath | Purpose |', '| --- | --- |')
 			for (const exportDetail of exportDetails) {

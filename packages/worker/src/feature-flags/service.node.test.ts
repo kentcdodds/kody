@@ -285,6 +285,7 @@ const registryKeys = [
 	'jev-search-rerank',
 	'execute-invoke',
 	'connection-profiles',
+	'mcp-skills-extension',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {
@@ -555,7 +556,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(7)
+	expect(listed).toHaveLength(8)
 	const byKey = (key: string) => listed.find((flag) => flag.key === key)
 	const executeMetric = {
 		eventType: 'execute',

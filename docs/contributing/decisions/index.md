@@ -63,7 +63,6 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0048 — Inbound HTTP is webhooks; invocation tokens drain](./0048-webhooks-replace-invocation-tokens.md)
   — no `*` webhook URLs; token surfaces unadvertise after the soak; the HTTP
   token path drains until leftover rows are 0
-- [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
 - [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
@@ -132,12 +131,18 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
   — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
   TanStack, Preact, or any other framework; packages bring frameworks themselves
+- [0058 — Skills over MCP ship as a flagged progressive enhancement](./0058-skills-over-mcp-progressive-enhancement.md)
+  — `mcp-skills-extension` (default off, `experiments_opt_in`), modern lane
+  only; packages stay the source of truth at `skills/<name>/SKILL.md`; no
+  `kody.skills` manifest key; tools stay search/execute/api; supersedes 0015
 
 ## Historical / UI / implementation
 
 Accepted or superseded records that do **not** change the next product proposal.
 Do not treat this list as homework. History stays; it is not silently deleted.
 
+- [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
+  — superseded by 0058; Skills over MCP now ship behind a flag
 - [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
   — superseded by 0036; execute-live half is gone
 - [0014 — Platform scopes resolve live; person-account imports stay caller-owned](./0014-platform-live-packages.md)

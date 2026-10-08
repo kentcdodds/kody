@@ -19,6 +19,10 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		buildPublishedPackageArtifacts: vi.fn(),
 		refreshPackageRetrieverManifestCache: vi.fn(),
 		removePackageRetrieverManifestCacheEntries: vi.fn(),
+		writePackageSkillsIndex: vi.fn(),
+		removePackageSkillsIndexEntries: vi.fn(),
+		collectPackageSkills: vi.fn(),
+		buildPackageSkillsIndex: vi.fn(),
 		refreshPackageSubscriptionTopicMap: vi.fn(),
 		deleteJobRow: vi.fn(),
 		deleteEntitySource: vi.fn(),
@@ -79,6 +83,12 @@ vi.mock('#worker/package-retrievers/manifest-cache.ts', () =>
 		'refreshPackageRetrieverManifestCache',
 		'removePackageRetrieverManifestCacheEntries',
 	),
+)
+vi.mock('#worker/package-registry/skills-index-cache.ts', () =>
+	pickMocks('writePackageSkillsIndex', 'removePackageSkillsIndexEntries'),
+)
+vi.mock('#worker/package-registry/package-skills.ts', () =>
+	pickMocks('collectPackageSkills', 'buildPackageSkillsIndex'),
 )
 vi.mock('#worker/package-invocations/subscription-topic-cache.ts', () =>
 	pickMocks('refreshPackageSubscriptionTopicMap'),
@@ -206,6 +216,10 @@ function mockSource(manifest: unknown = shadeManifest()) {
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest,
 		files: { 'package.json': '{}' },
+		source: {
+			id: 'source-1',
+			published_commit: 'commit-1',
+		},
 	})
 }
 
@@ -222,6 +236,16 @@ function setupDefaultMocks() {
 	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
 		undefined,
 	)
+	mockModule.collectPackageSkills.mockResolvedValue([])
+	mockModule.buildPackageSkillsIndex.mockReturnValue({
+		version: 1,
+		packageId: 'package-1',
+		kodyId: '@owner/pkg',
+		publishedCommit: 'commit',
+		skills: [],
+	})
+	mockModule.writePackageSkillsIndex.mockResolvedValue(undefined)
+	mockModule.removePackageSkillsIndexEntries.mockResolvedValue(undefined)
 	mockModule.updateSavedPackage.mockResolvedValue(undefined)
 	mockModule.insertSavedPackage.mockResolvedValue(undefined)
 	mockModule.deleteEntitySource.mockResolvedValue(undefined)
@@ -314,7 +338,7 @@ test('refreshSavedPackageProjection uses caller-supplied source files instead of
 	mockModule.loadPackageSourceFromFiles.mockResolvedValue({
 		manifest: shadeManifest({ tags: ['home'] }),
 		files: sourceFiles,
-		source: { id: 'source-1' },
+		source: { id: 'source-1', published_commit: 'commit-1' },
 	})
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackageRecord())
 
@@ -362,7 +386,10 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	expect(mockModule.buildPublishedPackageArtifacts).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',
-		source: undefined,
+		source: expect.objectContaining({
+			id: 'source-1',
+			published_commit: 'commit-1',
+		}),
 		savedPackage: expect.objectContaining({
 			...savedPackageRecord({
 				description: 'Shade automation package',
@@ -380,7 +407,10 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	expect(mockModule.refreshPackageRetrieverManifestCache).toHaveBeenCalledWith({
 		env,
 		userId: 'user-1',
-		source: undefined,
+		source: expect.objectContaining({
+			id: 'source-1',
+			published_commit: 'commit-1',
+		}),
 		savedPackage: expect.objectContaining({
 			id: 'package-1',
 			kodyId: 'shade-automation',

@@ -665,6 +665,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 		searchText: null,
 		sourceId: 'source-1',
 		hasApp: true,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		createdAt: '2026-04-27T00:00:00.000Z',

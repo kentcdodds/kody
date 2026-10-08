@@ -243,6 +243,7 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'jev-search-rerank': false,
 		'execute-invoke': true,
 		'connection-profiles': false,
+		'mcp-skills-extension': false,
 	})
 	expect(Object.keys(body.loaderData).sort()).toEqual([
 		'accountConnections',

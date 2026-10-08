@@ -138,6 +138,7 @@ function createFixture(input: {
 		searchText: null,
 		sourceId,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,

@@ -39,6 +39,7 @@ function createHomeControlsDetail(
 			searchText: null,
 			sourceId: 'source-home',
 			hasApp: false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
 			lockedAt: null,

@@ -194,6 +194,7 @@ function makeRebuildInput(input: {
 			searchText: null,
 			sourceId: 'source-1',
 			hasApp: input.hasApp ?? false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
 			lockedAt: null,

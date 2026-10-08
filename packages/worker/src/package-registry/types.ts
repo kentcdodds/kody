@@ -634,6 +634,7 @@ export type SavedPackageRow = {
 	search_text: string | null
 	source_id: string
 	has_app: 0 | 1
+	has_skills: 0 | 1
 	hidden: 0 | 1
 	is_private: 0 | 1
 	locked_at: string | null
@@ -651,6 +652,7 @@ export type SavedPackageRecord = {
 	searchText: string | null
 	sourceId: string
 	hasApp: boolean
+	hasSkills: boolean
 	hidden: boolean
 	isPrivate: boolean
 	lockedAt: string | null

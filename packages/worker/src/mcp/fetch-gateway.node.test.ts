@@ -100,6 +100,7 @@ function savedPackage(
 		tags: [],
 		searchText: null,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,

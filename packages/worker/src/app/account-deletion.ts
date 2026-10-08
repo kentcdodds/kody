@@ -83,6 +83,7 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
+import { deleteAllPackageSkillsIndexEntriesForUser } from '#worker/package-registry/skills-index-cache.ts'
 import { deletePackageSubscriptionTopicCacheForUser } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import {
@@ -1378,6 +1379,15 @@ async function deleteRetrieverCache(input: {
 	} catch (error) {
 		const message = getErrorMessage(error)
 		input.warnings.push(`Package retriever KV cleanup failed: ${message}`)
+	}
+	try {
+		deleted += await deleteAllPackageSkillsIndexEntriesForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Package skills index KV cleanup failed: ${message}`)
 	}
 	try {
 		await deletePackageSubscriptionTopicCacheForUser({

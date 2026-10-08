@@ -442,10 +442,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, `is_private` (0/1) for repo visibility (default private; not
-  `package.json#private`) used by public-profile catalog filters, and
-  `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
-  of `published_commit` until the owner approves a specific commit in the
-  account UI
+  `package.json#private`) used by public-profile catalog filters, `locked_at`
+  (nullable ISO timestamp) that blocks agent and reconcile promotion of
+  `published_commit` until the owner approves a specific commit in the account
+  UI, and `has_skills` (0/1) set at publish when the package ships one or more
+  `skills/<name>/SKILL.md` trees (Skills-over-MCP index lookup)
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
   (see [Public packages](../community-packages.md)). `community_forks` rows for

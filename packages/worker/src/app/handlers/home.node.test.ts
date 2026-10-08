@@ -115,6 +115,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'jev-search-rerank': false,
 		'execute-invoke': true,
 		'connection-profiles': false,
+		'mcp-skills-extension': false,
 	})
 	expect(counts.batchSizes).toEqual([2, 3])
 	expect(loadOnboardingData).not.toHaveBeenCalled()

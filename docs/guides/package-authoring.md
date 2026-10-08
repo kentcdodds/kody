@@ -445,6 +445,12 @@ and call. Do not demo a `packages` helper. Package codemod
 parseable Markdown examples; ambiguous or keyed sites need a manual edit as
 above.
 
+## Ship Agent Skills
+
+Put `skills/<name>/SKILL.md` (with `name` and `description` frontmatter) in the
+package. Publish validates it and a malformed skill fails the publish. See
+[Ship Agent Skills in a package](./package-skills.md) (`guide:package_skills`).
+
 ## Verify your publish
 
 After publish succeeds — and after any required secret approvals — confirm every

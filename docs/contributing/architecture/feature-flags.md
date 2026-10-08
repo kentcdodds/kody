@@ -154,6 +154,20 @@ members with
 `adminFeatureFlagSet({ key: "connection-profiles", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
+`mcp-skills-extension` is an experiment (default **off**, registry
+`defaultAudience: experiments_opt_in`) for Skills-over-MCP (SEP-2640). Packages
+may ship Agent Skills at `skills/<name>/SKILL.md`; publish validates them and
+stores a per-package-version skills index. When on for a caller and the MCP
+client advertises the skills extension, Kody exposes those skills through
+`skills/list`, `skills/get`, and `resources/read` as a progressive enhancement.
+When off (or the client does not advertise the extension), the MCP surface is
+unchanged. Signed-in users can opt themselves in from `/docs/package-skills`.
+The declared `successMetric` is `execute` event count, goal increase:
+skill-aware hosts load package skills, then act via `execute`. Enable for
+experiment members with
+`adminFeatureFlagSet({ key: "mcp-skills-extension", enabled: true, audience: "experiments_opt_in" })`.
+Remove the flag and gate sites when the experiment ends.
+
 `package-share-grants` is a rollout kill switch for person-to-person package
 shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.
 Signed-in users can opt themselves in from `/docs/package-sharing` (a per-user

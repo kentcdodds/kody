@@ -22,6 +22,7 @@ import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/server/valida
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { assembleMcpServerInstructionsForCaller } from './assemble-mcp-server-instructions.ts'
 import { registerTools } from './register-tools.ts'
+import { registerPackageSkillsExtensionWhenEnabled } from './skills/register-package-skills.ts'
 import {
 	asMcpToolServer,
 	type McpRegistrationAgent,
@@ -68,6 +69,12 @@ export async function handleStatelessMcpRequest(input: {
 			await registerTools(
 				createStatelessRegistrationAgent({ server, env, ctx, callerContext }),
 			)
+			await registerPackageSkillsExtensionWhenEnabled({
+				server,
+				env,
+				callerContext,
+				parsedBody: input.parsedBody,
+			})
 			return server
 		},
 		{

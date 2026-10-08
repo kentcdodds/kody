@@ -17,6 +17,7 @@ const mockModule = vi.hoisted(() => {
 		searchText: 'discord gateway websocket',
 		sourceId: 'source-1',
 		hasApp: true,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,
@@ -292,7 +293,13 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	const defaults = await get()
 	expect(defaults.status).toBe(200)
 	expect(defaults.headers.get('Cache-Control')).toBe('no-store')
-	searchCall({ query: '', hasApp: null, sort: 'updated', limit: 20, offset: 0 })
+	searchCall({
+		query: '',
+		hasApp: null,
+		sort: 'updated',
+		limit: 20,
+		offset: 0,
+	})
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 	await expect(defaults.json()).resolves.toMatchObject({
 		ok: true,

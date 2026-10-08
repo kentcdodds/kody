@@ -79,10 +79,12 @@ import {
 	type PublishPhaseTimings,
 } from './publish-phase-timing.ts'
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
+import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
 
 export const repoCheckKinds = [
 	'manifest',
 	'docs',
+	'skills',
 	'dependencies',
 	'bundle',
 	'typecheck',
@@ -1594,6 +1596,22 @@ export async function runRepoChecks(input: {
 				sourceFiles,
 			})
 		}
+	}
+	const skillsCheck = await validatePackageSkills({
+		files: sourceFiles,
+		kodyId: manifest.name,
+	})
+	results.push({
+		kind: 'skills',
+		ok: skillsCheck.ok,
+		message: skillsCheck.message,
+	})
+	if (!skillsCheck.ok) {
+		return toRepoCheckRunResult({
+			results,
+			manifest,
+			sourceFiles,
+		})
 	}
 	const lintCheck = buildLintCheck(sourceFiles)
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()

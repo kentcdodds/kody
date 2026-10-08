@@ -83,6 +83,7 @@ function packageRow({
 			tags,
 			searchText,
 			sourceId: `source-${id}`,
+			hasSkills: false,
 			...flags,
 			lockedAt: null,
 			createdAt: '2026-04-20T00:00:00.000Z',

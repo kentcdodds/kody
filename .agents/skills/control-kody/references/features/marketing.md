@@ -17,9 +17,11 @@ sidebar href (one loader request per slug, including `/docs/connect`) so a click
 adopts a warm payload instead of waiting on a cold fetch.
 `/docs/package-sharing` opens with a flag callout: signed-in visitors POST
 `/docs/package-sharing/opt-in` to turn `package-share-grants` on for themselves;
-signed-out visitors log in with `redirectTo` back to that page. Custom secret
-providers are documented at `/docs/secret-providers`. Open API is documented at
-`/docs/open-api`; local CLI execute at `/docs/local-execute`.
+signed-out visitors log in with `redirectTo` back to that page.
+`/docs/package-skills` has the same callout for `mcp-skills-extension`
+(`/docs/package-skills/opt-in`). Custom secret providers are documented at
+`/docs/secret-providers`. Open API is documented at `/docs/open-api`; local CLI
+execute at `/docs/local-execute`.
 
 ## Drive it
 

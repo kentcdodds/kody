@@ -35,6 +35,10 @@ import {
 } from './checks.ts'
 import { withRequiredPackageDocs } from './checks-test-docs.ts'
 import {
+	createMalformedPackageSkillsFixtureFiles,
+	createPackageSkillsFixtureFiles,
+} from '#worker/test-support/package-skills-fixture.ts'
+import {
 	isolatedBundleChunkConcurrency,
 	isolatedBundleChunkSize,
 } from './isolated-check-phases.ts'
@@ -1092,4 +1096,39 @@ test('an isolate reset during a check phase becomes a failed check, not a crash'
 	expect(bundleResult?.message).toContain(
 		'search({ entity: "guide:heavy_work_offload" })',
 	)
+})
+
+test('runRepoChecks validates package skills and fails publish on malformed SKILL.md frontmatter', async () => {
+	const okFiles = packageFiles(
+		manifest('skilled', {}, { name: '@kentcdodds/skilled' }),
+		createPackageSkillsFixtureFiles(),
+	)
+	const { result: ok } = await runChecks(okFiles)
+	expect(findCheck(ok, 'skills')).toEqual({
+		kind: 'skills',
+		ok: true,
+		message: 'Validated 1 package skill: hello-skill.',
+	})
+	expect(ok.ok).toBe(true)
+
+	const { result: bad } = await runChecks(
+		packageFiles(
+			manifest('skilled', {}, { name: '@kentcdodds/skilled' }),
+			createMalformedPackageSkillsFixtureFiles(),
+		),
+	)
+	expect(bad.ok).toBe(false)
+	expect(findCheck(bad, 'skills')).toEqual({
+		kind: 'skills',
+		ok: false,
+		message: expect.stringContaining('missing frontmatter "name"'),
+	})
+	expect(findCheck(bad, 'bundle')).toBeUndefined()
+
+	const { result: none } = await runChecks(packageFiles(manifest('plain')))
+	expect(findCheck(none, 'skills')).toEqual({
+		kind: 'skills',
+		ok: true,
+		message: 'No package skills found.',
+	})
 })

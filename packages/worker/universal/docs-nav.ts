@@ -116,6 +116,7 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 			},
 			{ slug: 'package-authoring', label: 'Authoring' },
 			{ slug: 'package-sharing', label: 'Sharing a package' },
+			{ slug: 'package-skills', label: 'Package skills' },
 			{ slug: 'package-apps', label: 'Package apps' },
 			{ slug: 'package-subscriptions', label: 'Subscriptions and events' },
 			{ slug: 'heavy-work-offload', label: 'Offload heavy work' },

@@ -49,6 +49,7 @@ async function seedPackage(
 		search_text: null,
 		source_id: `source-${id}`,
 		has_app: 0,
+		has_skills: 0,
 		hidden: input.hidden ? 1 : 0,
 		is_private: input.isPrivate ? 1 : 0,
 	})

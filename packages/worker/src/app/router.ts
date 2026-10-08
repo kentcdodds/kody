@@ -249,6 +249,7 @@ import {
 	createLlmsTxtHandler,
 } from '#app/handlers/docs.tsx'
 import { createPackageSharingOptInHandler } from '#app/handlers/package-sharing-opt-in.ts'
+import { createPackageSkillsOptInHandler } from '#app/handlers/package-skills-opt-in.ts'
 import {
 	createLegacyGuidesApiRedirectHandler,
 	createLegacyGuidesMarkdownRedirectHandler,
@@ -369,6 +370,7 @@ export function createAppRouter(env: Env) {
 			docDetailMarkdown: createDocDetailMarkdownHandler(env),
 			docDetailOgImage: createDocDetailOgImageHandler(env),
 			packageSharingOptInPost: createPackageSharingOptInHandler(env),
+			packageSkillsOptInPost: createPackageSkillsOptInHandler(env),
 			llmsTxt: createLlmsTxtHandler(env),
 			legacyGuides: createLegacyGuidesRedirectHandler(env),
 			legacyGuidesApi: createLegacyGuidesApiRedirectHandler(env),

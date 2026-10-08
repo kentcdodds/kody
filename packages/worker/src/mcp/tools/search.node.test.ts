@@ -169,6 +169,7 @@ function packageRecord(
 		searchText: null,
 		sourceId: `source-${id}`,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,
@@ -531,6 +532,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 		name: '@kody/roku-remote',
 		kodyId: 'roku-remote',
 		hasApp: true,
+		hasSkills: false,
 	})
 	const savedPackage = await loaders({ loadPackages: async () => [roku] })
 	expect(savedPackage).toEqual({
@@ -643,6 +645,7 @@ test('buildSavedPackageSearchRows defers source loading and hydrates only top ma
 			searchText: 'search text',
 			sourceId: 'missing-source',
 			hasApp: true,
+			hasSkills: false,
 		}),
 	)
 	const degraded = await searchRows(failedHydration.rows, 'observed package')
@@ -978,6 +981,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 			'Home automation package management wrappers and workflow helpers.',
 		tags: ['home', 'workflow', 'wrapper', 'package'],
 		hasApp: true,
+		hasSkills: false,
 	})
 	opsPackage.projection.appEntry = './app.tsx'
 

@@ -46,6 +46,14 @@ import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
+import {
+	buildPackageSkillsIndex,
+	collectPackageSkills,
+} from '#worker/package-registry/package-skills.ts'
+import {
+	removePackageSkillsIndexEntries,
+	writePackageSkillsIndex,
+} from '#worker/package-registry/skills-index-cache.ts'
 import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
 import { refreshPackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
@@ -82,6 +90,29 @@ function logPackageRetrieverProjectionError(input: {
 	Sentry.captureException(input.error, {
 		tags: {
 			scope: 'package-retriever-projection',
+			action: input.action,
+		},
+		extra: {
+			packageId: input.packageId,
+		},
+	})
+}
+
+function logPackageSkillsProjectionError(input: {
+	action: 'refresh' | 'delete'
+	packageId: string
+	error: unknown
+}) {
+	console.error(
+		JSON.stringify({
+			message: 'package skills projection update failed',
+			action: input.action,
+			packageId: input.packageId,
+		}),
+	)
+	Sentry.captureException(input.error, {
+		tags: {
+			scope: 'package-skills-projection',
 			action: input.action,
 		},
 		extra: {
@@ -185,6 +216,7 @@ function toSavedPackageInsertRow(input: {
 	userId: string
 	sourceId: string
 	manifest: AuthoredPackageJson
+	hasSkills?: boolean
 }): Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> {
 	const projection = buildPackageSearchProjection(input.manifest)
 	return {
@@ -197,6 +229,7 @@ function toSavedPackageInsertRow(input: {
 		search_text: projection.searchText,
 		source_id: input.sourceId,
 		has_app: projection.hasApp ? 1 : 0,
+		has_skills: input.hasSkills ? 1 : 0,
 		hidden: 0,
 		is_private: 1,
 	}
@@ -243,15 +276,30 @@ export async function refreshSavedPackageProjection(input: {
 							userId: input.userId,
 							sourceId: input.sourceId,
 						})
+			const existing = await getSavedPackageById(input.env.APP_DB, {
+				userId: input.userId,
+				packageId: input.packageId,
+			})
+			const loadedFilesForSkills: Record<string, string> | null =
+				input.sourceFiles ??
+				('files' in loaded ? (loaded.files as Record<string, string>) : null)
+			const collectedSkills = loadedFilesForSkills
+				? await collectPackageSkills({
+						files: loadedFilesForSkills,
+						// Scoped package.json name (`@owner/slug`), not the leaf kody.id.
+						kodyId: loaded.manifest.name,
+					})
+				: null
+			const hasSkills =
+				collectedSkills !== null
+					? collectedSkills.length > 0
+					: (existing?.hasSkills ?? false)
 			const row = toSavedPackageInsertRow({
 				packageId: input.packageId,
 				userId: input.userId,
 				sourceId: input.sourceId,
 				manifest: loaded.manifest,
-			})
-			const existing = await getSavedPackageById(input.env.APP_DB, {
-				userId: input.userId,
-				packageId: input.packageId,
+				hasSkills,
 			})
 			await assertWithinStorageBytesEntitlement({
 				db: input.env.APP_DB,
@@ -296,6 +344,7 @@ export async function refreshSavedPackageProjection(input: {
 					searchText: row.search_text,
 					sourceId: row.source_id,
 					hasApp: row.has_app === 1,
+					hasSkills: row.has_skills === 1,
 				})
 				// The name leaf is the second half of the package's canonical URL,
 				// so renaming the package moves that URL. Retire the old slug here
@@ -354,6 +403,7 @@ export async function refreshSavedPackageProjection(input: {
 				searchText: row.search_text ?? null,
 				sourceId: row.source_id,
 				hasApp: row.has_app === 1,
+				hasSkills: row.has_skills === 1,
 				// Preserve visibility across projection refresh / re-save.
 				hidden: existing?.hidden ?? false,
 				// Visibility is a repo setting, not a manifest field.
@@ -450,10 +500,33 @@ export async function refreshSavedPackageProjection(input: {
 					error,
 				})
 			})
+			const skillsIndexTask = (async () => {
+				if (collectedSkills === null) return
+				const publishedCommit = loaded.source?.published_commit
+				if (!publishedCommit) return
+				await writePackageSkillsIndex({
+					env: input.env,
+					userId: input.userId,
+					index: buildPackageSkillsIndex({
+						packageId: input.packageId,
+						// Scoped package.json name (`@owner/slug`) for skill:// URIs.
+						kodyId: savedPackage.name,
+						publishedCommit,
+						skills: collectedSkills,
+					}),
+				})
+			})().catch((error: unknown) => {
+				logPackageSkillsProjectionError({
+					action: 'refresh',
+					packageId: input.packageId,
+					error,
+				})
+			})
 			if (input.waitUntil) {
 				input.waitUntil(retrieverCacheTask)
+				input.waitUntil(skillsIndexTask)
 			} else {
-				await retrieverCacheTask
+				await Promise.all([retrieverCacheTask, skillsIndexTask])
 			}
 			const { syncPackageJobsForPackage } =
 				await import('#worker/jobs/service.ts')
@@ -711,6 +784,19 @@ export async function deleteSavedPackageProjection(input: {
 				})
 			} catch (error) {
 				logPackageRetrieverProjectionError({
+					action: 'delete',
+					packageId: input.packageId,
+					error,
+				})
+			}
+			try {
+				await removePackageSkillsIndexEntries({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			} catch (error) {
+				logPackageSkillsProjectionError({
 					action: 'delete',
 					packageId: input.packageId,
 					error,

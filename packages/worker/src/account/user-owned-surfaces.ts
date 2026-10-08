@@ -50,6 +50,7 @@ export type UserOwnedKvKeyScheme = {
 		| 'package_retriever_manifest'
 		| 'package_retriever_index_entry'
 		| 'package_retriever_index_prefix'
+		| 'package_skills_index'
 		| 'webhook_dispatch_payload'
 	binding: 'BUNDLE_ARTIFACTS_KV'
 	sourceTable?: string
@@ -258,6 +259,12 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 			prefixTemplate:
 				'package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:',
 			notes: 'Deleted by deleteAllPackageRetrieverCacheEntriesForUser.',
+		},
+		{
+			id: 'package_skills_index',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'package-skills-index:v1:{userId}:{packageId}:',
+			notes: 'Deleted by deleteAllPackageSkillsIndexEntriesForUser.',
 		},
 		{
 			id: 'webhook_dispatch_payload',

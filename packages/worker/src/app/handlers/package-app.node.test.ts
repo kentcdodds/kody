@@ -67,6 +67,7 @@ const mockModule = vi.hoisted(() => ({
 			searchText: null,
 			sourceId: 'source-1',
 			hasApp: true,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
 			lockedAt: null,

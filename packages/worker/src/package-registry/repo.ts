@@ -27,6 +27,7 @@ export function savedPackageVectorId(packageId: string) {
 const savedPackageSelectColumns = `saved_packages.id, saved_packages.user_id, saved_packages.name,
 				saved_packages.kody_id, saved_packages.description, saved_packages.tags_json,
 				saved_packages.search_text, saved_packages.source_id, saved_packages.has_app,
+				saved_packages.has_skills,
 				saved_packages.hidden, saved_packages.is_private, saved_packages.locked_at,
 				saved_packages.created_at, saved_packages.updated_at`
 
@@ -63,6 +64,10 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 		sourceId: String(row['source_id']),
 		hasApp:
 			row['has_app'] === 1 || row['has_app'] === '1' || row['has_app'] === true,
+		hasSkills:
+			row['has_skills'] === 1 ||
+			row['has_skills'] === '1' ||
+			row['has_skills'] === true,
 		hidden:
 			row['hidden'] === 1 || row['hidden'] === '1' || row['hidden'] === true,
 		isPrivate:
@@ -147,8 +152,8 @@ export async function insertSavedPackage(
 		.prepare(
 			`INSERT INTO saved_packages (
 				id, user_id, name, kody_id, description, tags_json, search_text,
-				source_id, has_app, hidden, is_private, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				source_id, has_app, has_skills, hidden, is_private, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -160,6 +165,7 @@ export async function insertSavedPackage(
 			row.search_text ?? null,
 			row.source_id,
 			row.has_app,
+			row.has_skills,
 			row.hidden ?? 0,
 			row.is_private ?? 1,
 			row.created_at ?? now,
@@ -189,6 +195,7 @@ export async function updateSavedPackage(
 		searchText?: string | null
 		sourceId?: string
 		hasApp?: boolean
+		hasSkills?: boolean
 		hidden?: boolean
 		isPrivate?: boolean
 	},
@@ -221,6 +228,9 @@ export async function updateSavedPackage(
 	}
 	if (input.hasApp !== undefined) {
 		addAssignment('has_app', input.hasApp ? 1 : 0)
+	}
+	if (input.hasSkills !== undefined) {
+		addAssignment('has_skills', input.hasSkills ? 1 : 0)
 	}
 	if (input.hidden !== undefined) {
 		addAssignment('hidden', input.hidden ? 1 : 0)

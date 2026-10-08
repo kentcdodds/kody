@@ -192,6 +192,7 @@ async function seedOwnerPackage(input: {
 		search_text: 'community flow integration websocket',
 		source_id: input.sourceId,
 		has_app: 0,
+		has_skills: 0,
 		hidden: 0,
 		is_private: 0,
 		created_at: now,

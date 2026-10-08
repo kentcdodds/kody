@@ -62,6 +62,7 @@ async function createDbWithAliceSharedNotes() {
 		search_text: null,
 		source_id: sourceId,
 		has_app: 0,
+		has_skills: 0,
 		hidden: 0,
 		is_private: 1,
 	})

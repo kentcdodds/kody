@@ -36,6 +36,7 @@ function forkRecord(
 		searchText: null,
 		sourceId: 'src-1',
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: true,
 		lockedAt: null,

@@ -24,6 +24,7 @@ function createLoadedPackage(input: {
 			searchText: null,
 			sourceId,
 			hasApp: false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: true,
 			lockedAt: null,

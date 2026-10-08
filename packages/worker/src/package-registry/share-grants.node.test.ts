@@ -108,6 +108,7 @@ async function seedPublishedPackage(
 		search_text: null,
 		source_id: sourceId,
 		has_app: 0,
+		has_skills: 0,
 		hidden: 0,
 		is_private: 1,
 	})
@@ -461,6 +462,7 @@ test('both sides must stay paid to use a shared package', async () => {
 				searchText: null,
 				sourceId: `source-${packageId}`,
 				hasApp: false,
+				hasSkills: false,
 				hidden: false,
 				isPrivate: true,
 				lockedAt: null,

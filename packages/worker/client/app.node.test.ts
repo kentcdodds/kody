@@ -19,6 +19,7 @@ const signedInSession: session.SessionInfo = {
 		'jev-search-rerank': false,
 		'execute-invoke': false,
 		'connection-profiles': false,
+		'mcp-skills-extension': false,
 	},
 }
 

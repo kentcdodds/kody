@@ -149,6 +149,7 @@ function packageDetail(input: {
 			searchText: null,
 			sourceId: `source-${input.recordId}`,
 			hasApp: input.hasApp ?? false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
 			lockedAt: null,

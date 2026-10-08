@@ -166,6 +166,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					search_text: manifest.kody.searchText ?? null,
 					source_id: source.id,
 					has_app: manifest.kody.app !== undefined ? 1 : 0,
+					has_skills: 0,
 					hidden: 0,
 					is_private: userRepo.isPrivate ? 1 : 0,
 					created_at: now,

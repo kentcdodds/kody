@@ -1,6 +1,7 @@
 # 0015: Wait on Skills over MCP (SEP-2640); serve skill content via packages
 
-- **Status:** accepted
+- **Status:** superseded by
+  [0058](./0058-skills-over-mcp-progressive-enhancement.md)
 - **Date:** 2026-08-10
 
 ## Context

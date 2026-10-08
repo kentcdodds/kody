@@ -329,6 +329,7 @@ function savedPackage(
 		searchText: `${id} package`,
 		sourceId: `source-${id}`,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
 		lockedAt: null,
