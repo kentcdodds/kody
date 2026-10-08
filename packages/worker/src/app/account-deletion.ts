@@ -984,16 +984,18 @@ async function cancelActiveWorkflowRuns(input: {
 	env: Env
 	userId: string
 	warnings: Array<string>
-}) {
+}): Promise<boolean> {
 	try {
 		await cancelActiveWorkflowRunsForUser({
 			env: input.env,
 			userId: input.userId,
 		})
+		return true
 	} catch (error) {
 		input.warnings.push(
 			`Workflow run cancellation failed: ${getErrorMessage(error)}`,
 		)
+		return false
 	}
 }
 
@@ -1580,8 +1582,9 @@ export async function deleteUserAccount(input: {
 	}
 
 	// Stop running package workflows before purging the storage their steps
-	// write to. RunLog holds the only index of the user's workflow instances.
-	await cancelActiveWorkflowRuns({
+	// write to. RunLog holds the only index of the user's workflow instances,
+	// so it is kept when cancellation fails so a retry can still find them.
+	const workflowRunsCancelled = await cancelActiveWorkflowRuns({
 		env: input.env,
 		userId: input.mcpUserId,
 		warnings,
@@ -1640,11 +1643,13 @@ export async function deleteUserAccount(input: {
 		storageIds: inventory.storageIds,
 		warnings,
 	})
-	result.clearedDurableObjects.runLogs = await clearRunLog({
-		env: input.env,
-		userId: input.mcpUserId,
-		warnings,
-	})
+	result.clearedDurableObjects.runLogs = workflowRunsCancelled
+		? await clearRunLog({
+				env: input.env,
+				userId: input.mcpUserId,
+				warnings,
+			})
+		: 0
 	result.clearedDurableObjects.userMeters = await purgeUserMeter({
 		env: input.env,
 		userId: input.mcpUserId,
