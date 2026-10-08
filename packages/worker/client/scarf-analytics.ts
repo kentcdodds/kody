@@ -43,6 +43,8 @@ export function createScarfPageTracker() {
 			const url = new URL('https://static.scarf.sh/a.png')
 			url.searchParams.set('x-pxid', pixelId)
 			url.searchParams.set('Page', page)
+			// A return visit must fetch again instead of reusing the document's image.
+			url.searchParams.set('_', crypto.randomUUID())
 			pixel.src = url.toString()
 		} catch {
 			// Analytics must not interrupt navigation or fail in restricted browsers.

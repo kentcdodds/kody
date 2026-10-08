@@ -421,13 +421,19 @@ test('hook scripts can create foreign repositories without inherited worktree st
 		expect(env.KODY_HOOK_TEST).toBe('preserved')
 		const target = join(root, 'fixture')
 		const init = spawnSync('git', ['init', target], { env, encoding: 'utf8' })
-		expect(init.status, init.stderr).toBe(0)
+		expect({ status: init.status, error: init.error }).toEqual({
+			status: 0,
+			error: undefined,
+		})
 		const top = spawnSync('git', ['rev-parse', '--show-toplevel'], {
 			cwd: target,
 			env,
 			encoding: 'utf8',
 		})
-		expect(top.status, top.stderr).toBe(0)
+		expect({ status: top.status, error: top.error }).toEqual({
+			status: 0,
+			error: undefined,
+		})
 		expect(top.stdout.trim()).toBe(await realpath(target))
 	} finally {
 		await rm(root, { recursive: true, force: true })

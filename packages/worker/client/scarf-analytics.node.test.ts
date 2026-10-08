@@ -73,6 +73,7 @@ test('beacons send only the public path, omit referrers, and deduplicate a page'
 	location.href = 'https://kody.codes/pricing'
 	track()
 	expect(pixels).toHaveLength(2)
+	expect(pixels[1]!.src).not.toBe(pixel.src)
 })
 
 test.each([{ doNotTrack: '1' }, { globalPrivacyControl: true }])(
