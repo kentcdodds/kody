@@ -160,8 +160,8 @@ async function rebuildPackageSkillsIndex(input: {
  * Every package-shipped skill the caller can see, read from the per-version
  * skills index in KV. Packages that report `hasSkills` but have no index yet
  * (published before the extension shipped) are rebuilt from the published
- * snapshot; a failed rebuild fails the whole request instead of silently
- * dropping skills.
+ * snapshot. A failed rebuild for one package is logged and skipped so a
+ * shared or platform miss cannot blank the caller's catalog.
  */
 export async function loadCallerSkillsCatalog(input: {
 	env: Env
