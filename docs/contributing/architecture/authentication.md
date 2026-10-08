@@ -351,11 +351,15 @@ Both are opt-in and adapted from the Epic Stack.
   creation fan `user.created`. See
   [the admin events guide](../../guides/admin-events.md#user-created-and-deleted-admins).
 - On success, runs a full per-user cascade across:
+  - the user's active package workflow instances, terminated first so no step
+    writes after the purge (finished instances stay in Cloudflare for their
+    30-day retention; see `accountUserOwnedWorkflowSurfaces`),
   - all `user_id`-scoped D1 tables (children before parents),
   - the shared Vectorize capability index, removing memory, job and
     saved-package entries by id,
   - `BUNDLE_ARTIFACTS_KV` keys captured from `published_bundle_artifacts` and
-    `archived_job_artifacts`,
+    `archived_job_artifacts`, plus user-prefixed keys such as the encrypted MCP
+    OAuth refresh-family snapshots,
   - the user's `StorageRunner` Durable Objects via the user-scoped
     `storageRunnerRpc` stub,
   - all OAuth grants for the user (and the provider clients the user minted) via
