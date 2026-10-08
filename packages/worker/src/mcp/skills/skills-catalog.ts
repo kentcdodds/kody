@@ -180,25 +180,36 @@ export async function loadCallerSkillsCatalog(input: {
 		records.map(async (record) => {
 			const publishedCommit = publishedCommitBySourceId.get(record.sourceId)
 			if (!publishedCommit) return null
-			const index =
-				(await readPackageSkillsIndex({
-					env: input.env,
-					userId: record.userId,
+			try {
+				const index =
+					(await readPackageSkillsIndex({
+						env: input.env,
+						userId: record.userId,
+						packageId: record.id,
+						publishedCommit,
+					})) ??
+					(await rebuildPackageSkillsIndex({
+						env: input.env,
+						callerContext: input.callerContext,
+						record,
+						publishedCommit,
+					}))
+				return {
+					ownerUserId: record.userId,
+					sourceId: record.sourceId,
 					packageId: record.id,
-					publishedCommit,
-				})) ??
-				(await rebuildPackageSkillsIndex({
-					env: input.env,
-					callerContext: input.callerContext,
-					record,
-					publishedCommit,
-				}))
-			return {
-				ownerUserId: record.userId,
-				sourceId: record.sourceId,
-				packageId: record.id,
-				index,
-			} satisfies CallerSkillsCatalogPackage
+					index,
+				} satisfies CallerSkillsCatalogPackage
+			} catch (error) {
+				// One shared/platform package with a missing snapshot or bad
+				// skill must not blank the caller's entire skills surface.
+				console.error(
+					'package-skills-catalog-load-failed',
+					record.id,
+					error instanceof Error ? error.message : String(error),
+				)
+				return null
+			}
 		}),
 	)
 	return packages.filter(

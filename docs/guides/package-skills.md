@@ -86,8 +86,9 @@ unaffected. See [Package authoring](./package-authoring.md) and the
 When all of these are true, a connection serves the package's skills:
 
 1. The `mcp-skills-extension` flag is on for the signed-in user.
-2. The client connects on the 2026-07-28 MCP lane and advertises the
-   `io.modelcontextprotocol/skills` extension during initialize.
+2. The client connects on the 2026-07-28 MCP lane and declares the
+   `io.modelcontextprotocol/skills` extension in that request's `_meta` client
+   capabilities (the lane is stateless — there is no initialize handshake).
 
 Then the connection answers:
 

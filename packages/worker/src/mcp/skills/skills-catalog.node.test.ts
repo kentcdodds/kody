@@ -267,19 +267,21 @@ test('rebuilds and persists a missing index for packages published before the fl
 	expect(buildSkillsListResult(catalog).skills).toHaveLength(1)
 })
 
-test('fails loudly with an internal error when a lazy rebuild fails', async () => {
+test('skips a package when its lazy rebuild fails instead of blanking the catalog', async () => {
 	mocks.listOwn.mockResolvedValue([savedPackage()])
 	mocks.loadSource.mockRejectedValue(new Error('snapshot gone'))
-
-	const failure = await loadCallerSkillsCatalog({ env, callerContext }).catch(
-		(error: unknown) => error,
-	)
-
-	expect(failure).toBeInstanceOf(ProtocolError)
-	expect(failure).toMatchObject({
-		code: -32603,
-		message: expect.stringContaining('snapshot gone'),
-	})
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		const catalog = await loadCallerSkillsCatalog({ env, callerContext })
+		expect(catalog).toEqual([])
+		expect(consoleError).toHaveBeenCalledWith(
+			'package-skills-catalog-load-failed',
+			'pkg-1',
+			expect.stringContaining('snapshot gone'),
+		)
+	} finally {
+		consoleError.mockRestore()
+	}
 })
 
 test('skills/get returns one skill and rejects unknown URIs with -32602', async () => {
@@ -364,6 +366,37 @@ test('resources/read returns verified text content and rejects unknown URIs', as
 	}).catch((error: unknown) => error)
 	expect(missing).toBeInstanceOf(ResourceNotFoundError)
 	expect(missing).toMatchObject({ code: -32602 })
+})
+
+test('skips packages whose skills index cannot load without failing the catalog', async () => {
+	const own = savedPackage()
+	const broken = savedPackage({
+		id: 'pkg-broken',
+		userId: 'user-2',
+		name: '@friend/broken',
+		kodyId: 'broken',
+		sourceId: 'source-broken',
+	})
+	mocks.listOwn.mockResolvedValue([own])
+	mocks.listShared.mockResolvedValue([broken])
+	mocks.readIndex.mockImplementation(async (input: { packageId: string }) => {
+		if (input.packageId === broken.id) {
+			throw new Error('kv unavailable')
+		}
+		return buildIndex(own)
+	})
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		const catalog = await loadCallerSkillsCatalog({ env, callerContext })
+		expect(catalog.map((entry) => entry.packageId)).toEqual(['pkg-1'])
+		expect(consoleError).toHaveBeenCalledWith(
+			'package-skills-catalog-load-failed',
+			'pkg-broken',
+			'kv unavailable',
+		)
+	} finally {
+		consoleError.mockRestore()
+	}
 })
 
 test('execute-only connection profiles cannot list package skills', async () => {
