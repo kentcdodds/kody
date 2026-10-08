@@ -1548,8 +1548,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   encrypted MCP OAuth refresh-family snapshots used so concurrent hosts sharing
   one client can reuse the previous refresh token without invalidating siblings
   (`packages/worker/src/oauth-refresh-family.ts`). Written with KV
-  `expirationTtl` (two hours / one hour). Retention is the TTL, so
-  account-deletion cleanup is not required.
+  `expirationTtl` (two hours / one hour). Registered as user-owned KV surfaces
+  and prefix-deleted by account deletion; the TTL covers a refresh that races
+  deletion.
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.

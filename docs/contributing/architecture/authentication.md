@@ -790,9 +790,10 @@ intercepts `POST /oauth/token` refresh grants:
   exits.
 - Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
   `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
-  hours and one hour. Retention is the TTL, so account deletion does not sweep
-  those keys. Snapshot writes are best-effort: a KV or encrypt failure does not
-  replace the provider's minted response.
+  hours and one hour. Account deletion prefix-deletes the user's keys; the TTL
+  covers any key written by a refresh that races deletion. Snapshot writes are
+  best-effort: a KV or encrypt failure does not replace the provider's minted
+  response.
 
 `/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 
