@@ -89,7 +89,7 @@ test('parseClientLabel and parseRedirectUriText reject empty and unsafe values',
 })
 
 test('mint stores ownership without the secret and revoke deletes the provider client', async () => {
-	const { db } = createMigratedDb()
+	const { sqlite, db } = createMigratedDb()
 	const helpers = {
 		createClient: vi.fn(async () => ({
 			clientId: 'oauth-client-1',
@@ -125,6 +125,15 @@ test('mint stores ownership without the secret and revoke deletes the provider c
 	])
 	expect(JSON.stringify(listed)).not.toContain('plain-secret-once')
 
+	const insertSubscription = sqlite.prepare(
+		`INSERT INTO mcp_event_subscriptions (
+			id, user_id, oauth_client_id, event_name, arguments_json,
+			callback_url, secret_encrypted
+		) VALUES (?, 'user-one', ?, 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
+	)
+	insertSubscription.run('sub_revoked_client', 'oauth-client-1')
+	insertSubscription.run('sub_other_client', 'oauth-client-2')
+
 	expect(
 		await revokeUserMcpOauthClient({
 			db,
@@ -136,6 +145,13 @@ test('mint stores ownership without the secret and revoke deletes the provider c
 	expect(helpers.deleteClient).toHaveBeenCalledWith('oauth-client-1')
 	expect(await listActiveUserMcpOauthClientIds(db, 1)).toEqual([])
 	expect((await listUserMcpOauthClients(db, 1))[0]?.revokedAt).toBeTruthy()
+	// The registration is gone, so its MCP event subscriptions go with it.
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions ORDER BY id`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_other_client'])
 })
 
 test('mint rolls back the provider client when D1 insert fails', async () => {

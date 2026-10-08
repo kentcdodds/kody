@@ -20,6 +20,7 @@ const signedInSession: session.SessionInfo = {
 		'execute-invoke': false,
 		'connection-profiles': false,
 		'mcp-skills-extension': false,
+		'mcp-events-extension': false,
 	},
 }
 

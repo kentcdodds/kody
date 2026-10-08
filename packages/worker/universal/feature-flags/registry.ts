@@ -138,6 +138,20 @@ export const featureFlagDefinitions = [
 				'Skill-aware hosts that load package skills over MCP then act via execute, so experimenters with the extension on run more execute calls against skill-guided packages.',
 		},
 	},
+	{
+		key: 'mcp-events-extension',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'MCP Events extension (draft, webhook delivery only) on the stateless /mcp lane: advertise the events capability and serve events/list, events/subscribe, and events/unsubscribe for package kody.emits topics that opt in with mcp: true. Only for clients that declare events support. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Experimenters whose MCP clients subscribe to package events run more event-driven execute calls than comparable flag-off users.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -155,6 +169,9 @@ export const connectionProfilesFlagKey =
 
 export const mcpSkillsExtensionFlagKey =
 	'mcp-skills-extension' satisfies FeatureFlagKey
+
+export const mcpEventsExtensionFlagKey =
+	'mcp-events-extension' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)

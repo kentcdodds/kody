@@ -51,6 +51,7 @@ import {
 	userOwnsMcpOauthClient,
 } from '#app/account-mcp-oauth-clients.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+import { deleteMcpEventSubscriptionsForOauthClient } from '#mcp/events/subscriptions-repo.ts'
 import {
 	isOAuthAuthorizeClobberedResubmit,
 	oauthAuthorizeClobberedResubmitMessage,
@@ -562,6 +563,11 @@ async function handleResetClientRequest(
 				clientId,
 			)
 		}
+		await deleteMcpEventSubscriptionsForOauthClient({
+			db: env.APP_DB,
+			oauthClientId: clientId,
+			...(ownsClient ? {} : { userId }),
+		})
 		void logAuditEvent({
 			db: auditDatabaseFromEnv(env),
 			category: 'oauth',

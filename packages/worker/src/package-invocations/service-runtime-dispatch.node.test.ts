@@ -69,6 +69,17 @@ vi.mock('#worker/run-records/package-subscriptions.ts', () => ({
 		repoMockModule.dispatchRunErrorSubscriptionEvents(...args),
 }))
 
+const fanOutMocks = vi.hoisted(() => ({
+	fanOutPackageEventToMcpSubscriptions: vi.fn(async () => ({
+		status: 'skipped_not_mcp',
+		delivered: 0,
+		failed: 0,
+		denied: 0,
+	})),
+}))
+
+vi.mock('#mcp/events/fan-out.ts', () => fanOutMocks)
+
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 	resolveBackgroundMcpUser: async (_db: D1Database, userId: string) => ({
 		userId,
@@ -148,6 +159,7 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 		payload: { messageId: '123', channelId: '456' },
 		source: { packageId: 'pkg-gateway', kodyId: 'discord-gateway' },
 		invokeDepth: 1,
+		emittedAt: expect.any(String),
 	})
 	// Queued delivery never invokes subscribers inside the emitting request.
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
@@ -240,6 +252,68 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 		}),
 	).resolves.toMatchObject({ status: 'enqueued' })
 	expect(send).toHaveBeenCalledTimes(1)
+
+	patchSeededManifest(seed, 'source-gateway', {
+		emits: {
+			[messageCreated]: {
+				description: 'A Discord message was created.',
+				mcp: true,
+			},
+		},
+	})
+	send.mockClear()
+	await eventTools().dispatch({
+		topic: messageCreated,
+		idempotencyKey: 'discord:message-create:mcp',
+		payload: { messageId: '123' },
+	})
+	expect(send).toHaveBeenCalledWith(
+		expect.objectContaining({ mcp: true, emittedAt: expect.any(String) }),
+	)
+})
+
+test('package event delivery fans out to MCP subscriptions on the same consumer path', async () => {
+	const db = createDatabase()
+	seedRuntimeDispatchPackages()
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		result: { handled: true },
+		logs: [],
+	})
+	const message = {
+		userId: 'user-123',
+		topic: messageCreated,
+		idempotencyKey: 'discord:message-create:mcp-fan-out',
+		payload: { messageId: '123', channelId: '456' },
+		source: { packageId: 'pkg-gateway', kodyId: 'discord-gateway' },
+		invokeDepth: 1,
+		mcp: true as const,
+		emittedAt: '2026-10-07T12:00:00.000Z',
+	}
+	fanOutMocks.fanOutPackageEventToMcpSubscriptions.mockClear()
+
+	await expect(deliver(db, message)).resolves.toMatchObject({
+		delivered: 1,
+		failed: 0,
+	})
+	expect(fanOutMocks.fanOutPackageEventToMcpSubscriptions).toHaveBeenCalledWith(
+		{
+			env: expect.anything(),
+			message,
+		},
+	)
+
+	// An MCP fan-out failure is logged and never fails package delivery.
+	consoleError.mockImplementation(() => {})
+	fanOutMocks.fanOutPackageEventToMcpSubscriptions.mockRejectedValueOnce(
+		new Error('fan-out exploded'),
+	)
+	await expect(
+		deliver(db, { ...message, idempotencyKey: 'discord:mcp-fan-out-error' }),
+	).resolves.toMatchObject({ delivered: 1, failed: 0 })
+	expect(consoleError).toHaveBeenCalledWith(
+		'mcp-events-fan-out-failed',
+		expect.objectContaining({ topic: messageCreated }),
+	)
 })
 
 test('package events deliver with filters, idempotent replay, and retryable failures', async () => {

@@ -140,3 +140,18 @@ test('package events queue message parsing rejects malformed bodies', () => {
 		malformed.map(() => null),
 	)
 })
+
+test('package events queue message parsing keeps MCP fan-out fields only when well-formed', () => {
+	const emittedAt = '2026-10-07T12:00:00.000Z'
+	expect(
+		parsePackageEventsDispatchQueueMessage(
+			createMessageBody({ mcp: true, emittedAt }),
+		),
+	).toEqual({ ...createMessageBody(), mcp: true, emittedAt })
+	const parsed = parsePackageEventsDispatchQueueMessage(
+		createMessageBody({ mcp: 'true', emittedAt: 'yesterday' }),
+	)
+	expect(parsed).toEqual(createMessageBody())
+	expect(parsed).not.toHaveProperty('mcp')
+	expect(parsed).not.toHaveProperty('emittedAt')
+})

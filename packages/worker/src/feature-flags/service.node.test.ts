@@ -286,6 +286,7 @@ const registryKeys = [
 	'execute-invoke',
 	'connection-profiles',
 	'mcp-skills-extension',
+	'mcp-events-extension',
 ] as const
 
 function everyFlag<T>(value: T, overrides: Partial<Record<FlagKey, T>> = {}) {

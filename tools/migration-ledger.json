@@ -331,6 +331,10 @@
 		{
 			"filename": "0082-saved-packages-has-skills.sql",
 			"sha256": "5959ee6480f8a7c2cd557c08e5dc7d856e524b56a467385dcf65712349f099b5"
+		},
+		{
+			"filename": "0083-mcp-event-subscriptions.sql",
+			"sha256": "0e2a36ccae5d3a2475ba1ef9d46c1afac3d2c50fd16b88b53098704c4f52075e"
 		}
 	]
 }

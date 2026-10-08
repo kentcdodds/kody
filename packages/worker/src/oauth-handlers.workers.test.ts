@@ -176,6 +176,7 @@ async function createDatabase(
 	options: {
 		emailVerifiedAt?: string | null
 		ownedClientIds?: ReadonlyArray<string>
+		writes?: Array<{ query: string; bound: Array<unknown> }>
 	} = {},
 ) {
 	const passwordHash = await createPasswordHash(password)
@@ -231,6 +232,7 @@ async function createDatabase(
 					return userRow
 				},
 				async run() {
+					options.writes?.push({ query, bound })
 					return { meta: { changes: 1, last_row_id: 1 } }
 				},
 			}
@@ -1233,7 +1235,10 @@ function resetSucceeded(
 
 test("reset client revokes only this user's matching grants and deletes only owned client registrations", async () => {
 	const userId = await createStableUserIdFromEmail('user@example.com')
-	const sharedClientDb = await createDatabase('password123')
+	const sharedClientWrites: Array<{ query: string; bound: Array<unknown> }> = []
+	const sharedClientDb = await createDatabase('password123', {
+		writes: sharedClientWrites,
+	})
 	const cookie = await sessionCookie()
 	const invalidRedirectUrl = exampleOAuthUrl('authorize', {
 		client_id: 'client-123',
@@ -1308,8 +1313,10 @@ test("reset client revokes only this user's matching grants and deletes only own
 		[['grant-owned', 'client-123', 'profile']],
 		redirectUriMismatchMessage,
 	)
+	const ownedClientWrites: Array<{ query: string; bound: Array<unknown> }> = []
 	const ownedClientDb = await createDatabase('password123', {
 		ownedClientIds: ['client-123'],
+		writes: ownedClientWrites,
 	})
 	expect(
 		await resetClient(invalidRedirectUrl, ownedClient, ownedClientDb, cookie),
@@ -1320,6 +1327,21 @@ test("reset client revokes only this user's matching grants and deletes only own
 			['client-123'],
 		),
 	)
+
+	// MCP event subscriptions follow the grants: a shared client only loses
+	// this user's rows; a deleted owned registration loses all of them.
+	const mcpEventDeletes = (
+		writes: Array<{ query: string; bound: Array<unknown> }>,
+	) =>
+		writes
+			.filter((write) => write.query.includes('mcp_event_subscriptions'))
+			.map((write) => write.bound)
+	expect(mcpEventDeletes(sharedClientWrites)).toEqual([
+		['client-123', userId],
+		['client-123', userId],
+		['client-123', userId],
+	])
+	expect(mcpEventDeletes(ownedClientWrites)).toEqual([['client-123']])
 })
 
 test('reset client rejects requests without a stale or mismatched client registration', async () => {

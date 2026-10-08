@@ -474,6 +474,56 @@ test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and sec
 	])
 })
 
+test('kody.emits mcp: true opts a topic into MCP Events; false or absent does not', () => {
+	const manifest = parse('@kentcdodds/discord-gateway', {
+		emits: {
+			'@kentcdodds/discord.message.created': {
+				description: 'A Discord message was created.',
+				mcp: true,
+			},
+			'@kentcdodds/discord.message.deleted': {
+				description: 'A Discord message was deleted.',
+				mcp: false,
+			},
+			'@kentcdodds/discord.message.updated': {
+				description: 'A Discord message was updated.',
+			},
+		},
+	})
+	const emitted = listPackageEmittedEvents(manifest)
+	expect(emitted).toEqual([
+		{
+			topic: '@kentcdodds/discord.message.created',
+			description: 'A Discord message was created.',
+			payloadSchema: null,
+			mcp: true,
+		},
+		{
+			topic: '@kentcdodds/discord.message.deleted',
+			description: 'A Discord message was deleted.',
+			payloadSchema: null,
+		},
+		{
+			topic: '@kentcdodds/discord.message.updated',
+			description: 'A Discord message was updated.',
+			payloadSchema: null,
+		},
+	])
+	expect(
+		emitted.filter((event) => event.mcp).map((event) => event.topic),
+	).toEqual(['@kentcdodds/discord.message.created'])
+	expect(() =>
+		parse('@kentcdodds/discord-gateway', {
+			emits: {
+				'@kentcdodds/discord.message.created': {
+					description: 'A Discord message was created.',
+					mcp: 'yes',
+				},
+			},
+		}),
+	).toThrow(/expected boolean[\s\S]*\.mcp/)
+})
+
 test('parseAuthoredPackageJson accepts kody.webhooks with verification, replay, challenge, and trusted rate limits', () => {
 	const sentryVerification = hmac(
 		'sentry-hook-signature',

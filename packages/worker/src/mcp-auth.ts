@@ -557,6 +557,7 @@ export async function handleMcpRequest({
 							env,
 							ctx,
 							callerContext: props,
+							oauthClientId: inboundClientId || null,
 							...(classification.parsedBody === undefined
 								? {}
 								: { parsedBody: classification.parsedBody }),

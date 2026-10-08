@@ -10,6 +10,7 @@ import {
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import { deleteMcpEventSubscriptionsForUser } from '#mcp/events/subscriptions-repo.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
 	type ClearedAccountFactors,
@@ -70,6 +71,10 @@ export async function applyPasswordChange(
 		try {
 			await revokeAllOAuthGrantsForUser({
 				helpers,
+				userId: input.stableUserId,
+			})
+			await deleteMcpEventSubscriptionsForUser({
+				db: input.d1,
 				userId: input.stableUserId,
 			})
 			return null

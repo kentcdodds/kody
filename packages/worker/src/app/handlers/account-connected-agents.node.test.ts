@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
@@ -9,7 +10,9 @@ import {
 	listInboundMcpConnectionLastUsed,
 	recordInboundMcpConnectionLastUsed,
 } from '#worker/inbound-mcp-connection-last-used.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -37,9 +40,10 @@ function createAppEnv(
 		lookupClient?: ReturnType<typeof vi.fn>
 	},
 	meter = createInMemoryUserMeterEnv(),
+	appDb: D1Database = {} as D1Database,
 ) {
 	return {
-		APP_DB: {} as D1Database,
+		APP_DB: appDb,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
 		OAUTH_PROVIDER: helpers,
@@ -94,8 +98,23 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	signIn(true)
 	const cookie = await createAuthCookie(userOneSession, false)
 	const meter = createInMemoryUserMeterEnv()
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const insertSubscription = sqlite.prepare(
+		`INSERT INTO mcp_event_subscriptions (
+			id, user_id, oauth_client_id, event_name, arguments_json,
+			callback_url, secret_encrypted
+		) VALUES (?, ?, ?, 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
+	)
+	insertSubscription.run('sub_a', userOneSession.stableUserId, 'client-a')
+	insertSubscription.run('sub_other_user', 'someone-else', 'client-a')
+	insertSubscription.run(
+		'sub_chatgpt',
+		userOneSession.stableUserId,
+		'https://chatgpt.com/oauth/vG3/client.json',
+	)
 	const { handler } = createAccountConnectedAgentsApiHandler(
-		createAppEnv(helpers, meter),
+		createAppEnv(helpers, meter, createD1FromSqlite(sqlite)),
 	)
 	const url = 'https://example.com/account/connected-agents.json'
 	const request = (init: RequestInit = {}) => {
@@ -197,6 +216,14 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	expect(revokeBody.agents.map((agent) => agent.clientId)).toEqual([
 		'https://chatgpt.com/oauth/vG3/client.json',
 	])
+	// Only this user's grant to client-a is gone; a shared client's other
+	// users and this user's other clients keep their MCP event subscriptions.
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions ORDER BY id`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_chatgpt', 'sub_other_user'])
 	expect(
 		await listInboundMcpConnectionLastUsed({
 			env: meter.env,

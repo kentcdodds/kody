@@ -1,3 +1,5 @@
+import { deleteMcpEventSubscriptionsForOauthClient } from '#mcp/events/subscriptions-repo.ts'
+
 export const maxUserMcpOauthClients = 10
 export const maxRedirectUris = 8
 export const maxClientLabelLength = 80
@@ -369,6 +371,10 @@ export async function revokeUserMcpOauthClient(input: {
 		)
 		.bind(new Date().toISOString(), input.id, input.userId)
 		.run()
+	await deleteMcpEventSubscriptionsForOauthClient({
+		db: input.db,
+		oauthClientId: row.client_id,
+	})
 	return { ok: true }
 }
 

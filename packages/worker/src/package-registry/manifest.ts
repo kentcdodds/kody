@@ -415,6 +415,7 @@ export function listPackageEmittedEvents(manifest: AuthoredPackageJson) {
 			topic,
 			description: emittedEvent.description.trim(),
 			payloadSchema: emittedEvent.payloadSchema ?? null,
+			...(emittedEvent.mcp === true ? { mcp: true as const } : {}),
 		}))
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
@@ -498,6 +499,7 @@ export type PackageSearchProjection = {
 		topic: string
 		description: string
 		payloadSchema?: Record<string, unknown> | null
+		mcp?: true
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
 	webhooks: Array<PackageWebhookManifestEntry>

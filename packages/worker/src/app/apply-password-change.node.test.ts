@@ -104,3 +104,32 @@ test('factors are cleared before password_changed_at is stamped', async () => {
 			.get(),
 	).toEqual({ count: 0 })
 })
+
+test('password change drops every MCP event subscription for the user with the grants', async () => {
+	const { sqlite, d1, db, stableUserId } = await seedUserWithFactors()
+	const insertSubscription = sqlite.prepare(
+		`INSERT INTO mcp_event_subscriptions (
+			id, user_id, oauth_client_id, event_name, arguments_json,
+			callback_url, secret_encrypted
+		) VALUES (?, ?, ?, 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
+	)
+	insertSubscription.run('sub_one', stableUserId, 'client-a')
+	insertSubscription.run('sub_two', stableUserId, 'client-b')
+	insertSubscription.run('sub_someone_else', 'someone-else', 'client-a')
+
+	const result = await applyPasswordChange({
+		db,
+		d1,
+		helpers,
+		userId: 1,
+		stableUserId,
+		password: 'brand-new-password',
+	})
+	expect(result.ok).toBe(true)
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions ORDER BY id`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_someone_else'])
+})

@@ -417,6 +417,9 @@ export const packageEmittedEventDefinitionSchema = z.object({
 	// keyword set is enforced in parseAuthoredPackageJson (manifest.ts) so
 	// schema problems surface as publish-time manifest errors.
 	payloadSchema: z.record(z.string(), z.unknown()).optional(),
+	// Opt-in exposure through the MCP Events extension (events/list,
+	// events/subscribe). Absent or false keeps the topic package-internal.
+	mcp: z.boolean().optional(),
 })
 
 export type PackageEmittedEventDefinition = z.infer<

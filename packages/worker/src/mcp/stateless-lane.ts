@@ -24,6 +24,10 @@ import { assembleMcpServerInstructionsForCaller } from './assemble-mcp-server-in
 import { registerTools } from './register-tools.ts'
 import { registerPackageSkillsExtensionWhenEnabled } from './skills/register-package-skills.ts'
 import {
+	readMcpRequestClientCapabilities,
+	registerMcpEvents,
+} from './events/register-mcp-events.ts'
+import {
 	asMcpToolServer,
 	type McpRegistrationAgent,
 } from './mcp-registration-agent.ts'
@@ -47,6 +51,8 @@ export async function handleStatelessMcpRequest(input: {
 	callerContext: McpCallerContext
 	/** Body already parsed by lane classification, so it is read only once. */
 	parsedBody?: unknown
+	/** OAuth client the bearer grant was issued to (MCP Events principal). */
+	oauthClientId?: string | null
 }): Promise<Response> {
 	const { request, env, ctx, callerContext } = input
 	const handler = createMcpHandler(
@@ -74,6 +80,13 @@ export async function handleStatelessMcpRequest(input: {
 				env,
 				callerContext,
 				parsedBody: input.parsedBody,
+			})
+			await registerMcpEvents({
+				server,
+				env,
+				callerContext,
+				oauthClientId: input.oauthClientId ?? null,
+				clientCapabilities: readMcpRequestClientCapabilities(input.parsedBody),
 			})
 			return server
 		},
