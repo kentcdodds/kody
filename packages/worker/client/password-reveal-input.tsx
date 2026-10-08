@@ -76,6 +76,10 @@ export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 					{...({
 						...inputProps,
 						type: inputType,
+						// Revealed text must not autocorrect a credential.
+						autoCorrect: 'off',
+						spellCheck: false,
+						autoCapitalize: 'off',
 						mix: [
 							ref((node, signal) => {
 								inputEl = node instanceof HTMLInputElement ? node : null
@@ -83,8 +87,10 @@ export function PasswordRevealInput(handle: Handle<PasswordRevealInputProps>) {
 									if (inputEl === node) inputEl = null
 								})
 							}),
-							inputPadCss,
 							inputMix,
+							// After caller styles: their `padding` shorthand would
+							// otherwise wipe padding-right and run text under Show.
+							inputPadCss,
 						],
 					} as Record<string, unknown>)}
 				/>

@@ -166,9 +166,15 @@ export function AccountPasswordPanel(
 								: 'This account signs in with a connected provider or passkey. Setting a password lets you also sign in with email.'}
 						</p>
 						{hasUsablePassword ? (
-							<label mix={css(accountFieldCss)}>
-								<span mix={css(accountFieldLabelCss)}>Current password</span>
+							<div mix={css(accountFieldCss)}>
+								<label
+									for="account-current-password"
+									mix={css(accountFieldLabelCss)}
+								>
+									Current password
+								</label>
 								<PasswordRevealInput
+									id="account-current-password"
 									name="currentPassword"
 									data-field-ring
 									required
@@ -179,11 +185,14 @@ export function AccountPasswordPanel(
 										on('input', updateCurrentPassword),
 									]}
 								/>
-							</label>
+							</div>
 						) : null}
-						<label mix={css(accountFieldCss)}>
-							<span mix={css(accountFieldLabelCss)}>New password</span>
+						<div mix={css(accountFieldCss)}>
+							<label for="account-new-password" mix={css(accountFieldLabelCss)}>
+								New password
+							</label>
 							<PasswordRevealInput
+								id="account-new-password"
 								name="newPassword"
 								data-field-ring
 								required
@@ -193,10 +202,16 @@ export function AccountPasswordPanel(
 								value={newPassword}
 								mix={[css(accountInputCss), on('input', updateNewPassword)]}
 							/>
-						</label>
-						<label mix={css(accountFieldCss)}>
-							<span mix={css(accountFieldLabelCss)}>Confirm new password</span>
+						</div>
+						<div mix={css(accountFieldCss)}>
+							<label
+								for="account-confirm-password"
+								mix={css(accountFieldLabelCss)}
+							>
+								Confirm new password
+							</label>
 							<PasswordRevealInput
+								id="account-confirm-password"
 								name="confirmPassword"
 								data-field-ring
 								required
@@ -205,7 +220,7 @@ export function AccountPasswordPanel(
 								value={confirmPassword}
 								mix={[css(accountInputCss), on('input', updateConfirmPassword)]}
 							/>
-						</label>
+						</div>
 						<div>
 							<button
 								type="submit"
