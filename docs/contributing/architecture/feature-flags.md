@@ -160,11 +160,11 @@ may ship Agent Skills at `skills/<name>/SKILL.md`; publish validates them and
 stores a per-package-version skills index. When on for a caller and the MCP
 client advertises the skills extension, Kody exposes those skills through
 `skills/list`, `skills/get`, and `resources/read` as a progressive enhancement.
-When off (or the client does not advertise the extension), the MCP surface is
-unchanged. Signed-in users can opt themselves in from `/docs/package-skills`.
-The declared `successMetric` is `execute` event count, goal increase:
-skill-aware hosts load package skills, then act via `execute`. Enable for
-experiment members with
+When off (or the client does not advertise the extension), the MCP surface stays
+`search` / `execute` / `api`. Signed-in users can opt themselves in from
+`/docs/package-skills`. The declared `successMetric` is `execute` event count,
+goal increase: skill-aware hosts load package skills, then act via `execute`.
+Enable for experiment members with
 `adminFeatureFlagSet({ key: "mcp-skills-extension", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 

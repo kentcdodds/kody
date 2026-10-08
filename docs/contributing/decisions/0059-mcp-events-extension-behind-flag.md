@@ -55,7 +55,7 @@ scope.
   stamped `mcp` field (an absent field fails closed). A fan-out failure is
   logged and never throws to the queue, so a dead callback cannot replay package
   subscribers.
-- **Subscriptions.** Rows live in `mcp_event_subscriptions` (migration 0082).
+- **Subscriptions.** Rows live in `mcp_event_subscriptions` (migration 0083).
   The subscription key is (stable user id, OAuth client id, event name,
   canonical arguments, callback URL), and the row id is a deterministic `sub_`
   hash of that key. Subscribe and refresh are the same upsert. TTL defaults to 1

@@ -184,10 +184,11 @@ Deletion must cover these user-owned surfaces:
   (`repo-session:{durableObjectId}/`). Account deletion enumerates session ids
   and each `purgeSession` prefix-purges that object's keys after `deleteAll`.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
-  community listing snapshots, and per-user package retriever cache/index keys
-  in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
-  OAuth token/grant KV is owned by the OAuth provider and is handled through
-  provider grant revocation rather than app-level key scans.
+  community listing snapshots, per-user package retriever cache/index keys, and
+  package-skills index keys in `BUNDLE_ARTIFACTS_KV` are deleted before D1
+  projection rows are removed. OAuth token/grant KV is owned by the OAuth
+  provider and is handled through provider grant revocation rather than
+  app-level key scans.
 - **Cloudflare Artifacts:** source repos referenced by `entity_sources` and the
   per-user `RepoSessionIndex` catalog are deleted through the REST client in
   `packages/worker/src/repo/artifacts.ts`.
@@ -447,6 +448,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `published_commit` until the owner approves a specific commit in the account
   UI, and `has_skills` (0/1) set at publish when the package ships one or more
   `skills/<name>/SKILL.md` trees (Skills-over-MCP index lookup)
+- `mcp_event_subscriptions` (`0083-mcp-event-subscriptions.sql`): user-owned MCP
+  Events webhook subscriptions (event name, callback URL, encrypted `whsec_`
+  secrets). Deleted and exported with the account; secret columns are redacted
+  from export. See [MCP Events](../../guides/mcp-events.md) and
+  [0059](../decisions/0059-mcp-events-extension-behind-flag.md).
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
   (see [Public packages](../community-packages.md)). `community_forks` rows for

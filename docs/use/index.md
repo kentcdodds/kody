@@ -77,6 +77,9 @@ reference detail those docs link into.
 - [Packages](./packages.md)
 - [Share a package](../guides/package-sharing.md) — invite another paid account
   to use a package (accept required; pin or follow)
+- [Ship Agent Skills in a package](../guides/package-skills.md) — put
+  `skills/<name>/SKILL.md` in a package; MCP serving is behind
+  `mcp-skills-extension`
 - [MCP Events from packages](../guides/mcp-events.md) — opt a `kody.emits` topic
   into ChatGPT (and other webhook MCP clients) behind `mcp-events-extension`
 - [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic

@@ -38,15 +38,15 @@ When the flag is on **and** the MCP client advertises events support:
 The tool surface stays `search` / `execute` / `api`. Nothing is exposed by
 default: each topic opts in with `"mcp": true` on its `kody.emits` entry.
 
-## Clients that consume it today
+## Clients that consume it
 
 | Client                                                  | Support                                                                        |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | ChatGPT (Work chats on web; desktop Work + Cloud; dots) | Webhook MCP Events on protocol `2026-07-28`                                    |
 | Other MCP hosts                                         | Only if they advertise events support and implement webhook subscribe/delivery |
 
-Cursor, Claude, and other hosts that do not advertise the extension keep today's
-behavior: no `events` capability, and `events/*` methods are not registered.
+Cursor, Claude, and other hosts that do not advertise the extension have no
+`events` capability, and `events/*` methods are not registered.
 
 ## Opt a topic into MCP
 
@@ -81,11 +81,11 @@ Declare the topic in `package.json#kody.emits` as usual, and set `mcp: true`:
 Rules:
 
 - Omit `mcp` or set `"mcp": false` to keep the topic package-internal (same-user
-  `kody.subscriptions` still work).
+  `kody.subscriptions` deliver it).
 - The MCP event **name** is the topic string (`@you/ping.ready`).
-- v1 subscriptions take no filter arguments (`inputSchema` is an empty object).
-- Payloads still follow the package-event 64 KiB cap; MCP delivery allows up to
-  256 KiB for the full webhook body.
+- Subscriptions take no filter arguments (`inputSchema` is an empty object).
+- Payloads follow the package-event 64 KiB cap; MCP delivery allows up to 256
+  KiB for the full webhook body.
 
 ## Emit
 
@@ -139,8 +139,8 @@ X-MCP-Subscription-Id: sub_…
 Subscriptions stop delivering when the OAuth client is revoked, the password
 changes, or the TTL expires without refresh. Revoke and password-change paths
 delete the rows immediately; an expired TTL only stops delivery until a later
-`events/subscribe` from that principal prunes the stale row. Same-user scoping
-is unchanged: events never cross accounts.
+`events/subscribe` from that principal prunes the stale row. Events never cross
+accounts.
 
 ## Try it
 

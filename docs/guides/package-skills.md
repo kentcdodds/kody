@@ -11,9 +11,9 @@ audience: agents
 # Ship Agent Skills in a package
 
 > [!NOTE] Serving skills over MCP is behind the `mcp-skills-extension` feature
-> flag because host support is still partial and the shape may change. Signed-in
-> users can turn it on from this page. Authoring and publishing skills works
-> with the flag off.
+> flag because host support is partial and the shape may change. Signed-in users
+> can turn it on from this page. Authoring and publishing skills works with the
+> flag off.
 
 A package skill is an [Agent Skill](https://agentskills.io/specification) that
 lives inside a Kody package. The package stays the source of truth; Kody
@@ -100,23 +100,23 @@ resources/read           -> skill://you/my-package/hello-skill/references/checkl
 
 Results are scoped to packages that connection can already use (your own, plus
 shared or imported ones). The tool surface stays `search`, `execute`, and `api`.
-With the flag off, or a client that does not advertise the extension, nothing on
-the MCP surface changes.
+With the flag off, or a client that does not advertise the extension, the MCP
+surface stays those three tools.
 
 ## Which hosts support it
 
 Honest status against the
-[official client matrix](https://modelcontextprotocol.io/clients):
+[official extension matrix](https://modelcontextprotocol.io/extensions/client-matrix):
 
 | Host                               | Skills over MCP                     |
 | ---------------------------------- | ----------------------------------- |
 | ChatGPT                            | Partial (import at submission time) |
 | fast-agent                         | Partial                             |
 | MCP Inspector                      | Partial                             |
-| Claude Desktop / claude.ai, Cursor | No Skills column on the matrix yet  |
+| Claude Desktop / claude.ai, Cursor | No (empty Skills cell)              |
 
-Hosts that do not advertise the extension can still use the skill. Discover it
-through `search`, then open the file:
+Hosts that do not advertise the extension can use the skill through search.
+Discover it, then open the file:
 
 ```text
 search({ entity: 'package:@you/my-package#skills/hello-skill/SKILL.md' })
