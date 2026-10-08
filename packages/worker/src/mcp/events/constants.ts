@@ -9,7 +9,7 @@
  *   verification, 256 KiB bodies):
  *   https://developers.openai.com/plugins/build/mcp-events
  *
- * See docs/contributing/decisions/0058-mcp-events-extension-behind-flag.md.
+ * See docs/contributing/decisions/0059-mcp-events-extension-behind-flag.md.
  */
 export const mcpEventsSpecPin =
 	'experimental-ext-triggers-events design sketch 2026-02-19 (draft); OpenAI MCP Events webhook profile; protocol 2026-07-28'

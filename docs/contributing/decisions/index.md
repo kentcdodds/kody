@@ -135,6 +135,10 @@ Open these before proposing a new primitive, surface, or storage home.
   — `mcp-skills-extension` (default off, `experiments_opt_in`), modern lane
   only; packages stay the source of truth at `skills/<name>/SKILL.md`; no
   `kody.skills` manifest key; tools stay search/execute/api; supersedes 0015
+- [0059 — MCP Events extension (webhook profile) behind a flag](./0059-mcp-events-extension-behind-flag.md)
+  — `kody.emits` topics with `mcp: true` reach ChatGPT-style webhook subscribers
+  through the existing package events consumer; flag plus client capability
+  gate; Workers-limited SSRF guard documented
 
 ## Historical / UI / implementation
 
