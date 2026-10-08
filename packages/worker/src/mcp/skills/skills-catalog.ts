@@ -5,11 +5,13 @@ import {
 } from '@modelcontextprotocol/server'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { resolveConnectionProfileActor } from '#worker/connection-profiles/access.ts'
-import { profileGrantsReveal } from '#worker/connection-profiles/repo.ts'
+import { profileGrantsAllow } from '#worker/connection-profiles/repo.ts'
 import {
 	buildPackageSkillsIndex,
+	bytesToBase64,
 	collectPackageSkills,
-	digestUtf8,
+	digestSnapshotContent,
+	skillResourceIsBinary,
 	type PackageSkillIndexEntry,
 	type PackageSkillResourceIndexEntry,
 	type PackageSkillsIndex,
@@ -73,11 +75,14 @@ async function listVisibleSkillPackageRecords(input: {
 	const userId = input.callerContext.user?.userId
 	if (!userId) return []
 	const profileActor = await resolveConnectionProfileActor(input)
-	const reveal = (packageId: string) =>
-		profileGrantsReveal({
+	// Skills are source-like content: require package `read`, not mere
+	// reveal (execute-only profiles must not pull SKILL.md / assets).
+	const canRead = (packageId: string) =>
+		profileGrantsAllow({
 			grants: profileActor.grants,
 			resourceType: 'package',
 			resourceId: packageId,
+			action: 'read',
 		})
 	const [ownRecords, sharedRecords, platformPackages] = await Promise.all([
 		listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
@@ -104,7 +109,7 @@ async function listVisibleSkillPackageRecords(input: {
 	]
 	const seen = new Set<string>()
 	return candidates.filter((record) => {
-		if (!record.hasSkills || !reveal(record.id) || seen.has(record.id)) {
+		if (!record.hasSkills || !canRead(record.id) || seen.has(record.id)) {
 			return false
 		}
 		seen.add(record.id)
@@ -324,19 +329,29 @@ export async function readCatalogSkillResource(input: {
 			`Skill resource "${input.uri}" is missing from the published snapshot`,
 		)
 	}
-	const { digest, size } = await digestUtf8(content)
+	const { digest, size, bytes } = await digestSnapshotContent(
+		content,
+		resource.packagePath,
+	)
 	if (digest !== resource.digest || size !== resource.size) {
 		throw skillsInternalError(
 			`Skill resource "${input.uri}" does not match its published digest`,
 		)
 	}
+	const binary = skillResourceIsBinary(resource.packagePath, content)
 	return {
 		contents: [
-			{
-				uri: resource.uri,
-				mimeType: resource.mimeType,
-				text: content,
-			},
+			binary
+				? {
+						uri: resource.uri,
+						mimeType: resource.mimeType,
+						blob: bytesToBase64(bytes),
+					}
+				: {
+						uri: resource.uri,
+						mimeType: resource.mimeType,
+						text: content,
+					},
 		],
 	}
 }

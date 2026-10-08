@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 	readIndex: vi.fn(),
 	writeIndex: vi.fn(),
 	loadSource: vi.fn(),
+	resolveConnectionProfileActor: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -45,6 +46,10 @@ vi.mock('#worker/package-registry/skills-index-cache.ts', () => ({
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mocks.loadSource(...args),
+}))
+vi.mock('#worker/connection-profiles/access.ts', () => ({
+	resolveConnectionProfileActor: (...args: Array<unknown>) =>
+		mocks.resolveConnectionProfileActor(...args),
 }))
 
 const {
@@ -126,6 +131,8 @@ beforeEach(() => {
 		files: packageFiles,
 		manifest: { name: '@owner/ship', kody: { id: 'ship' } },
 	})
+	// Unlimited caller (no named profile): grants null → read allowed.
+	mocks.resolveConnectionProfileActor.mockResolvedValue({ grants: null })
 })
 
 test('anonymous callers get an empty catalog without touching storage', async () => {
@@ -357,6 +364,65 @@ test('resources/read returns verified text content and rejects unknown URIs', as
 	}).catch((error: unknown) => error)
 	expect(missing).toBeInstanceOf(ResourceNotFoundError)
 	expect(missing).toMatchObject({ code: -32602 })
+})
+
+test('execute-only connection profiles cannot list package skills', async () => {
+	const own = savedPackage()
+	mocks.listOwn.mockResolvedValue([own])
+	mocks.readIndex.mockResolvedValue(await buildIndex(own))
+	mocks.resolveConnectionProfileActor.mockResolvedValue({
+		grants: [
+			{
+				resourceType: 'package',
+				resourceId: own.id,
+				actions: ['execute'],
+			},
+		],
+	})
+
+	const catalog = await loadCallerSkillsCatalog({ env, callerContext })
+	expect(catalog).toEqual([])
+})
+
+test('resources/read returns binary skill assets as base64 blobs', async () => {
+	const pngMagic = String.fromCharCode(
+		0x89,
+		0x50,
+		0x4e,
+		0x47,
+		0x0d,
+		0x0a,
+		0x1a,
+		0x0a,
+	)
+	const files = {
+		...packageFiles,
+		'skills/ship-it/assets/logo.png': pngMagic,
+	}
+	const own = savedPackage()
+	mocks.listOwn.mockResolvedValue([own])
+	mocks.readIndex.mockResolvedValue(await buildIndex(own, 'commit-1', files))
+	mocks.loadSource.mockResolvedValue({
+		files,
+		manifest: { name: '@owner/ship', kody: { id: 'ship' } },
+	})
+	const catalog = await loadCallerSkillsCatalog({ env, callerContext })
+
+	const result = await readCatalogSkillResource({
+		env,
+		callerContext,
+		catalog,
+		uri: 'skill://owner/ship/ship-it/assets/logo.png',
+	})
+	expect(result).toEqual({
+		contents: [
+			{
+				uri: 'skill://owner/ship/ship-it/assets/logo.png',
+				mimeType: 'image/png',
+				blob: btoa(pngMagic),
+			},
+		],
+	})
 })
 
 test('resources/read fails when the snapshot no longer matches the indexed digest', async () => {

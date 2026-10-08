@@ -3,7 +3,9 @@ import {
 	buildPackageSkillsIndex,
 	buildSkillUri,
 	collectPackageSkills,
+	digestSnapshotContent,
 	digestUtf8,
+	skillResourceIsBinary,
 	guessMimeType,
 	packageSkillMaxBytes,
 	packageSkillMaxFiles,
@@ -223,6 +225,27 @@ test('digest is stable, byte-length based, and lowercase hex', async () => {
 		'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
 	)
 	expect((await digestUtf8('héllo!')).digest).not.toBe(first.digest)
+})
+
+test('binary skill assets digest latin-1 snapshot bytes, not UTF-8', async () => {
+	const pngMagic = String.fromCharCode(
+		0x89,
+		0x50,
+		0x4e,
+		0x47,
+		0x0d,
+		0x0a,
+		0x1a,
+		0x0a,
+	)
+	const path = 'skills/a-skill/assets/logo.png'
+	const snap = await digestSnapshotContent(pngMagic, path)
+	const asUtf8 = await digestUtf8(pngMagic)
+	expect(snap.size).toBe(8)
+	expect(asUtf8.size).toBeGreaterThan(8)
+	expect(snap.digest).not.toBe(asUtf8.digest)
+	expect(skillResourceIsBinary(path, pngMagic)).toBe(true)
+	expect(skillResourceIsBinary('skills/a-skill/SKILL.md', '# hi')).toBe(false)
 })
 
 test('builds URIs from kody ids', () => {

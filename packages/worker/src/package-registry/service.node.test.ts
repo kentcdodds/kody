@@ -461,6 +461,53 @@ test('refreshSavedPackageProjection omits files when artifact rebuild is skipped
 	expect(refreshed).not.toHaveProperty('files')
 	expect(mockModule.loadPackageSourceBySourceId).not.toHaveBeenCalled()
 	expect(mockModule.buildPublishedPackageArtifacts).not.toHaveBeenCalled()
+	expect(mockModule.collectPackageSkills).not.toHaveBeenCalled()
+})
+
+test('refreshSavedPackageProjection indexes skills from sourceFiles even when artifact rebuild is skipped', async () => {
+	setupDefaultMocks()
+	const skillFiles = {
+		'package.json': JSON.stringify(shadeManifest()),
+		'skills/ship-it/SKILL.md':
+			'---\nname: ship-it\ndescription: Ship it.\n---\n\n# Ship\n',
+	}
+	mockModule.loadPackageSourceFromFiles.mockResolvedValue({
+		source: {
+			id: 'source-1',
+			entity_id: 'package-1',
+			entity_kind: 'package',
+			published_commit: 'commit-1',
+		},
+		manifest: shadeManifest(),
+		files: skillFiles,
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(
+		savedPackageRecord({ description: 'Shade automation package', tags: [] }),
+	)
+	mockModule.collectPackageSkills.mockResolvedValue([
+		{ name: 'ship-it', resources: [] },
+	])
+	mockModule.buildPackageSkillsIndex.mockReturnValue({
+		version: 1,
+		packageId: 'package-1',
+		kodyId: '@kentcdodds/shade-automation',
+		publishedCommit: 'commit-1',
+		skills: [{ name: 'ship-it' }],
+	})
+
+	const refreshed = await refresh(createEnv(), {
+		rebuildArtifacts: false,
+		sourceFiles: skillFiles,
+	})
+
+	expect(refreshed).not.toHaveProperty('files')
+	expect(mockModule.buildPublishedPackageArtifacts).not.toHaveBeenCalled()
+	expect(mockModule.collectPackageSkills).toHaveBeenCalled()
+	expect(mockModule.writePackageSkillsIndex).toHaveBeenCalled()
+	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ hasSkills: true }),
+	)
 })
 
 test('refreshSavedPackageProjection continues best-effort cleanup when dependent steps fail', async () => {

@@ -8,6 +8,11 @@
  * the stored digest. This module is pure: no Env, no I/O.
  */
 
+import {
+	shouldStoreArtifactBlobAsLatin1,
+	snapshotStringToBytes,
+} from '#universal/package-file-media.ts'
+
 export const packageSkillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const packageSkillNameMaxLength = 64
 export const packageSkillDescriptionMaxLength = 1024
@@ -31,9 +36,9 @@ export type PackageSkillResource = {
 	uri: string
 	/** `sha256:{64 hex}` */
 	digest: string
-	/** UTF-8 byte length */
+	/** Raw byte length (latin-1 for binary snapshot paths, UTF-8 otherwise) */
 	size: number
-	/** Raw UTF-8 text as stored */
+	/** Snapshot-stored content string (latin-1 for binary paths) */
 	content: string
 	mimeType: string
 }
@@ -109,15 +114,42 @@ export function buildSkillUri(
 	return `skill://${prefixSegments.join('/')}/${trimmedPath}`
 }
 
-export async function digestUtf8(
+/**
+ * Digest and size of a snapshot-stored file. Binary paths (and NUL-bearing
+ * strings) use the latin-1 byte view; everything else is UTF-8 — matching how
+ * published snapshots store content.
+ */
+export async function digestSnapshotContent(
 	content: string,
-): Promise<{ digest: string; size: number }> {
-	const bytes = new TextEncoder().encode(content)
+	packagePath: string,
+): Promise<{ digest: string; size: number; bytes: Uint8Array }> {
+	const bytes = snapshotStringToBytes(content, packagePath)
 	const hash = await crypto.subtle.digest('SHA-256', bytes)
 	const hex = Array.from(new Uint8Array(hash), (byte) =>
 		byte.toString(16).padStart(2, '0'),
 	).join('')
-	return { digest: `sha256:${hex}`, size: bytes.byteLength }
+	return { digest: `sha256:${hex}`, size: bytes.byteLength, bytes }
+}
+
+/** @deprecated Prefer {@link digestSnapshotContent} so binary assets stay intact. */
+export async function digestUtf8(
+	content: string,
+): Promise<{ digest: string; size: number }> {
+	const { digest, size } = await digestSnapshotContent(content, 'SKILL.md')
+	return { digest, size }
+}
+
+export function skillResourceIsBinary(packagePath: string, content: string) {
+	return content.includes('\0') || shouldStoreArtifactBlobAsLatin1(packagePath)
+}
+
+export function bytesToBase64(bytes: Uint8Array) {
+	let binary = ''
+	const chunkSize = 0x8000
+	for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+		binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+	}
+	return btoa(binary)
 }
 
 export function guessMimeType(path: string): string {
@@ -409,7 +441,7 @@ export async function collectPackageSkills(input: {
 		let totalBytes = 0
 		for (const packagePath of skillFilePaths) {
 			const content = input.files[packagePath]!
-			const { digest, size } = await digestUtf8(content)
+			const { digest, size } = await digestSnapshotContent(content, packagePath)
 			totalBytes += size
 			if (totalBytes > maxBytes) {
 				throw new Error(

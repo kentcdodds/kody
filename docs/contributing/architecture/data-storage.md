@@ -1529,6 +1529,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
+- `package-skills-index:v1:{userId}:{packageId}:{publishedCommit}` — per-version
+  Agent Skills index (frontmatter + digests, no file contents) written at
+  publish; served by Skills-over-MCP when `mcp-skills-extension` is on.
 - `derived-cache:v1:mcp-oauth-refresh-family:{userId}:{grantId}` and
   `derived-cache:v1:mcp-oauth-refresh-replay:{userId}:{grantId}:{tokenHash}` —
   encrypted MCP OAuth refresh-family snapshots used so concurrent hosts sharing
