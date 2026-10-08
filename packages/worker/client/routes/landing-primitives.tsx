@@ -18,10 +18,12 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
+import { LandingLantern3d } from '#client/lantern-3d/landing-lantern-3d.tsx'
 import {
-	LandingLantern,
-	hoverPointer,
-} from '#client/routes/landing-lantern.tsx'
+	type CreateLanternLeaders,
+	type LanternLeaders,
+} from '#client/lantern-3d/lantern-3d-leaders.ts'
+import { hoverPointer } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
 /**
@@ -43,24 +45,30 @@ export const landingPrimitivesSectionId = 'primitives'
 
 const whatIsKodyHref = docHref('what-is-kody')
 
-/** Measure orbs and words, then write the leader paths in section pixels. */
-function leaderFollow() {
+/** Measure orbs and words, then write the leader paths in section pixels.
+ *  `lanternLeaders` is the 3D lantern's layout once its chunk has loaded. */
+function leaderFollow(lanternLeaders: () => CreateLanternLeaders | null) {
 	return ref((node: Element, signal: AbortSignal) => {
 		const svg = node.querySelector<SVGSVGElement>('.landing-primitives-leaders')
 		const stage = node.querySelector<HTMLElement>('.landing-primitives-stage')
-		if (!svg || !stage) return
+		if (!svg || !stage || !(node instanceof HTMLElement)) return
 		const words = node.querySelector<HTMLElement>('.landing-primitives-words')
-		const lanternArt = node.querySelector<HTMLElement>('.landing-lantern-art')
+		let tracked: LanternLeaders | null = null
 
 		const draw = () => {
-			if (getComputedStyle(svg).display === 'none') return
+			if (getComputedStyle(svg).display === 'none') {
+				tracked?.reset()
+				return
+			}
 			const origin = stage.getBoundingClientRect()
 			if (origin.width === 0) return
 			svg.setAttribute('viewBox', `0 0 ${origin.width} ${origin.height}`)
-			if (lanternArt) {
+			// Looked up per draw: the 3D lantern swaps in for the 2D one.
+			const lantern = node.querySelector<HTMLElement>('.landing-lantern')
+			if (lantern) {
 				// Lines run faint inside the glass and come up to full strength
 				// as they leave it (see the mask in styles.css).
-				const art = lanternArt.getBoundingClientRect()
+				const art = lantern.getBoundingClientRect()
 				svg.style.setProperty(
 					'--glass-x',
 					`${art.left - origin.left + art.width * landingLanternGlass.x}px`,
@@ -74,6 +82,19 @@ function leaderFollow() {
 					`${art.width * landingLanternGlass.r}px`,
 				)
 			}
+			// The live 3D lantern turns its orbs, so its words follow them.
+			const create = node.querySelector(
+				'.landing-lantern-3d[data-stage="live"]',
+			)
+				? lanternLeaders()
+				: null
+			if (create) {
+				tracked ??= create(node, svg)
+				tracked.draw(origin)
+				svg.dataset.ready = ''
+				return
+			}
+			tracked?.reset()
 			for (const id of landingPrimitiveIds) {
 				const orb = node.querySelector<HTMLElement>(`[data-orb="${id}"]`)
 				const dot = node.querySelector<HTMLElement>(`[data-dot="${id}"]`)
@@ -153,7 +174,8 @@ export function LandingPrimitives(handle: Handle) {
 	let openId: LandingPrimitiveId | null = null
 	let dismissedId: LandingPrimitiveId | null = null
 	let openedAt = 0
-	const follow = leaderFollow()
+	let lanternLeaders: CreateLanternLeaders | null = null
+	const follow = leaderFollow(() => lanternLeaders)
 
 	function panelId(id: LandingPrimitiveId) {
 		return `${handle.id}-${id}-panel`
@@ -208,7 +230,7 @@ export function LandingPrimitives(handle: Handle) {
 				{landingPrimitivesIntroLead}
 			</h2>
 			<div class="landing-primitives-stage">
-				<LandingLantern
+				<LandingLantern3d
 					activeId={openId}
 					panelId={panelId}
 					onOpen={setOpen}
@@ -216,6 +238,9 @@ export function LandingPrimitives(handle: Handle) {
 					onClose={close}
 					onDismiss={dismiss}
 					onResume={clearDismissed}
+					onLeaders={(create) => {
+						lanternLeaders = create
+					}}
 				/>
 				{renderLeaders(openId)}
 				<ul class="landing-primitives-words" aria-label="The six primitives">

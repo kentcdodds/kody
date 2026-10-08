@@ -124,6 +124,7 @@
     "@sentry/cli": "^3.8.0",
     "@types/node": "^26.6.4",
     "@types/semver": "^7.8.0",
+    "@types/three": "^0.186.0",
     "concurrently": "^10.0.5",
     "dotenv": "^18.0.5",
     "esbuild": "^0.28.2",

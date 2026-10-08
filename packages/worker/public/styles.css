@@ -1633,6 +1633,291 @@ html.is-settled {
 	}
 }
 
+/* 3D lantern (`client/lantern-3d/`). The wrapper keeps the lantern box;
+   the 2D poster and the 3D scene both fill it, and the scene takes over
+   once it is live (a crossfade unless motion is reduced). The canvas
+   bleeds past the box so the glow and fireflies can leave the frame. It
+   never takes the pointer: the frame does, so the words beside it stay
+   clickable. The orb buttons are invisible and follow the orbs; the
+   scene draws their lit state. */
+@media (min-width: 801px) {
+	.landing-primitives-stage:has(.landing-lantern-3d) {
+		grid-template-columns: minmax(14rem, 22rem) minmax(0, 15rem);
+	}
+}
+
+.landing-lantern-3d {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 863 / 1242;
+}
+
+.landing-lantern-3d-poster,
+.landing-lantern-3d .landing-lantern-3d-scene {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	margin: 0;
+}
+
+.landing-lantern-3d-poster .landing-lantern {
+	width: 100%;
+	margin: 0;
+}
+
+.landing-lantern-3d[data-stage='live'] .landing-lantern-3d-poster {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.landing-lantern-3d-scene {
+	cursor: grab;
+	touch-action: pan-y;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.landing-lantern-3d[data-stage='loading'] .landing-lantern-3d-scene {
+	pointer-events: none;
+}
+
+.landing-lantern-3d-canvas {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	z-index: 0;
+	display: block;
+	width: 170%;
+	height: 130%;
+	translate: -50% -50%;
+	pointer-events: none;
+	opacity: 0;
+}
+
+.landing-lantern-3d[data-stage='live'] .landing-lantern-3d-canvas {
+	opacity: 1;
+}
+
+.landing-lantern-3d-orbs {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	pointer-events: none;
+}
+
+.landing-lantern-3d-orb {
+	position: absolute;
+	left: var(--x, 50%);
+	top: var(--y, 50%);
+	width: calc(var(--size, 16.2) * 1%);
+	aspect-ratio: 1;
+	translate: -50% -50%;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-radius: 50%;
+	background: transparent;
+	cursor: grab;
+	pointer-events: auto;
+	touch-action: none;
+	user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.landing-lantern[data-grabbing] .landing-lantern-3d-orb {
+	cursor: grabbing;
+}
+
+.landing-lantern-3d-orb:focus-visible {
+	outline: 3px solid var(--color-text);
+	outline-offset: 4px;
+}
+
+/* Beside the foot, clear of the base at every lantern width. */
+.landing-lantern-3d-spin {
+	position: absolute;
+	right: -2.1rem;
+	bottom: 0.35rem;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	width: 2.4rem;
+	height: 2.4rem;
+	margin: 0;
+	padding: 0;
+	color: var(--color-text-muted);
+	background: color-mix(in oklch, var(--color-surface) 85%, transparent);
+	border: 1px solid var(--color-border);
+	border-radius: 50%;
+	box-shadow: var(--shadow-sm);
+	cursor: pointer;
+	transition:
+		color 0.2s ease,
+		border-color 0.2s ease;
+}
+
+.landing-lantern-3d-spin:hover {
+	color: var(--color-text);
+	border-color: oklch(0.75 0.15 75);
+}
+
+.landing-lantern-3d-spin:focus-visible {
+	outline: 3px solid var(--color-text);
+	outline-offset: 3px;
+}
+
+/* While the 3D lantern is live its words follow the orbs: each dot and
+   word take the row their orb's height ranks, and the list centres on the
+   glass (`lantern-3d-leaders.ts` writes both). Only the dot and the word
+   move, so the panel stays under the list and an emptied row cannot catch
+   the pointer. The lines break around the orbs they pass, so they only
+   fade a little inside the glass, and they run darker on a light page. */
+.landing-primitives[data-leaders='3d'] .landing-primitives-words {
+	translate: 0 var(--labels-drop, 0px);
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitive {
+	pointer-events: none;
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitive-dot,
+.landing-primitives[data-leaders='3d'] .landing-primitive-word {
+	translate: 0 var(--label-shift, 0px);
+	pointer-events: auto;
+}
+
+.landing-primitives[data-leaders='3d'] .landing-primitives-leaders {
+	mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.8) 70%,
+		black 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		circle var(--glass-r, 0px) at var(--glass-x, -1000px)
+			var(--glass-y, -1000px),
+		rgb(0 0 0 / 0.8) 70%,
+		black 100%
+	);
+}
+
+.landing-primitives[data-leaders='3d'] .landing-leader-base {
+	stroke: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+	stroke-width: 1.6;
+	opacity: 0.72;
+}
+
+.landing-primitives[data-leaders='3d']
+	.landing-leader[data-open]
+	.landing-leader-base {
+	stroke-width: 2.2;
+	opacity: 1;
+}
+
+/* With an orb open the other lines step back but stay traceable across the
+   bright glass to their orbs. */
+.landing-primitives[data-leaders='3d'][data-active]
+	.landing-leader:not([data-open]) {
+	opacity: 0.5;
+}
+
+/* On the graphite page the lines run light, and a light line is lost on the
+   bright glass. The halo becomes a casing in the page colour: a dark edge
+   on the glass that disappears on the page. While an orb is open the other
+   lines step back in colour only: a casing that faded with them would sink
+   into the deep amber in the middle of the globe. */
+@media (prefers-color-scheme: dark) {
+	.landing-primitives[data-leaders='3d'] .landing-leader-halo {
+		stroke: var(--color-background);
+		stroke-width: 3.6;
+		opacity: 0.95;
+		animation: none;
+	}
+
+	.landing-primitives[data-leaders='3d']
+		:is(.landing-leader-base, .landing-leader-flow) {
+		transition: opacity 0.25s ease;
+	}
+
+	.landing-primitives[data-leaders='3d'][data-active]
+		.landing-leader:not([data-open]) {
+		opacity: 1;
+	}
+
+	.landing-primitives[data-leaders='3d'][data-active]
+		.landing-leader:not([data-open])
+		:is(.landing-leader-base, .landing-leader-flow) {
+		opacity: 0.5;
+	}
+
+	.landing-primitives[data-leaders='3d'][data-active]
+		.landing-leader:not([data-open])
+		.landing-leader-end:not([data-hidden]) {
+		opacity: 0.7;
+	}
+}
+
+.landing-leader-end {
+	fill: var(--primitive-color);
+	stroke: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
+	stroke-width: 1.5;
+	transition: opacity 0.2s ease;
+}
+
+.landing-leader-end[data-hidden] {
+	opacity: 0;
+}
+
+@keyframes landing-lantern-3d-in {
+	from {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.landing-lantern-3d-poster,
+	.landing-lantern-3d-canvas {
+		transition: opacity 0.8s ease;
+	}
+
+	.landing-lantern-3d-spin {
+		animation: landing-lantern-3d-in 0.8s ease both;
+	}
+
+	.landing-lantern-3d-spin svg {
+		transition: rotate 0.5s ease;
+	}
+
+	.landing-lantern-3d-spin:hover svg {
+		rotate: 180deg;
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitives-words {
+		transition: translate 0.6s var(--ease-out);
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitive-dot {
+		transition:
+			box-shadow 0.2s ease,
+			opacity 0.2s ease,
+			translate 0.45s var(--ease-out);
+	}
+
+	.landing-primitives[data-leaders='3d'] .landing-primitive-word {
+		transition:
+			color 0.2s ease,
+			text-decoration-color 0.2s ease,
+			translate 0.45s var(--ease-out);
+	}
+}
+
+@media (max-width: 800px) {
+	.landing-lantern-3d {
+		width: min(64vw, 15rem);
+		margin: 0 auto;
+	}
+}
+
 .landing-vs {
 	max-width: 46rem;
 	margin: clamp(3.25rem, 7vw, 5rem) auto 0;
