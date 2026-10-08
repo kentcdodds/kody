@@ -18,7 +18,7 @@ import { mcpEventRequestTimeoutMs } from './constants.ts'
  *   link-local / metadata 169.254.0.0/16, ULA, mapped, NAT64, docs, ...).
  * - `redirect: 'error'` and a hard timeout.
  *
- * Residual risk (accepted, see ADR 0058): a public hostname whose DNS answers
+ * Residual risk (accepted, see ADR 0059): a public hostname whose DNS answers
  * a private address. Worker egress runs on Cloudflare's network with
  * `global_fetch_strictly_public`, which has no route into private networks
  * unless a binding (Tunnel / VPC) is configured, and none is used here.

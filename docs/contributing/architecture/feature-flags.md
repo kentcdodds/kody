@@ -177,8 +177,9 @@ capabilities, `server/discover` advertises `capabilities.events` and the server
 answers `events/list`, `events/subscribe`, and `events/unsubscribe`. Only
 `kody.emits` topics declared with `mcp: true` are listed. When off (or the
 client does not declare events), none of that is registered, and existing
-subscriptions stop receiving deliveries. The declared `successMetric` is
-`execute` event count, goal increase: event-driven clients follow deliveries
+subscriptions stop receiving deliveries. Signed-in users can also turn it on
+from `/docs/mcp-events` (a per-user on override). The declared `successMetric`
+is `execute` event count, goal increase: event-driven clients follow deliveries
 with execute calls. Exposures are recorded at the MCP evaluation chokepoint,
 only for requests whose client declares events support. Enable for experiment
 members with

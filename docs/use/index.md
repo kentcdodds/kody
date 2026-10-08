@@ -77,6 +77,8 @@ reference detail those docs link into.
 - [Packages](./packages.md)
 - [Share a package](../guides/package-sharing.md) — invite another paid account
   to use a package (accept required; pin or follow)
+- [MCP Events from packages](../guides/mcp-events.md) — opt a `kody.emits` topic
+  into ChatGPT (and other webhook MCP clients) behind `mcp-events-extension`
 - [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic
   Worker days by surface, and how the acting user plus a stable module graph
   reuse one isolate per UTC day

@@ -217,6 +217,8 @@ export const routes = route({
 	packageSharingOptInPost: post('/docs/package-sharing/opt-in'),
 	// Signed-in opt-in for the mcp-skills-extension flag from the package skills docs.
 	packageSkillsOptInPost: post('/docs/package-skills/opt-in'),
+	// Signed-in opt-in for the mcp-events-extension flag from the MCP Events docs.
+	mcpEventsOptInPost: post('/docs/mcp-events/opt-in'),
 	llmsTxt: '/llms.txt',
 	// The docs used to live under `/guides`. Everything there 308s to `/docs`
 	// (see `#app/handlers/legacy-guides-redirect.ts`).

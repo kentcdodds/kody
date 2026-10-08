@@ -44,6 +44,7 @@ import localExecute from '../../../../docs/guides/local-execute.md'
 import openApi from '../../../../docs/guides/open-api.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
+import mcpEvents from '../../../../docs/guides/mcp-events.md'
 import textYourAgent from '../../../../docs/guides/text-your-agent.md'
 import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
@@ -106,6 +107,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'package-skills', raw: packageSkills },
 	{ slug: 'package-apps', raw: packageApps },
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
+	{ slug: 'mcp-events', raw: mcpEvents },
 	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
 	{ slug: 'oauth', raw: oauth },

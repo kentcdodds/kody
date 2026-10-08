@@ -109,7 +109,10 @@ Expired rows are pruned on `events/subscribe`, and the deliverable query filters
 them out, so the hot path stays read-only. Rows per principal stay bounded by
 the 100-subscription cap.
 
-A contributor guide page for MCP Events is a separate pass.
+The contributor/user guide is `/docs/mcp-events` (`guide:mcp_events`), with a
+signed-in self opt-in POST at `/docs/mcp-events/opt-in` (same pattern as package
+sharing). The `mcp-ping` fixture under
+`packages/worker/src/mcp/events/fixtures/` is the real-example package shape.
 
 **Revisit-if** the draft settles a client capability shape, adds required
 behavior to the webhook profile (for example `terminated` on revoke), or the SDK

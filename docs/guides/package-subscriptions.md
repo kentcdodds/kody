@@ -156,7 +156,8 @@ the event. There is no cross-user delivery.
 
 Declare topics in `package.json#kody.emits`. Topics must use the scoped form
 `@{username}/topic.name` with a lower-dot-case body, and the scope must match
-the emitting package's npm scope:
+the emitting package's npm scope. Set `"mcp": true` on a topic to also expose it
+over [MCP Events](./mcp-events.md) (flag-gated; nothing is exposed by default):
 
 ```json
 {

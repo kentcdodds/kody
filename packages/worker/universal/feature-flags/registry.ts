@@ -143,7 +143,7 @@ export const featureFlagDefinitions = [
 		defaultEnabled: false,
 		defaultAudience: 'experiments_opt_in',
 		description:
-			'MCP Events extension (draft, webhook delivery only) on the stateless /mcp lane: advertise the events capability and serve events/list, events/subscribe, and events/unsubscribe for package kody.emits topics that opt in with mcp: true. Only for clients that declare events support. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
+			'MCP Events extension (draft, webhook delivery only) on the stateless /mcp lane: advertise the events capability and serve events/list, events/subscribe, and events/unsubscribe for package kody.emits topics that opt in with mcp: true. Only for clients that declare events support. Off by default; enable with audience experiments_opt_in. Signed-in users can also turn it on from /docs/mcp-events. Delete the flag and gate sites when the experiment ends.',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',
