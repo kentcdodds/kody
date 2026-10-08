@@ -184,11 +184,13 @@ Deletion must cover these user-owned surfaces:
   (`repo-session:{durableObjectId}/`). Account deletion enumerates session ids
   and each `purgeSession` prefix-purges that object's keys after `deleteAll`.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
-  community listing snapshots, per-user package retriever cache/index keys, and
-  package-skills index keys in `BUNDLE_ARTIFACTS_KV` are deleted before D1
-  projection rows are removed. OAuth token/grant KV is owned by the OAuth
-  provider and is handled through provider grant revocation rather than
-  app-level key scans.
+  community listing snapshots, per-user package retriever cache/index keys,
+  package-skills index keys, package codemod revert keys, and MCP OAuth
+  refresh-family snapshot/replay keys
+  (`derived-cache:v1:mcp-oauth-refresh-{family,replay}:{userId}:`) in
+  `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed. OAuth
+  token/grant KV is owned by the OAuth provider and is handled through provider
+  grant revocation rather than app-level key scans.
 - **Cloudflare Artifacts:** source repos referenced by `entity_sources` and the
   per-user `RepoSessionIndex` catalog are deleted through the REST client in
   `packages/worker/src/repo/artifacts.ts`.
