@@ -13,6 +13,7 @@ import {
 import { createDoubleCheck } from '#client/double-check.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
@@ -390,17 +391,21 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 											flexWrap: 'wrap',
 										})}
 									>
-										<input
-											data-field-ring
-											type="password"
-											value={createdClient.clientSecret}
-											readOnly
-											{...passwordManagerIgnoreProps}
+										<div
 											mix={css({
-												...accountInputCss,
 												flex: '1 1 16rem',
+												minWidth: 0,
 											})}
-										/>
+										>
+											<PasswordRevealInput
+												data-field-ring
+												value={createdClient.clientSecret}
+												readOnly
+												{...passwordManagerIgnoreProps}
+												revealNoun="client secret"
+												mix={css(accountInputCss)}
+											/>
+										</div>
 										<button
 											type="button"
 											mix={[

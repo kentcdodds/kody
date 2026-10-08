@@ -1,6 +1,7 @@
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'
 import { recordBodyCss } from '#client/routes/record-table.tsx'
 import {
@@ -204,14 +205,14 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 					Bearer token{' '}
 					<span mix={css({ color: colors.textMuted })}>(optional)</span>
 				</span>
-				<input
+				<PasswordRevealInput
 					data-field-ring
 					name="bearerToken"
-					type="password"
 					value={addBearerToken}
 					placeholder="Paste token (or Bearer …)"
 					disabled={isMutating}
 					autocomplete="off"
+					revealNoun="bearer token"
 					mix={[
 						on('input', (event) => {
 							onBearerTokenInput(event.currentTarget.value)

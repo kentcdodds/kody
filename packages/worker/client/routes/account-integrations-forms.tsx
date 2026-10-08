@@ -5,6 +5,7 @@ import {
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementMessage,
@@ -432,12 +433,12 @@ export function RotateCredentialsForm(
 					</label>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>New client secret</span>
-						<input
-							type="password"
+						<PasswordRevealInput
 							data-field-ring
 							name="oauthAppClientSecret"
 							value={clientSecret}
 							{...passwordManagerIgnoreProps}
+							revealNoun="client secret"
 							mix={[
 								on('input', (event) => {
 									clientSecret = event.currentTarget.value

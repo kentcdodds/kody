@@ -1,6 +1,7 @@
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
@@ -355,8 +356,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						</label>
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>Current password</span>
-							<input
-								type="password"
+							<PasswordRevealInput
 								name="password"
 								data-field-ring
 								required

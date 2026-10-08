@@ -5,6 +5,7 @@ import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
 	type RouteLoaderResult,
 	routeLoaderRedirect,
@@ -605,88 +606,31 @@ export function ConnectSecretSetRoute(handle: Handle) {
 
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Secret value</span>
-								<div
-									mix={css({
-										position: 'relative',
-										display: 'flex',
-										alignItems: 'center',
-									})}
-								>
-									{showSecretValue ? (
-										<input
-											type="text"
-											required
-											autoFocus={Boolean(autofocusKey)}
-											data-field="secret-value"
-											data-testid="connect-secret-set-value"
-											{...passwordManagerIgnoreProps}
-											value={state.value}
-											placeholder="Paste the secret value"
-											mix={[
-												on('input', (event) => {
-													editorState = {
-														...state,
-														value: event.currentTarget.value,
-													}
-													handle.update()
-												}),
-												css({
-													...inputCss,
-													paddingRight: '4.5rem',
-												}),
-											]}
-										/>
-									) : (
-										<input
-											type="password"
-											required
-											autoFocus={Boolean(autofocusKey)}
-											data-field="secret-value"
-											data-testid="connect-secret-set-value"
-											{...passwordManagerIgnoreProps}
-											value={state.value}
-											placeholder="Paste the secret value"
-											mix={[
-												on('input', (event) => {
-													editorState = {
-														...state,
-														value: event.currentTarget.value,
-													}
-													handle.update()
-												}),
-												css({
-													...inputCss,
-													paddingRight: '4.5rem',
-												}),
-											]}
-										/>
-									)}
-									<button
-										type="button"
-										aria-label={
-											showSecretValue
-												? 'Hide secret value'
-												: 'Show secret value'
-										}
-										mix={[
-											on('click', () => {
-												showSecretValue = !showSecretValue
-												handle.update()
-											}),
-											css({
-												position: 'absolute',
-												right: spacing.sm,
-												border: 'none',
-												background: 'transparent',
-												color: colors.textMuted,
-												cursor: 'pointer',
-												padding: spacing.xs,
-											}),
-										]}
-									>
-										{showSecretValue ? 'Hide' : 'Show'}
-									</button>
-								</div>
+								<PasswordRevealInput
+									required
+									autoFocus={Boolean(autofocusKey)}
+									data-field="secret-value"
+									data-testid="connect-secret-set-value"
+									{...passwordManagerIgnoreProps}
+									value={state.value}
+									placeholder="Paste the secret value"
+									revealNoun="secret value"
+									revealed={showSecretValue}
+									onRevealedChange={(next) => {
+										showSecretValue = next
+										handle.update()
+									}}
+									mix={[
+										on('input', (event) => {
+											editorState = {
+												...state,
+												value: event.currentTarget.value,
+											}
+											handle.update()
+										}),
+										css(inputCss),
+									]}
+								/>
 							</label>
 
 							<button

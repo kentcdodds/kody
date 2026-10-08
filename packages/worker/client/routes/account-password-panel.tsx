@@ -1,5 +1,6 @@
 import { css, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'
 import {
@@ -167,8 +168,7 @@ export function AccountPasswordPanel(
 						{hasUsablePassword ? (
 							<label mix={css(accountFieldCss)}>
 								<span mix={css(accountFieldLabelCss)}>Current password</span>
-								<input
-									type="password"
+								<PasswordRevealInput
 									name="currentPassword"
 									data-field-ring
 									required
@@ -183,8 +183,7 @@ export function AccountPasswordPanel(
 						) : null}
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>New password</span>
-							<input
-								type="password"
+							<PasswordRevealInput
 								name="newPassword"
 								data-field-ring
 								required
@@ -197,8 +196,7 @@ export function AccountPasswordPanel(
 						</label>
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>Confirm new password</span>
-							<input
-								type="password"
+							<PasswordRevealInput
 								name="confirmPassword"
 								data-field-ring
 								required

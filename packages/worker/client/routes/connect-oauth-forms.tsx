@@ -9,6 +9,7 @@ import {
 import { buildConnectOauthWhatsNextPrompt } from '#universal/connect-oauth-whats-next.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -208,12 +209,12 @@ export function ConnectOauthCredentialsForm(
 						) : (
 							<label mix={css(fieldCss)}>
 								<span mix={css(fieldLabelCss)}>Client Secret</span>
-								<input
+								<PasswordRevealInput
 									name="oauthClientSecret"
-									type="password"
 									required
 									{...passwordManagerIgnoreProps}
 									defaultValue={props.clientSecretInput}
+									revealNoun="client secret"
 									mix={[
 										on('input', (event) => {
 											props.onClientSecretInput(event.currentTarget.value)

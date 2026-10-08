@@ -1,6 +1,7 @@
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { type AccountFormerEmail } from '#universal/loader-data.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
@@ -146,8 +147,7 @@ export function renderAccountFormerEmailsPanel(
 				</label>
 				<label mix={css(accountFieldCss)}>
 					<span mix={css(accountFieldLabelCss)}>Current password</span>
-					<input
-						type="password"
+					<PasswordRevealInput
 						name="password"
 						data-field-ring
 						required

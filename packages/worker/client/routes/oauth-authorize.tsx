@@ -9,6 +9,7 @@ import { readRouterSearch } from '#client/router-location.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
 	honeypotFieldName,
 	readPublicFormProtection,
@@ -699,8 +700,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 								</label>
 								<label mix={css(fieldCss)}>
 									<span mix={css(fieldLabelCss)}>Password</span>
-									<input
-										type="password"
+									<PasswordRevealInput
 										name="password"
 										required
 										autoComplete="current-password"

@@ -2,6 +2,7 @@ import { css, ref, type Handle } from 'remix/component'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { routes } from '#universal/routes.ts'
 import {
 	colors,
@@ -249,8 +250,7 @@ export function AccountDeletePanel(
 							{handle.props.hasUsablePassword ? (
 								<label mix={css(accountFieldCss)}>
 									<span mix={css(accountFieldLabelCss)}>Current password</span>
-									<input
-										type="password"
+									<PasswordRevealInput
 										name="password"
 										data-testid="delete-account-password"
 										data-field-ring

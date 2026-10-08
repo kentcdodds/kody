@@ -22,10 +22,27 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(page).toHaveURL(/\/login\?redirectTo=%2Faccount$/)
 	await expect(page.getByLabel('Email')).toBeVisible()
 	await expect(page.getByLabel('Password')).toBeVisible()
+	const showPassword = page.getByRole('button', {
+		name: 'Show password',
+		exact: true,
+	})
+	await expect(showPassword).toBeVisible()
+	await expect(showPassword).toHaveAttribute('aria-pressed', 'false')
+	await expect(page.getByLabel('Password')).toHaveAttribute('type', 'password')
 
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(primaryTestUser.email)
 	await page.getByLabel('Password').fill(primaryTestUser.password)
+	await showPassword.click()
+	await expect(
+		page.getByRole('button', { name: 'Hide password', exact: true }),
+	).toHaveAttribute('aria-pressed', 'true')
+	await expect(page.getByLabel('Password')).toHaveAttribute('type', 'text')
+	await expect(page.getByLabel('Password')).toHaveValue(
+		primaryTestUser.password,
+	)
+	await page.getByRole('button', { name: 'Hide password', exact: true }).click()
+	await expect(page.getByLabel('Password')).toHaveAttribute('type', 'password')
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)

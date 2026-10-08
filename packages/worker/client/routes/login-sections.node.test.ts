@@ -32,6 +32,10 @@ test('credential errors associate the status message with email and password', a
 	)
 	expect(html).toMatch(/id="auth-email"[^>]*type="email"/)
 	expect(html).toMatch(/id="auth-email"[^>]*autocomplete="username"/)
+	expect(html).toMatch(/id="auth-password"[^>]*type="password"/)
+	expect(html).toMatch(/id="auth-password"[^>]*autocomplete="current-password"/)
+	expect(html).toMatch(/aria-label="Show password"/)
+	expect(html).toMatch(/aria-pressed="false"/)
 	expect(html).not.toContain('id="auth-username"')
 })
 

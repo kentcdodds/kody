@@ -5,6 +5,7 @@ import {
 import { type Handle, css, ref } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { accountDisclosureCss } from './account-management-components.tsx'
 import {
@@ -110,95 +111,41 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 				<label mix={css(fieldCss)}>
 					<span mix={css(fieldLabelCss)}>Secret value</span>
 					<div
-						mix={[
-							css({
-								position: 'relative',
-								display: 'flex',
-								alignItems: 'center',
-							}),
-							ref((node, signal) => {
-								valueField = node as HTMLElement
-								signal.addEventListener('abort', () => {
-									if (valueField === node) valueField = null
-								})
-								if (
-									autoFocusKey &&
-									focusedForKey !== autoFocusKey &&
-									focusSecretValueInput(node)
-								) {
-									focusedForKey = autoFocusKey
-								}
-							}),
-						]}
+						mix={ref((node, signal) => {
+							valueField = node as HTMLElement
+							signal.addEventListener('abort', () => {
+								if (valueField === node) valueField = null
+							})
+							if (
+								autoFocusKey &&
+								focusedForKey !== autoFocusKey &&
+								focusSecretValueInput(node)
+							) {
+								focusedForKey = autoFocusKey
+							}
+						})}
 					>
-						{props.showSecretValue ? (
-							<input
-								type="text"
-								required
-								autoFocus={Boolean(autoFocusKey)}
-								data-field="secret-value"
-								{...passwordManagerIgnoreProps}
-								value={props.value}
-								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-								mix={[
-									on(
-										'input',
-
-										(event) => {
-											props.onValueChange(event.currentTarget.value)
-										},
-									),
-
-									css({
-										...inputCss,
-										paddingRight: '4.5rem',
-									}),
-								]}
-							/>
-						) : (
-							<input
-								type="password"
-								required
-								autoFocus={Boolean(autoFocusKey)}
-								data-field="secret-value"
-								{...passwordManagerIgnoreProps}
-								value={props.value}
-								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
-								mix={[
-									on(
-										'input',
-
-										(event) => {
-											props.onValueChange(event.currentTarget.value)
-										},
-									),
-
-									css({
-										...inputCss,
-										paddingRight: '4.5rem',
-									}),
-								]}
-							/>
-						)}
-						<button
-							type="button"
-							aria-label={
-								props.showSecretValue
-									? 'Hide secret value'
-									: 'Show secret value'
-							}
-							title={
-								props.showSecretValue
-									? 'Hide secret value'
-									: 'Show secret value'
-							}
+						<PasswordRevealInput
+							required
+							autoFocus={Boolean(autoFocusKey)}
+							data-field="secret-value"
+							{...passwordManagerIgnoreProps}
+							value={props.value}
+							placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
+							revealNoun="secret value"
+							revealed={props.showSecretValue}
+							onRevealedChange={(next) => {
+								if (next !== props.showSecretValue) {
+									props.onToggleShowSecretValue()
+								}
+							}}
 							mix={[
-								on('click', () => props.onToggleShowSecretValue()),
-								css(iconButtonCss),
+								on('input', (event) => {
+									props.onValueChange(event.currentTarget.value)
+								}),
+								css(inputCss),
 							]}
-						>
-							{props.showSecretValue ? 'Hide' : 'Show'}
-						</button>
+						/>
 					</div>
 				</label>
 
@@ -281,29 +228,6 @@ const advancedDetailsCss = {
 	...accountDisclosureCss,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.sm,
-}
-
-const iconButtonCss = {
-	position: 'absolute' as const,
-	right: spacing.sm,
-	top: '50%',
-	transform: 'translateY(-50%)',
-	background: 'none',
-	border: 'none',
-	borderRadius: '999px',
-	padding: spacing.xs,
-	width: '3.5rem',
-	height: '2rem',
-	color: colors.text,
-	cursor: 'pointer',
-	display: 'flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	fontSize: '0.75rem',
-	fontWeight: 600,
-	'&:hover': {
-		background: colors.primarySoft,
-	},
 }
 
 const repeatedRowCss = {

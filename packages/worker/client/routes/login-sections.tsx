@@ -6,6 +6,7 @@ import {
 } from '#client/form-error-fields.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { renderIcon } from '#universal/icon.tsx'
 import { turnstileWidgetClassName } from '#client/public-form-protection.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
@@ -221,9 +222,8 @@ export function renderAuthForm(
 						</a>
 					</div>
 				)}
-				<input
+				<PasswordRevealInput
 					id={`${props.handleId}-password`}
-					type="password"
 					name="password"
 					required
 					autoComplete={props.isSignup ? 'new-password' : 'current-password'}
