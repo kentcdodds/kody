@@ -329,6 +329,7 @@ test('final schema drops retired tables without stale deletion/export inventory 
 		'workflow_runs',
 		'user_package_run_successes',
 		'user_activation_milestones',
+		'package_invocation_tokens',
 	]
 	const deletionStatements = accountUserDataTargets.map(
 		(target) => buildUserScopedDeleteOrUpdateSql(matchFor(target)).sql,

@@ -47,5 +47,6 @@ unadvertised drain. The HTTP bearer path stays until leftover rows are 0.
 ## LATER-NOTE (2026-10-08)
 
 Completed 2026-10-08: HTTP invocation tokens fully removed from code; rows
-purged; table drop in follow-up migration after deploy. The drain path and
-retirement runbook are retired. Webhooks remain the only external HTTP knock.
+purged (`0084`); table dropped (`0085`) after that code was live. The drain path
+and retirement runbook are retired. Webhooks remain the only external HTTP
+knock.

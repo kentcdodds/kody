@@ -184,14 +184,11 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  */
 
 /**
- * Tables still present in D1 after their product surface is gone. Rows are
- * purged (`0084-purge-package-invocation-tokens.sql`). DROP TABLE ships in a
- * follow-up migration after this worker is live, so deletion/export do not
- * inventory these leftovers.
+ * Tables still present in D1 after their product surface is gone. Rows may be
+ * purged while DROP TABLE waits for a later deploy. Deletion/export do not
+ * inventory these leftovers. Empty when nothing is mid-drop.
  */
-export const accountUserDataPendingDropTables = [
-	'package_invocation_tokens',
-] as const
+export const accountUserDataPendingDropTables = [] as const
 
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },

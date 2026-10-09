@@ -1429,11 +1429,11 @@ on write unless a migration backfills existing rows.
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
 - HTTP package invocation tokens are gone.
-  `0084-purge-package-invocation-tokens.sql` deletes leftover
-  `package_invocation_tokens` rows; the table drop ships in a follow-up
-  migration after this code is live. Keyed invocation replay lives in the RunLog
-  Durable Object ledger (see [Run records](./run-records.md)); the current D1
-  schema has no `package_invocations` table.
+  `0084-purge-package-invocation-tokens.sql` deleted leftover rows;
+  `0085-drop-package-invocation-tokens.sql` drops `package_invocation_tokens`.
+  Keyed invocation replay lives in the RunLog Durable Object ledger (see
+  [Run records](./run-records.md)); the current D1 schema has no
+  `package_invocations` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
   `0057-webhook-url-secret-encrypted.sql`,
   `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for

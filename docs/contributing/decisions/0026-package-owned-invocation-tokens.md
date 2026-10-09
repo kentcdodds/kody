@@ -58,5 +58,5 @@ package's HTTP surface; composition inside Kody uses static imports or
 
 The HTTP invocation-token mechanism was fully removed. Webhooks are the only
 external HTTP knock ([0048](./0048-webhooks-replace-invocation-tokens.md)).
-Token rows were purged; the table drop ships in a follow-up migration after that
-code is live.
+Token rows were purged (`0084`) and `package_invocation_tokens` was dropped
+(`0085`).

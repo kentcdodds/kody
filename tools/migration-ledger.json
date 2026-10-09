@@ -339,6 +339,10 @@
 		{
 			"filename": "0084-purge-package-invocation-tokens.sql",
 			"sha256": "511e40ba0254f1c7ffd121c0956ff63bd912261fcf35dd7192dff6c64a92ce84"
+		},
+		{
+			"filename": "0085-drop-package-invocation-tokens.sql",
+			"sha256": "dce13ccc023c9b518e57b7875d62370a2aab78907ec86d14f5641638f7299274"
 		}
 	]
 }

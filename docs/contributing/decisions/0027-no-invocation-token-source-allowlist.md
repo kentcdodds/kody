@@ -34,4 +34,4 @@ omitted.
 The HTTP invocation-token mechanism was fully removed
 ([0048](./0048-webhooks-replace-invocation-tokens.md)). Request `source` remains
 an optional log label on webhook and other invoke surfaces. Token rows were
-purged; the table drop ships in a follow-up migration after that code is live.
+purged (`0084`) and `package_invocation_tokens` was dropped (`0085`).
