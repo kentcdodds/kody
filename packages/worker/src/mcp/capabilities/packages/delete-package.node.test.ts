@@ -38,6 +38,7 @@ function createCtx(userId = 'user-1') {
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(userId),
@@ -118,6 +119,7 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 			{
 				env: { APP_DB: {} } as Env,
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://heykody.dev',
 					user: null,
 				}),

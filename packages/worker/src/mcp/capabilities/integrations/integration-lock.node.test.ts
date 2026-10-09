@@ -23,6 +23,7 @@ test('integrationLock grants a package and rejects missing packages', async () =
 	const ctx = {
 		env: {} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.codes',
 			user: {
 				userId: personIdFromStored('user-1'),

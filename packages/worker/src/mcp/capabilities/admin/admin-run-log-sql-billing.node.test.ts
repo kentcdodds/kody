@@ -93,6 +93,7 @@ function createCtx(roles: Array<'admin' | 'user'>) {
 	return {
 		env: { APP_DB: {} } as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(

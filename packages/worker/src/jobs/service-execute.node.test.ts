@@ -270,6 +270,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 		count: limit,
 	})
 	const quota = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env: quotaEnv,
 		job: intervalJob('job-run-quota'),
 		callerContext,
@@ -290,6 +291,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 	)
 	await expect(
 		executeJobOnce({
+			source: { kind: 'schedule', jobId: 'test-job' },
 			env,
 			job: intervalJob('job-identity-retry'),
 			callerContext,
@@ -301,6 +303,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 		new AccountSuspendedError(),
 	)
 	const suspended = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job: intervalJob('job-suspended'),
 		callerContext,
@@ -341,6 +344,7 @@ test('interactive-origin leftover jobs run in the background with writable stora
 	expect(row.record.storageId).toBe(`job:${jobView.id}`)
 	expect(row.callerContext?.executionOrigin).toBe('interactive')
 	const outcome = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job: row.record,
 		callerContext: row.callerContext,
@@ -387,7 +391,12 @@ test('leftover kody.json jobs execute the bundled published entry with job run-r
 			logs: ['ad hoc job executed'],
 		})
 
-	const outcome = await executeJobOnce({ env, job: row.record, callerContext })
+	const outcome = await executeJobOnce({
+		env,
+		job: row.record,
+		callerContext,
+		source: { kind: 'schedule', jobId: 'test-job' },
+	})
 
 	expect(outcome.execution).toEqual({
 		ok: true,
@@ -458,6 +467,7 @@ test('executeJobOnce records job_run usage for success and failure', async () =>
 	for (const [usageOutcome, execution] of cases) {
 		recordUsageSpy.mockClear()
 		const outcome = await executeJobOnce({
+			source: { kind: 'schedule', jobId: 'test-job' },
 			env,
 			job: row.record,
 			callerContext,
@@ -559,6 +569,7 @@ test('package-backed jobs execute from published package.json manifests', async 
 		})
 		executeSpy.mockResolvedValueOnce(row.run)
 		const outcome = await executeJobOnce({
+			source: { kind: 'schedule', jobId: 'test-job' },
 			env,
 			job,
 			callerContext: createBaseCallerContext(),
@@ -591,23 +602,37 @@ test('package-backed jobs with a stored typecheck bypass policy still surface ex
 		})
 	const formatJobErrorSpy = vi.spyOn(schedule, 'formatJobError')
 
-	expect((await executeJobOnce({ env, job, callerContext })).execution).toEqual(
-		{
-			ok: true,
-			result: { ok: true, bypassed: true },
-			logs: ['repo-backed kody executed'],
-		},
-	)
+	expect(
+		(
+			await executeJobOnce({
+				env,
+				job,
+				callerContext,
+				source: { kind: 'schedule', jobId: 'test-job' },
+			})
+		).execution,
+	).toEqual({
+		ok: true,
+		result: { ok: true, bypassed: true },
+		logs: ['repo-backed kody executed'],
+	})
 	expect(executeSpy).toHaveBeenCalledTimes(1)
 
 	executeSpy.mockRejectedValueOnce(new Error('Executor import failed'))
-	expect((await executeJobOnce({ env, job, callerContext })).execution).toEqual(
-		{
-			ok: false,
-			error: 'Executor import failed',
-			logs: [],
-		},
-	)
+	expect(
+		(
+			await executeJobOnce({
+				env,
+				job,
+				callerContext,
+				source: { kind: 'schedule', jobId: 'test-job' },
+			})
+		).execution,
+	).toEqual({
+		ok: false,
+		error: 'Executor import failed',
+		logs: [],
+	})
 	expect(formatJobErrorSpy).toHaveBeenCalled()
 })
 
@@ -647,6 +672,7 @@ test('package-backed ESM jobs bundle the package entry and use runtime invoke to
 	})
 
 	const outcome = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job,
 		callerContext: createBaseCallerContext(),
@@ -723,6 +749,7 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 		})
 
 	const outcome = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job: createJob({
 			id: 'job-stale-bundle',
@@ -762,6 +789,7 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
 
 	const outcome = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'test-job' },
 		env,
 		job: createJob({
 			id: 'job-repo-discard-failure',
@@ -814,7 +842,13 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 		},
 	}
 	const run = (runRecordHandle?: typeof claimedHandle) =>
-		executeJobOnce({ env, job: row.record, callerContext, runRecordHandle })
+		executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+			runRecordHandle,
+			source: { kind: 'schedule', jobId: 'test-job' },
+		})
 
 	for (const error of [
 		estimateError.message,
@@ -859,10 +893,12 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 			schedule: onceSchedule,
 		},
 	})
-	vi.spyOn(registry, 'runBundledModuleWithRegistry').mockResolvedValue({
-		result: { ok: true },
-		logs: [],
-	})
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({
+			result: { ok: true },
+			logs: [],
+		})
 
 	const result = await runJobNow({
 		env,
@@ -873,6 +909,9 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 
 	expect(result.execution).toEqual({ ok: true, result: { ok: true }, logs: [] })
 	expect(result.deletedAfterRun).toBe(false)
+	const runRequest = executeSpy.mock.lastCall?.[1].request
+	expect(runRequest?.attribution).toEqual(callerContext.request?.attribution)
+	expect(runRequest?.credential).toEqual(callerContext.request?.credential)
 	expect(deleteByIds).not.toHaveBeenCalled()
 	const row = await getJobRowById(db, callerContext.user.userId, jobView.id)
 	expect(row?.record).toEqual(

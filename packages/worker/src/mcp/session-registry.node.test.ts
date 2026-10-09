@@ -95,6 +95,7 @@ test('registerMcpAgentSession retries a transient D1 internal error with an unde
 
 test('cold MCP session owner discovery reads persisted Agents SDK props', async () => {
 	const props = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
 		user: {

@@ -40,6 +40,7 @@ async function createAgent() {
 	} as unknown as Env
 	const authContext = await buildMcpUserContextFromGrantProps(env, { userId })
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.test',
 		user: authContext?.user ?? null,
 	})

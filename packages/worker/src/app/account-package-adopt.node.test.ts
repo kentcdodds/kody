@@ -1,9 +1,7 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	adoptCommunityFork: vi.fn(),
@@ -42,8 +40,7 @@ function createUser() {
 			username: 'user',
 			displayName: 'user',
 		},
-		actor,
-		owner: personalOrgId(actor),
+		request: sessionRequestContext(actor),
 	}
 }
 

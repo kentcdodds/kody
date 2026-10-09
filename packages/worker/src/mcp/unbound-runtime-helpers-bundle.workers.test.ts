@@ -22,6 +22,7 @@ test(
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const callerContext = createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
 				userId: personIdFromStored('user-unbound-repro'),
@@ -63,6 +64,7 @@ test(
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const callerContext = createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
 				userId: personIdFromStored('user-unbound-secrets'),

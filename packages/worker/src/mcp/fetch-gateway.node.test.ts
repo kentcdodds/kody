@@ -4,6 +4,7 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	executeGatewayFetch,
@@ -66,6 +67,7 @@ const props = {
 	baseUrl: 'https://example.com',
 	userId: 'user-123',
 	email: null,
+	request: sessionRequestContext('user-123'),
 	storageContext: null,
 }
 
@@ -1002,6 +1004,9 @@ test('fetch gateway provider placeholders: normalize mixed case, deny wrong host
 	)
 	expect(allowed.headers.get('Authorization')).toBe('Bearer vault-password')
 	expect(resolveSpy).toHaveBeenCalledTimes(1)
+	expect(resolveSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ request: props.request }),
+	)
 
 	await expect(
 		expand(providerRequest('https://evil.example.com/login', canonical)),
@@ -1036,6 +1041,7 @@ test('executeGatewayFetch rejects when allowOutboundFetch is false', async () =>
 				baseUrl: 'https://kody.example',
 				userId: 'user-123',
 				email: 'user@example.com',
+				request: null,
 				storageContext: null,
 				allowOutboundFetch: false,
 			},

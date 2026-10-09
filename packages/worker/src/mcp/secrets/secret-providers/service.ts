@@ -5,6 +5,11 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	inheritRequest,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { buildSecretProviderPackageApprovalUrl } from './approval-url.ts'
 import {
 	isCanonicalProviderRef,
@@ -56,6 +61,7 @@ export type SecretProviderInvoker = (
 		env: Env
 		baseUrl: string
 		ownerUserId: string
+		request: RequestSource
 		savedPackage: SavedPackageRecord
 	},
 ) => Promise<SealedProviderCanonicalizeResult | SealedProviderResolveResult>
@@ -354,6 +360,8 @@ export async function resolveProviderSecret(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	/** The fetching run; the provider export inherits it. */
+	request: RequestContext
 	provider: string
 	ref: string
 	storageContext?: StorageContext | null
@@ -406,6 +414,7 @@ export async function resolveProviderSecret(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		ownerUserId,
+		request: inheritRequest(input.request),
 		providerId,
 		rawRef,
 		binding,
@@ -458,6 +467,7 @@ export async function resolveProviderSecret(input: {
 			env: input.env,
 			baseUrl: input.baseUrl,
 			ownerUserId,
+			request: inheritRequest(input.request),
 			savedPackage: providerPackage,
 			action: 'resolve',
 			providerId,
@@ -498,6 +508,7 @@ async function resolveCanonicalProviderRef(input: {
 	env: Env
 	baseUrl: string
 	ownerUserId: string
+	request: RequestSource
 	providerId: string
 	rawRef: string
 	binding: SecretProviderBindingRecord
@@ -526,6 +537,7 @@ async function resolveCanonicalProviderRef(input: {
 			env: input.env,
 			baseUrl: input.baseUrl,
 			ownerUserId: input.ownerUserId,
+			request: input.request,
 			savedPackage: input.providerPackage,
 			action: 'canonicalize',
 			providerId: input.providerId,

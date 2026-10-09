@@ -293,6 +293,7 @@ export async function dispatchRepoSubscriptionEvents(input: {
 							event: input.providerEvent,
 						}),
 						source: 'repo',
+						request: { kind: 'platform-event', sourceId: 'repo' },
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

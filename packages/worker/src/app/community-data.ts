@@ -399,7 +399,7 @@ async function loadCommunityDetailDataUncached(
 	const ownerUserId = ownerRow
 		? ownerIdFromStored(ownerRow.stable_user_id)
 		: null
-	const viewerUserId = user?.owner ?? null
+	const viewerUserId = user?.request.org.id ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
 	const viewerInstalls = await loadViewerListingInstalls({

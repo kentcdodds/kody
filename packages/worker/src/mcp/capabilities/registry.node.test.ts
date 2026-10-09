@@ -30,6 +30,7 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 		},
 	} as unknown as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -62,6 +63,7 @@ test('getStaticRegistry memoizes the builtin registry', async () => {
 test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {
 	const env = {} as Env
 	const adminContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-1'),
@@ -71,6 +73,7 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 		},
 	})
 	const regularContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-1'),

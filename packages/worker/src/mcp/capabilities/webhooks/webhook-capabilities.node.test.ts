@@ -70,6 +70,7 @@ function createCapabilityContext(
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			executionOrigin,
 			user: {

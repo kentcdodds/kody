@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { createProfileAvatarHandler } from './profile-avatar.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -81,8 +82,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 		userId: 1,
 		email: 'alice@example.com',
 		mcpUser: { userId: 'stable-alice' },
-		actor: 'stable-alice',
-		owner: 'stable-alice',
+		request: sessionRequestContext('stable-alice'),
 	})
 	mocks.getUserSocialRowByUsername.mockResolvedValue({
 		...publicRow,

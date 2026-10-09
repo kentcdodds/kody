@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	isActiveWorkflowStatus,
@@ -11,6 +8,7 @@ import {
 } from '#app/account-workflows-data.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type WorkflowRunInspection } from '#worker/package-runtime/package-workflows.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listWorkflowRunsForUser: vi.fn(),
@@ -41,8 +39,7 @@ const user: AuthenticatedAppUser = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-	actor: personIdFromStored('stable-user-1'),
-	owner: personalOrgId(personIdFromStored('stable-user-1')),
+	request: sessionRequestContext('stable-user-1'),
 }
 
 function makeWorkflow(

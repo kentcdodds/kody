@@ -19,6 +19,7 @@ const { valueListCapability } = await import('./value-list.ts')
 
 function buildCallerContext() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-1'),

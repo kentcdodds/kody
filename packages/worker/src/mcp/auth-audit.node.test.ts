@@ -35,6 +35,7 @@ const adminCapability = {
 
 function memberContext(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -105,7 +106,10 @@ test('a principal enumerating admin capabilities stays visible in the audit log'
 test('audit denials carry the raw identifier for the sink to hash, never a stored secret', async () => {
 	await expect(
 		assertCallerCanAccessCapability(
-			createMcpCallerContext({ baseUrl: 'https://heykody.dev' }),
+			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://heykody.dev',
+			}),
 			adminCapability,
 		),
 	).rejects.toThrow(/Authenticated MCP user is required/)

@@ -198,6 +198,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 	expect(
 		callerContextFields(
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
 					userId: personIdFromStored('user-1'),
@@ -213,7 +214,11 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 	})
 	expect(
 		callerContextFields(
-			createMcpCallerContext({ baseUrl: 'https://example.com', user: null }),
+			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+				user: null,
+			}),
 		),
 	).toMatchObject({ hasUser: false, userId: undefined })
 
@@ -244,6 +249,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 			{
 				env: createTestEnv(),
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},
@@ -261,6 +267,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	])
 
 	const userCallerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored('user-1'),

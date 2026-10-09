@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -15,6 +12,7 @@ import {
 	createAccountBillingCheckoutApiHandler,
 	createAccountBillingSuccessHandler,
 } from './account-billing.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser:
@@ -116,8 +114,7 @@ const authenticatedUser: AuthenticatedAppUser = {
 		email: 'ada@example.com',
 		displayName: 'ada',
 	},
-	actor: personIdFromStored('stable-ada'),
-	owner: personalOrgId(personIdFromStored('stable-ada')),
+	request: sessionRequestContext('stable-ada'),
 }
 
 function createBillingDb(customerId: string | null = null) {

@@ -341,6 +341,7 @@ async function resolvePackageAppWorkerBuildInput(input: {
 			storageId: input.binding.packageId,
 		},
 		repoContext: null,
+		source: { kind: 'package-app' },
 	})
 	return {
 		baseUrl: input.binding.baseUrl,

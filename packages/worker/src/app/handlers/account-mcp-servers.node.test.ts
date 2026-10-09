@@ -11,8 +11,10 @@ import type * as ProviderMarks from '#worker/integrations/provider-marks.ts'
 
 const mockModule = await vi.hoisted(async () => {
 	// Hoisted above static imports, so the id helpers load here.
-	const { personalOrgId, personIdFromStored } =
+	const { personIdFromStored } =
 		await import('@kody-internal/shared/owner-person-ids.ts')
+	const { sessionRequestContext } =
+		await import('#worker/test-support/request-context.ts')
 	const epoch = new Date(0).toISOString()
 	const setting = (
 		overrides: Partial<McpServerSettingMetadata> = {},
@@ -55,8 +57,7 @@ const mockModule = await vi.hoisted(async () => {
 			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser,
-			actor: mcpUser.userId,
-			owner: personalOrgId(mcpUser.userId),
+			request: sessionRequestContext(mcpUser.userId),
 		})),
 		readAuthSessionResult: vi.fn<typeof authSession.readAuthSessionResult>(
 			async () => ({

@@ -30,6 +30,7 @@ test(
 			value: 'hello',
 		})
 		const callerContext = createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
 				userId: personIdFromStored(userId),

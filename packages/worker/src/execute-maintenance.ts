@@ -40,6 +40,7 @@ export async function runExecuteSmokeCheck(env: Env) {
 			baseUrl: origin,
 			userId: null,
 			email: null,
+			request: null,
 			storageContext: null,
 		},
 		timeoutMs: 10_000,

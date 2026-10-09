@@ -1099,6 +1099,7 @@ export function withCallerUser(
 export function createBaseCallerContext() {
 	return withCallerUser(
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored('user-123'),

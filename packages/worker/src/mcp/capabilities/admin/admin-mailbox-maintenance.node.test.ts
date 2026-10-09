@@ -154,6 +154,7 @@ function createAdminCtx() {
 			AUDIT_DB: createD1FromSqlite(auditSqlite),
 		} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(

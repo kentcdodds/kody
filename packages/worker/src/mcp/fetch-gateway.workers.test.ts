@@ -54,6 +54,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 		baseUrl: 'https://kody.example.com',
 		userId,
 		email,
+		request: null,
 		storageContext: null,
 	}
 	const globalFetch = (async () =>

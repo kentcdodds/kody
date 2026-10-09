@@ -8,7 +8,8 @@ import {
 	type InferOutput,
 	union,
 } from 'remix/data-schema'
-import { type OwnerId, type PersonId } from './owner-person-ids.ts'
+import { type PersonId } from './owner-person-ids.ts'
+import { type RequestContext } from './request-context.ts'
 
 export const mcpUserContextSchema = object({
 	userId: string(),
@@ -63,7 +64,10 @@ export type McpUserContext = Omit<
 	McpUserContextInferred,
 	'userId' | 'roles' | 'permissions' | 'username'
 > & {
-	/** The signed-in person. Read `McpCallerContext.actor` / `.owner` instead. */
+	/**
+	 * The signed-in person, or the org's owning account for Automation runs.
+	 * Read `McpCallerContext.request` for the org and the actor.
+	 */
 	userId: PersonId
 	username?: string
 	roles?: Array<string>
@@ -87,12 +91,12 @@ export type McpCallerContextWire = Omit<
 }
 
 /**
- * A caller context with resolved identities. `actor` is the person acting
- * (audit, RBAC, attribution); `owner` is the org whose data the call reads and
- * writes (storage). `createMcpCallerContext` and `parseMcpCallerContext` derive both
- * from `user`; they are never read from serialized input.
+ * A caller context with its resolved request context: the org whose data the
+ * call reads and writes, the acting person (if any), attribution, and the
+ * credential. `createMcpCallerContext` and `parseMcpCallerContext` derive it
+ * from `user` plus the request source; it is never read from serialized
+ * input. Null only when there is no signed-in user.
  */
 export type McpCallerContext = McpCallerContextWire & {
-	actor: PersonId | null
-	owner: OwnerId | null
+	request: RequestContext | null
 }

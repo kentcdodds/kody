@@ -21,6 +21,7 @@ const userId = 'user-evaluate-kody-binding'
 
 function createCaller() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -59,6 +60,7 @@ test(
 				baseUrl: 'https://kody.dev',
 				userId: null,
 				email: null,
+				request: null,
 				storageContext: null,
 			},
 			timeoutMs: 15_000,

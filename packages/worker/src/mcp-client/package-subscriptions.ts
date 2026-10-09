@@ -127,6 +127,7 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 							packageId: savedPackage.id,
 						}),
 						source: 'mcp-client',
+						request: { kind: 'platform-event', sourceId: 'mcp-client' },
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

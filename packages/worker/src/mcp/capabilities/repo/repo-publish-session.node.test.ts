@@ -43,6 +43,7 @@ function createCtx() {
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			user: {
 				userId: personIdFromStored('user-1'),
 				email: 'user@test.invalid',

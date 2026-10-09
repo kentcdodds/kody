@@ -4,11 +4,8 @@ import { prefetchRequestFeatureFlagsForHtmlPage } from '#app/request-feature-fla
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import {
-	personalOrgId,
-	type OwnerId,
-	type PersonId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
 export type AuthenticatedAppUser = {
 	sessionUserId: string
@@ -22,10 +19,8 @@ export type AuthenticatedAppUser = {
 	permissions: Array<PermissionString>
 	mcpUser: McpUserContext
 	artifactOwnerIds: Array<string>
-	/** The signed-in person: audit, RBAC, and attribution. */
-	actor: PersonId
-	/** The org whose data this request reads and writes. */
-	owner: OwnerId
+	/** Who is acting, in which org, through this session. */
+	request: RequestContext
 }
 
 export type ReadAuthenticatedAppUserOptions = {
@@ -58,8 +53,10 @@ async function readAuthenticatedAppUserInternal(
 		permissions: resolved.user.permissions,
 		artifactOwnerIds: resolved.user.artifactOwnerIds,
 		mcpUser: resolved.user.mcpUser,
-		actor: resolved.user.mcpUser.userId,
-		owner: personalOrgId(resolved.user.mcpUser.userId),
+		request: deriveRequestContext({
+			user: resolved.user.mcpUser,
+			source: { kind: 'session' },
+		}),
 	} satisfies AuthenticatedAppUser
 	if (prefetchFeatureFlags) {
 		prefetchRequestFeatureFlagsForHtmlPage(request, env, {

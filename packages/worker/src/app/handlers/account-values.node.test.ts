@@ -1,11 +1,9 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as valuesService from '#mcp/values/service.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<
@@ -27,8 +25,7 @@ const mockModule = vi.hoisted(() => ({
 			username: 'test-user',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 	listValues: vi.fn<typeof valuesService.listValues>(async () => [

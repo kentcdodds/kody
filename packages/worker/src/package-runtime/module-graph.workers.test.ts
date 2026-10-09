@@ -104,6 +104,7 @@ function makePackageFiles(
 
 function callerContextFor(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl,
 		user: {
 			userId: personIdFromStored(userId),

@@ -15,6 +15,7 @@ test.each([
 				{
 					env: {} as Env,
 					callerContext: createMcpCallerContext({
+						source: { kind: 'mcp-oauth' },
 						baseUrl: 'https://kody.codes',
 						user: {
 							userId: personIdFromStored('user-1'),

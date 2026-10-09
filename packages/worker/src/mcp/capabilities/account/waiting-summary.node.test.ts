@@ -65,6 +65,7 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 	})
 	const env = { APP_DB: db } as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com/',
 		user: {
 			userId: personIdFromStored(stableUserId),
@@ -79,6 +80,7 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 			{
 				env,
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com/',
 				}),
 			},

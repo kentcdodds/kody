@@ -62,6 +62,7 @@ const files = { 'skills/ship-it/SKILL.md': skillMd }
 const skillUri = 'skill://owner/ship/ship-it/SKILL.md'
 
 const signedInCaller = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://kody.example',
 	user: {
 		userId: personIdFromStored('user-1'),

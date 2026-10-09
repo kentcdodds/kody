@@ -11,6 +11,7 @@ function createCapabilityContext() {
 	return {
 		env: {} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored('user-1'),

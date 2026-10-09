@@ -78,6 +78,7 @@ function createAgent({
 	env?: Record<string, unknown>
 } = {}) {
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl,
 		user: {
 			userId: personIdFromStored(userId),

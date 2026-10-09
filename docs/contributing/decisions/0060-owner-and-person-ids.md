@@ -28,9 +28,10 @@ identity function. Acting in any other org must go through an explicit
 membership or grant check, never through this function.
 `resolvePackageOwnerContext` (platform scope grants) and
 `resolvePackageStorageOwner` (share grants) are the two existing checks. Caller
-contexts carry both ids: `McpCallerContext` has `actor` and `owner`, derived
-when constructed and never serialized, and `AuthenticatedAppUser` has both as
-well.
+contexts carry both ids, derived when constructed and never serialized:
+`McpCallerContext.request` and `AuthenticatedAppUser.request` hold `org.id` and
+`actor.userId` (amended by [ADR 0061](./0061-one-request-context.md), which
+replaced the separate `actor` and `owner` fields).
 
 We do **not**:
 
@@ -38,7 +39,7 @@ We do **not**:
 - rename D1 columns: TEXT `user_id` columns hold an `OwnerId`
 - change any Durable Object name, KV/R2 key, Vectorize namespace, or secret AAD
   string (`owner-storage-formats.node.test.ts` pins them)
-- persist `actor`/`owner` in job caller contexts
+- persist the request context in job caller contexts
 
 ## Consequences
 

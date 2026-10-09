@@ -1,8 +1,3 @@
-import {
-	internalExecuteRuntimeInvokeTokenId,
-	internalPackageRuntimeInvokeTokenId,
-} from './common.ts'
-
 /**
  * Sibling daily quota for always-on automation entrypoints (webhooks,
  * subscriptions, package-backed workflows). Distinct from MCP ad-hoc
@@ -32,13 +27,6 @@ export function shouldConsumeAutomationInvocationEntitlement(input: {
 	runtimeInvokeDepth: number
 }): boolean {
 	if (input.runtimeInvokeDepth > 0) return false
-	if (input.actorTokenId === internalExecuteRuntimeInvokeTokenId) return false
-	if (
-		input.actorTokenId === internalPackageRuntimeInvokeTokenId ||
-		input.actorTokenId.startsWith(`${internalPackageRuntimeInvokeTokenId}:`)
-	) {
-		return false
-	}
 	if (input.actorTokenId === internalSealedSecretProviderTokenId) return false
 	return true
 }

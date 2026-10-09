@@ -184,6 +184,7 @@ function setup({
 			} as unknown as D1Database,
 		} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			user: {
 				userId: personIdFromStored('user-1'),
 				email: 'user@test.invalid',

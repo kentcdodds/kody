@@ -135,6 +135,7 @@ function createGatewayProps(
 		baseUrl: 'https://heykody.dev',
 		userId,
 		email: overrides?.email ?? `${userId}@example.com`,
+		request: null,
 		storageContext:
 			overrides?.storageContext === undefined ? null : overrides.storageContext,
 	}

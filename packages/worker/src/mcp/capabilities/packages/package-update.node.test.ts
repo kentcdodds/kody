@@ -48,6 +48,7 @@ function update(
 		{
 			env: { APP_DB: {} } as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 				user: userId
 					? {

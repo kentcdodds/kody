@@ -57,6 +57,7 @@ function createAttributionEnv() {
 
 function callerContext(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(userId),
@@ -99,6 +100,7 @@ test('usageByPackageGet requires a signed-in user', async () => {
 			{
 				env,
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},

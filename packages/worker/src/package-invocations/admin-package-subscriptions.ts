@@ -320,6 +320,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 					idempotencyKey: input.buildIdempotencyKey(savedPackage),
 					source: input.source,
 					actorTokenId: input.actorTokenId,
+					request: { kind: 'platform-event', sourceId: input.source },
 					waitUntil: input.waitUntil,
 				})
 				if (response.status < 200 || response.status >= 400) {

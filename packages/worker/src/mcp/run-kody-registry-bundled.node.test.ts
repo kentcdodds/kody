@@ -62,6 +62,7 @@ const okBundle = {
 }
 const callerFor = (userId = 'user-123') =>
 	createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -370,7 +371,11 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 	await runOk({}, callerContext)
 	await runOk(
 		{ packageContext },
-		createMcpCallerContext({ baseUrl: 'https://heykody.dev', user: null }),
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://heykody.dev',
+			user: null,
+		}),
 	)
 	expect(recordUsageSpy).not.toHaveBeenCalled()
 

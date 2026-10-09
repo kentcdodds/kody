@@ -164,6 +164,7 @@ async function authenticateWithApiToken(input: {
 		callerContext: {
 			...createMcpCallerContext({
 				baseUrl: input.appOrigin,
+				source: { kind: 'api-token', tokenId: record.id },
 				executionOrigin: 'interactive',
 				user: authContext.user,
 				connectionProfileName: record.profile_name ?? null,
@@ -235,6 +236,7 @@ async function authenticateWithMcpOauth(input: {
 		callerContext: {
 			...createMcpCallerContext({
 				baseUrl: input.appOrigin,
+				source: { kind: 'cli' },
 				executionOrigin: 'interactive',
 				user: authContext.user,
 				connectionProfileName: readConnectionProfileNameFromGrantProps(

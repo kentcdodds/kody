@@ -25,6 +25,7 @@ function createCtx(
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: overrides?.executionOrigin ?? 'interactive',
 			user: {
@@ -149,6 +150,7 @@ test('webhookSyntheticDispatch returns synthetic run metadata and rejects runtim
 			ctx: {
 				env: { APP_DB: {} } as Env,
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://heykody.dev',
 					executionOrigin: 'interactive',
 					user: null,

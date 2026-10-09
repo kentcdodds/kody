@@ -67,6 +67,7 @@ test('adminUserMeterParity returns null for missing users and omits lease secret
 			...meter.env,
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(

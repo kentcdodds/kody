@@ -15,6 +15,11 @@ import {
 import { NonRetryableError } from 'cloudflare:workflows'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
+import {
+	parseRequestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 	readRetryablePackageInvocationInfrastructureCode,
@@ -121,6 +126,7 @@ export type DynamicCallableWorkflowPayload =
 			runAt: string
 			planDate: string | null
 			params?: PackageWorkflowParams
+			lineage?: RequestLineage
 	  }
 	| {
 			version: 3
@@ -137,6 +143,7 @@ export type DynamicCallableWorkflowPayload =
 			runAt: string
 			planDate: string | null
 			params?: PackageWorkflowParams
+			lineage?: RequestLineage
 	  }
 
 export type WorkflowRunInspection = {
@@ -211,6 +218,18 @@ type DynamicCallableWorkflowStep = {
 }
 
 const packageWorkflowTokenId = 'internal:package-workflows'
+
+/**
+ * Instances created before payloads carried lineage run as Automation, which
+ * has no actor and so can only narrow what the starter could do.
+ */
+function workflowRequestSource(
+	payload: DynamicCallableWorkflowPayload,
+): RequestSource {
+	return payload.lineage
+		? { kind: 'inherited', lineage: payload.lineage }
+		: { kind: 'platform-event', sourceId: packageWorkflowTokenId }
+}
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const workflowStatusRefreshTtlMs = 30_000
 const knownWorkflowStatusValues = [
@@ -389,6 +408,7 @@ function createInlineWorkflowPayload(input: {
 	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
+	lineage: RequestLineage | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
 	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
@@ -407,6 +427,7 @@ function createInlineWorkflowPayload(input: {
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
+		...(input.lineage ? { lineage: input.lineage } : {}),
 	}
 }
 
@@ -421,6 +442,7 @@ function createDynamicPackageWorkflowPayload(input: {
 	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
+	lineage: RequestLineage | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
 	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
@@ -442,6 +464,7 @@ function createDynamicPackageWorkflowPayload(input: {
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
+		...(input.lineage ? { lineage: input.lineage } : {}),
 	}
 }
 
@@ -456,6 +479,7 @@ function validateDynamicCallableWorkflowPayload(
 	const params = normalizePackageWorkflowParams(
 		record['params'] as PackageWorkflowParams | null | undefined,
 	)
+	const lineage = parseRequestLineage(record['lineage'])
 	if (sourceType === 'inline') {
 		if (record['version'] !== 3) {
 			throw new Error('Inline workflow payload version must be 3.')
@@ -508,6 +532,7 @@ function validateDynamicCallableWorkflowPayload(
 			params,
 			planDate:
 				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+			lineage,
 		})
 	}
 	if (sourceType === 'package') {
@@ -526,6 +551,7 @@ function validateDynamicCallableWorkflowPayload(
 			params,
 			planDate:
 				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+			lineage,
 		})
 	}
 	throw new Error('Dynamic callable workflow payload sourceType is invalid.')
@@ -873,6 +899,7 @@ async function resolveWorkflowPayload(input: {
 		sourceId?: string | null
 	} | null
 	body: PackageWorkflowCreateInput
+	lineage: RequestLineage
 }): Promise<DynamicCallableWorkflowPayload> {
 	const body = input.body as PackageWorkflowCreateInput &
 		Record<string, unknown>
@@ -886,6 +913,7 @@ async function resolveWorkflowPayload(input: {
 			idempotencyKey: input.body.idempotencyKey,
 			runAt: input.body.runAt,
 			params: input.body.params,
+			lineage: input.lineage,
 		})
 	}
 	const packageIdOrKodyId =
@@ -915,6 +943,7 @@ async function resolveWorkflowPayload(input: {
 		idempotencyKey: input.body.idempotencyKey,
 		runAt: input.body.runAt,
 		params: input.body.params,
+		lineage: input.lineage,
 	})
 }
 
@@ -928,6 +957,8 @@ export async function createDynamicCallableWorkflow(input: {
 		sourceId?: string | null
 	} | null
 	body: PackageWorkflowCreateInput
+	/** The run that starts the workflow; every step inherits it. */
+	lineage: RequestLineage
 }): Promise<PackageWorkflowCreateResult> {
 	const env = input.env as Env
 	const workflowBinding = resolveWorkflowEngineBinding(
@@ -1545,6 +1576,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					userId: payload.userId,
 					packageId: payload.packageId,
 					exportNames: [payload.exportName],
+					request: workflowRequestSource(payload),
 				},
 				request: {
 					packageIdOrKodyId: payload.packageId,
@@ -1615,6 +1647,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						storageId: null,
 					}
 				: null,
+			source: workflowRequestSource(payload),
 		})
 		const runHandle = beginRunRecord({
 			env: this.env,

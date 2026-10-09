@@ -202,6 +202,7 @@ function createContext(
 			PACKAGE_APP_BASE_URL: 'https://packages.kody.test',
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.test',
 			executionOrigin: executionOrigin === 'omit' ? undefined : executionOrigin,
 			user: {

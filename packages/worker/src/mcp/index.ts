@@ -112,7 +112,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		return agent
 	}
 	getCallerContext() {
-		return parseMcpCallerContext(this.props)
+		return parseMcpCallerContext(this.props, { kind: 'mcp-oauth' })
 	}
 	getEnv() {
 		return this.env

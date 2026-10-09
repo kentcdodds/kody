@@ -29,6 +29,7 @@ vi.mock('#worker/connection-profiles/access.ts', () => ({
 
 const env = { APP_DB: {} } as Env
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://kody.example.com',
 	user: {
 		userId: personIdFromStored('user-1'),
@@ -231,6 +232,7 @@ test('listing requires an authenticated user', async () => {
 		listMcpEventSources({
 			env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://kody.example.com',
 			}),
 		}),

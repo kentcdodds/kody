@@ -42,6 +42,7 @@ function createEnv() {
 
 function caller(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -404,7 +405,10 @@ test('integration capabilities deny cross-user reads and require authentication'
 	await expect(
 		integrationSaveCapability.handler(spotifyBase, {
 			env,
-			callerContext: createMcpCallerContext({ baseUrl: 'https://heykody.dev' }),
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://heykody.dev',
+			}),
 		}),
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 })

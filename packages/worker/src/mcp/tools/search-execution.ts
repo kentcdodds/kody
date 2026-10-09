@@ -231,6 +231,7 @@ async function executeSearchListWithinBudget(
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
 					userId: input.userId,
+					request: input.callerContext.request,
 					scope: 'search',
 					query: input.query,
 					includeHiddenPackages: input.includeHiddenPackages,

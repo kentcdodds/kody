@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestLineage } from '#worker/test-support/request-context.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 import {
@@ -142,6 +143,7 @@ function createCancelTestEnv() {
 			createDynamicCallableWorkflow({
 				env,
 				userId: 'user-1',
+				lineage: sessionRequestLineage('user-1'),
 				packageContext: null,
 				body: {
 					code: 'export default async function main() { return { ok: true } }',

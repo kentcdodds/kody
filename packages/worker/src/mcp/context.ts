@@ -1,8 +1,5 @@
 import { parseSafe } from 'remix/data-schema'
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
@@ -12,43 +9,80 @@ import {
 	type McpStorageContext,
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
+import {
+	deriveRequestContext,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 
 /** Legacy agent props persist in Durable Object storage, so they stay wire-shaped. */
 export type McpServerProps = McpCallerContextWire
 
-export function createMcpCallerContext(input: {
+type McpCallerContextWireInput = {
 	baseUrl: string
 	executionOrigin?: McpExecutionOrigin
 	user?: McpUserContext | null
 	storageContext?: McpStorageContext | null
 	repoContext?: McpRepoContext | null
 	connectionProfileName?: string | null
-}): McpCallerContext {
-	const user = input.user ?? null
-	const actor = user ? user.userId : null
+}
+
+/** The persisted form only (job `caller_context_json`); no request context. */
+export function createMcpCallerContextWire(
+	input: McpCallerContextWireInput,
+): McpCallerContextWire {
 	return {
 		baseUrl: input.baseUrl,
 		executionOrigin: input.executionOrigin,
-		user,
+		user: input.user ?? null,
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
 		connectionProfileName: input.connectionProfileName ?? null,
-		actor,
-		owner: actor ? personalOrgId(actor) : null,
 	}
 }
 
-/** Validate a serialized caller context and derive its actor and owner. */
-export function parseMcpCallerContext(value: unknown): McpCallerContext {
+export function createMcpCallerContext(
+	input: McpCallerContextWireInput & {
+		/** How this request reached Kody; decides actor, attribution, credential. */
+		source: RequestSource
+	},
+): McpCallerContext {
+	const wire = createMcpCallerContextWire(input)
+	return {
+		...wire,
+		request: wire.user
+			? deriveRequestContext({
+					user: wire.user,
+					source: input.source,
+					profileName: wire.connectionProfileName,
+				})
+			: null,
+	}
+}
+
+/** Validate a serialized caller context without deriving a request context. */
+export function parseMcpCallerContextWire(
+	value: unknown,
+): McpCallerContextWire {
 	const result = parseSafe(mcpCallerContextSchema, value)
 	if (!result.success) {
 		const message = result.issues.map((issue) => issue.message).join(', ')
 		throw new Error(`Invalid MCP caller context: ${message}`)
 	}
 	const { user, ...rest } = result.value
-	return createMcpCallerContext({
+	return createMcpCallerContextWire({
 		...rest,
 		user: user ? { ...user, userId: personIdFromStored(user.userId) } : null,
+	})
+}
+
+/** Validate a serialized caller context and derive its request context. */
+export function parseMcpCallerContext(
+	value: unknown,
+	source: RequestSource,
+): McpCallerContext {
+	return createMcpCallerContext({
+		...parseMcpCallerContextWire(value),
+		source,
 	})
 }
 
@@ -56,6 +90,6 @@ export function parseMcpCallerContext(value: unknown): McpCallerContext {
 export function toMcpCallerContextWire(
 	context: McpCallerContext,
 ): McpCallerContextWire {
-	const { actor: _actor, owner: _owner, ...wire } = context
+	const { request: _request, ...wire } = context
 	return wire
 }

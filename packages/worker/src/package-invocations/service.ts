@@ -1,4 +1,5 @@
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
 import { type PackageEventTools } from '#mcp/run-kody-registry.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -98,6 +99,7 @@ export async function invokePackageSubscription(input: {
 	source?: string | null
 	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
+	request: RequestSource
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

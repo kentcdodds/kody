@@ -1,12 +1,10 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as memoryRepo from '#mcp/memory/repo.ts'
 import type * as memoryService from '#mcp/memory/service.ts'
 import { buildMemoriesExportFilename } from '#universal/memory-export.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => {
 	const memoryRow = {
@@ -62,8 +60,7 @@ const mockModule = vi.hoisted(() => {
 				username: 'test-user',
 				displayName: 'user',
 			},
-			actor: personIdFromStored('stable-user-1'),
-			owner: personalOrgId(personIdFromStored('stable-user-1')),
+			request: sessionRequestContext('stable-user-1'),
 		})),
 		readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 		listMemoriesByUserId: vi.fn<typeof memoryRepo.listMemoriesByUserId>(

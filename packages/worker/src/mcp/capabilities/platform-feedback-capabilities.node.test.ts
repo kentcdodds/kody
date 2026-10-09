@@ -109,6 +109,7 @@ function createCapabilityContext(input?: {
 			},
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: input?.executionOrigin,
 			storageContext:

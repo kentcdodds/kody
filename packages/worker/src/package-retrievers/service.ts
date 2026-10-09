@@ -1,5 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { inheritRequest } from '#worker/request-context/request-context.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
@@ -91,6 +93,7 @@ async function invokeRetriever(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	request: RequestContext
 	scope: PackageRetrieverScope
 	entry: PackageRetrieverManifestCacheEntry
 	query: string
@@ -154,6 +157,7 @@ async function invokeRetriever(input: {
 			storageId: buildPackageRetrieverStorageId(input.entry.packageId),
 		},
 		repoContext: createRepoContext(source),
+		source: inheritRequest(input.request),
 	})
 	const packageContext = {
 		packageId: input.entry.packageId,
@@ -232,6 +236,8 @@ export async function runPackageRetrievers(input: {
 	env: Env
 	baseUrl: string
 	userId: string | null
+	/** The searching caller; retrievers run as part of its request. */
+	request: RequestContext | null
 	scope: PackageRetrieverScope
 	query: string
 	includeHiddenPackages?: boolean
@@ -248,7 +254,8 @@ export async function runPackageRetrievers(input: {
 	const userId = input.userId?.trim()
 	const query = input.query.trim()
 	const includeHiddenPackages = !!input.includeHiddenPackages
-	if (!userId || !query) {
+	const request = input.request
+	if (!userId || !request || !query) {
 		return {
 			results: [],
 			warnings: [],
@@ -279,6 +286,7 @@ export async function runPackageRetrievers(input: {
 						env: input.env,
 						baseUrl: input.baseUrl,
 						userId,
+						request,
 						scope: input.scope,
 						entry,
 						query,
