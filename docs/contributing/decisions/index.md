@@ -151,6 +151,10 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0063 — Teams P3 expand adds org rows without moving storage keys](./0063-teams-expand-orgs.md)
   — personal orgs reuse `stable_user_id` as `orgs.id`; additive tables, billing
   dual-read/write, and `org_audit_events` without moving storage keys
+- [0064 — OAuth consent binds a grant to one org](./0064-oauth-org-binding.md) —
+  stamp `orgId` on grant props and metadata; `?org=` plus consent picker (no
+  flag; one org = no picker); connection profiles stay org-bound narrowing, not
+  OAuth scopes; `userId` fallback until P9
 
 ## Historical / UI / implementation
 

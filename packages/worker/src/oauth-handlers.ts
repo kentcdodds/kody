@@ -20,7 +20,10 @@ import {
 } from '#app/auth-session.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getEnv } from '#app/env.ts'
-import { type OAuthAuthorizeLoaderData } from '#universal/loader-data.ts'
+import {
+	type OAuthAuthorizeConsentOrg,
+	type OAuthAuthorizeLoaderData,
+} from '#universal/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
@@ -65,7 +68,22 @@ import {
 	connectionProfileGrantFields,
 	resolveAuthorizeConnectionProfile,
 } from '#worker/connection-profiles/oauth.ts'
-import { isConnectionProfileAuthorizeError } from '#worker/connection-profiles/authorize-error.ts'
+import {
+	ConnectionProfileAuthorizeError,
+	isConnectionProfileAuthorizeError,
+} from '#worker/connection-profiles/authorize-error.ts'
+import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
+import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
+import { isOrgAuthorizeError } from '#worker/orgs/authorize-error.ts'
+import { orgGrantFields } from '#worker/orgs/oauth-grant.ts'
+import {
+	readOrgSlugFromForm,
+	resolveAuthorizeOrg,
+	selectConsentOrg,
+	selectConsentOrgsForLoader,
+	type AuthorizeOrg,
+} from '#worker/orgs/oauth-authorize.ts'
+import { listOrgsForPerson } from '#worker/orgs/repo.ts'
 
 export { oauthPaths }
 
@@ -84,6 +102,55 @@ function getValidOAuthUsername(value: unknown) {
 		!getUsernameFormatValidationError(value.trim())
 		? value.trim()
 		: null
+}
+
+function isAuthorizeBindingError(error: unknown): error is { message: string } {
+	return isOrgAuthorizeError(error) || isConnectionProfileAuthorizeError(error)
+}
+
+async function resolveAuthorizeOrgAndProfile(input: {
+	env: Env
+	request: Request
+	authRequest: AuthRequest
+	userId: string
+	formSlug?: string | null
+}): Promise<{
+	org: AuthorizeOrg
+	connectionProfileName: string | null
+}> {
+	const urlOrg = await resolveAuthorizeOrg({
+		env: input.env,
+		request: input.request,
+		authRequest: input.authRequest,
+		userId: input.userId,
+	})
+	const org = await selectConsentOrg({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		formSlug: input.formSlug ?? null,
+		urlOrg,
+	})
+	const connectionProfileName = await resolveAuthorizeConnectionProfile({
+		env: input.env,
+		request: input.request,
+		authRequest: input.authRequest,
+		userId: input.userId,
+	})
+	if (connectionProfileName) {
+		const profile = await getConnectionProfileByName({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: connectionProfileName,
+		})
+		const profileOrgId =
+			profile && typeof profile.orgId === 'string' ? profile.orgId.trim() : ''
+		if (profileOrgId && profileOrgId !== org.orgId) {
+			throw new ConnectionProfileAuthorizeError(
+				`Connection profile "${connectionProfileName}" was not found in @${org.slug}.`,
+			)
+		}
+	}
+	return { org, connectionProfileName }
 }
 
 async function evaluateSecondAgentGiftAfterAuthorize(
@@ -868,6 +935,19 @@ export async function loadOAuthAuthorizeData(
 		})
 	}
 
+	const requestedOrgSlug = readOrgSlugFromUrl(request.url)
+	let orgs: Array<OAuthAuthorizeConsentOrg> = []
+	let selectedOrgSlug: string | null = requestedOrgSlug
+	if (!requireCredentials && authorizeSession.stableUserId) {
+		const accessible = await listOrgsForPerson(
+			env.APP_DB,
+			authorizeSession.stableUserId,
+		)
+		const consent = selectConsentOrgsForLoader(accessible, requestedOrgSlug)
+		orgs = consent.orgs
+		selectedOrgSlug = consent.selectedOrgSlug
+	}
+
 	return {
 		data: {
 			ok: true,
@@ -878,6 +958,8 @@ export async function loadOAuthAuthorizeData(
 			scopes: resolvedScopes,
 			emailVerified,
 			requireCredentials,
+			orgs,
+			selectedOrgSlug,
 		},
 		setCookie: clearResetVerificationCookie ?? sessionSetCookie,
 	}
@@ -905,6 +987,8 @@ export async function handleAuthorizeInfo(
 			scopes: data.scopes,
 			emailVerified: data.emailVerified,
 			requireCredentials: data.requireCredentials,
+			orgs: data.orgs,
+			selectedOrgSlug: data.selectedOrgSlug,
 		},
 		{
 			headers: createSetCookieHeaders([setCookie]),
@@ -1149,16 +1233,19 @@ async function tryHandleSilentOidcAuthorize(
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
+	let authorizeOrg: AuthorizeOrg
 	let connectionProfileName: string | null
 	try {
-		connectionProfileName = await resolveAuthorizeConnectionProfile({
+		const resolved = await resolveAuthorizeOrgAndProfile({
 			env,
 			request,
 			authRequest,
 			userId: approvedUserId,
 		})
+		authorizeOrg = resolved.org
+		connectionProfileName = resolved.connectionProfileName
 	} catch (error) {
-		if (isConnectionProfileAuthorizeError(error)) {
+		if (isAuthorizeBindingError(error)) {
 			const redirectTo = oidcClientErrorRedirect(
 				authRequest,
 				'invalid_request',
@@ -1170,6 +1257,7 @@ async function tryHandleSilentOidcAuthorize(
 		throw error
 	}
 	const profileFields = connectionProfileGrantFields(connectionProfileName)
+	const orgFields = orgGrantFields(authorizeOrg.orgId)
 	const { redirectTo: providerRedirectTo } =
 		await helpers.completeAuthorization({
 			request: authRequest,
@@ -1178,6 +1266,7 @@ async function tryHandleSilentOidcAuthorize(
 				email: approvedEmail,
 				clientId: authRequest.clientId,
 				...profileFields.metadata,
+				...orgFields.metadata,
 			},
 			scope: resolvedScopes,
 			props: {
@@ -1188,6 +1277,7 @@ async function tryHandleSilentOidcAuthorize(
 				authTime,
 				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
 				...profileFields.props,
+				...orgFields.props,
 			},
 		})
 	const redirectTo = stampClientAuthorizationRedirect(
@@ -1548,16 +1638,20 @@ export async function handleAuthorizeRequest(
 			: authorizeSession.issuedAt
 				? Math.floor(authorizeSession.issuedAt / 1000)
 				: Math.floor(Date.now() / 1000)
+		let authorizeOrg: AuthorizeOrg
 		let connectionProfileName: string | null
 		try {
-			connectionProfileName = await resolveAuthorizeConnectionProfile({
+			const resolved = await resolveAuthorizeOrgAndProfile({
 				env,
 				request,
 				authRequest,
 				userId,
+				formSlug: readOrgSlugFromForm(formData),
 			})
+			authorizeOrg = resolved.org
+			connectionProfileName = resolved.connectionProfileName
 		} catch (error) {
-			if (isConnectionProfileAuthorizeError(error)) {
+			if (isAuthorizeBindingError(error)) {
 				const redirectTo = createOidcClientErrorRedirectUrl(
 					authRequest,
 					'invalid_request',
@@ -1581,6 +1675,7 @@ export async function handleAuthorizeRequest(
 			throw error
 		}
 		const profileFields = connectionProfileGrantFields(connectionProfileName)
+		const orgFields = orgGrantFields(authorizeOrg.orgId)
 		const { redirectTo: providerRedirectTo } =
 			await helpers.completeAuthorization({
 				request: authRequest,
@@ -1589,6 +1684,7 @@ export async function handleAuthorizeRequest(
 					email: approvedEmail,
 					clientId: authRequest.clientId,
 					...profileFields.metadata,
+					...orgFields.metadata,
 				},
 				scope: resolvedScopes,
 				props: {
@@ -1599,6 +1695,7 @@ export async function handleAuthorizeRequest(
 					authTime,
 					...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
 					...profileFields.props,
+					...orgFields.props,
 				},
 			})
 		const redirectTo = stampClientAuthorizationRedirect(

@@ -2290,6 +2290,12 @@ type AuthProvidersLoaderData = {
 	turnstileSiteKey: string | null
 }
 
+export type OAuthAuthorizeConsentOrg = {
+	slug: string
+	displayName: string | null
+	role: string | null
+}
+
 export type OAuthAuthorizeLoaderData =
 	| {
 			ok: true
@@ -2298,6 +2304,9 @@ export type OAuthAuthorizeLoaderData =
 			emailVerified: boolean | null
 			/** When true, authorize UI must collect credentials (prompt=login / max_age). */
 			requireCredentials: boolean
+			orgs: Array<OAuthAuthorizeConsentOrg>
+			/** From `?org=`, the sole accessible org, or null when multi and unspecified. */
+			selectedOrgSlug: string | null
 	  }
 	| {
 			ok: false

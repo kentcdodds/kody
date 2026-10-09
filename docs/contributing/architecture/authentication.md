@@ -244,13 +244,20 @@ assistant features:
   connection again" message instead of `client_id is required`. The authorize UI
   keeps inline verification/resend controls and the original OAuth query so
   verification in another tab can resume without restarting the host connection.
+  Consent binds the grant to one org
+  ([0064](../decisions/0064-oauth-org-binding.md)): `?org=<slug>` on the
+  authorize URL or `/mcp` resource, a hidden field when the user has exactly one
+  org, or a required picker when they have several. Approval stamps `orgId` on
+  grant props and metadata. There is no feature flag.
 - **MCP requests**: `handleMcpRequest` in `packages/worker/src/mcp-auth.ts` is
   the single chokepoint for `/mcp`. After token validation it checks
   `users.email_verified_at` (via `isAccountEmailVerified`) and rejects
   unverified — or unidentifiable — accounts with a
   `403 email_verification_required` JSON response pointing at `/account`. The
   gate fails closed: when verification cannot be established, the request is
-  rejected.
+  rejected. The request org comes from the grant's `props.orgId` (falling back
+  to `props.userId` as the personal org id until P9), not always the person's
+  implicit personal org.
 - **Inbound email**: `handleInboundEmail` in
   `packages/worker/src/email/inbound.ts` rejects routed mail for unverified
   accounts right after username routing (`setReject` plus a bounded `rejected`

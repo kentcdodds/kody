@@ -23,7 +23,7 @@ import {
 	toMcpCallerContextWire,
 	type McpServerProps,
 } from './mcp/context.ts'
-import { loadOrgBindingForPerson } from '#worker/orgs/repo.ts'
+import { loadOrgBindingFromGrantProps } from '#worker/orgs/grant-binding.ts'
 import type * as StatelessLane from './mcp/stateless-lane.ts'
 import {
 	classifyMcpProtocolRequest,
@@ -476,7 +476,15 @@ export async function handleMcpRequest({
 
 	const connectionProfileName =
 		readConnectionProfileNameFromGrantProps(grantProps)
-	const orgBinding = await loadOrgBindingForPerson(env.APP_DB, mcpUser.userId)
+	const orgBinding = await loadOrgBindingFromGrantProps({
+		db: env.APP_DB,
+		personId: mcpUser.userId,
+		grantProps,
+	})
+	if (!orgBinding) {
+		await recordRejection('denied', mcpUser.email)
+		return createUnauthorizedResponse(origin, 'invalid_token')
+	}
 	const callerContext = createMcpCallerContext({
 		baseUrl: origin,
 		source: { kind: 'mcp-oauth' },

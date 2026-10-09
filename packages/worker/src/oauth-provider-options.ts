@@ -4,6 +4,7 @@
 import type * as WorkersOAuthProvider from '@cloudflare/workers-oauth-provider'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+import { stampOrgIdOnTokenExchange } from '#worker/orgs/oauth-grant.ts'
 
 /**
  * MCP HTTP path and OAuthProvider `apiRoute`. v1 requires every protected route
@@ -85,5 +86,6 @@ export function createSharedOAuthProviderOptions(
 		// v1.2 removed allowPlainPKCE / allowImplicitFlow (S256 + auth code only).
 		// App-layer getPkceValidationError remains defense in depth. See
 		// docs/contributing/security.md.
+		tokenExchangeCallback: ({ props }) => stampOrgIdOnTokenExchange({ props }),
 	}
 }

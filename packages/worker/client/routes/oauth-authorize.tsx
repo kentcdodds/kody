@@ -28,6 +28,11 @@ import {
 	oauthAuthorizeConsentDecision,
 	oauthAuthorizeConsentFormAttrs,
 	oauthAuthorizeEmailVerificationDenyDisabled,
+	oauthAuthorizeGrantHeading,
+	oauthAuthorizeOrgField,
+	readOAuthAuthorizeConsentOrgs,
+	readOAuthAuthorizeSelectedOrgSlug,
+	type OAuthAuthorizeConsentOrg,
 } from '#client/routes/oauth-authorize-form.ts'
 import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
@@ -64,6 +69,8 @@ type OAuthAuthorizeInfo = {
 	scopes: Array<string>
 	emailVerified: boolean | null
 	requireCredentials: boolean
+	orgs: Array<OAuthAuthorizeConsentOrg>
+	selectedOrgSlug: string | null
 }
 
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -131,20 +138,96 @@ export async function oauthAuthorizeRouteLoader(
 					? payload.emailVerified
 					: null,
 			requireCredentials: payload.requireCredentials === true,
+			orgs: readOAuthAuthorizeConsentOrgs(payload.orgs),
+			selectedOrgSlug: readOAuthAuthorizeSelectedOrgSlug(
+				payload.selectedOrgSlug,
+			),
 		},
+	}
+}
+
+function orgOptionLabel(org: OAuthAuthorizeConsentOrg) {
+	return org.displayName ? `${org.displayName} (@${org.slug})` : `@${org.slug}`
+}
+
+function renderAuthorizeOrgField(input: {
+	orgs: ReadonlyArray<OAuthAuthorizeConsentOrg>
+	selectedOrgSlug: string | null
+	signedIn: boolean
+}) {
+	const field = oauthAuthorizeOrgField(input)
+	switch (field.kind) {
+		case 'hidden':
+			return (
+				<input
+					type="hidden"
+					name="org"
+					value={field.slug}
+					data-testid="oauth-authorize-org"
+				/>
+			)
+		case 'picker':
+			return (
+				<label mix={css(fieldCss)} data-testid="oauth-authorize-org-picker">
+					<span mix={css(fieldLabelCss)}>Organization</span>
+					<select
+						name="org"
+						required
+						data-testid="oauth-authorize-org"
+						mix={css(inputCss)}
+					>
+						{field.selectedSlug ? null : (
+							<option value="" disabled selected>
+								Choose an organization
+							</option>
+						)}
+						{field.options.map((org) => (
+							<option
+								key={org.slug}
+								value={org.slug}
+								selected={org.slug === field.selectedSlug}
+							>
+								{orgOptionLabel(org)}
+							</option>
+						))}
+					</select>
+				</label>
+			)
+		case 'missing':
+			return (
+				<p
+					role="alert"
+					data-testid="oauth-authorize-org-missing"
+					mix={css(getAlertCardCss('error'))}
+				>
+					This account has no organization to bind this connection to.
+				</p>
+			)
+		case 'pending':
+			return null
+		default: {
+			const exhaustive: never = field
+			return exhaustive
+		}
 	}
 }
 
 function renderOauthAuthorizeGrant(input: {
 	clientLabel: string
 	scopes: ReadonlyArray<string>
+	selectedOrgSlug: string | null
 }) {
 	return (
 		<section data-testid="oauth-authorize-grant" mix={css(cardCss)}>
-			<h2 mix={css(sectionTitleCss)}>This agent gets full access</h2>
+			<h2 mix={css(sectionTitleCss)}>
+				{oauthAuthorizeGrantHeading(input.selectedOrgSlug)}
+			</h2>
 			<p mix={css(descriptionCss)}>
-				Approving lets {input.clientLabel} use everything in this Kody account:
-				packages, memories, secrets, email, connected services, and anything
+				Approving lets {input.clientLabel} use everything in this Kody
+				{input.selectedOrgSlug
+					? ` organization @${input.selectedOrgSlug}`
+					: ' account'}
+				: packages, memories, secrets, email, connected services, and anything
 				else your assistant can do.
 			</p>
 			{input.scopes.length > 0 ? (
@@ -249,6 +332,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						? payload.emailVerified
 						: null,
 				requireCredentials: payload.requireCredentials === true,
+				orgs: readOAuthAuthorizeConsentOrgs(payload.orgs),
+				selectedOrgSlug: readOAuthAuthorizeSelectedOrgSlug(
+					payload.selectedOrgSlug,
+				),
 			}
 			status = 'ready'
 			allowClientReset = false
@@ -288,6 +375,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						? routeData.emailVerified
 						: null,
 				requireCredentials: routeData.requireCredentials === true,
+				orgs: routeData.orgs,
+				selectedOrgSlug: routeData.selectedOrgSlug,
 			}
 			status = 'ready'
 			allowClientReset = false
@@ -384,25 +473,29 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			body.set('decision', decision)
 			if (decision === 'approve' && form) {
 				const formData = new FormData(form)
+				const org = String(formData.get('org') ?? '').trim()
+				if (org) body.set('org', org)
 				const email = String(formData.get('email') ?? '').trim()
 				const password = String(formData.get('password') ?? '')
-				if (!email || !password) {
-					setMessage({
-						type: 'error',
-						text: 'Email and password are required.',
-					})
-					submittingDecision = null
-					handle.update()
-					return
+				if (email || password) {
+					if (!email || !password) {
+						setMessage({
+							type: 'error',
+							text: 'Email and password are required.',
+						})
+						submittingDecision = null
+						handle.update()
+						return
+					}
+					body.set('email', email)
+					body.set('password', password)
+					const protection = readPublicFormProtection(formData, form)
+					body.set(honeypotFieldName, protection[honeypotFieldName])
+					body.set(
+						turnstileResponseFieldName,
+						protection[turnstileResponseFieldName],
+					)
 				}
-				body.set('email', email)
-				body.set('password', password)
-				const protection = readPublicFormProtection(formData, form)
-				body.set(honeypotFieldName, protection[honeypotFieldName])
-				body.set(
-					turnstileResponseFieldName,
-					protection[turnstileResponseFieldName],
-				)
 			}
 			const response = await fetch(window.location.href, {
 				method: 'POST',
@@ -452,13 +545,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const requireCredentials = info?.requireCredentials === true
-		const hasSession =
-			Boolean(readEffectiveSession().session?.email) && !requireCredentials
-		await submitDecision(
-			'approve',
-			hasSession ? undefined : event.currentTarget,
-		)
+		await submitDecision('approve', event.currentTarget)
 	}
 
 	return () => {
@@ -526,13 +613,19 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 		const hydrated = consentInteractive
 		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
-		const actionsDisabled = oauthAuthorizeActionsDisabled({
-			hydrated,
-			statusReady: status === 'ready',
-			submitting: Boolean(submittingDecision),
-			sessionLoading: isSessionLoading,
-			needsEmailVerification,
+		const orgField = oauthAuthorizeOrgField({
+			orgs: info?.orgs ?? [],
+			selectedOrgSlug: info?.selectedOrgSlug ?? null,
+			signedIn: isLoggedIn,
 		})
+		const actionsDisabled =
+			oauthAuthorizeActionsDisabled({
+				hydrated,
+				statusReady: status === 'ready',
+				submitting: Boolean(submittingDecision),
+				sessionLoading: isSessionLoading,
+				needsEmailVerification,
+			}) || orgField.kind === 'missing'
 		const resetClientDisabled =
 			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
 		const formReady = hydrated && status === 'ready' && !isSessionLoading
@@ -561,7 +654,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					) : null}
 				</header>
 				{status === 'ready'
-					? renderOauthAuthorizeGrant({ clientLabel, scopes })
+					? renderOauthAuthorizeGrant({
+							clientLabel,
+							scopes,
+							selectedOrgSlug: info?.selectedOrgSlug ?? null,
+						})
 					: null}
 				{isLoggedIn ? (
 					<section mix={css(insetCardCss)}>
@@ -683,6 +780,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							name="decision"
 							value={oauthAuthorizeConsentDecision}
 						/>
+						{renderAuthorizeOrgField({
+							orgs: info?.orgs ?? [],
+							selectedOrgSlug: info?.selectedOrgSlug ?? null,
+							signedIn: isLoggedIn,
+						})}
 						{renderHoneypot()}
 						{!isLoggedIn && isSessionReady ? (
 							<>

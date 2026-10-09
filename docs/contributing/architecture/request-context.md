@@ -7,7 +7,7 @@ inbound email, or a platform event. It answers four questions in one shape:
 
 | Field         | Question                                   | Today                                                              |
 | ------------- | ------------------------------------------ | ------------------------------------------------------------------ |
-| `org`         | Whose data does this touch?                | The bound org (`id`, `slug`); personal orgs reuse `stable_user_id` |
+| `org`         | Whose data does this touch?                | The credential's bound org (`id`, `slug`); personal orgs reuse `stable_user_id` |
 | `actor`       | Who is acting?                             | The signed-in person; `null` for Automation                        |
 | `attribution` | Who is the run billed and audited to?      | `user` or `automation` (source + source id)                        |
 | `credential`  | What authenticated it, and does it narrow? | Kind, id, bound org, scopes, profile name                          |
@@ -64,10 +64,14 @@ the starter could do.
 ## The one swap point
 
 `deriveRequestContext` chooses org binding from an optional DB-backed
-`orgBinding` (via `loadOrgBindingForPerson` on browser sessions and MCP OAuth)
-or falls back to `resolveOrgBinding`, which maps every person to
-`personalOrgId(user.userId)` with slug from username. That fallback covers sync
-paths and tests. Call sites pass `orgBinding` only; they do not reimplement
+`orgBinding`. Browser sessions still load the person's personal org
+(`loadOrgBindingForPerson`). MCP OAuth and the CLI OAuth Open API path load the
+org stamped on the grant (`props.orgId`, then `loadOrgBindingForOrg`), falling
+back to `props.userId` as the personal org id for grants minted before the stamp
+([0064](../decisions/0064-oauth-org-binding.md)). Call sites that omit
+`orgBinding` still use `resolveOrgBinding` → `personalOrgId(user.userId)` with
+slug from username (covers sync paths and tests). Call sites pass `orgBinding`
+only; they do not reimplement
 membership rules.
 
 The persisted caller context (job `caller_context_json`, MCP agent props) stays
@@ -77,9 +81,10 @@ wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,
 ## Storage keys
 
 Storage still reads `callerContext.user.userId` (or the package's stored owner
-for Automation), which equals `request.org.id` while every org is a personal
-org. Moving storage reads to `request.org.id` is the step that must land before
-an org id can differ from a person id.
+for Automation). That still equals `request.org.id` for a personal-org grant; a
+team-org grant can already carry a different `request.org.id`. Moving storage
+reads to `request.org.id` is the step that must land before those grants touch
+org-keyed data.
 
 ## What to read when changing it
 
