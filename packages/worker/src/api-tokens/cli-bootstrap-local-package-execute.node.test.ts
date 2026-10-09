@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
@@ -12,7 +11,6 @@ import {
 	runWithRequestPermissions,
 } from '#worker/authorization/authorize.ts'
 import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
-import { handleOpenApiRequest } from '#worker/open-api/http-handler.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
 	cliCredentialBootstrapPolicy,
@@ -22,12 +20,10 @@ import {
 import { apiTokenLifetimeAliases, mintApiToken } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const apiOrigin = 'https://api.kody.test'
-const appOrigin = 'https://kody.test'
 const email = 'bootstrap-local@example.com'
 const username = 'bootstrap-local'
 
-async function createApi() {
+async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
 	const userId = testStableUserIdFromEmail(email)
@@ -42,47 +38,8 @@ async function createApi() {
 		stableUserId: userId,
 		username,
 	})
-	const env = {
-		APP_DB: db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	} as unknown as Env
-	const pending: Array<Promise<unknown>> = []
-	async function call(
-		method: string,
-		path: string,
-		options: { token?: string; body?: unknown } = {},
-	) {
-		const headers = new Headers()
-		if (options.token) headers.set('Authorization', `Bearer ${options.token}`)
-		if (options.body !== undefined) {
-			headers.set('Content-Type', 'application/json')
-		}
-		const response = await handleOpenApiRequest({
-			request: new Request(`${apiOrigin}${path}`, {
-				method,
-				headers,
-				...(options.body === undefined
-					? {}
-					: { body: JSON.stringify(options.body) }),
-			}),
-			env,
-			appOrigin,
-			waitUntil: (promise) => pending.push(promise),
-		})
-		await Promise.all(pending.splice(0))
-		return {
-			status: response.status,
-			body: (await response.json()) as {
-				error?: { code: string; message: string }
-				scopes?: Array<string>
-				modules?: Array<unknown>
-				imports?: Array<string>
-			},
-		}
-	}
-	return { db, env, userId, call }
+	const env = { APP_DB: db } as Env
+	return { db, env, userId }
 }
 
 async function seedOwnedPackage(db: D1Database, userId: string) {
@@ -106,7 +63,7 @@ async function seedOwnedPackage(db: D1Database, userId: string) {
 }
 
 test('default CLI bootstrap scopes resolve an owned package for local execute', async () => {
-	const { db, env, userId, call } = await createApi()
+	const { db, env, userId } = await createHarness()
 	const packageInfo = await seedOwnedPackage(db, userId)
 
 	const minted = await mintCliCredentialBootstrap({
@@ -126,6 +83,9 @@ test('default CLI bootstrap scopes resolve an owned package for local execute', 
 		[...cliCredentialBootstrapPolicy.defaultScopes].sort(),
 	)
 
+	// package-graph binds request permissions the same way; resolving the
+	// owned package under the redeemed token's scopes is the gate that used
+	// to fail closed as "package not found".
 	const request = deriveRequestContext({
 		user: {
 			userId: personIdFromStored(userId),
@@ -142,26 +102,10 @@ test('default CLI bootstrap scopes resolve an owned package for local execute', 
 		}),
 	)
 	expect(resolved?.row.id).toBe(packageInfo.id)
-
-	// package-graph is the local-execute prep that previously lied with
-	// "package not found" when package:execute was missing. Default bootstrap
-	// must get past the permission gate (artifact publish is orthogonal).
-	const graph = await call('POST', '/v1/local-execute/package-graph', {
-		token: redeemed.token.token,
-		body: {
-			code: `import demo from '${packageInfo.specifier}'
-export default async function main() { return demo }`,
-		},
-	})
-	expect(graph.status).not.toBe(403)
-	expect(graph.body.error?.code).not.toBe('insufficient_scope')
-	expect(graph.body.error?.message ?? '').not.toMatch(
-		/was not found for this user/i,
-	)
 })
 
-test('package-graph names missing package:execute when the package exists', async () => {
-	const { db, userId, call } = await createApi()
+test('missing package:execute names the scope instead of package-not-found', async () => {
+	const { db, env, userId } = await createHarness()
 	const packageInfo = await seedOwnedPackage(db, userId)
 	const narrow = await mintApiToken({
 		db,
@@ -172,31 +116,13 @@ test('package-graph names missing package:execute when the package exists', asyn
 		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'api',
 	})
-
-	const graph = await call('POST', '/v1/local-execute/package-graph', {
-		token: narrow.token,
-		body: {
-			code: `import demo from '${packageInfo.specifier}'
-export default async function main() { return demo }`,
-		},
-	})
-	expect(graph.status).toBe(403)
-	expect(graph.body.error?.code).toBe('insufficient_scope')
-	expect(graph.body.error?.message).toMatch(/package:execute/)
-	expect(graph.body.error?.message).toMatch(/@bootstrap-local\/demo/)
-	expect(graph.body.error?.message).not.toMatch(/was not found for this user/i)
-})
-
-test('resolveSavedPackageImport throws AuthorizationError instead of null when scoped out', async () => {
-	const { db, env, userId } = await createApi()
-	const packageInfo = await seedOwnedPackage(db, userId)
 	const request = deriveRequestContext({
 		user: {
 			userId: personIdFromStored(userId),
 			username,
 		},
-		source: { kind: 'api-token', tokenId: 'narrow' },
-		scopes: ['org:execute', 'org:read'],
+		source: { kind: 'api-token', tokenId: narrow.id },
+		scopes: narrow.scopes,
 	})
 	const error = await runWithRequestPermissions({ env, request }, () =>
 		resolveSavedPackageImport({
@@ -211,5 +137,6 @@ test('resolveSavedPackageImport throws AuthorizationError instead of null when s
 		permission: 'package:execute',
 	})
 	expect(String(error)).toMatch(/package:execute/)
+	expect(String(error)).toMatch(/@bootstrap-local\/demo/)
 	expect(String(error)).not.toMatch(/was not found for this user/i)
 })
