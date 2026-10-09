@@ -34,9 +34,17 @@ export const cliCredentialBootstrapPolicy = {
 	maxRedeemTtlSeconds: 15 * 60,
 	maxOutstandingCodesPerUser: 5,
 	defaultName: 'kody-cli-bootstrap',
+	/**
+	 * `org:execute` + `org:read` cover CapabilityProxy and account reads.
+	 * `package:execute` is required so `POST /v1/local-execute/package-graph`
+	 * can resolve `kody:@…` imports (request permissions check package:execute
+	 * per import). Without it, default bootstrap tokens fail closed on every
+	 * saved-package local execute.
+	 */
 	defaultScopes: [
 		'org:execute',
 		'org:read',
+		'package:execute',
 	] as const satisfies ReadonlyArray<ApiTokenScope>,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
 	maxIdleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds,

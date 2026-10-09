@@ -120,9 +120,10 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   `kody_at_`) and a `cli_command` that includes required lifetime flags.
   `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no Bearer;
   rejected for MCP `api`) and mints a normal `kody_at_` with default scopes
-  `org:execute` + `org:read` and `created_via: cli-bootstrap` for the CLI to
-  store. Lifetime is required on both bootstrap mint and redeem. CLI `whoami` /
-  `GET /v1/tokens/current` surface sliding `expires_at` (the idle window).
+  `org:execute` + `org:read` + `package:execute` and
+  `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
+  both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
+  surface sliding `expires_at` (the idle window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.

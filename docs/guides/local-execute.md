@@ -61,7 +61,7 @@ store. Minting details: [Open API](./open-api.md) (`guide:open_api`).
 	"operationId": "tokenCreate",
 	"params": {
 		"name": "kody-cli-local",
-		"scopes": ["org:execute", "org:read"],
+		"scopes": ["org:execute", "org:read", "package:execute"],
 		"lifetime": "short"
 	}
 }

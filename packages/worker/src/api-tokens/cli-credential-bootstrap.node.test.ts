@@ -66,7 +66,7 @@ test('bootstrap mint requires a lifetime and embeds it in cli_command', async ()
 	expect(minted.cli_command).toBe(
 		`npx @kodycodes/cli auth bootstrap --code ${minted.bootstrap_code} --lifetime short`,
 	)
-	expect(minted.scopes).toEqual(['org:execute', 'org:read'])
+	expect(minted.scopes).toEqual(['org:execute', 'org:read', 'package:execute'])
 	expect(minted.idle_ttl_seconds).toBe(shortLife.idleTtlSeconds)
 	expect(minted.max_lifetime_seconds).toBe(shortLife.maxLifetimeSeconds)
 	expect(parseApiToken(minted.bootstrap_code)).toBeNull()
@@ -104,7 +104,11 @@ test('bootstrap redeem requires a lifetime and yields a working token', async ()
 	})
 	expect(redeemed.userId).toBe(userId)
 	expect(redeemed.token.created_via).toBe('cli-bootstrap')
-	expect(redeemed.token.scopes).toEqual(['org:execute', 'org:read'])
+	expect(redeemed.token.scopes).toEqual([
+		'org:execute',
+		'org:read',
+		'package:execute',
+	])
 	expect(redeemed.token.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
 	expect(redeemed.token.expires_at).toBe(
 		at(30 + longLife.idleTtlSeconds).toISOString(),
@@ -349,7 +353,7 @@ test('bootstrap long lifetime clamps absolute max to a shorter API-token parent'
 		userId,
 		lifetime: 'long',
 		parent: {
-			scopes: ['token:delete', 'org:execute', 'org:read'],
+			scopes: ['token:delete', 'org:execute', 'org:read', 'package:execute'],
 			maxExpiresAt: at(parentRemainingSeconds).toISOString(),
 		},
 		now: start,
@@ -385,7 +389,7 @@ test('bootstrap still rejects an explicit idle TTL longer than the parent', asyn
 			idleTtlSeconds: 14 * 24 * 60 * 60,
 			maxLifetimeSeconds: 14 * 24 * 60 * 60,
 			parent: {
-				scopes: ['token:delete', 'org:execute', 'org:read'],
+				scopes: ['token:delete', 'org:execute', 'org:read', 'package:execute'],
 				maxExpiresAt: at(6 * 24 * 60 * 60).toISOString(),
 			},
 			now: start,
