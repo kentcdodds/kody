@@ -9,6 +9,8 @@ on:
       - reopened
       - synchronize
       - ready_for_review
+      - labeled
+      - unlabeled
       - closed
   workflow_dispatch:
     inputs:
@@ -62,7 +64,9 @@ jobs:
       (github.event_name == 'pull_request' &&
         github.event.action != 'closed' &&
         github.event.pull_request.head.repo.fork == false &&
-        github.event.pull_request.draft == false) ||
+        github.event.pull_request.draft == false &&
+        ((github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+          startsWith(github.event.label.name, 'preview-flag:'))) ||
       (github.event_name == 'workflow_dispatch' &&
         inputs.action == 'deploy')
     steps:
@@ -596,9 +600,27 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          PR_LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password ilikecode
+          labels_json="${PR_LABELS_JSON}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${PR_NUMBER}" ]; then
+            labels_json="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name]')"
+          fi
+          if [ -z "$labels_json" ] || [ "$labels_json" = "null" ]; then
+            labels_json='[]'
+          fi
+          mapfile -t flag_keys < <(node tools/preview-seed-flags.ts --labels "$labels_json")
+          flag_args=()
+          for key in "${flag_keys[@]}"; do
+            if [ -n "$key" ]; then
+              flag_args+=(--enable-flag "$key")
+            fi
+          done
+          node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" --email me@kentcdodds.com --password ilikecode "${flag_args[@]}"
 
       - name: 🩺 Healthcheck (preview)
         shell: bash

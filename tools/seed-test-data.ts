@@ -20,6 +20,10 @@ import {
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import {
+	isPreviewSeedFlagKey,
+	previewSeedFlagRejection,
+} from './preview-seed-flag-allowlist.ts'
+import {
 	getDefaultWranglerConfigPath,
 	resolveWranglerConfigPath,
 } from './wrangler-env-config.ts'
@@ -36,7 +40,10 @@ type CliOptions = {
 	persistTo?: string
 	/** Local-only: metadata-only saved_packages per seeded account. */
 	savedPackages?: number
-	/** Local-only: per-user feature flag overrides forced on. */
+	/**
+	 * Per-user feature flag overrides forced on. Any registry key locally.
+	 * With `--remote`, only preview env and the committed preview allowlist.
+	 */
 	enableFlags: Array<FeatureFlagKey>
 }
 
@@ -203,15 +210,24 @@ export function parseArgs(argv: Array<string>): CliOptions {
 	if (options.persistTo !== undefined && options.persistTo.length === 0) {
 		fail('Missing value for --persist-to <path>.')
 	}
-	if (
-		options.remote &&
-		(options.savedPackages !== undefined || options.enableFlags.length > 0)
-	) {
+	options.env = resolveWranglerEnv(options)
+	if (options.remote && options.savedPackages !== undefined) {
 		fail(
-			'--saved-packages and --enable-flag are local-only (metadata fixtures for local account UI).',
+			'--saved-packages is local-only (metadata fixtures for local account UI).',
 		)
 	}
-	options.env = resolveWranglerEnv(options)
+	if (options.remote && options.enableFlags.length > 0) {
+		if (options.env !== 'preview') {
+			fail(
+				`--enable-flag with --remote is only allowed when the wrangler env is preview. Refusing env ${JSON.stringify(options.env)}.`,
+			)
+		}
+		for (const key of options.enableFlags) {
+			if (!isPreviewSeedFlagKey(key)) {
+				fail(previewSeedFlagRejection(key))
+			}
+		}
+	}
 
 	return options
 }

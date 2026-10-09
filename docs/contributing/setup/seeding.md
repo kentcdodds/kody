@@ -39,10 +39,17 @@ See the [setup index](./index.md) for the other setup pages.
     seeded account (deterministic ids; no `entity_sources` or published
     artifacts). Enough for package pickers such as connection profiles.
   - `--enable-flag <key>` upserts a per-user override that forces the registry
-    flag on for each seeded account (repeatable). Keys must exist in
+    flag on for each seeded account (repeatable). Locally, keys must exist in
     `packages/worker/universal/feature-flags/registry.ts`.
   - Example for flagged connections UI as jane (and kody when using defaults):
     - `node tools/seed-test-data.ts --local --saved-packages 40 --enable-flag connection-profiles`
+- Remote `--enable-flag` is accepted only when the wrangler env is `preview` (an
+  explicit `--env preview`, a config path whose name contains `preview`, or
+  `CLOUDFLARE_ENV=preview`). Production and every other env fail closed. Remote
+  keys must also be on `tools/preview-seed-flag-allowlist.ts`. Preview deploys
+  pass those keys only when the PR has a matching `preview-flag:<key>` label.
+  See
+  [Manual preview testing](../preview-manual-testing.md#feature-flags-on-the-preview-seed).
 - These credentials are a test fixture only and should not be used to describe
   product behavior. Pass `--no-admin` to seed the default account without the
   admin role.
