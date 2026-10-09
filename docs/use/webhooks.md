@@ -593,16 +593,15 @@ Use `sync` when the caller needs the export JSON (or a **409** idempotency
 conflict). Use `ack` when the caller only needs acceptance; the queue consumer
 applies the same idempotency ledger.
 
-`inputMode: "params"` passes a JSON object as the export's **first argument**,
-matching invocation-token `params`. If the body is the invoke envelope
-(`{ "params": { … } }` with optional `idempotencyKey`, `source`, and `topic`),
-the platform unwraps `params`. `idempotencyKey` counts only as a non-empty
-string, and `source` / `topic` only as a string or null. A top-level JSON object
-that is not that envelope is the first argument as-is, so sibling fields such as
-`route` and `dryRun` stay visible even when a nested `params` object is present.
-Arrays and non-objects are **400** `invalid_params`. Default
-`inputMode: "request"` is unchanged: the export still receives
-`{ webhook, request }`.
+`inputMode: "params"` passes a JSON object as the export's **first argument**.
+If the body is the invoke envelope (`{ "params": { … } }` with optional
+`idempotencyKey`, `source`, and `topic`), the platform unwraps `params`.
+`idempotencyKey` counts only as a non-empty string, and `source` / `topic` only
+as a string or null. A top-level JSON object that is not that envelope is the
+first argument as-is, so sibling fields such as `route` and `dryRun` stay
+visible even when a nested `params` object is present. Arrays and non-objects
+are **400** `invalid_params`. Default `inputMode: "request"` is unchanged: the
+export still receives `{ webhook, request }`.
 
 Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 `idempotencyKey` is accepted when the header is absent. Same key + same payload

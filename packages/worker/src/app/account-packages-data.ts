@@ -16,7 +16,7 @@ import {
 	creditAttributionForPackage,
 	type CreditAttributionRow,
 } from '#universal/credit-attribution.ts'
-import { listPackageManifestExportNames } from '#universal/package-token-export-selection.ts'
+import { listPackageManifestExportNames } from '#universal/package-export-selection.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'

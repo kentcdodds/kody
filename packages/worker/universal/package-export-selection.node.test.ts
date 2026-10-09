@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
-import { listPackageManifestExportNames } from './package-token-export-selection.ts'
+import { listPackageManifestExportNames } from './package-export-selection.ts'
 
-test('listPackageManifestExportNames normalizes names and skips the token wildcard', () => {
+test('listPackageManifestExportNames normalizes names and skips the * wildcard', () => {
 	expect(
 		listPackageManifestExportNames({
 			'.': './src/index.ts',
