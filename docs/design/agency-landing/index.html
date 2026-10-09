@@ -731,37 +731,6 @@
       footer a {
         border-bottom: 1px solid #b5bfaa;
       }
-      dialog {
-        border: 1px solid #cbd5c0;
-        border-radius: 12px;
-        padding: 35px;
-        max-width: 460px;
-        width: calc(100% - 36px);
-        color: var(--ink);
-        background: var(--paper);
-      }
-      dialog::backdrop {
-        background: #10261899;
-        backdrop-filter: blur(4px);
-      }
-      dialog h2 {
-        font-size: 32px;
-        letter-spacing: -1px;
-        margin-right: 25px;
-      }
-      dialog p {
-        margin: 18px 0 25px;
-        color: #687460;
-        font-size: 15px;
-      }
-      .close {
-        position: absolute;
-        right: 15px;
-        top: 10px;
-        background: none;
-        border: 0;
-        font-size: 26px;
-      }
       .skip {
         position: absolute;
         left: 15px;
@@ -837,7 +806,7 @@
           width: 31px;
           height: 31px;
         }
-        .navlinks > a {
+        .navlinks > a:not(.button) {
           display: none;
         }
         .navlinks .button {
@@ -1010,9 +979,12 @@
         <div class="navlinks">
           <a href="#in-action">See it in action</a
           ><a href="#client-spaces">Client ownership</a
-          ><button class="button demo-button">
-            Book a demo <span class="arrow" aria-hidden="true">↗</span>
-          </button>
+          ><a
+            class="button"
+            href="https://kody.codes/onboarding?business=true&amp;utm_source=kody.codes&amp;utm_medium=business-page&amp;utm_campaign=business"
+          >
+            Get started <span class="arrow" aria-hidden="true">↗</span>
+          </a>
         </div>
       </nav>
       <main id="main">
@@ -1164,9 +1136,12 @@
               organizations, with clear ownership and control over who can use
               or change it.
             </p>
-            <button class="button demo-button">
-              Book a demo
-              <span class="arrow" aria-hidden="true">↗</span></button
+            <a
+              class="button"
+              href="https://kody.codes/onboarding?business=true&amp;utm_source=kody.codes&amp;utm_medium=business-page&amp;utm_campaign=business"
+            >
+              Get started
+              <span class="arrow" aria-hidden="true">↗</span></a
             ><a href="#in-action" class="text-link"
               >Explore a client workflow ↓</a
             >
@@ -1359,30 +1334,24 @@
           </p>
         </div>
         <div class="offer-card">
-          <h3>Bring a real business process.</h3>
+          <h3>Start with one workflow.</h3>
           <ul>
-            <li>Map your agents and business systems</li>
-            <li>Define team and client access</li>
-            <li>Plan the delivery and handoff</li>
+            <li>Connect your AI agent</li>
+            <li>Connect the tools you use</li>
+            <li>Build something useful</li>
           </ul>
-          <button class="button demo-button">
-            Book a demo <span class="arrow" aria-hidden="true">↗</span>
-          </button>
+          <a
+            class="button"
+            href="https://kody.codes/onboarding?business=true&amp;utm_source=kody.codes&amp;utm_medium=business-page&amp;utm_campaign=business"
+          >
+            Get started <span class="arrow" aria-hidden="true">↗</span>
+          </a>
         </div>
       </section>
       <footer>
         <span>Kody for business</span><a href="#main">Back to top ↑</a>
       </footer>
     </div>
-    <dialog id="demo" aria-labelledby="demo-title">
-      <button class="close" aria-label="Close dialog">×</button>
-      <h2 id="demo-title">Let’s talk about your team’s first workflow.</h2>
-      <p>
-        This is a design preview. The demo booking link will go here before the
-        page is published.
-      </p>
-      <button class="button close-demo">Back to the page</button>
-    </dialog>
     <script>
       const examples = {
         invoices: {
@@ -1527,13 +1496,6 @@
           render();
         }),
       );
-      const dialog = document.getElementById("demo");
-      document
-        .querySelectorAll(".demo-button")
-        .forEach((b) => b.addEventListener("click", () => dialog.showModal()));
-      document
-        .querySelectorAll(".close,.close-demo")
-        .forEach((b) => b.addEventListener("click", () => dialog.close()));
       render();
     </script>
     <script src="./hero-motion.js"></script>
