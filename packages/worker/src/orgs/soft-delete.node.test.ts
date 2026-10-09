@@ -481,7 +481,7 @@ test('personal org provision path supports soft delete audit', async () => {
 	expect(audit?.action).toBe('org.deleted')
 })
 
-test('softDeleteUserAccount refuses while a sole-member org lease is held without tombstoning the person', async () => {
+test('softDeleteUserAccount resumes after a sole-member org lease refusal', async () => {
 	const { env, appDb } = await createHarness()
 	const stableUserId = testStableUserIdFromEmail('lease-busy@example.com')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -529,20 +529,37 @@ test('softDeleteUserAccount refuses while a sole-member org lease is held withou
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
 
-	const person = await appDb
+	const personAfterRefuse = await appDb
 		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
 		.bind(stableUserId)
 		.first<{ deleted_at: string | null }>()
-	expect(person?.deleted_at).toBeNull()
-	const personalOrg = await appDb
+	expect(personAfterRefuse?.deleted_at).toBe(now.toISOString())
+	const orgAfterRefuse = await appDb
 		.prepare(`SELECT deleted_at, deleting_at FROM orgs WHERE id = ?`)
 		.bind(stableUserId)
 		.first<{ deleted_at: string | null; deleting_at: string | null }>()
-	expect(personalOrg?.deleted_at).toBeNull()
-	expect(personalOrg?.deleting_at).toBeNull()
+	expect(orgAfterRefuse?.deleted_at).toBeNull()
+	expect(orgAfterRefuse?.deleting_at).toBeNull()
 
 	releaseLease()
 	await expect(writePromise).resolves.toBe('saved')
+
+	await expect(
+		softDeleteUserAccount({
+			env,
+			userId: stableUserId,
+			now,
+		}),
+	).resolves.toMatchObject({
+		userId: stableUserId,
+		deletedAt: now.toISOString(),
+		deletedOrgIds: [stableUserId],
+	})
+	const orgAfterResume = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null }>()
+	expect(orgAfterResume?.deleted_at).toBe(now.toISOString())
 })
 
 test('softDeleteOrg refuses while an org OwnerId write lease is held', async () => {

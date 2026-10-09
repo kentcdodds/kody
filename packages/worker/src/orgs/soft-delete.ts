@@ -519,11 +519,13 @@ export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
  * Soft-delete a user and their sole-member orgs. Other-org memberships go
  * through {@link onMemberSoftRemoved}.
  *
- * Sole-member org OwnerIds are write-fenced before any tombstone so an active
- * lease refuses the whole account delete without leaving the person deleted
- * while orgs (or billing cancel) never ran. {@link softDeleteOrg} then reuses
- * those fences. {@link restoreUserAccount} only revives orgs that share the
- * person's `deleted_at`.
+ * The person row is tombstoned first (OwnerId writes stay blocked via
+ * {@link assertAccountWritableDb} even if a personal org is still live).
+ * {@link softDeleteOrg} fences each org itself; if it refuses for an active
+ * lease, retry this function — it resumes from an existing person tombstone
+ * and continues remaining sole-member orgs, memberships, and billing cancel.
+ * {@link restoreUserAccount} only revives orgs that share the person's
+ * `deleted_at`.
  */
 export async function softDeleteUserAccount(input: {
 	env: Env
@@ -536,103 +538,61 @@ export async function softDeleteUserAccount(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
-	const deletedAt = (input.now ?? new Date()).toISOString()
-	const fenceAt = new Date(deletedAt)
 	const appDb = input.env.APP_DB
+	const existing = await appDb
+		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
+		.bind(input.userId)
+		.first<{ deleted_at: string | null }>()
+	if (!existing) {
+		throw new Error('user_not_found_or_already_deleted')
+	}
+
+	let deletedAt: string
+	let createdPersonTombstone = false
+	if (existing.deleted_at) {
+		deletedAt = existing.deleted_at
+	} else {
+		deletedAt = (input.now ?? new Date()).toISOString()
+		const userUpdate = await appDb
+			.prepare(
+				`UPDATE users
+				 SET deleted_at = ?, updated_at = ?
+				 WHERE stable_user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(deletedAt, deletedAt, input.userId)
+			.run()
+		if ((userUpdate.meta.changes ?? 0) === 0) {
+			throw new Error('user_not_found_or_already_deleted')
+		}
+		createdPersonTombstone = true
+	}
+	const fenceAt = new Date(deletedAt)
 
 	const soleMemberOrgs = await appDb
 		.prepare(
 			`SELECT m.org_id AS org_id
 			 FROM org_memberships m
+			 INNER JOIN orgs org ON org.id = m.org_id AND org.deleted_at IS NULL
 			 WHERE m.user_id = ?
 			   AND m.deleted_at IS NULL
 			   AND (
-			     SELECT COUNT(*) FROM org_memberships o
-			     WHERE o.org_id = m.org_id AND o.deleted_at IS NULL
+			     SELECT COUNT(*) FROM org_memberships peers
+			     WHERE peers.org_id = m.org_id AND peers.deleted_at IS NULL
 			   ) = 1`,
 		)
 		.bind(input.userId)
 		.all<{ org_id: string }>()
-	const soleMemberOrgIds = (soleMemberOrgs.results ?? []).map(
-		(row) => row.org_id,
-	)
-
-	const fences: Array<{
-		orgId: string
-		created: boolean
-		deletingAt: string
-	}> = []
-	try {
-		for (const orgId of soleMemberOrgIds) {
-			const marked = await markOrgDeleting({
-				db: appDb,
-				orgId,
-				now: fenceAt,
-				env: input.env,
-			})
-			fences.push({
-				orgId,
-				created: marked.created,
-				deletingAt: marked.deletingAt,
-			})
-			if (marked.leaseCount > 0) {
-				throw new AccountDeletionWritersActiveError(marked.leaseCount)
-			}
-		}
-	} catch (error) {
-		for (const fence of fences) {
-			if (!fence.created) continue
-			try {
-				await abortOrgDeleting({
-					db: appDb,
-					orgId: fence.orgId,
-					now: fenceAt,
-					env: input.env,
-					expectedDeletingAt: fence.deletingAt,
-				})
-			} catch {
-				// Best-effort: leftover heal clears meter tombs when D1 is live.
-			}
-		}
-		throw error
-	}
-
-	const userUpdate = await appDb
-		.prepare(
-			`UPDATE users
-			 SET deleted_at = ?, updated_at = ?
-			 WHERE stable_user_id = ? AND deleted_at IS NULL`,
-		)
-		.bind(deletedAt, deletedAt, input.userId)
-		.run()
-	if ((userUpdate.meta.changes ?? 0) === 0) {
-		for (const fence of fences) {
-			if (!fence.created) continue
-			try {
-				await abortOrgDeleting({
-					db: appDb,
-					orgId: fence.orgId,
-					now: fenceAt,
-					env: input.env,
-					expectedDeletingAt: fence.deletingAt,
-				})
-			} catch {
-				// Best-effort abort after a concurrent person tombstone.
-			}
-		}
-		throw new Error('user_not_found_or_already_deleted')
-	}
 
 	const deletedOrgIds: Array<string> = []
-	for (const orgId of soleMemberOrgIds) {
+	for (const row of soleMemberOrgs.results ?? []) {
 		await softDeleteOrg({
 			env: input.env,
-			orgId,
+			orgId: row.org_id,
 			actorUserId: input.actorUserId ?? input.userId,
 			actorUsername: input.actorUsername,
 			now: fenceAt,
 		})
-		deletedOrgIds.push(orgId)
+		deletedOrgIds.push(row.org_id)
 	}
 
 	const otherMemberships = await appDb
@@ -651,17 +611,19 @@ export async function softDeleteUserAccount(input: {
 		})
 	}
 
-	await logOrgAuditEvent({
-		env: input.env,
-		orgId: input.userId,
-		action: 'user.deleted',
-		result: 'success',
-		actorUserId: input.actorUserId ?? input.userId,
-		actorUsername: input.actorUsername,
-		targetUserId: input.userId,
-		detailsJson: JSON.stringify({ deletedAt, deletedOrgIds }),
-		createdAt: deletedAt,
-	})
+	if (createdPersonTombstone) {
+		await logOrgAuditEvent({
+			env: input.env,
+			orgId: input.userId,
+			action: 'user.deleted',
+			result: 'success',
+			actorUserId: input.actorUserId ?? input.userId,
+			actorUsername: input.actorUsername,
+			targetUserId: input.userId,
+			detailsJson: JSON.stringify({ deletedAt, deletedOrgIds }),
+			createdAt: deletedAt,
+		})
+	}
 
 	invalidatePackageAppOwnerCache({ stableUserId: input.userId })
 	await cancelKodySubscriptionsForSoftDelete({
