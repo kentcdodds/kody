@@ -209,7 +209,10 @@ After that deploy, the seed session reports the flag on:
 npm run control-kody -- request GET /account/connected-agents.json --origin <preview> --dump --contains '"connectionProfilesEnabled":true'
 ```
 
-Without the label the same request contains `"connectionProfilesEnabled":false`.
+Without the label, the next preview seed deletes that allowlisted override, and
+the same request contains `"connectionProfilesEnabled":false`. An unknown
+`preview-flag:` label fails the seed step. Adding or removing the label on a
+closed pull request does not deploy.
 
 ## Logged-in data and UI pass
 

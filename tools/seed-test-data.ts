@@ -9,6 +9,7 @@ import {
 } from './local-d1-persist.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 import {
+	buildClearUnrequestedPreviewSeedFlagsSql,
 	buildSeedFeatureFlagOverrideSql,
 	buildSeedIntegrationSql,
 	buildSeedSavedPackagesSql,
@@ -261,6 +262,8 @@ export function buildSeedSql(
 	options: {
 		savedPackages?: number
 		enableFlags?: ReadonlyArray<FeatureFlagKey>
+		/** Preview reseeds delete allowlisted flags this run is not enabling. */
+		reconcilePreviewFlags?: boolean
 	} = {},
 ) {
 	return accounts
@@ -269,6 +272,13 @@ export function buildSeedSql(
 				buildSeedUserSql(account),
 				buildSeedIntegrationSql(account.email),
 			]
+			if (options.reconcilePreviewFlags) {
+				const clearSql = buildClearUnrequestedPreviewSeedFlagsSql({
+					email: account.email,
+					enableFlags: options.enableFlags ?? [],
+				})
+				if (clearSql) parts.push(clearSql)
+			}
 			if (options.savedPackages !== undefined) {
 				parts.push(
 					buildSeedSavedPackagesSql({
@@ -383,6 +393,7 @@ async function main() {
 	const sql = buildSeedSql(accounts, {
 		savedPackages: options.savedPackages,
 		enableFlags: options.enableFlags,
+		reconcilePreviewFlags: options.remote && options.env === 'preview',
 	})
 	executeSeedSql(sql, options, localPersistEnv())
 

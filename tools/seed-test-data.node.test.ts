@@ -220,6 +220,36 @@ test('remote enable-flag is preview-only and allowlisted', () => {
 	])
 	expect(fromPreviewConfig.env).toBe('preview')
 	expect(fromPreviewConfig.enableFlags).toEqual(['connection-profiles'])
+
+	const reconciled = buildSeedSql(
+		[
+			{
+				email: 'me@kentcdodds.com',
+				username: 'user-me',
+				passwordHash: 'hash',
+				admin: false,
+			},
+		],
+		{
+			enableFlags: ['connection-profiles'],
+			reconcilePreviewFlags: true,
+		},
+	)
+	expect(reconciled).toContain('DELETE FROM feature_flag_user_overrides')
+	expect(reconciled).toContain(`'demo-indicator'`)
+
+	const localOnly = buildSeedSql(
+		[
+			{
+				email: 'jane@example.com',
+				username: 'jane',
+				passwordHash: 'hash',
+				admin: false,
+			},
+		],
+		{ enableFlags: ['connection-profiles'] },
+	)
+	expect(localOnly).not.toContain('DELETE FROM feature_flag_user_overrides')
 })
 
 test('saved-packages and non-preview enable-flag are rejected for remote seed', () => {
