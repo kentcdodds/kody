@@ -2,8 +2,11 @@ import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
 import { resolveShareGrantedPackageImport } from '#worker/package-registry/share-grants.ts'
 import { getPlatformAccountByUsername } from '#worker/package-registry/scope-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { connectionProfileAllows } from '#universal/connection-profiles/grants.ts'
-import { getRequestConnectionProfileGrants } from '#worker/connection-profiles/request-grants.ts'
+import {
+	checkPermission,
+	getRequestPermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 
 export const packageSpecifierPrefix = 'kody:@'
 
@@ -179,25 +182,20 @@ export async function resolveSavedPackageImport(input: {
 function allowResolvedPackageImport(
 	resolution: ResolvedPackageImport,
 ): ResolvedPackageImport | null {
-	const grants = getRequestConnectionProfileGrants()
-	// Outside a profile wrap (undefined) or unlimited (null) → allow.
-	if (grants === undefined || grants === null) return resolution
+	const access = getRequestPermissions()
+	// Outside a request binding (jobs, apps, nested runtimes) → allow.
+	if (!access) return resolution
 	// Platform packages and nested share-owner helpers are infrastructure for
 	// an already-granted package graph, not chooser entries.
 	if (resolution.platformScope || resolution.bypassConnectionProfileGrant) {
 		return resolution
 	}
-	if (
-		connectionProfileAllows({
-			grants,
-			resourceType: 'package',
-			resourceId: resolution.row.id,
-			action: 'execute',
-		})
-	) {
-		return resolution
-	}
-	return null
+	const decision = checkPermission(
+		access,
+		'package:execute',
+		reachedPackage(access.orgId, { id: resolution.row.id }),
+	)
+	return decision.allowed ? resolution : null
 }
 
 export async function resolvePlatformScopedPackageImport(input: {

@@ -28,7 +28,6 @@ import {
 import { type NativeApiOperationId } from './operations.ts'
 import { connectionProfilesFlagKey } from '#universal/feature-flags/registry.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
-import { readCallerConnectionProfileName } from '#worker/connection-profiles/access.ts'
 import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
 import {
 	connectionProfileNameErrorMessage,
@@ -261,9 +260,8 @@ export const tokenOperationDefinitions: Record<
 							profileName: ctx.principal.token.profile_name ?? null,
 						}
 					: undefined
-			const callerProfileName = readCallerConnectionProfileName(
-				ctx.callerContext,
-			)
+			const callerProfileName =
+				ctx.callerContext.request?.credential.profileName ?? null
 			let profileName: string | null = null
 			if (input.profile !== undefined) {
 				profileName = normalizeConnectionProfileName(input.profile)

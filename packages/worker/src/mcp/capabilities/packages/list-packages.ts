@@ -1,15 +1,21 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
-import { resolveConnectionProfileActor } from '#worker/connection-profiles/access.ts'
-import { profileGrantsReveal } from '#worker/connection-profiles/repo.ts'
+import {
+	canSeeResource,
+	computeEffectivePermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 import {
 	packageSummaryWithCommunityProvenanceSchema,
 	toPackageSummaryWithCommunityProvenance,
@@ -52,20 +58,13 @@ export const listPackagesCapability = defineDomainCapability(
 					},
 				),
 			})
-			const actor = await resolveConnectionProfileActor({
+			const access = await computeEffectivePermissions({
 				env: ctx.env,
-				callerContext: ctx.callerContext,
+				request: requireMcpRequest(ctx.callerContext),
 			})
-			const visible =
-				actor.grants == null
-					? packages
-					: packages.filter((pkg) =>
-							profileGrantsReveal({
-								grants: actor.grants,
-								resourceType: 'package',
-								resourceId: pkg.id,
-							}),
-						)
+			const visible = packages.filter((pkg) =>
+				canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+			)
 			return {
 				packages: visible.map(toPackageSummaryWithCommunityProvenance),
 			}

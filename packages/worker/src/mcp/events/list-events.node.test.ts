@@ -9,7 +9,7 @@ import { listMcpEventSources } from './list-events.ts'
 const mocks = vi.hoisted(() => ({
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
-	resolveConnectionProfileActor: vi.fn(),
+	resolveConnectionProfileGrants: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -22,21 +22,24 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 		mocks.loadPackageManifestBySourceId(...args),
 }))
 
-vi.mock('#worker/connection-profiles/access.ts', () => ({
-	resolveConnectionProfileActor: (...args: Array<unknown>) =>
-		mocks.resolveConnectionProfileActor(...args),
+vi.mock('#worker/connection-profiles/repo.ts', () => ({
+	resolveConnectionProfileGrants: (...args: Array<unknown>) =>
+		mocks.resolveConnectionProfileGrants(...args),
 }))
 
 const env = { APP_DB: {} } as Env
-const callerContext = createMcpCallerContext({
-	source: { kind: 'mcp-oauth' },
-	baseUrl: 'https://kody.example.com',
-	user: {
-		userId: personIdFromStored('user-1'),
-		email: 'one@example.com',
-		displayName: 'One',
-	},
-})
+function createCallerContext(connectionProfileName: string | null) {
+	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://kody.example.com',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'one@example.com',
+			displayName: 'One',
+		},
+		connectionProfileName,
+	})
+}
 
 function savedPackage(id: string, kodyId: string): SavedPackageRecord {
 	return {
@@ -116,14 +119,11 @@ const manifestsBySourceId = new Map([
 afterEach(() => {
 	mocks.listSavedPackagesByUserId.mockReset()
 	mocks.loadPackageManifestBySourceId.mockReset()
-	mocks.resolveConnectionProfileActor.mockReset()
+	mocks.resolveConnectionProfileGrants.mockReset()
 })
 
 function arrange(grants: unknown) {
-	mocks.resolveConnectionProfileActor.mockResolvedValue({
-		grants,
-		profileName: grants === null ? null : 'work',
-	})
+	mocks.resolveConnectionProfileGrants.mockResolvedValue(grants)
 	mocks.listSavedPackagesByUserId.mockResolvedValue([
 		savedPackage('pkg-private', 'private-notes'),
 		savedPackage('pkg-gateway', 'discord-gateway'),
@@ -136,10 +136,11 @@ function arrange(grants: unknown) {
 			return { manifest }
 		},
 	)
+	return createCallerContext(grants === null ? null : 'work')
 }
 
 test('only mcp: true topics from readable saved packages are listed, sorted by name', async () => {
-	arrange(null)
+	const callerContext = arrange(null)
 	const sources = await listMcpEventSources({ env, callerContext })
 
 	expect([...sources.keys()]).toEqual([
@@ -179,7 +180,7 @@ test('only mcp: true topics from readable saved packages are listed, sorted by n
 })
 
 test('connection profile grants hide packages the connection cannot read', async () => {
-	arrange([
+	const callerContext = arrange([
 		{ resourceType: 'package', resourceId: 'pkg-gateway', actions: ['read'] },
 	])
 	const sources = await listMcpEventSources({ env, callerContext })
@@ -199,15 +200,15 @@ test('connection profile grants hide packages the connection cannot read', async
 	])
 	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
 
-	arrange([])
-	await expect(listMcpEventSources({ env, callerContext })).resolves.toEqual(
-		new Map(),
-	)
+	const deniedContext = arrange([])
+	await expect(
+		listMcpEventSources({ env, callerContext: deniedContext }),
+	).resolves.toEqual(new Map())
 })
 
 test('a package whose manifest fails to load is skipped and logged', async () => {
 	consoleWarn.mockImplementation(() => {})
-	arrange(null)
+	const callerContext = arrange(null)
 	mocks.loadPackageManifestBySourceId.mockImplementation(
 		async (input: { sourceId: string }) => {
 			if (input.sourceId === 'source-pkg-alerts') {

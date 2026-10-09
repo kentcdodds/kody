@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
 	connectionProfileAllows,
-	connectionProfileRevealsResource,
 	formatConnectionProfileGrantString,
 	normalizeConnectionProfileGrants,
 	parseConnectionProfileGrantString,
@@ -37,13 +36,6 @@ describe('connection profile grants', () => {
 				resourceType: 'package',
 				resourceId: 'pkg-1',
 				action: 'read',
-			}),
-		).toBe(false)
-		expect(
-			connectionProfileRevealsResource({
-				grants: [],
-				resourceType: 'package',
-				resourceId: 'pkg-1',
 			}),
 		).toBe(false)
 	})
@@ -85,13 +77,6 @@ describe('connection profile grants', () => {
 				action: 'read',
 			}),
 		).toBe(false)
-		expect(
-			connectionProfileRevealsResource({
-				grants,
-				resourceType: 'package',
-				resourceId: 'pkg-1',
-			}),
-		).toBe(true)
 	})
 
 	test('rejects write and non-package types at normalize', () => {

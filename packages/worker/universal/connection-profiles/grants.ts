@@ -102,25 +102,6 @@ export function connectionProfileAllows(input: {
 	return false
 }
 
-/** True when the package is granted for any action (visible in search/list). */
-export function connectionProfileRevealsResource(input: {
-	grants: ReadonlyArray<ConnectionProfileGrant> | null | undefined
-	resourceType: string
-	resourceId: string
-}): boolean {
-	if (input.grants == null) return true
-	for (const grant of input.grants) {
-		if (
-			grant.resourceType === input.resourceType &&
-			grant.resourceId === input.resourceId &&
-			grant.actions.length > 0
-		) {
-			return true
-		}
-	}
-	return false
-}
-
 export function parseConnectionProfileGrantsJson(
 	value: unknown,
 ): Array<ConnectionProfileGrant> {

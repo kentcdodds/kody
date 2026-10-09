@@ -136,10 +136,7 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 					'cliCredentialBootstrap cannot run inside saved-package, job, webhook, or app runtimes. Call it from the MCP api tool or the Open API.',
 				)
 			}
-			if (
-				typeof ctx.callerContext.connectionProfileName === 'string' &&
-				ctx.callerContext.connectionProfileName.trim()
-			) {
+			if (ctx.callerContext.request?.credential.profileName) {
 				throw new McpCallerError(
 					'cliCredentialBootstrap is not available on a named connection profile. Mint a profile-bound API token with tokenCreate instead.',
 				)

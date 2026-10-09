@@ -1,10 +1,13 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { type ConnectionProfileGrant } from '#universal/connection-profiles/grants.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { mcpEventsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import {
-	profileGrantsAllow,
-	resolveConnectionProfileGrants,
-} from '#worker/connection-profiles/repo.ts'
+	checkPermission,
+	computeEffectivePermissions,
+	reachedPackage,
+	type EffectivePermissions,
+} from '#worker/authorization/authorize.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
@@ -159,10 +162,23 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 		return result
 	}
 
-	const grantsByProfile = new Map<
-		string,
-		Promise<ReadonlyArray<ConnectionProfileGrant>>
-	>()
+	const accessByProfile = new Map<string, Promise<EffectivePermissions>>()
+	const subscriberAccess = (profileName: string | null) => {
+		const key = profileName ?? ''
+		let pending = accessByProfile.get(key)
+		if (!pending) {
+			pending = computeEffectivePermissions({
+				env: input.env,
+				request: deriveRequestContext({
+					user: { userId: personIdFromStored(message.userId) },
+					source: { kind: 'mcp-oauth' },
+					profileName,
+				}),
+			})
+			accessByProfile.set(key, pending)
+		}
+		return pending
+	}
 	const revokedClientCache = new Map<string, Promise<boolean>>()
 	const allowed: Array<McpEventSubscriptionRecord> = []
 	for (const subscription of subscriptions) {
@@ -178,28 +194,13 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 			result.denied += 1
 			continue
 		}
-		const profileName = subscription.connectionProfileName
-		let grants: ReadonlyArray<ConnectionProfileGrant> | null = null
-		if (profileName) {
-			let pending = grantsByProfile.get(profileName)
-			if (!pending) {
-				pending = resolveConnectionProfileGrants({
-					db,
-					userId: message.userId,
-					profileName,
-				})
-				grantsByProfile.set(profileName, pending)
-			}
-			grants = await pending
-		}
-		if (
-			profileGrantsAllow({
-				grants,
-				resourceType: 'package',
-				resourceId: message.source.packageId,
-				action: 'read',
-			})
-		) {
+		const access = await subscriberAccess(subscription.connectionProfileName)
+		const decision = checkPermission(
+			access,
+			'package:read',
+			reachedPackage(access.orgId, { id: message.source.packageId }),
+		)
+		if (decision.allowed) {
 			allowed.push(subscription)
 		} else {
 			result.denied += 1

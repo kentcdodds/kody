@@ -1,7 +1,6 @@
 import { ProtocolError } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { readCallerConnectionProfileName } from '#worker/connection-profiles/access.ts'
 import {
 	mcpEventCallbackVerificationTtlMs,
 	mcpEventSubscriptionDefaultTtlMs,
@@ -157,9 +156,8 @@ export async function subscribeMcpEvent(
 		})
 	}
 
-	const connectionProfileName = readCallerConnectionProfileName(
-		principal.callerContext,
-	)
+	const connectionProfileName =
+		principal.callerContext.request?.credential.profileName ?? null
 	const key: McpEventSubscriptionKey = {
 		userId,
 		oauthClientId: principal.oauthClientId,

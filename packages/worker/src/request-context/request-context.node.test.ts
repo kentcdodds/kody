@@ -97,6 +97,45 @@ test('inherited runs keep the starter lineage and re-resolve the org', () => {
 	expect(emitted.attribution).toEqual(automation.attribution)
 })
 
+test('every source keeps the connection profile it was reached through', () => {
+	const job = deriveRequestContext({
+		user,
+		source: { kind: 'schedule', jobId: 'job-1' },
+		profileName: '  work  ',
+	})
+	expect(job.credential.profileName).toBe('work')
+	expect(
+		deriveRequestContext({
+			user,
+			source: { kind: 'session' },
+			profileName: ' ',
+		}).credential.profileName,
+	).toBeNull()
+
+	// A run started by a profile-bound credential keeps that profile; a run
+	// whose starter had none keeps the profile persisted with the job.
+	const starter = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+		profileName: 'starter',
+	})
+	expect(
+		deriveRequestContext({
+			user,
+			source: inheritRequest(starter),
+			profileName: 'work',
+		}).credential.profileName,
+	).toBe('starter')
+	const unprofiled = deriveRequestContext({ user, source: { kind: 'session' } })
+	expect(
+		deriveRequestContext({
+			user,
+			source: inheritRequest(unprofiled),
+			profileName: 'work',
+		}).credential.profileName,
+	).toBe('work')
+})
+
 test('lineage survives a JSON round trip and malformed lineage is rejected', () => {
 	const lineage = requestLineage(
 		deriveRequestContext({ user, source: { kind: 'mcp-oauth' } }),

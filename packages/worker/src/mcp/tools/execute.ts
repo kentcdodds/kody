@@ -6,7 +6,7 @@ import {
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
-import { withCallerConnectionProfileGrants } from '#worker/connection-profiles/access.ts'
+import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
 import {
 	executeInvokeFieldDescription,
 	executeInvokeFlagKey,
@@ -427,10 +427,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					async () => {
 						try {
 							const inboundSignal = getInboundRequestSignal()
-							const execution = withCallerConnectionProfileGrants({
-								env,
-								callerContext,
-								run: async () =>
+							const execution = runWithRequestPermissions(
+								{ env, request: callerContext.request },
+								async () =>
 									runModuleWithRegistry(
 										env,
 										callerContext,
@@ -454,7 +453,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 											},
 										},
 									),
-							})
+							)
 							// Client disconnect cancels the request task. Keep
 							// the sandbox promise alive so its abort handler can
 							// finish the run record.

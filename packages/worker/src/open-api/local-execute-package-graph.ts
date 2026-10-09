@@ -10,7 +10,7 @@ import {
 	type NativeApiOperationDefinition,
 } from './native-operation-helpers.ts'
 import { type NativeApiOperationId } from './operations.ts'
-import { withCallerConnectionProfileGrants } from '#worker/connection-profiles/access.ts'
+import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
 
 export const localExecutePackageGraphInputSchema = z
 	.object({
@@ -54,17 +54,16 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 				params,
 			)
 			try {
-				return await withCallerConnectionProfileGrants({
-					env: ctx.env,
-					callerContext: ctx.callerContext,
-					run: () =>
+				return await runWithRequestPermissions(
+					{ env: ctx.env, request: ctx.callerContext.request },
+					() =>
 						buildLocalExecutePackageGraph({
 							env: ctx.env,
 							baseUrl: ctx.callerContext.baseUrl,
 							userId: ctx.callerContext.user.userId,
 							code: input.code,
 						}),
-				})
+				)
 			} catch (error) {
 				throw toLocalExecutePackageGraphApiError(error)
 			}

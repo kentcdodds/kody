@@ -36,6 +36,9 @@ export type RequestSource =
 	/** Nested invokes, workflow steps, package events, sealed providers. */
 	| { kind: 'inherited'; lineage: RequestLineage }
 
+/** The identity fields a request context is derived from. */
+type RequestPerson = Pick<McpUserContext, 'userId' | 'username'>
+
 type OrgBinding = {
 	org: RequestOrg
 	role: OrgRole
@@ -47,7 +50,7 @@ type OrgBinding = {
  * their `stable_user_id`, as its Owner. Org memberships replace this body;
  * callers do not change.
  */
-function resolveOrgBinding(user: McpUserContext): OrgBinding {
+function resolveOrgBinding(user: RequestPerson): OrgBinding {
 	return {
 		org: {
 			id: personalOrgId(user.userId),
@@ -57,7 +60,7 @@ function resolveOrgBinding(user: McpUserContext): OrgBinding {
 	}
 }
 
-function actorFor(user: McpUserContext): RequestActor {
+function actorFor(user: RequestPerson): RequestActor {
 	return { userId: user.userId, username: user.username?.trim() || null }
 }
 
@@ -81,6 +84,7 @@ function automation(input: {
 	source: AutomationSource
 	sourceId: string
 	credentialKind: RequestCredentialKind
+	profileName: string | null
 }): RequestContext {
 	return {
 		org: input.binding.org,
@@ -94,7 +98,7 @@ function automation(input: {
 			kind: input.credentialKind,
 			id: input.sourceId,
 			org: input.binding.org,
-			profileName: null,
+			profileName: input.profileName,
 		}),
 		membership: null,
 	}
@@ -106,13 +110,13 @@ function automation(input: {
  * for interactive sources, and the org's owning account for Automation.
  */
 export function deriveRequestContext(input: {
-	user: McpUserContext
+	user: RequestPerson
 	source: RequestSource
 	profileName?: string | null
 }): RequestContext {
 	const binding = resolveOrgBinding(input.user)
 	const { source } = input
-	const profileName = input.profileName ?? null
+	const profileName = input.profileName?.trim() || null
 	switch (source.kind) {
 		case 'session':
 		case 'mcp-oauth':
@@ -139,6 +143,7 @@ export function deriveRequestContext(input: {
 				source: 'schedule',
 				sourceId: source.jobId,
 				credentialKind: 'schedule',
+				profileName,
 			})
 		case 'webhook':
 			return automation({
@@ -146,6 +151,7 @@ export function deriveRequestContext(input: {
 				source: 'webhook',
 				sourceId: source.sourceId,
 				credentialKind: 'webhook',
+				profileName,
 			})
 		case 'inbound-email':
 			return automation({
@@ -153,6 +159,7 @@ export function deriveRequestContext(input: {
 				source: 'email',
 				sourceId: source.sourceId,
 				credentialKind: 'inbound-email',
+				profileName,
 			})
 		case 'platform-event':
 			return automation({
@@ -160,6 +167,7 @@ export function deriveRequestContext(input: {
 				source: 'event',
 				sourceId: source.sourceId,
 				credentialKind: 'platform-event',
+				profileName,
 			})
 		case 'inherited': {
 			const { lineage } = source
@@ -167,7 +175,10 @@ export function deriveRequestContext(input: {
 				org: binding.org,
 				actor: lineage.actor,
 				attribution: lineage.attribution,
-				credential: lineage.credential,
+				credential: {
+					...lineage.credential,
+					profileName: lineage.credential.profileName ?? profileName,
+				},
 				membership: lineage.actor ? { role: binding.role } : null,
 			}
 		}

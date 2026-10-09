@@ -16,8 +16,6 @@ export function sessionRequestContext(
 	return deriveRequestContext({
 		user: {
 			userId: personIdFromStored(stableUserId),
-			email: '',
-			displayName: '',
 			...(username ? { username } : {}),
 		},
 		source: { kind: 'session' },

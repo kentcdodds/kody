@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { toSecretCapabilityOutput } from '#mcp/capabilities/secrets/shared.ts'
 import { listPackageSecretsByPackageIds } from '#mcp/secrets/service.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
@@ -22,7 +25,7 @@ import {
 	authorizeSharedPackagePermission,
 	packageShareAccessErrorMessage,
 } from '#worker/package-registry/share-grants.ts'
-import { assertCallerCanAccessResource } from '#worker/connection-profiles/access.ts'
+import { authorize, reachedPackage } from '#worker/authorization/authorize.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
@@ -105,13 +108,12 @@ export const getPackageCapability = defineDomainCapability(
 				}
 				throw new McpCallerError('Saved package not found for this user.')
 			}
-			await assertCallerCanAccessResource({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
-				resourceType: 'package',
-				resourceId: saved.id,
-				action: 'read',
-			})
+			const request = requireMcpRequest(ctx.callerContext)
+			await authorize(
+				{ env: ctx.env, request },
+				'package:read',
+				reachedPackage(request.org.id, { id: saved.id }),
+			)
 			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,

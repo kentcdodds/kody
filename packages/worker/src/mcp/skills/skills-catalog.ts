@@ -4,8 +4,11 @@ import {
 	ResourceNotFoundError,
 } from '@modelcontextprotocol/server'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { resolveConnectionProfileActor } from '#worker/connection-profiles/access.ts'
-import { profileGrantsAllow } from '#worker/connection-profiles/repo.ts'
+import {
+	checkPermission,
+	computeEffectivePermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 import {
 	buildPackageSkillsIndex,
 	bytesToBase64,
@@ -73,17 +76,17 @@ async function listVisibleSkillPackageRecords(input: {
 	callerContext: McpCallerContext
 }): Promise<Array<SavedPackageRecord>> {
 	const userId = input.callerContext.user?.userId
-	if (!userId) return []
-	const profileActor = await resolveConnectionProfileActor(input)
+	const { request } = input.callerContext
+	if (!userId || !request) return []
+	const access = await computeEffectivePermissions({ env: input.env, request })
 	// Skills are source-like content: require package `read`, not mere
-	// reveal (execute-only profiles must not pull SKILL.md / assets).
+	// visibility (execute-only profiles must not pull SKILL.md / assets).
 	const canRead = (packageId: string) =>
-		profileGrantsAllow({
-			grants: profileActor.grants,
-			resourceType: 'package',
-			resourceId: packageId,
-			action: 'read',
-		})
+		checkPermission(
+			access,
+			'package:read',
+			reachedPackage(access.orgId, { id: packageId }),
+		).allowed
 	const [ownRecords, sharedRecords, platformPackages] = await Promise.all([
 		listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
 			userId,

@@ -1,10 +1,7 @@
 import {
-	connectionProfileAllows,
-	connectionProfileRevealsResource,
 	normalizeConnectionProfileGrants,
 	parseConnectionProfileGrantsJson,
 	serializeConnectionProfileGrants,
-	type ConnectionProfileAction,
 	type ConnectionProfileGrant,
 } from '#universal/connection-profiles/grants.ts'
 import {
@@ -284,21 +281,4 @@ export async function resolveConnectionProfileGrants(input: {
 		name: input.profileName,
 	})
 	return profile?.grants ?? []
-}
-
-export function profileGrantsAllow(input: {
-	grants: ReadonlyArray<ConnectionProfileGrant> | null | undefined
-	resourceType: string
-	resourceId: string
-	action: ConnectionProfileAction
-}) {
-	return connectionProfileAllows(input)
-}
-
-export function profileGrantsReveal(input: {
-	grants: ReadonlyArray<ConnectionProfileGrant> | null | undefined
-	resourceType: string
-	resourceId: string
-}) {
-	return connectionProfileRevealsResource(input)
 }

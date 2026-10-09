@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import {
 	orgPermissions,
 	type OrgPermission,
@@ -103,11 +104,12 @@ async function loadProfileGrants(
 ): Promise<ReadonlyArray<ConnectionProfileGrant> | null> {
 	const { profileName } = request.credential
 	if (!profileName) return null
-	// A bound profile with no person behind it grants nothing.
-	if (!request.actor) return []
+	// Profiles belong to the account that minted the credential. Automation
+	// keeps the profile of the credential that created the job or webhook,
+	// and that account is the org's own until orgs have members.
 	return await resolveConnectionProfileGrants({
 		db: env.APP_DB,
-		userId: request.actor.userId,
+		userId: request.actor?.userId ?? request.org.id,
 		profileName,
 	})
 }
@@ -199,6 +201,48 @@ function deny(input: {
 	}
 }
 
+function denialCode(
+	access: EffectivePermissions,
+	permission: OrgPermission,
+	resource: OrgResource | undefined,
+): AuthorizationDenialCode | null {
+	if (resource && resource.orgId !== access.orgId) return 'wrong_org'
+	if (!access.permissions.has(permission)) return 'missing_permission'
+	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
+		return 'credential_scope'
+	}
+	if (resource && !profileAllows(access.profileGrants, permission, resource)) {
+		return 'connection_profile'
+	}
+	return null
+}
+
+function denialMessage(
+	code: AuthorizationDenialCode,
+	permission: OrgPermission,
+	resource: OrgResource | undefined,
+) {
+	const target = resource ? ` on ${describeResource(resource)}` : ''
+	switch (code) {
+		case 'unauthenticated':
+			return `Authenticated MCP user is required for this capability. It needs ${permission}.`
+		case 'wrong_org':
+			return `${resource ? describeResource(resource) : 'This resource'} belongs to another org.`
+		case 'missing_permission':
+			return `Missing ${permission}${target}. An org Owner can grant it.`
+		case 'credential_scope':
+			return `This credential is not scoped for ${permission}${target}.`
+		case 'connection_profile': {
+			const action = profileActionFor(permission) ?? permission
+			return `This connection profile cannot ${action}${resource ? ` ${describeResource(resource)}` : ''}.`
+		}
+		default: {
+			const exhaustive: never = code
+			throw new Error(`Unhandled denial code: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /**
  * The pure decision behind `authorize`, for callers that already hold the
  * compiled permissions and check many resources at once.
@@ -208,45 +252,72 @@ export function checkPermission(
 	permission: OrgPermission,
 	resource?: OrgResource,
 ): AuthorizationDecision {
-	const target = resource ? ` on ${describeResource(resource)}` : ''
-	if (resource && resource.orgId !== access.orgId) {
-		return deny({
-			code: 'wrong_org',
-			permission,
-			access,
-			resource,
-			message: `${describeResource(resource)} belongs to another org.`,
-		})
-	}
-	if (!access.permissions.has(permission)) {
-		return deny({
-			code: 'missing_permission',
-			permission,
-			access,
-			resource,
-			message: `Missing ${permission}${target}. An org Owner can grant it.`,
-		})
-	}
-	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
-		return deny({
-			code: 'credential_scope',
-			permission,
-			access,
-			resource,
-			message: `This credential is not scoped for ${permission}${target}.`,
-		})
-	}
-	if (resource && !profileAllows(access.profileGrants, permission, resource)) {
-		const action = profileActionFor(permission) ?? permission
-		return deny({
-			code: 'connection_profile',
-			permission,
-			access,
-			resource,
-			message: `This connection profile cannot ${action} ${describeResource(resource)}.`,
-		})
-	}
-	return { allowed: true }
+	const code = denialCode(access, permission, resource)
+	if (!code) return { allowed: true }
+	return deny({
+		code,
+		permission,
+		access,
+		resource,
+		message: denialMessage(code, permission, resource),
+	})
+}
+
+const packageVisibilityPermissions: ReadonlyArray<OrgPermission> = [
+	'package:read',
+	'package:execute',
+	'package:write',
+]
+
+/**
+ * Whether a list or search result may show `resource`: the request holds at
+ * least one permission on it. A profile that only grants `execute` still
+ * shows the package, so it can be invoked.
+ */
+export function canSeeResource(
+	access: EffectivePermissions,
+	resource: OrgResource,
+) {
+	return packageVisibilityPermissions.some(
+		(permission) => denialCode(access, permission, resource) === null,
+	)
+}
+
+/**
+ * A package the request reached through its own lookups: one its org owns,
+ * one delegated through `package_scope`, an accepted share, or a built-in
+ * platform package. Those lookups run their own checks first, so the
+ * package counts as in the request's org until delegation becomes an org
+ * binding, shares become grants, and platform packages need a fork (#3040).
+ */
+export function reachedPackage(
+	orgId: OwnerId,
+	input: { id: string; label?: string },
+): OrgResource {
+	return { type: 'package', id: input.id, orgId, label: input.label }
+}
+
+const requestPermissionsStorage = new AsyncLocalStorage<EffectivePermissions>()
+
+/**
+ * Bind the request's permissions for deep call sites that do not carry a
+ * caller context (package import resolution). No request binds nothing.
+ */
+export async function runWithRequestPermissions<T>(
+	ctx: { env: Env; request: RequestContext | null },
+	run: () => Promise<T>,
+): Promise<T> {
+	if (!ctx.request) return await run()
+	const access = await computeEffectivePermissions({
+		env: ctx.env,
+		request: ctx.request,
+	})
+	return await requestPermissionsStorage.run(access, run)
+}
+
+/** The permissions bound by `runWithRequestPermissions`, if any. */
+export function getRequestPermissions(): EffectivePermissions | undefined {
+	return requestPermissionsStorage.getStore()
 }
 
 /**
@@ -265,7 +336,7 @@ export async function authorize(
 			permission,
 			orgId: null,
 			resource: resource ?? null,
-			message: `Authenticated MCP user is required for this capability. It needs ${permission}.`,
+			message: denialMessage('unauthenticated', permission, resource),
 		})
 	}
 	const access = await computeEffectivePermissions({

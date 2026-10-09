@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 	readIndex: vi.fn(),
 	writeIndex: vi.fn(),
 	loadSource: vi.fn(),
-	resolveConnectionProfileActor: vi.fn(),
+	resolveConnectionProfileGrants: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -48,9 +48,9 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageSourceBySourceId: (...args: Array<unknown>) =>
 		mocks.loadSource(...args),
 }))
-vi.mock('#worker/connection-profiles/access.ts', () => ({
-	resolveConnectionProfileActor: (...args: Array<unknown>) =>
-		mocks.resolveConnectionProfileActor(...args),
+vi.mock('#worker/connection-profiles/repo.ts', () => ({
+	resolveConnectionProfileGrants: (...args: Array<unknown>) =>
+		mocks.resolveConnectionProfileGrants(...args),
 }))
 
 const {
@@ -137,8 +137,6 @@ beforeEach(() => {
 		files: packageFiles,
 		manifest: { name: '@owner/ship', kody: { id: 'ship' } },
 	})
-	// Unlimited caller (no named profile): grants null → read allowed.
-	mocks.resolveConnectionProfileActor.mockResolvedValue({ grants: null })
 })
 
 test('anonymous callers get an empty catalog without touching storage', async () => {
@@ -412,17 +410,23 @@ test('execute-only connection profiles cannot list package skills', async () => 
 	const own = savedPackage()
 	mocks.listOwn.mockResolvedValue([own])
 	mocks.readIndex.mockResolvedValue(await buildIndex(own))
-	mocks.resolveConnectionProfileActor.mockResolvedValue({
-		grants: [
-			{
-				resourceType: 'package',
-				resourceId: own.id,
-				actions: ['execute'],
-			},
-		],
-	})
+	mocks.resolveConnectionProfileGrants.mockResolvedValue([
+		{
+			resourceType: 'package',
+			resourceId: own.id,
+			actions: ['execute'],
+		},
+	])
 
-	const catalog = await loadCallerSkillsCatalog({ env, callerContext })
+	const catalog = await loadCallerSkillsCatalog({
+		env,
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://kody.example',
+			user: callerContext.user,
+			connectionProfileName: 'work',
+		}),
+	})
 	expect(catalog).toEqual([])
 })
 

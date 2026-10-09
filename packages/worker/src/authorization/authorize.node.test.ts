@@ -5,20 +5,33 @@ import {
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	authorize,
 	authorizeSurface,
 	AuthorizationError,
+	canSeeResource,
 	checkPermission,
 	computeEffectivePermissions,
+	getRequestPermissions,
+	reachedPackage,
+	runWithRequestPermissions,
 	type EffectivePermissions,
 	type OrgResource,
 } from './authorize.ts'
 
-const env = {} as Env
+const mocks = vi.hoisted(() => ({
+	resolveConnectionProfileGrants: vi.fn(),
+}))
+
+vi.mock('#worker/connection-profiles/repo.ts', () => ({
+	resolveConnectionProfileGrants: (...args: Array<unknown>) =>
+		mocks.resolveConnectionProfileGrants(...args),
+}))
+
+const env = { APP_DB: {} } as Env
 
 function access(
 	overrides: Partial<EffectivePermissions> = {},
@@ -66,11 +79,7 @@ test('every person owns their implicit org and holds every org permission in it'
 
 test('Automation acts for its org with no actor', async () => {
 	const request = deriveRequestContext({
-		user: {
-			userId: personIdFromStored('user-1'),
-			email: '',
-			displayName: '',
-		},
+		user: { userId: personIdFromStored('user-1') },
 		source: { kind: 'schedule', jobId: 'job-1' },
 	})
 	expect(request.actor).toBeNull()
@@ -179,4 +188,55 @@ test('a request with no signed-in person is denied unless the surface touches no
 	await expect(
 		authorizeSurface({ env, request: null }, 'package:read'),
 	).rejects.toBeInstanceOf(AuthorizationError)
+})
+
+test('lists show a package when the request holds any permission on it', () => {
+	const pkg = reachedPackage(ownerIdFromStored('org-1'), { id: 'pkg-1' })
+	expect(canSeeResource(access(), pkg)).toBe(true)
+	const executeOnly = access({
+		profileGrants: [
+			{ resourceType: 'package', resourceId: 'pkg-1', actions: ['execute'] },
+		],
+	})
+	expect(canSeeResource(executeOnly, pkg)).toBe(true)
+	expect(checkPermission(executeOnly, 'package:read', pkg).allowed).toBe(false)
+	expect(canSeeResource(access({ profileGrants: [] }), pkg)).toBe(false)
+	expect(
+		canSeeResource(
+			access(),
+			reachedPackage(ownerIdFromStored('org-2'), { id: 'pkg-1' }),
+		),
+	).toBe(false)
+})
+
+test('Automation keeps the connection profile of the credential that created it', async () => {
+	const grants = [
+		{ resourceType: 'package', resourceId: 'pkg-1', actions: ['read'] },
+	]
+	mocks.resolveConnectionProfileGrants.mockResolvedValueOnce(grants)
+	const request = deriveRequestContext({
+		user: { userId: personIdFromStored('user-1') },
+		source: { kind: 'schedule', jobId: 'job-1' },
+		profileName: ' work ',
+	})
+	const effective = await computeEffectivePermissions({ env, request })
+	expect(mocks.resolveConnectionProfileGrants).toHaveBeenCalledWith({
+		db: env.APP_DB,
+		userId: 'user-1',
+		profileName: 'work',
+	})
+	expect(effective.profileGrants).toEqual(grants)
+})
+
+test('deep call sites read the permissions bound for the request', async () => {
+	const request = sessionRequestContext('user-1')
+	const bound = await runWithRequestPermissions({ env, request }, async () =>
+		getRequestPermissions(),
+	)
+	expect(bound).toBe(await computeEffectivePermissions({ env, request }))
+	await expect(
+		runWithRequestPermissions({ env, request: null }, async () =>
+			getRequestPermissions(),
+		),
+	).resolves.toBeUndefined()
 })

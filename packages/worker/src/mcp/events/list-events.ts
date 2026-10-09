@@ -1,7 +1,10 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { resolveConnectionProfileActor } from '#worker/connection-profiles/access.ts'
-import { profileGrantsAllow } from '#worker/connection-profiles/repo.ts'
+import {
+	checkPermission,
+	computeEffectivePermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
@@ -44,24 +47,22 @@ export async function listMcpEventSources(input: {
 	callerContext: McpCallerContext
 }): Promise<Map<string, McpEventSource>> {
 	const userId = input.callerContext.user?.userId
-	if (!userId) {
+	const { request } = input.callerContext
+	if (!userId || !request) {
 		throw new Error('MCP events require an authenticated user.')
 	}
-	const [actor, savedPackages] = await Promise.all([
-		resolveConnectionProfileActor({
-			env: input.env,
-			callerContext: input.callerContext,
-		}),
+	const [access, savedPackages] = await Promise.all([
+		computeEffectivePermissions({ env: input.env, request }),
 		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
 	])
 	const readablePackages = savedPackages
-		.filter((savedPackage) =>
-			profileGrantsAllow({
-				grants: actor.grants,
-				resourceType: 'package',
-				resourceId: savedPackage.id,
-				action: 'read',
-			}),
+		.filter(
+			(savedPackage) =>
+				checkPermission(
+					access,
+					'package:read',
+					reachedPackage(access.orgId, { id: savedPackage.id }),
+				).allowed,
 		)
 		.sort((left, right) => left.kodyId.localeCompare(right.kodyId))
 
