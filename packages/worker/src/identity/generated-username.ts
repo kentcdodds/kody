@@ -41,13 +41,21 @@ export async function isUsernameClaimedInIdentity(
 	}
 
 	if (except) {
+		// Own live handle (user_id) or own org-held retired handle (org_id)
+		// may be reclaimed. Express foreign claims positively so null/null
+		// historical redirects stay claimed (no SQL three-valued DROP).
 		const foreignHandle = await db
 			.prepare(
 				`SELECT 1 AS present FROM handles
 				 WHERE handle = ?
-				   AND NOT (
-				     user_id = ?
-				     OR (user_id IS NULL AND org_id = ?)
+				   AND (
+				     (user_id IS NULL AND org_id IS NULL)
+				     OR (user_id IS NOT NULL AND user_id != ?)
+				     OR (
+				       user_id IS NULL
+				       AND org_id IS NOT NULL
+				       AND org_id != ?
+				     )
 				   )`,
 			)
 			.bind(normalized, except, except)

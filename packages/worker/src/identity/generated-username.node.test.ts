@@ -85,4 +85,17 @@ test('isUsernameClaimedInIdentity allows reclaiming own retired handle and org s
 			exceptStableUserId: 'someone-else',
 		}),
 	).toBe(true)
+
+	await db
+		.prepare(
+			`INSERT INTO handles (handle, user_id, org_id, created_at)
+			 VALUES (?, NULL, NULL, ?)`,
+		)
+		.bind('retired-redirect', '2026-01-03T00:00:00.000Z')
+		.run()
+	expect(
+		await isUsernameClaimedInIdentity(db, 'retired-redirect', {
+			exceptStableUserId: stableUserId,
+		}),
+	).toBe(true)
 })
