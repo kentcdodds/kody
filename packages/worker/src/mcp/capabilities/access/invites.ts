@@ -418,9 +418,9 @@ export const inviteRevokeCapability = defineDomainCapability(
 	capabilityDomainNames.access,
 	{
 		name: 'inviteRevoke',
-		orgPermission: 'member:write',
+		orgPermission: 'none',
 		description:
-			'Revoke a pending invite in the organization this request is bound to. Accepted invites stay in place; remove the member or grant separately.',
+			'Revoke a pending invite in the organization this request is bound to. Membership invites need member:write. Grant invites need manage access on that resource (or member:write for an org grant). Accepted invites stay in place; remove the member or grant separately.',
 		keywords: ['invite', 'revoke', 'cancel'],
 		readOnly: false,
 		idempotent: false,
@@ -434,7 +434,8 @@ export const inviteRevokeCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			try {
-				const { db, request } = await requireOrgPermission(ctx, 'member:write')
+				const request = requireMcpRequest(ctx.callerContext)
+				const db = ctx.env.APP_DB
 				const invite = await getInviteById({
 					db,
 					orgId: request.org.id,
@@ -442,6 +443,29 @@ export const inviteRevokeCapability = defineDomainCapability(
 				})
 				if (!invite) {
 					throw new McpCallerError('Invite was not found in this organization.')
+				}
+				const kind = invite.kind
+				switch (kind) {
+					case 'membership':
+						await authorize({ env: ctx.env, request }, 'member:write')
+						break
+					case 'grant': {
+						if (!invite.resourceType || !invite.resourceId) {
+							throw new McpCallerError(
+								'This grant invite is missing a resource.',
+							)
+						}
+						await authorizeGrantTarget(
+							ctx,
+							invite.resourceType,
+							invite.resourceId,
+						)
+						break
+					}
+					default: {
+						const exhaustive: never = kind
+						throw new Error(`Unknown invite kind: ${String(exhaustive)}`)
+					}
 				}
 				await markInviteRevoked({ db, inviteId: invite.id })
 				return { invite_id: invite.id, status: 'revoked' as const }

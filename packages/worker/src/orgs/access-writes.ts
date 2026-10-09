@@ -26,12 +26,13 @@ async function runBatch(
 	statements: Array<{ run(): Promise<unknown> }>,
 ) {
 	if (typeof db.batch === 'function') {
-		await db.batch(statements as Array<D1PreparedStatement>)
-		return
+		return await db.batch(statements as Array<D1PreparedStatement>)
 	}
+	const results: Array<unknown> = []
 	for (const statement of statements) {
-		await statement.run()
+		results.push(await statement.run())
 	}
+	return results
 }
 
 function changesOf(result: unknown) {
@@ -349,15 +350,17 @@ export async function updateOrgMemberRole(input: {
 					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
 				)
 				.bind(input.role, input.orgId, input.userId)
-	const result = await statement.run()
-	if (!changesOf(result)) {
+	const results = await runBatch(input.db, [
+		statement,
+		bumpAccessEpochStatement(input.db, input.orgId),
+	])
+	if (!changesOf(results[0])) {
 		throw new Error(
 			input.protectLastOwner
 				? 'The last Owner cannot be demoted.'
 				: 'That person is not a member of this organization.',
 		)
 	}
-	await runBatch(input.db, [bumpAccessEpochStatement(input.db, input.orgId)])
 }
 
 export async function softDeleteOrgMember(input: {
@@ -391,15 +394,11 @@ export async function softDeleteOrgMember(input: {
 					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
 				)
 				.bind(now, input.orgId, input.userId)
-	const membershipResult = await membershipStatement.run()
-	if (!changesOf(membershipResult)) {
-		throw new Error(
-			input.protectLastOwner
-				? 'The last Owner cannot be removed.'
-				: 'That person is not a member of this organization.',
-		)
-	}
-	await runBatch(input.db, [
+	// One batch: membership + team/grant cleanup + epoch. Team/grant updates
+	// only match when the membership row is already soft-deleted, so a failed
+	// last-Owner guard (0 membership changes) cannot revoke grants alone.
+	const results = await runBatch(input.db, [
+		membershipStatement,
 		input.db
 			.prepare(
 				`UPDATE team_members
@@ -408,11 +407,13 @@ export async function softDeleteOrgMember(input: {
 				   AND deleted_at IS NULL
 				   AND team_id IN (
 				     SELECT id FROM teams WHERE org_id = ? AND deleted_at IS NULL
+				   )
+				   AND EXISTS (
+				     SELECT 1 FROM org_memberships
+				     WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL
 				   )`,
 			)
-			.bind(now, input.userId, input.orgId),
-		// Removal ends membership; direct user grants would otherwise leave the
-		// person as an outside collaborator. Soft-delete those grants too.
+			.bind(now, input.userId, input.orgId, input.orgId, input.userId),
 		input.db
 			.prepare(
 				`UPDATE grants
@@ -420,11 +421,22 @@ export async function softDeleteOrgMember(input: {
 				 WHERE org_id = ?
 				   AND subject_type = 'user'
 				   AND subject_id = ?
-				   AND deleted_at IS NULL`,
+				   AND deleted_at IS NULL
+				   AND EXISTS (
+				     SELECT 1 FROM org_memberships
+				     WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL
+				   )`,
 			)
-			.bind(now, now, input.orgId, input.userId),
+			.bind(now, now, input.orgId, input.userId, input.orgId, input.userId),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (!changesOf(results[0])) {
+		throw new Error(
+			input.protectLastOwner
+				? 'The last Owner cannot be removed.'
+				: 'That person is not a member of this organization.',
+		)
+	}
 }
 
 export async function createOrg(input: {
