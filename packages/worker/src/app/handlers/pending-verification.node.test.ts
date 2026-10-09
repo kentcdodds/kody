@@ -59,6 +59,9 @@ function createUserEnv(options: {
 						return { results: [], meta: { changes: 0 } }
 					},
 					async first() {
+						if (normalizedQuery.includes('from org_memberships')) {
+							return null
+						}
 						if (normalizedQuery.includes('email_verified_at')) {
 							return user ? { email_verified_at: user.email_verified_at } : null
 						}

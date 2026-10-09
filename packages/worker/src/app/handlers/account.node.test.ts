@@ -253,6 +253,6 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 	])
 	// Session batches: users+roles, then flags+overrides+experiments_opt_in.
 	expect(counts.batchSizes).toEqual([2, 3])
-	expect(counts.prepare).toBe(5)
+	expect(counts.prepare).toBe(6)
 	expect(counts.batch).toBe(2)
 })
