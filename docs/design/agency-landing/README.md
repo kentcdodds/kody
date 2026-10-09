@@ -13,6 +13,11 @@ python3 -m http.server 8768 --bind 127.0.0.1
 Open <http://127.0.0.1:8768/docs/design/agency-landing/>.
 The page uses the repository's existing fonts and logo.
 
+The agreed public URL is `/for/business`. Use `/for/` for audience landing
+pages, with `/for/agencies` and `/for/enterprise` reserved for distinct future
+offers. This PR remains a design prototype; production route wiring comes
+when the page is integrated into the app.
+
 Switch between monthly invoicing, nightly audits, and client onboarding.
 Each example has an app view and an AI-agent view. All three Get started links
 open the live onboarding flow with `business=true`, `utm_source=kody.codes`,
