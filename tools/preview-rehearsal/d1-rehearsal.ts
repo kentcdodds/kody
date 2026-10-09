@@ -128,12 +128,14 @@ export async function countD1Tables(
 	const counts: Array<D1TableCount> = []
 	for (let index = 0; index < tables.length; index += countBatchSize) {
 		const batch = tables.slice(index, index + countBatchSize)
+		// Separate statements, not UNION ALL: D1 caps compound SELECT terms far
+		// below SQLite's default.
 		const sql = batch
 			.map(
 				({ name }) =>
-					`SELECT '${name.replaceAll("'", "''")}' AS table_name, COUNT(*) AS row_count FROM ${quoteIdentifier(name)}`,
+					`SELECT '${name.replaceAll("'", "''")}' AS table_name, COUNT(*) AS row_count FROM ${quoteIdentifier(name)};`,
 			)
-			.join(' UNION ALL ')
+			.join('\n')
 		const rows = await queryD1<{ table_name: string; row_count: number }>(
 			client,
 			uuid,

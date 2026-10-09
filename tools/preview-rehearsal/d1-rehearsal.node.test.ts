@@ -55,17 +55,23 @@ function fakeD1Api(databases: Record<string, FakeDatabase>) {
 					},
 				])
 			}
+			if (sql.includes('UNION')) {
+				return Response.json(
+					{
+						success: false,
+						errors: [{ message: 'too many terms in compound SELECT' }],
+					},
+					{ status: 400 },
+				)
+			}
 			const counted = [...sql.matchAll(/SELECT '([^']+)' AS table_name/g)].map(
 				(match) => match[1] ?? '',
 			)
-			return ok([
-				{
-					results: counted.map((table) => ({
-						table_name: table,
-						row_count: database.tables[table],
-					})),
-				},
-			])
+			return ok(
+				counted.map((table) => ({
+					results: [{ table_name: table, row_count: database.tables[table] }],
+				})),
+			)
 		}
 		throw new Error(`unexpected ${method} ${url.pathname}`)
 	}
