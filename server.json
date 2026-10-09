@@ -3,7 +3,7 @@
 	"name": "io.github.kentcdodds/kody",
 	"title": "Kody",
 	"description": "Your agents' cloud. MCP server with search, execute, packages, jobs, secrets, and integrations.",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"websiteUrl": "https://kody.codes",
 	"repository": {
 		"url": "https://github.com/kentcdodds/kody",
