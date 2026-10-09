@@ -350,7 +350,7 @@
 		},
 		{
 			"filename": "0087-teams-soft-delete-columns.sql",
-			"sha256": "1efae53551878eae60756c9adcadd470d6d43fda545c59b2ae7c07e9dd48919d"
+			"sha256": "611213895a54d1735536d0c1838943a09c42b7ba97cf3a56c777fa19b96baaae"
 		},
 		{
 			"filename": "0088-teams-actor-columns.sql",

@@ -39,7 +39,7 @@ ALTER TABLE user_oauth_apps ADD COLUMN deleting_at TEXT;
 ALTER TABLE mcp_server_settings ADD COLUMN deleted_at TEXT;
 ALTER TABLE mcp_server_settings ADD COLUMN deleting_at TEXT;
 
-ALTER TABLE mcp_memories ADD COLUMN deleted_at TEXT;
+-- mcp_memories.deleted_at already exists (0001); add purge claim marker only.
 ALTER TABLE mcp_memories ADD COLUMN deleting_at TEXT;
 
 ALTER TABLE mcp_user_server_instructions ADD COLUMN deleted_at TEXT;
