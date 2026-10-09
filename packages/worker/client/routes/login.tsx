@@ -1,13 +1,11 @@
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/component'
-import { on } from '#client/event-mixin.ts'
 import {
 	getPathname,
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { ProviderIcon } from '#client/provider-icons.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { fetchSessionInfo, type SessionStatus } from '#client/session.ts'
@@ -16,6 +14,7 @@ import {
 	startSocialSignIn,
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
+import { renderSocialSignInButtons } from '#client/routes/social-sign-in-buttons.tsx'
 import {
 	clearStoredFirstTouchAttribution,
 	readSignupFirstTouchAttribution,
@@ -31,7 +30,6 @@ import {
 } from '#client/public-form-protection.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
-import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	type AuthStatus,
 	buildAuthPath,
@@ -426,39 +424,23 @@ export function LoginRoute(handle: Handle) {
 							onFieldEdit: clearFieldError,
 						})}
 
-						{showSocial ? (
-							<>
-								<div
-									data-rise
-									style={{ '--rise': '2' }}
-									role="separator"
-									aria-label="or continue with"
-									mix={css(authDividerCss)}
-								>
-									<span>or continue with</span>
-								</div>
-								<div
-									data-rise
-									style={{ '--rise': '3' }}
-									mix={css(authOauthCss)}
-								>
-									{authProviders.map((provider) => (
-										<button
-											key={provider.id}
-											type="button"
-											disabled={isSubmitting}
-											aria-label={`Continue with ${provider.label}`}
-											mix={[
-												css(oauthButtonCss),
-												on('click', () => handleProviderSignIn(provider.id)),
-											]}
-										>
-											<ProviderIcon providerId={provider.id} size="1.4rem" />
-										</button>
-									))}
-								</div>
-							</>
-						) : null}
+						{showSocial
+							? renderSocialSignInButtons({
+									providers: authProviders,
+									disabled: isSubmitting,
+									onProviderClick: (providerId) => {
+										void handleProviderSignIn(providerId)
+									},
+									dividerAttrs: {
+										'data-rise': '',
+										style: { '--rise': '2' },
+									},
+									buttonsAttrs: {
+										'data-rise': '',
+										style: { '--rise': '3' },
+									},
+								})
+							: null}
 
 						<footer data-rise style={{ '--rise': '4' }} mix={css(authFootCss)}>
 							{isSignup ? (
@@ -544,46 +526,6 @@ const authHeadCss = {
 	   desktop layout keeps the heading left-aligned with the form below it. */
 	[mobileMq]: {
 		textAlign: 'center' as const,
-	},
-}
-
-const authDividerCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: '0.9rem',
-	color: colors.textMuted,
-	fontSize: '0.88rem',
-	'&::before': {
-		content: '""',
-		flex: 1,
-		height: '1px',
-		background: colors.border,
-	},
-	'&::after': {
-		content: '""',
-		flex: 1,
-		height: '1px',
-		background: colors.border,
-	},
-}
-
-const authOauthCss = {
-	display: 'flex',
-	justifyContent: 'center',
-	flexWrap: 'wrap' as const,
-	gap: '0.7rem',
-}
-
-const oauthButtonCss = {
-	...getGhostButtonCss(),
-	flex: '0 0 auto',
-	width: '3rem',
-	height: '3rem',
-	minWidth: '3rem',
-	padding: 0,
-	'& svg': {
-		display: 'block',
-		flexShrink: 0,
 	},
 }
 

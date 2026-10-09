@@ -6,6 +6,7 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
+import { resolvePostAuthLandingPath,defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import {
 	createAuthCookie,
 	destroyAuthCookie,
@@ -60,7 +61,6 @@ import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
-import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import {
 	firstTouchAttributionCreateFields,
 	hasFirstTouchAttribution,
@@ -447,8 +447,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				} = {},
 			) {
 				const stableUserId = personIdFromStored(user.stable_user_id)
-				const postLoginPath =
+				const rawPostLoginPath =
 					options.destination ?? redirectTo ?? defaultRedirectTo
+				// Authorize resumes drop prompt=login after this completed auth
+				// so consent can use the session cookie just issued.
+				const postLoginPath =
+					resolvePostAuthLandingPath(rawPostLoginPath) ?? rawPostLoginPath
 				// Two-factor accounts get the same pending-verification gate as
 				// password and passkey logins; the session cookie is only
 				// issued once the TOTP code passes.

@@ -2,8 +2,10 @@ import { expect, test } from 'vitest'
 import {
 	defaultPostVerificationRedirect,
 	normalizeRedirectTo,
+	resolvePostAuthLandingPath,
 	resolvePostVerificationRedirect,
 	resolveVerifyEmailSuccessCta,
+	stripLoginFromAuthorizePrompt,
 } from '#universal/safe-redirect.ts'
 
 test('normalizeRedirectTo accepts same-origin paths and rejects open redirects', () => {
@@ -34,6 +36,32 @@ test('normalizeRedirectTo accepts same-origin paths and rejects open redirects',
 	}
 })
 
+test('stripLoginFromAuthorizePrompt drops login from absolute and path resumes', () => {
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'https://kody.codes/oauth/authorize?client_id=c&prompt=login',
+		),
+	).toBe('https://kody.codes/oauth/authorize?client_id=c')
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'/oauth/authorize?prompt=login%20consent&state=s',
+		),
+	).toBe('/oauth/authorize?prompt=consent&state=s')
+	expect(stripLoginFromAuthorizePrompt('/oauth/authorize?prompt=consent')).toBe(
+		'/oauth/authorize?prompt=consent',
+	)
+})
+
+test('resolvePostAuthLandingPath strips prompt=login only for authorize', () => {
+	expect(
+		resolvePostAuthLandingPath(
+			'/oauth/authorize?client_id=c&prompt=login&state=s',
+		),
+	).toBe('/oauth/authorize?client_id=c&state=s')
+	expect(resolvePostAuthLandingPath('/account')).toBe('/account')
+	expect(resolvePostAuthLandingPath('https://evil.example')).toBeNull()
+})
+
 test('post-verification redirect and success CTA preserve safe targets', () => {
 	const oauthResume = '/oauth/authorize?client_id=demo&state=abc'
 
@@ -41,6 +69,11 @@ test('post-verification redirect and success CTA preserve safe targets', () => {
 		defaultPostVerificationRedirect,
 	)
 	expect(resolvePostVerificationRedirect(oauthResume)).toBe(oauthResume)
+	expect(
+		resolvePostVerificationRedirect(
+			'/oauth/authorize?client_id=demo&prompt=login',
+		),
+	).toBe('/oauth/authorize?client_id=demo')
 	expect(resolvePostVerificationRedirect('https://evil.example')).toBe(
 		defaultPostVerificationRedirect,
 	)

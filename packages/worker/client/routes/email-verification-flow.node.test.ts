@@ -157,6 +157,13 @@ test('email verification redirect helpers preserve safe targets and reject open 
 			},
 			'/secrets',
 		],
+		[
+			{
+				mode: 'login',
+				redirectTo: '/oauth/authorize?client_id=c&prompt=login&state=s',
+			},
+			'/oauth/authorize?client_id=c&state=s',
+		],
 	]
 	expect(
 		passwordRedirects.filter(
