@@ -282,7 +282,7 @@ export function buildComputeOverageCreditsGuidance(
 	const rate = creditDebitRates[resource].label
 	switch (creditWallet) {
 		case 'funded':
-			return `Usage past the include is charged from your credits at ${rate} and stops when they run out.`
+			return `Usage past the include is charged from your credits at ${rate}. When credits run out, rate and compute limits match Free until you top up.`
 		case 'empty':
 			return `With no credits left, rate and compute limits match Free until you top up. Add credits at ${accountCreditsPath} to restore Pro rates; usage past the include is charged at ${rate}.`
 		case 'none':

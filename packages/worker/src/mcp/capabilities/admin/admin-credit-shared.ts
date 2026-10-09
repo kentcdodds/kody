@@ -24,7 +24,7 @@ export const adminCreditWalletSchema = z.object({
 	eligible: z
 		.boolean()
 		.describe(
-			'True when the effective plan is Pro and the account is credit-eligible (purchasable Pro subscription or admin eligibility): usage past the Pro include runs on credits (debited, up to the credits ceiling) and stops at the include when the balance is $0 or less. Otherwise the balance is held without being used.',
+			'True when the effective plan is Pro and the account is credit-eligible (purchasable Pro subscription or admin eligibility): usage past the Pro include runs on credits (debited, up to the credits ceiling). When the balance is $0 or less, rate and compute limits match Free until credits are added. Otherwise the balance is held without being used.',
 		),
 	adminCreditsEligible: z
 		.boolean()

@@ -30,7 +30,7 @@ export const entitlementResourceGroupNotes: Partial<
 	Record<EntitlementResourceGroup, string>
 > = {
 	monthly:
-		'Included Worker compute and Rows read this UTC month. On Pro, usage past the include is charged from prepaid credits and stops when they run out; Free is asked to upgrade.',
+		'Included Worker compute and Rows read this UTC month. On Pro, usage past the include is charged from prepaid credits; when credits run out, rate and compute limits match Free. Free is asked to upgrade.',
 	daily:
 		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }

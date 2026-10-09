@@ -315,7 +315,7 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 	)
 })
 
-test('purchasable Pro with credits runs past the include on credits; at $0 it stops at the include', async () => {
+test('purchasable Pro with credits runs past the include on credits; at $0 Free rates apply', async () => {
 	const purchasablePro = {
 		plan: 'free',
 		stripePlan: 'pro',

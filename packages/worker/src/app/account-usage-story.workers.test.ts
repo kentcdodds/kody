@@ -89,7 +89,7 @@ async function loadStoryAndCredits(userId: number) {
 	return { ...story, credits }
 }
 
-test('usage story and Credits section on real D1: Free calm, funded Pro on credits, empty Pro stopped', async () => {
+test('usage story and Credits section on real D1: Free calm, funded Pro on credits, empty Pro Free rates', async () => {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const free = await seedUser({ label: 'story-free' })
 	const funded = await seedUser({

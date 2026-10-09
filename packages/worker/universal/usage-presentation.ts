@@ -364,7 +364,7 @@ export function resolveCreditsAlarm(input: {
 					kind: 'credits_low',
 					tone: 'warn',
 					title: 'Credits running low',
-					body: `Balance: ${balance}. This month's include is used up, so runs stop when credits run out.`,
+					body: `Balance: ${balance}. This month's include is used up. When credits run out, rate and compute limits match Free.`,
 					action,
 				}
 			}
@@ -379,10 +379,10 @@ export function resolveCreditsAlarm(input: {
 
 /**
  * Monthly Worker compute / Rows read only warrants a customer warning (email
- * or usage-page warning row) when crossing the include would stop runs: an
- * empty purchasable-Pro wallet. Funded wallets keep running on credits (low
- * balance and auto-refill cap have their own emails); Free and other
- * wallet-less plans are never charged or stopped by these meters.
+ * or usage-page warning row) when crossing the include would drop the org to
+ * Free rate/compute limits: an empty purchasable-Pro wallet. Funded wallets
+ * keep running on credits (low balance and auto-refill cap have their own
+ * emails); Free and other wallet-less plans are never charged by these meters.
  */
 export function computeIncludeWarningPutsAccessAtRisk(
 	creditWallet: CreditWalletState,
