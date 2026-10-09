@@ -58,11 +58,11 @@ import {
 	listOwnedUserMcpOauthClientIds,
 } from '#app/account-mcp-oauth-clients.ts'
 import {
-	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
 	getAccountD1UserColumnCoverage,
 } from '#worker/account/data-targets.ts'
+import { hardPurgeDataTargets } from '#worker/orgs/data-targets.ts'
 import {
 	accountUserOwnedVectorizeSurfaces,
 	getAccountDeletionDurableObjectResultKeys,
@@ -1465,7 +1465,7 @@ async function deleteUserScopedRowsAndUser(input: {
 		updatedRowCounts[tableName] =
 			(updatedRowCounts[tableName] ?? 0) + (changes ?? 0)
 	}
-	const operations = accountUserDataTargets.map((target) => {
+	const operations = hardPurgeDataTargets('person').map((target) => {
 		const match = buildUserScopedTargetMatch({
 			target,
 			mcpUserId: input.mcpUserId,
