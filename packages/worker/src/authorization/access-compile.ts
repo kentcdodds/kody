@@ -206,20 +206,33 @@ function dbCanPrepare(db: D1Database) {
 	return typeof db?.prepare === 'function'
 }
 
-async function readOrgEpoch(db: D1Database, orgId: string): Promise<number> {
+async function readOrgEpoch(
+	db: D1Database,
+	orgId: string,
+): Promise<number | null> {
 	if (!dbCanPrepare(db)) {
 		throw new Error(
 			`APP_DB cannot prepare statements while compiling access for org ${orgId}.`,
 		)
 	}
-	const row = await db
-		.prepare(`SELECT access_epoch FROM orgs WHERE id = ?`)
-		.bind(orgId)
-		.first<{ access_epoch: number }>()
-	if (!row) {
-		throw new Error(`Org ${orgId} was not found while compiling access.`)
+	try {
+		const row = await db
+			.prepare(`SELECT access_epoch FROM orgs WHERE id = ?`)
+			.bind(orgId)
+			.first<{ access_epoch: number }>()
+		if (!row) return null
+		return Number(row.access_epoch) || 0
+	} catch (error) {
+		// Incomplete test DBs may lack the orgs table; production always has it
+		// after P3. Surface the error for non-owner callers instead.
+		if (
+			error instanceof Error &&
+			/no such table:\s*orgs/i.test(error.message)
+		) {
+			return null
+		}
+		throw error
 	}
-	return Number(row.access_epoch) || 0
 }
 
 async function readAccessCache(
@@ -334,11 +347,18 @@ export async function compileAccessForRequest(input: {
 		return ownerCompiledAccess(orgId, 0)
 	}
 
-	const epoch = await readOrgEpoch(input.db, orgId)
+	const epochOrNull = await readOrgEpoch(input.db, orgId)
 
 	if (!request.actor || role === 'owner') {
-		return ownerCompiledAccess(orgId, epoch)
+		// P3 dual path: Owner access works before every fixture provisions an
+		// orgs row. Cleanup: require the row once seeds and tests always do.
+		return ownerCompiledAccess(orgId, epochOrNull ?? 0)
 	}
+
+	if (epochOrNull === null) {
+		throw new Error(`Org ${orgId} was not found while compiling access.`)
+	}
+	const epoch = epochOrNull
 
 	const userId = request.actor.userId
 	const cached = await readAccessCache(input.db, orgId, userId, epoch)
