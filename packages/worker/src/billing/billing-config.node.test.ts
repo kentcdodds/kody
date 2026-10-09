@@ -6,10 +6,13 @@ import {
 	getPriceIdForPlan,
 	getPurchasablePlans,
 	isCreditsEligiblePriceId,
+	isKodySubscription,
+	isPurchasableProSubscription,
 	parseBillingInterval,
 	retiredProPriceIds,
 	retiredStandardPriceIds,
 	resolveSubscriptionPlan,
+	selectKodyPlanRetainingSubscriptions,
 	selectPlanRetainingSubscriptions,
 	subscriptionHasPrice,
 } from './billing-config.ts'
@@ -31,6 +34,7 @@ function subscription(input: {
 		items: {
 			data: (input.priceIds ?? []).map((id) => ({
 				id: undefined,
+				quantity: undefined,
 				price: { id },
 				current_period_end: undefined,
 			})),
@@ -285,6 +289,62 @@ test('selectPlanRetainingSubscriptions and subscriptionHasPrice drive the checko
 			),
 		),
 	).toEqual([null, null, 'bpc_kody'])
+})
+
+test('isKodySubscription requires a Kody price or Kody metadata', () => {
+	const gratitext = subscription({
+		id: 'sub_gratitext',
+		status: 'active',
+		priceIds: ['price_gratitext_premium_15'],
+	})
+	const purchasablePro = subscription({
+		id: 'sub_pro',
+		status: 'active',
+		priceIds: ['price_pro'],
+	})
+	const retiredStandard = subscription({
+		id: 'sub_retired_standard',
+		status: 'active',
+		priceIds: [retiredStandardMonthly],
+	})
+	const metadataOnly = subscription({
+		id: 'sub_meta',
+		status: 'active',
+		priceIds: ['price_rotated_unknown'],
+		metadata: { kody_plan: 'pro' },
+	})
+	expect(isKodySubscription(env, gratitext)).toBe(false)
+	expect(isKodySubscription(env, purchasablePro)).toBe(true)
+	expect(isKodySubscription(env, retiredStandard)).toBe(true)
+	expect(isKodySubscription(env, metadataOnly)).toBe(true)
+	expect(isPurchasableProSubscription(env, purchasablePro)).toBe(true)
+	expect(isPurchasableProSubscription(env, retiredStandard)).toBe(false)
+	expect(
+		selectKodyPlanRetainingSubscriptions(env, [
+			gratitext,
+			purchasablePro,
+			retiredStandard,
+			subscription({
+				id: 'sub_canceled_pro',
+				status: 'canceled',
+				priceIds: ['price_pro'],
+			}),
+		]).map((entry) => entry.id),
+	).toEqual(['sub_pro', 'sub_retired_standard'])
+	// Unmapped products never grant a Kody plan, even when plan-retaining.
+	expect(resolveSubscriptionPlan([gratitext], env)).toMatchObject({
+		stripePlan: null,
+		stripePriceId: null,
+		creditsEligible: false,
+	})
+	// A Kody sub beside an unmapped product still resolves the Kody plan only.
+	expect(
+		resolveSubscriptionPlan([gratitext, retiredStandard], env),
+	).toMatchObject({
+		stripePlan: 'standard',
+		stripePriceId: retiredStandardMonthly,
+		creditsEligible: false,
+	})
 })
 
 test('retired Standard and Pro price ids keep resolving their plans', () => {

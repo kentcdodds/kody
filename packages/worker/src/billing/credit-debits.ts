@@ -19,8 +19,7 @@
  *   (`creditDebitCostMicroUsd(next) - creditDebitCostMicroUsd(accounted)`).
  * - A funded purchasable-Pro wallet is debited for the delta. The balance
  *   can dip below $0 by up to one hour of usage past the include; after
- *   that, past-include runs stop until a top-up covers it
- *   (include → credits → stop, enforced in `consumeDailyEntitlement`).
+ *   that, rate/compute falls back to Free caps until a top-up (ADR 0064).
  * - Every other wallet (empty, or not eligible) advances progress without
  *   a debit. An empty wallet only gets here through the hour-scale lag
  *   before the stop applies; that overshoot and wallet-less usage are never
@@ -34,7 +33,10 @@
  * run is bounded; `credit_debit_cursor` keeps the keyset position so the
  * next run continues past the last wallet this one reached.
  */
-import { computeMonthlyOverage } from '#universal/compute-overage.ts'
+import {
+	computeMonthlyOverage,
+	computeMonthlyOverageForDebit,
+} from '#universal/compute-overage.ts'
 import {
 	creditDebitCostMicroUsd,
 	creditDebitMeters,
@@ -50,8 +52,10 @@ import {
 } from '#worker/entitlements/service.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { sendCreditLowBalanceEmail } from '#app/user-account-emails.ts'
+import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { creditDebitMonths } from './credit-wallet.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
+import { recordOrgBudgetSpend } from '#worker/entitlements/budget-gate.ts'
 
 export const creditDebitBatchSize = 50
 export const creditDebitMaxBatchesPerRun = 20
@@ -237,6 +241,7 @@ async function debitOneWallet(input: {
 	for (const month of input.months) {
 		const outcome = await settleCreditDebitMonth({
 			db,
+			env: input.env,
 			userId,
 			entitlement,
 			month,
@@ -267,12 +272,18 @@ async function debitOneWallet(input: {
 			autoRefillEnabled: Number(input.row.auto_refill_enabled) === 1,
 		})
 	) {
-		await sendCreditLowBalanceEmail({
-			env: input.env,
-			email: input.row.email,
-			userId,
-			balanceMicroUsd: nextBalance,
-			now: input.now,
+		await sendToOrgBillingRecipients({
+			db: input.env.APP_DB,
+			orgId: userId,
+			sendOne: async (recipient) => {
+				await sendCreditLowBalanceEmail({
+					env: input.env,
+					email: recipient.email,
+					userId: recipient.userId,
+					balanceMicroUsd: nextBalance,
+					now: input.now,
+				})
+			},
 		}).catch((error: unknown) => {
 			console.warn('credit-low-balance-email-failed', error)
 		})
@@ -291,6 +302,7 @@ type ProgressRow = { meter: string; accounted_units: number }
  */
 export async function settleCreditDebitMonth(input: {
 	db: D1Database
+	env: Env
 	userId: string
 	entitlement: UserEntitlement
 	month: string
@@ -308,32 +320,44 @@ export async function settleCreditDebitMonth(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
+	const debitOverage = computeMonthlyOverageForDebit({
+		plan: input.entitlement.plan,
+		ladder: input.entitlement.ladder,
+		creditWallet: input.entitlement.creditWallet,
+		uniqueWorkerDays: usage.uniqueWorkerDays,
+		durableObjectRowsRead: usage.durableObjectRowsRead,
+	})
+	const purchasableProDebitBaseline = computeMonthlyOverage({
+		plan: 'pro',
+		ladder: 'public',
+		creditWallet: 'funded',
+		uniqueWorkerDays: usage.uniqueWorkerDays,
+		durableObjectRowsRead: usage.durableObjectRowsRead,
+	})
 	const charge = input.entitlement.creditWallet === 'funded'
+	const walletEligiblePro =
+		input.entitlement.plan === 'pro' &&
+		input.entitlement.creditWallet !== 'none'
 	// When not charging, advance progress against at least the purchasable
 	// Pro debit baseline. Gift/retired Pro ceilings are larger than that
 	// baseline; without this, usage between 350 and 2,000 UWD would leave
-	// progress behind and get back-charged on a later funded return.
+	// progress behind and get back-charged on a later funded return. Empty
+	// purchasable Pro uses the baseline only (Free enforcement includes must
+	// not inflate progress).
 	const progressOverage = charge
-		? overage
-		: (() => {
-				const creditsBaseline = computeMonthlyOverage({
-					plan: 'pro',
-					ladder: 'public',
-					creditWallet: 'empty',
-					uniqueWorkerDays: usage.uniqueWorkerDays,
-					durableObjectRowsRead: usage.durableObjectRowsRead,
-				})
-				return {
+		? debitOverage
+		: input.entitlement.creditWallet === 'empty' && walletEligiblePro
+			? debitOverage
+			: {
 					billableUniqueWorkerDays: Math.max(
 						overage.billableUniqueWorkerDays,
-						creditsBaseline.billableUniqueWorkerDays,
+						purchasableProDebitBaseline.billableUniqueWorkerDays,
 					),
 					billableDurableObjectRowsRead: Math.max(
 						overage.billableDurableObjectRowsRead,
-						creditsBaseline.billableDurableObjectRowsRead,
+						purchasableProDebitBaseline.billableDurableObjectRowsRead,
 					),
 				}
-			})()
 	const billable: Record<CreditDebitMeter, number> = {
 		unique_worker_days: progressOverage.billableUniqueWorkerDays,
 		durable_object_rows_read: progressOverage.billableDurableObjectRowsRead,
@@ -429,6 +453,23 @@ export async function settleCreditDebitMonth(input: {
 				},
 			}
 		}
+	}
+	if (debitedMicroUsd > 0) {
+		await recordOrgBudgetSpend({
+			db: input.db,
+			env: input.env,
+			orgId: input.userId,
+			actorUserId: input.userId,
+			automationSource: null,
+			deltaMicroUsd: debitedMicroUsd,
+			now: input.now,
+		}).catch((error: unknown) => {
+			console.warn('org_budget_spend_record_failed', {
+				userId: input.userId,
+				month: input.month,
+				error: error instanceof Error ? error.message : String(error),
+			})
+		})
 	}
 	return { month: input.month, debitedMicroUsd, forgivenUnits }
 }

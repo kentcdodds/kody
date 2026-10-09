@@ -25,7 +25,11 @@ import {
 	type RawFetchHostSink,
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
-import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+	type UsageEnv,
+} from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
@@ -873,6 +877,9 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 								codeChars,
 								paramsChars,
 								executeShape: input.executeShape,
+								...usageAttributionFieldsFromRequest(
+									input.gatewayProps.request,
+								),
 								waitUntil: input.waitUntil,
 							})
 						}),
@@ -889,6 +896,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 							durationMs,
 							outcome,
 							surface: 'execute',
+							...usageAttributionFieldsFromRequest(input.gatewayProps.request),
 							...(input.executeShape
 								? { executeShape: input.executeShape }
 								: {}),

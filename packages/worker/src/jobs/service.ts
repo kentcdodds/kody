@@ -1316,6 +1316,12 @@ export async function executeJobOnce(input: {
 						userId: input.job.userId,
 						email: backgroundUser.email,
 						resource: 'job_runs_per_day',
+						orgBudget: {
+							orgId: input.job.userId,
+							orgSlug: backgroundUser.username ?? null,
+							actorUserId: input.job.userId,
+							actorUsername: backgroundUser.username ?? null,
+						},
 					})
 					const result = await runRepoBackedJob({
 						env: input.env,

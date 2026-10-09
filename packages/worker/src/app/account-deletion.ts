@@ -23,6 +23,7 @@ import {
 	type StripeSubscription,
 } from '#worker/billing/stripe-client.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
+import { isKodySubscription } from '#worker/billing/billing-config.ts'
 import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
@@ -822,12 +823,14 @@ async function appendEarlierAccountDeletionRefunds(input: {
 }
 
 /**
- * Refunds unused time on, then cancels, every subscription that can still
- * bill (see `stripeSubscriptionStatusesCanceledOnAccountDeletion`) and throws
- * {@link AccountDeletionBillingError} when any refund fails or any
- * subscription is still billable afterwards. Runs before any destructive
- * cleanup so a Stripe outage retains the account instead of leaving a paying
- * customer with no account, no portal access, and no refund.
+ * Refunds unused time on, then cancels, every **Kody** subscription that can
+ * still bill (see `stripeSubscriptionStatusesCanceledOnAccountDeletion` and
+ * {@link isKodySubscription}) and throws {@link AccountDeletionBillingError}
+ * when any refund fails or any Kody subscription is still billable afterwards.
+ * Non-Kody subscriptions on the shared Stripe account are left untouched.
+ * Runs before any destructive cleanup so a Stripe outage retains the account
+ * instead of leaving a paying customer with no account, no portal access, and
+ * no refund.
  *
  * Only `active` and `trialing` subscriptions are refunded, and the refund is
  * issued before the cancel so the invoice line's service period is still
@@ -858,7 +861,13 @@ async function cancelActiveStripeSubscriptions(input: {
 			`Stripe subscriptions could not be listed: ${getErrorMessage(error)}`,
 		])
 	}
-	const billable = subscriptions.filter(isStripeSubscriptionBillable)
+	// Shared Stripe account: only cancel Kody subscriptions. Never touch
+	// other products on the same customer (for example GratiText Premium).
+	const billable = subscriptions.filter(
+		(subscription) =>
+			isStripeSubscriptionBillable(subscription) &&
+			isKodySubscription(input.env, subscription),
+	)
 	const refunds: Array<AccountDeletionStripeRefund> = []
 
 	const nowSeconds = Math.floor(Date.now() / 1000)
@@ -909,7 +918,11 @@ async function cancelActiveStripeSubscriptions(input: {
 		try {
 			stillBillable = (
 				await listSubscriptions(input.env, input.customerId)
-			).filter(isStripeSubscriptionBillable)
+			).filter(
+				(subscription) =>
+					isStripeSubscriptionBillable(subscription) &&
+					isKodySubscription(input.env, subscription),
+			)
 		} catch (error) {
 			throw new AccountDeletionBillingError([
 				...failures,

@@ -369,6 +369,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						userId: callerContext.user.userId,
 						email: callerContext.user.email,
 						resource: 'execute_calls_per_day',
+						orgBudget: callerContext.request
+							? {
+									orgId: callerContext.request.org.id,
+									orgSlug: callerContext.request.org.slug,
+									actorUserId: callerContext.request.actor?.userId ?? null,
+									actorUsername: callerContext.request.actor?.username ?? null,
+								}
+							: undefined,
 					})
 				}
 

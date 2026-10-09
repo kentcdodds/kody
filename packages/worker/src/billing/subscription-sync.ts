@@ -33,6 +33,8 @@ import {
 } from './stripe-client.ts'
 import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
 import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
+import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
+import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
 
 export class BillingLinkError extends Error {
 	readonly code:
@@ -152,7 +154,8 @@ export async function refreshStripePlanForUser(input: {
 			stripePlan: resolved.stripePlan,
 		}),
 	)
-	if (previous?.email) {
+	const orgId = previous?.stable_user_id
+	if (orgId) {
 		const previousPlan = parseStripePlanName(previous.stripe_plan)
 		const nextPlan = resolved.stripePlan
 		if (
@@ -160,11 +163,17 @@ export async function refreshStripePlanForUser(input: {
 			nextPlan !== previousPlan
 		) {
 			waitUntil(
-				sendBillingSuccessEmail({
-					env: input.env,
-					email: previous.email,
-					userId: previous.stable_user_id,
-					planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
+				sendToOrgBillingRecipients({
+					db: input.env.APP_DB,
+					orgId,
+					sendOne: async (recipient) => {
+						await sendBillingSuccessEmail({
+							env: input.env,
+							email: recipient.email,
+							userId: recipient.userId,
+							planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
+						})
+					},
 				}).catch((error) => {
 					console.warn('billing-success-email-failed', error)
 				}),
@@ -172,17 +181,26 @@ export async function refreshStripePlanForUser(input: {
 		}
 		const status = resolved.subscriptionStatus
 		if (status === 'past_due' || status === 'unpaid') {
+			const day = utcDayKey(now)
 			waitUntil(
-				sendPastDueEmail({
-					env: input.env,
-					email: previous.email,
-					userId: previous.stable_user_id,
-					day: utcDayKey(now),
+				sendToOrgBillingRecipients({
+					db: input.env.APP_DB,
+					orgId,
+					sendOne: async (recipient) => {
+						await sendPastDueEmail({
+							env: input.env,
+							email: recipient.email,
+							userId: recipient.userId,
+							day,
+						})
+					},
 				}).catch((error) => {
 					console.warn('billing-past-due-email-failed', error)
 				}),
 			)
 		}
+	}
+	if (previous?.email) {
 		scheduleKitSubscriberSync({
 			env: input.env,
 			email: previous.email,
@@ -219,6 +237,7 @@ export async function resolveBillingUserForCheckoutLink(input: {
 	env: SyncEnv
 	clientReferenceId: string | null | undefined
 	stableUserIdHint?: string | null
+	metadata?: Record<string, string> | null
 	customerId?: string | null
 	customerEmail?: string | null
 }): Promise<BillingUser | null> {
@@ -234,7 +253,10 @@ export async function resolveBillingUserForCheckoutLink(input: {
 		candidates.push(user)
 	}
 
-	const stableUserIdHint = input.stableUserIdHint?.trim()
+	const stableUserIdHint =
+		resolveOrgIdFromStripeMetadata(input.metadata) ??
+		input.stableUserIdHint?.trim() ??
+		null
 	if (stableUserIdHint) {
 		const row = await input.env.APP_DB.prepare(
 			`SELECT id, email, stable_user_id FROM users WHERE stable_user_id = ?`,
@@ -254,17 +276,40 @@ export async function resolveBillingUserForCheckoutLink(input: {
 
 	const customerId = input.customerId?.trim()
 	if (customerId) {
-		const row = await input.env.APP_DB.prepare(
+		const userRow = await input.env.APP_DB.prepare(
 			`SELECT id, email, stable_user_id FROM users WHERE stripe_customer_id = ?`,
 		)
 			.bind(customerId)
 			.first<{ id: number; email: string; stable_user_id: string }>()
 		await pushCandidate(
-			row
+			userRow
 				? {
-						id: row.id,
-						email: row.email,
-						stableUserId: row.stable_user_id,
+						id: userRow.id,
+						email: userRow.email,
+						stableUserId: userRow.stable_user_id,
+					}
+				: null,
+		)
+		const orgRow = await input.env.APP_DB.prepare(
+			`SELECT o.id AS org_id, u.id, u.email, u.stable_user_id
+			 FROM orgs o
+			 INNER JOIN users u ON u.stable_user_id = o.id
+			 WHERE o.stripe_customer_id = ?
+			   AND o.deleted_at IS NULL`,
+		)
+			.bind(customerId)
+			.first<{
+				org_id: string
+				id: number
+				email: string
+				stable_user_id: string
+			}>()
+		await pushCandidate(
+			orgRow
+				? {
+						id: orgRow.id,
+						email: orgRow.email,
+						stableUserId: orgRow.stable_user_id,
 					}
 				: null,
 		)
@@ -307,12 +352,22 @@ export async function findUserIdByStripeCustomerId(input: {
 }): Promise<number | null> {
 	const customerId = input.customerId.trim()
 	if (!customerId) return null
-	const row = await input.env.APP_DB.prepare(
+	const userRow = await input.env.APP_DB.prepare(
 		`SELECT id FROM users WHERE stripe_customer_id = ?`,
 	)
 		.bind(customerId)
 		.first<{ id: number }>()
-	return row?.id ?? null
+	if (userRow?.id != null) return userRow.id
+	const orgRow = await input.env.APP_DB.prepare(
+		`SELECT u.id
+		 FROM orgs o
+		 INNER JOIN users u ON u.stable_user_id = o.id
+		 WHERE o.stripe_customer_id = ?
+		   AND o.deleted_at IS NULL`,
+	)
+		.bind(customerId)
+		.first<{ id: number }>()
+	return orgRow?.id ?? null
 }
 
 /**
@@ -482,6 +537,7 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 	sessionId: string
 	clientReferenceId?: string | null
 	stableUserIdHint?: string | null
+	metadata?: Record<string, string> | null
 	customerId?: string | null
 	customerEmail?: string | null
 	/** When set (success redirect), skip candidate lookup and use this user. */
@@ -501,6 +557,7 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 		env: input.env,
 		clientReferenceId: input.clientReferenceId,
 		stableUserIdHint: input.stableUserIdHint,
+		metadata: input.metadata,
 		customerId: input.customerId,
 		customerEmail: input.customerEmail,
 	})

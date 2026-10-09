@@ -25,16 +25,21 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 
 const attributionUpsertStatement = `
 INSERT INTO usage_attribution_daily (
-	user_id, day, package_id, meter, units, updated_at
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+	user_id, day, package_id, meter, units, updated_at,
+	actor_user_id, automation_source
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
 ON CONFLICT (user_id, day, package_id, meter) DO UPDATE SET
 	units = excluded.units,
-	updated_at = excluded.updated_at
+	updated_at = excluded.updated_at,
+	actor_user_id = excluded.actor_user_id,
+	automation_source = excluded.automation_source
 `.trim()
 
 /**
  * Analytics Engine SQL for billable units this UTC month, grouped by day and
  * package id (blob9). Empty blob9 is Ad hoc / historical unattributed.
+ * `blob1` is the org billing id. When multiple actors share a rollup key,
+ * `any(blob10)` and `any(blob11)` pick one representative row.
  */
 export function buildCreditAttributionDailyQuery(
 	dataset: string,
@@ -49,6 +54,8 @@ SELECT
 	toDate(timestamp) AS day,
 	blob9 AS package_id,
 	blob2 AS event_type,
+	any(blob10) AS actor_user_id,
+	any(blob11) AS automation_source,
 	sum(
 		if(blob2 = 'durable_object_rows_read' AND double3 > 0, double3, 1.0) * _sample_interval
 	) AS units
@@ -79,6 +86,8 @@ type AttributionAnalyticsRow = {
 	day: string
 	package_id: string | null
 	event_type: string
+	actor_user_id?: string | null
+	automation_source?: string | null
 	units: number | string
 }
 
@@ -142,6 +151,13 @@ export async function aggregateCreditAttributionDaily(
 		const units = Number(row.units)
 		if (!Number.isFinite(units) || units <= 0) continue
 		presentKeys.add(`${row.user_id}\0${day}\0${packageId}\0${meter}`)
+		const actorUserId =
+			(typeof row.actor_user_id === 'string' && row.actor_user_id.trim()) ||
+			row.user_id
+		const automationSource =
+			typeof row.automation_source === 'string'
+				? row.automation_source.trim()
+				: ''
 		upsertStatements.push(
 			env.APP_DB.prepare(attributionUpsertStatement).bind(
 				row.user_id,
@@ -150,6 +166,8 @@ export async function aggregateCreditAttributionDaily(
 				meter,
 				units,
 				updatedAt,
+				actorUserId,
+				automationSource,
 			),
 		)
 	}

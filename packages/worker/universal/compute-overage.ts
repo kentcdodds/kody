@@ -4,10 +4,10 @@
  * {@link resolvePlanLimits}; debit rates on `credits.ts`.
  *
  * Nobody is invoiced for usage above an include. Purchasable Pro goes
- * include → credits → stop: a funded wallet is debited for it
- * (`billing/credit-debits.ts`) and an empty wallet stops new compute
- * ({@link resolvePastIncludeStop}). Accounts without a wallet are not
- * charged, bounded by their hard rate caps.
+ * include → credits → free-tier limits: a funded wallet is debited for it
+ * (`billing/credit-debits.ts`) and an empty wallet falls back to Free
+ * rate/compute caps via {@link resolvePlanLimits}. Accounts without a wallet
+ * are not charged, bounded by their hard rate caps.
  *
  * Customer surfaces name these meters “Worker compute” and “Rows read”
  * (never Cloudflare “unique worker day” / UWD jargon). Both meters that
@@ -36,8 +36,8 @@ export const accountCreditsPath = '/account/usage#credits'
  * Credits state for one monthly meter:
  * - `within_include` — at or under the include.
  * - `debiting_credits` — above the include; the funded wallet pays.
- * - `add_credits` — above the include on Pro with an empty wallet: new
- *   compute is stopped until credits are added.
+ * - `add_credits` — above the include on Pro with an empty wallet: UI nudge
+ *   to top up; enforcement uses Free rate/compute caps (ADR 0064).
  * - `switch_to_pro` — above the include on Free or retired Standard/Pro
  *   (no wallet; not charged).
  * - `not_charged` — above the include on an operator plan (`max`).
@@ -176,6 +176,33 @@ export function computeMonthlyOverage(input: {
 	}
 }
 
+/**
+ * Monthly overage for debits and forgiveness progress. Wallet-eligible Pro
+ * always uses the subscription include (350 UWD / 5B rows), not empty-wallet
+ * Free enforcement caps from {@link resolvePlanLimits}.
+ */
+export function computeMonthlyOverageForDebit(input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	uniqueWorkerDays: number
+	durableObjectRowsRead: number
+}): MonthlyComputeOverage {
+	const walletEligiblePro =
+		input.plan === 'pro' && input.creditWallet !== 'none'
+	return computeMonthlyOverage(
+		walletEligiblePro
+			? {
+					plan: 'pro',
+					ladder: input.ladder,
+					creditWallet: 'funded',
+					uniqueWorkerDays: input.uniqueWorkerDays,
+					durableObjectRowsRead: input.durableObjectRowsRead,
+				}
+			: input,
+	)
+}
+
 export type PastIncludeStop = {
 	resource: ComputeOverageWarningResource
 	limit: number
@@ -183,34 +210,18 @@ export type PastIncludeStop = {
 }
 
 /**
- * The monthly meter that stops new compute on an empty purchasable-Pro
- * wallet, or `null` when nothing is stopped. Only `empty` stops: a funded
- * wallet pays past the include, and plans without a wallet keep their hard
- * rate caps instead. Worker compute wins when both meters are past.
+ * Former include → credits → stop gate (0051). ADR 0064 replaced the hard
+ * stop with Free rate/compute fallback via {@link resolvePlanLimits}, so
+ * this always returns `null`. Kept for stable imports and informational
+ * callers.
  */
-export function resolvePastIncludeStop(input: {
+export function resolvePastIncludeStop(_input: {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
 	uniqueWorkerDays: number
 	durableObjectRowsRead: number
 }): PastIncludeStop | null {
-	if (input.creditWallet !== 'empty') return null
-	const overage = computeMonthlyOverage(input)
-	if (overage.billableUniqueWorkerDays > 0) {
-		return {
-			resource: 'unique_worker_days',
-			limit: overage.includedUniqueWorkerDays,
-			current: nonNegativeInteger(input.uniqueWorkerDays),
-		}
-	}
-	if (overage.billableDurableObjectRowsRead > 0) {
-		return {
-			resource: 'durable_object_rows_read',
-			limit: overage.includedDurableObjectRowsRead,
-			current: nonNegativeInteger(input.durableObjectRowsRead),
-		}
-	}
 	return null
 }
 
@@ -273,7 +284,7 @@ export function buildComputeOverageCreditsGuidance(
 		case 'funded':
 			return `Usage past the include is charged from your credits at ${rate} and stops when they run out.`
 		case 'empty':
-			return `With no credits left, usage past the include stops. Add credits at ${accountCreditsPath} to keep going; usage past the include is charged at ${rate}.`
+			return `With no credits left, rate and compute limits match Free until you top up. Add credits at ${accountCreditsPath} to restore Pro rates; usage past the include is charged at ${rate}.`
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'

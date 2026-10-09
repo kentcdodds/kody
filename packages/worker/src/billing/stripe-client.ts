@@ -70,10 +70,15 @@ export class BillingNotConfiguredError extends Error {
 	}
 }
 
-type StripeEnv = {
+export type StripeEnv = {
 	STRIPE_SECRET_KEY?: string
 	STRIPE_API_BASE_URL?: string
 }
+
+const updatedSubscriptionItemSchema = object({
+	id: string(),
+	quantity: optional(number()),
+})
 
 const checkoutSessionSchema = object({
 	id: string(),
@@ -88,6 +93,7 @@ const createdCheckoutSessionSchema = object({
 
 const subscriptionItemSchema = object({
 	id: optional(string()),
+	quantity: optional(number()),
 	price: object({
 		id: string(),
 	}),
@@ -179,6 +185,21 @@ export type StripeCheckoutSession = InferOutput<typeof checkoutSessionSchema>
 export type StripeSubscription = InferOutput<typeof subscriptionSchema>
 
 /** Newest period end from subscription items, then the top-level field. */
+/** Seat count on the primary subscription line item (defaults to 1). */
+export function subscriptionSeatQuantity(
+	subscription: StripeSubscription,
+): number {
+	const quantity = subscription.items.data[0]?.quantity
+	if (
+		typeof quantity === 'number' &&
+		Number.isFinite(quantity) &&
+		quantity >= 1
+	) {
+		return Math.floor(quantity)
+	}
+	return 1
+}
+
 export function readStripeSubscriptionPeriodEndUnix(
 	subscription: StripeSubscription,
 ): number | null {
@@ -381,8 +402,9 @@ export async function createCheckoutSession(
 		cancelUrl: string
 		customerId?: string
 		customerEmail?: string
-		/** Opaque session metadata (e.g. kody_stable_user_id for webhook lookup). */
+		/** Opaque session metadata (e.g. kody_org_id for webhook lookup). */
 		metadata?: Record<string, string>
+		quantity?: number
 	},
 ): Promise<{ id: string; url: string }> {
 	const priceId = input.priceId.trim()
@@ -405,11 +427,17 @@ export async function createCheckoutSession(
 	if (!cancelUrl) {
 		throw new StripeApiError('Cancel URL is required.', { status: 400 })
 	}
+	const quantityRaw = input.quantity ?? 1
+	if (!Number.isSafeInteger(quantityRaw) || quantityRaw < 1) {
+		throw new StripeApiError('Checkout quantity must be a positive integer.', {
+			status: 400,
+		})
+	}
 
 	const form: Record<string, string> = {
 		mode: 'subscription',
 		'line_items[0][price]': priceId,
-		'line_items[0][quantity]': '1',
+		'line_items[0][quantity]': String(quantityRaw),
 		client_reference_id: clientReferenceId,
 		success_url: successUrl,
 		cancel_url: cancelUrl,
@@ -490,6 +518,38 @@ export async function listSubscriptions(
 		})
 	}
 	return parsed.value.data
+}
+
+/**
+ * Updates a subscription item seat quantity. Omits `proration_behavior` so
+ * Stripe uses the account default (create prorations).
+ */
+export async function updateSubscriptionItemQuantity(
+	env: StripeEnv,
+	input: { subscriptionItemId: string; quantity: number },
+): Promise<void> {
+	const subscriptionItemId = input.subscriptionItemId.trim()
+	if (!subscriptionItemId) {
+		throw new StripeApiError('Subscription item id is required.', {
+			status: 400,
+		})
+	}
+	if (!Number.isSafeInteger(input.quantity) || input.quantity < 1) {
+		throw new StripeApiError('Quantity must be a positive integer.', {
+			status: 400,
+		})
+	}
+	const body = await stripeRequest(env, {
+		method: 'POST',
+		path: `/v1/subscription_items/${encodeURIComponent(subscriptionItemId)}`,
+		form: { quantity: String(input.quantity) },
+	})
+	const parsed = parseSafe(updatedSubscriptionItemSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe subscription item shape.', {
+			status: 502,
+		})
+	}
 }
 
 /**
@@ -903,6 +963,8 @@ export type BillingPortalFlowData = {
 	priceId: string
 	/** Where Stripe sends the customer once the update is confirmed. */
 	afterCompletionRedirectUrl: string
+	/** Seat quantity on the subscription item (defaults to 1). */
+	quantity?: number
 }
 
 /**
@@ -961,7 +1023,14 @@ export async function createBillingPortalSession(
 		form[`${flow}[subscription]`] = subscriptionId
 		form[`${flow}[items][0][id]`] = subscriptionItemId
 		form[`${flow}[items][0][price]`] = priceId
-		form[`${flow}[items][0][quantity]`] = '1'
+		const quantityRaw = input.flowData.quantity ?? 1
+		if (!Number.isSafeInteger(quantityRaw) || quantityRaw < 1) {
+			throw new StripeApiError(
+				'Portal subscription quantity must be a positive integer.',
+				{ status: 400 },
+			)
+		}
+		form[`${flow}[items][0][quantity]`] = String(quantityRaw)
 		form['flow_data[after_completion][type]'] = 'redirect'
 		form['flow_data[after_completion][redirect][return_url]'] =
 			afterCompletionRedirectUrl

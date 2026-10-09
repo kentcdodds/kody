@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	legacyPlanLimits,
 	planLimits,
+	proCreditsEmptyWalletPlanLimits,
 	proCreditsPlanLimits,
 	resolvePlanLimits,
 } from '#universal/plans.ts'
@@ -63,11 +64,11 @@ test('purchasable Stripe Pro stays credits-eligible with Max stock and Standard 
 		creditsEligible: true,
 	})
 	const emptyLimits = resolvePlanLimits(paying.plan, paying.ladder, 'empty')
-	expect(emptyLimits).toEqual(proCreditsPlanLimits)
+	expect(emptyLimits).toEqual(proCreditsEmptyWalletPlanLimits)
 	expect(emptyLimits.maxSavedPackages).toBe(10_000)
 	expect(emptyLimits.maxConcurrentWorkflows).toBe(200)
-	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
-	expect(emptyLimits.maxExecuteCallsPerDay).toBe(500)
+	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(50)
+	expect(emptyLimits.maxExecuteCallsPerDay).toBe(150)
 })
 
 test('retired Stripe Pro and manual Pro stay on planLimits.pro without a wallet', () => {

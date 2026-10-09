@@ -35,6 +35,11 @@ const planRetainingSubscriptionStatuses = new Set([
  * Subscriptions that currently grant a paid plan. Checkout must not create a
  * second subscription for a customer who already has one of these; plan
  * changes go through the Stripe portal's subscription-update flow instead.
+ *
+ * Prefer {@link selectKodyPlanRetainingSubscriptions} for any path that
+ * mutates Stripe or treats "the" subscription as Kody's. This status-only
+ * filter can include non-Kody products that share the Stripe account
+ * (for example GratiText Premium).
  */
 export function selectPlanRetainingSubscriptions(
 	subscriptions: ReadonlyArray<StripeSubscription>,
@@ -49,6 +54,88 @@ export function subscriptionHasPrice(
 	priceId: string,
 ): boolean {
 	return subscription.items.data.some((item) => item.price.id === priceId)
+}
+
+/** Stripe metadata that marks a subscription as Kody-owned. */
+export const kodySubscriptionMetadataKeys = [
+	'kody_org_id',
+	'kody_stable_user_id',
+	'kody_plan',
+] as const
+
+/**
+ * Every configured or retired Kody price id. Unmapped prices on the shared
+ * Stripe account (other products) are never in this set.
+ */
+export function getAllKodyPriceIds(env: BillingEnv): Array<string> {
+	return collectPriceIds([
+		getProPriceId(env),
+		getProYearlyPriceId(env),
+		...retiredStandardPriceIds,
+		...retiredProPriceIds,
+	])
+}
+
+export function subscriptionHasKodyPrice(
+	env: BillingEnv,
+	subscription: StripeSubscription,
+): boolean {
+	const kodyPrices = new Set(getAllKodyPriceIds(env))
+	return subscription.items.data.some((item) => kodyPrices.has(item.price.id))
+}
+
+export function subscriptionHasKodyMetadata(
+	subscription: StripeSubscription,
+): boolean {
+	const metadata = subscription.metadata
+	if (!metadata) return false
+	for (const key of kodySubscriptionMetadataKeys) {
+		const value = metadata[key]?.trim()
+		if (value) return true
+	}
+	return false
+}
+
+/**
+ * True when the subscription is Kody's: a known Kody price, or Kody
+ * metadata. Billing code must not read-modify subscriptions that fail this
+ * check (shared-account products such as GratiText Premium).
+ */
+export function isKodySubscription(
+	env: BillingEnv,
+	subscription: StripeSubscription,
+): boolean {
+	return (
+		subscriptionHasKodyPrice(env, subscription) ||
+		subscriptionHasKodyMetadata(subscription)
+	)
+}
+
+/**
+ * Plan-retaining subscriptions that are Kody's. Use this for seat sync,
+ * checkout plan-change guards, account-deletion cancels, and any other
+ * write path. Read-only plan resolution also prefers this set.
+ */
+export function selectKodyPlanRetainingSubscriptions(
+	env: BillingEnv,
+	subscriptions: ReadonlyArray<StripeSubscription>,
+): Array<StripeSubscription> {
+	return selectPlanRetainingSubscriptions(subscriptions).filter(
+		(subscription) => isKodySubscription(env, subscription),
+	)
+}
+
+/**
+ * Purchasable Pro seat prices only. Retired Standard/Pro prices keep their
+ * exact billing in P6 (no quantity or price changes); seat quantity sync
+ * applies only to current seat prices.
+ */
+export function isPurchasableProSubscription(
+	env: BillingEnv,
+	subscription: StripeSubscription,
+): boolean {
+	const purchasable = new Set(getCreditsEligiblePriceIds(env))
+	return subscription.items.data.some((item) => purchasable.has(item.price.id))
 }
 
 /**
@@ -348,7 +435,10 @@ export function resolveSubscriptionPlan(
 	let creditsEligible = false
 	let soonestCancelAt: number | null = null
 
-	for (const subscription of selectPlanRetainingSubscriptions(subscriptions)) {
+	for (const subscription of selectKodyPlanRetainingSubscriptions(
+		env,
+		subscriptions,
+	)) {
 		const subscriptionPlan = planFromSubscription(
 			subscription,
 			standardPriceIds,

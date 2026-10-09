@@ -7,7 +7,7 @@ import {
 	resolveComputeIncludeCreditsStatus,
 	resolvePastIncludeStop,
 } from './compute-overage.ts'
-import { planLimits, proCreditsPlanLimits } from './plans.ts'
+import { planLimits } from './plans.ts'
 
 test('purchasable Pro uses the retired Standard includes and prices only units above them', () => {
 	const pro = computeMonthlyOverage({
@@ -39,14 +39,13 @@ test('purchasable Pro uses the retired Standard includes and prices only units a
 })
 
 test('usage at or below the include and junk counts cost nothing', () => {
-	for (const uniqueWorkerDays of [0, -5, Number.NaN, 350]) {
+	for (const uniqueWorkerDays of [0, -5, Number.NaN, 50]) {
 		const overage = computeMonthlyOverage({
 			plan: 'pro',
 			ladder: 'public',
 			creditWallet: 'empty',
 			uniqueWorkerDays,
-			durableObjectRowsRead:
-				proCreditsPlanLimits.maxDurableObjectRowsReadPerMonth,
+			durableObjectRowsRead: planLimits.free.maxDurableObjectRowsReadPerMonth,
 		})
 		expect(overage.billableUniqueWorkerDays).toBe(0)
 		expect(overage.creditsCostMicroUsd).toBe(0)
@@ -87,6 +86,7 @@ test('howToReduce points wallet and retired accounts at /account/usage#credits; 
 		'empty',
 	)
 	expect(empty).toContain(`Add credits at ${accountCreditsPath}`)
+	expect(empty).toContain('rate and compute limits match Free')
 	expect(empty).toContain('$0.004 per worker-compute day')
 	expect(
 		buildComputeOverageHowToReduce('durable_object_rows_read', 'pro', 'funded'),
@@ -106,43 +106,31 @@ test('howToReduce points wallet and retired accounts at /account/usage#credits; 
 	).not.toContain(accountCreditsPath)
 })
 
-test('past-include stop: only an empty purchasable-Pro wallet stops, and only past the include', () => {
-	const emptyPro = (uniqueWorkerDays: number, durableObjectRowsRead: number) =>
-		resolvePastIncludeStop({
-			plan: 'pro',
-			ladder: 'public',
-			creditWallet: 'empty',
-			uniqueWorkerDays,
-			durableObjectRowsRead,
-		})
-	// Include is free: at or under 350 / 5B never stops, even at $0.
-	expect(emptyPro(350, 5_000_000_000)).toBeNull()
-	expect(emptyPro(351, 0)).toEqual({
-		resource: 'unique_worker_days',
-		limit: 350,
-		current: 351,
-	})
-	expect(emptyPro(10, 5_000_000_001)).toEqual({
-		resource: 'durable_object_rows_read',
-		limit: 5_000_000_000,
-		current: 5_000_000_001,
-	})
-	// Worker compute wins when both are past.
-	expect(emptyPro(400, 6_000_000_000)?.resource).toBe('unique_worker_days')
-	// Funded wallets pay past the include; wallet-less plans keep hard caps.
+test('resolvePastIncludeStop is a no-op after ADR 0064 free-tier fallback', () => {
 	for (const input of [
-		{ plan: 'pro', creditWallet: 'funded' },
-		{ plan: 'pro', creditWallet: 'none' },
-		{ plan: 'standard', creditWallet: 'none' },
-		{ plan: 'free', creditWallet: 'none' },
-		{ plan: 'max', creditWallet: 'none' },
-	] as const) {
+		{
+			plan: 'pro' as const,
+			creditWallet: 'empty' as const,
+			uniqueWorkerDays: 351,
+			durableObjectRowsRead: 5_000_000_001,
+		},
+		{
+			plan: 'pro' as const,
+			creditWallet: 'funded' as const,
+			uniqueWorkerDays: 1_000_000,
+			durableObjectRowsRead: 1_000_000_000_000,
+		},
+		{
+			plan: 'free' as const,
+			creditWallet: 'none' as const,
+			uniqueWorkerDays: 1_000_000,
+			durableObjectRowsRead: 1_000_000_000_000,
+		},
+	]) {
 		expect(
 			resolvePastIncludeStop({
 				...input,
 				ladder: 'public',
-				uniqueWorkerDays: 1_000_000,
-				durableObjectRowsRead: 1_000_000_000_000,
 			}),
 		).toBeNull()
 	}

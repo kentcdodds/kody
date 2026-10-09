@@ -54,6 +54,8 @@ async function recordUserInboundUsageRollup(input: {
 		durationMs: input.usageDurationMs,
 		outcome: 'success',
 		timestamp: input.now.toISOString(),
+		actorUserId: '',
+		automationSource: 'email',
 	})
 	return 'recorded' as const
 }

@@ -216,16 +216,16 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
 
 /**
  * Prepaid credit wallet state for limit resolution. Purchasable Pro bills
- * include → credits → stop: the subscription covers the include, usage past
- * it runs on credits, and at $0 usage past the include stops.
+ * include → credits → free-tier limits: the subscription covers the include,
+ * usage past it runs on credits, and at $0 rate/compute falls back to Free
+ * caps while stock stays on Max ({@link proCreditsEmptyWalletPlanLimits}).
  *
  * - `none` — not wallet-eligible (Free, retired Standard/Pro, gift/referral
  *   Pro overlays, manual grants, `max`). Credits are never used or debited;
  *   these plans keep their own hard caps.
- * - `empty` — purchasable Pro with a balance at or below $0. The include
- *   ({@link proCreditsPlanLimits}) applies, and once a monthly Worker
- *   compute or Rows read include is used up, {@link pastIncludeStopResources}
- *   stop until credits are added.
+ * - `empty` — purchasable Pro with a balance at or below $0. Max stock and
+ *   concurrency stay on {@link proCreditsPlanLimits}; rate/compute/email and
+ *   monthly includes match {@link planLimits.free} until credits are added.
  * - `funded` — purchasable Pro with a balance above $0. Past the include,
  *   the rate/compute fields in {@link creditsUnlockedLimitFields} can reach
  *   {@link creditsUnlockMultiplier}× the include (capped at the `max`
@@ -336,16 +336,17 @@ export type PlanLimits = {
 	 * Included unique Dynamic Worker days per UTC month ("Worker compute" on
 	 * customer surfaces). One of the two credit debit meters (with Durable
 	 * Object rows-read). Not in `entitlementResources`. Usage above the
-	 * include debits a funded Pro wallet; an empty Pro wallet stops
-	 * {@link pastIncludeStopResources} instead. Other plans are not charged
-	 * or stopped (their hard rate caps bound it). Approaching and reached
+	 * include debits a funded Pro wallet; an empty Pro wallet falls back to
+	 * Free rate/compute caps instead. Other plans are not charged (their hard
+	 * rate caps bound it). Approaching and reached
 	 * warning emails cover this allotment.
 	 */
 	maxUniqueWorkerDaysPerMonth: number
 	/**
 	 * Included Durable Object SQLite rows read per UTC month ("Rows read").
-	 * The other credit debit meter, with the same include → credits → stop
-	 * rule as {@link PlanLimits.maxUniqueWorkerDaysPerMonth}. No duration
+	 * The other credit debit meter, with the same include → credits →
+	 * free-tier limits rule as {@link PlanLimits.maxUniqueWorkerDaysPerMonth}.
+	 * No duration
 	 * meter. Approaching and reached warning emails cover this allotment.
 	 */
 	maxDurableObjectRowsReadPerMonth: number
@@ -639,12 +640,35 @@ export const proCreditsPlanLimits: PlanLimits = {
 }
 
 /**
+ * Purchasable Pro at $0: Max stock/concurrency from {@link proCreditsPlanLimits}
+ * with Free rate/compute/email/job-interval ceilings (ADR 0064).
+ */
+export const proCreditsEmptyWalletPlanLimits: PlanLimits = {
+	...proCreditsPlanLimits,
+	maxEmailSendsPerDay: planLimits.free.maxEmailSendsPerDay,
+	maxEmailReceivesPerDay: planLimits.free.maxEmailReceivesPerDay,
+	maxStoredEmailMessages: planLimits.free.maxStoredEmailMessages,
+	maxEmailMessageBytes: planLimits.free.maxEmailMessageBytes,
+	maxExecuteCallsPerDay: planLimits.free.maxExecuteCallsPerDay,
+	maxExecuteCallsPerWeek: planLimits.free.maxExecuteCallsPerWeek,
+	maxOutboundFetchesPerDay: planLimits.free.maxOutboundFetchesPerDay,
+	maxOutboundFetchesPerWeek: planLimits.free.maxOutboundFetchesPerWeek,
+	maxJobRunsPerDay: planLimits.free.maxJobRunsPerDay,
+	maxAutomationInvocationsPerDay:
+		planLimits.free.maxAutomationInvocationsPerDay,
+	minJobIntervalMs: planLimits.free.minJobIntervalMs,
+	maxUniqueWorkerDaysPerMonth: planLimits.free.maxUniqueWorkerDaysPerMonth,
+	maxDurableObjectRowsReadPerMonth:
+		planLimits.free.maxDurableObjectRowsReadPerMonth,
+}
+
+/**
  * How far credits carry the rate/compute include: up to this multiple of
  * the Pro include, capped at the `max` operator ceilings (daily only: `max`
  * has no weekly window). Applies only while the wallet is funded, so an
- * empty wallet stops at the include (include → credits → stop). Stock,
- * concurrency, email caps, UWD/DO includes, and the job interval floor stay
- * on {@link proCreditsPlanLimits}. Customer copy calls this a ceiling on how
+ * empty wallet falls back to Free rate/compute (include → credits →
+ * free-tier limits). Stock and concurrency stay on {@link proCreditsPlanLimits}.
+ * Customer copy calls this a ceiling on how
  * far credits go, never something a balance unlocks.
  */
 export const creditsUnlockMultiplier = 50
@@ -673,10 +697,10 @@ export function isCreditsUnlockedResource(
 }
 
 /**
- * Counted entry points that start new compute. On purchasable Pro with an
- * empty wallet, these stop once this UTC month's Worker compute or Rows read
- * include is used up, so usage past the include never runs with nothing to
- * charge (hosted package apps take the same stop without a counter).
+ * Counted entry points that start new compute. Historically gated the
+ * include → credits → stop path (0051); ADR 0064 replaced the stop with
+ * Free rate limits via {@link proCreditsEmptyWalletPlanLimits}. Kept for
+ * call-site stability.
  * Outbound fetches are left out: they happen inside a run that was already
  * admitted, and failing them mid-run would strand half-done work.
  */
@@ -734,9 +758,10 @@ const proCreditsUnlockedPlanLimits = unlockCreditsLimits(proCreditsPlanLimits)
 
 /**
  * Resolve the full limit table for a plan. The purchasable Pro wallet
- * (`creditWallet` other than `none`) uses {@link proCreditsPlanLimits},
- * unlocked when funded. Legacy applies only to retired Standard/Pro; free
- * and `max` always use {@link planLimits}.
+ * (`creditWallet` other than `none`) uses {@link proCreditsPlanLimits}
+ * when funded (unlocked rates), {@link proCreditsEmptyWalletPlanLimits}
+ * when empty (Max stock, Free rates), and legacy applies only to retired
+ * Standard/Pro; free and `max` always use {@link planLimits}.
  */
 export function resolvePlanLimits(
 	plan: PlanName,
@@ -744,9 +769,8 @@ export function resolvePlanLimits(
 	creditWallet: CreditWalletState = 'none',
 ): PlanLimits {
 	if (plan === 'pro' && creditWallet !== 'none') {
-		return creditWallet === 'funded'
-			? proCreditsUnlockedPlanLimits
-			: proCreditsPlanLimits
+		if (creditWallet === 'funded') return proCreditsUnlockedPlanLimits
+		return proCreditsEmptyWalletPlanLimits
 	}
 	if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
 		return legacyPlanLimits[plan]

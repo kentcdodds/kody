@@ -2026,7 +2026,18 @@ export async function buildPackageAppWorker(input: {
 		async () => {
 			await assertWithinComputeInclude({
 				db: input.env.APP_DB,
+				env: input.env,
 				userId: input.userId,
+				orgBudget: input.runtime.callerContext.request
+					? {
+							orgId: input.runtime.callerContext.request.org.id,
+							orgSlug: input.runtime.callerContext.request.org.slug,
+							actorUserId:
+								input.runtime.callerContext.request.actor?.userId ?? null,
+							actorUsername:
+								input.runtime.callerContext.request.actor?.username ?? null,
+						}
+					: undefined,
 			})
 		},
 	)

@@ -15,7 +15,6 @@ import {
 	readDailyEntitlementResourceUsage,
 	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
-import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { resolvePlanLimit } from '#universal/plans.ts'
 import {
 	microUsdPerCent,
@@ -180,23 +179,6 @@ function catchError(promise: Promise<unknown>) {
 	)
 }
 
-async function expectStopped(
-	user: SeededUser,
-	resource: DailyResource,
-	expected: { resource: string; limit: number; current: number },
-) {
-	const error = await catchError(consume(user, resource))
-	expect(isComputeOverageLimitError(error)).toBe(true)
-	if (!isComputeOverageLimitError(error)) return
-	expect(error.details).toMatchObject({
-		code: 'compute_overage_include_reached',
-		plan: 'pro',
-		creditsStatus: 'add_credits',
-		...expected,
-	})
-	expect(error.message).toContain('/account/usage#credits')
-}
-
 const pastIncludeStopped = [
 	'execute_calls_per_day',
 	'job_runs_per_day',
@@ -234,7 +216,7 @@ test('wallet eligibility: only the purchasable Pro gets a wallet; retired plans 
 	])
 })
 
-test('credits carry rates past the include up to 50×; stock stays Max; at $0 rates stop at the include', async () => {
+test('credits carry rates past the include up to 50×; stock stays Max; at $0 rates fall back to Free', async () => {
 	const user = await seedPro('credits-unlock')
 	const resources: Array<LimitResource> = [
 		'execute_calls_per_day',
@@ -245,7 +227,7 @@ test('credits carry rates past the include up to 50×; stock stays Max; at $0 ra
 	expect((await entitlementFor(user)).creditWallet).toBe('empty')
 	// Purchasable Pro includes Max stock even with an empty wallet.
 	expect((await limitsFor(user, resources)).slice(0, 3)).toEqual([
-		500, 10_000, 200,
+		150, 10_000, 200,
 	])
 
 	await ensureWallet(user)
@@ -259,6 +241,7 @@ test('credits carry rates past the include up to 50×; stock stays Max; at $0 ra
 	await setRollup(user.stableUserId, 350 + 2_500)
 	await settleCreditDebitMonth({
 		db: env.APP_DB,
+		env,
 		userId: user.stableUserId,
 		entitlement: funded,
 		month,
@@ -266,7 +249,7 @@ test('credits carry rates past the include up to 50×; stock stays Max; at $0 ra
 	})
 	expect(await balance(user.stableUserId)).toBe(0)
 	expect((await entitlementFor(user)).creditWallet).toBe('empty')
-	expect(await limitsFor(user, resources.slice(0, 2))).toEqual([500, 10_000])
+	expect(await limitsFor(user, resources.slice(0, 2))).toEqual([150, 10_000])
 })
 
 test('debits charge only usage above the include, are idempotent, and never back-charge an empty wallet', async () => {
@@ -319,9 +302,9 @@ test('debits charge only usage above the include, are idempotent, and never back
 	expect(await balance(userId)).toBe(5_000_000)
 })
 
-test('include → credits → stop: an empty Pro wallet runs free within the include and stops past it', async () => {
+test('include → credits → free-tier limits: empty Pro keeps Max stock and Free rates, even past the monthly include', async () => {
 	// Within the include (exactly at 350 / 5B): free, and nothing is debited.
-	const within = await seedPro('credits-stop-within')
+	const within = await seedPro('credits-fallback-within')
 	await setRollup(within.stableUserId, 350)
 	await setRollup(
 		within.stableUserId,
@@ -333,16 +316,11 @@ test('include → credits → stop: an empty Pro wallet runs free within the inc
 	await debit()
 	expect(await balance(within.stableUserId)).toBe(0)
 
-	// Past the Worker compute include with $0: new compute stops, and the
-	// stopped attempt does not spend daily quota.
-	const past = await seedPro('credits-stop-past')
+	// Past the Worker compute include with $0: work continues on Free rate caps.
+	const past = await seedPro('credits-fallback-past')
 	await setRollup(past.stableUserId, 351)
 	for (const resource of pastIncludeStopped) {
-		await expectStopped(past, resource, {
-			resource: 'unique_worker_days',
-			limit: 350,
-			current: 351,
-		})
+		await consume(past, resource)
 		expect(
 			await readDailyEntitlementResourceUsage({
 				env,
@@ -350,36 +328,30 @@ test('include → credits → stop: an empty Pro wallet runs free within the inc
 				resource,
 				now,
 			}),
-		).toBe(0)
+		).toBe(1)
 	}
-	// Outbound fetches belong to an already admitted run.
 	await consume(past, 'outbound_fetches_per_day')
-	// Hosted package apps have no daily counter but take the same stop.
-	const appStop = await catchError(
-		assertWithinComputeInclude({
-			db: env.APP_DB,
-			userId: past.stableUserId,
-			now,
-		}),
-	)
-	expect(isComputeOverageLimitError(appStop)).toBe(true)
+	expect(
+		await catchError(
+			assertWithinComputeInclude({
+				db: env.APP_DB,
+				env,
+				userId: past.stableUserId,
+				now,
+			}),
+		),
+	).toBeNull()
 	await assertWithinComputeInclude({
 		db: env.APP_DB,
+		env,
 		userId: within.stableUserId,
 		now,
 	})
 
-	// Rows read past its include stops the same way.
-	const rows = await seedPro('credits-stop-rows')
+	const rows = await seedPro('credits-fallback-rows')
 	await setRollup(rows.stableUserId, 5_000_000_001, 'durable_object_rows_read')
-	await expectStopped(rows, 'execute_calls_per_day', {
-		resource: 'durable_object_rows_read',
-		limit: 5_000_000_000,
-		current: 5_000_000_001,
-	})
+	await consume(rows, 'execute_calls_per_day')
 
-	// The stop does not touch Always-Max stock: at $0 purchasable Pro keeps
-	// Max stock and concurrency, and the include rates.
 	expect((await entitlementFor(past)).creditWallet).toBe('empty')
 	const stock = [
 		'repos',
@@ -392,13 +364,13 @@ test('include → credits → stop: an empty Pro wallet runs free within the inc
 	] as const
 	expect(await limitsFor(past, [...stock, 'execute_calls_per_day'])).toEqual([
 		...stock.map((resource) => resolvePlanLimit('max', resource)),
-		500,
+		150,
 	])
 })
 
-test('include → credits → stop: credits pay past the include, and the stop returns when they run out', async () => {
+test('include → credits → free-tier limits: credits pay past the include; at $0 Free rates apply until top-up', async () => {
 	// Funded and past the include: runs, and the debit lane charges credits.
-	const funded = await seedPro('credits-stop-funded')
+	const funded = await seedPro('credits-fallback-funded')
 	await topUp(funded.stableUserId, 1_000)
 	await setRollup(funded.stableUserId, 400)
 	for (const resource of pastIncludeStopped) await consume(funded, resource)
@@ -407,31 +379,23 @@ test('include → credits → stop: credits pay past the include, and the stop r
 	expect(await balance(funded.stableUserId)).toBe(10_000_000 - 50 * 4_000)
 
 	// Credits run out: 250 days past the include × $0.004 = $1.00 → $0.
-	const drained = await seedPro('credits-stop-drained')
+	const drained = await seedPro('credits-fallback-drained')
 	await topUp(drained.stableUserId, 100)
 	await setRollup(drained.stableUserId, 350 + 250)
 	await debit()
 	expect(await balance(drained.stableUserId)).toBe(0)
-	await expectStopped(drained, 'execute_calls_per_day', {
-		resource: 'unique_worker_days',
-		limit: 350,
-		current: 600,
-	})
+	await consume(drained, 'execute_calls_per_day')
+	expect(await limitsFor(drained, ['execute_calls_per_day'])).toEqual([150])
 
-	// Stopped at $0, then credits are added: runs resume right away (the
-	// cached empty wallet is re-checked before stopping), and the stretch
-	// before the stop applied is forgiven, not charged.
-	const resumed = await seedPro('credits-stop-resumed')
+	// At $0 past the include, work continues on Free rates until credits return.
+	const resumed = await seedPro('credits-fallback-resumed')
 	await setRollup(resumed.stableUserId, 420)
-	await expectStopped(resumed, 'execute_calls_per_day', {
-		resource: 'unique_worker_days',
-		limit: 350,
-		current: 420,
-	})
+	await consume(resumed, 'execute_calls_per_day')
 	await topUp(resumed.stableUserId, 500)
 	await consume(resumed, 'execute_calls_per_day')
 	await assertWithinComputeInclude({
 		db: env.APP_DB,
+		env,
 		userId: resumed.stableUserId,
 		now,
 	})

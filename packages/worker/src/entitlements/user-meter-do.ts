@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { BudgetLimitError, type BudgetLimitErrorDetails } from './errors.ts'
 import { DurableObject } from 'cloudflare:workers'
 import {
 	type DurableObjectPitrRpc,
@@ -38,7 +39,10 @@ export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 12
+const userMeterSchemaVersion = 13
+/** Singleton row id for monthly org budget spend (schema v13). */
+const budgetSpendStateRowId = 1
+const utcMonthKeyPattern = /^\d{4}-\d{2}$/
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
@@ -144,6 +148,12 @@ export type UserMeterDailyTrendUniqueWorkerDayRow = {
  * daily_counters rows plus unique-worker-day claim counts grouped by day.
  * Does not bootstrap missing keys — absence means zero.
  */
+export type UserMeterBudgetSpendState = {
+	month: string
+	users: Record<string, number>
+	automationMicroUsd: number
+}
+
 export type UserMeterDailyTrendResult = {
 	retentionDays: number
 	startDay: string
@@ -350,6 +360,19 @@ function assertUtcDayKey(day: string): string {
 		)
 	}
 	return day
+}
+
+function assertUtcMonthKey(month: string): string {
+	if (!utcMonthKeyPattern.test(month)) {
+		throw new Error(
+			`UserMeter month must be a UTC YYYY-MM key; got ${JSON.stringify(month)}.`,
+		)
+	}
+	return month
+}
+
+function throwBudgetLimit(details: Omit<BudgetLimitErrorDetails, 'code'>) {
+	throw new BudgetLimitError(details)
 }
 
 function assertInboundDeliveryId(deliveryId: string): string {
@@ -694,6 +717,20 @@ class UserMeterBase extends DurableObject<Env> {
 			CREATE TABLE IF NOT EXISTS inbound_mcp_connection_last_used (
 				client_id TEXT PRIMARY KEY NOT NULL,
 				last_used_at TEXT NOT NULL
+			)
+		`)
+		// Monthly org budget spend counters (schema v13).
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS budget_spend_state (
+				id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
+				month TEXT NOT NULL,
+				automation_micro_usd INTEGER NOT NULL DEFAULT 0
+			)
+		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS budget_spend_users (
+				user_id TEXT PRIMARY KEY NOT NULL,
+				micro_usd INTEGER NOT NULL
 			)
 		`)
 		this.ctx.storage.sql.exec(
@@ -1846,6 +1883,183 @@ class UserMeterBase extends DurableObject<Env> {
 		return { ok: true }
 	}
 
+	private resetBudgetSpendForMonth(month: string) {
+		const safeMonth = assertUtcMonthKey(month)
+		this.ctx.storage.sql.exec(`DELETE FROM budget_spend_users`)
+		this.ctx.storage.sql.exec(
+			`INSERT INTO budget_spend_state (id, month, automation_micro_usd)
+			 VALUES (?, ?, 0)
+			 ON CONFLICT(id) DO UPDATE SET
+				month = excluded.month,
+				automation_micro_usd = 0`,
+			budgetSpendStateRowId,
+			safeMonth,
+		)
+	}
+
+	private ensureBudgetMonth(month: string): string {
+		const safeMonth = assertUtcMonthKey(month)
+		const row = this.ctx.storage.sql
+			.exec<{ month: string }>(
+				`SELECT month FROM budget_spend_state WHERE id = ?`,
+				budgetSpendStateRowId,
+			)
+			.toArray()[0]
+		if (!row) {
+			this.resetBudgetSpendForMonth(safeMonth)
+			return safeMonth
+		}
+		if (String(row.month) !== safeMonth) {
+			this.resetBudgetSpendForMonth(safeMonth)
+		}
+		return safeMonth
+	}
+
+	private readBudgetSpendState(month: string): UserMeterBudgetSpendState {
+		this.ensureBudgetMonth(month)
+		const automationRow = this.ctx.storage.sql
+			.exec<{ automation_micro_usd: number }>(
+				`SELECT automation_micro_usd FROM budget_spend_state WHERE id = ?`,
+				budgetSpendStateRowId,
+			)
+			.toArray()[0]
+		const userRows = this.ctx.storage.sql
+			.exec<{ user_id: string; micro_usd: number }>(
+				`SELECT user_id, micro_usd FROM budget_spend_users`,
+			)
+			.toArray()
+		const users: Record<string, number> = {}
+		for (const row of userRows) {
+			users[String(row.user_id)] = Math.max(0, Number(row.micro_usd ?? 0))
+		}
+		return {
+			month,
+			users,
+			automationMicroUsd: Math.max(
+				0,
+				Number(automationRow?.automation_micro_usd ?? 0),
+			),
+		}
+	}
+
+	async getBudgetSpend(input: {
+		month: string
+	}): Promise<UserMeterBudgetSpendState> {
+		const month = assertUtcMonthKey(input.month)
+		return this.readBudgetSpendState(month)
+	}
+
+	async assertWithinBudgetAndRecord(input: {
+		month: string
+		actorUserId: string | null
+		automationSource: string | null
+		deltaMicroUsd: number
+		userBudgetMicroUsd: number | null
+		automationBudgetMicroUsd: number | null
+		actorUsername?: string | null
+		orgSlug?: string | null
+	}): Promise<UserMeterBudgetSpendState> {
+		const month = assertUtcMonthKey(input.month)
+		const delta = Math.max(0, Math.floor(Number(input.deltaMicroUsd ?? 0)))
+		const orgSlug = input.orgSlug?.trim() || 'org'
+		const state = this.readBudgetSpendState(month)
+		const isAutomation =
+			input.actorUserId == null && input.automationSource != null
+		if (isAutomation) {
+			const budget = input.automationBudgetMicroUsd
+			if (budget != null && budget >= 0) {
+				const current = state.automationMicroUsd
+				const next = current + delta
+				const overBudget = next > budget || (delta === 0 && current >= budget)
+				if (overBudget) {
+					throwBudgetLimit({
+						kind: 'automation',
+						orgSlug,
+						spentMicroUsd: current,
+						budgetMicroUsd: budget,
+					})
+				}
+			}
+		} else if (input.actorUserId != null) {
+			const budget = input.userBudgetMicroUsd
+			if (budget != null && budget >= 0) {
+				const current = state.users[input.actorUserId] ?? 0
+				const next = current + delta
+				const overBudget = next > budget || (delta === 0 && current >= budget)
+				if (overBudget) {
+					throwBudgetLimit({
+						kind: 'user',
+						orgSlug,
+						actorUsername: input.actorUsername?.trim() || undefined,
+						spentMicroUsd: current,
+						budgetMicroUsd: budget,
+					})
+				}
+			}
+		}
+		if (delta === 0) {
+			return state
+		}
+		this.ctx.storage.transactionSync(() => {
+			this.ensureBudgetMonth(month)
+			if (isAutomation) {
+				this.ctx.storage.sql.exec(
+					`UPDATE budget_spend_state
+					 SET automation_micro_usd = automation_micro_usd + ?
+					 WHERE id = ?`,
+					delta,
+					budgetSpendStateRowId,
+				)
+			} else if (input.actorUserId != null) {
+				this.ctx.storage.sql.exec(
+					`INSERT INTO budget_spend_users (user_id, micro_usd)
+					 VALUES (?, ?)
+					 ON CONFLICT(user_id) DO UPDATE SET
+						micro_usd = micro_usd + excluded.micro_usd`,
+					input.actorUserId,
+					delta,
+				)
+			}
+		})
+		return this.readBudgetSpendState(month)
+	}
+
+	async recomputeBudgetSpend(input: {
+		month: string
+		users: Record<string, number>
+		automation: number
+	}): Promise<UserMeterBudgetSpendState> {
+		const month = assertUtcMonthKey(input.month)
+		this.ensureBudgetMonth(month)
+		const automationTarget = Math.max(0, Math.floor(Number(input.automation)))
+		this.ctx.storage.transactionSync(() => {
+			const state = this.readBudgetSpendState(month)
+			if (automationTarget > state.automationMicroUsd) {
+				this.ctx.storage.sql.exec(
+					`UPDATE budget_spend_state
+					 SET automation_micro_usd = ?
+					 WHERE id = ?`,
+					automationTarget,
+					budgetSpendStateRowId,
+				)
+			}
+			for (const [userId, microUsd] of Object.entries(input.users)) {
+				const target = Math.max(0, Math.floor(Number(microUsd)))
+				const current = state.users[userId] ?? 0
+				if (target <= current) continue
+				this.ctx.storage.sql.exec(
+					`INSERT INTO budget_spend_users (user_id, micro_usd)
+					 VALUES (?, ?)
+					 ON CONFLICT(user_id) DO UPDATE SET
+						micro_usd = MAX(micro_usd, excluded.micro_usd)`,
+					userId,
+					target,
+				)
+			}
+		})
+		return this.readBudgetSpendState(month)
+	}
+
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			const deletingAt = this.readDeletingAt()
@@ -2111,6 +2325,24 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		clientId: string
 	}) => Promise<{ ok: true }>
 	purge: () => Promise<{ ok: true }>
+	getBudgetSpend: (input: {
+		month: string
+	}) => Promise<UserMeterBudgetSpendState>
+	assertWithinBudgetAndRecord: (input: {
+		month: string
+		actorUserId: string | null
+		automationSource: string | null
+		deltaMicroUsd: number
+		userBudgetMicroUsd: number | null
+		automationBudgetMicroUsd: number | null
+		actorUsername?: string | null
+		orgSlug?: string | null
+	}) => Promise<UserMeterBudgetSpendState>
+	recomputeBudgetSpend: (input: {
+		month: string
+		users: Record<string, number>
+		automation: number
+	}) => Promise<UserMeterBudgetSpendState>
 	exportCounters: (input: {
 		pageSize?: number
 		startAfter?: string | null

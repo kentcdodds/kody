@@ -132,6 +132,24 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 		stripeSubscription('sub_incomplete', 'incomplete'),
 		stripeSubscription('sub_canceled', 'canceled'),
 		stripeSubscription('sub_expired', 'incomplete_expired'),
+		// Shared Stripe account product: never cancel or refund.
+		{
+			id: 'sub_gratitext',
+			status: 'active',
+			cancel_at: null,
+			current_period_end: undefined,
+			metadata: undefined,
+			items: {
+				data: [
+					{
+						id: undefined,
+						quantity: undefined,
+						price: { id: 'price_gratitext_premium_15' },
+						current_period_end: undefined,
+					},
+				],
+			},
+		},
 	])
 	const pro = stripeUser('user-pro', 'cus_pro')
 	const result = await pro.deleteAccount()
@@ -149,6 +167,9 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 		'sub_paused',
 		'sub_incomplete',
 	])
+	expect(subscriptionIdsOf(stripe.cancelSubscription.mock.calls)).not.toContain(
+		'sub_gratitext',
+	)
 	expect(stripe.deleteCustomer).toHaveBeenCalledWith(
 		expect.any(Object),
 		'cus_pro',

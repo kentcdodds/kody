@@ -24,6 +24,8 @@ import {
 	listPaidInvoicesForSubscription,
 	listSubscriptions,
 	StripeApiError,
+	subscriptionSeatQuantity,
+	updateSubscriptionItemQuantity,
 } from './stripe-client.ts'
 
 const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
@@ -146,6 +148,19 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 			'customer_update[name]': null,
 		}
 		expect(formFields(createInit, Object.keys(expected))).toEqual(expected)
+	}
+
+	{
+		using fetchMock = fetchReturning(
+			jsonResponse({
+				id: 'cs_seats',
+				url: 'https://checkout.stripe.com/c/pay/cs_seats',
+			}),
+		)
+		await createCheckoutSession(env, { ...checkoutInput, quantity: 3 })
+		expect(
+			formFields(fetchMock.mock.calls[0]?.[1], ['line_items[0][quantity]']),
+		).toEqual({ 'line_items[0][quantity]': '3' })
 	}
 
 	// Existing Stripe customers must send customer, never customer_email.
@@ -280,6 +295,24 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 	}
 
 	{
+		using fetchMock = fetchReturning(
+			jsonResponse({ url: 'https://billing.stripe.com/session/seats' }),
+		)
+		await createBillingPortalSession(env, {
+			customerId: 'cus_portal',
+			returnUrl: 'https://app.example.com/account/billing',
+			configuration: 'bpc_kody',
+			flowData: { ...flowData, quantity: 4 },
+		})
+		const confirm = 'flow_data[subscription_update_confirm]'
+		expect(
+			formFields(fetchMock.mock.calls[0]?.[1], [
+				`${confirm}[items][0][quantity]`,
+			]),
+		).toEqual({ [`${confirm}[items][0][quantity]`]: '4' })
+	}
+
+	{
 		using fetchMock = stubFetch(vi.fn())
 		await expect(
 			createBillingPortalSession(env, {
@@ -290,6 +323,59 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		).rejects.toMatchObject({ name: 'StripeApiError', status: 400 })
 		expect(fetchMock).not.toHaveBeenCalled()
 	}
+})
+
+test('subscriptionSeatQuantity reads the first item quantity', () => {
+	expect(
+		subscriptionSeatQuantity({
+			id: 'sub_1',
+			status: 'active',
+			cancel_at: null,
+			current_period_end: undefined,
+			metadata: undefined,
+			items: {
+				data: [
+					{
+						id: undefined,
+						quantity: 5,
+						price: { id: 'price_pro' },
+						current_period_end: undefined,
+					},
+				],
+			},
+		}),
+	).toBe(5)
+	expect(
+		subscriptionSeatQuantity({
+			id: 'sub_1',
+			status: 'active',
+			cancel_at: null,
+			current_period_end: undefined,
+			metadata: undefined,
+			items: {
+				data: [
+					{
+						id: undefined,
+						quantity: undefined,
+						price: { id: 'price_pro' },
+						current_period_end: undefined,
+					},
+				],
+			},
+		}),
+	).toBe(1)
+})
+
+test('updateSubscriptionItemQuantity posts quantity to Stripe', async () => {
+	using fetchMock = fetchReturning(jsonResponse({ id: 'si_1', quantity: 2 }))
+	await updateSubscriptionItemQuantity(env, {
+		subscriptionItemId: 'si_1',
+		quantity: 2,
+	})
+	const [url, init] = fetchMock.mock.calls[0]!
+	expect(url).toBe('https://api.stripe.com/v1/subscription_items/si_1')
+	expect(init?.method).toBe('POST')
+	expect(formFields(init, ['quantity'])).toEqual({ quantity: '2' })
 })
 
 test('stripe client immediately cancels subscriptions and deletes customers', async () => {

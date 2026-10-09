@@ -1,6 +1,6 @@
 # 0051: Pro bills include → credits → stop (no fund-to-unlock, no free past-include burn)
 
-- **Status:** accepted
+- **Status:** superseded by [0064](./0064-org-seats-and-free-tier-fallback.md)
 - **Date:** 2026-09-27
 
 ## Context

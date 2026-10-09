@@ -12,6 +12,7 @@ import {
 	sendCreditAutoRefilledEmail,
 	sendCreditMonthlyCapEmail,
 } from '#app/user-account-emails.ts'
+import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import {
 	createOffSessionPaymentIntent,
 	StripeApiError,
@@ -61,11 +62,17 @@ export async function runCreditAutoRefill(input: {
 			return 'skipped'
 		case 'cap_reached':
 			if (wallet.notify.monthlyCap) {
-				await sendCreditMonthlyCapEmail({
-					env: input.env,
-					email: input.email,
-					userId: input.userId,
-					month,
+				await sendToOrgBillingRecipients({
+					db,
+					orgId: input.userId,
+					sendOne: async (recipient) => {
+						await sendCreditMonthlyCapEmail({
+							env: input.env,
+							email: recipient.email,
+							userId: recipient.userId,
+							month,
+						})
+					},
 				}).catch((error: unknown) => {
 					console.warn('credit-monthly-cap-email-failed', error)
 				})
@@ -112,13 +119,19 @@ export async function runCreditAutoRefill(input: {
 			now: input.now,
 		})
 		if (result.applied && wallet.notify.autoRefilled) {
-			await sendCreditAutoRefilledEmail({
-				env: input.env,
-				email: input.email,
-				userId: input.userId,
-				paymentIntentId: intent.id,
-				amountCents: intent.amount,
-				balanceMicroUsd: result.balanceMicroUsd,
+			await sendToOrgBillingRecipients({
+				db,
+				orgId: input.userId,
+				sendOne: async (recipient) => {
+					await sendCreditAutoRefilledEmail({
+						env: input.env,
+						email: recipient.email,
+						userId: recipient.userId,
+						paymentIntentId: intent.id,
+						amountCents: intent.amount,
+						balanceMicroUsd: result.balanceMicroUsd,
+					})
+				},
 			}).catch((error: unknown) => {
 				console.warn('credit-auto-refilled-email-failed', error)
 			})

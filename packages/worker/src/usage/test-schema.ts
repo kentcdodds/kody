@@ -28,6 +28,8 @@ ON usage_rollups(user_id, month);`,
 	meter TEXT NOT NULL,
 	units REAL NOT NULL DEFAULT 0,
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	actor_user_id TEXT,
+	automation_source TEXT,
 	PRIMARY KEY (user_id, day, package_id, meter)
 );`,
 		`CREATE INDEX idx_usage_attribution_daily_user_month

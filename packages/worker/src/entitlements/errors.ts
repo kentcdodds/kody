@@ -39,8 +39,8 @@ export type EntitlementLimitErrorDetails = {
 
 /**
  * Credits next step for a rate/compute include, or `null` when the plan's
- * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 is at its
- * include and keeps going on credits; a funded wallet is already at the
+ * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 hits Free
+ * rate/compute caps and is nudged to top up; a funded wallet is already at the
  * credits ceiling. Free keeps its hard caps (upgrade offer); retired and
  * gift Pro accounts learn that Pro with credits runs past the include.
  */
@@ -52,7 +52,7 @@ export function entitlementCreditsOffer(
 	if (!isCreditsUnlockedResource(resource) || plan === 'max') return null
 	switch (creditWallet) {
 		case 'empty':
-			return `add credits at ${accountCreditsPath} to keep going past your include`
+			return `add credits at ${accountCreditsPath} to restore Pro rates past your include`
 		case 'funded':
 			return null
 		case 'none':
@@ -421,4 +421,147 @@ export function isJobIntervalFloorError(
 
 function escapeRegex(value: string) {
 	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+}
+
+export const budgetLimitErrorCode = 'org_budget_limit_exceeded' as const
+
+export type BudgetLimitKind = 'user' | 'automation'
+
+export type BudgetLimitErrorDetails = {
+	code: typeof budgetLimitErrorCode
+	kind: BudgetLimitKind
+	orgSlug: string
+	actorUsername?: string
+	spentMicroUsd: number
+	budgetMicroUsd: number
+}
+
+export function formatBudgetMicroUsd(microUsd: number) {
+	return `$${(microUsd / 1_000_000).toFixed(2)}`
+}
+
+export function buildBudgetLimitMessage(details: BudgetLimitErrorDetails) {
+	const orgLabel = `@${details.orgSlug}`
+	switch (details.kind) {
+		case 'user': {
+			const actorLabel = details.actorUsername
+				? `@${details.actorUsername}`
+				: 'This member'
+			const spent = formatBudgetMicroUsd(details.spentMicroUsd)
+			const budget = formatBudgetMicroUsd(details.budgetMicroUsd)
+			return `${actorLabel} reached their monthly budget in org ${orgLabel} (${spent} of ${budget}). An org Owner or Billing member can raise it.`
+		}
+		case 'automation':
+			return `Automation in org ${orgLabel} reached its monthly budget. An org Owner or Billing member can raise it.`
+		default: {
+			const exhaustive: never = details.kind
+			throw new Error(`Unknown budget limit kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export function parseBudgetLimitMessage(
+	message: string,
+): BudgetLimitErrorDetails | null {
+	const automationMatch =
+		/^Automation in org @([^ ]+) reached its monthly budget\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (automationMatch) {
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'automation',
+			orgSlug: automationMatch[1] ?? '',
+			spentMicroUsd: 0,
+			budgetMicroUsd: 0,
+		}
+	}
+	const userMatch =
+		/^@([^ ]+) reached their monthly budget in org @([^ ]+) \((\$[\d.]+) of (\$[\d.]+)\)\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (userMatch) {
+		const spentMicroUsd = parseBudgetDollarAmount(userMatch[3])
+		const budgetMicroUsd = parseBudgetDollarAmount(userMatch[4])
+		if (spentMicroUsd === null || budgetMicroUsd === null) return null
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'user',
+			actorUsername: userMatch[1],
+			orgSlug: userMatch[2] ?? '',
+			spentMicroUsd,
+			budgetMicroUsd,
+		}
+	}
+	const memberMatch =
+		/^This member reached their monthly budget in org @([^ ]+) \((\$[\d.]+) of (\$[\d.]+)\)\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (memberMatch) {
+		const spentMicroUsd = parseBudgetDollarAmount(memberMatch[2])
+		const budgetMicroUsd = parseBudgetDollarAmount(memberMatch[3])
+		if (spentMicroUsd === null || budgetMicroUsd === null) return null
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'user',
+			orgSlug: memberMatch[1] ?? '',
+			spentMicroUsd,
+			budgetMicroUsd,
+		}
+	}
+	return null
+}
+
+function parseBudgetDollarAmount(value: string | undefined) {
+	if (!value?.startsWith('$')) return null
+	const dollars = Number(value.slice(1))
+	if (!Number.isFinite(dollars)) return null
+	return Math.round(dollars * 1_000_000)
+}
+
+export class BudgetLimitError extends Error {
+	readonly details: BudgetLimitErrorDetails
+
+	constructor(details: Omit<BudgetLimitErrorDetails, 'code'>) {
+		const fullDetails: BudgetLimitErrorDetails = {
+			code: budgetLimitErrorCode,
+			...details,
+		}
+		super(buildBudgetLimitMessage(fullDetails))
+		this.name = 'BudgetLimitError'
+		this.details = fullDetails
+	}
+}
+
+export function isBudgetLimitError(error: unknown): error is BudgetLimitError {
+	return (
+		error instanceof BudgetLimitError ||
+		(error instanceof Error &&
+			'details' in error &&
+			typeof error.details === 'object' &&
+			error.details !== null &&
+			'code' in error.details &&
+			error.details.code === budgetLimitErrorCode)
+	)
+}
+
+/** Rehydrate a budget denial from a Durable Object RPC error. */
+export function coerceBudgetLimitError(
+	error: unknown,
+): BudgetLimitError | null {
+	if (isBudgetLimitError(error)) return error
+	if (!(error instanceof Error)) return null
+	if (
+		'details' in error &&
+		typeof error.details === 'object' &&
+		error.details !== null &&
+		'code' in error.details &&
+		error.details.code === budgetLimitErrorCode
+	) {
+		const details = error.details as BudgetLimitErrorDetails
+		return new BudgetLimitError(details)
+	}
+	const parsed = parseBudgetLimitMessage(error.message)
+	if (!parsed) return null
+	return new BudgetLimitError(parsed)
 }

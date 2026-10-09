@@ -30,6 +30,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
+import { sendToOrgBillingRecipients } from '#worker/billing/org-billing-emails.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
@@ -376,32 +377,46 @@ async function sendThresholdEmailIfNeeded(input: {
 		warnings: input.warnings,
 	})
 
-	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+	let anySent = false
 	try {
-		sendResult = await sendCloudflareEmail(
-			{
-				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.env.CLOUDFLARE_API_TOKEN,
+		await sendToOrgBillingRecipients({
+			db: input.env.APP_DB,
+			orgId: input.user.stable_user_id,
+			sendOne: async (recipient) => {
+				let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
+				try {
+					sendResult = await sendCloudflareEmail(
+						{
+							accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
+							apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
+							apiToken: input.env.CLOUDFLARE_API_TOKEN,
+						},
+						{
+							to: recipient.email,
+							from: input.emailConfig.fromEmail,
+							subject: email.subject,
+							html: email.html,
+							text: email.text,
+						},
+					)
+				} catch (error) {
+					console.warn('user-entitlement-warning-send-failed', error)
+					return
+				}
+				if (!sendResult.ok) {
+					console.warn('user-entitlement-warning-send-skipped', {
+						reason: sendResult.error ?? 'unconfigured',
+					})
+					return
+				}
+				anySent = true
 			},
-			{
-				to: input.user.email,
-				from: input.emailConfig.fromEmail,
-				subject: email.subject,
-				html: email.html,
-				text: email.text,
-			},
-		)
-	} catch (error) {
-		console.warn('user-entitlement-warning-send-failed', error)
-		return false
-	}
-	if (!sendResult.ok) {
-		console.warn('user-entitlement-warning-send-skipped', {
-			reason: sendResult.error ?? 'unconfigured',
 		})
+	} catch (error) {
+		console.warn('user-entitlement-warning-recipients-failed', error)
 		return false
 	}
+	if (!anySent) return false
 
 	await claimWarningInstance({
 		kv: input.kv,

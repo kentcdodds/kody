@@ -1,11 +1,14 @@
 import { expect, test } from 'vitest'
 import {
+	BudgetLimitError,
 	ComputeOverageLimitError,
 	EntitlementLimitError,
+	buildBudgetLimitMessage,
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
 	buildJobIntervalFloorMessage,
 	jobIntervalFloorErrorCode,
+	parseBudgetLimitMessage,
 	parseComputeOverageLimitMessage,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
@@ -256,10 +259,10 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	expect(
 		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro', 'empty'),
 	).toBe(
-		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/usage#credits to keep going past your include.',
+		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/usage#credits to restore Pro rates past your include.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'pro', 'empty')).toBe(
-		'Run fewer jobs today, space them out, or add credits at /account/usage#credits to keep going past your include.',
+		'Run fewer jobs today, space them out, or add credits at /account/usage#credits to restore Pro rates past your include.',
 	)
 	// Free stays hard-capped: the next step is Pro, not credits.
 	expect(buildEntitlementUpgradeHint('execute_calls_per_day', 'free')).toBe(
@@ -1109,6 +1112,32 @@ test('legacy Pro and manual Pro grants keep pre-cut scheduled-job ceilings', asy
 	}
 })
 
+test('org budget limit messages match spec and round-trip', () => {
+	const user = new BudgetLimitError({
+		kind: 'user',
+		orgSlug: 'acme',
+		actorUsername: 'sam',
+		spentMicroUsd: 50_000_000,
+		budgetMicroUsd: 50_000_000,
+	})
+	expect(user.message).toBe(
+		'@sam reached their monthly budget in org @acme ($50.00 of $50.00). An org Owner or Billing member can raise it.',
+	)
+	expect(parseBudgetLimitMessage(user.message)).toEqual(user.details)
+
+	const automation = new BudgetLimitError({
+		kind: 'automation',
+		orgSlug: 'acme',
+		spentMicroUsd: 10_000_000,
+		budgetMicroUsd: 10_000_000,
+	})
+	expect(automation.message).toBe(
+		'Automation in org @acme reached its monthly budget. An org Owner or Billing member can raise it.',
+	)
+	expect(parseBudgetLimitMessage(automation.message)?.kind).toBe('automation')
+	expect(buildBudgetLimitMessage(user.details)).toBe(user.message)
+})
+
 test('past-include stop message leads with credits, reads in customer units, and round-trips', () => {
 	const workerCompute = new ComputeOverageLimitError({
 		resource: 'unique_worker_days',
@@ -1118,7 +1147,7 @@ test('past-include stop message leads with credits, reads in customer units, and
 		creditsStatus: 'add_credits',
 	})
 	expect(workerCompute.message).toMatch(
-		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, usage past the include stops\. Add credits at \/account\/usage#credits to keep going; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
+		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, rate and compute limits match Free until you top up\. Add credits at \/account\/usage#credits to restore Pro rates; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
 	)
 	expect(parseComputeOverageLimitMessage(workerCompute.message)).toEqual(
 		workerCompute.details,

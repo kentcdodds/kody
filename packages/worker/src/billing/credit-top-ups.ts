@@ -7,6 +7,10 @@ import {
 	createCreditTopUpCheckoutSession,
 	getCreditTopUpCheckoutSession,
 } from './stripe-client.ts'
+import {
+	buildOrgBillingMetadata,
+	resolveOrgIdFromStripeMetadata,
+} from './org-stripe-metadata.ts'
 
 /** Checkout Session metadata marking a prepaid credit top-up. */
 export const creditTopUpMetadataKey = 'kody_credit_top_up'
@@ -58,7 +62,7 @@ export async function startCreditTopUpCheckout(input: {
 		cancelUrl: input.creditsUrl,
 		metadata: {
 			[creditTopUpMetadataKey]: '1',
-			kody_stable_user_id: input.stableUserId,
+			...buildOrgBillingMetadata(input.stableUserId),
 		},
 	})
 	return { url: session.url }
@@ -106,7 +110,7 @@ export async function applyCreditTopUpFromCheckoutSession(input: {
 	}
 	const stableUserId =
 		input.expectedStableUserId ??
-		session.metadata?.['kody_stable_user_id']?.trim() ??
+		resolveOrgIdFromStripeMetadata(session.metadata ?? undefined) ??
 		''
 	if (!stableUserId) {
 		throw new CreditTopUpError(

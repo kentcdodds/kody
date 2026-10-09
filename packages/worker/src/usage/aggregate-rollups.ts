@@ -222,7 +222,9 @@ function utcMonthBounds(now: Date) {
  * are `sum(doubleN * _sample_interval)`. Coalesced points
  * (`coalescedCountUsageEventTypes`) store the unit count in `double3`, so
  * those metrics' counts use `double3` when it is set. Blob/double positions match the data point layout in
- * `record-usage.ts`.
+ * `record-usage.ts`. Analytics Engine `blob1` is the org billing id (same as
+ * the rollup `user_id` for personal orgs). Actor and automation attribution
+ * live in `blob10` and `blob11` when present.
  *
  * Every `if()` branch must be a Float: Analytics Engine rejects the whole
  * query (HTTP 422) when one branch is `doubleN` and the other an Integer

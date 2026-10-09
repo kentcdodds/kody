@@ -306,6 +306,7 @@ test('billing checkout routes existing subscribers through the portal update flo
 			priceId: 'price_pro_yearly',
 			afterCompletionRedirectUrl:
 				'https://example.com/account/billing?billing=updated',
+			quantity: 1,
 		},
 	})
 	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(1)
@@ -338,15 +339,21 @@ test('billing checkout routes existing subscribers through the portal update flo
 	expect(mockModule.createBillingPortalSession).toHaveBeenCalledTimes(2)
 	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(1)
 
-	// Legacy double subscriptions: plain portal (no flow) so the customer can
-	// pick which one to keep.
+	// Legacy double Kody subscriptions: plain portal (no flow) so the customer
+	// can pick which one to keep. Both must use known Kody prices; an unmapped
+	// shared-account product must not count toward this branch.
 	mockModule.listSubscriptions.mockResolvedValueOnce([
 		subscription({
 			id: 'sub_standard',
 			status: 'active',
-			priceId: 'price_standard',
+			priceId: retiredStandardPriceId,
 		}),
 		subscription({ id: 'sub_pro', status: 'trialing', priceId: 'price_pro' }),
+		subscription({
+			id: 'sub_gratitext',
+			status: 'active',
+			priceId: 'price_gratitext_premium_15',
+		}),
 	])
 	const doubled = await postCheckout(env, { plan: 'pro', interval: 'year' })
 	expect(doubled.status).toBe(200)

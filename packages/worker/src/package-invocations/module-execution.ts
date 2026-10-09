@@ -17,8 +17,10 @@ import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.t
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import {
+	budgetLimitErrorCode,
 	computeOverageLimitErrorCode,
 	entitlementLimitErrorCode,
+	isBudgetLimitError,
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
@@ -177,11 +179,17 @@ export async function runSavedPackageModuleOnce(
 					userId: input.actor.orgId,
 					email: user.email,
 					resource: automationInvocationsPerDayResource,
+					orgBudget: {
+						orgId: input.actor.orgId,
+						orgSlug: user.username ?? null,
+						automationSource: input.actor.request.kind,
+					},
 				})
 			} catch (error) {
 				if (
 					isEntitlementLimitError(error) ||
-					isComputeOverageLimitError(error)
+					isComputeOverageLimitError(error) ||
+					isBudgetLimitError(error)
 				) {
 					return {
 						kind: 'pre-execution-denied',
@@ -189,7 +197,9 @@ export async function runSavedPackageModuleOnce(
 							status: 429,
 							code: isEntitlementLimitError(error)
 								? entitlementLimitErrorCode
-								: computeOverageLimitErrorCode,
+								: isBudgetLimitError(error)
+									? budgetLimitErrorCode
+									: computeOverageLimitErrorCode,
 							message: error.message,
 							idempotencyKey: input.idempotencyKey ?? undefined,
 							details: error.details,

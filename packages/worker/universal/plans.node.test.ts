@@ -3,7 +3,7 @@ import {
 	formatDurableObjectRowsRead,
 	parseEntitlementLadder,
 	planLimits,
-	proCreditsPlanLimits,
+	proCreditsEmptyWalletPlanLimits,
 	resolveCreditWalletState,
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
@@ -188,9 +188,9 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Max stock always; funded wallet raises rate ceilings only', () => {
+test('purchasable Pro has Max stock always; empty wallet uses Free rates; funded raises ceilings', () => {
 	const empty = resolvePlanLimits('pro', 'public', 'empty')
-	expect(empty).toEqual(proCreditsPlanLimits)
+	expect(empty).toEqual(proCreditsEmptyWalletPlanLimits)
 	expect(
 		limitMismatches([
 			[10_000, 'pro', 'saved_packages', 'public', 'empty'],
@@ -200,14 +200,14 @@ test('purchasable Pro has Max stock always; funded wallet raises rate ceilings o
 			[20_000, 'pro', 'repo_sessions', 'public', 'empty'],
 			[100 * 1024 * 1024 * 1024, 'pro', 'storage_bytes', 'public', 'empty'],
 			[200, 'pro', 'concurrent_workflows', 'public', 'empty'],
-			[500, 'pro', 'execute_calls_per_day', 'public', 'empty'],
+			[150, 'pro', 'execute_calls_per_day', 'public', 'empty'],
 			[25_000, 'pro', 'execute_calls_per_day', 'public', 'funded'],
 			[200, 'pro', 'email_sends_per_day', 'public', 'funded'],
-			[200, 'pro', 'email_sends_per_day', 'public', 'empty'],
+			[10, 'pro', 'email_sends_per_day', 'public', 'empty'],
 		]),
 	).toEqual([])
-	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(350)
-	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(5_000_000_000)
+	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(50)
+	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(500_000_000)
 
 	// Retired $49 Pro keeps its own table.
 	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)

@@ -64,7 +64,11 @@ import {
 	consumeDailyEntitlement,
 	findCachedUserAccountByStableUserId,
 } from '#worker/entitlements/service.ts'
-import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+	type UsageEnv,
+} from '#worker/usage/record-usage.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
@@ -287,6 +291,7 @@ export async function executeGatewayFetch(input: {
 				entityId: meteredEntityId,
 				durationMs: Date.now() - startedAtMs,
 				outcome,
+				...usageAttributionFieldsFromRequest(input.props.request),
 				...(response ? readResponseContentLengthBytes(response) : {}),
 			}
 			const usagePromise = recordUsage(input.env, usageEvent)

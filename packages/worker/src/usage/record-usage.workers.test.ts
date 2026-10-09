@@ -45,11 +45,14 @@ async function recordAll(
 	for (const event of events) await recordUsage(usageEnv, event)
 }
 
-const blobRow = (userId: string, blobs: Array<string>) => [
-	userId,
-	...blobs,
-	...Array(8 - blobs.length).fill(''),
-]
+const blobRow = (userId: string, blobs: Array<string>) => {
+	const padded = [userId, ...blobs]
+	while (padded.length < 11) padded.push('')
+	if (!padded[usageEventBlobIndexes.actorUserId]) {
+		padded[usageEventBlobIndexes.actorUserId] = userId
+	}
+	return padded
+}
 
 function dataPoint(
 	userId: string,

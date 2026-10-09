@@ -40,8 +40,9 @@ at `packages/worker/universal/plans.ts`.
   `buildEntitlementUpgradeHint` uses `entitlementCreditsOffer` for rate/compute
   includes credits extend (reduce-only once funded, and for `max`); stock and
   other resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
-  (Free). `ComputeOverageLimitError` is the include → credits → stop denial for
-  an empty purchasable-Pro wallet past a monthly include.
+  (Free). `ComputeOverageLimitError` remains for legacy surfaces; empty-wallet
+  enforcement uses Free rate/compute via `proCreditsEmptyWalletPlanLimits` (ADR
+  0064).
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -248,12 +249,14 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Include → credits → stop.** This is the one customer billing path for
-purchasable Pro ([decision 0051](../decisions/0051-include-credits-stop.md)).
-The $12 / $120 subscription is the seat plus a monthly include: the retired
-Standard rates, email, Worker compute (350 unique worker days), Rows read (5B),
-and job interval floor on `proCreditsPlanLimits`. Past the include, usage runs
-on credits until they are gone, then stops.
+**Include → credits → free-tier limits.** This is the customer billing path for
+purchasable Pro
+([decision 0064](../decisions/0064-org-seats-and-free-tier-fallback.md), which
+supersedes [0051](../decisions/0051-include-credits-stop.md)). The $12 / $120
+subscription is the seat plus a monthly include: the retired Standard rates,
+email, Worker compute (350 unique worker days), Rows read (5B), and job interval
+floor on `proCreditsPlanLimits`. Past the include, usage runs on credits until
+they are gone, then rate and compute fall back to Free caps.
 
 - **Stock is not part of the path.** Purchasable Pro always has Max stock and
   concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
@@ -262,24 +265,20 @@ on credits until they are gone, then stops.
   `unlockCreditsLimits` scales (execute, outbound fetches, job runs, automation
   invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
   include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
-  job runs 40,000, automation 200,000; `max` has no weekly window). At $0 they
-  stop at the include (within the 60s enforcement cache).
+  job runs 40,000, automation 200,000; `max` has no weekly window). At $0,
+  `resolvePlanLimits` returns `proCreditsEmptyWalletPlanLimits`: Max stock with
+  Free rate/compute/email and job interval (for example 150 execute/day,
+  400/week).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
-  funded wallet (see Debits). At $0, `consumeDailyEntitlement` throws
-  `ComputeOverageLimitError` for `isPastIncludeStopResource` (execute, job runs,
-  automation invocations) once either meter is past this UTC month's include
-  (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
-  stopped attempt spends no daily quota. Hosted package apps have no daily
-  counter, so `buildPackageAppWorker` calls `assertWithinComputeInclude` (the
-  same rule) for HTTP requests and realtime hooks: HTTP gets a `429` "Monthly
-  include used up" page, and realtime sockets close with `include-used-up`.
-  Outbound fetches are exempt because they happen inside a run that was already
-  admitted. The usage read comes from `usage_rollups` (hourly) behind the 60s
-  entitlement cache, so the stop can trail usage by about an hour; a later
-  top-up forgives that overshoot instead of charging it. Before throwing, the
-  stop re-reads the entitlement uncached, so a top-up resumes work immediately
-  in every isolate.
-- Email caps and the job interval floor are not credit-extended.
+  funded wallet (see Debits). At $0, work keeps running within Free rate limits;
+  denials use the normal daily/weekly entitlement path with copy that nudges a
+  top-up. `assertWithinPastIncludeCredits` and `resolvePastIncludeStop` are
+  no-ops kept for stable call sites. Hosted package apps use the same limit
+  table via `assertWithinComputeInclude`. Outbound fetches are exempt from
+  monthly include logic because they happen inside a run that was already
+  admitted.
+- Email caps and the job interval floor are not credit-extended while funded; at
+  $0 they match Free along with the other rate/compute fields.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
 never frames it as something a balance unlocks, and never names Max; the rate
@@ -882,13 +881,12 @@ Rate limit example (purchasable Pro with $0):
 > you no longer need, or add credits at /account/usage#credits to keep going
 > past your include.
 
-Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
+Empty-wallet rate denial (purchasable Pro with $0, `EntitlementLimitError` at
+Free execute caps):
 
-> Worker compute include used up: your "pro" plan includes 350 worker-compute
-> days this UTC month and you have used 412. With no credits left, usage past
-> the include stops. Add credits at /account/usage#credits to keep going; usage
-> past the include is charged at $0.004 per worker-compute day. Keep package
-> code stable so the same worker stays warm. …
+> Plan limit reached: your "pro" plan allows at most 150 execute calls per day
+> and you currently have 150. … or add credits at /account/usage#credits to
+> restore Pro rates past your include.
 
 Customer copy never says a balance "unlocks" or "lifts" limits and never names
 Max; SSR and unit tests forbid that wording on pricing, billing, credits, and

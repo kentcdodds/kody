@@ -106,11 +106,13 @@ function createDb(
 		creditBalanceMicroUsd?: number
 	} = {},
 ) {
+	let boundParams: Array<unknown> = []
 	return {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
-				bind(..._params: Array<unknown>) {
+				bind(...params: Array<unknown>) {
+					boundParams = params
 					return this
 				},
 				async first<T>() {
@@ -119,9 +121,34 @@ function createDb(
 							balance_micro_usd: options.creditBalanceMicroUsd ?? 0,
 						} as T
 					}
+					if (
+						normalized.includes('from users') &&
+						normalized.includes('stable_user_id = ?')
+					) {
+						const id = String(boundParams[0] ?? '')
+						const user = users.find((row) => row.stable_user_id === id)
+						return user ? ({ stable_user_id: user.stable_user_id } as T) : null
+					}
 					return null
 				},
 				async all<T>() {
+					if (normalized.includes('from org_memberships')) {
+						return { results: [] as Array<T> }
+					}
+					if (
+						normalized.includes('from users') &&
+						normalized.includes('stable_user_id in')
+					) {
+						const ids = new Set(boundParams.map((value) => String(value ?? '')))
+						return {
+							results: users
+								.filter((row) => ids.has(row.stable_user_id))
+								.map((row) => ({
+									user_id: row.stable_user_id,
+									email: row.email,
+								})) as Array<T>,
+						}
+					}
 					if (
 						normalized.includes('from usage_rollups') &&
 						normalized.includes('inner join users')

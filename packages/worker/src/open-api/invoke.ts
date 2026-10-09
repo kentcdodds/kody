@@ -7,7 +7,10 @@ import {
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
 import { authorizeSurface } from '#worker/authorization/authorize.ts'
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 import {
 	toCapabilityOpenApiPrincipal,
 	type ApiInvocationContext,
@@ -214,6 +217,7 @@ export async function invokeApiOperation(input: {
 				entityId,
 				durationMs: Date.now() - startedAt,
 				outcome,
+				...usageAttributionFieldsFromRequest(input.ctx.callerContext.request),
 			},
 			input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : undefined,
 		)
