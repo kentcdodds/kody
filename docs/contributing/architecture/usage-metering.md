@@ -28,10 +28,10 @@ document covers event capture and rollups only.
 Usage metering follows the repo-wide isolation invariant: every event carries a
 required billing scope id on `UsageEvent.userId`, the Analytics Engine index is
 that same id, and D1 rollups are keyed by `usage_rollups.user_id`. For Teams,
-that id is the **org billing id** (`orgId`): migrated personal orgs use the same
-string as before, so existing rows and queries keep working during the
-personal-org soak. Types and call sites still often name the field `userId` even
-though Analytics Engine `blob1` and `index1` are the org id.
+that id is the **org billing id** (`orgId`). For a personal org the id equals
+the owner's stable user id, so AE `index1` / `blob1` and `usage_rollups.user_id`
+match the historical per-user key. Types and call sites still often name the
+field `userId` even though Analytics Engine `blob1` and `index1` are the org id.
 
 **Actor attribution** is separate: who triggered the metered unit lives in
 `actorUserId` / Analytics Engine `blob10` (empty for Automation runs). Org
