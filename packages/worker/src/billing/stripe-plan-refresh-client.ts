@@ -29,15 +29,12 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 				refreshAt,
 			})
 		}
-		// Any users row (live or soft-deleted) keeps the account write lease so
-		// deletion/purge cannot re-arm alarms. Only live team orgs (no users
-		// identity for this id) schedule without a lease.
-		const anyPersonalUser = await input.env.APP_DB.prepare(
-			`SELECT 1 AS ok FROM users WHERE stable_user_id = ?`,
+		const livePersonalUser = await input.env.APP_DB.prepare(
+			`SELECT 1 AS ok FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(userId)
 			.first<{ ok: number }>()
-		if (anyPersonalUser) {
+		if (livePersonalUser) {
 			await withAccountWriteLease({
 				db: input.env.APP_DB,
 				stableUserId: userId,
@@ -47,6 +44,9 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 			})
 			return true
 		}
+		// Soft-deleted personal accounts have no live users row and must not
+		// re-arm alarms. Only a live team org (no personal identity) schedules
+		// without the account write lease.
 		const liveTeamOrg = await input.env.APP_DB.prepare(
 			`SELECT 1 AS ok FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
