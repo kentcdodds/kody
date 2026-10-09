@@ -15,6 +15,7 @@ import {
 	getFeatureFlagEvaluationsForUser,
 	type FeatureFlagEvaluation,
 } from '#worker/feature-flags/service.ts'
+import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -79,14 +80,43 @@ async function resolveFeatureFlagUserId(
 	return row?.id ?? null
 }
 
-type CallerFeatureFlagResolution = {
-	stableUserId: string
-	evaluations: Record<FeatureFlagKey, FeatureFlagEvaluation>
+type CallerFeatureFlagResolution =
+	| {
+			status: 'ok'
+			stableUserId: string
+			evaluations: Record<FeatureFlagKey, FeatureFlagEvaluation>
+	  }
+	| { status: 'anonymous' | 'unresolved' }
+	| { status: 'failed' }
+
+/**
+ * Cross-request evaluation cache for stateless `/mcp` (a new caller context
+ * every HTTP request). Long enough to cover a burst of tools/call round
+ * trips, short enough that a kill switch lands on the next requests after
+ * this window. Failures are not cached.
+ */
+export const callerFeatureFlagEvaluationTtlMs = 15_000
+
+const callerFeatureFlagEvaluationCaches = new WeakMap<
+	D1Database,
+	PromiseLruCache<CallerFeatureFlagResolution>
+>()
+
+function callerFeatureFlagEvaluationCache(db: D1Database) {
+	let cache = callerFeatureFlagEvaluationCaches.get(db)
+	if (!cache) {
+		cache = new PromiseLruCache<CallerFeatureFlagResolution>({
+			ttlMs: callerFeatureFlagEvaluationTtlMs,
+			limit: 500,
+		})
+		callerFeatureFlagEvaluationCaches.set(db, cache)
+	}
+	return cache
 }
 
 const callerFeatureFlagResolutions = new WeakMap<
 	McpCallerContext,
-	Promise<CallerFeatureFlagResolution | null>
+	Promise<CallerFeatureFlagResolution>
 >()
 
 const callerFeatureFlagMaps = new WeakMap<
@@ -94,27 +124,48 @@ const callerFeatureFlagMaps = new WeakMap<
 	Promise<CallerFeatureFlags>
 >()
 
+class UnresolvedFeatureFlagUser extends Error {
+	constructor() {
+		super('feature flag user is unresolved')
+		this.name = 'UnresolvedFeatureFlagUser'
+	}
+}
+
+async function loadFreshCallerFeatureFlagResolution(
+	env: Env,
+	stableUserId: string,
+): Promise<CallerFeatureFlagResolution> {
+	const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
+	// Do not cache this. A users row can appear in the same TTL window.
+	if (userId === null) throw new UnresolvedFeatureFlagUser()
+	const evaluations = await getFeatureFlagEvaluationsForUser(env.APP_DB, userId)
+	await recordFeatureFlagExposures(env, {
+		stableUserId,
+		evaluations,
+	})
+	return { status: 'ok', stableUserId, evaluations }
+}
+
 async function loadCallerFeatureFlagResolution(
 	env: Env,
 	callerContext: McpCallerContext,
-): Promise<CallerFeatureFlagResolution | null> {
+): Promise<CallerFeatureFlagResolution> {
 	let promise = callerFeatureFlagResolutions.get(callerContext)
 	if (!promise) {
-		promise = (async (): Promise<CallerFeatureFlagResolution | null> => {
-			if (!env.APP_DB) return null
-			if (!callerContext.user?.userId) return null
+		promise = (async (): Promise<CallerFeatureFlagResolution> => {
+			if (!env.APP_DB) return { status: 'anonymous' }
+			const stableUserId = callerContext.user?.userId?.trim()
+			if (!stableUserId) return { status: 'anonymous' }
 			try {
-				const stableUserId = callerContext.user.userId.trim()
-				if (!stableUserId) return null
-				const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
-				if (userId === null) return null
-				const evaluations = await getFeatureFlagEvaluationsForUser(
-					env.APP_DB,
-					userId,
-				)
-				return { stableUserId, evaluations }
-			} catch {
-				return null
+				return await callerFeatureFlagEvaluationCache(env.APP_DB).getOrCreate({
+					cacheKey: stableUserId,
+					create: () => loadFreshCallerFeatureFlagResolution(env, stableUserId),
+				})
+			} catch (error) {
+				if (error instanceof UnresolvedFeatureFlagUser) {
+					return { status: 'unresolved' }
+				}
+				return { status: 'failed' }
 			}
 		})()
 		callerFeatureFlagResolutions.set(callerContext, promise)
@@ -122,51 +173,53 @@ async function loadCallerFeatureFlagResolution(
 	return await promise
 }
 
-async function resolveAndRecordCallerFeatureFlags(
-	env: Env,
-	callerContext: McpCallerContext,
-): Promise<CallerFeatureFlags> {
-	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
-	if (!resolution) return disabledFeatureFlags()
-	await recordFeatureFlagExposures(env, {
-		stableUserId: resolution.stableUserId,
-		evaluations: resolution.evaluations,
-	})
+function flagsFromResolution(
+	resolution: CallerFeatureFlagResolution,
+): CallerFeatureFlags {
+	if (resolution.status !== 'ok') return disabledFeatureFlags()
 	return Object.fromEntries(
 		featureFlagKeys.map((key) => [key, resolution.evaluations[key].enabled]),
 	) as Record<FeatureFlagKey, boolean>
 }
 
 /**
- * Full per-request flag evaluations (enabled + assignment source), cached on
- * the caller context so search behavior and dedicated exposure recording
- * share one assignment. Does not record evaluation-site exposures; call
- * `resolveCallerFeatureFlags` when those writes are needed.
+ * Full flag evaluations (enabled + assignment source). Shares the caller
+ * context and the short TTL cache with `resolveCallerFeatureFlags`, including
+ * the exposure write when that cache entry is filled.
  */
 export async function resolveCallerFeatureFlagEvaluations(
 	env: Env,
 	callerContext: McpCallerContext,
 ): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation> | null> {
 	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
-	return resolution?.evaluations ?? null
+	return resolution.status === 'ok' ? resolution.evaluations : null
 }
 
 /**
- * Resolve the caller's evaluated feature-flag map once per request (same
- * `McpCallerContext` object). Used by registry filtering (search/list) so
- * access checks stay synchronous. Evaluation also records success-metric
- * exposures for measured flags (see `#worker/feature-flags/exposure.ts`) so
- * MCP-only users are represented in admin metric readouts — once per request,
- * not once per call site.
+ * True when this request's flag read threw (D1 or evaluation). Anonymous
+ * callers and unknown stable ids are fail-closed, not failures. A failure
+ * must not spend execute daily quota.
+ */
+export async function callerFeatureFlagEvaluationFailed(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<boolean> {
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	return resolution.status === 'failed'
+}
+
+/**
+ * Resolve the caller's evaluated feature-flag map. Call sites on the same
+ * `McpCallerContext` share one read. Stateless `/mcp` builds a new context
+ * per HTTP request, so evaluations are also cached per stable user id for
+ * {@link callerFeatureFlagEvaluationTtlMs}. Exposures are written when that
+ * cache entry is filled, not once per call site and not once per request
+ * inside the window. Counts are lower than the old per-call-site writes and
+ * are the accurate assignment record.
  *
- * This is request-scoped only: the stateless `/mcp` lane builds a new caller
- * context per HTTP request, so each request still evaluates and records once.
- * Do not add a cross-request or per-isolate TTL cache here.
- *
- * Fail-closed rules: anonymous callers and authenticated callers whose stable
- * id cannot be resolved to a `users.id` get every flag off, so gated
- * capabilities never appear with a different flag state than the same user's
- * app session would compute.
+ * Fail-closed rules: anonymous callers, authenticated callers whose stable
+ * id cannot be resolved to a `users.id`, and evaluation failures get every
+ * flag off. Failures are not cached, so the next request retries.
  */
 export async function resolveCallerFeatureFlags(
 	env: Env,
@@ -174,7 +227,9 @@ export async function resolveCallerFeatureFlags(
 ): Promise<CallerFeatureFlags> {
 	let promise = callerFeatureFlagMaps.get(callerContext)
 	if (!promise) {
-		promise = resolveAndRecordCallerFeatureFlags(env, callerContext)
+		promise = loadCallerFeatureFlagResolution(env, callerContext).then(
+			(resolution) => flagsFromResolution(resolution),
+		)
 		callerFeatureFlagMaps.set(callerContext, promise)
 	}
 	return await promise

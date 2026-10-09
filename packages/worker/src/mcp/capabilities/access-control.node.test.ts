@@ -14,6 +14,8 @@ import {
 	callerCanAccessCapability,
 	filterCapabilityRegistryForCaller,
 	filterCapabilityRegistryMcpServersForCaller,
+	callerFeatureFlagEvaluationFailed,
+	callerFeatureFlagEvaluationTtlMs,
 	resolveCallerFeatureFlags,
 	type CallerFeatureFlags,
 } from './access-control.ts'
@@ -329,8 +331,8 @@ test('one MCP request records flag exposures once and reuses the request evaluat
 		evaluations,
 	})
 
-	// A distinct caller context (next HTTP request) must evaluate and record
-	// again — no cross-request cache.
+	// A new caller context inside the TTL reuses the evaluation and does not
+	// write another exposure. Counts drop versus one write per request.
 	const nextRequestContext = createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
@@ -342,6 +344,105 @@ test('one MCP request records flag exposures once and reuses the request evaluat
 		},
 	})
 	await resolveCallerFeatureFlags(env, nextRequestContext)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(1)
+	expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledTimes(1)
+
+	const afterTtlMs = Date.now() + callerFeatureFlagEvaluationTtlMs + 1
+	vi.useFakeTimers()
+	vi.setSystemTime(afterTtlMs)
+	try {
+		const afterTtl = createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: 'flags@example.com',
+				displayName: 'flags',
+				roles: ['user'],
+			},
+		})
+		await resolveCallerFeatureFlags(env, afterTtl)
+		expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(2)
+		expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('flag evaluation failure fails closed, skips exposures, and is not cached', async () => {
+	const stableUserId = testStableUserIdFromEmail('flag-eval-fail@example.com')
+	const env = createFlagResolveEnv(7)
+	flagMocks.getFeatureFlagEvaluationsForUser.mockReset()
+	flagMocks.recordFeatureFlagExposures.mockClear()
+	flagMocks.getFeatureFlagEvaluationsForUser.mockRejectedValue(
+		new Error('d1 down'),
+	)
+	const caller = () =>
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: 'flag-eval-fail@example.com',
+				displayName: 'flags',
+				roles: ['user'],
+			},
+		})
+
+	const firstContext = caller()
+	const flags = await resolveCallerFeatureFlags(env, firstContext)
+	expect(flags['execute-invoke']).toBe(false)
+	expect(await callerFeatureFlagEvaluationFailed(env, firstContext)).toBe(true)
+	expect(flagMocks.recordFeatureFlagExposures).not.toHaveBeenCalled()
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(1)
+
+	const secondContext = caller()
+	await resolveCallerFeatureFlags(env, secondContext)
 	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(2)
-	expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledTimes(2)
+})
+
+test('an unresolved flag user is not cached across requests', async () => {
+	const stableUserId = testStableUserIdFromEmail('flag-unresolved@example.com')
+	let numericUserId: number | null = null
+	const env = {
+		APP_DB: {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async first() {
+								return numericUserId === null ? null : { id: numericUserId }
+							},
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	flagMocks.getFeatureFlagEvaluationsForUser.mockReset()
+	flagMocks.recordFeatureFlagExposures.mockClear()
+	flagMocks.getFeatureFlagEvaluationsForUser.mockResolvedValue(
+		createEvaluations({ 'execute-invoke': true }),
+	)
+	const caller = () =>
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: 'flag-unresolved@example.com',
+				displayName: 'flags',
+				roles: ['user'],
+			},
+		})
+
+	const missing = await resolveCallerFeatureFlags(env, caller())
+	expect(missing['execute-invoke']).toBe(false)
+	expect(await callerFeatureFlagEvaluationFailed(env, caller())).toBe(false)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).not.toHaveBeenCalled()
+
+	numericUserId = 11
+	const present = await resolveCallerFeatureFlags(env, caller())
+	expect(present['execute-invoke']).toBe(true)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(1)
 })

@@ -68,6 +68,13 @@ const mockModule = vi.hoisted(() => ({
 			'mcp-events-extension': false,
 		}),
 	),
+	callerFeatureFlagEvaluationFailed: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof AccessControlModule.callerFeatureFlagEvaluationFailed
+			>
+		) => false,
+	),
 	consumeDailyEntitlement: vi.fn(),
 }))
 
@@ -95,6 +102,11 @@ vi.mock(
 					typeof AccessControlModule.resolveCallerFeatureFlags
 				>
 			) => mockModule.resolveCallerFeatureFlags(...args),
+			callerFeatureFlagEvaluationFailed: (
+				...args: Parameters<
+					typeof AccessControlModule.callerFeatureFlagEvaluationFailed
+				>
+			) => mockModule.callerFeatureFlagEvaluationFailed(...args),
 		}
 	},
 )
@@ -257,6 +269,7 @@ async function getExecuteRegistration(
 		'mcp-skills-extension': false,
 		'mcp-events-extension': false,
 	})
+	mockModule.callerFeatureFlagEvaluationFailed.mockResolvedValue(false)
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
@@ -1040,6 +1053,29 @@ test('execute does not consume daily entitlement when live flag resolution fails
 	expect(denied.isError).toBe(true)
 	expect(denied.structuredContent.error).toBe('flag resolution failed')
 	expect(denied.structuredContent).not.toHaveProperty('entitlement')
+	expect(mockModule.consumeDailyEntitlement).not.toHaveBeenCalled()
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
+})
+
+test('execute does not consume daily entitlement when flag evaluation fails closed', async () => {
+	const userId = testStableUserIdFromEmail('flag-fail-closed@example.com')
+	const handler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: {
+			userId,
+			email: 'flag-fail-closed@example.com',
+		},
+	})
+	mockModule.callerFeatureFlagEvaluationFailed.mockResolvedValueOnce(true)
+
+	const denied = await handler({
+		code: shouldNotRunCode,
+		conversationId: 'conv-flag-fail-closed',
+	})
+
+	expect(denied.isError).toBe(true)
+	expect(denied.structuredContent.error).toBe('Feature flag evaluation failed')
 	expect(mockModule.consumeDailyEntitlement).not.toHaveBeenCalled()
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
