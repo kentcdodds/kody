@@ -204,7 +204,10 @@ function docDetailHead({
  */
 const routeDocumentHeads = {
 	[routePattern(routes.home)]: homeDocumentHead,
-	[routePattern(routes.account)]: titleOnly('Account'),
+	[routePattern(routes.account)]: titleOnly('Profile'),
+	[routePattern(routes.accountSecurity)]: titleOnly('Security'),
+	[routePattern(routes.accountData)]: titleOnly('Data & deletion'),
+	[routePattern(routes.accountOrganizations)]: titleOnly('Organizations'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
@@ -501,8 +504,7 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
 	[routePattern(routes.orgMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.orgMemories)]: titleOnly('Memories'),
-	[routePattern(routes.orgPackages)]: ({ params }) =>
-		titleOnly(params.orgSlug ? `@${params.orgSlug}` : 'Repositories'),
+	[routePattern(routes.orgPackages)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
 	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.orgValues)]: titleOnly('Values'),
@@ -512,7 +514,6 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.accountOrganizationsNew)]: titleOnly(
 		'Create organization',
 	),
-	[routePattern(routes.accountInvites)]: titleOnly('Invites'),
 }
 
 const documentHeadMatcher = (() => {

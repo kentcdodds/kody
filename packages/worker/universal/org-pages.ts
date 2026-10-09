@@ -153,7 +153,8 @@ export function orderOrganizations<T extends OrganizationSummary>(
 
 /**
  * Signup organization first, then the others. A single organization stays
- * minimal: no role label. Create and Invites always follow the organizations.
+ * minimal: no role label. Create follows the organizations, then Invites
+ * when any are waiting (the Organizations page lists them either way).
  */
 export function orgSwitcherEntries(
 	orgs: ReadonlyArray<OrganizationSummary>,
@@ -174,7 +175,7 @@ export function orgSwitcherEntries(
 				}) satisfies OrgSwitcherEntry,
 		),
 		{ kind: 'create' },
-		{ kind: 'invites', count },
+		...(count > 0 ? [{ kind: 'invites', count } as const] : []),
 	]
 }
 

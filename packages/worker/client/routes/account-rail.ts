@@ -2,26 +2,19 @@ import {
 	accountAliasPath,
 	orgResourcePath,
 	orgSlugFromPathname,
-	parseOrgResourcePath,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { type IconName } from '#universal/icon.tsx'
 
 /**
- * Packages for the signup organization live on the public profile home
- * (`/@slug`). Non-personal org package lists use `/@slug/packages` (gated
- * until storage follows `request.org.id`). `/account/packages` only 302s
- * when the session has no org slug yet.
+ * The repository list for an organization. `/account/packages` only 302s
+ * there, so it is the fallback when the session has no org slug yet.
  */
-export function accountPackagesNavHref(input: {
-	orgSlug: string | null | undefined
-	personal: boolean
-}) {
-	if (!input.orgSlug) return routes.accountPackages.href()
-	return input.personal
-		? routes.profile.href({ username: input.orgSlug })
-		: orgResourcePath(input.orgSlug, 'packages')
+export function accountPackagesNavHref(orgSlug: string | null | undefined) {
+	return orgSlug
+		? orgResourcePath(orgSlug, 'packages')
+		: routes.accountPackages.href()
 }
 
 function orgSectionHref(
@@ -33,7 +26,7 @@ function orgSectionHref(
 }
 
 /**
- * Org slug for account-rail links: the org already in the URL when the
+ * Org slug for workspace-rail links: the org already in the URL when the
  * person belongs to it, otherwise their signup organization. Username is
  * only a last resort — personal org slugs stay put across renames.
  */
@@ -53,122 +46,227 @@ export function accountRailOrgSlug(input: {
 	)
 }
 
-type AccountNavItem = { href: string; label: string; icon: IconName }
+export type AccountRailItem = {
+	href: string
+	label: string
+	icon: IconName
+	/** Other pages that belong to this item (`/account/passkeys` → Security). */
+	alsoActiveFor?: ReadonlyArray<string>
+}
 
-/** Account rail items in display order for the signed-in session. */
-export function accountNavItemsFor(input: {
+export type AccountRailGroup = {
+	label: string | null
+	items: Array<AccountRailItem>
+}
+
+/** Settings that belong to the person, whichever organization they are in. */
+const accountRailItems: Array<AccountRailItem> = [
+	{ href: routes.account.href(), label: 'Profile', icon: 'user' },
+	{
+		href: routes.accountSecurity.href(),
+		label: 'Security',
+		icon: 'shield',
+		alsoActiveFor: [
+			routes.accountTwoFactor.href(),
+			routes.accountPasskeys.href(),
+		],
+	},
+	{
+		href: routes.accountOrganizations.href(),
+		label: 'Organizations',
+		icon: 'users',
+	},
+	{
+		href: routes.accountExperiments.href(),
+		label: 'Experiments',
+		icon: 'star',
+	},
+	{
+		href: routes.accountData.href(),
+		label: 'Data & deletion',
+		icon: 'folder',
+	},
+]
+
+/** True for the person-scoped pages that take the account rail. */
+export function isAccountRailPath(pathname: string) {
+	return accountRailItems.some((item) => isAccountNavItemActive(item, pathname))
+}
+
+export function accountRailGroups(): Array<AccountRailGroup> {
+	return [{ label: null, items: accountRailItems }]
+}
+
+/**
+ * The workspace rail: everything the organization owns, grouped by job.
+ * Storage still keys by person id (#3073), so a non-personal organization
+ * has none of these pages yet and gets an empty rail.
+ */
+export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
 	/** True when `orgSlug` is the signup (personal) organization. */
 	personal: boolean
-}): Array<AccountNavItem> {
+}): Array<AccountRailGroup> {
+	if (!input.personal) return []
+	const { orgSlug } = input
 	return [
-		{ href: '/account', label: 'Overview', icon: 'home' },
 		{
-			href: orgSectionHref(input.orgSlug, 'waiting', '/account/waiting'),
-			label: 'Waiting',
-			icon: 'clock',
+			label: 'Build',
+			items: [
+				{
+					href: accountPackagesNavHref(orgSlug),
+					label: 'Repositories',
+					icon: 'box',
+				},
+				{
+					href: orgSectionHref(orgSlug, 'jobs', routes.accountJobs.href()),
+					label: 'Jobs',
+					icon: 'briefcase',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'workflows',
+						routes.accountWorkflows.href(),
+					),
+					label: 'Workflows',
+					icon: 'refresh',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'webhooks',
+						routes.accountWebhooks.href(),
+					),
+					label: 'Webhooks',
+					icon: 'cloud',
+				},
+			],
 		},
-		{ href: '/account/experiments', label: 'Experiments', icon: 'star' },
 		{
-			href: orgSectionHref(
-				input.orgSlug,
-				'connections',
-				routes.accountConnections.href(),
-			),
-			label: 'Connections',
-			icon: 'link',
+			label: 'Access',
+			items: [
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'connections',
+						routes.accountConnections.href(),
+					),
+					label: 'Connections',
+					icon: 'link',
+					alsoActiveFor: [routes.accountMcpOauthClients.href()],
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'integrations',
+						routes.accountIntegrations.href(),
+					),
+					label: 'Integrations',
+					icon: 'plug',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'mcp-servers',
+						routes.accountMcpServers.href(),
+					),
+					label: 'MCP servers',
+					icon: 'server',
+				},
+			],
 		},
 		{
-			href: accountPackagesNavHref({
-				orgSlug: input.orgSlug,
-				personal: input.personal,
-			}),
-			label: 'Repositories',
-			icon: 'box',
+			label: 'Data',
+			items: [
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'secrets',
+						routes.accountSecrets.href(),
+					),
+					label: 'Secrets',
+					icon: 'key',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'secret-providers',
+						routes.accountSecretProviders.href(),
+					),
+					label: 'Secret providers',
+					icon: 'key',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'memories',
+						routes.accountMemories.href(),
+					),
+					label: 'Memories',
+					icon: 'book',
+				},
+				{
+					href: orgSectionHref(orgSlug, 'email', routes.accountEmail.href()),
+					label: 'Email',
+					icon: 'mail',
+				},
+			],
 		},
-		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
-		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
 		{
-			href: orgSectionHref(input.orgSlug, 'activity', '/account/activity'),
 			label: 'Activity',
-			icon: 'trending-up',
+			items: [
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'activity',
+						routes.accountActivity.href(),
+					),
+					label: 'Activity',
+					icon: 'trending-up',
+				},
+				{
+					href: orgSectionHref(
+						orgSlug,
+						'waiting',
+						routes.accountWaiting.href(),
+					),
+					label: 'Waiting',
+					icon: 'clock',
+				},
+			],
 		},
 		{
-			href: orgSectionHref(input.orgSlug, 'jobs', '/account/jobs'),
-			label: 'Jobs',
-			icon: 'briefcase',
-		},
-		{
-			href: orgSectionHref(input.orgSlug, 'workflows', '/account/workflows'),
-			label: 'Workflows',
-			icon: 'refresh',
-		},
-		{
-			href: orgSectionHref(
-				input.orgSlug,
-				'webhooks',
-				routes.accountWebhooks.href(),
-			),
-			label: 'Webhooks',
-			icon: 'cloud',
-		},
-		{
-			href: orgSectionHref(input.orgSlug, 'secrets', '/account/secrets'),
-			label: 'Secrets',
-			icon: 'key',
-		},
-		{
-			href: orgSectionHref(
-				input.orgSlug,
-				'secret-providers',
-				'/account/secret-providers',
-			),
-			label: 'Secret providers',
-			icon: 'key',
-		},
-		{
-			href: orgSectionHref(
-				input.orgSlug,
-				'integrations',
-				'/account/integrations',
-			),
-			label: 'Integrations',
-			icon: 'plug',
-		},
-		{
-			href: orgSectionHref(
-				input.orgSlug,
-				'mcp-servers',
-				'/account/mcp-servers',
-			),
-			label: 'MCP servers',
-			icon: 'server',
-		},
-		{
-			href: orgSectionHref(input.orgSlug, 'memories', '/account/memories'),
-			label: 'Memories',
-			icon: 'book',
-		},
-		{
-			href: orgSectionHref(input.orgSlug, 'email', '/account/email'),
-			label: 'Email',
-			icon: 'mail',
+			label: 'Organization',
+			items: [
+				{
+					href: routes.accountBilling.href(),
+					label: 'Billing',
+					icon: 'wallet',
+				},
+				{
+					href: routes.accountUsage.href(),
+					label: 'Usage',
+					icon: 'chart',
+					alsoActiveFor: [routes.accountCredits.href()],
+				},
+			],
 		},
 	]
 }
 
-export function isAccountNavItemActive(itemHref: string, currentPath: string) {
-	if (itemHref === '/account') return currentPath === '/account'
-	// The repository list is `/@slug` (and package pages under it). Organization
-	// sections such as `/@slug/secrets` are their own rail items.
-	if (/^\/@[^/]+$/.test(itemHref)) {
-		if (currentPath === itemHref) return true
-		const orgPage = parseOrgResourcePath(currentPath)
-		if (orgPage?.section === 'packages') return true
-		if (orgPage) return false
-		return currentPath.startsWith(`${itemHref}/`)
-	}
-	const itemAlias = accountAliasPath(itemHref)
+function matchesRailPath(itemPath: string, currentPath: string) {
+	if (itemPath === routes.account.href()) return currentPath === itemPath
+	const itemAlias = accountAliasPath(itemPath)
 	const currentAlias = accountAliasPath(currentPath)
 	return currentAlias === itemAlias || currentAlias.startsWith(`${itemAlias}/`)
+}
+
+export function isAccountNavItemActive(
+	item: Pick<AccountRailItem, 'href' | 'alsoActiveFor'>,
+	currentPath: string,
+) {
+	return [item.href, ...(item.alsoActiveFor ?? [])].some((path) =>
+		matchesRailPath(path, currentPath),
+	)
 }

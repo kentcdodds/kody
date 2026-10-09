@@ -1,10 +1,15 @@
 import { type Action } from 'remix/router'
 import { jsonResponse } from '#worker/json-response.ts'
 import { loadAccountOrganizationSnapshot } from '#app/account-organizations-data.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadAccountProfileData } from '#app/account-profile-data.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
+import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 
 function readFormValue(body: FormData, key: string) {
@@ -24,7 +29,7 @@ export function createAccountOrganizationsNewHandler(env: Env) {
 				env,
 				title: 'Create organization',
 				loaderData: {
-					accountOrganizations: {
+					accountOrganizationsNew: {
 						ok: true,
 						error: url.searchParams.get('error'),
 						draft: {
@@ -85,26 +90,48 @@ function redirectWithError(
 	return Response.redirect(destination.toString(), 302)
 }
 
-export function createAccountInvitesHandler(env: Env) {
+async function loadAccountOrganizationsData(
+	env: Env,
+	user: AuthenticatedAppUser,
+	request: Request,
+): Promise<AccountOrganizationsLoaderData> {
+	const [snapshot, profile] = await Promise.all([
+		loadAccountOrganizationSnapshot(env, user, request),
+		loadAccountProfileData(user, env),
+	])
+	return {
+		ok: true,
+		username: profile.username,
+		viewer: { displayName: profile.displayName, avatarUrl: profile.avatarUrl },
+		organizations: snapshot.organizations,
+		lastUsedOrganization: snapshot.lastUsedOrganization,
+		invites: snapshot.invites,
+	}
+}
+
+export function createAccountOrganizationsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) return user
-			const snapshot = await loadAccountOrganizationSnapshot(env, user, request)
 			return renderAppPage({
 				request,
 				env,
-				title: 'Invites',
+				title: 'Organizations',
 				loaderData: {
-					accountInvites: { ok: true, invites: snapshot.invites },
+					accountOrganizations: await loadAccountOrganizationsData(
+						env,
+						user,
+						request,
+					),
 				},
 			})
 		},
-	} satisfies Action<typeof routes.accountInvites>
+	} satisfies Action<typeof routes.accountOrganizations>
 }
 
-export function createAccountInvitesApiHandler(env: Env) {
+export function createAccountOrganizationsApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -112,8 +139,9 @@ export function createAccountInvitesApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-			const snapshot = await loadAccountOrganizationSnapshot(env, user, request)
-			return jsonResponse({ ok: true, invites: snapshot.invites })
+			return jsonResponse(
+				await loadAccountOrganizationsData(env, user, request),
+			)
 		},
-	} satisfies Action<typeof routes.accountInvitesApi>
+	} satisfies Action<typeof routes.accountOrganizationsApi>
 }

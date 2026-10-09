@@ -44,9 +44,9 @@ export type SiteHeaderProps = {
 
 /**
  * Sticky site header from the 2026 landing redesign: brand, marketing nav
- * (Community · Docs · Pricing · Blog), and the session corner (Account
- * then the avatar on desktop). The bottom hairline is a static CSS border so
- * it paints before JS.
+ * (Community · Docs · Pricing · Blog), and the session corner: one menu that
+ * picks the organization and holds the person's own links. The bottom
+ * hairline is a static CSS border so it paints before JS.
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
@@ -128,10 +128,34 @@ function renderIconWell(name: IconName) {
 	)
 }
 
+function renderLogoutRow() {
+	return (
+		<form
+			key="logout"
+			method="post"
+			action={routes.logout.href()}
+			mix={css({ margin: 0, display: 'grid' })}
+		>
+			<button
+				type="submit"
+				data-testid="org-switcher-logout"
+				mix={css(switcherButtonRowCss)}
+			>
+				<span mix={css(switcherLeadingCss)}>{renderIconWell('lock')}</span>
+				<span mix={css(switcherRowTextCss)}>
+					<span mix={css(switcherRowLabelCss)}>Log out</span>
+				</span>
+			</button>
+		</form>
+	)
+}
+
 /** Focus order for the arrow keys: the trigger, then every row in the panel. */
 function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
 	if (!panel || !panel.matches(':popover-open')) return
-	const rows = Array.from(panel.querySelectorAll<HTMLElement>('a[href]'))
+	const rows = Array.from(
+		panel.querySelectorAll<HTMLElement>('a[href], button'),
+	)
 	if (rows.length === 0) return
 	const index = rows.indexOf(document.activeElement as HTMLElement)
 	const next =
@@ -210,13 +234,10 @@ function OrgSwitcher(
 				case 'invites':
 					return {
 						key: 'invites',
-						href: routes.accountInvites.href(),
+						href: `${routes.accountOrganizations.href()}#invites`,
 						label: 'Invites',
 						detail: null,
-						ariaCurrent:
-							handle.props.currentPathname === routes.accountInvites.href()
-								? 'page'
-								: undefined,
+						ariaCurrent: undefined,
 						selected: false,
 						leading: renderIconWell('mail'),
 						badge: entry.count > 0 ? String(entry.count) : null,
@@ -260,6 +281,34 @@ function OrgSwitcher(
 		const actionRows = entries
 			.filter((entry) => entry.kind !== 'org')
 			.map(toRow)
+		const pageCurrent = (href: string) =>
+			handle.props.currentPathname === href ? ('page' as const) : undefined
+		const accountRows: Array<SwitcherRow> = [
+			...(handle.props.username
+				? [
+						{
+							key: 'account-profile',
+							href: routes.profile.href({ username: handle.props.username }),
+							label: 'Your profile',
+							detail: null,
+							ariaCurrent: undefined,
+							selected: false,
+							leading: renderIconWell('globe'),
+							badge: null,
+						},
+					]
+				: []),
+			{
+				key: 'account-settings',
+				href: routes.account.href(),
+				label: 'Account settings',
+				detail: null,
+				ariaCurrent: pageCurrent(routes.account.href()),
+				selected: false,
+				leading: renderIconWell('user'),
+				badge: null,
+			},
+		]
 
 		const body = (
 			<>
@@ -273,6 +322,16 @@ function OrgSwitcher(
 				</div>
 				<div mix={css(switcherActionsCss)}>
 					{actionRows.map(renderSwitcherRow)}
+				</div>
+				<div
+					role="group"
+					aria-label="Your account"
+					data-testid="org-switcher-account-group"
+					mix={css(switcherActionsCss)}
+				>
+					<p mix={css(switcherEyebrowCss)}>Your account</p>
+					{accountRows.map(renderSwitcherRow)}
+					{renderLogoutRow()}
 				</div>
 			</>
 		)
@@ -304,7 +363,7 @@ function OrgSwitcher(
 				<button
 					type="button"
 					popovertarget={orgSwitcherPanelId}
-					aria-label={`Organization ${label}`}
+					aria-label={`${label}: organizations and account`}
 					aria-expanded={open ? 'true' : 'false'}
 					data-open={open ? '' : undefined}
 					data-testid="org-switcher"
@@ -356,14 +415,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	}
 
 	return () => {
-		const profileHref = handle.props.username
-			? routes.profile.href({ username: handle.props.username })
-			: null
-		const profileAriaCurrent =
-			profileHref && handle.props.currentPathname === profileHref
-				? ('page' as const)
-				: undefined
-
 		return (
 			<header class="site-header" mix={css(headerCss)}>
 				<nav aria-label="Main" mix={css(navCss)}>
@@ -410,33 +461,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									avatarUrl={handle.props.avatarUrl}
 									currentPathname={handle.props.currentPathname}
 								/>
-								<a
-									href={routes.account.href()}
-									aria-current={ariaCurrent(
-										handle.props.currentPathname,
-										routes.account.href(),
-									)}
-									data-testid="site-header-account"
-									mix={css(navAccountCss)}
-								>
-									Account
-								</a>
-								{profileHref ? (
-									<a
-										href={profileHref}
-										aria-label={`@${handle.props.username}`}
-										aria-current={profileAriaCurrent}
-										data-testid="site-header-profile"
-										mix={css(navUserAvatarCss)}
-									>
-										<UserAvatar
-											displayName={handle.props.displayName}
-											avatarUrl={handle.props.avatarUrl}
-											size={32}
-											variant="well"
-										/>
-									</a>
-								) : null}
 								{handle.props.showDemoIndicator ? (
 									<span
 										data-testid="demo-indicator"
@@ -508,22 +532,11 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 								menu
 							/>
 						) : null}
-						<div data-menu-group mix={css(menuGroupCss)}>
-							{handle.props.loggedIn ? (
-								<a
-									href={routes.account.href()}
-									aria-current={ariaCurrent(
-										handle.props.currentPathname,
-										routes.account.href(),
-									)}
-									data-testid="site-header-account-menu"
-								>
-									Account
-								</a>
-							) : (
+						{handle.props.loggedIn ? null : (
+							<div data-menu-group mix={css(menuGroupCss)}>
 								<a href={handle.props.loginHref}>Log in</a>
-							)}
-						</div>
+							</div>
+						)}
 					</div>
 				</nav>
 			</header>
@@ -753,29 +766,6 @@ const navLoginCss = {
 	'&:hover': { color: colors.primaryText },
 }
 
-const navAccountCss = {
-	color: colors.textMuted,
-	textDecoration: 'none',
-	fontWeight: 500,
-	fontSize: '0.98rem',
-	whiteSpace: 'nowrap' as const,
-	transition: `color ${transitions.fast}`,
-	'&:hover': { color: colors.text },
-	'&[aria-current="page"]': { color: colors.text },
-}
-
-const navUserAvatarCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	lineHeight: 0,
-	padding: '0.15rem',
-	borderRadius: radius.full,
-	textDecoration: 'none',
-	color: colors.textMuted,
-	'&:hover': { color: colors.text },
-}
-
 /** The trigger names this; the panel positions against it (CSS anchor positioning). */
 const orgSwitcherAnchor = '--org-switcher'
 
@@ -916,6 +906,16 @@ const switcherRowCss = {
 	[hoverMq]: {
 		'&:hover': { backgroundColor: colors.primarySoftest, color: colors.text },
 	},
+}
+
+const switcherButtonRowCss = {
+	...switcherRowCss,
+	width: '100%',
+	border: 'none',
+	background: 'transparent',
+	font: 'inherit',
+	textAlign: 'start' as const,
+	cursor: 'pointer',
 }
 
 const switcherLeadingCss = {

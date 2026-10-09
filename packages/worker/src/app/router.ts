@@ -313,12 +313,15 @@ import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
 import { createOrgAccountRedirectMiddleware } from '#app/org-account-redirect.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 import {
-	createAccountInvitesApiHandler,
-	createAccountInvitesHandler,
+	createAccountOrganizationsApiHandler,
+	createAccountOrganizationsHandler,
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
-import { createOrgSectionHandler } from '#app/handlers/org-section.ts'
+import {
+	createOrgPackagesApiHandler,
+	createOrgSectionHandler,
+} from '#app/handlers/org-section.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
@@ -405,12 +408,14 @@ export function createAppRouter(env: Env) {
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
-			account: createAccountHandler(env),
+			account: createAccountHandler(env, 'Profile'),
+			accountSecurity: createAccountHandler(env, 'Security'),
+			accountData: createAccountHandler(env, 'Data & deletion'),
+			accountOrganizations: createAccountOrganizationsHandler(env),
+			accountOrganizationsApi: createAccountOrganizationsApiHandler(env),
 			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
 			accountOrganizationsNewPost:
 				createAccountOrganizationsNewPostHandler(env),
-			accountInvites: createAccountInvitesHandler(env),
-			accountInvitesApi: createAccountInvitesApiHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
@@ -610,6 +615,7 @@ export function createAppRouter(env: Env) {
 			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
 			orgPackages: createOrgSectionHandler(env, 'packages'),
+			orgPackagesApi: createOrgPackagesApiHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
 			orgSecrets: createOrgSectionHandler(env, 'secrets'),
 			orgValues: createOrgSectionHandler(env, 'values'),

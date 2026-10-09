@@ -1163,20 +1163,22 @@ export type AccountProfileLoaderData = {
 	avatarUrl: string | null
 	profileVisibility: ProfileVisibility
 	formerEmails: Array<AccountFormerEmail>
-	organizations?: Array<AccountOrganizationSummary>
-	inviteCount?: number
-	lastUsedOrganization?: string | null
 }
 
-type AccountOrganizationsLoaderData = {
+type AccountOrganizationsNewLoaderData = {
 	ok: true
 	error: string | null
 	/** What the person typed before a rejected submit, so it is not lost. */
 	draft: { displayName: string; slug: string }
 }
 
-export type AccountInvitesLoaderData = {
+export type AccountOrganizationsLoaderData = {
 	ok: true
+	username: string
+	/** The signup organization is named and pictured after the person. */
+	viewer: { displayName: string; avatarUrl: string | null }
+	organizations: Array<AccountOrganizationSummary>
+	lastUsedOrganization: string | null
 	invites: Array<AccountInviteSummary>
 }
 
@@ -2379,7 +2381,7 @@ export type AppLoaderData = {
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountOrganizations?: AccountOrganizationsLoaderData
-	accountInvites?: AccountInvitesLoaderData
+	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData

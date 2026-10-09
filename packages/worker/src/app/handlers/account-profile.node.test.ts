@@ -238,9 +238,6 @@ test('account profile API returns email and username for the signed-in user', as
 		avatarUrl: null,
 		profileVisibility: 'public',
 		formerEmails: [],
-		organizations: [],
-		inviteCount: 0,
-		lastUsedOrganization: null,
 	})
 	// Reads are not audited.
 	expect(logAuditEventSpy).not.toHaveBeenCalled()

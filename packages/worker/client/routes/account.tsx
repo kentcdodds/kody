@@ -6,7 +6,6 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type OnboardingChecklistLoaderData,
-	type AccountOrganizationSummary,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
@@ -18,10 +17,7 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import {
-	getGhostButtonCss,
-	mutedLinkCss,
-} from '#universal/styles/style-primitives.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'
 import {
@@ -39,14 +35,11 @@ import {
 	fetchAccountPagePayloads,
 } from '#client/routes/account-page-data.ts'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
-import { renderAccountOrganizationsPanel } from '#client/routes/account-organizations.tsx'
-import { renderAccountLogoutPanel } from '#client/routes/account-logout-panel.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
-	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { createAccountEmailClaims } from '#client/routes/account-email-claims-client.ts'
 import { renderAccountFormerEmailsPanel } from '#client/routes/account-former-emails-panel.tsx'
@@ -68,18 +61,43 @@ const accountAvatarApiPath = '/account/profile/avatar.json'
 
 export { accountRouteLoader } from '#client/routes/account-page-data.ts'
 
-function isAccountPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/account'
+type AccountView = 'profile' | 'security' | 'data'
+
+/** Profile, Security, and Data & deletion share one route and one payload. */
+function accountViewFor(href: string): AccountView | null {
+	switch (new URL(href, 'http://localhost').pathname) {
+		case routes.account.href():
+			return 'profile'
+		case routes.accountSecurity.href():
+			return 'security'
+		case routes.accountData.href():
+			return 'data'
+		default:
+			return null
+	}
 }
+
+const accountViewHeaders = {
+	profile: {
+		title: 'Profile',
+		description: 'How you appear across Kody, and the email you sign in with.',
+	},
+	security: {
+		title: 'Security',
+		description:
+			'Your password, second sign-in step, the accounts you can sign in with, and emails you used before.',
+	},
+	data: {
+		title: 'Data & deletion',
+		description: 'Take a copy of your account data, or delete the account.',
+	},
+} satisfies Record<AccountView, { title: string; description: string }>
 
 export function AccountRoute(handle: Handle) {
 	let saveStatus: 'idle' | 'saving' = 'idle'
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
-	let organizations: Array<AccountOrganizationSummary> = []
-	let inviteCount = 0
-	let lastUsedOrganization: string | null = null
 	let email = ''
 	let emailVerified = false
 	let emailVerificationDelivery: AccountProfileLoaderData['emailVerificationDelivery'] =
@@ -110,7 +128,7 @@ export function AccountRoute(handle: Handle) {
 	let appliedError: Error | null = null
 	const accountData = createRouteData<'accountProfile', AccountPagePayloads>({
 		consume(handle, href) {
-			if (!isAccountPath(href)) return null
+			if (!accountViewFor(href)) return null
 			const accountProfile = tryConsumeRouteLoaderData(
 				handle,
 				'accountProfile',
@@ -173,9 +191,6 @@ export function AccountRoute(handle: Handle) {
 		draftProfileVisibility = payload.profileVisibility
 		if (!optimisticAvatarObjectUrl) avatarUrl = payload.avatarUrl
 		accountEmailClaims.applyFormerEmails(payload.formerEmails ?? [])
-		organizations = payload.organizations ?? []
-		inviteCount = payload.inviteCount ?? 0
-		lastUsedOrganization = payload.lastUsedOrganization ?? null
 	}
 
 	function releaseOptimisticAvatar() {
@@ -185,14 +200,18 @@ export function AccountRoute(handle: Handle) {
 	}
 
 	if (typeof document !== 'undefined') {
+		// The avatar lives on the Profile view; a drop on Security or Data
+		// would open an editor for a picture that is not on screen.
+		const onProfileView = () =>
+			accountViewFor(readCurrentRouterHref(handle)) === 'profile'
 		listenForAvatarFileDrop({
 			signal: handle.signal,
 			onDragActiveChange(active) {
-				avatarDropActive = active
+				avatarDropActive = active && onProfileView()
 				handle.update()
 			},
 			onImageFile(file) {
-				openAvatarEditor(file)
+				if (onProfileView()) openAvatarEditor(file)
 			},
 		})
 	}
@@ -523,12 +542,13 @@ export function AccountRoute(handle: Handle) {
 				? usernameFormatError(draftUsername)
 				: null
 		const usernameFieldError = usernameSaveError ?? liveUsernameFormatError
+		const view = accountViewFor(currentHref) ?? 'profile'
 
 		return (
 			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
-					title="Account"
-					description="Manage your profile, security settings, connected accounts, and data."
+					title={accountViewHeaders[view].title}
+					description={accountViewHeaders[view].description}
 					currentHref={currentHref}
 				/>
 
@@ -543,7 +563,7 @@ export function AccountRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 
-				{status === 'ready' ? (
+				{status === 'ready' && view === 'profile' ? (
 					<>
 						{!emailVerified
 							? renderEmailVerificationPrompt({
@@ -565,15 +585,6 @@ export function AccountRoute(handle: Handle) {
 							shouldShowOnboardingChecklist(onboardingChecklist))
 							? renderOnboardingBanner({ checklist: onboardingChecklist })
 							: null}
-						{renderAccountOrganizationsPanel({
-							organizations,
-							username,
-							viewer: { displayName: savedDisplayName, avatarUrl },
-							inviteCount,
-							lastUsedOrganization,
-							currentPathname: new URL(currentHref, 'http://localhost')
-								.pathname,
-						})}
 						{renderAccountProfilePanel({
 							email,
 							emailVerified,
@@ -619,6 +630,17 @@ export function AccountRoute(handle: Handle) {
 							onEmailChangePasswordInput:
 								accountEmailClaims.updateEmailChangePassword,
 						})}
+					</>
+				) : null}
+				{status === 'ready' && view === 'security' ? (
+					<>
+						<AccountPasswordPanel
+							hasUsablePassword={accountConnections.hasUsablePassword}
+							onPasswordSet={() => {
+								accountConnections.markHasUsablePassword()
+							}}
+						/>
+						{accountConnections.render()}
 						{emailVerified
 							? renderAccountFormerEmailsPanel({
 									formerEmails: emailClaims.formerEmails,
@@ -640,27 +662,10 @@ export function AccountRoute(handle: Handle) {
 									},
 								})
 							: null}
-						<AccountPasswordPanel
-							hasUsablePassword={accountConnections.hasUsablePassword}
-							onPasswordSet={() => {
-								accountConnections.markHasUsablePassword()
-							}}
-						/>
-						{accountConnections.render()}
-						<AccountManagementPanel
-							title="Connections"
-							description="The agents that have authorized against this account, the MCP URL for connecting another, and per-host revoke live on the Connections page."
-						>
-							<div mix={css(accountActionsCss)}>
-								<a
-									href={routes.accountConnections.href()}
-									data-testid="account-connections-link"
-									mix={css(compactGhostButtonCss)}
-								>
-									Manage connections
-								</a>
-							</div>
-						</AccountManagementPanel>
+					</>
+				) : null}
+				{status === 'ready' && view === 'data' ? (
+					<>
 						<AccountManagementPanel
 							title="Your data"
 							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
@@ -685,8 +690,6 @@ export function AccountRoute(handle: Handle) {
 						</AccountManagementPanel>
 					</>
 				) : null}
-
-				{renderAccountLogoutPanel()}
 
 				<AccountAvatarEditor
 					file={editorFile}
@@ -726,15 +729,6 @@ export function AccountRoute(handle: Handle) {
 						</p>
 					</div>
 				) : null}
-				<p mix={css({ margin: 0 })}>
-					<a href="/privacy" mix={css(mutedLinkCss)}>
-						Privacy
-					</a>
-					{' · '}
-					<a href="/terms" mix={css(mutedLinkCss)}>
-						Terms
-					</a>
-				</p>
 			</AccountManagementShell>
 		)
 	}

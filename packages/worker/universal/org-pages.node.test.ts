@@ -83,7 +83,7 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
 })
 
-test('switcher lists the signup organization first, then roles, then create and invites', () => {
+test('switcher lists the signup organization first, then roles, then create and any waiting invites', () => {
 	expect(
 		orderOrganizations([acme, billing, personal]).map((org) => org.slug),
 	).toEqual(['ada', 'acme', 'billing-co'])
@@ -97,11 +97,7 @@ test('switcher lists the signup organization first, then roles, then create and 
 	])
 
 	const single = orgSwitcherEntries([personal], 0)
-	expect(single.map((entry) => entry.kind)).toEqual([
-		'org',
-		'create',
-		'invites',
-	])
+	expect(single.map((entry) => entry.kind)).toEqual(['org', 'create'])
 	expect(single[0]).toEqual({ kind: 'org', org: personal, showRole: false })
 	expect(orgRoleLabel('owner')).toBe('Owner')
 	expect(orgRoleLabel(null)).toBe('Collaborator')

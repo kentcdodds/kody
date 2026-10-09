@@ -1,6 +1,5 @@
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
-import { loadAccountOrganizationSnapshot } from '#app/account-organizations-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
@@ -8,7 +7,11 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 
-export function createAccountHandler(env: Env) {
+/** Profile, Security, and Data & deletion are views of one account page. */
+export function createAccountHandler(
+	env: Env,
+	title: 'Profile' | 'Security' | 'Data & deletion',
+) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -17,10 +20,9 @@ export function createAccountHandler(env: Env) {
 				return user
 			}
 
-			const [accountProfile, organizations, accountConnections, onboarding] =
+			const [accountProfile, accountConnections, onboarding] =
 				await Promise.all([
 					loadAccountProfileData(user, env),
-					loadAccountOrganizationSnapshot(env, user, request),
 					loadAccountConnectionsData({ env, userId: user.userId }),
 					loadOnboardingData({
 						env,
@@ -46,14 +48,9 @@ export function createAccountHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
-				title: 'Account',
+				title,
 				loaderData: {
-					accountProfile: {
-						...accountProfile,
-						organizations: organizations.organizations,
-						inviteCount: organizations.inviteCount,
-						lastUsedOrganization: organizations.lastUsedOrganization,
-					},
+					accountProfile,
 					accountConnections,
 					onboarding,
 				},

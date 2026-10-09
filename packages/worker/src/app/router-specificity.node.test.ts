@@ -81,12 +81,14 @@ test('organization resource pages outrank a package url with the same shape', as
 	const resolve = makeRouter([
 		'orgSecrets',
 		'orgPackages',
+		'orgPackagesApi',
 		'communityPackage',
 		'profile',
 	])
 	expect(await resolve('/@ada/secrets')).toBe('orgSecrets')
 	expect(await resolve('/@ada/secrets/new')).toBe('orgSecrets')
 	expect(await resolve('/@ada/packages')).toBe('orgPackages')
+	expect(await resolve('/@ada/packages.json')).toBe('orgPackagesApi')
 	expect(await resolve('/@ada/devin')).toBe('communityPackage')
 	expect(await resolve('/@ada')).toBe('profile')
 })

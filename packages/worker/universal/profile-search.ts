@@ -156,6 +156,8 @@ export function profilePackageSortIsActive(filters: {
 
 export function buildProfileHref(input: {
 	username: string
+	/** The list's own page when it is not the public profile (`/@slug/packages`). */
+	basePath?: string
 	query?: string | null
 	visibility?: ProfilePackageVisibilityFilter
 	listing?: ProfilePackageListingFilter
@@ -207,6 +209,11 @@ export function buildProfileHref(input: {
 			}
 			if (!searchParams.has(key)) searchParams.set(key, value)
 		}
+	}
+	if (input.basePath) {
+		return searchParams.size > 0
+			? `${input.basePath}?${searchParams.toString()}`
+			: input.basePath
 	}
 	return routes.profile.href(
 		{ username: input.username },

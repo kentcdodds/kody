@@ -163,7 +163,7 @@ function createAccountEnv(
 async function getAccount(env: Env, session: AuthSession) {
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(session, false)
-	return createAccountHandler(env).handler(
+	return createAccountHandler(env, 'Profile').handler(
 		new RequestContext(
 			new Request('https://example.com/account', {
 				headers: { Cookie: cookie },
@@ -274,9 +274,10 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 	])
 	// Session batches: users+roles, then flags+overrides+experiments_opt_in.
 	// Organization list and invite list are extra prepares on the session
-	// shell and again for the account page payload (inviteCount derives from
-	// the listed invites, so there is no separate COUNT query).
+	// shell only; the account page itself no longer lists organizations
+	// (inviteCount derives from the listed invites, so there is no separate
+	// COUNT query).
 	expect(counts.batchSizes).toEqual([2, 3])
-	expect(counts.prepare).toBe(12)
+	expect(counts.prepare).toBe(9)
 	expect(counts.batch).toBe(2)
 })

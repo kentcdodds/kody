@@ -1,9 +1,12 @@
 import { css, type Handle, type RemixNode } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import {
-	accountNavItemsFor,
+	accountRailGroups,
 	accountRailOrgSlug,
 	isAccountNavItemActive,
+	isAccountRailPath,
+	workspaceRailGroups,
+	type AccountRailGroup,
 } from './account-rail.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -22,12 +25,14 @@ import {
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
 import { readAppSession } from '#client/app-session-context.tsx'
+import { type SessionInfo } from '#client/session.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
 	AccountManagementLinkNav,
 	accountManagementNarrowMq,
+	accountRailHeightVar,
 } from './account-management-link-nav.tsx'
 
 export {
@@ -210,16 +215,16 @@ export function AccountManagementShell(
 				// nav-less shell users (onboarding, pending verification) keep
 				// the plain column. The rail starts at the gutter so it lines
 				// up with the header's brand. Its box is the shell (top and
-				// bottom), so it runs down to the footer on a short page, and
-				// the link column scrolls inside that box when the list is
-				// taller. No fixed min-height: the flex growth above already
-				// fills the viewport, and more would push the footer below the
-				// fold on short pages. Note: `css()`
+				// bottom), so it runs down to the footer on a short page. The
+				// rail measures its link column into `--account-rail-height`
+				// so a short page grows to fit every link instead of hiding
+				// the tail behind an unmarked inner scroll. Note: `css()`
 				// classes each live in their own cascade sub-layer, so child
 				// spacing must stay on the shell's `gap`, never on per-child
 				// margins a child's own class would silently beat.
 				'&:has(> [data-account-nav])': {
 					position: 'relative',
+					minHeight: `calc(var(${accountRailHeightVar}, 0px) + clamp(3rem, 7vw, 5rem))`,
 					gap: accountSectionGap,
 					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
 					...(handle.props.maxWidth
@@ -386,12 +391,6 @@ const adminNavItems = [
 	paths: ReadonlyArray<string>
 }>
 
-export {
-	accountNavItemsFor,
-	accountPackagesNavHref,
-	accountRailOrgSlug,
-} from './account-rail.ts'
-
 type AccountPageHeaderProps = {
 	title: string
 	description: string
@@ -399,42 +398,74 @@ type AccountPageHeaderProps = {
 	actions?: AccountManagementSlot
 }
 
+function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
+	return groups.map((group) => ({
+		label: group.label,
+		items: group.items.map((item) => ({
+			href: item.href,
+			label: item.label,
+			icon: item.icon,
+			active: isAccountNavItemActive(item, currentPath),
+		})),
+	}))
+}
+
+function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
+	if (isAccountRailPath(input.currentPath)) {
+		return {
+			label: 'Account sections',
+			heading: { eyebrow: 'Account' },
+			groups: accountRailGroups(),
+		}
+	}
+	const organizations = input.session?.organizations ?? []
+	const orgSlug = accountRailOrgSlug({
+		pathname: input.currentPath,
+		organizations,
+		username: input.session?.username,
+	})
+	// No slug yet means `/account/...` fallbacks, which redirect to the
+	// signup organization.
+	const personal =
+		orgSlug === null ||
+		(organizations.find((org) => org.slug === orgSlug)?.personal ??
+			orgSlug === input.session?.username)
+	return {
+		label: 'Workspace sections',
+		heading: {
+			eyebrow: 'Workspace',
+			name: orgSlug ? `@${orgSlug}` : undefined,
+		},
+		groups: workspaceRailGroups({ orgSlug, personal }),
+	}
+}
+
 /**
- * Account-sections subnav plus the page title. The desktop rail is
- * absolutely positioned in the shell, so it stays in the left track. The
- * phone menu is in normal flow and comes first, above the H1. An entity
- * explainer, when this page has one, is the info button beside the H1.
- * Account pages use this the same way admin pages use AdminPageHeader, so
- * user-specific destinations live under the account layout.
+ * Section rail plus the page title. Person settings (profile, security,
+ * organizations) take the account rail; everything an organization owns
+ * takes the workspace rail, headed by the organization it belongs to. The
+ * desktop rail is absolutely positioned in the shell, so it stays in the
+ * left track. The phone menu is in normal flow and comes first, above the
+ * H1. An entity explainer, when this page has one, is the info button
+ * beside the H1.
  */
 export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 	return () => {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
 		const session = readAppSession(handle)?.session ?? null
-		const organizations = session?.organizations ?? []
-		const orgSlug = accountRailOrgSlug({
-			pathname: currentPath,
-			organizations,
-			username: session?.username,
-		})
-		const personal =
-			organizations.find((org) => org.slug === orgSlug)?.personal ??
-			Boolean(orgSlug && orgSlug === session?.username)
 		const explainer = resolveEntityExplainer(currentPath)
-		const navItems = accountNavItemsFor({ orgSlug, personal })
+		const rail = pageRail({ session, currentPath })
 
 		return (
 			<>
-				<AccountManagementLinkNav
-					label="Account sections"
-					items={navItems.map((item) => ({
-						href: item.href,
-						label: item.label,
-						icon: item.icon,
-						active: isAccountNavItemActive(item.href, currentPath),
-					}))}
-				/>
+				{rail.groups.length > 0 ? (
+					<AccountManagementLinkNav
+						label={rail.label}
+						heading={rail.heading}
+						groups={railLinkGroups(rail.groups, currentPath)}
+					/>
+				) : null}
 				<AccountManagementHeader
 					title={handle.props.title}
 					description={handle.props.description}
@@ -465,19 +496,24 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 				/>
 				<AccountManagementLinkNav
 					label="Admin sections"
-					items={adminNavItems.map((item) => ({
-						href: item.href,
-						label: item.label,
-						icon: item.icon,
-						// Prefix-aware like account nav so `/admin/users/42`
-						// keeps Users highlighted. `/admin` stays exact-only
-						// so sibling pages (`/admin/roles`, …) are unaffected.
-						active: item.paths.some(
-							(path) =>
-								path === currentPath ||
-								(path !== '/admin' && currentPath.startsWith(`${path}/`)),
-						),
-					}))}
+					groups={[
+						{
+							label: null,
+							items: adminNavItems.map((item) => ({
+								href: item.href,
+								label: item.label,
+								icon: item.icon,
+								// Prefix-aware like account nav so `/admin/users/42`
+								// keeps Users highlighted. `/admin` stays exact-only
+								// so sibling pages (`/admin/roles`, …) are unaffected.
+								active: item.paths.some(
+									(path) =>
+										path === currentPath ||
+										(path !== '/admin' && currentPath.startsWith(`${path}/`)),
+								),
+							})),
+						},
+					]}
 				/>
 			</>
 		)

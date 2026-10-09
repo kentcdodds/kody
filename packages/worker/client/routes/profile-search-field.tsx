@@ -26,6 +26,7 @@ import {
 export function ProfileRepositorySearchInput(
 	handle: Handle<{
 		username: string
+		basePath?: string
 		filters: ProfilePackageFilters
 	}>,
 ) {
@@ -81,6 +82,7 @@ export function ProfileRepositorySearchInput(
 						sync = acknowledgeRecordTableSearchInput(value)
 						const href = buildProfileHref({
 							username: handle.props.username,
+							basePath: handle.props.basePath,
 							...handle.props.filters,
 							query: value,
 							extraSearchParams: new URL(window.location.href).searchParams,

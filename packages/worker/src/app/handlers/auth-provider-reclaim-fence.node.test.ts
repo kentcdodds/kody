@@ -257,7 +257,7 @@ test('signed-in unverified accounts cannot link a provider; verified accounts st
 	const unverifiedResponse = await linkGithub('squat-linker@example.com')
 	expect(unverifiedResponse.status).toBe(302)
 	expect(unverifiedResponse.headers.get('Location')).toBe(
-		'/account?oauthError=email-unverified',
+		'/account/security?oauthError=email-unverified',
 	)
 	expect(countConnections(sqlite, 31)).toEqual({ count: 0 })
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -272,7 +272,7 @@ test('signed-in unverified accounts cannot link a provider; verified accounts st
 	const verifiedResponse = await linkGithub('verified-linker@example.com')
 	expect(verifiedResponse.status).toBe(302)
 	expect(verifiedResponse.headers.get('Location')).toBe(
-		'/account?oauthLinked=github',
+		'/account/security?oauthLinked=github',
 	)
 	expect(
 		sqlite

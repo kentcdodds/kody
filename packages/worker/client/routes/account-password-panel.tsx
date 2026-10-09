@@ -144,7 +144,7 @@ export function AccountPasswordPanel(
 
 		return (
 			<AccountManagementPanel
-				title="Security"
+				title="Sign-in"
 				description="Change your password, add two-factor authentication, or sign in with passkeys."
 			>
 				<details mix={css(accountDisclosureCss)}>

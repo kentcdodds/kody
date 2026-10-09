@@ -6,7 +6,7 @@ import {
 } from '#client/lazy-route.tsx'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
-import { ProfileRoute, profileRouteLoader } from './profile.tsx'
+import { profileRouteLoader } from './profile.tsx'
 
 export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.orgActivity)]: lazyRouteLoader(
@@ -66,9 +66,9 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountOrganizationsNewRouteLoader,
 	),
-	[routePattern(routes.accountInvites)]: lazyRouteLoader(
+	[routePattern(routes.accountOrganizations)]: lazyRouteLoader(
 		accountArea,
-		(module) => module.accountInvitesRouteLoader,
+		(module) => module.accountOrganizationsRouteLoader,
 	),
 }
 
@@ -96,7 +96,11 @@ export const orgAccountClientRoutes = {
 	[routePattern(routes.orgMemories)]: (
 		<LazyAccountRoute render={(module) => <module.AccountMemoriesRoute />} />
 	),
-	[routePattern(routes.orgPackages)]: <ProfileRoute />,
+	[routePattern(routes.orgPackages)]: (
+		<LazyAccountRoute
+			render={(module) => <module.AccountRepositoriesRoute />}
+		/>
+	),
 	[routePattern(routes.orgSecretProviders)]: (
 		<LazyAccountRoute
 			render={(module) => <module.AccountSecretProvidersRoute />}
@@ -122,7 +126,9 @@ export const orgAccountClientRoutes = {
 			render={(module) => <module.AccountOrganizationsNewRoute />}
 		/>
 	),
-	[routePattern(routes.accountInvites)]: (
-		<LazyAccountRoute render={(module) => <module.AccountInvitesRoute />} />
+	[routePattern(routes.accountOrganizations)]: (
+		<LazyAccountRoute
+			render={(module) => <module.AccountOrganizationsRoute />}
+		/>
 	),
 }
