@@ -1,9 +1,13 @@
+/**
+ * soft-delete-read-filter: opt-out — person lookup reads `users.deleted_at`
+ * so a tombstoned person cannot fall through to a leftover personal org row.
+ */
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
 import { resolveDisplayName } from './username.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const backgroundMcpUserCacheTtlMs = 60_000
 const backgroundMcpUserCacheMaxEntries = 1_000
@@ -29,15 +33,26 @@ function isMissingRbacTableError(error: unknown) {
 	)
 }
 
+function backgroundMcpUserNotFound(userId: string) {
+	return new Error(`Background MCP user was not found: ${userId}`)
+}
+
+/**
+ * Person accounts and team orgs share the owner-id space that package job
+ * sync and saved-package projection pass into this lookup. A live team org
+ * (no `users` row) still needs a caller identity. A person id still wins: a
+ * deleting or soft-deleted user is missing even when a personal org remains.
+ */
 async function loadBackgroundMcpUser(
 	db: D1Database,
 	userId: string,
 ): Promise<McpUserContext> {
 	const user = await db
 		.prepare(
-			`SELECT id, email, username, display_name, suspended_at
+			`SELECT id, email, username, display_name, suspended_at,
+				deleting_at, deleted_at
 			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 WHERE stable_user_id = ?`,
 		)
 		.bind(userId)
 		.first<{
@@ -46,12 +61,30 @@ async function loadBackgroundMcpUser(
 			username: string
 			display_name: string | null
 			suspended_at: string | null
+			deleting_at: string | null
+			deleted_at: string | null
 		}>()
-	if (!user) {
-		throw new Error(`Background MCP user was not found: ${userId}`)
-	}
-	if (user.suspended_at) {
-		throw new AccountSuspendedError()
+	if (user) {
+		if (user.deleting_at || user.deleted_at) {
+			throw backgroundMcpUserNotFound(userId)
+		}
+		if (user.suspended_at) {
+			throw new AccountSuspendedError()
+		}
+	} else {
+		const org = await getOrgById(db, userId)
+		if (!org) {
+			throw backgroundMcpUserNotFound(userId)
+		}
+		const displayName = org.display_name?.trim() || org.slug
+		return {
+			userId: personIdFromStored(userId),
+			email: '',
+			username: org.slug,
+			displayName,
+			roles: ['user'],
+			permissions: [],
+		}
 	}
 	const profileDisplayName = user.display_name?.trim()
 
