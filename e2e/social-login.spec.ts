@@ -1,4 +1,4 @@
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 import {
 	clearAuthRateLimitsInE2eDatabase,
 	executeE2eD1Command,
@@ -33,6 +33,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	await page.context().clearCookies()
 
 	await page.goto('/login')
+	await waitForClientHydration(page)
 	await page.getByRole('button', { name: 'Continue with GitHub' }).click()
 
 	// A brand-new social account lands on onboarding rather than the account
@@ -61,6 +62,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	).toBeVisible()
 
 	clearAuthRateLimitsInE2eDatabase()
+	await waitForClientHydration(page)
 	await connectionsCard.getByRole('button', { name: 'Connect Google' }).click()
 	await expect(page).toHaveURL(/\/account\?oauthLinked=google$/)
 	await expect(page.getByText('Google connected.')).toBeVisible()
@@ -73,6 +75,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	).toBeVisible()
 
 	clearAuthRateLimitsInE2eDatabase()
+	await waitForClientHydration(page)
 	await connectionsCard.getByRole('button', { name: 'Connect Discord' }).click()
 	await expect(page).toHaveURL(/\/account\?oauthLinked=discord$/)
 	await expect(page.getByText('Discord connected.')).toBeVisible()

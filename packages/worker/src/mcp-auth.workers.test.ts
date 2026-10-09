@@ -252,6 +252,9 @@ function createMockDb(options: MockDbOptions = {}) {
 					// lookup is a regression.
 					throw new Error(`Unexpected per-field users lookup: ${query}`)
 				}
+				if (normalized.includes('from org_memberships')) {
+					return null
+				}
 				const result = await statement.all()
 				return result.results[0] ?? null
 			},
