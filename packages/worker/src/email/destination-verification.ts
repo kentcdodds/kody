@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
+import { redactEmailRecipient } from '#worker/audit-log.ts'
 import { buildEmailDestinationVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
@@ -161,8 +162,8 @@ function captureDestinationVerificationSendFailure(input: {
 		},
 		extra: {
 			userId: input.userId,
-			destinationEmail: input.destinationEmail,
-			from: input.from,
+			destinationEmail: redactEmailRecipient(input.destinationEmail),
+			from: redactEmailRecipient(input.from),
 		},
 	})
 }

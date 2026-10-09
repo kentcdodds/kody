@@ -34,6 +34,7 @@ import {
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
 import { AdminUserCreditsPanel } from './admin-users-credits.tsx'
+import { renderAdminUserDestinationPanel } from './admin-users-destination-panel.tsx'
 import {
 	costVsPayFootnote,
 	formatDynamicWorkerUsd,
@@ -388,50 +389,13 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 					) : null}
 				</AccountManagementPanel>
 			) : null}
-			<AccountManagementPanel
-				title="Email destination"
-				description="Mark an additional destination verified after the person proves they own it (for example they mailed their inbox from it). Use when destination verification mail never arrives."
-			>
-				<div
-					mix={css({
-						display: 'grid',
-						gap: spacing.md,
-						gridTemplateColumns: 'minmax(0, 1fr) auto',
-						alignItems: 'end',
-						[mq.mobile]: { gridTemplateColumns: '1fr' },
-					})}
-				>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>Destination email</span>
-						<input
-							data-field-ring
-							type="email"
-							disabled={isMutating}
-							value={props.destinationEmailDraft}
-							aria-label="Destination email"
-							placeholder="extra@example.com"
-							mix={[
-								on('input', (event) => {
-									props.onDestinationEmailDraftChange(event.currentTarget.value)
-								}),
-								css({ width: '100%' }),
-							]}
-						/>
-					</label>
-					<button
-						type="button"
-						disabled={isMutating || props.destinationEmailDraft.trim() === ''}
-						mix={[
-							on('click', () => props.onSubmitMarkDestinationVerified()),
-							css(primaryButtonCss),
-						]}
-					>
-						{actionState === 'verifying'
-							? 'Working…'
-							: 'Mark destination verified'}
-					</button>
-				</div>
-			</AccountManagementPanel>
+			{renderAdminUserDestinationPanel({
+				isVerifying: actionState === 'verifying',
+				isMutating,
+				destinationEmailDraft: props.destinationEmailDraft,
+				onDestinationEmailDraftChange: props.onDestinationEmailDraftChange,
+				onSubmitMarkDestinationVerified: props.onSubmitMarkDestinationVerified,
+			})}
 			<AccountManagementPanel
 				title="Manage plan"
 				description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
