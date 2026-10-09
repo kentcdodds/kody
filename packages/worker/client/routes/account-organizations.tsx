@@ -203,6 +203,14 @@ function slugFromName(name: string) {
 		.replace(/-+$/g, '')
 }
 
+function draftFromHref(href: string) {
+	const search = new URL(href, 'http://localhost').searchParams
+	return {
+		draftName: search.get('displayName') ?? '',
+		draftSlug: search.get('slug') ?? '',
+	}
+}
+
 export async function accountOrganizationsNewRouteLoader(): Promise<RouteLoaderResult> {
 	return {}
 }
@@ -214,19 +222,27 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 		'accountOrganizations',
 		initialHref,
 	)
-	const initialSearch = new URL(initialHref, 'http://localhost').searchParams
-	let draftName =
-		consumed?.draft.displayName ?? initialSearch.get('displayName') ?? ''
-	let draftSlug = consumed?.draft.slug ?? initialSearch.get('slug') ?? ''
+	let syncedHref = initialHref
+	let loaderError = consumed?.error ?? null
+	let { draftName, draftSlug } = consumed
+		? { draftName: consumed.draft.displayName, draftSlug: consumed.draft.slug }
+		: draftFromHref(initialHref)
 	// A slug the person typed (or one sent back with an error) is theirs; only
 	// an untouched slug follows the name.
 	let slugEdited = draftSlug.length > 0
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
+		// A rejected submit redirects back here with a new draft and error while
+		// this component stays mounted.
+		if (href !== syncedHref) {
+			syncedHref = href
+			loaderError = null
+			;({ draftName, draftSlug } = draftFromHref(href))
+			slugEdited = draftSlug.length > 0
+		}
 		const error =
-			consumed?.error ??
-			new URL(href, 'http://localhost').searchParams.get('error')
+			loaderError ?? new URL(href, 'http://localhost').searchParams.get('error')
 		return (
 			<AccountManagementShell maxWidth="40rem">
 				<AccountPageHeader
@@ -279,7 +295,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									required
 									minLength={3}
 									maxLength={32}
-									pattern="[a-zA-Z0-9][a-zA-Z0-9\-]{1,30}[a-zA-Z0-9]"
+									pattern="[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]"
 									autoCapitalize="none"
 									autoComplete="off"
 									spellCheck={false}
@@ -289,8 +305,9 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									mix={[
 										css(slugInputCss),
 										on('input', (event) => {
-											draftSlug = (event.currentTarget as HTMLInputElement)
-												.value
+											draftSlug = (
+												event.currentTarget as HTMLInputElement
+											).value.toLowerCase()
 											slugEdited = draftSlug.length > 0
 											handle.update()
 										}),
