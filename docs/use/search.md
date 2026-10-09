@@ -334,8 +334,8 @@ for a close helpers package before writing fetch code. For integrations.sh
 registry lookup, `communityFork` `@kody/integrations-sh`. See
 `search({ entity: "guide:openapi_integrations" })` (also at
 `/docs/openapi-integrations`) when the API publishes a spec. For a named
-bind-and-call surface, `communityFork` `@kody/openapi` into the user's account —
-person accounts cannot import `@kody/*` live.
+bind-and-call surface, `communityFork` `@kody/openapi` into the user's org;
+imports resolve only in the caller's org.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
 with `search({ entity: "guide:integration_bootstrap" })`. Inspect the relevant

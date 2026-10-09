@@ -28,9 +28,9 @@ Agent notes — for AI agents driving the first build from this page:
   kody.mcp["server-name"].tool_name(...) when a server is already on the
   account. Do not invent a service connect as Step 2 — that step is one prompt
   plus the onboarding guide.
-- Persist with packageSave after the ad hoc call works. Do not invoke official
-  @kody/* packages — person accounts run the owned fork from Connect, or a new
-  packageSave.
+- Persist with packageSave after the ad hoc call works. Do not invoke @kody/*
+  packages directly; imports resolve only in the user's org, so run the owned
+  fork from Connect, or a new packageSave.
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.

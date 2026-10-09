@@ -144,9 +144,8 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
 ## Use a helper package and verify
 
 A saved integration is auth credentials only. Finish by putting maintained
-helpers in front of it. There is no live official `@kody/spotify` package, so
-this path is a person-account public package — review the source, then fork only
-because it is not an official `@kody/*` helper.
+helpers in front of it. There is no `@kody/spotify` package, so this path uses
+another person's public package. Review the source, then fork it.
 
 1. Find the package with `communitySearch({ query: 'spotify' })` — the
    `@kentcdodds/spotify` package wraps playback, playlists, search, library, and

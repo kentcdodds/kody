@@ -98,14 +98,14 @@ what `@kody/figma` reads by default.
 For a second account or token, use a distinct secret name such as
 `figmaPat-work` and pass `secretName: 'figmaPat-work'` (or `account: 'work'`).
 
-## Use the official package and verify
+## Use the `@kody/figma` package and verify
 
 Credentials alone are not the finish. Fork
-[`@kody/figma`](https://kody.codes/@kody/figma) so your automations call
-maintained helpers over Figma REST:
+[`@kody/figma`](https://kody.codes/@kody/figma), a public community package from
+the `@kody` org, so your automations call maintained helpers over Figma REST:
 
 1. Search for `@kody/figma` (or open the listing) and `communityFork` it into
-   your scope (or click **Install**).
+   your org (or click **Install**).
 2. Check the fork's README **Required setup**: Lane A expects an OAuth
    integration named `figma`; Lane B expects secret `figmaPat`. Both need host
    `api.figma.com`.
