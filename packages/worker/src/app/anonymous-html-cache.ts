@@ -38,6 +38,7 @@ export const anonymousVisibilityGatedCacheControl = 'public, max-age=60'
 const cacheableAnonymousExactPaths = new Set([
 	'/',
 	'/pricing',
+	'/for/business',
 	'/faq',
 	'/case-studies',
 	'/blog',

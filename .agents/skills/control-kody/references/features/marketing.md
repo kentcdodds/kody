@@ -5,22 +5,23 @@ legal, docs, blog, Discord invite.
 
 ## How to get there
 
-`/`, `/pricing`, `/faq`, `/case-studies`, `/support`, `/privacy`, `/terms`,
-`/docs`, `/docs/:slug`, `/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`,
-`/discord`. Legacy `/guides*` URLs 308 to `/docs*`. Intra-docs navigation (doc
-to doc, or a doc to `/docs` / `/docs/connect`) is an instant shell swap — no
-page view-transition — so the sidebar does not re-animate. How Kody works (and
-other interactive walkthroughs) stay in the article column; they do not break
-out over the nav. The docs shell opts out of overflow anchoring so replacing the
-article does not bump the rail. After hydrate it independently prefetches every
-sidebar href (one loader request per slug, including `/docs/connect`) so a click
-adopts a warm payload instead of waiting on a cold fetch. `/docs/package-skills`
-opens with a flag callout for `mcp-skills-extension`: signed-in visitors POST
-`/docs/package-skills/opt-in` to turn it on for themselves; signed-out visitors
-log in with `redirectTo` back to that page. `/docs/mcp-events` does the same for
-`mcp-events-extension` via `/docs/mcp-events/opt-in`. Custom secret providers
-are documented at `/docs/secret-providers`. Open API is documented at
-`/docs/open-api`; local CLI execute at `/docs/local-execute`.
+`/`, `/for/business`, `/pricing`, `/faq`, `/case-studies`, `/support`,
+`/privacy`, `/terms`, `/docs`, `/docs/:slug`, `/docs/connect`, `/llms.txt`,
+`/blog`, `/blog/:slug`, `/discord`. Legacy `/guides*` URLs 308 to `/docs*`.
+Intra-docs navigation (doc to doc, or a doc to `/docs` / `/docs/connect`) is an
+instant shell swap — no page view-transition — so the sidebar does not
+re-animate. How Kody works (and other interactive walkthroughs) stay in the
+article column; they do not break out over the nav. The docs shell opts out of
+overflow anchoring so replacing the article does not bump the rail. After
+hydrate it independently prefetches every sidebar href (one loader request per
+slug, including `/docs/connect`) so a click adopts a warm payload instead of
+waiting on a cold fetch. `/docs/package-skills` opens with a flag callout for
+`mcp-skills-extension`: signed-in visitors POST `/docs/package-skills/opt-in` to
+turn it on for themselves; signed-out visitors log in with `redirectTo` back to
+that page. `/docs/mcp-events` does the same for `mcp-events-extension` via
+`/docs/mcp-events/opt-in`. Custom secret providers are documented at
+`/docs/secret-providers`. Open API is documented at `/docs/open-api`; local CLI
+execute at `/docs/local-execute`.
 
 ## Drive it
 

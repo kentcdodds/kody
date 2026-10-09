@@ -298,6 +298,7 @@ export const routes = route({
 	sentryTunnel: post('/sentry-tunnel'),
 	login: '/login',
 	ogPageImage: '/og/:page.png',
+	business: '/for/business',
 	pricing: '/pricing',
 	faq: '/faq',
 	caseStudies: '/case-studies',

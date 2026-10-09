@@ -435,6 +435,10 @@ const routeDocumentHeads = {
 		'Get started',
 	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
+	[routePattern(routes.business)]: publicPageHead(
+		'business',
+		'AI Agent Cloud for Business and Agencies | Kody',
+	),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),
 	[routePattern(routes.caseStudies)]: publicPageHead(

@@ -75,6 +75,7 @@ type AppProps = {
 function isRedesignedMarketingPath(pathname: string) {
 	return (
 		pathname === '/' ||
+		pathname === '/for/business' ||
 		pathname === '/pricing' ||
 		pathname === '/faq' ||
 		pathname === '/case-studies' ||
@@ -327,7 +328,8 @@ export function App(handle: Handle<AppProps>) {
 						>
 							Skip to content
 						</a>
-						{isAuthShellPath ? null : (
+						{isAuthShellPath ||
+						currentPathname === routes.business.href() ? null : (
 							<SiteHeader
 								loggedIn={isLoggedIn}
 								displayName={sessionDisplayName}

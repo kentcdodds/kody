@@ -405,6 +405,7 @@ registerPreloadPatterns(
 
 registerPreloadPatterns(
 	[
+		routePattern(routes.business),
 		routePattern(routes.pricing),
 		routePattern(routes.faq),
 		routePattern(routes.caseStudies),

@@ -631,6 +631,9 @@ export const clientRoutes = {
 	[routePattern(routes.pendingVerification)]: (
 		<LazyAuthRoute render={(m) => <m.PendingVerificationRoute />} />
 	),
+	[routePattern(routes.business)]: (
+		<LazyMarketingRoute render={(m) => <m.BusinessRoute />} />
+	),
 	[routePattern(routes.pricing)]: (
 		<LazyMarketingRoute render={(m) => <m.PricingRoute />} />
 	),
