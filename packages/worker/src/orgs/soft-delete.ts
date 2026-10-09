@@ -183,20 +183,24 @@ export async function softDeleteOrg(input: {
 		throw new Error('org_not_found_or_already_deleted')
 	}
 
-	// Spec §10.1 / §10.3: revoke credentials bound to the org. Soft-delete also
-	// tombstones api_tokens rows; restore never clears those tombstones.
+	// Spec §10.1 / §10.3: revoke credentials bound to the org. Team-bound tokens
+	// store the person on user_id and the org on org_id (same COALESCE match as
+	// member offboarding). Soft-delete also tombstones api_tokens; restore never
+	// clears those tombstones.
 	await appDb
 		.prepare(
 			`UPDATE api_tokens
-			 SET revoked_at = ?, updated_at = ?
-			 WHERE user_id = ?
-			   AND revoked_at IS NULL
+			 SET revoked_at = ?, updated_at = ?, deleted_at = ?
+			 WHERE COALESCE(org_id, user_id) = ?
 			   AND deleted_at IS NULL`,
 		)
-		.bind(deletedAt, deletedAt, input.orgId)
+		.bind(deletedAt, deletedAt, deletedAt, input.orgId)
 		.run()
 	await appDb
-		.prepare(`DELETE FROM cli_credential_bootstrap_codes WHERE user_id = ?`)
+		.prepare(
+			`DELETE FROM cli_credential_bootstrap_codes
+			 WHERE COALESCE(org_id, user_id) = ?`,
+		)
 		.bind(input.orgId)
 		.run()
 

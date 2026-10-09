@@ -2,14 +2,23 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
-import { restoreResourceRow } from '#worker/orgs/soft-delete.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import {
+	assertActorCanRestoreSoftDeletedOrg,
+	OrgRestoreWindowExpiredError,
+	restoreResourceRow,
+} from '#worker/orgs/soft-delete.ts'
 
 const inputSchema = z.object({
 	orgId: z
 		.string()
 		.min(1)
-		.describe('Organization id. Must match the bound request org.'),
+		.describe(
+			'Soft-deleted organization id that owns the resource. Must match the soft-deleted org the actor can restore.',
+		),
 	resourceType: z
 		.string()
 		.min(1)
@@ -26,24 +35,51 @@ export const resourceRestoreCapability = defineDomainCapability(
 	{
 		name: 'resourceRestore',
 		description:
-			'Restore one soft-deleted org-owned resource row when the org is still within the restore window. Minimal stub for P7; expands with resource-specific permissions later.',
+			'Restore one soft-deleted org-owned resource row while the org is still within the restore window. Soft-deleted orgs cannot be bound, so authorization mirrors orgRestore (deletion-generation Owner + `org:write` on scoped credentials). Minimal stub for P7; expands with resource-specific permissions later.',
 		keywords: ['org', 'restore', 'resource', 'soft delete'],
-		orgPermission: 'org:write',
+		// Soft-deleted orgs are not bindable; authorize in the handler.
+		orgPermission: 'none',
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
+			const user = requireMcpUser(ctx.callerContext)
 			const request = requireMcpRequest(ctx.callerContext)
-			if (args.orgId !== request.org.id) {
-				throw new McpCallerError(
-					'orgId must match the organization bound to this request.',
-				)
+			const scopes = request.credential.scopes
+			if (scopes && !scopes.includes('org:write')) {
+				throw new McpCallerError('This credential is not scoped for org:write.')
 			}
-			return await restoreResourceRow({
-				env: ctx.env,
-				orgId: request.org.id,
-				resourceType: args.resourceType,
-				resourceId: args.resourceId,
-			})
+			try {
+				await assertActorCanRestoreSoftDeletedOrg({
+					db: ctx.env.APP_DB,
+					orgId: args.orgId,
+					actorUserId: user.userId,
+				})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === 'org_restore_forbidden'
+				) {
+					throw new McpCallerError(
+						'Only an Owner of the soft-deleted organization can restore its resources.',
+					)
+				}
+				throw error
+			}
+			try {
+				return await restoreResourceRow({
+					env: ctx.env,
+					orgId: args.orgId,
+					resourceType: args.resourceType,
+					resourceId: args.resourceId,
+				})
+			} catch (error) {
+				if (error instanceof OrgRestoreWindowExpiredError) {
+					throw new McpCallerError(
+						'The 30-day restore window for this organization has expired.',
+					)
+				}
+				throw error
+			}
 		},
 	},
 )
