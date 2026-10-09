@@ -15,6 +15,7 @@ import {
 	restoreOrg,
 	restoreResourceRow,
 	softDeleteOrg,
+	softDeleteUserAccount,
 } from './soft-delete.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import * as JobManager from '#worker/jobs/manager-client.ts'
@@ -478,6 +479,70 @@ test('personal org provision path supports soft delete audit', async () => {
 		.bind(stableUserId)
 		.first<{ action: string }>()
 	expect(audit?.action).toBe('org.deleted')
+})
+
+test('softDeleteUserAccount refuses while a sole-member org lease is held without tombstoning the person', async () => {
+	const { env, appDb } = await createHarness()
+	const stableUserId = testStableUserIdFromEmail('lease-busy@example.com')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at, stable_user_id
+			) VALUES (91001, 'lease-busy@example.com', 'leasebusy', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, stableUserId)
+		.run()
+	await provisionPersonalOrg(appDb, {
+		stableUserId,
+		username: 'leasebusy',
+		createdAt: ts,
+		plan: 'free',
+	})
+
+	let releaseLease!: () => void
+	const hold = new Promise<void>((resolve) => {
+		releaseLease = resolve
+	})
+	let leaseAcquired!: () => void
+	const acquired = new Promise<void>((resolve) => {
+		leaseAcquired = resolve
+	})
+	const writePromise = withAccountWriteLease({
+		db: appDb,
+		stableUserId,
+		env,
+		holder: 'packageSave',
+		write: async () => {
+			leaseAcquired()
+			await hold
+			return 'saved'
+		},
+	})
+	await acquired
+
+	await expect(
+		softDeleteUserAccount({
+			env,
+			userId: stableUserId,
+			now,
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+
+	const person = await appDb
+		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null }>()
+	expect(person?.deleted_at).toBeNull()
+	const personalOrg = await appDb
+		.prepare(`SELECT deleted_at, deleting_at FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null; deleting_at: string | null }>()
+	expect(personalOrg?.deleted_at).toBeNull()
+	expect(personalOrg?.deleting_at).toBeNull()
+
+	releaseLease()
+	await expect(writePromise).resolves.toBe('saved')
 })
 
 test('softDeleteOrg refuses while an org OwnerId write lease is held', async () => {
