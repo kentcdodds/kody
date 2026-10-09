@@ -303,16 +303,16 @@ charged `creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
 list). Every other wallet advances progress without a charge (against at least
 the purchasable Pro baseline when `creditWallet` is `none`), so a later top-up
 or resubscribe never back-charges. The balance can dip below $0 by about an hour
-of usage past the include; past-include usage stays stopped until a top-up
-covers it. Debit ledger ids are deterministic per starting position, so an
-overlapping run rolls back instead of charging twice. A new wallet, and a top-up
-or admin grant that funds an empty wallet, advance progress to the billable
-units already in the rollups for both months the lane settles (prior and
-current), so credits never pay for usage from while the wallet was empty. The
-sweep is bounded per run; `credit_debit_cursor` keeps its keyset position so
-later runs reach every candidate. CPU, Durable Object duration, RunLog rows, and
-email are not debited. Nobody is invoiced for overage. There is no
-overage-invoice ledger.
+of usage past the include; after that, rate and compute fall back to Free caps
+until a top-up (ADR 0065). Debit ledger ids are deterministic per starting
+position, so an overlapping run rolls back instead of charging twice. A new
+wallet, and a top-up or admin grant that funds an empty wallet, advance progress
+to the billable units already in the rollups for both months the lane settles
+(prior and current), so credits never pay for usage from while the wallet was
+empty. The sweep is bounded per run; `credit_debit_cursor` keeps its keyset
+position so later runs reach every candidate. CPU, Durable Object duration,
+RunLog rows, and email are not debited. Nobody is invoiced for overage. There is
+no overage-invoice ledger.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -350,9 +350,9 @@ OAuth signup, admin-created) receives a one-shot house grant of
 is `admin_grant` with note `Welcome credits`, null `granted_by_user_id`, and
 deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 Platform accounts are not granted. The balance is held until the account is
-credit-eligible Pro (include → credits → stop); this is not a Free prepaid
-wallet product and does not unlock spend on Free. The grant runs at account
-creation as best-effort: person-account inserts set
+credit-eligible Pro (include → credits → Free rate/compute fallback); this is
+not a Free prepaid wallet product and does not unlock spend on Free. The grant
+runs at account creation as best-effort: person-account inserts set
 `users.signup_welcome_credits_pending = 1` in the same write, then clear it
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
@@ -441,22 +441,22 @@ Durable Object rows-read allotment (Free 0.5B, Pro and retired Standard 5B,
 retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
-only when crossing the include would stop runs: an empty purchasable-Pro wallet
-(`computeIncludeWarningPutsAccessAtRisk` in `universal/usage-presentation.ts`).
-Free and other wallet-less plans never get those mails (the include never
-charges or stops them), and funded wallets get the low-balance and auto-refill
-cap mails instead. `/account/usage` (one page; `/account/credits` redirects to
-its `#credits` section) uses the same framing from that module: activity (code
-executions and runs) first, included compute as a bar capped at 100% with
-past-include usage shown as dollars on credits, and one credits alarm only when
-the wallet or access is at risk. Free sees Worker compute and Rows read as
-informational counts only. Usage above an include debits a funded
-purchasable-Pro wallet, stops new compute on an empty one, and is neither
-charged nor stopped on plans without a wallet; see
-[Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
-weekly caps; on purchasable Pro they are the include that credits extend.
-Durable Object duration is observed (Cloudflare-measured GB-s plus the
-StorageRunner RPC wall-clock proxy) and is not charged. See
+only when crossing the include would put Free rate/compute caps in force: an
+empty purchasable-Pro wallet (`computeIncludeWarningPutsAccessAtRisk` in
+`universal/usage-presentation.ts`). Free and other wallet-less plans never get
+those mails (the include never charges them or changes their caps), and funded
+wallets get the low-balance and auto-refill cap mails instead. `/account/usage`
+(one page; `/account/credits` redirects to its `#credits` section) uses the same
+framing from that module: activity (code executions and runs) first, included
+compute as a bar capped at 100% with past-include usage shown as dollars on
+credits, and one credits alarm only when the wallet or access is at risk. Free
+sees Worker compute and Rows read as informational counts only. Usage above an
+include debits a funded purchasable-Pro wallet, applies Free rate/compute caps
+on an empty one (ADR 0065), and is neither charged nor capped-down on plans
+without a wallet; see [Prepaid credits](#prepaid-credits). Execute and outbound
+fetches are daily and weekly caps; on purchasable Pro they are the include that
+credits extend. Durable Object duration is observed (Cloudflare-measured GB-s
+plus the StorageRunner RPC wall-clock proxy) and is not charged. See
 [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in

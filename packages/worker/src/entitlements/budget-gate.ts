@@ -1,4 +1,9 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import {
+	creditDebitCostMicroUsd,
+	creditDebitMeters,
+	type CreditDebitMeter,
+} from '#universal/credits.ts'
 import { type RequestSource } from '#worker/request-context/request-context.ts'
 import { type TransactionalEmailEnv } from '#app/email/sender-config.ts'
 import { sendBudgetHitEmail } from '#worker/billing/org-budget-hit-emails.ts'
@@ -344,19 +349,23 @@ async function loadBudgetSpendShares(input: {
 	month: string
 }): Promise<Array<AttributionSpendShare>> {
 	const monthPrefix = `${input.month}-`
+	const meterList = creditDebitMeters.map((meter) => `'${meter}'`).join(', ')
 	try {
 		const { results } = await input.db
 			.prepare(
 				`SELECT
+					meter,
 					COALESCE(actor_user_id, '') AS actor_user_id,
 					COALESCE(automation_source, '') AS automation_source,
-					SUM(units) AS weight
+					SUM(units) AS units
 				 FROM usage_attribution_daily
 				 WHERE user_id = ?
 				   AND day >= ?
 				   AND day < ?
-				   AND meter IN ('dynamic_worker_day', 'durable_object_rows_read')
-				 GROUP BY COALESCE(actor_user_id, ''), COALESCE(automation_source, '')`,
+				   AND meter IN (${meterList})
+				 GROUP BY meter,
+					COALESCE(actor_user_id, ''),
+					COALESCE(automation_source, '')`,
 			)
 			.bind(
 				input.orgId,
@@ -365,36 +374,63 @@ async function loadBudgetSpendShares(input: {
 				nextUtcMonthDay(input.month),
 			)
 			.all<{
+				meter: string
 				actor_user_id: string
 				automation_source: string
-				weight: number
+				units: number
 			}>()
-		const shares: Array<AttributionSpendShare> = []
+		const merged = new Map<string, AttributionSpendShare>()
 		for (const row of results ?? []) {
-			const weight = Number(row.weight)
-			if (!Number.isFinite(weight) || weight <= 0) continue
-			const actor = row.actor_user_id.trim()
+			const meter = asCreditDebitMeter(row.meter)
+			if (!meter) continue
+			const units = Number(row.units)
+			if (!Number.isFinite(units) || units <= 0) continue
+			// Weight by priced micro-USD so row-read counts cannot drown worker-days.
+			const weight = creditDebitCostMicroUsd(meter, units)
+			if (weight <= 0) continue
 			const automation = row.automation_source.trim()
-			if (actor.length > 0) {
-				shares.push({
-					actorUserId: actor,
-					automationSource: null,
-					weight,
-				})
+			const actor = row.actor_user_id.trim()
+			// Prefer automation_source when present: hourly attribution may also
+			// stamp the org billing id into actor_user_id for schedule/webhook.
+			const share: AttributionSpendShare =
+				automation.length > 0
+					? {
+							actorUserId: null,
+							automationSource: automation,
+							weight,
+						}
+					: actor.length > 0
+						? {
+								actorUserId: actor,
+								automationSource: null,
+								weight,
+							}
+						: { actorUserId: null, automationSource: null, weight: 0 }
+			if (share.weight <= 0) continue
+			if (share.actorUserId == null && share.automationSource == null) {
 				continue
 			}
-			if (automation.length > 0) {
-				shares.push({
-					actorUserId: null,
-					automationSource: automation,
-					weight,
-				})
+			const key =
+				share.automationSource != null
+					? `automation:${share.automationSource}`
+					: `user:${share.actorUserId}`
+			const existing = merged.get(key)
+			if (existing) {
+				existing.weight += share.weight
+			} else {
+				merged.set(key, share)
 			}
 		}
-		return shares
+		return [...merged.values()]
 	} catch {
 		return []
 	}
+}
+
+function asCreditDebitMeter(meter: string): CreditDebitMeter | null {
+	return (creditDebitMeters as ReadonlyArray<string>).includes(meter)
+		? (meter as CreditDebitMeter)
+		: null
 }
 
 function nextUtcMonthDay(month: string): string {
