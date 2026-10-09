@@ -805,10 +805,7 @@ function resolveRealtimeHandler(userModule, facetName) {
 
 async function readRuntimeRunId(runtimeRun) {
 	try {
-		const run = await Promise.race([
-			runtimeRun,
-			new Promise((resolve) => setTimeout(() => resolve(null), 1000)),
-		]);
+		const run = await runtimeRun;
 		return run && typeof run.id === 'string' ? run.id : null;
 	} catch (error) {
 		console.warn('package-app-run-record-read-failed', error);

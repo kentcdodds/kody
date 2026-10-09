@@ -67,7 +67,10 @@ import { handleStatusIncidentEventRequest } from '#worker/status-incidents/maint
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
-import { forwardRuntimeWorkerFetch } from '#worker/package-runtime/package-app-diagnostics.ts'
+import {
+	forwardRuntimeWorkerFetch,
+	stripPackageAppRuntimeRunId,
+} from '#worker/package-runtime/package-app-diagnostics.ts'
 import {
 	isNamespacedAppEndpointPath,
 	retiredConnectorsPathPrefix,
@@ -364,7 +367,8 @@ const appHandler = withCors({
 		// in handlePackageAppOriginRequest; this handler independently returns 500
 		// rather than executing package code if that routing invariant is broken.
 		if (isPackageAppRequestPath(url.pathname)) {
-			return handlePackageAppRequest(request, env)
+			const response = await handlePackageAppRequest(request, env)
+			return stripPackageAppRuntimeRunId(response).response
 		}
 
 		if (isNamespacedAppEndpointPath(url.pathname)) {

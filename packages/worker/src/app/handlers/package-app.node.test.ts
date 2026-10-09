@@ -296,7 +296,7 @@ test('handlePackageAppRequest does not log auth failure without a session cookie
 	expect(consoleWarn).not.toHaveBeenCalled()
 })
 
-test('handlePackageAppRequest logs an entrypoint 500 with the runtime run id and strips it', async () => {
+test('handlePackageAppRequest logs an entrypoint 500 and keeps the runtime run id for the origin hop', async () => {
 	consoleError.mockImplementation(() => {})
 	servePackageEntrypoint(
 		async () =>
@@ -311,7 +311,7 @@ test('handlePackageAppRequest logs an entrypoint 500 with the runtime run id and
 		},
 	})
 	expect(response.status).toBe(500)
-	expect(response.headers.get('x-kody-runtime-run-id')).toBeNull()
+	expect(response.headers.get('x-kody-runtime-run-id')).toBe('run-9')
 	expect(consoleError).toHaveBeenCalledWith(
 		'package-app-http-error',
 		expect.objectContaining({

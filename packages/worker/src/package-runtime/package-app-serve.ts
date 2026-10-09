@@ -12,8 +12,8 @@ import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	logPackageAppHttpError,
+	packageAppRuntimeRunIdHeader,
 	runtimeRunIdFromError,
-	stripPackageAppRuntimeRunId,
 } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
@@ -537,20 +537,21 @@ export async function servePackageAppRequest(input: {
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
-			return attachPackageAppServerTiming(
-				await packageRealtimeSessionRpc({
-					env,
-					userId: owner.userId,
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					sourceId: savedPackage.sourceId,
-					baseUrl,
-				}).connect(
-					createPackageCodeRequest(request),
-					packageRealtimePath.facet,
-				),
-				serverTiming,
-			)
+			const connected = await packageRealtimeSessionRpc({
+				env,
+				userId: owner.userId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				sourceId: savedPackage.sourceId,
+				baseUrl,
+			}).connect(createPackageCodeRequest(request), packageRealtimePath.facet)
+			logPackageAppHttpError({
+				request,
+				status: connected.status,
+				phase: 'realtime-response',
+				runtimeRunId: connected.headers.get(packageAppRuntimeRunIdHeader),
+			})
+			return attachPackageAppServerTiming(connected, serverTiming)
 		} catch (error) {
 			console.error('Package realtime handler failed:', error)
 			reportPackageAppFailure({
@@ -765,14 +766,15 @@ export async function servePackageAppRequest(input: {
 		const fetched = await pushServerTiming(serverTiming, 'entrypoint', () =>
 			entrypoint.fetch(forwardedRequest),
 		)
-		const served = stripPackageAppRuntimeRunId(fetched)
+		// Leave x-kody-runtime-run-id on the response. The origin forward reads
+		// it for the runtime-worker hop log, then strips it before the browser.
 		logPackageAppHttpError({
 			request,
-			status: served.response.status,
+			status: fetched.status,
 			phase: 'entrypoint-response',
-			runtimeRunId: served.runtimeRunId,
+			runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
 		})
-		return attachPackageAppServerTiming(served.response, serverTiming)
+		return attachPackageAppServerTiming(fetched, serverTiming)
 	} catch (error) {
 		console.error('Package app entrypoint failed:', error)
 		return attachPackageAppServerTiming(
