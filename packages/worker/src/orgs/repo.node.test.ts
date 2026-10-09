@@ -71,3 +71,31 @@ test('renameUserHandle keeps org slug on the original handle row', async () => {
 		role: 'owner',
 	})
 })
+
+test('renameUserHandle can reclaim a retired org-held handle when renaming back', async () => {
+	const db = await createDb()
+	const stableUserId = testStableUserIdFromEmail('roundtrip@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId,
+		username: 'ada',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await renameUserHandle(db, {
+		stableUserId,
+		oldUsername: 'ada',
+		newUsername: 'ada2',
+		now: '2026-01-03T00:00:00.000Z',
+	})
+	await renameUserHandle(db, {
+		stableUserId,
+		oldUsername: 'ada2',
+		newUsername: 'ada',
+		now: '2026-01-04T00:00:00.000Z',
+	})
+
+	const restored = await db
+		.prepare(`SELECT user_id, org_id FROM handles WHERE handle = ?`)
+		.bind('ada')
+		.first<{ user_id: string | null; org_id: string | null }>()
+	expect(restored).toEqual({ user_id: stableUserId, org_id: stableUserId })
+})

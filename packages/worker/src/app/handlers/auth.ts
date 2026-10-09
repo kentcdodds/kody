@@ -21,6 +21,7 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { type routes } from '#universal/routes.ts'
+import { isUsernameClaimedInIdentity } from '#worker/identity/generated-username.ts'
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
@@ -242,10 +243,7 @@ export function createAuthHandler(env: Env) {
 			}
 
 			if (normalizedMode === 'signup') {
-				const existingUsername = await db.findOne(usersTable, {
-					where: { username: normalizedUsername },
-				})
-				if (existingUsername) {
+				if (await isUsernameClaimedInIdentity(env.APP_DB, normalizedUsername)) {
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -416,7 +414,14 @@ export function createAuthHandler(env: Env) {
 					})
 				} catch (error) {
 					console.error('Failed to provision personal org at signup:', error)
+					invalidatePackageAppOwnerCache({
+						stableUserId: signupUser.stableUserId,
+					})
 					try {
+						await rollbackPersonalOrgAfterFailedSignup(
+							env.APP_DB,
+							signupUser.stableUserId,
+						)
 						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 							.bind(signupUser.id)
 							.run()

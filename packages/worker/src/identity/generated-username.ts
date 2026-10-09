@@ -13,6 +13,77 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 }
 
 /**
+ * Whether a username is already claimed on `users`, a live or retired
+ * `handles` row, or an org slug (personal org slugs mirror usernames).
+ *
+ * Pass `exceptStableUserId` when the caller is reclaiming their own retired
+ * handle or personal org slug (rename-back).
+ */
+export async function isUsernameClaimedInIdentity(
+	db: D1Database,
+	username: string,
+	options?: { exceptStableUserId?: string },
+) {
+	const normalized = normalizeUsername(username)
+	if (!normalized) return false
+	const except = options?.exceptStableUserId?.trim() || null
+	if (except) {
+		const otherUser = await db
+			.prepare(
+				`SELECT 1 AS present FROM users
+				 WHERE username = ? AND stable_user_id != ?`,
+			)
+			.bind(normalized, except)
+			.first<{ present: number }>()
+		if (otherUser) return true
+	} else if (await userExistsByUsername(db, normalized)) {
+		return true
+	}
+
+	if (except) {
+		// Own live handle (user_id) or own org-held retired handle (org_id)
+		// may be reclaimed. Express foreign claims positively so null/null
+		// historical redirects stay claimed (no SQL three-valued DROP).
+		const foreignHandle = await db
+			.prepare(
+				`SELECT 1 AS present FROM handles
+				 WHERE handle = ?
+				   AND (
+				     (user_id IS NULL AND org_id IS NULL)
+				     OR (user_id IS NOT NULL AND user_id != ?)
+				     OR (
+				       user_id IS NULL
+				       AND org_id IS NOT NULL
+				       AND org_id != ?
+				     )
+				   )`,
+			)
+			.bind(normalized, except, except)
+			.first<{ present: number }>()
+		if (foreignHandle) return true
+		const foreignOrg = await db
+			.prepare(
+				`SELECT 1 AS present FROM orgs
+				 WHERE slug = ? AND id != ?`,
+			)
+			.bind(normalized, except)
+			.first<{ present: number }>()
+		return Boolean(foreignOrg)
+	}
+
+	const handleRow = await db
+		.prepare(`SELECT 1 AS present FROM handles WHERE handle = ?`)
+		.bind(normalized)
+		.first<{ present: number }>()
+	if (handleRow) return true
+	const orgSlug = await db
+		.prepare(`SELECT 1 AS present FROM orgs WHERE slug = ?`)
+		.bind(normalized)
+		.first<{ present: number }>()
+	return Boolean(orgSlug)
+}
+
+/**
  * Find an available username starting from a preferred base (for example a
  * provider handle or an email local part). Numeric suffixes are used only when
  * the base itself is claimable but taken — a reserved base with substring
@@ -38,7 +109,7 @@ export async function getAvailableUsernameFromBase(
 	if (
 		normalizedBase &&
 		!baseError &&
-		!(await userExistsByUsername(db, normalizedBase))
+		!(await isUsernameClaimedInIdentity(db, normalizedBase))
 	) {
 		return normalizedBase
 	}
@@ -49,7 +120,7 @@ export async function getAvailableUsernameFromBase(
 			const candidate = `${prefix}-${suffix}`
 			if (
 				!(await getEffectiveUsernameValidationError(candidate, env)) &&
-				!(await userExistsByUsername(db, candidate))
+				!(await isUsernameClaimedInIdentity(db, candidate))
 			) {
 				return candidate
 			}
@@ -67,7 +138,7 @@ export async function getAvailableUsernameFromBase(
 		const candidate = `n${random}`
 		if (
 			!(await getEffectiveUsernameValidationError(candidate, env)) &&
-			!(await userExistsByUsername(db, candidate))
+			!(await isUsernameClaimedInIdentity(db, candidate))
 		) {
 			return candidate
 		}

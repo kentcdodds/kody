@@ -149,6 +149,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — `authorize` is the one org check; every capability declares `orgPermission`
   and every Open API operation publishes `x-kody-permission`; site admin stays
   separate
+- [0063 — Teams P3 expand adds org rows without moving storage keys](./0063-teams-expand-orgs.md)
+  — personal orgs reuse `stable_user_id` as `orgs.id`; additive tables, billing
+  dual-read/write, and `org_audit_events` without moving storage keys
 
 ## Historical / UI / implementation
 

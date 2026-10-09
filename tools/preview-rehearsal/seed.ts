@@ -7,6 +7,7 @@ import {
 	queryD1,
 	resolveRehearsalDatabases,
 	type CloudflareClient,
+	type RehearsalDatabase,
 } from './d1-rehearsal.ts'
 import {
 	describeFailure,
@@ -493,26 +494,85 @@ async function seedPersonData(
 	}
 }
 
-export async function assertNotSeeded(
+/** Person roster plus the platform account. A complete seed has all of these. */
+export const rehearsalSeedEmails = [
+	...rehearsalUsers.map((user) => user.email),
+	rehearsalPlatformAccount.email,
+] as const
+
+export const rehearsalSeedRosterSize = rehearsalSeedEmails.length
+
+export type RehearsalSeedState = 'empty' | 'partial' | 'complete'
+
+export type RehearsalSeedStatus = {
+	workerName: string
+	state: RehearsalSeedState
+	count: number
+	expected: number
+	daveUsername: string | null
+	app: RehearsalDatabase
+}
+
+export function classifyRehearsalSeed(input: {
+	count: number
+	daveUsername: string | null
+}): RehearsalSeedState {
+	if (!Number.isFinite(input.count) || input.count <= 0) return 'empty'
+	if (input.count < rehearsalSeedRosterSize) return 'partial'
+	// Dave's rename is the last durable APP_DB write in seedRehearsal. Six
+	// accounts can exist earlier; that is still an incomplete seed.
+	if (input.daveUsername === renamedDaveUsername) return 'complete'
+	return 'partial'
+}
+
+export async function rehearsalSeedStatus(
 	client: CloudflareClient,
 	workerName: string,
-) {
+): Promise<RehearsalSeedStatus> {
 	const app = (await resolveRehearsalDatabases(client, workerName)).find(
 		(database) => database.role === 'app',
 	)
 	if (!app) throw new Error('No app database for this preview.')
-	const emails = rehearsalUsers.map((user) => `'${user.email}'`).join(', ')
-	const rows = await queryD1<{ n: number }>(
+	const emails = rehearsalSeedEmails.map((email) => `'${email}'`).join(', ')
+	const daveEmail = rehearsalUser('dave').email
+	const rows = await queryD1<{ n: number; dave_username: string | null }>(
 		client,
 		app.uuid,
-		`SELECT COUNT(*) AS n FROM users WHERE email IN (${emails}, '${rehearsalPlatformAccount.email}')`,
+		`SELECT (SELECT COUNT(*) FROM users WHERE email IN (${emails})) AS n, (SELECT username FROM users WHERE email = '${daveEmail}') AS dave_username`,
 	)
-	if (Number(rows[0]?.n ?? 0) > 0) {
-		throw new Error(
-			`${workerName} already has rehearsal users. Restore the pre-seed D1 snapshot (action restore) or use a fresh branch preview, then seed again.`,
-		)
+	const count = Number(rows[0]?.n ?? 0)
+	const daveUsername = rows[0]?.dave_username ?? null
+	return {
+		workerName,
+		state: classifyRehearsalSeed({ count, daveUsername }),
+		count,
+		expected: rehearsalSeedRosterSize,
+		daveUsername,
+		app,
 	}
-	return app
+}
+
+export async function assertNotSeeded(
+	client: CloudflareClient,
+	workerName: string,
+) {
+	const status = await rehearsalSeedStatus(client, workerName)
+	switch (status.state) {
+		case 'empty':
+			return status.app
+		case 'complete':
+			throw new Error(
+				`${workerName} already has the full rehearsal roster (${status.count}/${status.expected}). Restore the last successful seed run's pre-seed D1 snapshot (action restore) or use a fresh branch preview, then seed again.`,
+			)
+		case 'partial':
+			throw new Error(
+				`${workerName} has a partial rehearsal roster (${status.count}/${status.expected}). Restore the last successful seed run's pre-seed D1 snapshot (action restore), then seed again.`,
+			)
+		default: {
+			const _exhaustive: never = status.state
+			throw new Error(`Unknown rehearsal seed state: ${_exhaustive}`)
+		}
+	}
 }
 
 /**

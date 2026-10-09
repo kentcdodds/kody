@@ -1,5 +1,14 @@
 import { expect, test } from 'vitest'
-import { readFlags, readTokenLifetime } from './run.ts'
+import { readFlags, readTokenLifetime, rehearsalUsage } from './run.ts'
+
+test('usage lists seed-status before seed', () => {
+	expect(rehearsalUsage).toContain(
+		'seed-status  --worker <kody-branch-*> [--out <seed-status.json>]',
+	)
+	expect(rehearsalUsage.indexOf('seed-status')).toBeLessThan(
+		rehearsalUsage.indexOf('seed         --worker'),
+	)
+})
 
 test('readFlags pairs flags with values and rejects bare or flag-shaped values', () => {
 	expect(readFlags(['--worker', 'kody-branch-x', '--out', 'a.json'])).toEqual(
