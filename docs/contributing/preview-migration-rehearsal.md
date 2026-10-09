@@ -105,9 +105,10 @@ have no Stripe mock and the settings route requires a Stripe customer.
 Per user, signed in as that user: ids and username, packages, the inline app
 response, jobs with `next_run_at`, webhooks, secret names plus a fresh
 decryption proof for both secrets, integrations plus an authenticated call, top
-results for four fixed memory searches, share grants (inbound and outbound),
-token ids and scopes, and usage. As the admin: each user's account record and
-wallet (balance, plan, eligibility), and the scope grants.
+results for four fixed memory searches, share grants (inbound and outbound;
+alice and carol, the users who opted in to sharing), token ids and scopes, and
+usage. As the admin: each user's account record and wallet (balance, plan,
+eligibility), and the scope grants.
 
 Every read is a required check. A failed check is written into the snapshot and
 listed under `failures`, and the run fails, so a check that breaks the same way

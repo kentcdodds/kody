@@ -1,6 +1,10 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { openRehearsalSession, type RehearsalSession } from './kody-session.ts'
-import { type RehearsalOrigins, type RehearsalUser } from './rehearsal-env.ts'
+import {
+	sharingOptInRoles,
+	type RehearsalOrigins,
+	type RehearsalUser,
+} from './rehearsal-env.ts'
 import {
 	appMarker,
 	memoryQueries,
@@ -38,6 +42,20 @@ export function stripVolatile(value: unknown): unknown {
 	return out
 }
 
+/**
+ * The inline app path on previews intermittently answers 500 or a login
+ * redirect for a valid session; a persistent failure still shows up.
+ */
+const appAttempts = 3
+const appRetryDelayMs = 2_000
+const sleep = (ms: number) =>
+	new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** MCP errors carry a per-call conversation id. */
+function normalizeErrorMessage(message: string) {
+	return message.replace(/conversationId: \S+/g, 'conversationId: <id>')
+}
+
 export type SnapshotCheckFailure = { check: string; error: string }
 
 type Capture = (check: string, fn: () => Promise<unknown>) => Promise<unknown>
@@ -52,7 +70,9 @@ function createCapture(failures: Array<SnapshotCheckFailure>): Capture {
 		try {
 			return stripVolatile(await fn())
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
+			const message = normalizeErrorMessage(
+				error instanceof Error ? error.message : String(error),
+			)
 			failures.push({ check, error: message })
 			return { error: message }
 		}
@@ -106,12 +126,16 @@ async function snapshotPerson(
 		),
 		appUrl,
 		app: await capture(check('app'), async () => {
-			const response = await session.request(new URL(appUrl).pathname)
-			return {
-				status: response.status,
-				servesApp:
-					typeof response.body === 'string' &&
-					response.body.includes(appMarker),
+			let attempt = 0
+			for (;;) {
+				attempt += 1
+				const response = await session.request(new URL(appUrl).pathname)
+				const servesApp =
+					typeof response.body === 'string' && response.body.includes(appMarker)
+				if (servesApp || attempt === appAttempts) {
+					return { status: response.status, servesApp }
+				}
+				await sleep(appRetryDelayMs)
 			}
 		}),
 		jobs: await capture(check('jobs'), async () => {
@@ -149,14 +173,18 @@ async function snapshotPerson(
 			session.execute(integrationProofModule(echoUrl)),
 		),
 		memorySearches,
-		shares: {
-			inbound: await capture(check('shares.inbound'), () =>
-				callCapability(session, 'packageShareList', { scope: 'inbound' }),
-			),
-			outbound: await capture(check('shares.outbound'), () =>
-				callCapability(session, 'packageShareList', { scope: 'outbound' }),
-			),
-		},
+		shares: sharingOptInRoles.includes(user.role)
+			? {
+					inbound: await capture(check('shares.inbound'), () =>
+						callCapability(session, 'packageShareList', { scope: 'inbound' }),
+					),
+					outbound: await capture(check('shares.outbound'), () =>
+						callCapability(session, 'packageShareList', {
+							scope: 'outbound',
+						}),
+					),
+				}
+			: 'not opted in',
 		tokens: await capture(check('tokens'), async () => {
 			const listed = (await session.api('tokenList')) as {
 				tokens?: Array<Record<string, unknown>>
