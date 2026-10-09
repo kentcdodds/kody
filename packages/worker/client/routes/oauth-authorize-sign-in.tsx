@@ -104,6 +104,7 @@ export async function startOauthAuthorizePasskeySignIn(input: {
 export function renderOauthAuthorizeSignInMethods(input: {
 	providers: ReadonlyArray<AuthProviderInfo>
 	disabled: boolean
+	/** When null, omit the /login escape hatch (avoids prompt=login bounce). */
 	resumeTarget: string | null
 	onProviderClick: (providerId: string) => void
 	onPasskeyClick: () => void
@@ -129,14 +130,16 @@ export function renderOauthAuthorizeSignInMethods(input: {
 				{renderIcon('key', { size: '17' })}
 				Sign in with a passkey
 			</button>
-			<p mix={css(descriptionCss)}>
-				<a
-					href={buildAuthLink('/login', input.resumeTarget)}
-					mix={css(mutedLinkCss)}
-				>
-					Use the full sign-in page
-				</a>
-			</p>
+			{input.resumeTarget ? (
+				<p mix={css(descriptionCss)}>
+					<a
+						href={buildAuthLink('/login', input.resumeTarget)}
+						mix={css(mutedLinkCss)}
+					>
+						Use the full sign-in page
+					</a>
+				</p>
+			) : null}
 		</>
 	)
 }

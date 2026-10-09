@@ -10,6 +10,7 @@ import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileResponseFieldName,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
@@ -129,6 +130,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	function setSignInError(text: string) {
+		// Social/passkey start spends the Turnstile token; refresh before retry
+		// (same pattern as /login setSubmitError).
+		resetTurnstileWidgets()
 		signInStatus = 'idle'
 		setMessage({ type: 'error', text })
 	}
@@ -773,7 +777,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							? renderOauthAuthorizeSignInMethods({
 									providers: authProviders,
 									disabled: actionsDisabled || signInStatus === 'submitting',
-									resumeTarget: readOAuthResumeTarget(),
+									// /login bounces existing sessions straight back. With
+									// prompt=login that loops, so only link when unsigned.
+									resumeTarget: sessionEmail ? null : readOAuthResumeTarget(),
 									onProviderClick: (providerId) => {
 										void handleProviderSignIn(providerId)
 									},
