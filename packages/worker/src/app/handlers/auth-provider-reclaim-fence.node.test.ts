@@ -26,6 +26,7 @@ import {
 	testCookieSecret,
 } from '#worker/test-support/auth-provider-harness.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { isAccountWriteLeaseUsersQuery } from '#worker/test-support/user-meter.ts'
 
 const msw = createMswNodeServer()
 
@@ -58,9 +59,7 @@ function withRacingPurge(
 		prepare(query: string) {
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
-			const isWritableCheck =
-				normalized.includes('select deleting_at from users') &&
-				normalized.includes('stable_user_id')
+			const isWritableCheck = isAccountWriteLeaseUsersQuery(normalized)
 			const isConnectionInsert = normalized.includes(
 				'insert into oauth_connections',
 			)

@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { isAccountWriteLeaseUsersQuery } from '#worker/test-support/user-meter.ts'
 import { hashVerificationToken } from './email-verification-tokens.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
@@ -116,10 +117,7 @@ function withDeletingAtAfterWritableCheck(db: D1Database): D1Database {
 		prepare(query: string) {
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
-			if (
-				!normalized.includes('select deleting_at from users') ||
-				!normalized.includes('stable_user_id')
-			) {
+			if (!isAccountWriteLeaseUsersQuery(normalized)) {
 				return statement
 			}
 			return {

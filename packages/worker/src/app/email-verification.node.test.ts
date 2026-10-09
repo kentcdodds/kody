@@ -9,6 +9,7 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { isAccountWriteLeaseUsersQuery } from '#worker/test-support/user-meter.ts'
 
 test('email verification links preserve safe resume targets and reject open redirects', () => {
 	const oauthResume = '/oauth/authorize?client_id=demo&state=abc'
@@ -192,10 +193,7 @@ function withDeletingAtAfterWritableCheck(
 		prepare(query: string) {
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
-			if (
-				!normalized.includes('select deleting_at from users') ||
-				!normalized.includes('stable_user_id')
-			) {
+			if (!isAccountWriteLeaseUsersQuery(normalized)) {
 				return statement
 			}
 			return {

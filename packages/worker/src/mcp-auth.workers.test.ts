@@ -16,7 +16,10 @@ import {
 import { oauthScopes } from './oauth-handlers.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
+import {
+	createWaitUntilDrain,
+	isAccountWriteLeaseUsersQuery,
+} from '#worker/test-support/user-meter.ts'
 import {
 	isOrgBindingMembershipQuery,
 	mockPersonalOrgBindingRow,
@@ -228,10 +231,13 @@ function createMockDb(options: MockDbOptions = {}) {
 						password_changed_at: options.passwordChangedAt ?? null,
 					} satisfies MockAccountRow
 				}
-				if (normalized.includes('select deleting_at from users')) {
+				if (isAccountWriteLeaseUsersQuery(normalized)) {
 					if (!boundStableUserId) return null
 					if (options.writableCheckDeletingAt !== undefined) {
-						return { deleting_at: options.writableCheckDeletingAt }
+						return {
+							deleting_at: options.writableCheckDeletingAt,
+							deleted_at: null,
+						}
 					}
 					if (options.accountByStableId !== undefined) {
 						if (
@@ -242,10 +248,11 @@ function createMockDb(options: MockDbOptions = {}) {
 						}
 						return {
 							deleting_at: options.accountByStableId.deleting_at ?? null,
+							deleted_at: null,
 						}
 					}
 					if (boundStableUserId !== defaultStableUserId) return null
-					return { deleting_at: null }
+					return { deleting_at: null, deleted_at: null }
 				}
 				if (
 					normalized.includes('select suspended_at from users') ||

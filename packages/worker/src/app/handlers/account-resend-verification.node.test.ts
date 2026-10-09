@@ -17,6 +17,7 @@ import {
 	isOrgBindingMembershipQuery,
 	mockPersonalOrgBindingRow,
 } from '#worker/test-support/org-binding-query.ts'
+import { isAccountWriteLeaseUsersQuery } from '#worker/test-support/user-meter.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -80,11 +81,14 @@ function createResendTestDb(
 				if (isOrgBindingMembershipQuery(normalized)) {
 					return mockPersonalOrgBindingRow(user.stable_user_id, user.username)
 				}
-				if (normalized.includes('select deleting_at from users')) {
+				if (isAccountWriteLeaseUsersQuery(normalized)) {
 					if (options.fenceAfterWritableCheck) {
 						state.fenceAfterWritableCheck = true
 					}
-					return { deleting_at: options.deletingAt ?? null }
+					return {
+						deleting_at: options.deletingAt ?? null,
+						deleted_at: null,
+					}
 				}
 				if (normalized.includes('email_verification_delivery_status')) {
 					return {

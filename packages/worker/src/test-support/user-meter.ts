@@ -704,6 +704,18 @@ export function createWaitUntilDrain() {
 }
 
 /**
+ * True when `query` is the owner write-lease person gate
+ * (`users.deleting_at` / `users.deleted_at` by `stable_user_id`).
+ */
+export function isAccountWriteLeaseUsersQuery(query: string) {
+	const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+	return (
+		normalized.includes('stable_user_id') &&
+		/select deleting_at(?:, deleted_at)? from users/.test(normalized)
+	)
+}
+
+/**
  * Minimal D1 stub for the `deleting_at` gate used by
  * {@link withAccountWriteLease} in node tests. The DO handles all lease
  * storage; the only D1 query on the hot path is the `deleting_at` point gate.
@@ -711,12 +723,7 @@ export function createWaitUntilDrain() {
 export function createPermissiveAccountWriteLeaseDbHooks() {
 	return {
 		supportsDeletingAtQuery(query: string) {
-			return (
-				query.includes('SELECT deleting_at FROM users WHERE stable_user_id') ||
-				query.includes(
-					'SELECT deleting_at, deleted_at FROM users WHERE stable_user_id',
-				)
-			)
+			return isAccountWriteLeaseUsersQuery(query)
 		},
 		deletingAtFirstResult() {
 			return {
