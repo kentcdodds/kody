@@ -1794,8 +1794,9 @@ Current retention policies:
   rewrites yesterday and today). Deleted and exported with the account.
   `durable_object_duration_coverage_daily` is the fleet-level attributed vs
   total companion (no user data).
-- `credit_wallets`: one prepaid credit wallet per `stable_user_id` (balance in
-  micro-USD, auto-refill settings and saved card id, notice opt-outs).
+- `credit_wallets`: one prepaid credit wallet per owner id (`user_id` is the org
+  id; personal orgs reuse `stable_user_id`). Balance in micro-USD, auto-refill
+  settings and saved card id, notice opt-outs.
 - `credit_ledger_entries`: append-only top-ups, auto-refills, admin grants (with
   `granted_by_user_id` and `note`), and debits. `stripe_reference` is unique for
   idempotent Stripe credits. Deleting an admin anonymizes `granted_by_user_id`
