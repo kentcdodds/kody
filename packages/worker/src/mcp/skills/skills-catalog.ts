@@ -7,7 +7,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
-	reachedPackage,
+	packageResource,
 } from '#worker/authorization/authorize.ts'
 import {
 	buildPackageSkillsIndex,
@@ -19,9 +19,7 @@ import {
 	type PackageSkillResourceIndexEntry,
 	type PackageSkillsIndex,
 } from '#worker/package-registry/package-skills.ts'
-import { listPlatformPackagesForSearch } from '#worker/package-registry/platform-packages.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
-import { listAcceptedInboundSharedPackages } from '#worker/package-registry/share-grants.ts'
 import {
 	readPackageSkillsIndex,
 	writePackageSkillsIndex,
@@ -81,43 +79,16 @@ async function listVisibleSkillPackageRecords(input: {
 	const access = await computeEffectivePermissions({ env: input.env, request })
 	// Skills are source-like content: require package `read`, not mere
 	// visibility (execute-only profiles must not pull SKILL.md / assets).
-	const canRead = (packageId: string) =>
-		checkPermission(
-			access,
-			'package:read',
-			reachedPackage(access.orgId, { id: packageId }),
-		).allowed
-	const [ownRecords, sharedRecords, platformPackages] = await Promise.all([
-		listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
-			userId,
-		}),
-		listAcceptedInboundSharedPackages({
-			db: input.env.APP_DB,
-			granteeUserId: userId,
-		}),
-		listPlatformPackagesForSearch(input.env.APP_DB),
-	])
-	const ownIds = new Set(ownRecords.map((record) => record.id))
-	const ownNames = new Set(ownRecords.map((record) => record.name))
-	const ownKodyIds = new Set(ownRecords.map((record) => record.kodyId))
-	const candidates: Array<SavedPackageRecord> = [
-		...ownRecords.filter((record) => !record.hidden),
-		...sharedRecords.filter((record) => !ownIds.has(record.id)),
-		...platformPackages
-			.map((entry) => entry.record)
-			.filter(
-				(record) =>
-					!ownNames.has(record.name) && !ownKodyIds.has(record.kodyId),
-			),
-	]
-	const seen = new Set<string>()
-	return candidates.filter((record) => {
-		if (!record.hasSkills || !canRead(record.id) || seen.has(record.id)) {
-			return false
-		}
-		seen.add(record.id)
-		return true
-	})
+	const records = await listSavedPackagesWithCommunityProvenanceByUserId(
+		input.env.APP_DB,
+		{ userId },
+	)
+	return records.filter(
+		(record) =>
+			!record.hidden &&
+			record.hasSkills &&
+			checkPermission(access, 'package:read', packageResource(record)).allowed,
+	)
 }
 
 async function rebuildPackageSkillsIndex(input: {
@@ -163,8 +134,8 @@ async function rebuildPackageSkillsIndex(input: {
  * Every package-shipped skill the caller can see, read from the per-version
  * skills index in KV. Packages that report `hasSkills` but have no index yet
  * (published before the extension shipped) are rebuilt from the published
- * snapshot. A failed rebuild for one package is logged and skipped so a
- * shared or platform miss cannot blank the caller's catalog.
+ * snapshot. A failed rebuild for one package is logged and skipped so one
+ * miss cannot blank the caller's catalog.
  */
 export async function loadCallerSkillsCatalog(input: {
 	env: Env
@@ -204,8 +175,8 @@ export async function loadCallerSkillsCatalog(input: {
 					index,
 				} satisfies CallerSkillsCatalogPackage
 			} catch (error) {
-				// One shared/platform package with a missing snapshot or bad
-				// skill must not blank the caller's entire skills surface.
+				// One package with a missing snapshot or bad skill must not
+				// blank the caller's entire skills surface.
 				console.error(
 					'package-skills-catalog-load-failed',
 					record.id,

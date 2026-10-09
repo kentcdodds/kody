@@ -7,7 +7,6 @@ import {
 	buildInstallAdaptPrompt,
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
-import { isOfficialCommunityListing } from '#universal/community-links.ts'
 import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
@@ -61,11 +60,9 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					404,
 				)
 			}
-			// Official `@kody/*` listings are first-party and skip acknowledgement.
-			// Third-party listings require acknowledged: true. The listing page
-			// sends that flag after createDoubleCheck confirms the fork.
-			const official = isOfficialCommunityListing({ name: listing.name })
-			if (!official && parsed.data.acknowledged !== true) {
+			// Every listing requires acknowledged: true. The listing page sends
+			// that flag after createDoubleCheck confirms the fork.
+			if (parsed.data.acknowledged !== true) {
 				return jsonResponse(
 					{
 						ok: false,

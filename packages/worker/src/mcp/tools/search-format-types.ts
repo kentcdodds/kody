@@ -262,8 +262,6 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
-			/** Platform (built-in) scope username; live for execute and platform-account packages. Person-account saved packages must fork. */
-			platformScope?: string | null
 			hostedUrl: string | null
 			readmeSnippet: {
 				path: string
@@ -415,8 +413,6 @@ export type SearchEntityDetailStructured =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
-			/** Platform (built-in) scope username; live for execute and platform-account packages. Person-account saved packages must fork. */
-			platformScope?: string | null
 			hostedUrl: string | null
 			appEntry: string | null
 			maintain: {
@@ -494,7 +490,6 @@ export type SearchEntityDetailStructured =
 			example: string | null
 			followUp: string
 			hidden: boolean
-			platformScope?: string | null
 			referencedTypesTruncated?: true
 	  }
 	| {
@@ -615,8 +610,6 @@ export type SearchEntityDetail =
 			baseUrl: string
 			hostedUrl: string | null
 			ownerUsername?: string | null
-			/** Platform (built-in) scope username when owned by a platform account. */
-			platformScope?: string | null
 			listingAhead: boolean | null
 			/** Export subpath when opening `package:{id}#{subpath}`. */
 			section?: string
@@ -720,10 +713,6 @@ export type SearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
-			/** Platform (built-in) scope username when owned by a platform account. */
-			platformScope?: string | null
-			/** Owner username for person-to-person share-grant rows. */
-			ownerUsername?: string | null
 			readmeSnippet?: {
 				path: string
 				snippet: string

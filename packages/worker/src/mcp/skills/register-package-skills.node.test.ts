@@ -22,12 +22,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
 		mocks.listOwn(...args),
 }))
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	listAcceptedInboundSharedPackages: async () => [],
-}))
-vi.mock('#worker/package-registry/platform-packages.ts', () => ({
-	listPlatformPackagesForSearch: async () => [],
-}))
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	listEntitySourcesByIds: async (_db: unknown, ids: Array<string>) =>
 		ids.map((id) => ({ id, published_commit: 'commit-1' })),

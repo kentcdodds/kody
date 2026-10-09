@@ -1,56 +1,11 @@
 import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
-
-test('getCapabilityRegistryForContext hides flag-gated capabilities when the flag is off', async () => {
-	const userId = `user-registry-flag-gate-${crypto.randomUUID()}`
-	const prepare = vi.fn(() => {
-		return {
-			bind() {
-				return this
-			},
-			async all() {
-				return { results: [], meta: { changes: 0 } }
-			},
-			async first() {
-				return null
-			},
-			async run() {
-				return { meta: { changes: 0 } }
-			},
-		}
-	})
-	const env = {
-		APP_DB: {
-			prepare,
-		},
-	} as unknown as Env
-	const callerContext = createMcpCallerContext({
-		source: { kind: 'mcp-oauth' },
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: personIdFromStored(userId),
-			email: 'user-1@example.com',
-			displayName: 'user-1',
-			roles: ['admin'],
-		},
-	})
-
-	const registry = await getCapabilityRegistryForContext({
-		env,
-		callerContext,
-	})
-	const staticRegistry = await getStaticRegistry()
-
-	expect(staticRegistry.capabilityMap).toHaveProperty('packageShareInvite')
-	expect(registry.capabilityMap).not.toHaveProperty('packageShareInvite')
-	expect(registry.capabilityMap).toHaveProperty('search')
-})
 
 test('getStaticRegistry memoizes the builtin registry', async () => {
 	const first = await getStaticRegistry()

@@ -70,8 +70,6 @@ test('client route and loader matching prefer specific static routes over dynami
 		[routePattern(routes.communityPackage)]: element('package-detail'),
 		[routePattern(routes.communityPackageApprovePublish)]:
 			element('approve-publish'),
-		[routePattern(routes.communityPackageApproveChanges)]:
-			element('approve-changes'),
 	}
 	const routeCases: Array<[string, string]> = [
 		['/account/mcp-servers/new', 'new-server'],
@@ -81,7 +79,6 @@ test('client route and loader matching prefer specific static routes over dynami
 		['/@kentcdodds/pkg-1', 'package-detail'],
 		['/@kentcdodds/pkg-1/approve-publish', 'approve-publish'],
 		['/@kentcdodds/pkg-1/approve-publish?commit=abc1234', 'approve-publish'],
-		['/@kentcdodds/pkg-1/approve-changes', 'approve-changes'],
 	]
 	expect(
 		routeCases.map(([path]) => [path, matchRoute(path, pageRoutes)]),

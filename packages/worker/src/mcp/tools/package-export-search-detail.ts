@@ -7,7 +7,6 @@ import { formatMarkdownInlineCode } from './markdown-safety.ts'
 import { type SearchEntityDetailFormatResult } from './search-entity-plugin.ts'
 import {
 	buildEntityRef,
-	buildPlatformPackageForkNotice,
 	getPrimaryPackageActionFunction,
 } from './search-format-helpers.ts'
 import { type SearchEntityDetail } from './search-format-types.ts'
@@ -111,13 +110,9 @@ export default async function main(params) {
 }`
 }
 
-function buildPackageExportFollowUp(input: {
-	packageId: string
-	platformNotice: string | null
-}) {
+function buildPackageExportFollowUp(input: { packageId: string }) {
 	const packageGetCall = `packageGet({ package_id: ${JSON.stringify(input.packageId)} })`
-	const base = `${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files.`
-	return input.platformNotice ? `${input.platformNotice} ${base}` : base
+	return `${packageGetCall} returns the full export array plus package-scoped secret metadata. That call does not return files.`
 }
 
 function isDefaultExportName(name: string) {
@@ -234,14 +229,10 @@ export function formatPackageExportEntityDetail(input: {
 		subpath: input.exportDetail.subpath,
 		functions: input.exportDetail.functions,
 	})
-	const platformNotice = input.detail.platformScope
-		? buildPlatformPackageForkNotice(input.detail.platformScope)
-		: null
 	const includeBoilerplate = input.includeBoilerplate ?? true
 	const followUp = includeBoilerplate
 		? buildPackageExportFollowUp({
 				packageId: input.detail.record.id,
-				platformNotice,
 			})
 		: ''
 	const functions = input.exportDetail.functions.map((fn) => ({
@@ -264,7 +255,6 @@ export function formatPackageExportEntityDetail(input: {
 		'',
 		'## Execute from `execute`',
 		'',
-		...(platformNotice ? [platformNotice, ''] : []),
 		'```ts',
 		executeExample,
 		'```',
@@ -350,7 +340,6 @@ export function formatPackageExportEntityDetail(input: {
 			example: jsDoc.example,
 			followUp,
 			hidden: input.detail.record.hidden,
-			platformScope: input.detail.platformScope ?? null,
 			...(referenced.truncated ? { referencedTypesTruncated: true } : {}),
 		},
 	}

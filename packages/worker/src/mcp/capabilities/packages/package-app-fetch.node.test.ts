@@ -24,7 +24,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
 }))
@@ -60,7 +59,6 @@ function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 		ownerScope: 'kody',
 		ownerEmail: 'kody@example.com',
 		actorUserId: 'user-1',
-		delegated: false,
 	})
 	return packageAppFetchCapability.handler(args, {
 		env: { APP_DB: {} } as Env,

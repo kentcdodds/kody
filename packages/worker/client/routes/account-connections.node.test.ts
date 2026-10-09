@@ -315,9 +315,7 @@ test('account rail lists Connections and Repositories at the same level as the o
 	const items = accountNavItemsFor({
 		orgSlug: 'jane',
 		personal: true,
-		showShared: true,
 	})
-	expect(items.map((item) => item.label)).toContain('Shared')
 	expect(items.map((item) => item.label)).toContain('Secret providers')
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
 		'/@jane/secret-providers',
@@ -343,7 +341,6 @@ test('account rail keeps the selected organization slug for section links', () =
 	const items = accountNavItemsFor({
 		orgSlug: 'acme',
 		personal: false,
-		showShared: false,
 	})
 	expect(items.find((item) => item.label === 'Secrets')?.href).toBe(
 		'/@acme/secrets',

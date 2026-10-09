@@ -6,10 +6,8 @@ function createLoadedPackage(input: {
 	kodyId: string
 	exports: Record<string, string>
 	files: Record<string, string>
-	ownerUserId?: string
-	shareOwned?: boolean
 }) {
-	const ownerUserId = input.ownerUserId ?? 'user-1'
+	const ownerUserId = 'user-1'
 	const name = `@kentcdodds/${input.kodyId}`
 	const packageId = `pkg-${input.kodyId}-${ownerUserId}`
 	const sourceId = `source-${input.kodyId}-${ownerUserId}`
@@ -55,11 +53,6 @@ function createLoadedPackage(input: {
 		}),
 		files: input.files,
 		prefix: `.__kody_packages__/${name}`,
-		sourceOwnerUserId: ownerUserId,
-		platformScope: null,
-		...(input.shareOwned
-			? { shareOwned: true, storageOwnerUserId: ownerUserId }
-			: {}),
 	}
 }
 
@@ -134,44 +127,4 @@ export default async function main() { return [await run(), await whoami()] }`,
 		wake.row.id,
 	])
 	expect(dependencies.some((dependency) => dependency.transitive)).toBe(false)
-})
-
-test('imports inside a share-owned package resolve under the share owner', async () => {
-	const shared = createLoadedPackage({
-		kodyId: 'shared',
-		ownerUserId: 'owner-1',
-		shareOwned: true,
-		exports: { './run': './src/run.ts' },
-		files: {
-			'src/run.ts': `import whoami from 'kody:@kentcdodds/wake/whoami'
-export default async function run() { return await whoami() }`,
-		},
-	})
-	const ownerWake = createLoadedPackage({
-		kodyId: 'wake',
-		ownerUserId: 'owner-1',
-		shareOwned: true,
-		exports: { './whoami': './src/whoami.ts' },
-		files: {
-			'src/whoami.ts': 'export default async function whoami() { return 2 }',
-		},
-	})
-	const dependencies = await resolveDependencies({
-		entrySource: `import run from 'kody:@kentcdodds/shared/run'
-export default async function main() { return await run() }`,
-		loadedPackages: new Map([
-			['@kentcdodds/shared', shared],
-			['@kentcdodds/wake', wake],
-			['@kentcdodds/wake#owner-1', ownerWake],
-		]),
-	})
-	expect(dependencies).toEqual([
-		expect.objectContaining({ packageId: shared.row.id, shareOwned: true }),
-		expect.objectContaining({
-			packageId: ownerWake.row.id,
-			transitive: true,
-			shareOwned: true,
-			storageOwnerUserId: 'owner-1',
-		}),
-	])
 })

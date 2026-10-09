@@ -34,10 +34,7 @@ import {
 	packageIdLookupDescription,
 	packageNameLookupDescription,
 } from '#worker/package-registry/package-name.ts'
-import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
 	resolveSavedPackageRef,
@@ -160,11 +157,6 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 					.describe(
 						'Exact subscription topic declared in package.json#kody.subscriptions.',
 					),
-				package_scope: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(packageScopeInputDescription),
 				email_message_id: z
 					.string()
 					.min(1)
@@ -223,11 +215,10 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			assertDirectMcpCaller(ctx.callerContext)
 			requireExactlyOneDispatchInput(args)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			let requestedKodyId: string | undefined
 			if (args.kody_id !== undefined) {
 				try {

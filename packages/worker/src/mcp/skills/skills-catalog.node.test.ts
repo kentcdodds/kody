@@ -14,8 +14,6 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
 const mocks = vi.hoisted(() => ({
 	listOwn: vi.fn(),
-	listShared: vi.fn(),
-	listPlatform: vi.fn(),
 	listEntitySourcesByIds: vi.fn(),
 	readIndex: vi.fn(),
 	writeIndex: vi.fn(),
@@ -26,14 +24,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
 		mocks.listOwn(...args),
-}))
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	listAcceptedInboundSharedPackages: (...args: Array<unknown>) =>
-		mocks.listShared(...args),
-}))
-vi.mock('#worker/package-registry/platform-packages.ts', () => ({
-	listPlatformPackagesForSearch: (...args: Array<unknown>) =>
-		mocks.listPlatform(...args),
 }))
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	listEntitySourcesByIds: (...args: Array<unknown>) =>
@@ -126,8 +116,6 @@ async function buildIndex(
 beforeEach(() => {
 	for (const mock of Object.values(mocks)) mock.mockReset()
 	mocks.listOwn.mockResolvedValue([])
-	mocks.listShared.mockResolvedValue([])
-	mocks.listPlatform.mockResolvedValue([])
 	mocks.listEntitySourcesByIds.mockImplementation(
 		async (_db: unknown, ids: Array<string>) =>
 			ids.map((id) => ({ id, published_commit: 'commit-1' })),
@@ -151,7 +139,7 @@ test('anonymous callers get an empty catalog without touching storage', async ()
 	expect(mocks.listOwn).not.toHaveBeenCalled()
 })
 
-test('lists own, shared, and platform skills from KV indexes, skipping hidden and skill-less packages', async () => {
+test('lists the caller org skills from KV indexes, skipping hidden and skill-less packages', async () => {
 	const own = savedPackage()
 	const hidden = savedPackage({ id: 'pkg-hidden', sourceId: 'source-hidden' })
 	hidden.hidden = true
@@ -160,27 +148,15 @@ test('lists own, shared, and platform skills from KV indexes, skipping hidden an
 		sourceId: 'source-none',
 		hasSkills: false,
 	})
-	const shared = savedPackage({
-		id: 'pkg-shared',
-		userId: 'user-2',
-		name: '@friend/shared',
-		kodyId: 'shared',
-		sourceId: 'source-shared',
+	const second = savedPackage({
+		id: 'pkg-2',
+		name: '@owner/second',
+		kodyId: 'second',
+		sourceId: 'source-2',
 	})
-	const platform = savedPackage({
-		id: 'pkg-platform',
-		userId: 'platform-user',
-		name: '@kody/platform',
-		kodyId: 'platform',
-		sourceId: 'source-platform',
-	})
-	mocks.listOwn.mockResolvedValue([own, hidden, noSkills])
-	mocks.listShared.mockResolvedValue([shared])
-	mocks.listPlatform.mockResolvedValue([
-		{ record: platform, platformScope: 'kody' },
-	])
+	mocks.listOwn.mockResolvedValue([own, hidden, noSkills, second])
 	const indexes = new Map<string, PackageSkillsIndex>()
-	for (const record of [own, shared, platform]) {
+	for (const record of [own, second]) {
 		indexes.set(record.id, await buildIndex(record))
 	}
 	mocks.readIndex.mockImplementation(
@@ -190,20 +166,15 @@ test('lists own, shared, and platform skills from KV indexes, skipping hidden an
 
 	const catalog = await loadCallerSkillsCatalog({ env, callerContext })
 
-	expect(catalog.map((entry) => entry.packageId)).toEqual([
-		'pkg-1',
-		'pkg-shared',
-		'pkg-platform',
-	])
+	expect(catalog.map((entry) => entry.packageId)).toEqual(['pkg-1', 'pkg-2'])
 	expect(mocks.listEntitySourcesByIds).toHaveBeenCalledWith(env.APP_DB, [
 		'source-1',
-		'source-shared',
-		'source-platform',
+		'source-2',
 	])
 	expect(mocks.readIndex).toHaveBeenCalledWith({
 		env,
-		userId: 'user-2',
-		packageId: 'pkg-shared',
+		userId: 'user-1',
+		packageId: 'pkg-2',
 		publishedCommit: 'commit-1',
 	})
 	expect(mocks.loadSource).not.toHaveBeenCalled()
@@ -216,8 +187,7 @@ test('lists own, shared, and platform skills from KV indexes, skipping hidden an
 	})
 	expect(listed.skills.map((skill) => skill.uri)).toEqual([
 		'skill://owner/ship/ship-it/SKILL.md',
-		'skill://friend/shared/ship-it/SKILL.md',
-		'skill://kody/platform/ship-it/SKILL.md',
+		'skill://owner/second/ship-it/SKILL.md',
 	])
 	expect(listed.skills[0]).toEqual({
 		uri: 'skill://owner/ship/ship-it/SKILL.md',
@@ -235,24 +205,6 @@ test('lists own, shared, and platform skills from KV indexes, skipping hidden an
 			},
 		],
 	})
-})
-
-test('platform package shadowed by the caller own package is not listed twice', async () => {
-	const own = savedPackage()
-	mocks.listOwn.mockResolvedValue([own])
-	mocks.listPlatform.mockResolvedValue([
-		{
-			record: savedPackage({
-				id: 'pkg-platform',
-				userId: 'platform-user',
-				sourceId: 'source-platform',
-			}),
-			platformScope: 'kody',
-		},
-	])
-	mocks.readIndex.mockResolvedValue(await buildIndex(own))
-	const catalog = await loadCallerSkillsCatalog({ env, callerContext })
-	expect(catalog.map((entry) => entry.packageId)).toEqual(['pkg-1'])
 })
 
 test('rebuilds and persists a missing index for packages published before the flag', async () => {
@@ -379,13 +331,11 @@ test('skips packages whose skills index cannot load without failing the catalog'
 	const own = savedPackage()
 	const broken = savedPackage({
 		id: 'pkg-broken',
-		userId: 'user-2',
-		name: '@friend/broken',
+		name: '@owner/broken',
 		kodyId: 'broken',
 		sourceId: 'source-broken',
 	})
-	mocks.listOwn.mockResolvedValue([own])
-	mocks.listShared.mockResolvedValue([broken])
+	mocks.listOwn.mockResolvedValue([own, broken])
 	mocks.readIndex.mockImplementation(async (input: { packageId: string }) => {
 		if (input.packageId === broken.id) {
 			throw new Error('kv unavailable')

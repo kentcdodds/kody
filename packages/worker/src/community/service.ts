@@ -27,7 +27,6 @@ import {
 	getSavedPackageByName,
 	updateSavedPackage,
 } from '#worker/package-registry/repo.ts'
-import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	cleanupArtifactReposForPackage,
@@ -132,6 +131,7 @@ import {
 import { resolveCommunityForkAlternateLeaf } from './allocate-fork-leaf.ts'
 import {
 	collectChangedForkFiles,
+	rewriteForkedPackageSelfReferences,
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
@@ -602,8 +602,8 @@ export async function publishCommunityListing(input: {
 	baseUrl: string
 	userId: string
 	/**
-	 * Acting user on delegated (package scope grant) publishes. Community bans
-	 * must bind to the person acting, not just the owning platform account.
+	 * Acting person when the owner is an org. Community bans bind to the
+	 * person acting, not just the owning org.
 	 */
 	actorUserId?: string
 	packageId: string
@@ -618,11 +618,11 @@ export async function publishCommunityListing(input: {
 		packageId: input.packageId,
 	})
 	if (!savedPackage) {
-		// Missing / wrong-owner package_id (including delegated package_scope
-		// mismatches) is caller-clearable. CommunityActionError keeps these on
-		// mcp-event lines and out of Sentry (KODY-CLOUDFLARE-5B).
+		// Missing / wrong-owner package_id is caller-clearable.
+		// CommunityActionError keeps these on mcp-event lines and out of Sentry
+		// (KODY-CLOUDFLARE-5B).
 		throw new CommunityActionError(
-			`Saved package "${input.packageId}" was not found for this package owner. Confirm package_id with search({ domain: "packages" }) and that package_scope matches the account that owns it.`,
+			`Saved package "${input.packageId}" was not found in this org. Confirm package_id with search({ domain: "packages" }) and that this connection is bound to the org that owns it.`,
 		)
 	}
 

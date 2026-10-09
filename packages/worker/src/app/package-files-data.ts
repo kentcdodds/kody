@@ -556,8 +556,7 @@ export async function loadAccessiblePackageFilesData(input: {
 		}
 	}
 
-	if (!page.ownerPackage) return null
-	if (!page.canReadOwnerSource) return null
+	if (!page.ownerPackage || !page.viewerIsOwner) return null
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	if (!user) return null
 	const data = await loadAccountPackageFilesData({
@@ -585,7 +584,6 @@ export async function loadPackagePageHasAgentsDocs(input: {
 	listingId?: string | null
 	ownerSourceId?: string | null
 	viewerIsOwner: boolean
-	canReadOwnerSource?: boolean
 	ownerUserId?: string
 }): Promise<boolean> {
 	if (input.listingId && input.env.BUNDLE_ARTIFACTS_KV) {
@@ -602,8 +600,7 @@ export async function loadPackagePageHasAgentsDocs(input: {
 			// Agent docs link instead of 404ing visitors on a dead tree URL.
 		}
 	}
-	const canReadOwnerSource = input.canReadOwnerSource ?? input.viewerIsOwner
-	if (!canReadOwnerSource || !input.ownerSourceId) return false
+	if (!input.viewerIsOwner || !input.ownerSourceId) return false
 	const user = await readAuthenticatedAppUser(input.request, input.env)
 	if (!user) return false
 	try {

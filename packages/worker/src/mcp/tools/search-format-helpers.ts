@@ -75,10 +75,6 @@ export function buildPackageMaintainSnippets(packageId: string) {
 	}
 }
 
-export function buildPlatformPackageForkNotice(platformScope: string) {
-	return `This is a platform (built-in) package from @${platformScope}. communityFork it into your scope before importing it.`
-}
-
 export function buildPackageSourceFollowUp(input: {
 	packageId: string
 	kodyId: string
@@ -149,28 +145,25 @@ export function buildPackageListNextStep(
 					functionName: actionFunction.name,
 				})
 			: null
-	const platformSuffix = match.platformScope
-		? ` ${buildPlatformPackageForkNotice(match.platformScope)}`
-		: ''
 	const listingAheadSuffix =
 		match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 	const entityRef = buildEntityRef(match.kodyId, 'package', exportSubpath)
 	if (exportSubpath) {
 		if (match.exportCallContract) {
-			return `Use the inlined export call contract above from \`execute\`. Inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need referenced types or the full package.${platformSuffix}${listingAheadSuffix}`
+			return `Use the inlined export call contract above from \`execute\`. Inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need referenced types or the full package.${listingAheadSuffix}`
 		}
 		if (primaryUsage) {
-			return `Use ${primaryUsage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${platformSuffix}${listingAheadSuffix}`
+			return `Use ${primaryUsage}; inspect search({ entity: ${JSON.stringify(entityRef)} }) only if you need the full export contract.${listingAheadSuffix}`
 		}
-		return `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${platformSuffix}${listingAheadSuffix}`
+		return `Inspect the export contract with search({ entity: ${JSON.stringify(entityRef)} }).${listingAheadSuffix}`
 	}
 	if (primaryUsage) {
-		return `Use ${primaryUsage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
+		return `Use ${primaryUsage}; inspect search({ entity: "package:${match.kodyId}" }) only if you need more exports.${listingAheadSuffix}`
 	}
 	if (match.hasApp) {
-		return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
+		return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, jobs, and the hosted app URL.${listingAheadSuffix}`
 	}
-	return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
+	return `Inspect package detail with search({ entity: "package:${match.kodyId}" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${listingAheadSuffix}`
 }
 
 export function formatInlineTypeDefinition(typeDefinition: string) {

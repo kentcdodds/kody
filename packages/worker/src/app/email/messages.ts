@@ -628,6 +628,7 @@ export function buildPasswordResetEmail(input: {
 	})
 }
 
+<<<<<<< HEAD
 export function buildPackageShareInviteEmail(input: {
 	appBaseUrl: string
 	ownerUsername: string
@@ -666,6 +667,8 @@ export function buildPackageShareInviteEmail(input: {
 	})
 }
 
+=======
+>>>>>>> aea01aa26 (Remove package shares and platform accounts (Teams P8 code removal))
 export function buildPasswordResetConfirmedEmail(input: {
 	appBaseUrl: string
 	accountUrl: string

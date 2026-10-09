@@ -15,7 +15,6 @@ import {
 } from '#worker/integrations/service.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { resolveSavedPackageRefWithCommunityProvenance } from '#worker/package-registry/repo.ts'
-import { findPlatformPackageByRef } from '#worker/package-registry/platform-packages.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 
 import { collectIntegrationPackageSuggestions } from './integration-package-suggestions.ts'
@@ -137,30 +136,23 @@ export async function resolveEntityDetail(input: {
 				ref: ref.id,
 			},
 		)
-		const [ownRecord] = loadedOwnRecord
+		const [record] = loadedOwnRecord
 			? await applySavedPackageForkListingAncestry({
 					env,
 					records: [loadedOwnRecord],
 				})
 			: [null]
-		// Platform (built-in) packages stay discoverable without a fork so
-		// agents can inspect and communityFork them. The caller's own copy
-		// wins when both exist.
-		const platformFallback = ownRecord
-			? null
-			: await findPlatformPackageByRef(env.APP_DB, { idOrKodyId: ref.id })
-		const record = ownRecord ?? platformFallback?.record
 		if (!record) {
 			throw new McpCallerError('Saved package not found for this user.')
 		}
 		const loaded = await loadPackageSourceBySourceId({
 			env,
 			baseUrl: input.callerContext.baseUrl,
-			userId: platformFallback?.ownerUserId ?? input.userId,
+			userId: input.userId,
 			sourceId: record.sourceId,
 		})
 		const packageAppOrigin = getPackageAppBaseUrl({ env })
-		const ownerUsername = platformFallback?.platformScope ?? input.username
+		const ownerUsername = input.username
 		return {
 			type: 'package' as const,
 			id: record.kodyId,
@@ -171,8 +163,7 @@ export async function resolveEntityDetail(input: {
 			files: loaded.files,
 			baseUrl: input.callerContext.baseUrl,
 			ownerUsername,
-			platformScope: platformFallback?.platformScope ?? null,
-			listingAhead: ownRecord?.listingAhead ?? null,
+			listingAhead: record.listingAhead ?? null,
 			hostedUrl:
 				record.hasApp && ownerUsername
 					? resolveHostedPackageAppUrl({

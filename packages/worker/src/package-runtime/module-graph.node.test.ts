@@ -18,12 +18,6 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	}),
 }))
 
-vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
-	isPlatformAccountStableUserId: async () => false,
-	listPlatformAccountUsernames: async () => [],
-}))
-
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	resolveSavedPackageRef: (...args: Array<unknown>) =>
 		mockModule.resolveSavedPackageRef(...args),

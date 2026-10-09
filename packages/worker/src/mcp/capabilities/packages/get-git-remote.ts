@@ -3,7 +3,10 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { authorize } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	gitAuthorIdentityFromUser,
 	gitAuthorIdentitySchema,
@@ -15,10 +18,7 @@ import {
 	packageIdLookupDescription,
 	packageNameLookupDescription,
 } from '#worker/package-registry/package-name.ts'
-import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import {
 	KODY_DESCRIPTION_MAX_LENGTH,
@@ -39,11 +39,6 @@ import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 const getGitRemoteInputSchema = z.object({
 	package_id: z.string().min(1).optional().describe(packageIdLookupDescription),
 	kody_id: z.string().min(1).optional().describe(packageNameLookupDescription),
-	package_scope: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(packageScopeInputDescription),
 	create: z
 		.boolean()
 		.optional()
@@ -118,11 +113,10 @@ export const getGitRemoteCapability = defineDomainCapability(
 				await authorize(authorizeCtx, 'package:write')
 			}
 			const gitAuthor = gitAuthorIdentityFromUser(user)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const requestedKodyId =
 				args.kody_id === undefined || args.kody_id.trim() === ''
 					? undefined

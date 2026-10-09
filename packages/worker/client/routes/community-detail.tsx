@@ -2,12 +2,10 @@ import { Frame, type Handle, type RemixNode, css } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import { getPackageTreeHref } from '#universal/package-files.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
-import { readAppSession } from '#client/app-session-context.tsx'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
@@ -15,7 +13,6 @@ import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { NotFoundPage } from '#client/not-found-page.tsx'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -33,7 +30,6 @@ import {
 	shouldResetInstallOnShellSnapshot,
 } from '#client/routes/community-detail-install.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
-import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityInstallApiPayload,
@@ -55,8 +51,6 @@ import {
 	renderReportDisclosure,
 	renderShellStatus,
 } from './community-detail-sections.tsx'
-import { renderPackageShareBanners } from './package-share-banners.tsx'
-import { postPackageShareAction } from './package-share-client.ts'
 
 /**
  * Community detail, ported from the redesign prototype
@@ -110,9 +104,6 @@ export function CommunityDetailRoute(handle: Handle) {
 	let shellLoadedForPathname: string | null = null
 	let shellRequestedForPathname: string | null = null
 	let shellUnauthorized = false
-	let shareGrant: PackageShareGrantLoaderView | null = null
-	let shareBusy = false
-	let shareMessage: string | null = null
 	let shellNotFound = false
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
@@ -188,9 +179,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		readmeImageBaseHref = snapshot.imageBaseHref
 		username = snapshot.username
 		kodyId = snapshot.kodyId
-		shareGrant = snapshot.shareGrant ?? null
-		shareBusy = false
-		shareMessage = null
 		reportState = 'idle'
 		reportMessage = null
 		shellUnauthorized = false
@@ -268,7 +256,6 @@ export function CommunityDetailRoute(handle: Handle) {
 					isPrivate:
 						payload.isPrivate ?? payload.ownerPackage?.isPrivate ?? false,
 					invocationUrlOrigin: payload.invocationUrlOrigin,
-					shareGrant: payload.shareGrant ?? null,
 				},
 				ref.pathname,
 			)
@@ -319,61 +306,6 @@ export function CommunityDetailRoute(handle: Handle) {
 				error instanceof Error ? error.message : 'Unable to submit report.'
 			handle.update()
 		}
-	}
-
-	async function submitShareAccept(trustLevel: 'follow' | 'pin') {
-		if (!shareGrant || shareBusy) return
-		const pathname = readRouterPathname(handle)
-		shareBusy = true
-		shareMessage = null
-		handle.update()
-		const result = await postPackageShareAction({
-			intent: 'accept',
-			ownerUsername: username,
-			kodyId,
-			grantId: shareGrant.id,
-			trustLevel,
-		})
-		if (readRouterPathname(handle) !== pathname) return
-		shareBusy = false
-		if (result.status === 'unauthorized') {
-			window.location.assign('/login')
-			return
-		}
-		if (result.status === 'error') {
-			shareMessage = result.message
-			handle.update()
-			return
-		}
-		shareGrant = result.grant
-		handle.update()
-	}
-
-	async function submitShareLeave() {
-		if (!shareGrant || shareBusy) return
-		const pathname = readRouterPathname(handle)
-		shareBusy = true
-		shareMessage = null
-		handle.update()
-		const result = await postPackageShareAction({
-			intent: 'leave',
-			ownerUsername: username,
-			kodyId,
-			grantId: shareGrant.id,
-		})
-		if (readRouterPathname(handle) !== pathname) return
-		shareBusy = false
-		if (result.status === 'unauthorized') {
-			window.location.assign('/login')
-			return
-		}
-		if (result.status === 'error') {
-			shareMessage = result.message
-			handle.update()
-			return
-		}
-		shareGrant = result.grant.status === 'left' ? null : result.grant
-		handle.update()
 	}
 
 	async function submitFeature(nextFeatured: boolean) {
@@ -510,12 +442,11 @@ export function CommunityDetailRoute(handle: Handle) {
 			return
 		}
 		const loginLink = control instanceof HTMLAnchorElement
-		const official = control.getAttribute('data-official') === 'true'
 		const listingId = control.getAttribute('data-package-title-listing')
 		const decision = decideCommunityInstallClick({
 			installState: loginLink ? 'idle' : installState,
 			alreadyInstalled: loginLink ? false : installOutcome != null,
-			requiresConfirm: !loginLink && !official,
+			requiresConfirm: !loginLink,
 			confirmed: isCommunityInstallConfirmArmed({
 				confirmed: installConfirm.doubleCheck,
 				confirmedListingId: installConfirmListingId,
@@ -709,21 +640,6 @@ export function CommunityDetailRoute(handle: Handle) {
 				]}
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
-
-				{showShellReady &&
-				isFeatureFlagEnabled(
-					readAppSession(handle)?.session,
-					packageShareGrantsFlagKey,
-				)
-					? renderPackageShareBanners({
-							shareGrant,
-							loggedIn,
-							busy: shareBusy,
-							message: shareMessage,
-							onAccept: (trustLevel) => void submitShareAccept(trustLevel),
-							onLeave: () => void submitShareLeave(),
-						})
-					: null}
 
 				{renderShellStatus(shellStatusMessage)}
 

@@ -31,14 +31,12 @@ import {
 } from '#client/routes/docs-shell.tsx'
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
-import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
 import { renderPackageSkillsFlagCallout } from '#client/routes/package-skills-flag-callout.tsx'
 import { renderMcpEventsFlagCallout } from '#client/routes/mcp-events-flag-callout.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import {
 	mcpSkillsExtensionFlagKey,
 	mcpEventsExtensionFlagKey,
-	packageShareGrantsFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import { extractDocWatchMarkdown } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
@@ -318,15 +316,6 @@ export function DocDetailRoute(handle: Handle) {
 						</p>
 					</header>
 
-					{doc.slug === 'package-sharing'
-						? renderPackageSharingFlagCallout({
-								loggedIn: Boolean(session),
-								enabled: isFeatureFlagEnabled(
-									session,
-									packageShareGrantsFlagKey,
-								),
-							})
-						: null}
 					{doc.slug === 'mcp-events'
 						? renderMcpEventsFlagCallout({
 								loggedIn: Boolean(session),

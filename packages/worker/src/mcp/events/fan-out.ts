@@ -4,7 +4,7 @@ import { mcpEventsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
-	reachedPackage,
+	packageResource,
 	type EffectivePermissions,
 } from '#worker/authorization/authorize.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
@@ -201,7 +201,10 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 		const decision = checkPermission(
 			access,
 			'package:read',
-			reachedPackage(access.orgId, { id: message.source.packageId }),
+			packageResource({
+				id: message.source.packageId,
+				userId: message.userId,
+			}),
 		)
 		if (decision.allowed) {
 			allowed.push(subscription)

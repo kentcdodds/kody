@@ -104,21 +104,18 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	})
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
-	// Official `@kody/*` listings skip the acknowledgement gate.
+	// `@kody/*` listings are ordinary community packages from the `@kody` org.
 	mockModule.getCommunityListingById.mockResolvedValue(
-		listing('listing-official', '@kody/notion-mcp'),
+		listing('listing-kody', '@kody/notion-mcp'),
 	)
 	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
-	mockModule.installCommunityListing.mockResolvedValue(installed('notion-mcp'))
-	const official = await post({})
-	expect(official.status).toBe(200)
-	expect(official.payload).toMatchObject({
-		ok: true,
-		status: 'installed',
-		targetName: '@userb/notion-mcp',
+	const kodyOrgListing = await post({})
+	expect(kodyOrgListing.status).toBe(409)
+	expect(kodyOrgListing.payload).toMatchObject({
+		ok: false,
+		requiresAcknowledgement: true,
 	})
-	expect(mockModule.installCommunityListing).toHaveBeenCalledTimes(1)
-	mockModule.installCommunityListing.mockClear()
+	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
 	mockModule.getCommunityListingById.mockResolvedValue(
 		listing('listing-1', '@someone/demo'),

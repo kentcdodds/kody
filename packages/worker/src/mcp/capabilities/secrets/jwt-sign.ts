@@ -11,7 +11,6 @@ import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import {
 	decodeHmacKeyMaterial,
 	extractSecretMaterial,
@@ -106,13 +105,7 @@ export const jwtSignCapability = defineDomainCapability(
 			const secretName = referenced.name
 			const secretScope =
 				args.private_key_secret_scope ?? referenced.scope ?? undefined
-			const secretUserId = authorityPackageId
-				? await resolvePackageStorageOwner({
-						db: ctx.env.APP_DB,
-						caller: user.userId,
-						packageId: authorityPackageId,
-					})
-				: personalOrgId(user.userId)
+			const secretUserId = personalOrgId(user.userId)
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: secretUserId,
@@ -142,8 +135,6 @@ export const jwtSignCapability = defineDomainCapability(
 				authorityPackageId,
 				secretName,
 				resolved,
-				allowImplicitUserSecretAccess:
-					secretUserId === personalOrgId(user.userId),
 			})
 
 			const secretMaterial = extractSecretMaterial({
