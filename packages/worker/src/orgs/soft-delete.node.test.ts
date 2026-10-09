@@ -8,6 +8,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import {
 	OrgRestoreWindowExpiredError,
 	UserDeleteBlockedSoleOwnerError,
+	assertActorCanRestoreSoftDeletedOrg,
 	assertUserDeleteNotBlockedAsSoleOwner,
 	restoreOrg,
 	softDeleteOrg,
@@ -105,6 +106,41 @@ test('soft delete and restore org within the restore window', async () => {
 		'org.deleted',
 		'org.restored',
 	])
+})
+
+test('only a deletion-generation owner can restore a soft-deleted org', async () => {
+	const { env, appDb } = await createHarness()
+	const orgId = 'org-restore-auth'
+	const ownerId = 'owner-restore-1'
+	const memberId = 'member-restore-1'
+	await seedOrg(appDb, orgId, 'restore-auth')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?), (?, ?, 'member', ?)`,
+		)
+		.bind(orgId, ownerId, ts, orgId, memberId, ts)
+		.run()
+	await softDeleteOrg({
+		env,
+		orgId,
+		actorUserId: ownerId,
+		now,
+	})
+	await expect(
+		assertActorCanRestoreSoftDeletedOrg({
+			db: appDb,
+			orgId,
+			actorUserId: memberId,
+		}),
+	).rejects.toThrow('org_restore_forbidden')
+	const allowed = await assertActorCanRestoreSoftDeletedOrg({
+		db: appDb,
+		orgId,
+		actorUserId: ownerId,
+	})
+	expect(allowed.deletedAt).toBeTruthy()
 })
 
 test('org restore does not revive memberships for soft-deleted users', async () => {

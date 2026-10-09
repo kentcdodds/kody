@@ -234,6 +234,36 @@ export async function softDeleteOrg(input: {
 	}
 }
 
+/**
+ * Soft-deleted orgs cannot be bound as the request org (memberships are
+ * tombstoned). Restore authorization checks that the actor was an Owner of
+ * the org at the deletion generation instead.
+ */
+export async function assertActorCanRestoreSoftDeletedOrg(input: {
+	db: D1Database
+	orgId: string
+	actorUserId: string
+}): Promise<{ deletedAt: string }> {
+	const row = await input.db
+		.prepare(
+			`SELECT o.deleted_at AS deleted_at
+			 FROM orgs o
+			 INNER JOIN org_memberships m
+			   ON m.org_id = o.id
+			  AND m.user_id = ?
+			  AND m.role = 'owner'
+			  AND m.deleted_at = o.deleted_at
+			 WHERE o.id = ?
+			   AND o.deleted_at IS NOT NULL`,
+		)
+		.bind(input.actorUserId, input.orgId)
+		.first<{ deleted_at: string }>()
+	if (!row?.deleted_at) {
+		throw new Error('org_restore_forbidden')
+	}
+	return { deletedAt: row.deleted_at }
+}
+
 export async function restoreOrg(input: {
 	env: Env
 	orgId: string

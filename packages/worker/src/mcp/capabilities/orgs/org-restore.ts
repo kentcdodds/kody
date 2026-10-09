@@ -2,17 +2,15 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	requireMcpRequest,
-	requireMcpUser,
-} from '#mcp/capabilities/meta/require-user.ts'
-import { restoreOrg } from '#worker/orgs/soft-delete.ts'
+	assertActorCanRestoreSoftDeletedOrg,
+	OrgRestoreWindowExpiredError,
+	restoreOrg,
+} from '#worker/orgs/soft-delete.ts'
 
 const inputSchema = z.object({
-	orgId: z
-		.string()
-		.min(1)
-		.describe('Organization id to restore. Must match the bound request org.'),
+	orgId: z.string().min(1).describe('Soft-deleted organization id to restore.'),
 })
 
 const outputSchema = z.object({
@@ -24,25 +22,46 @@ export const orgRestoreCapability = defineDomainCapability(
 	{
 		name: 'orgRestore',
 		description:
-			'Restore a soft-deleted organization within the 30-day retention window.',
+			'Restore a soft-deleted organization within the 30-day retention window. Authorization uses the actor’s Owner membership from the deletion generation because the org cannot be bound while tombstoned.',
 		keywords: ['org', 'restore', 'undelete', 'team'],
-		orgPermission: 'org:delete',
+		// Soft-deleted orgs are not bindable; authorize in the handler.
+		orgPermission: 'none',
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const request = requireMcpRequest(ctx.callerContext)
-			if (args.orgId !== request.org.id) {
-				throw new McpCallerError(
-					'orgId must match the organization bound to this request.',
-				)
+			try {
+				await assertActorCanRestoreSoftDeletedOrg({
+					db: ctx.env.APP_DB,
+					orgId: args.orgId,
+					actorUserId: user.userId,
+				})
+			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message === 'org_restore_forbidden'
+				) {
+					throw new McpCallerError(
+						'Only an Owner of the soft-deleted organization can restore it.',
+					)
+				}
+				throw error
 			}
-			await restoreOrg({
-				env: ctx.env,
-				orgId: request.org.id,
-				actorUserId: user.userId,
-			})
-			return { orgId: request.org.id }
+			try {
+				await restoreOrg({
+					env: ctx.env,
+					orgId: args.orgId,
+					actorUserId: user.userId,
+				})
+			} catch (error) {
+				if (error instanceof OrgRestoreWindowExpiredError) {
+					throw new McpCallerError(
+						'The 30-day restore window for this organization has expired.',
+					)
+				}
+				throw error
+			}
+			return { orgId: args.orgId }
 		},
 	},
 )
