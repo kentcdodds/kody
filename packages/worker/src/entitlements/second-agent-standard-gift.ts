@@ -155,6 +155,7 @@ export async function evaluateSecondAgentStandardGift(input: {
 				     second_agent_standard_gift_expires_at = ?,
 				     updated_at = ?`,
 		orgValues: [grantedAt, write.expiresAt, updatedAt],
+		orgWhereSuffix: ' AND second_agent_standard_gift_granted_at IS NULL',
 	})
 	const updated = batchResult[0]
 

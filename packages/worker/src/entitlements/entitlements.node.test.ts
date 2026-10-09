@@ -115,6 +115,13 @@ function createEntitlementsTestDb(
 				: null
 		}
 		if (query.includes('SELECT 1 AS present FROM users')) {
+			if (query.includes('email = ?')) {
+				return users.some(
+					(row) => row.email === params[0] && row.stable_user_id === params[1],
+				)
+					? { present: 1 }
+					: null
+			}
 			return byId(String(params[0])) ? { present: 1 } : null
 		}
 		const table = countedTables.find((name) => query.includes(`FROM ${name}`))
@@ -396,6 +403,21 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	).rejects.toThrow('Stored plan is not a registered plan name.')
 })
 
+test('getUserPlan ignores org billing when email does not match the stable user id', async () => {
+	const userId = testStableUserIdFromEmail(plannedEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
+		orgs: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],
+	})
+	expect(
+		await getUserPlan(db, {
+			userId,
+			email: 'attacker@example.com',
+		}),
+	).toBe('free')
+	expect(await getUserPlan(db, { userId, email: plannedEmail })).toBe('max')
+})
+
 test('getCachedUserPlan caches per db binding and never caches failures', async () => {
 	const { userId, users, db, queries } = await createPlannedUserDb('pro')
 	const context = { userId, email: plannedEmail }
@@ -403,8 +425,10 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 	expect(await getCachedUserPlan(db, context)).toBe('pro')
 	expect(await getCachedUserPlan(db, context)).toBe('pro')
 	expect(
-		queries.filter((query) =>
-			query.sql.includes('email = ? AND stable_user_id = ?'),
+		queries.filter(
+			(query) =>
+				query.sql.includes('email = ? AND stable_user_id = ?') &&
+				!query.sql.includes('SELECT 1 AS present'),
 		),
 	).toHaveLength(1)
 
@@ -515,8 +539,10 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 			},
 		})
 	const planQueries = () =>
-		queries.filter((query) =>
-			query.sql.includes('email = ? AND stable_user_id = ?'),
+		queries.filter(
+			(query) =>
+				query.sql.includes('email = ? AND stable_user_id = ?') &&
+				!query.sql.includes('SELECT 1 AS present'),
 		)
 
 	await check()

@@ -7,9 +7,10 @@ export function preparePersonalOrgBillingUpdate(
 	stableUserId: string,
 	setClause: string,
 	values: ReadonlyArray<unknown>,
+	orgWhereSuffix = '',
 ) {
 	return db
-		.prepare(`UPDATE orgs SET ${setClause} WHERE id = ?`)
+		.prepare(`UPDATE orgs SET ${setClause} WHERE id = ?${orgWhereSuffix}`)
 		.bind(...values, stableUserId)
 }
 
@@ -19,6 +20,7 @@ export async function batchUsersAndPersonalOrgBillingUpdate(input: {
 	usersStatement: D1PreparedStatement
 	orgSetClause: string
 	orgValues: ReadonlyArray<unknown>
+	orgWhereSuffix?: string
 }) {
 	return await input.db.batch([
 		input.usersStatement,
@@ -27,6 +29,7 @@ export async function batchUsersAndPersonalOrgBillingUpdate(input: {
 			input.stableUserId,
 			input.orgSetClause,
 			input.orgValues,
+			input.orgWhereSuffix ?? '',
 		),
 	])
 }

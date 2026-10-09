@@ -270,20 +270,41 @@ async function loadEntitlementRowForStableUserId(
 	input: { stableUserId: string; email: string | null | undefined },
 ): Promise<UserEntitlementRow | null> {
 	const columns = userEntitlementColumnsSql()
+	const email = input.email?.trim().toLowerCase()
+
+	if (email) {
+		const verifiedUser = await db
+			.prepare(
+				`SELECT 1 AS present FROM users
+				 WHERE email = ? AND stable_user_id = ? AND deleting_at IS NULL`,
+			)
+			.bind(email, input.stableUserId)
+			.first<{ present: number }>()
+		if (!verifiedUser) return null
+
+		const orgRow = await db
+			.prepare(`SELECT ${columns} FROM orgs WHERE id = ?`)
+			.bind(input.stableUserId)
+			.first<UserEntitlementRow>()
+		if (orgRow) return orgRow
+
+		return await db
+			.prepare(
+				`SELECT ${columns} FROM users WHERE email = ? AND stable_user_id = ?`,
+			)
+			.bind(email, input.stableUserId)
+			.first<UserEntitlementRow>()
+	}
+
 	const orgRow = await db
 		.prepare(`SELECT ${columns} FROM orgs WHERE id = ?`)
 		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
 	if (orgRow) return orgRow
 
-	const email = input.email?.trim().toLowerCase()
 	return await db
-		.prepare(
-			email
-				? `SELECT ${columns} FROM users WHERE email = ? AND stable_user_id = ?`
-				: `SELECT ${columns} FROM users WHERE stable_user_id = ?`,
-		)
-		.bind(...(email ? [email, input.stableUserId] : [input.stableUserId]))
+		.prepare(`SELECT ${columns} FROM users WHERE stable_user_id = ?`)
+		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
 }
 

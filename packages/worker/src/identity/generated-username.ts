@@ -13,6 +13,29 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 }
 
 /**
+ * Whether a username is already claimed on `users`, a live or retired
+ * `handles` row, or an org slug (personal org slugs mirror usernames).
+ */
+export async function isUsernameClaimedInIdentity(
+	db: D1Database,
+	username: string,
+) {
+	const normalized = normalizeUsername(username)
+	if (!normalized) return false
+	if (await userExistsByUsername(db, normalized)) return true
+	const handleRow = await db
+		.prepare(`SELECT 1 AS present FROM handles WHERE handle = ?`)
+		.bind(normalized)
+		.first<{ present: number }>()
+	if (handleRow) return true
+	const orgSlug = await db
+		.prepare(`SELECT 1 AS present FROM orgs WHERE slug = ?`)
+		.bind(normalized)
+		.first<{ present: number }>()
+	return Boolean(orgSlug)
+}
+
+/**
  * Find an available username starting from a preferred base (for example a
  * provider handle or an email local part). Numeric suffixes are used only when
  * the base itself is claimable but taken — a reserved base with substring
@@ -38,7 +61,7 @@ export async function getAvailableUsernameFromBase(
 	if (
 		normalizedBase &&
 		!baseError &&
-		!(await userExistsByUsername(db, normalizedBase))
+		!(await isUsernameClaimedInIdentity(db, normalizedBase))
 	) {
 		return normalizedBase
 	}
@@ -49,7 +72,7 @@ export async function getAvailableUsernameFromBase(
 			const candidate = `${prefix}-${suffix}`
 			if (
 				!(await getEffectiveUsernameValidationError(candidate, env)) &&
-				!(await userExistsByUsername(db, candidate))
+				!(await isUsernameClaimedInIdentity(db, candidate))
 			) {
 				return candidate
 			}
@@ -67,7 +90,7 @@ export async function getAvailableUsernameFromBase(
 		const candidate = `n${random}`
 		if (
 			!(await getEffectiveUsernameValidationError(candidate, env)) &&
-			!(await userExistsByUsername(db, candidate))
+			!(await isUsernameClaimedInIdentity(db, candidate))
 		) {
 			return candidate
 		}
