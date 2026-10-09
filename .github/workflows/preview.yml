@@ -643,7 +643,10 @@ jobs:
           exit 1
 
       # Each preview owns its Vectorize index, so builtin capability vectors are
-      # written here the same way the production deploy writes them.
+      # written here. --force because APP_DB embed fingerprints can outlive the
+      # index (an existing preview's first deploy onto its own index, or a
+      # deploy that failed between ensure and this step) and would skip the
+      # upserts.
       - name: 🧭 Reindex builtin capability vectors (preview Vectorize)
         shell: bash
         env:
@@ -652,7 +655,7 @@ jobs:
           set -euo pipefail
           CAPABILITY_REINDEX_SECRET="$(cat "$RUNNER_TEMP/capability-reindex-secret")"
           export CAPABILITY_REINDEX_SECRET
-          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities
+          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities --force
 
       - name: 🩺 Healthcheck platform worker (preview)
         shell: bash

@@ -38,13 +38,23 @@ type VectorizeClient = {
 	now?: () => number
 }
 
-async function listVectorizeIndexNames(client: VectorizeClient) {
-	const response = await cloudflareApiRequest<Array<VectorizeIndexInfo>>({
-		...client,
-		pathname: '/vectorize/v2/indexes',
-		method: 'GET',
-	})
-	return new Set((response.result ?? []).map((index) => index.name))
+/**
+ * Look the index up by name rather than scanning the list endpoint, which
+ * pages once the account holds many preview indexes.
+ */
+async function vectorizeIndexExists(client: VectorizeClient, name: string) {
+	try {
+		const response = await cloudflareApiRequest<VectorizeIndexInfo>({
+			...client,
+			pathname: `/vectorize/v2/indexes/${encodeURIComponent(name)}`,
+			method: 'GET',
+		})
+		return response.result?.name === name
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (/Cloudflare API request failed \(404\)/.test(message)) return false
+		throw error
+	}
 }
 
 async function ensureVectorizeMetadataIndexes(
@@ -84,8 +94,7 @@ export async function ensureVectorizeIndex(
 		return { name: input.name }
 	}
 	try {
-		const names = await listVectorizeIndexNames(input)
-		if (names.has(input.name)) {
+		if (await vectorizeIndexExists(input, input.name)) {
 			console.error(`Vectorize index exists: ${input.name}`)
 		} else {
 			await cloudflareApiRequest({
@@ -119,7 +128,7 @@ export async function ensureVectorizeIndex(
 
 /**
  * Delete a Vectorize index. An index that is already gone counts as success,
- * and the post-delete list is the source of truth for whether it is gone.
+ * and the post-delete lookup is the source of truth for whether it is gone.
  */
 export async function deleteVectorizeIndex(
 	input: VectorizeClient & { name: string },
@@ -129,7 +138,7 @@ export async function deleteVectorizeIndex(
 		return
 	}
 	try {
-		if (!(await listVectorizeIndexNames(input)).has(input.name)) {
+		if (!(await vectorizeIndexExists(input, input.name))) {
 			console.error(`Vectorize index already deleted: ${input.name}`)
 			return
 		}
@@ -143,8 +152,8 @@ export async function deleteVectorizeIndex(
 		} catch (error) {
 			deleteError = error
 		}
-		if ((await listVectorizeIndexNames(input)).has(input.name)) {
-			throw deleteError ?? new Error('index still listed after delete')
+		if (await vectorizeIndexExists(input, input.name)) {
+			throw deleteError ?? new Error('index still exists after delete')
 		}
 		console.error(`Deleted Vectorize index: ${input.name}`)
 	} catch (error) {

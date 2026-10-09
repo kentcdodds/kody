@@ -19,12 +19,13 @@ setup pages.
 - Vectorize index (`CAPABILITY_VECTOR_INDEX`): `<preview-worker-name>-vectors`
   (384-dimension cosine with the `kind`, `userId`, `status`, `category`, and
   `domain` metadata indexes). After the origin is healthy, the workflow runs
-  `tools/ci/reindex-capabilities.ts --phases capabilities` with a per-deploy
-  random `CAPABILITY_REINDEX_SECRET` so builtin capability search works on the
-  fresh index. A per-preview index (instead of a namespace prefix inside a
-  shared index) keeps production namespace logic unchanged and lets cleanup
-  delete every preview vector in one call; Cloudflare allows 50,000 indexes per
-  account.
+  `tools/ci/reindex-capabilities.ts --phases capabilities --force` with a
+  per-deploy random `CAPABILITY_REINDEX_SECRET` so builtin capability search
+  works on the fresh index (`--force` because APP_DB embed fingerprints can
+  outlive the index they described). A per-preview index (instead of a namespace
+  prefix inside a shared index) keeps production namespace logic unchanged and
+  lets cleanup delete every preview vector in one call; Cloudflare allows 50,000
+  indexes per account.
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - KV namespace (published source snapshots / bundles):
   `<preview-worker-name>-bundle-artifacts-kv`

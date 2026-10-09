@@ -9,7 +9,9 @@ import {
 
 type FakeIndex = { config: unknown; metadataIndexes: Array<string> }
 
-function fakeVectorizeApi(options: { ignoreDeletes?: boolean } = {}) {
+function fakeVectorizeApi(
+	options: { ignoreDeletes?: boolean; lookupStatus?: number } = {},
+) {
 	const indexes = new Map<string, FakeIndex>()
 	const requests: Array<string> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
@@ -19,15 +21,21 @@ function fakeVectorizeApi(options: { ignoreDeletes?: boolean } = {}) {
 		const path = url.pathname.replace(/^.*\/vectorize\/v2\/indexes/, '')
 		requests.push(`${method} ${path || '/'}`)
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined
-		if (path === '' && method === 'GET') {
-			return ok([...indexes.keys()].map((name) => ({ name })))
-		}
 		if (path === '' && method === 'POST') {
 			indexes.set(body.name, { config: body.config, metadataIndexes: [] })
 			return ok({ name: body.name })
 		}
 		const match = /^\/([^/]+)(\/.*)?$/.exec(path)
 		const name = decodeURIComponent(match?.[1] ?? '')
+		if (options.lookupStatus) {
+			return Response.json(
+				{
+					success: false,
+					errors: [{ code: 10000, message: 'Authentication error' }],
+				},
+				{ status: options.lookupStatus },
+			)
+		}
 		const index = indexes.get(name)
 		if (!index) {
 			return Response.json(
@@ -47,6 +55,7 @@ function fakeVectorizeApi(options: { ignoreDeletes?: boolean } = {}) {
 			index.metadataIndexes.push(body.propertyName)
 			return ok({})
 		}
+		if (!match?.[2] && method === 'GET') return ok({ name })
 		if (!match?.[2] && method === 'DELETE') {
 			if (!options.ignoreDeletes) indexes.delete(name)
 			return ok({})
@@ -83,7 +92,7 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 		name: 'kody-pr-7-vectors',
 	})
 	expect(api.requests).toEqual([
-		'GET /',
+		'GET /kody-pr-7-vectors',
 		'GET /kody-pr-7-vectors/metadata_index/list',
 		'POST /kody-pr-7-vectors/metadata_index/create',
 		'POST /kody-pr-7-vectors/metadata_index/create',
@@ -101,7 +110,7 @@ test('deleteVectorizeIndex treats a missing index as success and fails loudly wh
 		...client(api.fetcher),
 		name: 'kody-pr-8-vectors',
 	})
-	expect(api.requests).toEqual(['GET /'])
+	expect(api.requests).toEqual(['GET /kody-pr-8-vectors'])
 
 	await ensureVectorizeIndex({
 		...client(api.fetcher),
@@ -124,8 +133,17 @@ test('deleteVectorizeIndex treats a missing index as success and fails loudly wh
 			name: 'kody-pr-9-vectors',
 		}),
 	).rejects.toThrow(
-		'Failed to delete Vectorize index kody-pr-9-vectors: index still listed after delete',
+		'Failed to delete Vectorize index kody-pr-9-vectors: index still exists after delete',
 	)
+
+	const forbidden = fakeVectorizeApi({ lookupStatus: 403 })
+	await expect(
+		deleteVectorizeIndex({
+			...client(forbidden.fetcher),
+			name: 'kody-pr-9-vectors',
+		}),
+	).rejects.toThrow('Cloudflare API request failed (403)')
+	expect(forbidden.requests).not.toContain('DELETE /kody-pr-9-vectors')
 })
 
 test('dry-run ensure and delete make no Cloudflare requests', async () => {

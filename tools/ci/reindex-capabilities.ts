@@ -77,6 +77,12 @@ export function parseReindexArgs(argv: ReadonlyArray<string>) {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index]
 		const value = argv[index + 1] ?? ''
+		if (
+			(arg === '--url' || arg === '--phases' || arg === '--max-sweeps') &&
+			(!value || value.startsWith('-'))
+		) {
+			fail(`Missing value for ${arg}.`)
+		}
 		switch (arg) {
 			case '--url':
 				baseUrl = value
@@ -118,13 +124,11 @@ export function parseReindexArgs(argv: ReadonlyArray<string>) {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
+	const args = parseReindexArgs(process.argv.slice(2))
 	const secret = process.env.CAPABILITY_REINDEX_SECRET?.trim()
 	if (!secret) fail('Missing CAPABILITY_REINDEX_SECRET.')
 	try {
-		await runCapabilityReindex({
-			...parseReindexArgs(process.argv.slice(2)),
-			secret,
-		})
+		await runCapabilityReindex({ ...args, secret })
 	} catch (error) {
 		fail(error instanceof Error ? error.message : String(error))
 	}
