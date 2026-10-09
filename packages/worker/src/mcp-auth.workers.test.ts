@@ -520,6 +520,9 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		storageContext: null,
 		user: { userId: 'user' },
 	})
+	// Legacy agent props persist in Durable Object storage; derived ids do not.
+	expect(receivedProps).not.toHaveProperty('actor')
+	expect(receivedProps).not.toHaveProperty('owner')
 	expect(userSelects).toHaveLength(1)
 	expect(userSelects[0]).toContain('email_verified_at')
 	expect(userSelects[0]).toContain('suspended_at')

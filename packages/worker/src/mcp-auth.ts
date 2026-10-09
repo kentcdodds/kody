@@ -18,7 +18,11 @@ import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
-import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
+import {
+	createMcpCallerContext,
+	toMcpCallerContextWire,
+	type McpServerProps,
+} from './mcp/context.ts'
 import type * as StatelessLane from './mcp/stateless-lane.ts'
 import {
 	classifyMcpProtocolRequest,
@@ -471,13 +475,13 @@ export async function handleMcpRequest({
 
 	const connectionProfileName =
 		readConnectionProfileNameFromGrantProps(grantProps)
-	const props: OAuthContextProps = createMcpCallerContext({
+	const callerContext = createMcpCallerContext({
 		baseUrl: origin,
 		executionOrigin: 'interactive',
 		user: mcpUser,
 		connectionProfileName,
 	})
-	context.props = props
+	context.props = toMcpCallerContextWire(callerContext)
 
 	// Lane classification: 2025-era ("legacy") requests keep the sessionful
 	// Durable Object McpAgent lane; 2026-07-28 envelope requests are served
@@ -556,7 +560,7 @@ export async function handleMcpRequest({
 							request,
 							env,
 							ctx,
-							callerContext: props,
+							callerContext,
 							oauthClientId: inboundClientId || null,
 							...(classification.parsedBody === undefined
 								? {}

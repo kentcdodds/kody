@@ -13,7 +13,8 @@ import {
 	type McpUserContext,
 } from '@kody-internal/shared/chat.ts'
 
-export type McpServerProps = McpCallerContext
+/** Legacy agent props persist in Durable Object storage, so they stay wire-shaped. */
+export type McpServerProps = McpCallerContextWire
 
 export function createMcpCallerContext(input: {
 	baseUrl: string
