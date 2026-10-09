@@ -58,6 +58,24 @@ Saved packages keep `--local` and a static `kody:@…` import.
   ([ADR 0056](../../../docs/contributing/decisions/0056-cli-credential-bootstrap.md)).
   `whoami` works. Use MCP `search`, or a token with `search:read`.
 - The module imports `kody:@…`. Keep `--local`. Default bootstrap includes
-  `package:execute` so package-graph can resolve those imports.
+  `package:execute` so package-graph can resolve those imports. Package-graph
+  does not require `integration:read`.
+- ship-pr `./tick`, `./reply-review`, and `./merge` need one more scope.
+  `@kentcdodds/github` calls `createAuthenticatedFetch` → `integrationGet`
+  (`integration:read`). Pass it on bootstrap. Do not widen the default set.
+
+```json
+{
+	"operationId": "cliCredentialBootstrap",
+	"params": {
+		"lifetime": "short",
+		"scopes": ["org:execute", "org:read", "package:execute", "integration:read"]
+	}
+}
+```
+
+A merge that escalates to `workflowRunList` also needs `job:read`. Refreshing an
+expired GitHub token needs `integration:use`.
+
 - The CLI asks for a login, a bootstrap, or a token. Priority is `--token` /
   `KODY_API_TOKEN`, then the stored bootstrap token, then `kody login`.

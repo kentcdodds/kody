@@ -23,6 +23,25 @@ Pass `risk` on every tick. User policy overrides.
 Credential setup is
 [prefer-local-cli-execute](../prefer-local-cli-execute/SKILL.md).
 
+`./tick`, `./reply-review`, and `./merge` import `@kentcdodds/github`, which
+calls `createAuthenticatedFetch` → `integrationGet`. That surface requires
+`integration:read`. Package-graph itself only needs `package:execute`. Pass the
+scopes below to `cliCredentialBootstrap`. Do not widen the default bootstrap
+set.
+
+```json
+{
+	"operationId": "cliCredentialBootstrap",
+	"params": {
+		"lifetime": "short",
+		"scopes": ["org:execute", "org:read", "package:execute", "integration:read"]
+	}
+}
+```
+
+A merge that escalates to `workflowRunList` also needs `job:read`. Refreshing an
+expired GitHub token needs `integration:use`.
+
 ## Command
 
 The CLI rejects `--local` together with `--invoke`. Use the static import tick

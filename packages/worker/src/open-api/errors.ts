@@ -141,6 +141,9 @@ export function toApiError(error: unknown): ApiError {
 			message: error.message,
 			details: {
 				required_permission: error.permission,
+				// CLI `insufficient_scope` copy reads `required_scope`, not
+				// `required_permission`. Same value, both names.
+				required_scope: error.permission,
 				denial: error.code,
 			},
 			headers: {

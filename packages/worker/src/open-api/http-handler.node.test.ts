@@ -213,7 +213,10 @@ test('runs capability operations under the token scope and slides expiry', async
 	expect(denied.status).toBe(403)
 	expect(denied.body['error']).toMatchObject({
 		code: 'insufficient_scope',
-		details: { required_permission: 'secret:use' },
+		details: {
+			required_permission: 'secret:use',
+			required_scope: 'secret:use',
+		},
 	})
 
 	const usage = api.sqlite

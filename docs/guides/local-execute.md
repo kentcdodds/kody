@@ -93,6 +93,12 @@ on origin (or fail closed naming the secret) instead of sending them raw.
 - Bootstrap or redeem rejects a missing lifetime. Pass `--lifetime short|long`
   (or both idle/max flags). Call `cliCredentialBootstrap` again with
   `lifetime: "short"` if the code expired.
-- The module imports `kody:@…`. Keep `--local`.
+- The module imports `kody:@…`. Keep `--local`. Package-graph checks
+  `package:execute` only. ship-pr `./tick`, `./reply-review`, and `./merge` also
+  need `integration:read` because `@kentcdodds/github` calls
+  `createAuthenticatedFetch` → `integrationGet`. Pass that scope to
+  `cliCredentialBootstrap`. Do not add it to the default bootstrap set. A merge
+  that escalates to `workflowRunList` also needs `job:read`. Refreshing an
+  expired GitHub token needs `integration:use`.
 - Auth priority for `--local`: `--token` / `KODY_API_TOKEN`, then the stored
   bootstrap token, then `kody login`.
