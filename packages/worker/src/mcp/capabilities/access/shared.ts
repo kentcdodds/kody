@@ -1,5 +1,6 @@
 import {
 	grantPresets,
+	resolveGrantPermissions,
 	type GrantPreset,
 } from '@kody-internal/shared/grant-presets.ts'
 import {
@@ -16,7 +17,10 @@ import {
 	requireMcpRequest,
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
-import { authorize } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	computeEffectivePermissions,
+} from '#worker/authorization/authorize.ts'
 import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
@@ -175,6 +179,52 @@ export async function authorizeGrantTarget(
 		},
 	)
 	return { user, request, db: ctx.env.APP_DB }
+}
+
+/** Org:delete (and org:write) on an org grant would let a delegate elevate past Owner. */
+const ownerOnlyOrgGrantPermissions = new Set<OrgPermission>([
+	'org:delete',
+	'org:write',
+])
+
+/**
+ * Resolve grant permissions for a resource, and require an Owner when the list
+ * includes org:delete or org:write on an organization grant.
+ */
+export async function resolveAuthorizedGrantPermissions(
+	ctx: CapabilityContext,
+	input: {
+		resourceType: GrantResourceType
+		preset?: GrantPreset | null
+		permissions: Array<OrgPermission> | null
+	},
+) {
+	let permissions: ReadonlyArray<OrgPermission>
+	try {
+		permissions = resolveGrantPermissions({
+			resourceType: input.resourceType,
+			preset: input.preset ?? null,
+			permissions: input.permissions,
+		})
+	} catch (error) {
+		throw new McpCallerError(
+			error instanceof Error ? error.message : 'Invalid grant permissions.',
+		)
+	}
+	if (input.resourceType !== 'org') return permissions
+	const needsOwner = permissions.some((permission) =>
+		ownerOnlyOrgGrantPermissions.has(permission),
+	)
+	if (!needsOwner) return permissions
+	const request = requireMcpRequest(ctx.callerContext)
+	const access = await computeEffectivePermissions({
+		env: ctx.env,
+		request,
+	})
+	if (!access.isOwner) {
+		throw new McpCallerError('Only an Owner can grant org:write or org:delete.')
+	}
+	return permissions
 }
 
 export function readPermissionList(values: Array<string> | undefined) {

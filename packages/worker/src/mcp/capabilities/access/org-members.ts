@@ -141,7 +141,9 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 						throw new McpCallerError('Only an Owner can change the Owner role.')
 					}
 				}
-				if (membership.role === 'owner' && args.role !== 'owner') {
+				const demotingOwner =
+					membership.role === 'owner' && args.role !== 'owner'
+				if (demotingOwner) {
 					const owners = await liveOwnerCount(db, request.org.id)
 					if (owners <= 1) {
 						throw new McpCallerError('The last Owner cannot be demoted.')
@@ -159,6 +161,7 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 					orgId: request.org.id,
 					userId,
 					role: args.role,
+					protectLastOwner: demotingOwner,
 				})
 				if (seatRole(membership.role) !== seatRole(args.role)) {
 					await syncSeatsAfterMembershipChange({
@@ -207,7 +210,15 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 						'That person is not a member of this organization.',
 					)
 				}
-				if (membership.role === 'owner') {
+				const removingOwner = membership.role === 'owner'
+				if (removingOwner) {
+					const access = await computeEffectivePermissions({
+						env: ctx.env,
+						request,
+					})
+					if (!access.isOwner) {
+						throw new McpCallerError('Only an Owner can remove an Owner.')
+					}
 					const owners = await liveOwnerCount(db, request.org.id)
 					if (owners <= 1) {
 						throw new McpCallerError('The last Owner cannot be removed.')
@@ -217,6 +228,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 					db,
 					orgId: request.org.id,
 					userId,
+					protectLastOwner: removingOwner,
 				})
 				if (seatRole(membership.role)) {
 					await syncSeatsAfterMembershipChange({

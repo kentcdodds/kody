@@ -3,6 +3,10 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import {
 	getGrantById,
 	isGrantResourceType,
 	listGrants,
@@ -18,6 +22,7 @@ import {
 	readPermissionList,
 	requireOrgPermission,
 	requirePresetOrPermissions,
+	resolveAuthorizedGrantPermissions,
 	resolvePersonId,
 	resolveTeamId,
 	rethrowAccessError,
@@ -69,9 +74,9 @@ export const accessGrantCapability = defineDomainCapability(
 	capabilityDomainNames.access,
 	{
 		name: 'accessGrant',
-		orgPermission: 'member:write',
+		orgPermission: 'none',
 		description:
-			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Organization grants use resource_type org and this organization id. You need manage access on that resource.',
+			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Organization grants use resource_type org and this organization id. You need manage access on that resource (or member:write for an organization grant).',
 		keywords: ['grant', 'access', 'permission', 'share', 'preset'],
 		readOnly: false,
 		idempotent: true,
@@ -105,8 +110,16 @@ export const accessGrantCapability = defineDomainCapability(
 					preset: args.preset,
 					permissions,
 				})
-				const scoped = await requireOrgPermission(ctx, 'member:write')
-				await authorizeGrantTarget(ctx, args.resource_type, args.resource_id)
+				const scoped = await authorizeGrantTarget(
+					ctx,
+					args.resource_type,
+					args.resource_id,
+				)
+				const resolved = await resolveAuthorizedGrantPermissions(ctx, {
+					resourceType: args.resource_type,
+					preset: args.preset,
+					permissions,
+				})
 				const subject = await resolveGrantSubject(
 					scoped.db,
 					scoped.request.org.id,
@@ -124,7 +137,7 @@ export const accessGrantCapability = defineDomainCapability(
 					resourceId: args.resource_id,
 					subject,
 					preset: args.preset ?? null,
-					permissions: args.preset ? null : permissions,
+					permissions: args.preset ? null : [...resolved],
 					createdByUserId: scoped.user.userId,
 				})
 				const grant = await getGrantById({
@@ -145,9 +158,9 @@ export const accessRevokeCapability = defineDomainCapability(
 	capabilityDomainNames.access,
 	{
 		name: 'accessRevoke',
-		orgPermission: 'member:write',
+		orgPermission: 'none',
 		description:
-			'Revoke one live grant in the organization this request is bound to. You need manage access on that grant resource.',
+			'Revoke one live grant in the organization this request is bound to. You need manage access on that grant resource (or member:write for an organization grant).',
 		keywords: ['grant', 'revoke', 'access', 'remove'],
 		readOnly: false,
 		idempotent: false,
@@ -161,7 +174,9 @@ export const accessRevokeCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			try {
-				const { db, request } = await requireOrgPermission(ctx, 'member:write')
+				requireMcpUser(ctx.callerContext)
+				const request = requireMcpRequest(ctx.callerContext)
+				const db = ctx.env.APP_DB
 				const grant = await getGrantById({
 					db,
 					orgId: request.org.id,

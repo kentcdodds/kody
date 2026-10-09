@@ -53,7 +53,8 @@ synchronous, for callers that already hold the compiled permissions.
 A surface check without a resource (capability `orgPermission`, Open API
 `x-kody-permission`) passes when the permission is held at org level **or on any
 resource grant** in the org. A check with a resource requires that resource.
-Profiles and the signed-in step are the other denials that can fire.
+Personal-org Owners still hold every permission, so steps 2 to 4 never deny for
+them. Profiles and the signed-in step are the other denials that can fire.
 
 ### Checking many resources
 

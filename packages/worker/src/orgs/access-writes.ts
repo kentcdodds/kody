@@ -27,12 +27,13 @@ async function runBatch(
 	statements: Array<{ run(): Promise<unknown> }>,
 ) {
 	if (typeof db.batch === 'function') {
-		await db.batch(statements as Array<D1PreparedStatement>)
-		return
+		return await db.batch(statements as Array<D1PreparedStatement>)
 	}
+	const results: Array<unknown> = []
 	for (const statement of statements) {
-		await statement.run()
+		results.push(await statement.run())
 	}
+	return results
 }
 
 function changesOf(result: unknown) {
@@ -203,13 +204,15 @@ export async function upsertGrant(input: {
 	const existing = await input.db
 		.prepare(
 			`SELECT id FROM grants
-			 WHERE resource_type = ?
+			 WHERE org_id = ?
+			   AND resource_type = ?
 			   AND resource_id = ?
 			   AND subject_type = ?
 			   AND subject_id = ?
 			   AND deleted_at IS NULL`,
 		)
 		.bind(
+			input.orgId,
 			input.resourceType,
 			input.resourceId,
 			input.subject.type,
@@ -224,9 +227,9 @@ export async function upsertGrant(input: {
 				.prepare(
 					`UPDATE grants
 					 SET preset = ?, updated_at = ?, created_by_user_id = ?
-					 WHERE id = ?`,
+					 WHERE id = ? AND org_id = ?`,
 				)
-				.bind(input.preset, now, input.createdByUserId, grantId),
+				.bind(input.preset, now, input.createdByUserId, grantId, input.orgId),
 			input.db
 				.prepare(`DELETE FROM grant_permissions WHERE grant_id = ?`)
 				.bind(grantId),
@@ -274,27 +277,24 @@ export async function softDeleteGrant(input: {
 	grantId: string
 }) {
 	const now = new Date().toISOString()
-	const deleteGrant = input.db
+	const existing = await input.db
 		.prepare(
-			`UPDATE grants
-			 SET deleted_at = ?, updated_at = ?
+			`SELECT id FROM grants
 			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
 		)
-		.bind(now, now, input.grantId, input.orgId)
-	const results = await (async () => {
-		if (typeof input.db.batch === 'function') {
-			return await input.db.batch([
-				deleteGrant,
-				bumpAccessEpochStatement(input.db, input.orgId),
-			])
-		}
-		const result = await deleteGrant.run()
-		await bumpAccessEpochStatement(input.db, input.orgId).run()
-		return [result]
-	})()
-	if (!changesOf(results[0])) {
-		throw new Error('Grant was not found in this org.')
-	}
+		.bind(input.grantId, input.orgId)
+		.first<{ id: string }>()
+	if (!existing) throw new Error('Grant was not found in this org.')
+	await runBatch(input.db, [
+		input.db
+			.prepare(
+				`UPDATE grants
+				 SET deleted_at = ?, updated_at = ?
+				 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(now, now, input.grantId, input.orgId),
+		bumpAccessEpochStatement(input.db, input.orgId),
+	])
 }
 
 /**
@@ -325,33 +325,81 @@ export async function updateOrgMemberRole(input: {
 	orgId: string
 	userId: string
 	role: OrgRole
+	/**
+	 * When demoting an Owner, fold the last-Owner guard into the UPDATE so two
+	 * concurrent demotions cannot both succeed and leave zero Owners.
+	 */
+	protectLastOwner?: boolean
 }) {
-	await runBatch(input.db, [
-		input.db
-			.prepare(
-				`UPDATE org_memberships
-				 SET role = ?
-				 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(input.role, input.orgId, input.userId),
+	const statement = input.protectLastOwner
+		? input.db
+				.prepare(
+					`UPDATE org_memberships
+					 SET role = ?
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL
+					   AND role = 'owner'
+					   AND (
+					     SELECT COUNT(*) FROM org_memberships
+					     WHERE org_id = ? AND role = 'owner' AND deleted_at IS NULL
+					   ) > 1`,
+				)
+				.bind(input.role, input.orgId, input.userId, input.orgId)
+		: input.db
+				.prepare(
+					`UPDATE org_memberships
+					 SET role = ?
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(input.role, input.orgId, input.userId)
+	const results = await runBatch(input.db, [
+		statement,
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (!changesOf(results[0])) {
+		throw new Error(
+			input.protectLastOwner
+				? 'The last Owner cannot be demoted.'
+				: 'That person is not a member of this organization.',
+		)
+	}
 }
 
 export async function softDeleteOrgMember(input: {
 	db: D1Database
 	orgId: string
 	userId: string
+	/**
+	 * When removing an Owner, fold the last-Owner guard into the UPDATE so two
+	 * concurrent removals cannot both succeed and leave zero Owners.
+	 */
+	protectLastOwner?: boolean
 }) {
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
-		input.db
-			.prepare(
-				`UPDATE org_memberships
-				 SET deleted_at = ?
-				 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(now, input.orgId, input.userId),
+	const membershipStatement = input.protectLastOwner
+		? input.db
+				.prepare(
+					`UPDATE org_memberships
+					 SET deleted_at = ?
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL
+					   AND role = 'owner'
+					   AND (
+					     SELECT COUNT(*) FROM org_memberships
+					     WHERE org_id = ? AND role = 'owner' AND deleted_at IS NULL
+					   ) > 1`,
+				)
+				.bind(now, input.orgId, input.userId, input.orgId)
+		: input.db
+				.prepare(
+					`UPDATE org_memberships
+					 SET deleted_at = ?
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(now, input.orgId, input.userId)
+	// One batch: membership + team/grant cleanup + epoch. Team/grant updates
+	// only match when the membership row is already soft-deleted, so a failed
+	// last-Owner guard (0 membership changes) cannot revoke grants alone.
+	const results = await runBatch(input.db, [
+		membershipStatement,
 		input.db
 			.prepare(
 				`UPDATE team_members
@@ -360,11 +408,36 @@ export async function softDeleteOrgMember(input: {
 				   AND deleted_at IS NULL
 				   AND team_id IN (
 				     SELECT id FROM teams WHERE org_id = ? AND deleted_at IS NULL
+				   )
+				   AND EXISTS (
+				     SELECT 1 FROM org_memberships
+				     WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL
 				   )`,
 			)
-			.bind(now, input.userId, input.orgId),
+			.bind(now, input.userId, input.orgId, input.orgId, input.userId),
+		input.db
+			.prepare(
+				`UPDATE grants
+				 SET deleted_at = ?, updated_at = ?
+				 WHERE org_id = ?
+				   AND subject_type = 'user'
+				   AND subject_id = ?
+				   AND deleted_at IS NULL
+				   AND EXISTS (
+				     SELECT 1 FROM org_memberships
+				     WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL
+				   )`,
+			)
+			.bind(now, now, input.orgId, input.userId, input.orgId, input.userId),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (!changesOf(results[0])) {
+		throw new Error(
+			input.protectLastOwner
+				? 'The last Owner cannot be removed.'
+				: 'That person is not a member of this organization.',
+		)
+	}
 }
 
 export async function createOrg(input: {
