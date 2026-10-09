@@ -65,7 +65,7 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the sample id and env e
 	const sampleOnly = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
-		} as Env,
+		} as unknown as Env,
 	})
 	expect(sampleOnly).toContain(videoId)
 	const docWatchIds = bundledDocWatchVideoIds()
@@ -76,7 +76,7 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the sample id and env e
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 			YOUTUBE_ALLOWED_VIDEO_IDS: extraVideoId,
-		} as Env,
+		} as unknown as Env,
 	})
 	expect(withExtra).toContain(extraVideoId)
 	expect(withExtra).toContain(videoId)
@@ -92,7 +92,7 @@ test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: playlistId,
 			YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
-		} as Env,
+		} as unknown as Env,
 		loadPlaylists: false,
 	})
 	expect(ids).toContain(videoId)
