@@ -26,3 +26,8 @@ The current positioning is “The agent cloud for your business.” It targets
 business teams and agencies with shared tools, organization ownership, and
 controlled access. Agency examples show delivery across client organizations.
 It makes no enterprise compliance or certification claims.
+
+The hero illustration uses Kody's existing lantern character as a reference.
+Three separate lantern-lit workspaces connect through a shared cloud, showing
+shared infrastructure with distinct team or client spaces. The generated PNG
+is stored locally in `assets/agent-cloud-lanterns.png` and includes transparency.
