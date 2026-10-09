@@ -820,13 +820,28 @@ export async function refreshStripePlanForOrg(input: {
 
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT stripe_price_id, ${userEntitlementColumnsSql()}
+		`SELECT stripe_customer_id, stripe_price_id, ${userEntitlementColumnsSql()}
 		 FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(orgId)
-		.first<UserEntitlementRow & { stripe_price_id: string | null }>()
+		.first<
+			UserEntitlementRow & {
+				stripe_customer_id: string | null
+				stripe_price_id: string | null
+			}
+		>()
 	if (!previous) {
 		throw new Error(`Cannot refresh Stripe plan: missing org ${orgId}.`)
+	}
+	// Null customer is allowed (link-then-refresh race). A different stored
+	// customer must not forgive usage or queue billing mail for this org.
+	if (
+		previous.stripe_customer_id != null &&
+		previous.stripe_customer_id !== input.customerId
+	) {
+		throw new Error(
+			`Cannot refresh Stripe plan: Stripe customer mismatch for org ${orgId}.`,
+		)
 	}
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
 	const resolved = resolveSubscriptionPlan(subscriptions, input.env)

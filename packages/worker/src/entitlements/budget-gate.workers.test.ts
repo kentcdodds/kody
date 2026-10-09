@@ -273,4 +273,13 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 	const third = await meter.getBudgetSpend({ month })
 	expect(third.users[orgId] ?? 0).toBe(0)
 	expect(third.users[memberB]).toBe(20_000)
+
+	// Stale overlapping snapshot with a lower total must not overwrite.
+	await meter.replaceBudgetSpendFromLedger({
+		month,
+		users: { [memberB]: 5_000 },
+		automation: 0,
+	})
+	const afterStale = await meter.getBudgetSpend({ month })
+	expect(afterStale.users[memberB]).toBe(20_000)
 })

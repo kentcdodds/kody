@@ -354,9 +354,10 @@ export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 
 /**
  * Idempotent org budget MTD sync from committed `credit_ledger_entries`
- * debits. Uses UserMeter `recomputeBudgetSpend` (MAX semantics) so a failed
- * post-debit write is repaired on the next settle without double-counting.
- * Source of truth is the ledger; attribution weights are overage-only.
+ * debits. Uses UserMeter `replaceBudgetSpendFromLedger` (absolute replace)
+ * so a failed post-debit write is repaired on the next settle without
+ * double-counting. Source of truth is the ledger; attribution weights are
+ * overage-only.
  */
 export async function syncOrgBudgetSpendFromCreditLedger(input: {
 	db: D1Database

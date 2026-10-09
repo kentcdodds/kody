@@ -7,6 +7,7 @@ import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
 	linkStripeCustomerFromCheckoutSessionForOrg,
+	refreshStripePlanForOrg,
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
@@ -551,5 +552,48 @@ test('team checkout links Stripe customer onto the team org, not the member pers
 	expect(await readUser(member.id, 'stripe_customer_id, stripe_plan')).toEqual({
 		stripe_customer_id: null,
 		stripe_plan: null,
+	})
+})
+
+test('refreshStripePlanForOrg rejects a different Stripe customer before forgive', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-mismatch-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (
+			id, slug, plan, stripe_customer_id, stripe_plan,
+			created_at, updated_at
+		) VALUES (?, ?, 'pro', ?, 'pro', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			'cus_original',
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+
+	using _fetch = stubStripeFetch({
+		subscriptions: subscriptionList('sub_other', 'active'),
+	})
+	await expect(
+		refreshStripePlanForOrg({
+			env: createBillingEnv(),
+			orgId: teamOrgId,
+			customerId: 'cus_other',
+			now,
+		}),
+	).rejects.toThrow(/Stripe customer mismatch/)
+	const org = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id, stripe_plan FROM orgs WHERE id = ?`,
+	)
+		.bind(teamOrgId)
+		.first<{ stripe_customer_id: string | null; stripe_plan: string | null }>()
+	expect(org).toEqual({
+		stripe_customer_id: 'cus_original',
+		stripe_plan: 'pro',
 	})
 })

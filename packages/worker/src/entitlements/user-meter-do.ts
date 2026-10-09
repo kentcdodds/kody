@@ -2118,7 +2118,26 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 		this.ensureBudgetMonth(month)
 		const automationTarget = Math.max(0, Math.floor(Number(input.automation)))
+		let incomingTotal = automationTarget
+		for (const microUsd of Object.values(input.users)) {
+			incomingTotal += Math.max(0, Math.floor(Number(microUsd)))
+		}
 		this.ctx.storage.transactionSync(() => {
+			// Debit MTD only grows within a month. Reject a stale overlapping
+			// sync whose ledger snapshot is older than what we already stored.
+			const current = this.readBudgetSpendState(month)
+			let currentTotal = current.automationMicroUsd
+			for (const microUsd of Object.values(current.users)) {
+				currentTotal += Math.max(0, Math.floor(Number(microUsd)))
+			}
+			if (incomingTotal < currentTotal) {
+				console.info('user_meter_budget_replace_skip_stale_total', {
+					month,
+					incomingTotal,
+					currentTotal,
+				})
+				return
+			}
 			this.ctx.storage.sql.exec(`DELETE FROM budget_spend_users`)
 			this.ctx.storage.sql.exec(
 				`UPDATE budget_spend_state
