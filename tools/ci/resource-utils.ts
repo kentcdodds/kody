@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -510,18 +511,36 @@ export const cloudflareWorkflowNameMaxLength = 64
 
 export const dynamicCallableWorkflowNameSuffix = '-dynamic-callable-workflows'
 
+/** Hex chars kept from a digest when a workflow name must be truncated. */
+export const dynamicCallableWorkflowNameDigestLength = 8
+
 /**
- * Per-worker dynamic-callable workflow name, truncated to Cloudflare's 64-char
+ * Per-worker dynamic-callable workflow name, within Cloudflare's 64-char
  * limit so long branch preview names (e.g. local-execute-parity-0092) still
- * deploy. Runtime and platform/main configs must use the same helper so the
+ * deploy. When truncation is required, a short digest of the full runtime
+ * worker name is embedded so two long slugs that share a prefix do not
+ * collide. Runtime and platform/main configs must use the same helper so the
  * cross-script binding name matches.
  */
 export function dynamicCallableWorkflowName(runtimeWorkerName: string) {
-	return truncateWithSuffix(
-		runtimeWorkerName,
-		dynamicCallableWorkflowNameSuffix,
-		cloudflareWorkflowNameMaxLength,
+	const suffix = dynamicCallableWorkflowNameSuffix
+	if (
+		runtimeWorkerName.length + suffix.length <=
+		cloudflareWorkflowNameMaxLength
+	) {
+		return `${runtimeWorkerName}${suffix}`
+	}
+	const digest = createHash('sha256')
+		.update(runtimeWorkerName)
+		.digest('hex')
+		.slice(0, dynamicCallableWorkflowNameDigestLength)
+	const digestPart = `-${digest}`
+	const maxBase = Math.max(
+		1,
+		cloudflareWorkflowNameMaxLength - digestPart.length - suffix.length,
 	)
+	const trimmed = runtimeWorkerName.slice(0, maxBase).replace(/-+$/g, '')
+	return `${trimmed}${digestPart}${suffix}`
 }
 
 export function listD1Databases(): Array<D1DatabaseListEntry> {

@@ -263,6 +263,9 @@ test('generate truncates long branch preview workflow names to 64 chars', async 
 	expect(typeof workflowName).toBe('string')
 	expect(String(workflowName).length).toBeLessThanOrEqual(64)
 	expect(String(workflowName)).toMatch(/-dynamic-callable-workflows$/)
+	expect(String(workflowName)).toMatch(
+		/-[0-9a-f]{8}-dynamic-callable-workflows$/,
+	)
 	expect(patchedMain.env?.preview?.workflows?.[0]?.name).toBe(workflowName)
 	// Untruncated would be 72 characters and wrangler would reject the config.
 	expect(
