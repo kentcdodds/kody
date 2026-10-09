@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	assertActorCanRestoreSoftDeletedOrg,
 	OrgRestoreWindowExpiredError,
@@ -22,7 +25,7 @@ export const orgRestoreCapability = defineDomainCapability(
 	{
 		name: 'orgRestore',
 		description:
-			'Restore a soft-deleted organization within the 30-day retention window. Authorization uses the actor’s Owner membership from the deletion generation because the org cannot be bound while tombstoned.',
+			'Restore a soft-deleted organization within the 30-day retention window. Authorization uses the actor’s Owner membership from the deletion generation (the org cannot be bound while tombstoned) and still requires `org:delete` on scoped credentials.',
 		keywords: ['org', 'restore', 'undelete', 'team'],
 		// Soft-deleted orgs are not bindable; authorize in the handler.
 		orgPermission: 'none',
@@ -30,6 +33,13 @@ export const orgRestoreCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const request = requireMcpRequest(ctx.callerContext)
+			const scopes = request.credential.scopes
+			if (scopes && !scopes.includes('org:delete')) {
+				throw new McpCallerError(
+					'This credential is not scoped for org:delete.',
+				)
+			}
 			try {
 				await assertActorCanRestoreSoftDeletedOrg({
 					db: ctx.env.APP_DB,
