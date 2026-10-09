@@ -6,7 +6,9 @@
 --
 -- Accepted shares: one live grant (preset use: package:read, package:execute)
 -- from the owner's org to the grantee, with a deterministic id derived from
--- the share id. A live grant that already covers the pair is left alone.
+-- the share id. A live grant that already covers the pair keeps its id; it is
+-- topped up with package:read and package:execute (a read-only grant gains
+-- execute) and relabelled `use` only when it holds nothing beyond those two.
 --
 -- Pending shares: one grant invite (preset use) per share. Old share invite
 -- links are invalid after this migration: the old tokens were never stored in
@@ -147,16 +149,40 @@ WHERE NOT EXISTS (
 		AND g.deleted_at IS NULL
 );
 
+-- Covers both the grants inserted above and any live grant that already
+-- existed for the (package, user) pair, e.g. a read-only one.
 INSERT OR IGNORE INTO grant_permissions (grant_id, permission)
 SELECT g.id, p.permission
 FROM grants g
-INNER JOIN __p8_accepted_shares a ON g.id = 'p8-share-' || a.share_id
+INNER JOIN __p8_accepted_shares a
+	ON g.resource_type = 'package'
+	AND g.resource_id = a.package_id
+	AND g.subject_type = 'user'
+	AND g.subject_id = a.grantee_user_id
 CROSS JOIN (
 	SELECT 'package:read' AS permission
 	UNION ALL
 	SELECT 'package:execute'
 ) p
 WHERE g.deleted_at IS NULL;
+
+UPDATE grants
+SET preset = 'use',
+	updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE deleted_at IS NULL
+	AND resource_type = 'package'
+	AND subject_type = 'user'
+	AND preset IS NOT 'use'
+	AND EXISTS (
+		SELECT 1 FROM __p8_accepted_shares a
+		WHERE a.package_id = grants.resource_id
+			AND a.grantee_user_id = grants.subject_id
+	)
+	AND NOT EXISTS (
+		SELECT 1 FROM grant_permissions gp
+		WHERE gp.grant_id = grants.id
+			AND gp.permission NOT IN ('package:read', 'package:execute')
+	);
 
 UPDATE orgs
 SET access_epoch = access_epoch + 1,
@@ -260,9 +286,19 @@ WHERE id IN (
 	SELECT stable_user_id FROM users WHERE account_type = 'platform'
 );
 
+-- Dual-write: admin and campaign paths still read plan and
+-- admin_credits_eligible from users until Teams P9 drops those columns
+-- (#3084), so the matching users rows get the same values.
+UPDATE users
+SET plan = 'pro',
+	admin_credits_eligible = 1,
+	updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE account_type = 'platform';
+
 -- 6. Only @kody gets the $1,000 site-admin credit (100000 cents =
--- 1000000000 micro-USD). The wallet is bumped only while the ledger note is
--- absent, so a re-run never credits twice.
+-- 1000000000 micro-USD). The ledger row goes in first, guarded by its note,
+-- and the wallet is bumped only when that insert wrote a row (changes() = 1),
+-- so a re-run never credits twice.
 INSERT OR IGNORE INTO credit_wallets (user_id, created_at, updated_at)
 SELECT
 	u.stable_user_id,
@@ -270,20 +306,6 @@ SELECT
 	strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 FROM users u
 WHERE u.username = 'kody' AND u.account_type = 'platform';
-
-UPDATE credit_wallets
-SET balance_micro_usd = balance_micro_usd + 1000000000,
-	updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-WHERE user_id IN (
-		SELECT stable_user_id FROM users
-		WHERE username = 'kody' AND account_type = 'platform'
-	)
-	AND NOT EXISTS (
-		SELECT 1 FROM credit_ledger_entries l
-		WHERE l.user_id = credit_wallets.user_id
-			AND l.kind = 'admin_grant'
-			AND l.note = 'Teams P8: site-admin credit for @kody org'
-	);
 
 INSERT INTO credit_ledger_entries (
 	id,
@@ -312,6 +334,15 @@ WHERE u.username = 'kody'
 		WHERE l.user_id = u.stable_user_id
 			AND l.kind = 'admin_grant'
 			AND l.note = 'Teams P8: site-admin credit for @kody org'
+	);
+
+UPDATE credit_wallets
+SET balance_micro_usd = balance_micro_usd + 1000000000,
+	updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE changes() = 1
+	AND user_id IN (
+		SELECT stable_user_id FROM users
+		WHERE username = 'kody' AND account_type = 'platform'
 	);
 
 -- 7. Fail-closed invariants.

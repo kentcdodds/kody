@@ -132,6 +132,15 @@ WHERE u.account_type = 'platform'
 	AND (o.id IS NULL OR o.plan <> 'pro' OR o.admin_credits_eligible <> 1)`,
 	},
 	{
+		name: 'platform-user-pro',
+		description:
+			'Every platform users row mirrors plan pro with admin credits until P9',
+		sql: `SELECT COUNT(*) AS gaps
+FROM users u
+WHERE u.account_type = 'platform'
+	AND (u.plan <> 'pro' OR u.admin_credits_eligible <> 1)`,
+	},
+	{
 		name: 'kody-site-admin-credit',
 		description: 'The @kody org has its site-admin credit ledger entry once',
 		sql: `SELECT COUNT(*) AS gaps
@@ -292,6 +301,13 @@ export async function verifyConversion(input: {
 	}
 }
 
+/** D1 runs a multi-statement query as one batch (a single transaction). */
+export const d1BatchSeparator = ';\n'
+
+function joinBatch(statements: ReadonlyArray<string>) {
+	return statements.join(d1BatchSeparator)
+}
+
 const nowIso = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`
 
 /**
@@ -322,6 +338,15 @@ WHERE id IN (SELECT stable_user_id FROM users WHERE account_type = 'platform')
 	AND (plan <> 'pro' OR admin_credits_eligible <> 1)`,
 	},
 	{
+		// Dual-write until Teams P9 drops users.plan and
+		// users.admin_credits_eligible (#3084): admin and campaign paths still
+		// read them from users.
+		name: 'platform-user-pro',
+		sql: `UPDATE users SET plan = 'pro', admin_credits_eligible = 1, updated_at = ${nowIso}
+WHERE account_type = 'platform'
+	AND (plan <> 'pro' OR admin_credits_eligible <> 1)`,
+	},
+	{
 		name: 'kody-wallet',
 		sql: `INSERT OR IGNORE INTO credit_wallets (user_id, created_at, updated_at)
 SELECT u.stable_user_id, ${nowIso}, ${nowIso}
@@ -329,32 +354,30 @@ FROM users u
 WHERE u.username = 'kody' AND u.account_type = 'platform'`,
 	},
 	{
-		name: 'kody-credit-balance',
-		sql: `UPDATE credit_wallets
-SET balance_micro_usd = balance_micro_usd + ${kodyCreditMicroUsd}, updated_at = ${nowIso}
-WHERE user_id IN (
-		SELECT stable_user_id FROM users WHERE username = 'kody' AND account_type = 'platform'
-	)
-	AND NOT EXISTS (
-		SELECT 1 FROM credit_ledger_entries l
-		WHERE l.user_id = credit_wallets.user_id
-			AND l.kind = 'admin_grant'
-			AND l.note = '${kodyCreditNote}'
-	)`,
-	},
-	{
-		name: 'kody-credit-ledger',
-		sql: `INSERT INTO credit_ledger_entries (id, user_id, kind, amount_micro_usd, month, granted_by_user_id, note, created_at)
+		// One D1 query is one batch: the ledger row and the wallet bump apply
+		// together or not at all. The bump runs only when the ledger insert
+		// wrote its row (changes() = 1), so a repeat never credits twice.
+		name: 'kody-credit',
+		sql: joinBatch([
+			`INSERT INTO credit_ledger_entries (id, user_id, kind, amount_micro_usd, month, granted_by_user_id, note, created_at)
 SELECT '${kodyCreditLedgerId}', u.stable_user_id, 'admin_grant', ${kodyCreditMicroUsd}, strftime('%Y-%m', 'now'), NULL, '${kodyCreditNote}', ${nowIso}
 FROM users u
 WHERE u.username = 'kody'
 	AND u.account_type = 'platform'
+	AND EXISTS (SELECT 1 FROM credit_wallets w WHERE w.user_id = u.stable_user_id)
 	AND NOT EXISTS (
 		SELECT 1 FROM credit_ledger_entries l
 		WHERE l.user_id = u.stable_user_id
 			AND l.kind = 'admin_grant'
 			AND l.note = '${kodyCreditNote}'
 	)`,
+			`UPDATE credit_wallets
+SET balance_micro_usd = balance_micro_usd + ${kodyCreditMicroUsd}, updated_at = ${nowIso}
+WHERE changes() = 1
+	AND user_id IN (
+		SELECT stable_user_id FROM users WHERE username = 'kody' AND account_type = 'platform'
+	)`,
+		]),
 	},
 ]
 

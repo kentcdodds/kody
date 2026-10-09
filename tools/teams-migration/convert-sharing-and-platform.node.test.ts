@@ -9,6 +9,7 @@ import {
 } from '../preview-rehearsal/seal.ts'
 import {
 	conversionChecks,
+	d1BatchSeparator,
 	kodyCreditMicroUsd,
 	kodyCreditNote,
 	repairConversion,
@@ -188,6 +189,14 @@ function snapshot(sqlite: DatabaseSync) {
 			sqlite,
 			`SELECT user_id, balance_micro_usd FROM credit_wallets`,
 		),
+		orgPlans: rows(
+			sqlite,
+			`SELECT id, plan, admin_credits_eligible FROM orgs ORDER BY id`,
+		),
+		userPlans: rows(
+			sqlite,
+			`SELECT stable_user_id, plan, admin_credits_eligible FROM users ORDER BY stable_user_id`,
+		),
 	}
 }
 
@@ -206,10 +215,25 @@ function createFakeCloudflare(sqlite: DatabaseSync) {
 		if (path === '/d1/database/app-uuid/query' && method === 'POST') {
 			const body = JSON.parse(String(init?.body)) as { sql: string }
 			querySql.push(body.sql)
-			return Response.json({
-				success: true,
-				result: [{ results: sqlite.prepare(body.sql).all(), success: true }],
-			})
+			const statements = body.sql.split(d1BatchSeparator)
+			if (statements.length === 1) {
+				return Response.json({
+					success: true,
+					result: [{ results: sqlite.prepare(body.sql).all(), success: true }],
+				})
+			}
+			sqlite.exec('BEGIN')
+			try {
+				const result = statements.map((statement) => ({
+					results: sqlite.prepare(statement).all(),
+					success: true,
+				}))
+				sqlite.exec('COMMIT')
+				return Response.json({ success: true, result })
+			} catch (error) {
+				sqlite.exec('ROLLBACK')
+				throw error
+			}
 		}
 		throw new Error(`Unexpected Cloudflare request ${method} ${path}`)
 	}
@@ -433,7 +457,7 @@ test('0091 credits nobody when there is no platform @kody account', () => {
 	)
 })
 
-test('0091 aborts when an accepted share is covered only by a narrower grant', () => {
+test('0091 tops up a live read-only grant instead of aborting', () => {
 	const sqlite = createSeededDb()
 	sqlite
 		.prepare(
@@ -446,7 +470,75 @@ test('0091 aborts when an accepted share is covered only by a narrower grant', (
 			`INSERT INTO grant_permissions (grant_id, permission) VALUES ('narrow-grant', 'package:read')`,
 		)
 		.run()
-	expect(() => sqlite.exec(conversionSql)).toThrow(/CHECK constraint failed/)
+	const epochBefore = scalar(
+		sqlite,
+		`SELECT access_epoch FROM orgs WHERE id = 'alice-id'`,
+	) as number
+
+	sqlite.exec(conversionSql)
+
+	expect(
+		rows(
+			sqlite,
+			`SELECT id, preset FROM grants WHERE resource_id = 'alice-pkg-1' AND subject_id = 'bob-id'`,
+		),
+	).toEqual([{ id: 'narrow-grant', preset: 'use' }])
+	expect(
+		rows(
+			sqlite,
+			`SELECT permission FROM grant_permissions WHERE grant_id = 'narrow-grant' ORDER BY permission`,
+		),
+	).toEqual([{ permission: 'package:execute' }, { permission: 'package:read' }])
+	expect(
+		scalar(sqlite, `SELECT access_epoch FROM orgs WHERE id = 'alice-id'`),
+	).toBeGreaterThan(epochBefore)
+})
+
+test('0091 keeps the preset of a grant that holds more than Use', () => {
+	const sqlite = createSeededDb()
+	sqlite
+		.prepare(
+			`INSERT INTO grants (id, org_id, resource_type, resource_id, subject_type, subject_id, preset, created_by_user_id, created_at, updated_at)
+			VALUES ('wide-grant', 'alice-id', 'package', 'alice-pkg-1', 'user', 'bob-id', NULL, 'alice-id', '2026-09-01', '2026-09-01')`,
+		)
+		.run()
+	sqlite
+		.prepare(
+			`INSERT INTO grant_permissions (grant_id, permission) VALUES ('wide-grant', 'package:read'), ('wide-grant', 'package:publish')`,
+		)
+		.run()
+	sqlite.exec(conversionSql)
+	expect(
+		rows(sqlite, `SELECT preset FROM grants WHERE id = 'wide-grant'`),
+	).toEqual([{ preset: null }])
+	expect(
+		rows(
+			sqlite,
+			`SELECT permission FROM grant_permissions WHERE grant_id = 'wide-grant' ORDER BY permission`,
+		),
+	).toEqual([
+		{ permission: 'package:execute' },
+		{ permission: 'package:publish' },
+		{ permission: 'package:read' },
+	])
+})
+
+test('0091 dual-writes platform plan and admin credits onto users until P9', () => {
+	const sqlite = createSeededDb()
+	sqlite.exec(conversionSql)
+	expect(
+		rows(
+			sqlite,
+			`SELECT username, plan, admin_credits_eligible FROM users ORDER BY username`,
+		),
+	).toEqual([
+		{ username: 'alice', plan: 'free', admin_credits_eligible: 0 },
+		{ username: 'bob', plan: 'free', admin_credits_eligible: 0 },
+		{ username: 'carol', plan: 'free', admin_credits_eligible: 0 },
+		{ username: 'dave', plan: 'free', admin_credits_eligible: 0 },
+		{ username: 'kody', plan: 'pro', admin_credits_eligible: 1 },
+		{ username: 'tools', plan: 'pro', admin_credits_eligible: 1 },
+	])
 })
 
 test('verifyConversion passes on a converted database with read-only queries', async () => {
@@ -493,6 +585,7 @@ test('verifyConversion names every gap before conversion has run', async () => {
 		'pending-share-grant-invite',
 		'scope-grantee-owner-membership',
 		'platform-org-pro',
+		'platform-user-pro',
 		'kody-site-admin-credit',
 		'kody-wallet',
 	])
@@ -516,6 +609,11 @@ test('repairConversion restores lost memberships, platform plans, and the @kody 
 			`UPDATE orgs SET plan = 'free', admin_credits_eligible = 0 WHERE id = 'tools-id'`,
 		)
 		.run()
+	sqlite
+		.prepare(
+			`UPDATE users SET plan = 'free', admin_credits_eligible = 0 WHERE stable_user_id = 'tools-id'`,
+		)
+		.run()
 	sqlite.prepare(`DELETE FROM credit_ledger_entries`).run()
 	sqlite.prepare(`DELETE FROM credit_wallets`).run()
 	const cloudflare = createFakeCloudflare(sqlite)
@@ -529,6 +627,7 @@ test('repairConversion restores lost memberships, platform plans, and the @kody 
 	expect(failingChecks(broken)).toEqual([
 		'scope-grantee-owner-membership',
 		'platform-org-pro',
+		'platform-user-pro',
 		'kody-site-admin-credit',
 		'kody-wallet',
 	])
@@ -552,6 +651,43 @@ test('repairConversion restores lost memberships, platform plans, and the @kody 
 	expect(scalar(sqlite, `SELECT balance_micro_usd FROM credit_wallets`)).toBe(
 		kodyCreditMicroUsd,
 	)
+})
+
+test('repair never credits twice when the ledger entry already exists', async () => {
+	const sqlite = createSeededDb()
+	sqlite.exec(conversionSql)
+	sqlite.prepare(`UPDATE credit_wallets SET balance_micro_usd = 42`).run()
+	const cloudflare = createFakeCloudflare(sqlite)
+	await repairConversion({
+		client: cloudflare.client,
+		target: parseQueryTarget('production'),
+		now,
+	})
+	expect(scalar(sqlite, `SELECT balance_micro_usd FROM credit_wallets`)).toBe(
+		42,
+	)
+	expect(scalar(sqlite, `SELECT COUNT(*) FROM credit_ledger_entries`)).toBe(1)
+})
+
+test('repair leaves ledger and wallet untouched when the batch fails', async () => {
+	const sqlite = createSeededDb()
+	sqlite.exec(conversionSql)
+	sqlite.prepare(`DELETE FROM credit_ledger_entries`).run()
+	sqlite.prepare(`UPDATE credit_wallets SET balance_micro_usd = 7`).run()
+	sqlite.exec(
+		`CREATE TRIGGER fail_wallet_bump BEFORE UPDATE ON credit_wallets
+		BEGIN SELECT RAISE(ABORT, 'wallet bump failed'); END`,
+	)
+	const cloudflare = createFakeCloudflare(sqlite)
+	await expect(
+		repairConversion({
+			client: cloudflare.client,
+			target: parseQueryTarget('production'),
+			now,
+		}),
+	).rejects.toThrow(/wallet bump failed/)
+	expect(scalar(sqlite, `SELECT COUNT(*) FROM credit_ledger_entries`)).toBe(0)
+	expect(scalar(sqlite, `SELECT balance_micro_usd FROM credit_wallets`)).toBe(7)
 })
 
 test('repair does not restore lost share grants', async () => {
