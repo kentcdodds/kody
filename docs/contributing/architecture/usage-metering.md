@@ -463,16 +463,19 @@ export does not list them.
    (gated by `shouldRunUsageAggregationCron` in the scheduled handler).
    `kody-jobs` fires cron and forwards to origin `JobsHost`, which runs this
    lane: it queries the Analytics Engine SQL API for the current UTC month
-   grouped by user and metric (weighting by `_sample_interval`, since Analytics
-   Engine samples under load) and batch-upserts absolute values — an idempotent
-   recompute, not increments. Analytics Engine retention (~90 days) always
-   covers a full month, so month-to-date recompute is complete; prior months
-   already in D1 stay untouched. Analytics Engine rejects the whole query
-   (HTTP 422) when an `if()` mixes a `doubleN` branch with an Integer literal,
-   so fallbacks in that query are Float literals (`1.0`, `0.0`);
-   `aggregate-rollups.node.test.ts` guards this. The aggregation needs
-   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and no-ops with a debug
-   log when either (or the `USAGE_EVENTS` binding) is missing.
+   grouped by billing id and metric (weighting by `_sample_interval`, since
+   Analytics Engine samples under load) and batch-upserts absolute values — an
+   idempotent recompute, not increments. The live-owner guard keeps a row when
+   the id is a live user or a live org, so a team org wallet still has a rollup
+   to debit. Soft-deleted owners are left out and their current-month rows are
+   removed. Analytics Engine retention (~90 days) always covers a full month, so
+   month-to-date recompute is complete; prior months already in D1 stay
+   untouched. Analytics Engine rejects the whole query (HTTP 422) when an `if()`
+   mixes a `doubleN` branch with an Integer literal, so fallbacks in that query
+   are Float literals (`1.0`, `0.0`); `aggregate-rollups.node.test.ts` guards
+   this. The aggregation needs `CLOUDFLARE_ACCOUNT_ID` and
+   `CLOUDFLARE_API_TOKEN` and no-ops with a debug log when either (or the
+   `USAGE_EVENTS` binding) is missing.
 
    **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local
