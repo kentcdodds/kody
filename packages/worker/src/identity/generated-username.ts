@@ -1,13 +1,18 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Username and org-slug claim checks must see soft-deleted rows so reserved
+ * names stay taken during the restore window (Teams §10.3 full unique indexes).
+ */
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
 	usernameFromEmail,
 } from '#worker/identity/username.ts'
 
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export async function userExistsByUsername(db: D1Database, username: string) {
 	const row = await db
-		.prepare(`SELECT id FROM users WHERE username = ?${andLiveDeletedAtSql()}`)
+		.prepare(`SELECT id FROM users WHERE username = ?`)
 		.bind(username)
 		.first<{ id: number }>()
 	return Boolean(row)
