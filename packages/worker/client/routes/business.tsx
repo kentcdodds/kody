@@ -67,7 +67,7 @@ export function BusinessRoute(handle: Handle) {
 								<button
 									data-example="invoices"
 									type="button"
-									aria-pressed={current === 'invoices'}
+									aria-pressed={current === 'invoices' ? 'true' : 'false'}
 									mix={on('click', () => {
 										current = 'invoices'
 										handle.update()
@@ -78,7 +78,7 @@ export function BusinessRoute(handle: Handle) {
 								<button
 									data-example="audit"
 									type="button"
-									aria-pressed={current === 'audit'}
+									aria-pressed={current === 'audit' ? 'true' : 'false'}
 									mix={on('click', () => {
 										current = 'audit'
 										handle.update()
@@ -89,7 +89,7 @@ export function BusinessRoute(handle: Handle) {
 								<button
 									data-example="onboarding"
 									type="button"
-									aria-pressed={current === 'onboarding'}
+									aria-pressed={current === 'onboarding' ? 'true' : 'false'}
 									mix={on('click', () => {
 										current = 'onboarding'
 										handle.update()
@@ -151,7 +151,7 @@ export function BusinessRoute(handle: Handle) {
 													<button
 														data-mode="app"
 														type="button"
-														aria-pressed={mode === 'app'}
+														aria-pressed={mode === 'app' ? 'true' : 'false'}
 														mix={on('click', () => {
 															mode = 'app'
 															handle.update()
@@ -162,7 +162,7 @@ export function BusinessRoute(handle: Handle) {
 													<button
 														data-mode="agent"
 														type="button"
-														aria-pressed={mode === 'agent'}
+														aria-pressed={mode === 'agent' ? 'true' : 'false'}
 														mix={on('click', () => {
 															mode = 'agent'
 															handle.update()

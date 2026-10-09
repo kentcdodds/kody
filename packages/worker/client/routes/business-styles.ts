@@ -872,5 +872,6 @@ export const businessCss = {
 	},
 	'& .output-content h2': {
 		fontSize: '20px',
+		letterSpacing: '-0.6px',
 	},
 }
