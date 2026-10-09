@@ -63,7 +63,15 @@ paste it into chat. Prefer the env var over `--token`. When set,
 	"operationId": "tokenCreate",
 	"params": {
 		"name": "kody-cli-local",
-		"scopes": ["org:execute", "org:read", "package:execute"],
+		"scopes": [
+			"org:execute",
+			"org:read",
+			"package:execute",
+			"package:read",
+			"integration:read",
+			"integration:use",
+			"secret:use"
+		],
 		"lifetime": "short"
 	}
 }

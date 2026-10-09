@@ -3,7 +3,9 @@ import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import {
 	isLegacyApiTokenScope,
 	legacyApiTokenScopeMap,
+	localExecuteOrgPermissions,
 	rewriteLegacyApiTokenScopes,
+	unionLocalExecuteParityScopes,
 } from './legacy-scope-rewrite.ts'
 
 test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
@@ -128,8 +130,34 @@ test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
 	])
 	expect(rewriteLegacyApiTokenScopes(['search:read'])).toEqual(['search:read'])
 	expect(rewriteLegacyApiTokenScopes(['local-execute'])).toEqual([
-		'org:execute',
+		...localExecuteOrgPermissions,
 	])
+})
+
+test('unionLocalExecuteParityScopes adds the parity set only when org:execute is held', () => {
+	expect(unionLocalExecuteParityScopes(['org:read'])).toEqual(['org:read'])
+	expect(
+		unionLocalExecuteParityScopes([
+			'billing:read',
+			'member:read',
+			'org:execute',
+			'org:read',
+		]),
+	).toEqual(
+		[
+			...localExecuteOrgPermissions,
+			'billing:read',
+			'member:read',
+			'org:read',
+		].sort(),
+	)
+	expect(
+		unionLocalExecuteParityScopes([
+			'org:execute',
+			'org:read',
+			'package:execute',
+		]),
+	).toEqual([...localExecuteOrgPermissions, 'org:read'].sort())
 })
 
 test('dedupes overlapping expansions, keeps org permissions, and sorts', () => {

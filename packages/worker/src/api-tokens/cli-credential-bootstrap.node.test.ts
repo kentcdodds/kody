@@ -6,6 +6,7 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	cliBootstrapCodePrefix,
+	cliCredentialBootstrapPolicy,
 	mintCliCredentialBootstrap,
 	parseCliBootstrapCode,
 	redeemCliCredentialBootstrap,
@@ -66,7 +67,10 @@ test('bootstrap mint requires a lifetime and embeds it in cli_command', async ()
 	expect(minted.cli_command).toBe(
 		`npx @kodycodes/cli auth bootstrap --code ${minted.bootstrap_code} --lifetime short`,
 	)
-	expect(minted.scopes).toEqual(['org:execute', 'org:read', 'package:execute'])
+	expect(minted.scopes).toEqual([...cliCredentialBootstrapPolicy.defaultScopes])
+	expect(minted.scopes).toContain('integration:read')
+	expect(minted.scopes).toContain('secret:use')
+	expect(minted.scopes).toContain('package:execute')
 	expect(minted.idle_ttl_seconds).toBe(shortLife.idleTtlSeconds)
 	expect(minted.max_lifetime_seconds).toBe(shortLife.maxLifetimeSeconds)
 	expect(parseApiToken(minted.bootstrap_code)).toBeNull()
@@ -105,9 +109,7 @@ test('bootstrap redeem requires a lifetime and yields a working token', async ()
 	expect(redeemed.userId).toBe(userId)
 	expect(redeemed.token.created_via).toBe('cli-bootstrap')
 	expect(redeemed.token.scopes).toEqual([
-		'org:execute',
-		'org:read',
-		'package:execute',
+		...cliCredentialBootstrapPolicy.defaultScopes,
 	])
 	expect(redeemed.token.idle_ttl_seconds).toBe(longLife.idleTtlSeconds)
 	expect(redeemed.token.expires_at).toBe(
