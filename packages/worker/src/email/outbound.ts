@@ -4,8 +4,8 @@ import {
 	accountSuspendedMessage,
 	getAccountRestrictionsByStableUserId,
 } from '#worker/account/account-suspension.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
+import { sendViaCloudflareEmailProvider } from './provider-send.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -368,94 +368,6 @@ async function requireStoredEmailMessage(input: {
 		)
 	}
 	return mailboxMessageToEmailMessageRecord(stored, input.userId)
-}
-
-async function sendViaBinding(input: {
-	env: SendEmailEnv
-	from: string
-	to: Array<string>
-	subject: string
-	text?: string | null
-	html?: string | null
-	replyTo?: string | null
-	headers: Record<string, string>
-	attachments: Array<PreparedOutboundAttachment>
-}) {
-	const binding = input.env.EMAIL
-	if (!binding) return { sent: false, messageId: null }
-	const result = await binding.send({
-		from: input.from,
-		to: input.to.length === 1 ? input.to[0]! : input.to,
-		subject: input.subject,
-		...(input.replyTo ? { replyTo: input.replyTo } : {}),
-		headers: input.headers,
-		...(input.text ? { text: input.text } : {}),
-		...(input.html ? { html: input.html } : {}),
-		...(input.attachments.length > 0
-			? {
-					// The binding treats string content as raw text, so binary
-					// payloads must go through as bytes rather than base64.
-					attachments: input.attachments.map((attachment) => ({
-						disposition: 'attachment' as const,
-						filename: attachment.filename,
-						type: attachment.contentType,
-						content: attachment.bytes,
-					})),
-				}
-			: {}),
-	})
-	return { sent: true, messageId: result.messageId ?? null }
-}
-
-async function sendViaRestFallback(input: {
-	env: SendEmailEnv
-	from: string
-	to: Array<string>
-	subject: string
-	text?: string | null
-	html?: string | null
-	replyTo?: string | null
-	headers: Record<string, string>
-	attachments: Array<PreparedOutboundAttachment>
-}) {
-	const html = input.html ?? input.text
-	if (!html) {
-		throw new Error('Email text or HTML body is required.')
-	}
-	const result = await sendCloudflareEmail(
-		{
-			accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
-			apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
-			apiToken: input.env.CLOUDFLARE_API_TOKEN,
-		},
-		{
-			from: input.from,
-			to: input.to.length === 1 ? input.to[0]! : input.to,
-			subject: input.subject,
-			html,
-			text: input.text ?? undefined,
-			replyTo: input.replyTo ?? undefined,
-			headers:
-				Object.keys(input.headers).length > 0 ? input.headers : undefined,
-			attachments:
-				input.attachments.length > 0
-					? // The REST API expects base64 string content.
-						input.attachments.map((attachment) => ({
-							content: attachment.contentBase64,
-							filename: attachment.filename,
-							type: attachment.contentType,
-							disposition: 'attachment' as const,
-							// The inferred schema output type requires this key even
-							// when undefined; JSON.stringify drops it from the payload.
-							contentId: undefined,
-						}))
-					: undefined,
-		},
-	)
-	if (!result.ok) {
-		throw new Error(result.error ?? 'Cloudflare email send was skipped.')
-	}
-	return result.messageId ?? null
 }
 
 function outboundEmailContentBytes(
@@ -848,7 +760,7 @@ export async function sendOutboundEmail(
 		try {
 			let acceptedProviderMessageId: string | null
 			try {
-				const bindingResult = await sendViaBinding({
+				const providerResult = await sendViaCloudflareEmailProvider({
 					env: input.env,
 					from,
 					to,
@@ -861,21 +773,7 @@ export async function sendOutboundEmail(
 					headers: providerHeaders,
 					attachments,
 				})
-				acceptedProviderMessageId = bindingResult.sent
-					? bindingResult.messageId
-					: await sendViaRestFallback({
-							env: input.env,
-							from,
-							to,
-							subject,
-							text,
-							html,
-							replyTo: input.replyTo
-								? (normalizeEmailAddress(input.replyTo) ?? undefined)
-								: undefined,
-							headers: providerHeaders,
-							attachments,
-						})
+				acceptedProviderMessageId = providerResult.messageId
 			} catch (error) {
 				// Provider did not accept the send. Safe to mark failed / clear id.
 				sendOutcome = 'error'

@@ -69,6 +69,10 @@ test('destination verify send indexes a distinct kind and leaves signup verifica
 		email: 'pager@example.com',
 	})
 	expect(added.created).toBe(true)
+	expect(sendCloudflareEmail.mock.calls[0]?.[1]).toMatchObject({
+		from: 'owner@inbox.example.com',
+		to: 'pager@example.com',
+	})
 	expect(await lookup('cf-destination-1')).toMatchObject({
 		user_id: 1,
 		kind: transactionalEmailDestinationVerificationKind,

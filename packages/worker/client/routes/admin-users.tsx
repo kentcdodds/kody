@@ -83,6 +83,7 @@ export function AdminUsersRoute(handle: Handle) {
 	let createdUser: AdminCreatedUserSetup | null = null
 	let mintedVerifyUrl: string | null = null
 	let mintedVerifyUrlForStableUserId: string | null = null
+	let destinationEmailDraft = ''
 	const markVerifiedCheck = createDoubleCheck(handle)
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
@@ -477,6 +478,57 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitMarkDestinationVerified() {
+		const href = getCurrentHref()
+		const selectedUser = resolveSelectedUser(href)
+		const destinationEmail = destinationEmailDraft.trim()
+		if (!selectedUser || actionState !== 'idle' || destinationEmail === '') {
+			return
+		}
+		actionState = 'verifying'
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'mark_email_destination_verified',
+					stableUserId: selectedUser.stableUserId,
+					destinationEmail,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersMutationData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error || 'Unable to mark destination verified.',
+				)
+			}
+			applyMutationPayload(payload, href)
+			destinationEmailDraft = ''
+			message = `Marked ${destinationEmail} verified.`
+			actionState = 'idle'
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to mark destination verified.'
+			handle.update()
+		}
+	}
+
 	async function submitModerationAction(
 		action: 'suspend_user' | 'unsuspend_user' | 'resume_email_outbound',
 	) {
@@ -782,6 +834,13 @@ export function AdminUsersRoute(handle: Handle) {
 									onSubmitRoleAction: (action) => void submitRoleAction(action),
 									onSubmitVerificationAction: (action) =>
 										void submitVerificationAction(action),
+									destinationEmailDraft,
+									onDestinationEmailDraftChange: (email) => {
+										destinationEmailDraft = email
+										handle.update()
+									},
+									onSubmitMarkDestinationVerified: () =>
+										void submitMarkDestinationVerified(),
 									onPlanChoiceChange: (plan) => {
 										selectedPlanChoice = plan
 										handle.update()

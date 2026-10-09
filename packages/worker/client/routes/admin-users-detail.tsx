@@ -80,6 +80,9 @@ export type AdminUserDetailProps = {
 	onSubmitVerificationAction: (
 		action: 'mark_email_verified' | 'mint_verify_url',
 	) => void
+	destinationEmailDraft: string
+	onDestinationEmailDraftChange: (email: string) => void
+	onSubmitMarkDestinationVerified: () => void
 	onPlanChoiceChange: (plan: AdminPlanName) => void
 	onSubmitPlanAction: () => void
 	onCreditsGranted: () => void
@@ -385,6 +388,50 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 					) : null}
 				</AccountManagementPanel>
 			) : null}
+			<AccountManagementPanel
+				title="Email destination"
+				description="Mark an additional destination verified after the person proves they own it (for example they mailed their inbox from it). Use when destination verification mail never arrives."
+			>
+				<div
+					mix={css({
+						display: 'grid',
+						gap: spacing.md,
+						gridTemplateColumns: 'minmax(0, 1fr) auto',
+						alignItems: 'end',
+						[mq.mobile]: { gridTemplateColumns: '1fr' },
+					})}
+				>
+					<label mix={css(fieldCss)}>
+						<span mix={css(fieldLabelCss)}>Destination email</span>
+						<input
+							data-field-ring
+							type="email"
+							disabled={isMutating}
+							value={props.destinationEmailDraft}
+							aria-label="Destination email"
+							placeholder="extra@example.com"
+							mix={[
+								on('input', (event) => {
+									props.onDestinationEmailDraftChange(event.currentTarget.value)
+								}),
+								css({ width: '100%' }),
+							]}
+						/>
+					</label>
+					<button
+						type="button"
+						disabled={isMutating || props.destinationEmailDraft.trim() === ''}
+						mix={[
+							on('click', () => props.onSubmitMarkDestinationVerified()),
+							css(primaryButtonCss),
+						]}
+					>
+						{actionState === 'verifying'
+							? 'Working…'
+							: 'Mark destination verified'}
+					</button>
+				</div>
+			</AccountManagementPanel>
 			<AccountManagementPanel
 				title="Manage plan"
 				description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."

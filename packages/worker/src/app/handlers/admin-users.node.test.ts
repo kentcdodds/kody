@@ -615,6 +615,39 @@ test('mark email verified and mint verify url actions update the account and log
 	expect((await act('mint_verify_url')).status).toBe(400)
 })
 
+test('mark_email_destination_verified action updates the destination and logs audit events', async () => {
+	const { env, post } = setupAdminUsers(
+		[makeUser(2, 'member', { email_verified_at: '2026-01-01T00:00:00.000Z' })],
+		[[2, 'user']],
+	)
+	const destinationId = 'dest-pager-1'
+	await env.APP_DB.prepare(
+		`INSERT INTO email_notification_destinations
+		 (id, user_id, email, verified_at, is_default)
+		 VALUES (?, 2, 'pager@example.com', NULL, 0)`,
+	)
+		.bind(destinationId)
+		.run()
+
+	const response = await post({
+		action: 'mark_email_destination_verified',
+		stableUserId: stableUserId(2),
+		destinationEmail: 'pager@example.com',
+	})
+	expect(response.status).toBe(200)
+	expectAdminAudit(
+		'mark_email_destination_verified',
+		`target_stable_user_id=${stableUserId(2)};destination=pager@example.com`,
+	)
+	const row = await env.APP_DB.prepare(
+		`SELECT verified_at IS NOT NULL AS verified
+		 FROM email_notification_destinations WHERE id = ?`,
+	)
+		.bind(destinationId)
+		.first<{ verified: number }>()
+	expect(row).toEqual({ verified: 1 })
+})
+
 test('create_user action returns setup link, logs audit, maps duplicate email to 409, and keeps the setup link when list refresh fails', async () => {
 	const createdUser = {
 		userId: 9,
