@@ -93,6 +93,7 @@ export async function hardPurgeSoftDeletedUser(input: {
 		env: input.env,
 		dbUserId: input.dbUserId,
 		mcpUserId: input.stableUserId,
+		purgeSoftDeleted: true,
 	})
 	await logOrgAuditEvent({
 		env: input.env,

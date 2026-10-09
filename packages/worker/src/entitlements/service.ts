@@ -43,7 +43,10 @@ import {
 } from './user-meter-client.ts'
 
 /** Env surface for authoritative entitlement usage readers. */
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import {
+	andLiveDeletedAtSql,
+	liveDeletedAtSql,
+} from '#worker/soft-delete/live-sql.ts'
 export type EntitlementUsageEnv = UserMeterEnv &
 	RepoSessionIndexEnv &
 	Pick<Env, 'RUN_LOG' | 'MAILBOX' | 'JOBS'>
@@ -1062,8 +1065,9 @@ export async function listUsersForD1StorageReconciliation(input: {
 		.prepare(
 			`SELECT stable_user_id AS userId
 			FROM users
+			WHERE ${liveDeletedAtSql()}
 			ORDER BY stable_user_id ASC
-			${andLiveDeletedAtSql()} LIMIT ?`,
+			LIMIT ?`,
 		)
 		.bind(input.limit)
 		.all<{ userId: string }>()

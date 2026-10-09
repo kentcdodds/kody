@@ -107,6 +107,62 @@ test('soft delete and restore org within the restore window', async () => {
 	])
 })
 
+test('org restore does not revive memberships for soft-deleted users', async () => {
+	const { env, appDb } = await createHarness()
+	const orgId = 'org-restore-members'
+	const liveMember = 'live-member-1'
+	const deletedMember = 'deleted-member-1'
+	await seedOrg(appDb, orgId, 'restore-members')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at, stable_user_id
+			) VALUES
+				(1, 'live@example.com', 'live', 'x', ?, ?, ?),
+				(2, 'gone@example.com', 'gone', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, liveMember, ts, ts, deletedMember)
+		.run()
+	await appDb
+		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = ?`)
+		.bind(ts, deletedMember)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'member', ?), (?, ?, 'member', ?)`,
+		)
+		.bind(orgId, liveMember, ts, orgId, deletedMember, ts)
+		.run()
+	const deleted = await softDeleteOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now,
+	})
+	await restoreOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now: new Date(now.getTime() + 60_000),
+	})
+	const live = await appDb
+		.prepare(
+			`SELECT deleted_at FROM org_memberships WHERE org_id = ? AND user_id = ?`,
+		)
+		.bind(orgId, liveMember)
+		.first<{ deleted_at: string | null }>()
+	expect(live?.deleted_at).toBeNull()
+	const gone = await appDb
+		.prepare(
+			`SELECT deleted_at FROM org_memberships WHERE org_id = ? AND user_id = ?`,
+		)
+		.bind(orgId, deletedMember)
+		.first<{ deleted_at: string | null }>()
+	expect(gone?.deleted_at).toBe(deleted.deletedAt)
+})
+
 test('restore outside the 30-day window fails', async () => {
 	const { env, appDb } = await createHarness()
 	const orgId = 'org-old-delete'

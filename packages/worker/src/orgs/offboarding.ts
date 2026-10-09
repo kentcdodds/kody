@@ -328,31 +328,32 @@ async function revokeOrgBoundCredentials(input: {
 		})
 	}
 
-	// api_tokens.org_id / bootstrap org_id land in P4. Until then every token
-	// is bound to the member's personal org (id = user id). Revoke only when
-	// offboarding from that org; other-org revoke waits on P4 org_id.
-	const revokeUserScopedCredentials = input.orgId === input.memberUserId
+	// P4 stamps org_id on api_tokens and bootstrap codes. Revoke credentials
+	// bound to this org for the removed member (personal org id == user id
+	// still matches via org_id = memberUserId).
 	let revokedApiTokens = 0
 	let revokedCliBootstrapCodes = 0
-	if (revokeUserScopedCredentials) {
-		const tokenResult = await input.appDb
-			.prepare(
-				`UPDATE api_tokens
-				 SET revoked_at = ?, updated_at = ?
-				 WHERE user_id = ?
-				   AND revoked_at IS NULL
-				   AND deleted_at IS NULL`,
-			)
-			.bind(input.nowIso, input.nowIso, input.memberUserId)
-			.run()
-		revokedApiTokens = tokenResult.meta.changes ?? 0
+	const tokenResult = await input.appDb
+		.prepare(
+			`UPDATE api_tokens
+			 SET revoked_at = ?, updated_at = ?
+			 WHERE user_id = ?
+			   AND COALESCE(org_id, user_id) = ?
+			   AND revoked_at IS NULL
+			   AND deleted_at IS NULL`,
+		)
+		.bind(input.nowIso, input.nowIso, input.memberUserId, input.orgId)
+		.run()
+	revokedApiTokens = tokenResult.meta.changes ?? 0
 
-		const bootstrap = await input.appDb
-			.prepare(`DELETE FROM cli_credential_bootstrap_codes WHERE user_id = ?`)
-			.bind(input.memberUserId)
-			.run()
-		revokedCliBootstrapCodes = bootstrap.meta.changes ?? 0
-	}
+	const bootstrap = await input.appDb
+		.prepare(
+			`DELETE FROM cli_credential_bootstrap_codes
+			 WHERE user_id = ? AND COALESCE(org_id, user_id) = ?`,
+		)
+		.bind(input.memberUserId, input.orgId)
+		.run()
+	revokedCliBootstrapCodes = bootstrap.meta.changes ?? 0
 
 	return {
 		revokedOAuthGrants,

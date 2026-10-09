@@ -1,3 +1,9 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Account deletion and soft-delete purge both read and remove user-owned rows
+ * including tombstones. Live product paths keep deleted_at filters elsewhere.
+ */
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
@@ -309,8 +315,9 @@ async function listUserVectorIds(env: Env, userId: string) {
 }
 
 async function getUserBillingIdentity(env: Env, dbUserId: number) {
+	// Look up by primary key during deletion/purge; do not require a live row.
 	const row = await env.APP_DB.prepare(
-		`SELECT stripe_customer_id, email FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		`SELECT stripe_customer_id, email FROM users WHERE id = ?`,
 	)
 		.bind(dbUserId)
 		.first<{ stripe_customer_id: string | null; email: string | null }>()
@@ -1442,6 +1449,8 @@ async function deleteUserScopedRowsAndUser(input: {
 	env: Env
 	mcpUserId: string
 	dbUserId: number
+	/** When true, delete a soft-deleted users row (purge lane). */
+	allowSoftDeletedUser?: boolean
 }): Promise<{
 	deletedRowCounts: Record<string, number>
 	updatedRowCounts: Record<string, number>
@@ -1469,7 +1478,9 @@ async function deleteUserScopedRowsAndUser(input: {
 		}
 	})
 	const userStatement = input.env.APP_DB.prepare(
-		`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		input.allowSoftDeletedUser
+			? `DELETE FROM users WHERE id = ? AND deleted_at IS NOT NULL`
+			: `DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	).bind(input.dbUserId)
 	const results = await input.env.APP_DB.batch([
 		...operations.map((operation) => operation.statement),
@@ -1508,22 +1519,54 @@ export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
 	dbUserId: number
 	mcpUserId: string
+	/**
+	 * Purge lane: the account is already soft-deleted and claimed via
+	 * `deleting_at`. Skip the live deletion fence and remove the tombstoned
+	 * users row.
+	 */
+	purgeSoftDeleted?: boolean
 }): Promise<AccountDeletionResult> {
-	const marked = await markAccountDeleting({
-		db: input.env.APP_DB,
-		dbUserId: input.dbUserId,
-		env: input.env,
-	})
-	if (marked.leaseCount > 0) {
-		if (marked.created) {
-			await abortAccountDeleting({
-				db: input.env.APP_DB,
-				dbUserId: input.dbUserId,
-				env: input.env,
-				expectedDeletingAt: marked.deletingAt,
-			})
+	const purgeSoftDeleted = input.purgeSoftDeleted === true
+	let marked: {
+		leaseCount: number
+		created: boolean
+		deletingAt: string
+	}
+	if (purgeSoftDeleted) {
+		const tombstone = await input.env.APP_DB.prepare(
+			`SELECT deleting_at
+			 FROM users
+			 WHERE id = ? AND deleted_at IS NOT NULL`,
+		)
+			.bind(input.dbUserId)
+			.first<{ deleting_at: string | null }>()
+		if (!tombstone) {
+			throw new Error(
+				`Account ${input.mcpUserId} is not soft-deleted for purge.`,
+			)
 		}
-		throw new AccountDeletionWritersActiveError(marked.leaseCount)
+		marked = {
+			leaseCount: 0,
+			created: false,
+			deletingAt: tombstone.deleting_at ?? new Date().toISOString(),
+		}
+	} else {
+		marked = await markAccountDeleting({
+			db: input.env.APP_DB,
+			dbUserId: input.dbUserId,
+			env: input.env,
+		})
+		if (marked.leaseCount > 0) {
+			if (marked.created) {
+				await abortAccountDeleting({
+					db: input.env.APP_DB,
+					dbUserId: input.dbUserId,
+					env: input.env,
+					expectedDeletingAt: marked.deletingAt,
+				})
+			}
+			throw new AccountDeletionWritersActiveError(marked.leaseCount)
+		}
 	}
 	const warnings: Array<string> = []
 	const clearedDurableObjects: Record<string, number> = {}
@@ -1862,12 +1905,18 @@ export async function deleteUserAccount(input: {
 			env: input.env,
 			mcpUserId: input.mcpUserId,
 			dbUserId: input.dbUserId,
+			allowSoftDeletedUser: purgeSoftDeleted,
 		})
 		result.deletedRowCounts = {
 			...result.deletedRowCounts,
 			...d1Cleanup.deletedRowCounts,
 		}
 		result.updatedRowCounts = d1Cleanup.updatedRowCounts
+		if (purgeSoftDeleted && (d1Cleanup.deletedRowCounts.users ?? 0) === 0) {
+			throw new Error(
+				`Soft-deleted user row was not removed for ${input.mcpUserId}.`,
+			)
+		}
 	} catch (error) {
 		const failure = `Atomic D1 account deletion failed: ${getErrorMessage(error)}`
 		warnings.push(failure)

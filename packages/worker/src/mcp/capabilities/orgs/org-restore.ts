@@ -1,11 +1,18 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { restoreOrg } from '#worker/orgs/soft-delete.ts'
 
 const inputSchema = z.object({
-	orgId: z.string().min(1).describe('Organization id to restore.'),
+	orgId: z
+		.string()
+		.min(1)
+		.describe('Organization id to restore. Must match the bound request org.'),
 })
 
 const outputSchema = z.object({
@@ -24,12 +31,18 @@ export const orgRestoreCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const request = requireMcpRequest(ctx.callerContext)
+			if (args.orgId !== request.org.id) {
+				throw new McpCallerError(
+					'orgId must match the organization bound to this request.',
+				)
+			}
 			await restoreOrg({
 				env: ctx.env,
-				orgId: args.orgId,
+				orgId: request.org.id,
 				actorUserId: user.userId,
 			})
-			return { orgId: args.orgId }
+			return { orgId: request.org.id }
 		},
 	},
 )

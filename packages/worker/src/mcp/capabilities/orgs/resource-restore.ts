@@ -1,10 +1,15 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { requireMcpRequest } from '#mcp/capabilities/meta/require-user.ts'
 import { restoreResourceRow } from '#worker/orgs/soft-delete.ts'
 
 const inputSchema = z.object({
-	orgId: z.string().min(1),
+	orgId: z
+		.string()
+		.min(1)
+		.describe('Organization id. Must match the bound request org.'),
 	resourceType: z
 		.string()
 		.min(1)
@@ -27,9 +32,15 @@ export const resourceRestoreCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
+			const request = requireMcpRequest(ctx.callerContext)
+			if (args.orgId !== request.org.id) {
+				throw new McpCallerError(
+					'orgId must match the organization bound to this request.',
+				)
+			}
 			return await restoreResourceRow({
 				env: ctx.env,
-				orgId: args.orgId,
+				orgId: request.org.id,
 				resourceType: args.resourceType,
 				resourceId: args.resourceId,
 			})

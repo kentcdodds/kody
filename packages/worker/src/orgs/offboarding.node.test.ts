@@ -160,6 +160,75 @@ test('cannot remove the last live owner', async () => {
 	).rejects.toThrow('cannot_remove_last_owner')
 })
 
+test('offboarding revokes team-bound API tokens and bootstrap codes', async () => {
+	const db = await createDb()
+	const ts = '2026-01-01T00:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-team', 'member-1', 'org-1', 'team token', 'hash', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(ts, ts, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-other', 'member-1', 'other-org', 'other token', 'hash2', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(ts, ts, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO cli_credential_bootstrap_codes (
+				id, user_id, org_id, code_hash, name, scopes_json,
+				idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at
+			) VALUES (
+				'boot-team', 'member-1', 'org-1', 'codehash', 'boot', '[]',
+				3600, 86400, ?, ?
+			)`,
+		)
+		.bind(ts, ts)
+		.run()
+
+	const result = await offboardOrgMember({
+		appDb: db,
+		env: { APP_DB: db } as Env,
+		orgId: 'org-1',
+		memberUserId: 'member-1',
+		memberLeftVoluntarily: false,
+		jobChoices: [{ jobId: 'job-1', disposition: 'keep_running' }],
+		now: new Date('2026-10-01T12:00:00.000Z'),
+	})
+	expect(result.revokedApiTokens).toBe(1)
+	expect(result.revokedCliBootstrapCodes).toBe(1)
+	const teamToken = await db
+		.prepare(`SELECT revoked_at FROM api_tokens WHERE id = 'token-team'`)
+		.first<{ revoked_at: string | null }>()
+	expect(teamToken?.revoked_at).toBeTruthy()
+	const otherToken = await db
+		.prepare(`SELECT revoked_at FROM api_tokens WHERE id = 'token-other'`)
+		.first<{ revoked_at: string | null }>()
+	expect(otherToken?.revoked_at).toBeNull()
+	const boot = await db
+		.prepare(
+			`SELECT COUNT(*) AS n FROM cli_credential_bootstrap_codes WHERE id = 'boot-team'`,
+		)
+		.first<{ n: number }>()
+	expect(boot?.n).toBe(0)
+})
+
 test('revokeOAuthGrantsForOrg matches metadata.orgId with userId fallback', async () => {
 	const revokeGrant = vi.fn(async () => undefined)
 	const helpers = {

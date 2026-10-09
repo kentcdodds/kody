@@ -307,8 +307,8 @@ export async function markEmailNotificationDestinationVerified(input: {
 		.prepare(
 			`UPDATE email_notification_destinations
 			 SET verified_at = COALESCE(verified_at, ?)
-			 WHERE id = ? AND user_id = ?
-			 RETURNING id, email, verified_at, is_default${andLiveDeletedAtSql()}`,
+			 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}
+			 RETURNING id, email, verified_at, is_default`,
 		)
 		.bind(verifiedAt, input.destinationId, input.userId)
 		.first<DestinationRow>()

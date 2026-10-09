@@ -111,12 +111,7 @@ async function restoreOrgOwnedAppRows(input: {
 			.run()
 		total += result.meta.changes ?? 0
 	}
-	for (const table of [
-		'org_memberships',
-		'teams',
-		'grants',
-		'org_user_budgets',
-	] as const) {
+	for (const table of ['teams', 'grants', 'org_user_budgets'] as const) {
 		const result = await input.appDb
 			.prepare(
 				`UPDATE ${table}
@@ -127,12 +122,30 @@ async function restoreOrgOwnedAppRows(input: {
 			.run()
 		total += result.meta.changes ?? 0
 	}
+	// Only revive memberships for people who are still live accounts. A member
+	// who soft-deleted their own account must not regain access on org restore.
+	const memberships = await input.appDb
+		.prepare(
+			`UPDATE org_memberships
+			 SET deleted_at = NULL
+			 WHERE org_id = ?
+			   AND deleted_at = ?
+			   AND user_id IN (
+			     SELECT stable_user_id FROM users WHERE deleted_at IS NULL
+			   )`,
+		)
+		.bind(input.orgId, input.deletedAt)
+		.run()
+	total += memberships.meta.changes ?? 0
 	const teamMembers = await input.appDb
 		.prepare(
 			`UPDATE team_members
 			 SET deleted_at = NULL
 			 WHERE deleted_at = ?
-			   AND team_id IN (SELECT id FROM teams WHERE org_id = ?)`,
+			   AND team_id IN (SELECT id FROM teams WHERE org_id = ?)
+			   AND user_id IN (
+			     SELECT stable_user_id FROM users WHERE deleted_at IS NULL
+			   )`,
 		)
 		.bind(input.deletedAt, input.orgId)
 		.run()
