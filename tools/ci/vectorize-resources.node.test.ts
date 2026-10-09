@@ -98,10 +98,16 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 	})
 	const created = api.indexes.get('kody-pr-7-vectors')
 	expect(created?.config).toEqual({
-		dimensions: expect.any(Number),
+		dimensions: 384,
 		metric: 'cosine',
 	})
-	expect(created?.metadataIndexes.length).toBeGreaterThan(2)
+	expect(created?.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
 
 	created!.metadataIndexes = ['kind', 'userId']
 	api.requests.length = 0
@@ -116,8 +122,13 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 		'POST /kody-pr-7-vectors/metadata_index/create',
 		'POST /kody-pr-7-vectors/metadata_index/create',
 	])
-	expect(created!.metadataIndexes.slice(0, 2)).toEqual(['kind', 'userId'])
-	expect(created!.metadataIndexes.length).toBeGreaterThan(2)
+	expect(created!.metadataIndexes).toEqual([
+		'kind',
+		'userId',
+		'status',
+		'category',
+		'domain',
+	])
 })
 
 test('deleteVectorizeIndex treats a missing or just-deleted (410) index as success and fails loudly when the index survives the delete', async () => {
