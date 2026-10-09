@@ -13,6 +13,26 @@ export function isPaidOrg(plan: string): boolean {
 	return plan !== 'free'
 }
 
+/** Stripe customer for org-scoped checkout (team org row, else personal user). */
+export async function readOrgStripeCustomerId(
+	db: D1Database,
+	orgId: string,
+): Promise<string | null> {
+	const org = await db
+		.prepare(
+			`SELECT stripe_customer_id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+		)
+		.bind(orgId)
+		.first<{ stripe_customer_id: string | null }>()
+	const orgCustomer = org?.stripe_customer_id?.trim()
+	if (orgCustomer) return orgCustomer
+	const user = await db
+		.prepare(`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`)
+		.bind(orgId)
+		.first<{ stripe_customer_id: string | null }>()
+	return user?.stripe_customer_id?.trim() || null
+}
+
 export class FreeOrgLimitError extends Error {
 	override name = 'FreeOrgLimitError'
 
@@ -93,6 +113,35 @@ export async function assertCanOwnAnotherFreeOrg(
 	if (count >= MAX_FREE_ORGS_PER_USER) {
 		throw new FreeOrgLimitError(FREE_ORG_LIMIT_MESSAGE)
 	}
+}
+
+/**
+ * Before granting live Owner on a free org, enforce the two-free-org cap.
+ * Skips when the org is paid or the user already owns it.
+ */
+export async function assertCanAcceptFreeOrgOwnership(input: {
+	db: D1Database
+	orgId: string
+	userId: string
+}): Promise<void> {
+	const org = await input.db
+		.prepare(`SELECT plan FROM orgs WHERE id = ? AND deleted_at IS NULL`)
+		.bind(input.orgId)
+		.first<{ plan: string }>()
+	if (!org || isPaidOrg(org.plan)) {
+		return
+	}
+	const existingOwner = await input.db
+		.prepare(
+			`SELECT 1 AS ok FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND role = 'owner' AND deleted_at IS NULL`,
+		)
+		.bind(input.orgId, input.userId)
+		.first<{ ok: number }>()
+	if (existingOwner) {
+		return
+	}
+	await assertCanOwnAnotherFreeOrg(input.db, input.userId)
 }
 
 export function resolveEffectiveUserBudgetMicroUsd(input: {

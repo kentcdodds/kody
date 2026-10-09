@@ -24,6 +24,7 @@ import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	automationInvocationsPerDayResource,
 	shouldConsumeAutomationInvocationEntitlement,
@@ -173,6 +174,16 @@ export async function runSavedPackageModuleOnce(
 			// nothing. Failed attempts still count. Distinct from MCP
 			// execute_calls_per_day and scheduled job_runs_per_day.
 			try {
+				const orgRecord = await getOrgById(input.env.APP_DB, input.actor.orgId)
+				const orgSlug = orgRecord?.slug?.trim() || user.username?.trim() || null
+				const automationSource =
+					input.actor.request.kind === 'schedule'
+						? 'schedule'
+						: input.actor.request.kind === 'webhook'
+							? 'webhook'
+							: input.actor.request.kind === 'inbound-email'
+								? 'email'
+								: 'event'
 				await consumeDailyEntitlement({
 					db: input.env.APP_DB,
 					env: input.env,
@@ -181,8 +192,9 @@ export async function runSavedPackageModuleOnce(
 					resource: automationInvocationsPerDayResource,
 					orgBudget: {
 						orgId: input.actor.orgId,
-						orgSlug: user.username ?? null,
-						automationSource: input.actor.request.kind,
+						orgSlug,
+						automationSource,
+						actorUserId: null,
 					},
 				})
 			} catch (error) {

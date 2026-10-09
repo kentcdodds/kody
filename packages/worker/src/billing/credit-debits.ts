@@ -55,7 +55,6 @@ import { sendCreditLowBalanceEmail } from '#app/user-account-emails.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { creditDebitMonths } from './credit-wallet.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
-import { recordOrgBudgetSpend } from '#worker/entitlements/budget-gate.ts'
 
 export const creditDebitBatchSize = 50
 export const creditDebitMaxBatchesPerRun = 20
@@ -454,22 +453,8 @@ export async function settleCreditDebitMonth(input: {
 			}
 		}
 	}
-	if (debitedMicroUsd > 0) {
-		await recordOrgBudgetSpend({
-			db: input.db,
-			env: input.env,
-			orgId: input.userId,
-			actorUserId: input.userId,
-			automationSource: null,
-			deltaMicroUsd: debitedMicroUsd,
-			now: input.now,
-		}).catch((error: unknown) => {
-			console.warn('org_budget_spend_record_failed', {
-				userId: input.userId,
-				month: input.month,
-				error: error instanceof Error ? error.message : String(error),
-			})
-		})
-	}
+	// Org budget MTD is updated by the real-time gate per actor; skip aggregate
+	// settlement reconciliation into the org UserMeter (avoids double-count and
+	// mis-attributing shared-wallet debits to the org id as a member).
 	return { month: input.month, debitedMicroUsd, forgivenUnits }
 }

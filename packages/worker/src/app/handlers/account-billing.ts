@@ -36,7 +36,10 @@ import { isPlatformFeedbackDomainError } from '#worker/platform-feedback/errors.
 import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
 import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { buildOrgBillingMetadata } from '#worker/billing/org-stripe-metadata.ts'
-import { countLiveSeats } from '#worker/orgs/billing.ts'
+import {
+	countLiveSeats,
+	readOrgStripeCustomerId,
+} from '#worker/orgs/billing.ts'
 
 function billingErrorRedirect(request: Request, errorCode: string) {
 	const url = new URL('/account/billing', request.url)
@@ -134,13 +137,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				)
 			}
 
-			const row = await env.APP_DB.prepare(
-				`SELECT stripe_customer_id FROM users WHERE id = ?`,
-			)
-				.bind(user.userId)
-				.first<{ stripe_customer_id: string | null }>()
-			const customerId = row?.stripe_customer_id?.trim() || undefined
-			const orgId = user.mcpUser.userId
+			const orgId = user.request.org.id
+			const customerId =
+				(await readOrgStripeCustomerId(env.APP_DB, orgId)) || undefined
 			const seatQuantity = Math.max(1, await countLiveSeats(env.APP_DB, orgId))
 			const billingUrl = new URL('/account/billing', request.url).toString()
 			const requestIp = getRequestIp(request) ?? undefined
@@ -239,6 +238,8 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					...(customerId ? { customerId } : { customerEmail: user.email }),
 					// Lets the Stripe webhook resolve the user without reversing
 					// the HMAC client_reference_id (still verified on link).
+					// Success redirect linking still keys off the signed-in user;
+					// webhook org resolution uses kody_org_id below (team soak).
 					metadata: {
 						...buildOrgBillingMetadata(orgId),
 						kody_plan: plan,
@@ -246,7 +247,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				})
 				recordCheckoutFunnelEvent(env, {
 					stage: 'checkout_started',
-					userId: user.mcpUser.userId,
+					userId: orgId,
 					plan,
 				})
 				void logAuditEvent({
@@ -443,12 +444,8 @@ export function createAccountBillingPortalHandler(env: Env) {
 				return billingErrorRedirect(request, 'billing_not_configured')
 			}
 
-			const row = await env.APP_DB.prepare(
-				`SELECT stripe_customer_id FROM users WHERE id = ?`,
-			)
-				.bind(user.userId)
-				.first<{ stripe_customer_id: string | null }>()
-			const customerId = row?.stripe_customer_id?.trim()
+			const orgId = user.request.org.id
+			const customerId = await readOrgStripeCustomerId(env.APP_DB, orgId)
 			if (!customerId) {
 				return billingErrorRedirect(request, 'no_customer')
 			}

@@ -1,4 +1,8 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -228,6 +232,34 @@ test('billing checkout sells only Pro and selects monthly vs yearly Stripe price
 	)
 	expect(yearlyMissing.status).toBe(409)
 	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(2)
+})
+
+test('billing checkout bills the request-bound org, not only the personal id', async () => {
+	mockModule.createCheckoutSession.mockResolvedValue({
+		id: 'cs_team',
+		url: 'https://checkout.stripe.com/c/pay/cs_team',
+	})
+	const teamOrgId = ownerIdFromStored('team-org-stable')
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		...authenticatedUser,
+		request: deriveRequestContext({
+			user: authenticatedUser.mcpUser,
+			source: { kind: 'session' },
+			orgBinding: {
+				org: { id: teamOrgId, slug: 'team-co' },
+				role: 'owner',
+			},
+		}),
+	})
+	const env = createEnv()
+	const response = await postCheckout(env, { plan: 'pro' })
+	expect(response.status).toBe(200)
+	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
+		env,
+		expect.objectContaining({
+			metadata: expect.objectContaining({ kody_org_id: teamOrgId }),
+		}),
+	)
 })
 
 function subscription(input: { id: string; status: string; priceId: string }) {

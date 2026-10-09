@@ -12,6 +12,7 @@ import {
 	softDeleteOrgMember,
 	updateOrgMemberRole,
 } from '#worker/orgs/access-writes.ts'
+import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	orgRoleSchema,
@@ -145,6 +146,13 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 					if (owners <= 1) {
 						throw new McpCallerError('The last Owner cannot be demoted.')
 					}
+				}
+				if (args.role === 'owner' && membership.role !== 'owner') {
+					await assertCanAcceptFreeOrgOwnership({
+						db,
+						orgId: request.org.id,
+						userId,
+					})
 				}
 				await updateOrgMemberRole({
 					db,

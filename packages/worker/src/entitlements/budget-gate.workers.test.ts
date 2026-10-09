@@ -6,6 +6,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { consumeDailyEntitlement } from './service.ts'
 import { isBudgetLimitError } from './errors.ts'
+import { recordOrgBudgetSpend } from './budget-gate.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 
@@ -14,14 +15,17 @@ const month = utcMonthKey(now)
 
 async function ensureBudgetSchema(db: D1Database) {
 	await ensureOrgsTestSchema(db)
-	await db
-		.prepare(
-			`ALTER TABLE orgs ADD COLUMN default_user_budget_micro_usd INTEGER`,
-		)
-		.run()
-	await db
-		.prepare(`ALTER TABLE orgs ADD COLUMN automation_budget_micro_usd INTEGER`)
-		.run()
+	for (const sql of [
+		`ALTER TABLE orgs ADD COLUMN default_user_budget_micro_usd INTEGER`,
+		`ALTER TABLE orgs ADD COLUMN automation_budget_micro_usd INTEGER`,
+	]) {
+		try {
+			await db.prepare(sql).run()
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			if (!/duplicate column name/i.test(message)) throw error
+		}
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS org_user_budgets (
@@ -95,4 +99,60 @@ test('over user budget denies new execute via consumeDailyEntitlement', async ()
 	if (!isBudgetLimitError(error)) return
 	expect(error.message).toContain('@sam')
 	expect(error.message).toContain('@acme')
+})
+
+test('recordOrgBudgetSpend skips past-month debits without resetting live MTD', async () => {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureBudgetSchema(env.APP_DB)
+	const email = `past-month-${crypto.randomUUID()}@example.com`
+	const userId = testStableUserIdFromEmail(email)
+	const orgId = userId
+	const april = new Date('2026-04-10T12:00:00.000Z')
+	const march = '2026-03'
+	await seedAccount({
+		db: env.APP_DB,
+		email,
+		username: 'april-user',
+		plan: 'free',
+		stableUserId: userId,
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (
+				id, slug, plan, created_at, updated_at,
+				default_user_budget_micro_usd, automation_budget_micro_usd
+			) VALUES (?, ?, 'free', ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET slug = excluded.slug`,
+	)
+		.bind(
+			orgId,
+			'april-org',
+			april.toISOString(),
+			april.toISOString(),
+			null,
+			null,
+		)
+		.run()
+	const meter = userMeterRpc({ env, userId: orgId })
+	await meter.assertWithinBudgetAndRecord({
+		month: utcMonthKey(april),
+		actorUserId: userId,
+		automationSource: null,
+		deltaMicroUsd: 10_000_000,
+		userBudgetMicroUsd: 50_000_000,
+		automationBudgetMicroUsd: null,
+		actorUsername: 'april-user',
+		orgSlug: 'april-org',
+	})
+	await recordOrgBudgetSpend({
+		db: env.APP_DB,
+		env,
+		orgId,
+		actorUserId: userId,
+		automationSource: null,
+		deltaMicroUsd: 5_000_000,
+		now: april,
+		month: march,
+	})
+	const state = await meter.getBudgetSpend({ month: utcMonthKey(april) })
+	expect(state.users[userId]).toBe(10_000_000)
 })

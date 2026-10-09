@@ -1,3 +1,4 @@
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { listOrgBillingRecipientUserIds } from '#worker/orgs/billing.ts'
@@ -99,7 +100,7 @@ export async function sendSeatChangeEmail(input: {
 		emailConfig.appBaseUrl,
 	).toString()
 	const text = `${line}\n\nManage billing: ${billingUrl}`
-	const html = `<p>${line}</p><p><a href="${billingUrl}">Manage billing</a></p>`
+	const html = `<p>${escapeHtml(line)}</p><p><a href="${escapeHtml(billingUrl)}">Manage billing</a></p>`
 
 	return await sendToOrgBillingRecipients({
 		db: input.db,

@@ -21,6 +21,7 @@ import {
 	type GrantResourceType,
 	type StoredInvite,
 } from '#worker/orgs/access-writes.ts'
+import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	authorizeGrantTarget,
@@ -107,6 +108,13 @@ async function acceptStoredInvite(input: {
 	switch (kind) {
 		case 'membership': {
 			const role: OrgRole = invite.role ?? 'member'
+			if (role === 'owner') {
+				await assertCanAcceptFreeOrgOwnership({
+					db: input.db,
+					orgId: invite.orgId,
+					userId: input.acceptedByUserId,
+				})
+			}
 			await addOrgMember({
 				db: input.db,
 				orgId: invite.orgId,

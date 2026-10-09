@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	resolveTransactionalEmailConfig,
@@ -41,7 +42,7 @@ export function buildBudgetHitEmailContent(input: {
 	const billingUrl = new URL('/account/billing', input.appBaseUrl).toString()
 	const subject = 'Organization monthly budget reached'
 	const text = `${line}\n\nManage billing: ${billingUrl}`
-	const html = `<p>${line}</p><p><a href="${billingUrl}">Manage billing</a></p>`
+	const html = `<p>${escapeHtml(line)}</p><p><a href="${escapeHtml(billingUrl)}">Manage billing</a></p>`
 	return { subject, text, html }
 }
 

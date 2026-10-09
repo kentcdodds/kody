@@ -61,11 +61,13 @@ import {
 	isEntitlementLimitError,
 	JobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
+import { orgBudgetForJobExecution } from '#worker/entitlements/budget-gate.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
 	getCachedUserEntitlement,
 } from '#worker/entitlements/service.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	resolvePlanLimits,
 	type CreditWalletState,
@@ -1308,6 +1310,9 @@ export async function executeJobOnce(input: {
 						callerContext: input.callerContext,
 						backgroundUser,
 					})
+					const orgRecord = await getOrgById(input.env.APP_DB, input.job.userId)
+					const orgSlug =
+						orgRecord?.slug?.trim() || backgroundUser.username?.trim() || null
 					// Daily job-run quota before sandbox work so over-limit
 					// ticks cost nothing. Failed attempts still count.
 					await consumeDailyEntitlement({
@@ -1316,12 +1321,11 @@ export async function executeJobOnce(input: {
 						userId: input.job.userId,
 						email: backgroundUser.email,
 						resource: 'job_runs_per_day',
-						orgBudget: {
+						orgBudget: orgBudgetForJobExecution({
 							orgId: input.job.userId,
-							orgSlug: backgroundUser.username ?? null,
-							actorUserId: input.job.userId,
-							actorUsername: backgroundUser.username ?? null,
-						},
+							orgSlug,
+							source: input.source,
+						}),
 					})
 					const result = await runRepoBackedJob({
 						env: input.env,

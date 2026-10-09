@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import {
+	assertCanAcceptFreeOrgOwnership,
 	assertCanOwnAnotherFreeOrg,
 	countLiveFreeOwnedOrgs,
 	countLiveSeats,
@@ -136,6 +137,37 @@ test('listOrgBillingRecipientUserIds returns owners and billing role', async () 
 
 	const ids = await listOrgBillingRecipientUserIds(db, orgId)
 	expect(ids.sort()).toEqual([billing, owner].sort())
+})
+
+test('assertCanAcceptFreeOrgOwnership enforces cap before new owner on free org', async () => {
+	const db = await createDb()
+	const userId = testStableUserIdFromEmail('invite-owner@example.com')
+	await insertOrg(db, { id: 'free-1', slug: 'free-one' })
+	await insertMembership(db, { orgId: 'free-1', userId, role: 'owner' })
+	await insertOrg(db, { id: 'free-2', slug: 'free-two' })
+	await insertMembership(db, { orgId: 'free-2', userId, role: 'owner' })
+	await insertOrg(db, { id: 'free-3', slug: 'free-three' })
+
+	await expect(
+		assertCanAcceptFreeOrgOwnership({
+			db,
+			orgId: 'free-3',
+			userId,
+		}),
+	).rejects.toBeInstanceOf(FreeOrgLimitError)
+
+	await insertOrg(db, { id: 'paid-invite', slug: 'paid', plan: 'pro' })
+	await assertCanAcceptFreeOrgOwnership({
+		db,
+		orgId: 'paid-invite',
+		userId,
+	})
+
+	await assertCanAcceptFreeOrgOwnership({
+		db,
+		orgId: 'free-1',
+		userId,
+	})
 })
 
 test('assertCanOwnAnotherFreeOrg enforces MAX_FREE_ORGS_PER_USER', async () => {

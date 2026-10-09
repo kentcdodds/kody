@@ -1897,26 +1897,45 @@ class UserMeterBase extends DurableObject<Env> {
 		)
 	}
 
-	private ensureBudgetMonth(month: string): string {
-		const safeMonth = assertUtcMonthKey(month)
+	private storedBudgetMonth(): string | null {
 		const row = this.ctx.storage.sql
 			.exec<{ month: string }>(
 				`SELECT month FROM budget_spend_state WHERE id = ?`,
 				budgetSpendStateRowId,
 			)
 			.toArray()[0]
-		if (!row) {
+		return row ? String(row.month) : null
+	}
+
+	private ensureBudgetMonth(month: string): string {
+		const safeMonth = assertUtcMonthKey(month)
+		const stored = this.storedBudgetMonth()
+		if (!stored) {
 			this.resetBudgetSpendForMonth(safeMonth)
 			return safeMonth
 		}
-		if (String(row.month) !== safeMonth) {
-			this.resetBudgetSpendForMonth(safeMonth)
+		if (stored === safeMonth) {
+			return safeMonth
 		}
+		// Late settlement for a past month must not wipe the live MTD row.
+		if (safeMonth < stored) {
+			return stored
+		}
+		this.resetBudgetSpendForMonth(safeMonth)
 		return safeMonth
 	}
 
 	private readBudgetSpendState(month: string): UserMeterBudgetSpendState {
-		this.ensureBudgetMonth(month)
+		const safeMonth = assertUtcMonthKey(month)
+		const stored = this.storedBudgetMonth()
+		if (stored && safeMonth < stored) {
+			return {
+				month: safeMonth,
+				users: {},
+				automationMicroUsd: 0,
+			}
+		}
+		this.ensureBudgetMonth(safeMonth)
 		const automationRow = this.ctx.storage.sql
 			.exec<{ automation_micro_usd: number }>(
 				`SELECT automation_micro_usd FROM budget_spend_state WHERE id = ?`,
@@ -1998,6 +2017,14 @@ class UserMeterBase extends DurableObject<Env> {
 			}
 		}
 		if (delta === 0) {
+			return state
+		}
+		const stored = this.storedBudgetMonth()
+		if (stored && month < stored) {
+			console.info('user_meter_budget_skip_past_month', {
+				month,
+				storedMonth: stored,
+			})
 			return state
 		}
 		this.ctx.storage.transactionSync(() => {

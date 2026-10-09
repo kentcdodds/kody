@@ -98,6 +98,23 @@ test('buildBudgetHitEmailContent matches budget limit copy without em dashes', (
 	)
 })
 
+test('buildBudgetHitEmailContent HTML-escapes slug and usernames', () => {
+	const malicious = '<img src=x onerror=alert(1)>'
+	const { html } = buildBudgetHitEmailContent({
+		details: {
+			code: 'org_budget_limit_exceeded',
+			kind: 'user',
+			orgSlug: malicious,
+			actorUsername: malicious,
+			spentMicroUsd: 1,
+			budgetMicroUsd: 1,
+		},
+		appBaseUrl: 'https://kody.test',
+	})
+	expect(html).not.toContain('<img')
+	expect(html).toContain('&lt;img')
+})
+
 test('sendBudgetHitEmail claims once per org actor per UTC month', async () => {
 	const db = await createDb()
 	const orgId = 'org-budget-hit'

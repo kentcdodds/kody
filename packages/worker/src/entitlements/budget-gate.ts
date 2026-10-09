@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
 import { type TransactionalEmailEnv } from '#app/email/sender-config.ts'
 import { sendBudgetHitEmail } from '#worker/billing/org-budget-hit-emails.ts'
 import {
@@ -155,6 +156,50 @@ export async function assertWithinOrgBudget(input: {
 	}
 }
 
+/** Whether MTD budget counters should move for this UTC month (live gate month only). */
+export function shouldMutateBudgetMtdForMonth(
+	month: string,
+	now: Date,
+): boolean {
+	const current = utcMonthKey(now)
+	return month === current
+}
+
+/** Map scheduled/automation job runs to org budget gate context. */
+export function orgBudgetForJobExecution(input: {
+	orgId: string
+	orgSlug: string | null
+	source: RequestSource
+}): OrgBudgetGateContext {
+	if (input.source.kind === 'inherited') {
+		const actor = input.source.lineage.actor
+		if (actor?.userId) {
+			return {
+				orgId: input.orgId,
+				orgSlug: input.orgSlug,
+				actorUserId: actor.userId,
+				actorUsername: actor.username ?? null,
+			}
+		}
+	}
+	const automationSource =
+		input.source.kind === 'schedule'
+			? 'schedule'
+			: input.source.kind === 'webhook'
+				? 'webhook'
+				: input.source.kind === 'inbound-email'
+					? 'email'
+					: input.source.kind === 'platform-event'
+						? 'event'
+						: 'schedule'
+	return {
+		orgId: input.orgId,
+		orgSlug: input.orgSlug,
+		automationSource,
+		actorUserId: null,
+	}
+}
+
 /** Record metered spend without re-checking limits (ledger reconciliation). */
 export async function recordOrgBudgetSpend(input: {
 	db: D1Database
@@ -165,15 +210,26 @@ export async function recordOrgBudgetSpend(input: {
 	automationSource: string | null
 	deltaMicroUsd: number
 	now?: Date
+	/** Defaults to the UTC month of `now`; past months skip MTD mutation. */
+	month?: string
 }): Promise<void> {
 	const delta = Math.max(0, Math.floor(Number(input.deltaMicroUsd)))
 	if (delta === 0) return
 	if (!(await orgBudgetEnforcementAvailable(input.db, input.orgId))) {
 		return
 	}
+	const now = input.now ?? new Date()
+	const month = input.month ?? utcMonthKey(now)
+	if (!shouldMutateBudgetMtdForMonth(month, now)) {
+		console.info('org_budget_spend_skip_past_month', {
+			orgId: input.orgId,
+			month,
+			currentMonth: utcMonthKey(now),
+		})
+		return
+	}
 	const actorUserId = input.actorUserId
 	const isAutomation = actorUserId == null && input.automationSource != null
-	const month = utcMonthKey(input.now ?? new Date())
 	const meter = userMeterRpc({ env: input.env, userId: input.orgId })
 	try {
 		await meter.assertWithinBudgetAndRecord({
