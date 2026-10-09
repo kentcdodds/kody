@@ -18,15 +18,16 @@ reference, not a current plan recommendation.
 
 ## What changed
 
-The old draft led with shared workspaces and administration. The new draft
-leads with what an agency can deliver and shows a request, the work, and a
+The old draft led with shared workspaces and administration. The new draft leads
+with what an agency can deliver and shows a request, the work, and a
 client-facing result before discussing permissions.
 
 The page has three selectable examples and two client interfaces, a package
-reuse diagram, a concrete access illustration, and a direct onboarding action. It keeps
-Kody's fonts and logo. All client names and data are illustrative.
+reuse diagram, a concrete access illustration, and a direct onboarding action.
+It keeps Kody's fonts and logo. All client names and data are illustrative.
 
 No invented testimonials, logos, performance statistics, or competitive
 exclusivity claims. The user requested finished-Teams pre-sale positioning;
 organization ownership, shared access, and handoff remain assumptions in this
-design. The CTA opens existing onboarding with a business flag and campaign attribution.
+design. The CTA opens existing onboarding with a business flag and campaign
+attribution.

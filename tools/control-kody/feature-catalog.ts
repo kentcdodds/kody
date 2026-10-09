@@ -314,6 +314,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		paths: [
 			'/',
 			'/pricing',
+			'/for/business',
 			'/faq',
 			'/case-studies',
 			'/support',

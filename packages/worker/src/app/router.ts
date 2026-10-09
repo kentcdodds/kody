@@ -278,6 +278,7 @@ import {
 	createDiscordApiHandler,
 	createDiscordHandler,
 } from '#app/handlers/discord.ts'
+import { createBusinessHandler } from '#app/handlers/business.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
@@ -376,6 +377,7 @@ export function createAppRouter(env: Env) {
 			legacyGuidesApi: createLegacyGuidesApiRedirectHandler(env),
 			legacyGuidesMarkdown: createLegacyGuidesMarkdownRedirectHandler(env),
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
+			business: createBusinessHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
 			caseStudies: createCaseStudiesHandler(env),

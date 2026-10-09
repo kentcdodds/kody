@@ -71,6 +71,15 @@ export const publicOgPages = {
 			"For all the agents you use today, and the ones you'll use tomorrow.",
 		path: '/signup',
 	},
+	business: {
+		imageTitle: 'The agent cloud\nfor your business',
+		imageSubtitle:
+			'Shared tools, data, and automations for teams and agencies.',
+		ogTitle: 'AI Agent Cloud for Business and Agencies | Kody',
+		ogDescription:
+			'Give your teams and AI agents a shared home for tools, data, and automations. Run work across departments and client organizations with clear ownership.',
+		path: '/for/business',
+	},
 	pricing: {
 		imageTitle: 'Simple Kody pricing',
 		imageSubtitle: 'Every plan is the whole factory. You pay for volume.',
