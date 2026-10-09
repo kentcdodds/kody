@@ -132,10 +132,11 @@ function createCommunityIconDeletionRaceDbMock() {
 	let deleting = false
 	// After mirror retirement, the DO-authority path no longer calls DB batch for
 	// lease acquire/release. We simulate the account-deletion race by counting
-	// SELECT deleting_at queries: the first two are from the icon-generation
-	// withAccountWriteLease flow; from the third onward we report deletion so that
-	// isServableIconCommit (called by cache.set after icon creation) returns false
-	// and skips the KV write.
+	// SELECT deleting_at queries. assertAccountWritableDb now issues two per
+	// gate (live users + personal-org row). Lease acquire uses the first pair;
+	// createCommunityIconDescriptor's post-R2 isServableIconCommit uses the
+	// second pair while still writable; cache.set's isServableIconCommit is
+	// the fifth query and must see deletion so the KV write is skipped.
 	let deletingAtSelectCount = 0
 	return {
 		prepare(query: string) {
@@ -146,8 +147,11 @@ function createCommunityIconDeletionRaceDbMock() {
 						async first<T>() {
 							if (normalized.includes('SELECT deleting_at')) {
 								deletingAtSelectCount++
-								if (deletingAtSelectCount >= 3) deleting = true
-								return { deleting_at: deleting ? 'now' : null } as T
+								if (deletingAtSelectCount >= 5) deleting = true
+								return {
+									deleting_at: deleting ? 'now' : null,
+									deleted_at: null,
+								} as T
 							}
 							return null
 						},
@@ -363,8 +367,8 @@ test('community icon cache write loses the race to account deletion', async () =
 	mockArtifactIcon('community-icon.png', createPngHeader(128, 128))
 	await getPinnedIcon(env)
 	// The deletion race is detected via the D1 deleting_at point gate:
-	// isServableIconCommit sees deleting_at set (on its third SELECT query,
-	// after icon generation completes) and skips the KV write.
+	// isServableIconCommit sees deleting_at set (on the fifth SELECT query,
+	// during cache.set after icon generation) and skips the KV write.
 	expect(kvValues.size).toBe(0)
 })
 

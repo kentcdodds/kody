@@ -98,6 +98,14 @@ function createDeleteForkDb() {
 			deleting_at TEXT,
 			deleted_at TEXT
 		);
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			deleted_at TEXT,
+			deleting_at TEXT,
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+		);
 		CREATE TABLE saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
