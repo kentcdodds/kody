@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { createRouter } from 'remix/router'
+import { route } from 'remix/routes'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -89,6 +90,30 @@ test('organization resource pages outrank a package url with the same shape', as
 	expect(await resolve('/@ada/packages')).toBe('orgPackages')
 	expect(await resolve('/@ada/devin')).toBe('communityPackage')
 	expect(await resolve('/@ada')).toBe('profile')
+})
+
+test('the create-organization form posts to the create action, not back to the page', async () => {
+	const router = createRouter()
+	router.map(
+		route({
+			accountOrganizationsNew: routes.accountOrganizationsNew,
+			accountOrganizationsNewPost: routes.accountOrganizationsNewPost,
+		}),
+		{
+			actions: {
+				accountOrganizationsNew: createStubHandler('page'),
+				accountOrganizationsNewPost: createStubHandler('create'),
+			},
+		},
+	)
+	const resolve = async (method: string) => {
+		const response = await router.fetch(
+			new Request('http://localhost/account/organizations/new', { method }),
+		)
+		return response.text()
+	}
+	expect(await resolve('GET')).toBe('page')
+	expect(await resolve('POST')).toBe('create')
 })
 
 test('method mismatches return 405 with Allow and GET routes serve HEAD', async () => {
