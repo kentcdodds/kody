@@ -3,6 +3,9 @@ import {
 	type IncomingMessage,
 	type ServerResponse,
 } from 'node:http'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	cookieHeaderFromSetCookie,
@@ -40,6 +43,7 @@ const sampleComment = [
 const plainSpec = {
 	expectedStatus: null,
 	body: null,
+	form: null,
 	dump: false,
 	contains: [],
 }
@@ -274,6 +278,51 @@ test('preview manual test --request specs accept control-kody request --dump/--c
 	expect(() => parseSessionRequest('GET /pricing oops')).toThrow(
 		/GET --request cannot include a JSON body: oops[\s\S]*--contains <text>/,
 	)
+	expect(
+		parseSessionRequest(
+			'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org',
+		),
+	).toEqual({
+		...plainSpec,
+		method: 'POST',
+		path: '/account/organizations/new',
+		expectedStatus: 302,
+		form: {
+			encoding: 'urlencoded',
+			fields: [
+				{ name: 'slug', value: 'x-org', filePath: null },
+				{ name: 'displayName', value: 'X', filePath: null },
+			],
+		},
+		contains: ['/@x-org'],
+	})
+	expect(
+		parseSessionRequest(
+			'POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png --form alt=me',
+		).form,
+	).toEqual({
+		encoding: 'multipart',
+		fields: [
+			{ name: 'avatar', value: '', filePath: './avatar.png' },
+			{ name: 'alt', value: 'me', filePath: null },
+		],
+	})
+	expect(() =>
+		parseSessionRequest(
+			'POST /account/organizations/new {"slug":"x"} --form slug=x',
+		),
+	).toThrow(/both a JSON body and --form/)
+	expect(() =>
+		parseSessionRequest(
+			'POST /account/profile/avatar.json --form avatar=@./a.png',
+		),
+	).toThrow(/requires --multipart/)
+	expect(() =>
+		parseSessionRequest('POST /account/organizations/new --multipart'),
+	).toThrow(/requires at least one --form/)
+	expect(() =>
+		parseSessionRequest('GET /account/organizations/new --form slug=x'),
+	).toThrow(/GET --request cannot include form fields/)
 
 	expect(
 		parseArgs([
@@ -407,6 +456,45 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 	])
 	expect(result?.briefing).toContain(server.origin)
 	expect(result?.briefing).toContain('/account/secrets.json')
+})
+
+test('preview --request sends urlencoded and multipart form bodies', async () => {
+	await using server = await createPreviewFixtureServer()
+	const avatarDir = await mkdtemp(path.join(tmpdir(), 'kody-form-'))
+	const avatarPath = path.join(avatarDir, 'avatar.png')
+	await writeFile(avatarPath, 'png-bytes')
+	try {
+		const { exitCode, result } = await runPreviewManualTest(
+			[
+				'--url',
+				server.origin,
+				'--no-wait',
+				'--request',
+				'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org',
+				'--request',
+				`POST /account/profile/avatar.json --multipart --form avatar=@${avatarPath} --contains avatar`,
+				'--json',
+			],
+			createSilentDeps({ logs: [] }),
+		)
+		expect(exitCode).toBe(0)
+		expect(result?.ok).toBe(true)
+		expect(server.captured.map((entry) => entry.path)).toEqual([
+			'/account/organizations/new',
+			'/account/profile/avatar.json',
+		])
+		expect(server.captured[0]).toMatchObject({
+			contentType: 'application/x-www-form-urlencoded',
+			body: 'slug=x-org&displayName=X',
+		})
+		const upload = server.captured[1]
+		expect(upload?.contentType).toMatch(/^multipart\/form-data; boundary=/)
+		expect(upload?.body).toContain('name="avatar"')
+		expect(upload?.body).toContain('filename="avatar.png"')
+		expect(upload?.body).toContain('png-bytes')
+	} finally {
+		await rm(avatarDir, { recursive: true, force: true })
+	}
 })
 
 test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
@@ -802,8 +890,37 @@ async function createPreviewFixtureServer(commitSha = 'deployedsha') {
 		throw new Error('Failed to resolve fixture server port')
 	}
 
+	const captured: Array<{ path: string; contentType: string; body: string }> =
+		[]
+	const record =
+		(handler: Handler): Handler =>
+		(request, response) => {
+			const chunks: Array<Buffer> = []
+			request.on('data', (chunk: Buffer | string) => {
+				chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+			})
+			request.on('end', () => {
+				const body = Buffer.concat(chunks).toString('utf8')
+				captured.push({
+					path: new URL(request.url ?? '/', 'http://127.0.0.1').pathname,
+					contentType: String(request.headers['content-type'] ?? ''),
+					body,
+				})
+				handler(request, response)
+			})
+		}
+	routes['POST /account/organizations/new'] = record((_request, response) => {
+		const slug = new URLSearchParams(captured.at(-1)?.body ?? '').get('slug')
+		response.writeHead(302, { Location: `/@${slug ?? ''}` })
+		response.end()
+	})
+	routes['POST /account/profile/avatar.json'] = record((_request, response) => {
+		json(response, 200, { ok: true, avatar: true })
+	})
+
 	return {
 		origin: `http://127.0.0.1:${address.port}`,
+		captured,
 		async [Symbol.asyncDispose]() {
 			await new Promise<void>((resolve, reject) => {
 				server.close((error) => {

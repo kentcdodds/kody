@@ -117,7 +117,7 @@ const playwrightOk = () => ({
 test('control-kody parses commands, maps every required route, and drives a seed login', async () => {
 	expect(parseControlArgs(['--help']).command).toBe('help')
 	const request = (argv: Array<string>) => parseControlArgs(argv).request
-	const plainRequest = { body: null, dump: false, contains: [] }
+	const plainRequest = { body: null, form: null, dump: false, contains: [] }
 	expect(
 		request([
 			'request',
@@ -131,6 +131,42 @@ test('control-kody parses commands, maps every required route, and drives a seed
 		method: 'GET',
 		path: '/account/waiting.json',
 		expectedStatus: null,
+	})
+	expect(
+		request([
+			'request',
+			'POST',
+			'/account/organizations/new',
+			'--form',
+			'slug=x-org',
+			'--form',
+			'displayName=X',
+			'--skip-login',
+		]),
+	).toEqual({
+		...plainRequest,
+		method: 'POST',
+		path: '/account/organizations/new',
+		expectedStatus: null,
+		form: {
+			encoding: 'urlencoded',
+			fields: [
+				{ name: 'slug', value: 'x-org', filePath: null },
+				{ name: 'displayName', value: 'X', filePath: null },
+			],
+		},
+	})
+	const avatarUpload = request([
+		'request',
+		'POST',
+		'/account/profile/avatar.json',
+		'--multipart',
+		'--form',
+		'avatar=@./avatar.png',
+	])
+	expect(avatarUpload?.form).toEqual({
+		encoding: 'multipart',
+		fields: [{ name: 'avatar', value: '', filePath: './avatar.png' }],
 	})
 	expect(request(['request', 'GET', '/admin', '403', '--skip-login'])).toEqual({
 		...plainRequest,
