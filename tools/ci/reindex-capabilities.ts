@@ -1,15 +1,9 @@
+import {
+	capabilityReindexPhases,
+	type CapabilityReindexPhase as CapabilityReindexPhaseName,
+} from '#worker/vectorize/reindex-sweep.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { fail } from './resource-utils.ts'
-
-export const capabilityReindexPhases = [
-	'capabilities',
-	'memories',
-	'jobs',
-	'packages',
-] as const
-
-export type CapabilityReindexPhaseName =
-	(typeof capabilityReindexPhases)[number]
 
 export type CapabilityReindexOptions = {
 	baseUrl: string

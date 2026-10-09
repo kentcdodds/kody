@@ -226,8 +226,9 @@ test('capability reindex can limit work to builtin capabilities for production d
 		new URL('../../../.github/workflows/deploy.yml', import.meta.url),
 		'utf8',
 	)
-	expect(workflow).toContain('payload=\'{"phases":["capabilities"]}\'')
-	expect(workflow).toContain('{phases:["capabilities"],cursor:$cursor}')
+	expect(workflow).toContain(
+		'node tools/ci/reindex-capabilities.ts --url "$DEPLOY_URL" --phases capabilities',
+	)
 
 	const invalidRequests: Array<[body: Record<string, unknown>, error: string]> =
 		[
