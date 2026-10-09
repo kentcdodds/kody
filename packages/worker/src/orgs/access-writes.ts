@@ -17,6 +17,7 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
 import { assertCanOwnAnotherFreeOrg } from '#worker/orgs/billing.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type GrantSubject =
 	| { type: 'user'; id: string }
@@ -227,7 +228,7 @@ export async function upsertGrant(input: {
 				.prepare(
 					`UPDATE grants
 					 SET preset = ?, updated_at = ?, created_by_user_id = ?
-					 WHERE id = ? AND org_id = ?`,
+					 WHERE id = ? AND org_id = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(input.preset, now, input.createdByUserId, grantId, input.orgId),
 			input.db
@@ -616,7 +617,7 @@ export async function listGrants(input: {
 	subjectType?: 'user' | 'team' | null
 	subjectId?: string | null
 }): Promise<Array<GrantView>> {
-	const where = ['g.org_id = ?', 'g.deleted_at IS NULL']
+	const where = ['g.org_id = ?']
 	const params: Array<string> = [input.orgId]
 	if (input.grantId) {
 		where.push('g.id = ?')
@@ -653,7 +654,7 @@ export async function listGrants(input: {
 			        gp.permission AS permission
 			 FROM grants g
 			 LEFT JOIN grant_permissions gp ON gp.grant_id = g.id
-			 WHERE ${where.join(' AND ')}
+			 WHERE ${where.join(' AND ')}${andLiveDeletedAtSql('g')}
 			 ORDER BY g.created_at ASC, g.id ASC, gp.permission ASC`,
 		)
 		.bind(...params)

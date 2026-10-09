@@ -32,6 +32,7 @@ import {
 	type GrantView,
 	grantResourceTypes,
 } from '#worker/orgs/access-writes.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const grantPresetSchema = z.enum(grantPresets)
 
@@ -277,7 +278,9 @@ export async function resolvePersonId(
 	const formatError = getUsernameFormatValidationError(normalized)
 	if (formatError) throw new McpCallerError(formatError)
 	const row = await db
-		.prepare(`SELECT stable_user_id FROM users WHERE username = ?`)
+		.prepare(
+			`SELECT stable_user_id FROM users WHERE username = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(normalized)
 		.first<{ stable_user_id: string }>()
 	if (!row?.stable_user_id) {

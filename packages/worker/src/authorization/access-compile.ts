@@ -15,6 +15,7 @@ import {
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
 import { orgPermissions } from '@kody-internal/shared/org-permissions.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const allOrgPermissions: ReadonlySet<OrgPermission> = new Set(orgPermissions)
 
@@ -217,7 +218,9 @@ async function readOrgEpoch(
 	}
 	try {
 		const row = await db
-			.prepare(`SELECT access_epoch FROM orgs WHERE id = ?`)
+			.prepare(
+				`SELECT access_epoch FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(orgId)
 			.first<{ access_epoch: number }>()
 		if (!row) return null
@@ -377,7 +380,7 @@ export function bumpAccessEpochStatement(db: D1Database, orgId: string) {
 			`UPDATE orgs
 			 SET access_epoch = access_epoch + 1,
 			     updated_at = ?
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(new Date().toISOString(), orgId)
 }
