@@ -1,6 +1,7 @@
 # 0035 — Platform packages are execute-only
 
-- **Status:** superseded by [0036](./0036-platform-packages-fork-only.md)
+- **Status:** superseded by [0036](./0036-platform-packages-fork-only.md), then
+  by [0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
 - **Date:** 2026-08-23
 
 ## Context

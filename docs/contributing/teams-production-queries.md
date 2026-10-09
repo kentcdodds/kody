@@ -29,6 +29,11 @@ The report leaves CI only sealed to the recipient key, and the public run
 summary has no counts: Actions artifacts and logs on this repo are
 world-readable. Keep `report.json` off the repo.
 
+Production runs need the repository Actions secret `STRIPE_SECRET_KEY`; the
+workflow stops with that name when it is empty. The OAuth KV namespace is found
+by title: `kody-oauth` in production, resolved from the Wrangler worker name the
+same way `node tools/ci/production-resources.ts ensure` creates it.
+
 Rehearse the same D1 and KV queries on a branch preview first with
 `-f target=kody-branch-<slug>` (from `main`, any dispatcher, no `confirm`).
 Previews have no Stripe account, so that run reports Stripe as skipped.
@@ -63,4 +68,5 @@ from older published commits are not current imports and are ignored.
   `production-queries.node.test.ts`. The tests run each query against a fully
   migrated APP_DB schema.
 
-Related: [preview migration rehearsal](./preview-migration-rehearsal.md).
+Related: [preview migration rehearsal](./preview-migration-rehearsal.md),
+including the P8 backup and verify workflow.

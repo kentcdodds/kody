@@ -9,6 +9,7 @@ import {
 } from './local-d1-persist.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 import {
+	buildClearUnrequestedPreviewSeedFlagsSql,
 	buildSeedFeatureFlagOverrideSql,
 	buildSeedIntegrationSql,
 	buildSeedSavedPackagesSql,
@@ -19,6 +20,10 @@ import {
 	isFeatureFlagKey,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
+import {
+	isPreviewSeedFlagKey,
+	previewSeedFlagRejection,
+} from './preview-seed-flag-allowlist.ts'
 import {
 	getDefaultWranglerConfigPath,
 	resolveWranglerConfigPath,
@@ -36,7 +41,10 @@ type CliOptions = {
 	persistTo?: string
 	/** Local-only: metadata-only saved_packages per seeded account. */
 	savedPackages?: number
-	/** Local-only: per-user feature flag overrides forced on. */
+	/**
+	 * Per-user feature flag overrides forced on. Any registry key locally.
+	 * With `--remote`, only preview env and the committed preview allowlist.
+	 */
 	enableFlags: Array<FeatureFlagKey>
 }
 
@@ -203,15 +211,24 @@ export function parseArgs(argv: Array<string>): CliOptions {
 	if (options.persistTo !== undefined && options.persistTo.length === 0) {
 		fail('Missing value for --persist-to <path>.')
 	}
-	if (
-		options.remote &&
-		(options.savedPackages !== undefined || options.enableFlags.length > 0)
-	) {
+	options.env = resolveWranglerEnv(options)
+	if (options.remote && options.savedPackages !== undefined) {
 		fail(
-			'--saved-packages and --enable-flag are local-only (metadata fixtures for local account UI).',
+			'--saved-packages is local-only (metadata fixtures for local account UI).',
 		)
 	}
-	options.env = resolveWranglerEnv(options)
+	if (options.remote && options.enableFlags.length > 0) {
+		if (options.env !== 'preview') {
+			fail(
+				`--enable-flag with --remote is only allowed when the wrangler env is preview. Refusing env ${JSON.stringify(options.env)}.`,
+			)
+		}
+		for (const key of options.enableFlags) {
+			if (!isPreviewSeedFlagKey(key)) {
+				fail(previewSeedFlagRejection(key))
+			}
+		}
+	}
 
 	return options
 }
@@ -245,6 +262,8 @@ export function buildSeedSql(
 	options: {
 		savedPackages?: number
 		enableFlags?: ReadonlyArray<FeatureFlagKey>
+		/** Preview reseeds delete allowlisted flags this run is not enabling. */
+		reconcilePreviewFlags?: boolean
 	} = {},
 ) {
 	return accounts
@@ -253,6 +272,13 @@ export function buildSeedSql(
 				buildSeedUserSql(account),
 				buildSeedIntegrationSql(account.email),
 			]
+			if (options.reconcilePreviewFlags) {
+				const clearSql = buildClearUnrequestedPreviewSeedFlagsSql({
+					email: account.email,
+					enableFlags: options.enableFlags ?? [],
+				})
+				if (clearSql) parts.push(clearSql)
+			}
 			if (options.savedPackages !== undefined) {
 				parts.push(
 					buildSeedSavedPackagesSql({
@@ -367,6 +393,7 @@ async function main() {
 	const sql = buildSeedSql(accounts, {
 		savedPackages: options.savedPackages,
 		enableFlags: options.enableFlags,
+		reconcilePreviewFlags: options.remote && options.env === 'preview',
 	})
 	executeSeedSql(sql, options, localPersistEnv())
 

@@ -41,9 +41,8 @@ node tools/control-kody.ts request GET /community.json --skip-login
   commit is the published or pinned blob `/assets/` serves. Remote image URLs
   stay links.
 - Package settings 404 for anyone who is not the owner.
-- Official `@kody/*` listings install from a fork icon beside the package name.
-  The tooltip is `Fork`. Listings from another account use the same fork icon
-  and `createDoubleCheck`. The tooltip is
+- Listings install from a fork icon beside the package name. Listings from
+  another account (including `@kody/*`) use `createDoubleCheck`. The tooltip is
   `This was built by another user. Verify it before using. Click again to confirm fork.`
   The first click arms that control. The second click sends `acknowledged: true`
   (the install endpoint responds `409` without it). Clicking elsewhere,

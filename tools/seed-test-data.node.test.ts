@@ -198,7 +198,61 @@ test('local seed can add metadata-only packages and feature flag overrides', () 
 	expect(flagSql).toContain(`'connection-profiles'`)
 })
 
-test('saved-packages and enable-flag are rejected for remote seed', () => {
+test('remote enable-flag is preview-only and allowlisted', () => {
+	const preview = parseArgs([
+		'--remote',
+		'--env',
+		'preview',
+		'--enable-flag',
+		'connection-profiles',
+		'--enable-flag',
+		'demo-indicator',
+	])
+	expect(preview.env).toBe('preview')
+	expect(preview.enableFlags).toEqual(['connection-profiles', 'demo-indicator'])
+
+	const fromPreviewConfig = parseArgs([
+		'--remote',
+		'--config',
+		'packages/worker/wrangler.preview.json',
+		'--enable-flag',
+		'connection-profiles',
+	])
+	expect(fromPreviewConfig.env).toBe('preview')
+	expect(fromPreviewConfig.enableFlags).toEqual(['connection-profiles'])
+
+	const reconciled = buildSeedSql(
+		[
+			{
+				email: 'me@kentcdodds.com',
+				username: 'user-me',
+				passwordHash: 'hash',
+				admin: false,
+			},
+		],
+		{
+			enableFlags: ['connection-profiles'],
+			reconcilePreviewFlags: true,
+		},
+	)
+	expect(reconciled).toContain('DELETE FROM feature_flag_user_overrides')
+	expect(reconciled).toContain(`'demo-indicator'`)
+
+	const localOnly = buildSeedSql(
+		[
+			{
+				email: 'jane@example.com',
+				username: 'jane',
+				passwordHash: 'hash',
+				admin: false,
+			},
+		],
+		{ enableFlags: ['connection-profiles'] },
+	)
+	expect(localOnly).not.toContain('DELETE FROM feature_flag_user_overrides')
+})
+
+test('saved-packages and non-preview enable-flag are rejected for remote seed', () => {
 	consoleError.mockImplementation(() => {})
 	using _exit = mockProcessExit()
 
@@ -210,11 +264,47 @@ test('saved-packages and enable-flag are rejected for remote seed', () => {
 	)
 
 	expect(() =>
-		parseArgs(['--remote', '--enable-flag', 'connection-profiles']),
+		parseArgs([
+			'--remote',
+			'--env',
+			'production',
+			'--enable-flag',
+			'connection-profiles',
+		]),
 	).toThrow('process.exit called')
 	expect(consoleError).toHaveBeenCalledWith(
-		expect.stringContaining('local-only'),
+		expect.stringContaining('only allowed when the wrangler env is preview'),
 	)
+
+	expect(() =>
+		parseArgs([
+			'--remote',
+			'--env',
+			'preview',
+			'--enable-flag',
+			'jev-search-rerank',
+		]),
+	).toThrow('process.exit called')
+	expect(consoleError).toHaveBeenCalledWith(
+		expect.stringContaining('not on the preview seed allowlist'),
+	)
+
+	const previousCloudflareEnv = process.env.CLOUDFLARE_ENV
+	delete process.env.CLOUDFLARE_ENV
+	try {
+		expect(() =>
+			parseArgs(['--remote', '--enable-flag', 'connection-profiles']),
+		).toThrow('process.exit called')
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.stringContaining('only allowed when the wrangler env is preview'),
+		)
+	} finally {
+		if (previousCloudflareEnv === undefined) {
+			delete process.env.CLOUDFLARE_ENV
+		} else {
+			process.env.CLOUDFLARE_ENV = previousCloudflareEnv
+		}
+	}
 
 	expect(() => parseArgs(['--local', '--enable-flag', 'not-a-flag'])).toThrow(
 		'process.exit called',

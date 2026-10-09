@@ -59,7 +59,7 @@ function setHidden(element: unknown, hidden: boolean) {
 
 function canHostProgress(control: StatusControl) {
 	const idle = control.getAttribute('data-package-title-idle')
-	return idle === 'fork' || idle === 'verify'
+	return idle === 'verify'
 }
 
 /**

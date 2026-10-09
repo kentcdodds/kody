@@ -2,11 +2,73 @@
  * Teams P4 §5.3: expand pre-org API token scopes to `OrgPermission` strings.
  * Unknown values fail loudly. Already-valid org permissions pass through so
  * the rewrite is idempotent after 0090.
+ *
+ * `local-execute` expands to the use-level org permissions CapabilityProxy
+ * needed for saved packages (integrations, secrets, email, jobs, …). 0090
+ * only mapped it to `org:execute`; 0092 repairs stored tokens. Keep this list
+ * in sync with `cliCredentialBootstrapPolicy.defaultScopes` (plus `org:read`).
  */
 import {
 	isOrgPermission,
 	type OrgPermission,
 } from '@kody-internal/shared/org-permissions.ts'
+
+/**
+ * Org permissions that pre-P4 `local-execute` effectively granted through
+ * CapabilityProxy (route gate was the only scope check). Sorted.
+ * `search:read` stays out — agents use MCP `search` or an explicit grant.
+ */
+export const localExecuteOrgPermissions = [
+	'app:execute',
+	'app:read',
+	'email:read',
+	'email:send',
+	'integration:read',
+	'integration:use',
+	'job:execute',
+	'job:read',
+	'memory:read',
+	'org:execute',
+	'package:execute',
+	'package:read',
+	'secret:use',
+] as const satisfies ReadonlyArray<OrgPermission>
+
+const localExecuteOrgPermissionSet: ReadonlySet<OrgPermission> = new Set(
+	localExecuteOrgPermissions,
+)
+
+/**
+ * When a token already holds `org:execute`, ensure it also holds the
+ * local-execute parity set. Idempotent. Used by migration 0092 repair and
+ * bootstrap defaults (via the same constant).
+ */
+export function unionLocalExecuteParityScopes(
+	scopes: ReadonlyArray<OrgPermission>,
+): Array<OrgPermission> {
+	if (!scopes.includes('org:execute')) return [...scopes].sort()
+	const next = new Set<OrgPermission>(scopes)
+	for (const permission of localExecuteOrgPermissionSet) {
+		next.add(permission)
+	}
+	return [...next].sort()
+}
+
+/**
+ * Same targets as migration 0092: CLI bootstrap *tokens*, or tokens that
+ * still look like the incomplete 0090 `local-execute` → `org:execute`
+ * rewrite (hold `org:execute` but not `package:execute`). Intentional CI
+ * tokens that already list `package:execute` are left alone. Outstanding
+ * bootstrap *codes* are not repaired (short TTL; parent-cap risk).
+ */
+export function shouldRepairLocalExecuteParity(input: {
+	scopes: ReadonlyArray<string>
+	createdVia?: string | null
+}): boolean {
+	if (!input.scopes.includes('org:execute')) return false
+	if (input.createdVia === 'cli-bootstrap') return true
+	return !input.scopes.includes('package:execute')
+}
 
 const accountRead = [
 	'billing:read',
@@ -138,7 +200,7 @@ export const legacyApiTokenScopeMap = {
 	'tokens:read': [...tokensRead],
 	'tokens:write': [...tokensRead, 'token:delete'],
 	'search:read': ['search:read'],
-	'local-execute': ['org:execute'],
+	'local-execute': [...localExecuteOrgPermissions],
 } as const satisfies Record<string, ReadonlyArray<OrgPermission>>
 
 export type LegacyApiTokenScope = keyof typeof legacyApiTokenScopeMap

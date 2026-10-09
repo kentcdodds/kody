@@ -463,16 +463,19 @@ export does not list them.
    (gated by `shouldRunUsageAggregationCron` in the scheduled handler).
    `kody-jobs` fires cron and forwards to origin `JobsHost`, which runs this
    lane: it queries the Analytics Engine SQL API for the current UTC month
-   grouped by user and metric (weighting by `_sample_interval`, since Analytics
-   Engine samples under load) and batch-upserts absolute values — an idempotent
-   recompute, not increments. Analytics Engine retention (~90 days) always
-   covers a full month, so month-to-date recompute is complete; prior months
-   already in D1 stay untouched. Analytics Engine rejects the whole query
-   (HTTP 422) when an `if()` mixes a `doubleN` branch with an Integer literal,
-   so fallbacks in that query are Float literals (`1.0`, `0.0`);
-   `aggregate-rollups.node.test.ts` guards this. The aggregation needs
-   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and no-ops with a debug
-   log when either (or the `USAGE_EVENTS` binding) is missing.
+   grouped by billing id and metric (weighting by `_sample_interval`, since
+   Analytics Engine samples under load) and batch-upserts absolute values — an
+   idempotent recompute, not increments. The live-owner guard keeps a row when
+   the id is a live user or a live org, so a team org wallet still has a rollup
+   to debit. Soft-deleted owners are left out and their current-month rows are
+   removed. Analytics Engine retention (~90 days) always covers a full month, so
+   month-to-date recompute is complete; prior months already in D1 stay
+   untouched. Analytics Engine rejects the whole query (HTTP 422) when an `if()`
+   mixes a `doubleN` branch with an Integer literal, so fallbacks in that query
+   are Float literals (`1.0`, `0.0`); `aggregate-rollups.node.test.ts` guards
+   this. The aggregation needs `CLOUDFLARE_ACCOUNT_ID` and
+   `CLOUDFLARE_API_TOKEN` and no-ops with a debug log when either (or the
+   `USAGE_EVENTS` binding) is missing.
 
    **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local
@@ -880,17 +883,25 @@ testimonial channel — the homepage carousel has no intake form).
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of
-`VerifiedNoMcp` (`origin=event`). If that first mail fails closed, the verify
-path still opens an event-origin row with `send_count` 0 so the hourly sweep can
-retry after the normal first-send dwell instead of seeding the user permanently.
-The campaign upsert keeps `MAX(send_count)` and the later `last_sent_at` when
-the state is unchanged, and never downgrades `event` to `seed`, so a later sweep
-persist cannot clobber that verify-time row. A real state change still resets
-`send_count`. Later sends wait 24 hours after a transition and 5 days between
-sends in the same state. The send ledger claim is `INSERT OR IGNORE` on
-`(user_id, state, send_index)` and is released if the Cloudflare send fails or
-unsubscribe-token minting fails (no footerless campaign mail). A lost claim race
-does not persist a stale `send_count`. Kit is not part of this machine.
+`VerifiedNoMcp` (`origin=event`) and goes out during `GET /verify-email`, not on
+a later cron. The handler resolves the sender with the same request URL the
+verification mail uses, then passes the send to `waitUntil`. A floating promise
+is cancelled when the verified page is returned, which drops the mail and never
+opens the event-origin retry row; the next sweep then seeds the user and does
+not backfill. Deleting the account afterward does not send or cancel that mail.
+If the immediate send fails closed (no email config even with the request URL,
+or a failed unsubscribe mint or Cloudflare send), the verify path still opens an
+event-origin row with `send_count` 0 so the hourly sweep can retry after the
+normal 24-hour first-send dwell instead of seeding the user permanently. Tips
+opt-out skips the mail and does not open that row. The campaign upsert keeps
+`MAX(send_count)` and the later `last_sent_at` when the state is unchanged, and
+never downgrades `event` to `seed`, so a later sweep persist cannot clobber that
+verify-time row. A real state change still resets `send_count`. Later sends wait
+24 hours after a transition and 5 days between sends in the same state. The send
+ledger claim is `INSERT OR IGNORE` on `(user_id, state, send_index)` and is
+released if the Cloudflare send fails or unsubscribe-token minting fails (no
+footerless campaign mail). A lost claim race does not persist a stale
+`send_count`. Kit is not part of this machine.
 
 Campaign mail is the only surface gated by the **Kody tips** preference
 (`user_tips_email_opt_outs`). Each campaign send includes an “Unsubscribe from

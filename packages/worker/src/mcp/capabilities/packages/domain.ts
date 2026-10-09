@@ -9,15 +9,6 @@ import { packageAppFetchCapability } from './package-app-fetch.ts'
 import { packageSubscriptionDispatchCapability } from './package-subscription-dispatch.ts'
 import { packageUpdateCapability } from './package-update.ts'
 import { publishExternalPushCapability } from './publish-external-push.ts'
-import {
-	packageShareAcceptCapability,
-	packageShareAcknowledgeUpdateCapability,
-	packageShareInspectCapability,
-	packageShareInviteCapability,
-	packageShareLeaveCapability,
-	packageShareListCapability,
-	packageShareRevokeCapability,
-} from './package-share.ts'
 import { savePackageCapability } from './save-package.ts'
 
 export const packagesDomain = defineDomain({
@@ -33,7 +24,6 @@ export const packagesDomain = defineDomain({
 		'app',
 		'subscriptions',
 		'event handlers',
-		'share',
 		'invite',
 		'test',
 		'smoke',
@@ -52,12 +42,5 @@ export const packagesDomain = defineDomain({
 		packageUpdateCapability,
 		publishExternalPushCapability,
 		deletePackageCapability,
-		packageShareInviteCapability,
-		packageShareAcceptCapability,
-		packageShareRevokeCapability,
-		packageShareLeaveCapability,
-		packageShareListCapability,
-		packageShareInspectCapability,
-		packageShareAcknowledgeUpdateCapability,
 	],
 })

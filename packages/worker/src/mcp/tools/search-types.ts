@@ -21,19 +21,6 @@ export type PackageSearchRow = {
 	listingAhead: boolean | null
 	projection: PackageSearchProjection
 	readmeSnippet?: PackageReadmeSnippet | null
-	/**
-	 * Platform (built-in) scope username when the row belongs to a platform
-	 * account rather than the caller. Host-set by the search loader only —
-	 * the package plugin's ownership check admits exactly these rows and
-	 * fails closed for any other foreign row.
-	 */
-	platformScope?: string | null
-	/**
-	 * True when the row is an accepted person-to-person share grant, not a
-	 * caller-owned or platform-scope package. The package plugin admits these
-	 * foreign rows the same way it admits platformScope.
-	 */
-	shareGranted?: boolean
 	hydrate?: () => Promise<{
 		projection: PackageSearchProjection
 		readmeSnippet: PackageReadmeSnippet | null
@@ -107,9 +94,10 @@ export type SearchTelemetry = {
 		top1Type: SearchMatch['type'] | null
 		/**
 		 * Adaptive keep path after Jev Score (`kept-high` |
-		 * `kept-lowered` | `empty`). Present when Score ran successfully.
+		 * `kept-lowered` | `kept-identity` | `empty`). Present when Score
+		 * ran successfully.
 		 */
-		keepPath?: 'kept-high' | 'kept-lowered' | 'empty'
+		keepPath?: 'kept-high' | 'kept-lowered' | 'kept-identity' | 'empty'
 		/** Present only when `outcome` is `fallback-error`. */
 		errorReason?: string
 		/** Present when the Jev stage ran or attempted. */

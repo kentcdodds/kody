@@ -1,103 +1,11 @@
 import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
-
-test('getCapabilityRegistryForContext hides flag-gated capabilities when the flag is off', async () => {
-	const userId = `user-registry-flag-gate-${crypto.randomUUID()}`
-	const prepare = vi.fn(() => {
-		return {
-			bind() {
-				return this
-			},
-			async all() {
-				return { results: [], meta: { changes: 0 } }
-			},
-			async first() {
-				return null
-			},
-			async run() {
-				return { meta: { changes: 0 } }
-			},
-		}
-	})
-	const env = {
-		APP_DB: {
-			prepare,
-		},
-	} as unknown as Env
-	const callerContext = createMcpCallerContext({
-		source: { kind: 'mcp-oauth' },
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: personIdFromStored(userId),
-			email: 'user-1@example.com',
-			displayName: 'user-1',
-			roles: ['admin'],
-		},
-	})
-
-	const registry = await getCapabilityRegistryForContext({
-		env,
-		callerContext,
-	})
-	const staticRegistry = await getStaticRegistry()
-
-	expect(staticRegistry.capabilityMap).toHaveProperty('packageShareInvite')
-	expect(registry.capabilityMap).not.toHaveProperty('packageShareInvite')
-	expect(registry.capabilityMap).toHaveProperty('search')
-})
-
-test('getCapabilityRegistryForContext resolves flags while MCP server refs load', async () => {
-	const userId = `user-registry-flag-overlap-${crypto.randomUUID()}`
-	let releaseMcpRefs = () => {}
-	const mcpRefs = new Promise<void>((resolve) => {
-		releaseMcpRefs = resolve
-	})
-	let usersQueryStarted = false
-	const prepare = vi.fn((sql: string) => {
-		const isMcpRefs = sql.includes('mcp_server_settings')
-		const isUser = sql.includes('FROM users')
-		return {
-			bind() {
-				return this
-			},
-			async all() {
-				if (isMcpRefs) await mcpRefs
-				return { results: [], meta: { changes: 0 } }
-			},
-			async first() {
-				if (isUser) usersQueryStarted = true
-				return null
-			},
-			async run() {
-				return { meta: { changes: 0 } }
-			},
-		}
-	})
-	const pending = getCapabilityRegistryForContext({
-		env: { APP_DB: { prepare } } as unknown as Env,
-		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: personIdFromStored(userId),
-				email: 'user-1@example.com',
-				displayName: 'user-1',
-				roles: ['user'],
-			},
-		}),
-	})
-	await vi.waitFor(() => {
-		expect(usersQueryStarted).toBe(true)
-	})
-	releaseMcpRefs()
-	await pending
-})
 
 test('getStaticRegistry memoizes the builtin registry', async () => {
 	const first = await getStaticRegistry()

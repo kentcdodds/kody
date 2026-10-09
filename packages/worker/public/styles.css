@@ -801,6 +801,20 @@ html.is-settled {
 	}
 }
 
+.landing-account-deleted {
+	box-sizing: border-box;
+	width: min(40rem, calc(100% - 2.5rem));
+	margin: 1.25rem auto 0;
+	padding: 0.9rem 1.15rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.85rem;
+	background: var(--color-surface);
+	color: var(--color-text);
+	text-align: center;
+	font-size: 1rem;
+	line-height: 1.45;
+}
+
 .landing-hero {
 	max-width: 72rem;
 	margin-inline: auto;

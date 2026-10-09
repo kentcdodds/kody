@@ -1,4 +1,3 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
@@ -9,19 +8,12 @@ import {
 	createLoadedPackageSource,
 	type RuntimeModule,
 } from '#worker/test-support/module-graph.ts'
-import { personPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
 import { SavedPackageNotFoundError } from './package-import-resolution.ts'
 
 vi.mock('#worker/worker-bundler-modules.ts', () => ({
 	importWorkerBundler: async () => ({
 		createWorker: (...args: Array<unknown>) => mockModule.createWorker(...args),
 	}),
-}))
-
-vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
-	isPlatformAccountStableUserId: async () => false,
-	listPlatformAccountUsernames: async () => [],
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -417,50 +409,13 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	).catch((error: unknown) => error)
 	expect(thrown).toBeInstanceOf(SavedPackageNotFoundError)
 	expect((thrown as Error).message).toBe(
-		'Saved package "@example-package/follow-up-on-pr-agent" was not found for this user.',
+		'Saved package "@example-package/follow-up-on-pr-agent" was not found in this org. Imports resolve only within the caller\'s org; to use a package from another org, communityFork it into this org and import the copy.',
 	)
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
 		{ userId: 'user-1', name: '@example-package/follow-up-on-pr-agent' },
 	)
 	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
-})
-
-test('buildKodyModuleBundle rejects ad-hoc execute and person-package imports of platform scopes', async () => {
-	mockModule.getPlatformAccountByUsername.mockImplementation(
-		async (_db: unknown, username: unknown) =>
-			username === 'kody'
-				? {
-						id: 1,
-						username: 'kody',
-						email: 'kody@example.com',
-						stableUserId: ownerIdFromStored('platform-kody'),
-					}
-				: null,
-	)
-	mockModule.getSavedPackageByName.mockResolvedValue(null)
-	const importGithub =
-		'import github from "kody:@kody/github"\nexport default github\n'
-
-	for (const input of [
-		{
-			sourceFiles: { 'index.js': importGithub },
-			bundleContext: 'ad-hoc-execute' as const,
-		},
-		{
-			sourceFiles: makePackageFiles('@alice/local-package', localKody, {
-				'index.js': importGithub,
-			}),
-		},
-	]) {
-		await expect(
-			buildKodyModuleBundle({
-				...graphInput,
-				...input,
-				entryPoint: 'index.js',
-			}),
-		).rejects.toThrow(personPackagePlatformDependencyMessage)
-	}
 })
 
 test('buildKodyAppBundle rewrites static and dynamic kody runtime imports inside TypeScript package apps', async () => {

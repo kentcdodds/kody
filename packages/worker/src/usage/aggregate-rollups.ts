@@ -187,7 +187,13 @@ SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
 WHERE ?1 = 'system:email'
 	OR EXISTS (
 		SELECT 1 FROM users
-		WHERE stable_user_id = ?1 AND deleting_at IS NULL
+		WHERE stable_user_id = ?1
+			AND deleting_at IS NULL${andLiveDeletedAtSql('users')}
+	)
+	OR EXISTS (
+		SELECT 1 FROM orgs
+		WHERE id = ?1
+			AND deleting_at IS NULL${andLiveDeletedAtSql('orgs')}
 	)
 ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	event_count = excluded.event_count,
@@ -336,12 +342,18 @@ function toCount(value: number | string) {
 	return Number.isFinite(parsed) ? Math.round(parsed) : 0
 }
 
+/**
+ * Keep Analytics Engine rows whose billing id is still a live user or a live
+ * org. Team org ids have no `users` row. Personal orgs share
+ * `stable_user_id`. Soft-deleted owners stay out so the hourly recompute
+ * cannot rebuild their rollups.
+ */
 export async function filterLiveUsageRows<T extends { user_id: string }>(
 	db: D1Database,
 	rows: Array<T>,
 ) {
 	const systemRows = rows.filter((row) => row.user_id === 'system:email')
-	const userIds = [
+	const ownerIds = [
 		...new Set(
 			rows
 				.map((row) => row.user_id)
@@ -349,20 +361,33 @@ export async function filterLiveUsageRows<T extends { user_id: string }>(
 		),
 	]
 	const live = new Set<string>()
-	for (let index = 0; index < userIds.length; index += 80) {
-		const chunk = userIds.slice(index, index + 80)
+	for (let index = 0; index < ownerIds.length; index += 80) {
+		const chunk = ownerIds.slice(index, index + 80)
 		const placeholders = chunk.map(() => '?').join(', ')
-		const result = await runD1WithRetry(() =>
-			db
-				.prepare(
-					`SELECT stable_user_id FROM users
-					WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
-						AND stable_user_id IN (${placeholders})`,
-				)
-				.bind(...chunk)
-				.all<{ stable_user_id: string }>(),
-		)
-		for (const row of result.results ?? []) live.add(row.stable_user_id)
+		const [users, orgs] = await Promise.all([
+			runD1WithRetry(() =>
+				db
+					.prepare(
+						`SELECT stable_user_id FROM users
+						WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
+							AND stable_user_id IN (${placeholders})`,
+					)
+					.bind(...chunk)
+					.all<{ stable_user_id: string }>(),
+			),
+			runD1WithRetry(() =>
+				db
+					.prepare(
+						`SELECT id FROM orgs
+						WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
+							AND id IN (${placeholders})`,
+					)
+					.bind(...chunk)
+					.all<{ id: string }>(),
+			),
+		])
+		for (const row of users.results ?? []) live.add(row.stable_user_id)
+		for (const row of orgs.results ?? []) live.add(row.id)
 	}
 	return [...systemRows, ...rows.filter((row) => live.has(row.user_id))]
 }
@@ -443,6 +468,12 @@ async function deleteNonLiveUserRollups(input: {
 						WHERE stable_user_id = usage_rollups.user_id
 							AND deleting_at IS NULL
 							${andLiveDeletedAtSql('users')}
+					)
+					AND NOT EXISTS (
+						SELECT 1 FROM orgs
+						WHERE id = usage_rollups.user_id
+							AND deleting_at IS NULL
+							${andLiveDeletedAtSql('orgs')}
 					)`,
 			)
 			.bind(...input.months)

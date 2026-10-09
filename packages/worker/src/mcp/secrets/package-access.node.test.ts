@@ -9,22 +9,14 @@ import {
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	findPlatformPackageByRef: vi.fn(),
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
-	isShareGrantedForeignPackage: vi.fn(),
-	findAcceptedPackageShareGrant: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-}))
-
-vi.mock('#worker/package-registry/platform-packages.ts', () => ({
-	findPlatformPackageByRef: (...args: Array<unknown>) =>
-		mockModule.findPlatformPackageByRef(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
@@ -39,13 +31,6 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
-}))
-
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	isShareGrantedForeignPackage: (...args: Array<unknown>) =>
-		mockModule.isShareGrantedForeignPackage(...args),
-	findAcceptedPackageShareGrant: (...args: Array<unknown>) =>
-		mockModule.findAcceptedPackageShareGrant(...args),
 }))
 
 const {
@@ -228,26 +213,7 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 	).resolves.toBeUndefined()
 	// Grant short-circuits before package/fork lookups.
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
-	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
-})
-
-test('assertPackageCanAccessResolvedSecret denies implicit access when allowImplicitUserSecretAccess is false', async () => {
-	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
-	await expect(
-		assertPackageCanAccessResolvedSecret(
-			accessInput({ allowImplicitUserSecretAccess: false }),
-		),
-	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
-	await expect(
-		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				resolved: grantedToPkg1,
-				allowImplicitUserSecretAccess: false,
-			}),
-		),
-	).resolves.toBeUndefined()
 })
 
 test('package secret access authorizes the stamp package, not the importing run', async () => {
@@ -277,30 +243,28 @@ test('package secret access authorizes the stamp package, not the importing run'
 	).resolves.toBeUndefined()
 })
 
-test('package secret access does not resolve platform packages the caller does not own', async () => {
-	const platformPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
+test("package secret access does not resolve another org's package", async () => {
+	const otherOrgPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
 	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
-				storageContext: { sessionId: null, packageId: platformPackageId },
+				storageContext: { sessionId: null, packageId: otherOrgPackageId },
 			}),
 		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 		expect((error as Error).message).toBe(
-			`Package "${platformPackageId}" was not found for secret access.`,
+			`Package "${otherOrgPackageId}" was not found for secret access.`,
 		)
 		return true
 	})
-	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
 	lookups(savedPackage, null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(accessInput()),
 	).resolves.toBeUndefined()
-	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 })
 
 test('assertCanSetSecrets fails closed for mutate grants before any provider work', async () => {
@@ -465,54 +429,4 @@ test('package approval helpers parse structured messages and skip trusted packag
 		kodyId: 'discord-gateway',
 	})
 	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
-})
-
-test('shared package code cannot use the guest user secrets even when allowed_packages lists it', async () => {
-	mockModule.isShareGrantedForeignPackage.mockResolvedValueOnce(true)
-	await expect(
-		assertPackageCanAccessResolvedSecret(
-			accessInput({ resolved: grantedToPkg1 }),
-		),
-	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
-})
-
-test('shared package mounts resolve secrets as the owner, not the guest', async () => {
-	mockModule.getSavedPackageById.mockImplementation(
-		async (_db: unknown, input: { userId: string }) =>
-			input.userId === 'owner-1' ? savedPackage : null,
-	)
-	mockModule.findAcceptedPackageShareGrant.mockResolvedValue({
-		ownerUserId: 'owner-1',
-		packageId: 'pkg-1',
-	})
-	mountManifest('@alice/shared-notes', 'shared-notes', {
-		notesToken: { name: 'ownerNotesToken', scope: 'package' },
-	})
-	mockModule.resolveSecret.mockResolvedValueOnce({
-		found: true,
-		value: 'owner-token',
-		scope: 'package',
-		allowedPackages: [],
-	})
-	const mounted = await resolvePackageMountedSecret({
-		env,
-		packageId: 'pkg-1',
-		alias: 'notesToken',
-		callerContext: mountCaller('pkg-1', { userId: 'guest-1' }),
-	})
-	expect(mounted).toMatchObject({
-		alias: 'notesToken',
-		ref: '{{secret:ownerNotesToken|scope=package}}',
-		scope: 'package',
-	})
-	// Host-issued opacity: name+scope only — no owner id callers could forge.
-	expect(mounted.ref).not.toContain('owner-1')
-	expect(mounted.ref).not.toContain('guest-1')
-	expect(JSON.stringify(mounted)).not.toContain('owner-token')
-	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'owner-1' }),
-	)
-	expect(mockModule.resolveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'owner-1' }),
-	)
 })

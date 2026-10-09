@@ -186,14 +186,6 @@ MCP callers stay out of the on/off cohorts. Enable for experiment members with
 `adminFeatureFlagSet({ key: "mcp-events-extension", enabled: true, audience: "experiments_opt_in" })`.
 Remove the flag and gate sites when the experiment ends.
 
-`package-share-grants` is a rollout kill switch for person-to-person package
-shares (invite, accept, UI, MCP, and runtime use). Registry default is **off**.
-Signed-in users can opt themselves in from `/docs/package-sharing` (a per-user
-on override). Operators can also enable it globally at `/admin/feature-flags`
-(or `adminFeatureFlagSet`). Evaluation failures fail closed. No `successMetric`:
-this is not an experiment. Remove the flag and every gate site after general
-availability.
-
 ## Success metrics
 
 Every flag exists to move something; the `successMetric` field on a registry

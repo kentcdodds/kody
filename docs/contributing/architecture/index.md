@@ -66,9 +66,6 @@ wrote during that fetch) so the next cron can skip the synthetic.
   [Waiting](../../use/waiting.md) for first-use and Discord membership cards.
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
-- [Platform accounts](./platform-accounts.md): operator-provisioned platform
-  accounts, package scope grants, and actor/owner delegation for official
-  package scopes.
 - [Request context](./request-context.md): the one `RequestContext` (org, actor,
   attribution, credential) every request source derives, and lineage for runs
   started by other runs.

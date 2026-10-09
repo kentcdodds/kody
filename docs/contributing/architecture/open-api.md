@@ -119,9 +119,10 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
   `kody_at_`) and a `cli_command` that includes required lifetime flags.
   `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no Bearer;
-  rejected for MCP `api`) and mints a normal `kody_at_` with default scopes
-  `org:execute` + `org:read` + `package:execute` and
-  `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
+  rejected for MCP `api`) and mints a normal `kody_at_` with default scopes that
+  restore pre-P4 `local-execute` parity (`org:execute` + `org:read` +
+  package/integration/secret/email/job/app/memory use scopes; migration 0092)
+  and `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
   both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
   surface sliding `expires_at` (the idle window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
@@ -162,10 +163,10 @@ module and does not silently hop to `kody.execute`. See
   package-graph download + local workerd embedding — not whole-module
   `kody.execute`.
 - Package-graph uses the same static-import scanner and resolution policy as
-  cloud ad hoc execute (own copy → share grant → platform scopes only when
-  allowed). Prefer published `importable-module` artifacts; unpublished or
-  missing artifacts answer `400 package_import_unpublished`. Literal dynamic
-  `import("kody:@…")` answers `400 unsupported_dynamic_package_import`.
+  cloud ad hoc execute (imports resolve only in the caller's org). Prefer
+  published `importable-module` artifacts; unpublished or missing artifacts
+  answer `400 package_import_unpublished`. Literal dynamic `import("kody:@…")`
+  answers `400 unsupported_dynamic_package_import`.
 - Calls dispatch through the same `kody.*` tool map as ad hoc cloud execute, so
   capability behavior, `kody.mcp`, and workflows match the cloud. Caller errors
   from a capability keep their status and message. Unexpected capability
@@ -210,11 +211,10 @@ module and does not silently hop to `kody.execute`. See
   secret placeholders through the fetch gateway.
 - Stamped `packageStorage` / `packageSecrets`: local shim factories hop as
   `kody.packageStorage*` / `kody.packageSecret*` (secret authority via
-  `__kodySecretAuthorityPackageId`). Each local hop accepts only caller-owned
-  package ids; share-granted packages cannot use these capabilities on
-  `execute --local` and must use cloud execute instead. Ad hoc (unstamped)
-  `packageStorage()` / `packageSecrets` on the host `kody:runtime` remain
-  unbound, matching cloud ad hoc execute.
+  `__kodySecretAuthorityPackageId`). Each local hop accepts only package ids
+  owned by the caller's org. Ad hoc (unstamped) `packageStorage()` /
+  `packageSecrets` on the host `kody:runtime` remain unbound, matching cloud ad
+  hoc execute.
 
 ## Errors
 

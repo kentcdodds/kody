@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { diffSnapshots, stripVolatile } from './json-snapshot.ts'
+import {
+	diffSnapshots,
+	findPackagesListedByMoreThanOneOwner,
+	stripVolatile,
+} from './json-snapshot.ts'
 
 test('stripVolatile drops per-read fields but keeps job schedules', () => {
 	expect(
@@ -44,4 +48,21 @@ test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt 
 		{ path: '.people[0].proofs.user', before: 'h1', after: 'h2' },
 		{ path: '.people[0].tokens[1]', before: undefined, after: { id: 't2' } },
 	])
+})
+
+test('findPackagesListedByMoreThanOneOwner flags a package injected into another org', () => {
+	expect(
+		findPackagesListedByMoreThanOneOwner({
+			alice: { packages: [{ id: 'a1' }, { id: 'shared' }] },
+			carol: { packages: [{ id: 'c1' }, { id: 'shared' }] },
+			'@rh-platform': { packages: [{ id: 'o1' }] },
+			dave: { error: 'failed' },
+		}),
+	).toEqual([{ id: 'shared', owners: ['alice', 'carol'] }])
+	expect(
+		findPackagesListedByMoreThanOneOwner({
+			alice: { packages: [{ id: 'a1' }] },
+			'@rh-platform': { packages: [{ id: 'o1' }] },
+		}),
+	).toEqual([])
 })

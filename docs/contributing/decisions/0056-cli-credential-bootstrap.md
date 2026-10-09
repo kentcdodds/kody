@@ -5,7 +5,9 @@
 - **Amended:** 2026-10-06 (required lifetimes, active-token cap 500, reclaim);
   2026-10-09 (Teams P4: default eventual scopes are `org:execute` + `org:read`);
   2026-10-09 (default scopes also include `package:execute` so local `kody:@…`
-  package-graph resolution works)
+  package-graph resolution works); 2026-10-09 (default scopes restore pre-P4
+  `local-execute` parity: integration, secret, email, job, app, memory use-level
+  permissions — migration 0092)
 - **Amends:** [0053](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md),
   [0055](./0055-cli-mcp-oauth-local-execute-http.md)
 
@@ -123,9 +125,13 @@ a flagless / default-lifetime mint path.
   local execute; single-task agents use `short`.
 - Ordinary and bootstrap tokens share the same idle/max ceilings (14 days / 3
   months). Cap reclaim is generic in `mintApiToken`.
-- **As of Teams P4:** default eventual scopes are `org:execute` + `org:read` +
-  `package:execute` (org permissions; no write-implies-read). `package:execute`
-  is required because package-graph / import resolution checks it on each
-  `kody:@…` import under request permissions. Do not mint the original
-  `local-execute` / `account:read` names, or `tokens:write`. Parent tokens still
-  cannot escalate scopes or outlive their own `max_expires_at`.
+- **As of Teams P4 + 0092:** default eventual scopes are the pre-P4
+  `local-execute` + `account:read` parity set under org permissions:
+  `org:execute`, `org:read`, and the use-level scopes saved packages need
+  (`package:execute` / `package:read`, `integration:read` / `integration:use`,
+  `secret:use`, `email:read` / `email:send`, `job:read` / `job:execute`,
+  `app:read` / `app:execute`, `memory:read`). `createAuthenticatedFetch` calls
+  `integrationGet` (`integration:read`); without it, every integration package
+  fails closed on CapabilityProxy. Do not mint `search:read`, write scopes, the
+  original `local-execute` / `account:read` names, or `tokens:write`. Parent
+  tokens still cannot escalate scopes or outlive their own `max_expires_at`.

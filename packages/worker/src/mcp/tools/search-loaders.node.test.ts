@@ -1,129 +1,135 @@
-import { expect, test, vi } from 'vitest'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 
-const mockModule = vi.hoisted(() => ({
-	listSavedPackagesWithCommunityProvenanceByUserId: vi.fn(),
-	getSavedPackageWithCommunityProvenanceById: vi.fn(),
-	listAcceptedInboundSharedPackages: vi.fn(),
-	listPlatformPackagesForSearch: vi.fn(async () => []),
-}))
-
-vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: async () => ({
-		capabilityList: [],
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {},
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-		capabilityHandlers: {},
-	}),
-}))
-
-vi.mock('#worker/mcp-client/settings-service.ts', () => ({
-	listVisibleEnabledMcpServerRefsCached: async () => [],
-}))
-
-vi.mock('#mcp/secrets/service.ts', () => ({
-	listUserSecretsForSearch: async () => [],
-}))
-
-vi.mock('#worker/integrations/service.ts', () => ({
-	listJoinedIntegrations: async () => [],
-}))
-
-vi.mock('#worker/package-registry/platform-packages.ts', () => ({
-	listPlatformPackagesForSearch: (...args: Array<unknown>) =>
-		mockModule.listPlatformPackagesForSearch(...(args as [])),
-}))
-
-vi.mock('#worker/community/fork-listing-relation.ts', () => ({
-	applySavedPackageForkListingAncestry: async ({
-		records,
-	}: {
-		records: Array<unknown>
-	}) => records,
+const mocks = vi.hoisted(() => ({
+	listPackages: vi.fn(),
+	buildRows: vi.fn(),
+	getRegistry: vi.fn(),
+	listSecrets: vi.fn(),
+	listIntegrations: vi.fn(),
+	listServerRefs: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesWithCommunityProvenanceByUserId(...args),
-	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
+		mocks.listPackages(...args),
 }))
-
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	listAcceptedInboundSharedPackages: (...args: Array<unknown>) =>
-		mockModule.listAcceptedInboundSharedPackages(...args),
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async (input: {
+		records: Array<unknown>
+	}) => input.records,
+}))
+vi.mock('./search-package-rows.ts', () => ({
+	buildSavedPackageSearchRows: (...args: Array<unknown>) =>
+		mocks.buildRows(...args),
+}))
+vi.mock('#mcp/capabilities/registry.ts', () => ({
+	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
+		mocks.getRegistry(...args),
+}))
+vi.mock('#mcp/secrets/service.ts', () => ({
+	listUserSecretsForSearch: (...args: Array<unknown>) =>
+		mocks.listSecrets(...args),
+}))
+vi.mock('#worker/integrations/service.ts', () => ({
+	listJoinedIntegrations: (...args: Array<unknown>) =>
+		mocks.listIntegrations(...args),
+}))
+vi.mock('#worker/mcp-client/settings-service.ts', () => ({
+	listVisibleEnabledMcpServerRefsCached: (...args: Array<unknown>) =>
+		mocks.listServerRefs(...args),
 }))
 
 const { loadSearchRowsAndRegistry } = await import('./search-loaders.ts')
 
-function packageRecord(input: { id: string; userId: string; name: string }) {
+const env = { APP_DB: {} } as Env
+
+function savedPackage(id: string, userId: string) {
 	return {
-		id: input.id,
-		userId: input.userId,
-		name: input.name,
-		kodyId: input.name.split('/').pop() ?? input.name,
-		description: '',
-		tags: [],
-		searchText: null,
-		hasApp: false,
-		isPrivate: false,
+		id,
+		userId,
+		name: `@acme/${id}`,
+		kodyId: id,
 		hidden: false,
-		sourceId: `source-${input.id}`,
 	}
 }
 
-test('search rows load inbound shared packages without waiting on the caller package list', async () => {
-	let releaseOwnList!: () => void
-	const ownListGate = new Promise<void>((resolve) => {
-		releaseOwnList = resolve
-	})
-	const own = packageRecord({
-		id: 'pkg-own',
-		userId: 'user-1',
-		name: '@me/own',
-	})
-	const shared = packageRecord({
-		id: 'pkg-shared',
-		userId: 'user-2',
-		name: '@friend/shared',
-	})
-	mockModule.listSavedPackagesWithCommunityProvenanceByUserId.mockImplementation(
-		async () => {
-			await ownListGate
-			return [own]
+beforeEach(() => {
+	for (const mock of Object.values(mocks)) mock.mockReset()
+	mocks.getRegistry.mockResolvedValue({ capabilities: [], mcpServers: [] })
+	mocks.listSecrets.mockResolvedValue([])
+	mocks.listIntegrations.mockResolvedValue([])
+	mocks.listServerRefs.mockResolvedValue([])
+	mocks.buildRows.mockImplementation(
+		async (input: { records: Array<{ id: string }> }) => ({
+			rows: input.records.map((record) => ({ record })),
+			warnings: [],
+		}),
+	)
+	mocks.listPackages.mockImplementation(
+		async (_db: unknown, input: { userId: string }) =>
+			input.userId === 'org-1'
+				? [savedPackage('org-pkg', 'org-1')]
+				: [savedPackage('person-pkg', 'user-1')],
+	)
+})
+
+function orgBoundCallerContext() {
+	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://kody.example',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'a@example.com',
+			displayName: 'A',
 		},
-	)
-	mockModule.listAcceptedInboundSharedPackages.mockResolvedValue([
-		{ id: 'pkg-shared', userId: 'user-2' },
-		{ id: 'pkg-own', userId: 'user-1' },
-	])
-	mockModule.getSavedPackageWithCommunityProvenanceById.mockImplementation(
-		async (_db: unknown, { packageId }: { packageId: string }) =>
-			packageId === 'pkg-shared' ? shared : own,
-	)
+		orgBinding: {
+			org: { id: ownerIdFromStored('org-1'), slug: 'acme' },
+			role: 'owner',
+		},
+	})
+}
 
-	const loading = loadSearchRowsAndRegistry({
-		env: { APP_DB: {} } as unknown as Env,
-		callerContext: { baseUrl: 'https://example.com' } as never,
+test('org-bound discovery lists the bound org packages, not the acting person packages', async () => {
+	const callerContext = orgBoundCallerContext()
+	expect(callerContext.request?.org.id).toBe('org-1')
+
+	const result = await loadSearchRowsAndRegistry({
+		env,
+		callerContext,
 		userId: 'user-1',
 	})
-	await vi.waitFor(() => {
-		expect(
-			mockModule.getSavedPackageWithCommunityProvenanceById,
-		).toHaveBeenCalledTimes(2)
-	})
-	releaseOwnList()
-	const rows = await loading
 
-	expect(
-		rows.packageRows.map((row) => ({
-			id: row.record.id,
-			shareGranted: row.shareGranted === true,
-		})),
-	).toEqual([
-		{ id: 'pkg-own', shareGranted: false },
-		{ id: 'pkg-shared', shareGranted: true },
-	])
+	expect(mocks.listPackages).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'org-1',
+	})
+	expect(mocks.buildRows).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'org-1' }),
+	)
+	expect(result.packageRows.map((row) => row.record.id)).toEqual(['org-pkg'])
+})
+
+test('a personal connection still lists the person own packages', async () => {
+	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://kody.example',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'a@example.com',
+			displayName: 'A',
+		},
+	})
+	const result = await loadSearchRowsAndRegistry({
+		env,
+		callerContext,
+		userId: 'user-1',
+	})
+	expect(mocks.listPackages).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'user-1',
+	})
+	expect(result.packageRows.map((row) => row.record.id)).toEqual(['person-pkg'])
 })

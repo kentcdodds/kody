@@ -75,8 +75,8 @@ reference detail those docs link into.
   overlays and package imports
 - [Workflows](./workflows.md)
 - [Packages](./packages.md)
-- [Share a package](../guides/package-sharing.md) — invite another paid account
-  to use a package (accept required; pin or follow)
+- [Share a package](../guides/package-sharing.md) — grant a person or team
+  access to a package, or invite someone who is not in your org yet
 - [Ship Agent Skills in a package](../guides/package-skills.md) — put
   `skills/<name>/SKILL.md` in a package; MCP serving is behind
   `mcp-skills-extension`

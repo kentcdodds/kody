@@ -1,4 +1,3 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -6,7 +5,6 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
-import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import { readDeclaredSecretProviderId } from './declared-provider.ts'
 import { clearProviderSecretCacheForTests } from './cache.ts'
 import {
@@ -179,21 +177,6 @@ test('provider resolve grants, hosts, cache, owner execute, share owner binding,
 	const packageUse = await h.resolve({ authorityPackageId: 'pkg-consumer' })
 	expect(packageUse.value).toBe('item-password')
 	expect(h.invokeProvider).toHaveBeenCalledTimes(2)
-
-	vi.spyOn(shareGrants, 'resolvePackageStorageOwner').mockResolvedValue(
-		ownerIdFromStored(ownerId),
-	)
-	clearProviderSecretCacheForTests()
-	const shared = await h.resolve({
-		userId: 'user-guest',
-		authorityPackageId: 'pkg-consumer',
-		invokeProvider: async (call) => {
-			expect(call.ownerUserId).toBe(ownerId)
-			expect(call.doorSecretValue).toBe('op-sa-token')
-			return { value: 'shared-password', hosts: ['app.example.com'] }
-		},
-	})
-	expect(shared.value).toBe('shared-password')
 
 	clearProviderSecretCacheForTests()
 	await expect(

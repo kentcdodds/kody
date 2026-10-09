@@ -47,9 +47,9 @@ Exact capabilities depend on the User Token Scopes granted at connect time.
    - **Scopes:** comma-separated User Token Scopes
    - **PKCE:** off (confidential client)
    - **Allowed hosts:** `slack.com,files.slack.com`
-6. After they authorize, `./smoke-test` on `@kody/slack` (or the forked package)
-   must report a user identity. A bot token is a failed setup, not a package
-   bug.
+6. After they authorize, `./smoke-test` on your fork of `@kody/slack` (a public
+   community package from the `@kody` org) must report a user identity. A bot
+   token is a failed setup, not a package bug.
 
 See the [OAuth guide](../oauth.md) for query parameters, confidential exchange,
 and reconnect behavior.

@@ -128,8 +128,15 @@ with a decisive top hit). A `fallback-error` outcome includes a short
 **`errorReason`** (missing AI Gateway, Gateway 403/402, or incomplete Score
 answers, including sampled top-level response keys when answers are missing).
 Score batches share a 4-second budget; past it Kody aborts them and returns
-hybrid order with outcome `fallback-timeout`. When the Jev stage runs or
-attempts, that object also carries **`model`**, **`aiCallCount`** (Score
+hybrid order with outcome `fallback-timeout`. When every Score misses the keep
+floors, the ranked list stays empty (`fallback-empty-after-drop`,
+`keepPath: empty`). Hybrid candidates whose package name, kody id, or name leaf
+equals a query term or a contiguous run of query terms stay in hybrid order
+(`keepPath: kept-identity`). `search({ query: "dropbox shared link" })` can
+still return the package `search({ query: "dropbox" })` finds. A package that
+only mentions those words in its description stays dropped. The response is
+still **No matches** when nothing matches an identity term. When the Jev stage
+runs or attempts, that object also carries **`model`**, **`aiCallCount`** (Score
 `AI.run` batches), and **`usage`** (`inputTokens` / `outputTokens`, or nulls
 when the binding omits them) so eval can weigh ranking quality against latency
 and token use. Public `search` also returns request-scoped
@@ -334,8 +341,8 @@ for a close helpers package before writing fetch code. For integrations.sh
 registry lookup, `communityFork` `@kody/integrations-sh`. See
 `search({ entity: "guide:openapi_integrations" })` (also at
 `/docs/openapi-integrations`) when the API publishes a spec. For a named
-bind-and-call surface, `communityFork` `@kody/openapi` into the user's account —
-person accounts cannot import `@kody/*` live.
+bind-and-call surface, `communityFork` `@kody/openapi` into the user's org;
+imports resolve only in the caller's org.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
 with `search({ entity: "guide:integration_bootstrap" })`. Inspect the relevant

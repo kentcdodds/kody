@@ -1,7 +1,4 @@
-import {
-	ownerIdFromStored,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	constants,
 	createHmac,
@@ -19,8 +16,6 @@ import {
 } from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as unresolvedSecret from '#mcp/secrets/unresolved-secret.ts'
-import * as packageAccess from '#mcp/secrets/package-access.ts'
-import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { decodeHmacKeyMaterial, extractSecretMaterial } from './jwt-signing.ts'
 
@@ -493,43 +488,4 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 		}),
 	)
 	expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
-
-	const ownerSpy = vi
-		.spyOn(shareGrants, 'resolvePackageStorageOwner')
-		.mockResolvedValue(ownerIdFromStored('owner-user'))
-	vi.spyOn(
-		packageAccess,
-		'assertPackageCanAccessResolvedSecret',
-	).mockResolvedValue(undefined)
-	await signWith(privateKey, refInput, {
-		env: { APP_DB: {} } as Env,
-		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: personIdFromStored('guest-user'),
-				email: 'guest@example.com',
-				displayName: 'Guest',
-			},
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: 'shared-pkg',
-				storageId: null,
-			},
-		}),
-	})
-	expect(ownerSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			caller: 'guest-user',
-			packageId: 'shared-pkg',
-		}),
-	)
-	expect(secretService.resolveSecret).toHaveBeenLastCalledWith(
-		expect.objectContaining({
-			userId: 'owner-user',
-			name: 'serviceAccountKey',
-			scope: 'user',
-		}),
-	)
 })

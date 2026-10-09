@@ -24,11 +24,12 @@ export type RehearsalUser = {
  * same emails on two rehearsal previews never collide.
  *
  * - admin: private-credential site admin (seed SQL path, `--admin` role).
- * - alice: paid; owns the shared package; seed SQL (legacy id).
- * - bob: holds the platform scope grant and publishes there; seed SQL.
- * - carol: paid; accepted alice's share and invited alice (pending);
- *   admin-created (random id); auto-refill configured.
- * - dave: real signup (random id); forked the platform listing; renamed.
+ * - alice: paid; grants carol Use on her package; seed SQL (legacy id).
+ * - bob: owns the rehearsal org and publishes there; seed SQL.
+ * - carol: paid; holds a Use grant on alice's package and ran it; has a
+ *   pending grant invite to alice; admin-created (random id); auto-refill
+ *   configured.
+ * - dave: real signup (random id); forked the org listing; renamed.
  */
 export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 	{
@@ -68,22 +69,23 @@ export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 	},
 ]
 
-/**
- * Package sharing is a per-user opt-in (`/docs/package-sharing`); bob and
- * dave stay opted out, so share capabilities are hidden from them.
- */
-export const sharingOptInRoles: ReadonlyArray<RehearsalUser['role']> = [
-	'alice',
-	'carol',
-]
-
 /** Dave renames during the seed so `username_redirects` has a row. */
 export const renamedDaveUsername = 'rh-dave-renamed'
 
-export const rehearsalPlatformAccount = {
-	email: 'rh-platform@example.com',
-	username: 'rh-platform',
-} as const
+/**
+ * An ordinary org owned by bob. Slug matches the former platform account
+ * username from main's seed (`rh-platform`) so a main→P8 conversion rehearsal
+ * and a fresh P8 seed both land on the same org slug for snapshots.
+ */
+export const rehearsalOrg = {
+	slug: 'rh-platform',
+	displayName: 'Rehearsal Org',
+	owner: 'bob',
+} as const satisfies {
+	slug: string
+	displayName: string
+	owner: RehearsalUser['role']
+}
 
 /** Fixture user `preview.yml` reseeds on every deploy; excluded from diffs. */
 export const previewFixtureEmail = 'me@kentcdodds.com'

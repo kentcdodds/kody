@@ -218,6 +218,20 @@ primitives:
     docs:
       - docs/contributing/architecture/authorization.md
 
+  - id: org-access-grants
+    group: auth
+    name: Org memberships and access grants
+    summary:
+      The one way to give access. Members and teams hold org roles; a grant
+      gives one person or team a preset on one resource; invites deliver both.
+    code:
+      - packages/worker/src/orgs/
+      - packages/worker/src/mcp/capabilities/access/
+    docs:
+      - docs/guides/package-sharing.md
+      - docs/contributing/architecture/authorization.md
+      - docs/contributing/decisions/0067-cross-org-grants-replace-shares-and-platform-accounts.md
+
   - id: entitlements
     group: auth
     name: Plans & entitlements
@@ -285,21 +299,6 @@ primitives:
       - packages/worker/src/mcp/capabilities/packages/
       - packages/worker/src/package-registry/
     docs:
-      - docs/contributing/architecture/data-storage.md
-
-  - id: package-share-grants
-    group: assistant
-    name: Package share grants
-    summary:
-      Person-to-person invitations to use a saved package (read source + invoke)
-      without write, publish, or the guest's other secrets.
-    code:
-      - packages/worker/src/package-registry/share-grants.ts
-      - packages/worker/src/package-registry/share-rbac.ts
-      - packages/worker/src/mcp/capabilities/packages/package-share.ts
-    docs:
-      - docs/guides/package-sharing.md
-      - docs/contributing/decisions/0050-package-share-grants-are-not-scope-grants.md
       - docs/contributing/architecture/data-storage.md
 
   - id: package-codemods
@@ -724,8 +723,8 @@ primitives:
       - docs/contributing/architecture/data-storage.md
 
 invariants:
-  - id: per-user-isolation
-    summary: userId scopes every read/write, DO id, and vector path.
+  - id: per-org-isolation
+    summary: The org scopes every read/write, DO id, and vector path.
     docs:
       - docs/contributing/project-intent.md
       - docs/contributing/architecture/data-storage.md

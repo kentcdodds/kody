@@ -459,6 +459,95 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 	expect(await findsAdminCapability(['admin'])).toBe(true)
 })
 
+test('searchUnified ranks the same when retrievers settle during candidate generation', async () => {
+	const retrieverResult = {
+		id: 'note-1',
+		title: 'Target lookup note',
+		summary: 'Target can be reached at 555-1234.',
+		score: 0.9,
+		source: 'notes inbox',
+		packageId: 'package-1',
+		kodyId: 'notes-package',
+		retrieverKey: 'notes',
+		retrieverName: 'Notes retriever',
+	}
+	const fixtures = {
+		query: 'target lookup note',
+		limit: 5,
+		userId: 'user-1',
+		registry: registryOf('meta', [
+			cap('target_lookup', 'meta', 'Find target details'),
+		]),
+		optionalRows: rows({
+			packageRows: [
+				leanPackageRow('pkg-target', 'user-1', {
+					name: '@user/target-lookup',
+					kodyId: 'target-lookup',
+					description: 'Lookup a target from notes.',
+				}),
+			],
+		}),
+		env: {
+			SENTRY_ENVIRONMENT: 'production',
+			CAPABILITY_VECTOR_INDEX: {
+				async query() {
+					return { matches: [] }
+				},
+			},
+		} as unknown as Env,
+	}
+	const embedText = async (text: string) => [...deterministicEmbedding(text)]
+	const rankedIds = (result: Awaited<ReturnType<typeof search>>) =>
+		result.matches.map((match) =>
+			match.type === 'capability'
+				? `capability:${match.name}`
+				: match.type === 'package'
+					? `package:${match.kodyId}`
+					: match.type === 'retriever_result'
+						? `retriever_result:${match.id}`
+						: `${match.type}`,
+		)
+
+	const sequential = await search({
+		...fixtures,
+		embedText,
+		retrieverResults: [retrieverResult],
+	})
+
+	let embeddingStarted = false
+	let releaseRetrievers = (_results: Array<typeof retrieverResult>) => {}
+	const retrieverResults = new Promise<Array<typeof retrieverResult>>(
+		(resolve) => {
+			releaseRetrievers = resolve
+		},
+	)
+	const overlappedPromise = search({
+		...fixtures,
+		embedText: async (text) => {
+			embeddingStarted = true
+			return await embedText(text)
+		},
+		retrieverResults,
+	})
+	await vi.waitFor(() => {
+		expect(embeddingStarted).toBe(true)
+	})
+	releaseRetrievers([retrieverResult])
+	const overlapped = await overlappedPromise
+
+	expect(rankedIds(overlapped)).toEqual(rankedIds(sequential))
+	expect(rankedIds(overlapped)).toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('retriever_result:note-1'),
+			expect.stringContaining('package:target-lookup'),
+			expect.stringContaining('capability:target_lookup'),
+		]),
+	)
+	expect(overlapped.telemetry.candidateCounts).toEqual(
+		sequential.telemetry.candidateCounts,
+	)
+})
+
 test('searchUnified ranks package retriever results alongside capabilities', async () => {
 	const retrieverResult = {
 		id: 'note-1',
@@ -1183,40 +1272,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	expect(capabilityNames(taskQuery.matches)).toContain('emailSend')
 })
 
-test('searchUnified ranks platform (built-in) package rows and drops unmarked foreign rows', async () => {
-	const withPlatform = await search({
-		query: 'github helpers',
-		optionalRows: rows({
-			packageRows: [
-				leanPackageRow('pkg-own', 'user-1', {
-					name: '@user/notes',
-					kodyId: 'notes',
-					description: 'Notes helper',
-				}),
-				{
-					...leanPackageRow('platform-pkg-1', 'platform-user', {
-						name: '@kody/github',
-						kodyId: 'github',
-						description: 'Official GitHub helpers',
-						tags: ['github'],
-					}),
-					platformScope: 'kody',
-				},
-			],
-		}),
-	})
-	expect(
-		withPlatform.matches.find(
-			(match) => match.type === 'package' && match.kodyId === 'github',
-		),
-	).toMatchObject({
-		type: 'package',
-		name: '@kody/github',
-		platformScope: 'kody',
-	})
-
-	// An unmarked foreign row still fails the package lane closed (and logs
-	// the tripwire warning).
+test('searchUnified drops package rows owned by another org', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const withForeign = await search({
 		query: 'github helpers',

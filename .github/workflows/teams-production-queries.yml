@@ -76,6 +76,16 @@ jobs:
             exit 1
           fi
 
+      - name: 🔑 Require the Stripe secret for production
+        if: inputs.target == 'production'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
+            echo "::error title=Missing Actions secret::The repository Actions secret STRIPE_SECRET_KEY is not set (or is empty), so the Stripe subscription count cannot run against production. Add it under Settings > Secrets and variables > Actions, then re-run." >&2
+            exit 1
+          fi
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:

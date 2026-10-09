@@ -1,14 +1,16 @@
 # 0050: Package share grants are not platform scope grants
 
-- **Status:** accepted
+- **Status:** superseded by
+  [0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
 - **Date:** 2026-09-10
 
 ## Context
 
 `package_scope_grants` / `adminPackageScopeGrant*` grant a person **full
 authoring** inside a **platform** account scope. That table is admin-minted,
-platform-owner only, and the seed of a future org/teams feature. See
-[platform accounts](../architecture/platform-accounts.md).
+platform-owner only, and the seed of a future org/teams feature. Platform
+accounts were later removed
+([0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)).
 
 Person-to-person sharing (spouse, staff, a collaborator who should **use** a
 package without a shared login) is a different product. Reusing scope grants

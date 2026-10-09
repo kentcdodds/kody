@@ -5,6 +5,7 @@ import { buildCandidateBaseScore } from '../search-scoring.ts'
 
 export const retrieverResultSearchEntityPlugin = {
 	type: 'retriever_result',
+	waitsForRetrieverResults: true,
 	buildCandidates(input) {
 		return input.retrieverResults
 			.map((result) => {

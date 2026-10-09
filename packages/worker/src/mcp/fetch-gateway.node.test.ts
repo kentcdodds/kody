@@ -1,7 +1,3 @@
-import {
-	personalOrgId,
-	ownerIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -17,7 +13,6 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
-import * as shareGrants from '#worker/package-registry/share-grants.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
@@ -316,9 +311,6 @@ test('fetch gateway requires package approval before resolving user secrets', as
 	const packageSpy = vi
 		.spyOn(packageRepo, 'getSavedPackageById')
 		.mockResolvedValue(savedPackage('pkg-1', 'example-package'))
-	vi.spyOn(shareGrants, 'resolvePackageStorageOwner').mockImplementation(
-		async (input) => personalOrgId(input.caller),
-	)
 	const forkSpy = vi
 		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
 		.mockResolvedValue(communityFork('pkg-1', 'example-package'))
@@ -1053,109 +1045,4 @@ test('executeGatewayFetch rejects when allowOutboundFetch is false', async () =>
 	).rejects.toThrow('Outbound fetch is not available in retriever runs.')
 	expect(globalFetch).not.toHaveBeenCalled()
 	expect(recordUsageSpy).not.toHaveBeenCalled()
-})
-
-test('share-grant guest secret refs expand as the package owner and require owner allowed_packages', async () => {
-	const guestRequest = (authorization: string) =>
-		new Request('https://example.com/api', {
-			method: 'POST',
-			headers: {
-				Authorization: authorization,
-				'x-kody-secret-authority': 'shared-pkg',
-			},
-		})
-	const guestProps = {
-		...packageRunProps('shared-pkg', {
-			grantedSecretAuthorityPackageIds: ['shared-pkg'],
-		}),
-		userId: 'guest-user',
-	}
-	const ownerSpy = vi
-		.spyOn(shareGrants, 'resolvePackageStorageOwner')
-		.mockResolvedValue(ownerIdFromStored('owner-user'))
-	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue(
-		savedPackage('shared-pkg', 'shared-tools', {
-			userId: 'owner-user',
-			owner: 'owner',
-			sourceId: 'source-shared',
-		}),
-	)
-	vi.spyOn(
-		communityRepo,
-		'getCommunityForkByForkedPackageId',
-	).mockResolvedValue(null)
-	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
-
-	// User-scoped and package-scoped mounted refs (packageSecrets.get(alias)
-	// placed in fetch Authorization) remap through the trusted package
-	// authority to the owner before resolveSecret; the guest id is never used.
-	for (const [name, scope, value] of [
-		['ownerMountedToken', 'user', 'owner-secret-value'],
-		['ownerNotesToken', 'package', 'owner-package-scoped-token'],
-	] as const) {
-		ownerSpy.mockClear()
-		resolveSpy.mockReset()
-		resolveSpy.mockResolvedValue({
-			found: true,
-			value,
-			scope,
-			allowedHosts: ['example.com'],
-			allowedPackages: ['shared-pkg'],
-		})
-		const transformed = await expand(
-			guestRequest(`Bearer {{secret:${name}|scope=${scope}}}`),
-			guestProps,
-		)
-		expect(ownerSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				caller: 'guest-user',
-				packageId: 'shared-pkg',
-			}),
-		)
-		expect(resolveSpy.mock.calls.map(([input]) => input)).toEqual([
-			expect.objectContaining({ userId: 'owner-user', name, scope }),
-		])
-		expect(transformed.headers.get('Authorization')).toBe(`Bearer ${value}`)
-	}
-
-	// packageSecrets.get(user) / get(pass) → secretHeaders.basic({…}) → fetch.
-	resolveSpy.mockReset()
-	resolveSpy.mockImplementation(async (input) =>
-		userSecret(
-			input.name === 'ownerClientId'
-				? 'owner-client-id'
-				: 'owner-client-secret',
-			['example.com'],
-			['shared-pkg'],
-		),
-	)
-	const basic = await expand(
-		guestRequest(
-			buildBasicAuthSecretPlaceholder({
-				usernameSecret: 'ownerClientId',
-				passwordSecret: 'ownerClientSecret',
-				scope: 'user',
-			}),
-		),
-		guestProps,
-	)
-	expect(resolveSpy.mock.calls.map(([input]) => input.userId)).toEqual([
-		'owner-user',
-		'owner-user',
-	])
-	expect(basic.headers.get('Authorization')).toBe(
-		`Basic ${btoa('owner-client-id:owner-client-secret')}`,
-	)
-
-	// Owner remap must not inherit implicit self-authored keychain access.
-	resolveSpy.mockReset()
-	resolveSpy.mockResolvedValue(
-		userSecret('should-not-leak', ['example.com'], []),
-	)
-	await expect(
-		expand(
-			guestRequest('Bearer {{secret:ownerPrivateKey|scope=user}}'),
-			guestProps,
-		),
-	).rejects.toSatisfy(isPackageAccessRequiredFor('shared-tools'))
 })

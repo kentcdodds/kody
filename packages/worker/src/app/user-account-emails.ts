@@ -52,6 +52,7 @@ async function claimAndSend(input: {
 	userId: string
 	kind: UserAccountEmailKind
 	suffix?: string
+	emailConfig?: EmailConfig
 	build: (config: EmailConfig) =>
 		| Promise<{
 				subject: string
@@ -67,7 +68,8 @@ async function claimAndSend(input: {
 		  }
 }): Promise<boolean> {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
-	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
+	const emailConfig =
+		input.emailConfig ?? resolveTransactionalEmailConfig({ env: input.env })
 	if (!kv || !emailConfig) return false
 
 	const key = userAccountEmailKvKey({
@@ -138,6 +140,8 @@ export async function sendConnectAgentEmail(input: {
 	env: Env
 	email: string
 	userId: string
+	/** Verify request URL. Used when no sending domain is configured, same as the verification mail. */
+	requestUrl?: string | URL | null
 }): Promise<boolean> {
 	if (
 		input.env.APP_DB &&
@@ -148,8 +152,17 @@ export async function sendConnectAgentEmail(input: {
 	) {
 		return false
 	}
-	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
-	if (!emailConfig) return false
+	const emailConfig = resolveTransactionalEmailConfig({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	if (!emailConfig) {
+		await openVerifiedNoMcpCampaignEvent({
+			env: input.env,
+			userId: input.userId,
+		})
+		return false
+	}
 	const unsubscribe = await mintConnectAgentUnsubscribe({
 		env: input.env,
 		appBaseUrl: emailConfig.appBaseUrl,
@@ -168,6 +181,7 @@ export async function sendConnectAgentEmail(input: {
 		to: input.email,
 		userId: input.userId,
 		kind: 'connect_agent',
+		emailConfig,
 		build: (config) => ({
 			...buildConnectAgentEmail({
 				appBaseUrl: config.appBaseUrl,

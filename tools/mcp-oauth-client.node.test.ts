@@ -413,3 +413,35 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 		},
 	)
 })
+
+test('authorizeOAuthClient binds the connection to an org with ?org=', async () => {
+	const orgParams: Array<string | null> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			orgParams.push(url.searchParams.get('org'))
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					redirectTo: 'http://127.0.0.1/oauth/callback?code=auth-code-1',
+				}),
+			)
+		},
+		async (origin) => {
+			const client = {
+				clientId: 'client-1',
+				clientSecret: 'secret-1',
+				redirectUri: 'http://127.0.0.1/oauth/callback',
+			}
+			await authorizeOAuthClient(origin, client, 'kody_session=abc')
+			await authorizeOAuthClient(
+				origin,
+				client,
+				'kody_session=abc',
+				fetch,
+				'rh-org',
+			)
+		},
+	)
+	expect(orgParams).toEqual([null, 'rh-org'])
+})

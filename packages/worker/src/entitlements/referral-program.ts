@@ -165,6 +165,8 @@ export async function attributeReferralAtSignup(input: {
 	if (referrer.stable_user_id === input.refereeStableUserId) {
 		return { outcome: 'ignored', reason: 'self' }
 	}
+	// Former platform accounts keep a `users` row with no person behind it
+	// until Teams P9 deletes it (#3084).
 	if (referrer.account_type === 'platform') {
 		return { outcome: 'ignored', reason: 'unknown_referrer' }
 	}
@@ -215,6 +217,8 @@ function rejectReasonForParties(
 	if (referrer.stable_user_id === referee.stable_user_id) {
 		return 'self_referral'
 	}
+	// Former platform accounts keep a `users` row with no person behind it
+	// until Teams P9 deletes it (#3084).
 	if (referrer.account_type === 'platform') {
 		return 'platform_referrer'
 	}

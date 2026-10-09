@@ -13,7 +13,6 @@ import { type routes } from '#universal/routes.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { maybeRewardHeldReferralAfterEmailVerified } from '#worker/entitlements/referral-program.ts'
 import { latestReferrerPaidPeriodEnd } from '#worker/billing/stripe-webhooks.ts'
-import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 
 function getVerifyEmailError(
@@ -82,19 +81,20 @@ export function createVerifyEmailHandler(env: Env) {
 					userId: result.stableUserId,
 				})
 			}
-			await attachPendingPackageShareInvitesSafely({
-				db: env.APP_DB,
-				userId: result.stableUserId,
-				email: result.email,
-			})
 			if (result.newlyVerified) {
-				void sendConnectAgentEmail({
-					env,
-					email: result.email,
-					userId: result.stableUserId,
-				}).catch((error) => {
-					console.warn('connect-agent-email-failed', error)
-				})
+				// Send 1 is immediate. waitUntil keeps it alive after this page
+				// returns; a floating promise is cancelled with the response,
+				// which drops the mail and never opens the dwell retry row.
+				waitUntil(
+					sendConnectAgentEmail({
+						env,
+						email: result.email,
+						userId: result.stableUserId,
+						requestUrl: request.url,
+					}).catch((error) => {
+						console.warn('connect-agent-email-failed', error)
+					}),
+				)
 				scheduleKitSubscriberSync({
 					env,
 					email: result.email,

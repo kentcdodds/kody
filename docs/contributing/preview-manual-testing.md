@@ -185,6 +185,35 @@ coverage in `package-secret-authority.workers.test.ts` is authoritative for the
 denial path; see
 [Package approval](../use/secrets-and-values.md#package-approval).
 
+## Feature flags on the preview seed
+
+The preview seed user is non-admin, and experimenter flags stay off until a PR
+opts in. Add a label whose name is `preview-flag:` plus a key from
+`tools/preview-seed-flag-allowlist.ts`, then let 🔎 Preview run (push, mark
+ready for review, add or remove a `preview-flag:` label, or re-run the
+workflow). The seed step fails closed for any other key, and `--enable-flag`
+with `--remote` refuses every wrangler env except `preview`.
+
+`connection-profiles` is on the allowlist. Label
+`preview-flag:connection-profiles` makes the seed step run:
+
+```bash
+node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" \
+  --email me@kentcdodds.com --password ilikecode \
+  --enable-flag connection-profiles
+```
+
+After that deploy, the seed session reports the flag on:
+
+```bash
+npm run control-kody -- request GET /account/connected-agents.json --origin <preview> --dump --contains '"connectionProfilesEnabled":true'
+```
+
+Without the label, the next preview seed deletes that allowlisted override, and
+the same request contains `"connectionProfilesEnabled":false`. An unknown
+`preview-flag:` label fails the seed step. Adding or removing the label on a
+closed pull request does not deploy.
+
 ## Logged-in data and UI pass
 
 1. Run the script with `--request` (and `--check` for HTML) covering the change.

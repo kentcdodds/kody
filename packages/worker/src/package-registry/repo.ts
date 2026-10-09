@@ -333,22 +333,6 @@ export async function getSavedPackageById(
 	return row ? mapSavedPackageRow(row) : null
 }
 
-/** Unscoped id lookup for share-grant and stamp-authority paths. */
-export async function getSavedPackageByIdAny(
-	db: D1Database,
-	packageId: string,
-): Promise<SavedPackageRecord | null> {
-	const row = await db
-		.prepare(
-			`SELECT ${savedPackageSelectColumns}
-			FROM saved_packages
-			WHERE id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(packageId)
-		.first<Record<string, unknown>>()
-	return row ? mapSavedPackageRow(row) : null
-}
-
 export async function getSavedPackageWithCommunityProvenanceById(
 	db: D1Database,
 	input: {

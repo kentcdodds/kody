@@ -26,12 +26,13 @@ guidance here, treat this document as the project's intent.
 ## Who this is for
 
 Kody is a multi-user personal assistant. Each authenticated user gets a strictly
-isolated assistant: their own packages, jobs, secrets, memories, chat threads,
-MCP servers, email inboxes, and durable storage. There is no shared state
-between users.
+isolated assistant in their personal org: their own packages, jobs, secrets,
+memories, chat threads, MCP servers, email inboxes, and durable storage. Orgs
+share no state. The one way to give someone else access is an org membership or
+an access grant ([Authorization](./architecture/authorization.md)).
 
 - Optimization target: a high-quality personal assistant for each individual
-  signed-in user, with hard isolation between users
+  signed-in user, with hard isolation between orgs
 - Onboarding: signup is open. Anyone can create an account from `/signup`. New
   signups must verify their email address; unverified accounts can sign in but
   cannot send outbound email. Person accounts that stay unverified for seven
@@ -43,7 +44,7 @@ between users.
 
 Optimize for:
 
-- Per-user isolation as a first-class invariant, enforced at the storage,
+- Per-org isolation as a first-class invariant, enforced at the storage,
   durable-object, vectorize, and runtime layers. Four narrow, documented
   exceptions exist: RBAC account administration (`access = 'any'`, limited to
   `user` and `role` entities), operator-owned system email for reserved platform
@@ -58,9 +59,6 @@ Optimize for:
 
 It does not need to optimize for:
 
-- Per-organization tenancy or shared-team workspaces
-- Fine-grained permission delegation between many distinct humans inside a
-  single account
 - Enterprise SSO / directory provisioning
 
 ## Product intent
@@ -85,15 +83,16 @@ When working in this repo, do not assume:
 - This project should evolve into a large catalog of explicitly declared MCP
   tools.
 - This project is trying to become a generic starter kit for others.
-- This is a single-user system. Per-user isolation is an invariant, not a future
-  direction; treat any code path that reads or writes data without a `userId`
-  (or that shares a Durable Object id across users) as a bug. The intentional
-  cross-user boundaries are RBAC account administration (`:any` on `user`/`role`
-  only, behind explicit guards), operator-owned system email for reserved
-  platform addresses, explicitly approved, attributed platform feedback exposed
-  through role-gated admin review capabilities, and role-gated community
-  activity metadata for public listings — see
-  [Authorization](./architecture/authorization.md).
+- This is a single-user system. Per-org isolation is an invariant, not a future
+  direction; treat any code path that reads or writes data without its owning
+  org (or that shares a Durable Object id across orgs) as a bug. A personal
+  org's id is its user's stable id. Memberships and grants are the access path
+  between people. The other intentional cross-org boundaries are RBAC account
+  administration (`:any` on `user`/`role` only, behind explicit guards),
+  operator-owned system email for reserved platform addresses, explicitly
+  approved, attributed platform feedback exposed through role-gated admin review
+  capabilities, and role-gated community activity metadata for public listings —
+  see [Authorization](./architecture/authorization.md).
 - One conversation or one agent per signed-in user. Concurrent chats and
   completely separate agents for the same user are expected. Do not key
   conversation-scoped behavior on the user alone, or on an MCP transport session
@@ -111,8 +110,8 @@ that exists in the repository.
 When updating docs or explaining architecture:
 
 - Describe the repo as a multi-user personal-assistant platform with strict
-  per-user isolation, not a shared workspace product.
-- Mention the per-user isolation invariant when it materially affects product,
+  per-org isolation, not a shared workspace product.
+- Mention the per-org isolation invariant when it materially affects product,
   auth, or storage decisions.
 - Keep present behavior separate from design notes and proposals.
 - Prefer focused docs over expanding `AGENTS.md`.
@@ -122,14 +121,15 @@ When updating docs or explaining architecture:
 If you are an agent working in this repo:
 
 - Read this file before making product-level decisions.
-- Per-user isolation is a hard invariant. Any new feature that touches data must
-  be scoped by `userId` at the data layer, by user-namespaced Durable Object ids
-  at the runtime layer, and by user-aware filters at the search/vector layer.
-  Cross-user access requires an explicit guard and one of the documented narrow
-  boundaries: account administration, operator-owned system email, user-approved
-  platform feedback, or public-listing community activity metadata — see
-  [Authorization](./architecture/authorization.md).
-- Isolation between users is not the same as one conversation per user. The same
+- Per-org isolation is a hard invariant. Any new feature that touches data must
+  be scoped by its owning org at the data layer, by org-namespaced Durable
+  Object ids at the runtime layer, and by org-aware filters at the search/vector
+  layer. Access from another org goes through a membership or grant checked by
+  `authorize`. Any other cross-org access requires an explicit guard and one of
+  the documented narrow boundaries: account administration, operator-owned
+  system email, user-approved platform feedback, or public-listing community
+  activity metadata — see [Authorization](./architecture/authorization.md).
+- Isolation between orgs is not the same as one conversation per user. The same
   signed-in user can run concurrent chats and completely separate agents at
   once. Do not hide or bind conversation-scoped context (memories, nudges,
   progressive disclosure) to the user id alone or to an MCP session.
