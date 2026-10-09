@@ -1,6 +1,7 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { type OidcGrantProps } from '#worker/oidc/id-token.ts'
+import { oidcSubject } from '#worker/oidc/subject.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 
 type OidcUserinfoOAuthHelpers = {
@@ -112,7 +113,7 @@ export async function handleOidcUserinfoRequest(request: Request, env: Env) {
 	}
 
 	const claims: Record<string, unknown> = {
-		sub: props.userId,
+		sub: oidcSubject(props),
 	}
 	if (tokenSummary.scope.includes('email')) {
 		claims.email = props.email

@@ -1,5 +1,6 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
+import { oidcSubjectBelongsToUser } from '#worker/oidc/subject.ts'
 
 export type OidcAuthorizeParams = {
 	nonce?: string
@@ -165,7 +166,11 @@ export async function evaluateOidcAuthorizeGate(input: {
 			request: input.request,
 			idTokenHint: input.params.idTokenHint,
 		})
-		if (!hintSubject || hintSubject !== input.session.sessionStableUserId) {
+		if (
+			!hintSubject ||
+			!input.session.sessionStableUserId ||
+			!oidcSubjectBelongsToUser(hintSubject, input.session.sessionStableUserId)
+		) {
 			signedIn = false
 		}
 	}
