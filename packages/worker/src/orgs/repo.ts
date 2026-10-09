@@ -297,7 +297,7 @@ export async function listPendingInvitesForPerson(
 			   AND (
 			     lower(COALESCE(i.invitee_email, '')) = lower(?)
 			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)
-			   )
+			   )${andLiveDeletedAtSql('o')}
 			 ORDER BY i.created_at DESC`,
 		)
 		.bind(input.now, input.email, input.username)

@@ -253,7 +253,7 @@ async function handleCustomerSubscriptionChange(input: {
 	})
 	if (result.userId == null && orgOrUserHint) {
 		const user = await input.env.APP_DB.prepare(
-			`SELECT id FROM users WHERE stable_user_id = ?`,
+			`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(orgOrUserHint)
 			.first<{ id: number }>()

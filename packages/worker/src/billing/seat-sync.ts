@@ -21,6 +21,7 @@ import {
 	type StripeSubscription,
 } from './stripe-client.ts'
 import { sendSeatChangeEmail } from './org-billing-emails.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type SeatSyncEnv = BillingEnv & StripeEnv
 
@@ -48,7 +49,7 @@ async function loadOrgBillingRow(
 		.prepare(
 			`SELECT plan, stripe_customer_id, username AS slug
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
 		.first<OrgBillingRow>()

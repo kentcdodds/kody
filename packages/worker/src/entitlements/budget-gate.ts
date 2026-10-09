@@ -14,6 +14,7 @@ import {
 } from '#worker/orgs/billing.ts'
 import { BudgetLimitError, coerceBudgetLimitError } from './errors.ts'
 import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type OrgBudgetHitEmailEnv = Pick<
 	Env,
@@ -38,7 +39,9 @@ async function orgBudgetEnforcementAvailable(
 ): Promise<boolean> {
 	try {
 		const row = await db
-			.prepare(`SELECT 1 AS ok FROM orgs WHERE id = ? LIMIT 1`)
+			.prepare(
+				`SELECT 1 AS ok FROM orgs WHERE id = ?${andLiveDeletedAtSql()} LIMIT 1`,
+			)
 			.bind(orgId)
 			.first<{ ok: number }>()
 		return row != null

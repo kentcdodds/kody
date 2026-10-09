@@ -2,6 +2,7 @@ import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { listOrgBillingRecipientUserIds } from '#worker/orgs/billing.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type OrgBillingRecipient = {
 	userId: string
@@ -25,7 +26,7 @@ async function resolveBillingRecipientUserIds(
 			`SELECT stable_user_id
 			 FROM users
 			 WHERE stable_user_id = ?
-			   AND deleting_at IS NULL`,
+			   AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
 		.first<{ stable_user_id: string }>()
@@ -46,7 +47,7 @@ export async function loadOrgBillingRecipientEmails(
 			 WHERE stable_user_id IN (${placeholders})
 			   AND deleting_at IS NULL
 			   AND email IS NOT NULL
-			   AND TRIM(email) != ''`,
+			   AND TRIM(email) != ''${andLiveDeletedAtSql()}`,
 		)
 		.bind(...userIds)
 		.all<{ user_id: string; email: string }>()

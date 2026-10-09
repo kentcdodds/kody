@@ -1,4 +1,5 @@
 /** Teams P6 org billing helpers (seats, free-org cap, budgets). */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 // After P5 membership mutations land, call syncOrgSeatQuantity from
 // packages/worker/src/billing/seat-sync.ts (cleanup issue tracks wiring).
@@ -27,7 +28,9 @@ export async function readOrgStripeCustomerId(
 	const orgCustomer = org?.stripe_customer_id?.trim()
 	if (orgCustomer) return orgCustomer
 	const user = await db
-		.prepare(`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(orgId)
 		.first<{ stripe_customer_id: string | null }>()
 	return user?.stripe_customer_id?.trim() || null
@@ -168,7 +171,7 @@ export async function readOrgBudgetSettings(
 		.prepare(
 			`SELECT default_user_budget_micro_usd, automation_budget_micro_usd
 			 FROM orgs
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
 		.first<{
