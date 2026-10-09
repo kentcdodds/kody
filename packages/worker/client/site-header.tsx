@@ -5,10 +5,13 @@ import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	currentSwitcherSlug,
+	orgBillingPath,
 	orgIdentity,
 	orgRoleLabel,
+	orgRoleManagesBilling,
 	orgSwitcherEntries,
 	organizationsWithSignupFallback,
+	parseOrgBillingPath,
 	switchOrgPath,
 	type OrganizationSummary,
 	type OrgSwitcherEntry,
@@ -214,6 +217,8 @@ function OrgSwitcher(
 		const currentIdentity = current ? orgIdentity(current, viewer) : null
 		const label = currentIdentity?.handle ?? 'Organizations'
 		const avatarSize = handle.props.menu ? 32 : 28
+		const onBillingPage =
+			parseOrgBillingPath(handle.props.currentPathname) !== null
 		const toRow = (entry: OrgSwitcherEntry): SwitcherRow => {
 			switch (entry.kind) {
 				case 'create':
@@ -251,9 +256,12 @@ function OrgSwitcher(
 						// Non-personal org resource pages stay gated until storage
 						// follows request.org.id (#3073), so switching into those
 						// orgs lands on the org home instead of a not-found section.
-						href: entry.org.personal
-							? switchOrgPath(handle.props.currentPathname, entry.org.slug)
-							: `/@${entry.org.slug}`,
+						// Billing is the exception: every org has its own.
+						href:
+							entry.org.personal ||
+							(onBillingPage && orgRoleManagesBilling(entry.org.role))
+								? switchOrgPath(handle.props.currentPathname, entry.org.slug)
+								: `/@${entry.org.slug}`,
 						label: identity.name,
 						detail: identity.hasName
 							? [identity.handle, role].filter(Boolean).join(' · ')
@@ -278,9 +286,30 @@ function OrgSwitcher(
 			}
 		}
 		const orgRows = entries.filter((entry) => entry.kind === 'org').map(toRow)
-		const actionRows = entries
-			.filter((entry) => entry.kind !== 'org')
-			.map(toRow)
+		const billingHref =
+			current && orgRoleManagesBilling(current.role)
+				? orgBillingPath(current.slug)
+				: null
+		const actionRows = [
+			...(billingHref && currentIdentity
+				? [
+						{
+							key: 'org-billing',
+							href: billingHref,
+							label: 'Billing',
+							detail: currentIdentity.handle,
+							ariaCurrent:
+								handle.props.currentPathname === billingHref
+									? ('page' as const)
+									: undefined,
+							selected: false,
+							leading: renderIconWell('wallet'),
+							badge: null,
+						} satisfies SwitcherRow,
+					]
+				: []),
+			...entries.filter((entry) => entry.kind !== 'org').map(toRow),
+		]
 		const pageCurrent = (href: string) =>
 			handle.props.currentPathname === href ? ('page' as const) : undefined
 		const accountRows: Array<SwitcherRow> = [

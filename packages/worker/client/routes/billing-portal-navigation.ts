@@ -1,3 +1,5 @@
+import { routes } from '#universal/routes.ts'
+
 /**
  * Primary clicks hard-navigate to the billing portal. That handler 302s to
  * Stripe, and a Remix soft-nav fetch of the redirect throws
@@ -5,12 +7,17 @@
  * new-tab and no-JS visits, and sets `data-rmx-document` so Remix leaves
  * the navigation to the browser before this handler hydrates.
  */
-export const billingPortalPath = '/account/billing/portal'
+export function billingPortalPath(orgSlug: string) {
+	return routes.orgBillingPortal.href({ orgSlug })
+}
 
-export function navigateBillingPortalOnPrimaryClick(event: Event) {
+export function navigateBillingPortalOnPrimaryClick(
+	event: Event,
+	orgSlug: string,
+) {
 	if (isModifiedClick(event)) return
 	event.preventDefault()
-	window.location.assign(billingPortalPath)
+	window.location.assign(billingPortalPath(orgSlug))
 }
 
 function isModifiedClick(event: Event) {

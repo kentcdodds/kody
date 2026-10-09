@@ -1,5 +1,7 @@
 import { type RemixNode, css } from 'remix/component'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
+import { type OrgRole } from '@kody-internal/shared/request-context.ts'
+import { orgBillingPath, orgRoleManagesBilling } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	colors,
@@ -17,19 +19,21 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
  * management.
  */
 export function renderOrgHomeMain(input: {
+	slug: string
 	handle: string
-	collaborator: boolean
+	role: OrgRole | null
 }) {
+	const collaborator = input.role === null
 	return (
 		<div mix={css(mainCss)} data-testid="org-home">
 			<h2 mix={css(headingCss)}>Get started</h2>
 			<ul mix={css(stepListCss)}>
 				{renderStep({
-					icon: input.collaborator ? 'key' : 'users',
-					title: input.collaborator
+					icon: collaborator ? 'key' : 'users',
+					title: collaborator
 						? 'Use what was shared with you'
 						: 'Invite members and share access',
-					body: input.collaborator
+					body: collaborator
 						? `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`
 						: `Members, teams, and access grants are managed by an agent connected to ${input.handle}. When you connect one, choose ${input.handle} on the approval screen.`,
 					action: (
@@ -41,6 +45,22 @@ export function renderOrgHomeMain(input: {
 						</a>
 					),
 				})}
+				{orgRoleManagesBilling(input.role)
+					? renderStep({
+							icon: 'wallet',
+							title: 'Billing and seats',
+							body: `Subscribe ${input.handle} to Kody Pro, billed per seat: every owner and member is one. Invoices and the payment method live there too.`,
+							action: (
+								<a
+									href={orgBillingPath(input.slug)}
+									data-testid="org-home-billing"
+									mix={css(getGhostButtonCss({ size: 'sm' }))}
+								>
+									Open billing
+								</a>
+							),
+						})
+					: null}
 				{renderStep({
 					icon: 'box',
 					title: 'Repositories, secrets, and jobs',

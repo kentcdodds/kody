@@ -299,8 +299,9 @@ export function ProfileRoute(handle: Handle) {
 							role: orgRoleLabel(memberOrg.role),
 						})}
 						{renderOrgHomeMain({
+							slug: memberOrg.slug,
 							handle: identity.handle,
-							collaborator: memberOrg.role === null,
+							role: memberOrg.role,
 						})}
 					</div>
 				</section>

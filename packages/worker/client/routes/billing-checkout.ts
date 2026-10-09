@@ -1,9 +1,8 @@
 import { readJson } from '#client/routes/account-approval-shared.ts'
-
-const billingCheckoutApiPath = '/account/billing/checkout.json'
+import { routes } from '#universal/routes.ts'
 
 export type BillingInterval = 'month' | 'year'
-/** Where `POST /account/billing/checkout.json` sends the browser next. */
+/** Where `POST /@slug/billing/checkout.json` sends the browser next. */
 type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
 
 type BillingCheckoutResult =
@@ -13,22 +12,33 @@ type BillingCheckoutResult =
 const checkoutFallbackError = 'Unable to start checkout. Try again shortly.'
 
 /**
- * Start Pro checkout. Existing subscribers get a prorated portal update
- * (or the plain portal when they hold more than one subscription).
+ * Start Pro checkout for an organization, one seat per owner and member.
+ * Existing subscribers get a prorated portal update (or the plain portal
+ * when they hold more than one subscription).
  */
-export async function requestProCheckout(
-	interval: BillingInterval = 'month',
-): Promise<BillingCheckoutResult> {
+export async function requestProCheckout(input: {
+	orgSlug: string
+	interval?: BillingInterval
+	promoCode?: string
+}): Promise<BillingCheckoutResult> {
+	const promoCode = input.promoCode?.trim()
 	try {
-		const response = await fetch(billingCheckoutApiPath, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
+		const response = await fetch(
+			routes.orgBillingCheckoutPost.href({ orgSlug: input.orgSlug }),
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					plan: 'pro',
+					interval: input.interval ?? 'month',
+					...(promoCode ? { promoCode } : {}),
+				}),
 			},
-			credentials: 'include',
-			body: JSON.stringify({ plan: 'pro', interval }),
-		})
+		)
 		const payload = await readJson<{
 			ok?: boolean
 			url?: string

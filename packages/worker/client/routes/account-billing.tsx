@@ -34,6 +34,8 @@ import {
 	resolveActiveStripePlan,
 } from '#client/routes/account-billing-plans.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
+import { orgIdentity, parseOrgBillingPath } from '#universal/org-pages.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	billingPortalPath,
 	navigateBillingPortalOnPrimaryClick,
@@ -54,7 +56,6 @@ import {
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
-const billingApiPath = '/account/billing.json'
 const jsonRequestHeaders = {
 	Accept: 'application/json',
 	'Content-Type': 'application/json',
@@ -176,24 +177,47 @@ function subscriptionStatusBadgeCss(tone: SubscriptionStatusTone) {
 	}
 }
 
+function billingOrgSlug(href: string) {
+	const slug = parseOrgBillingPath(
+		new URL(href, 'http://localhost').pathname,
+	)?.slug
+	if (!slug) throw new Error(`Not an organization billing URL: ${href}`)
+	return slug
+}
+
+/**
+ * `?error=` and `?billing=` carry Stripe redirect outcomes; forwarding them
+ * lets the JSON API map them to the same messages the SSR page renders.
+ */
+async function fetchOrgBilling(href: string, signal: AbortSignal) {
+	const url = new URL(href, 'http://localhost')
+	const response = await fetch(
+		`${routes.orgBillingApi.href({ orgSlug: billingOrgSlug(href) })}${url.search}`,
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
+	if (response.status === 401) return 'unauthorized' as const
+	const payload = await readJson<
+		AccountBillingLoaderData | { ok: false; error?: string }
+	>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error(
+			(payload && 'error' in payload && payload.error) ||
+				'Unable to load billing.',
+		)
+	}
+	return payload
+}
+
 export async function accountBillingRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	// `?error=` and `?billing=` carry Stripe redirect outcomes; forward them so
-	// the JSON API maps them to the same messages the SSR page renders.
-	const response = await fetch(`${billingApiPath}${url.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountBillingLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load billing.')
-	}
+	const payload = await fetchOrgBilling(url.href, signal)
+	if (payload === 'unauthorized') return routeLoaderRedirect('/login')
 	return { accountBilling: payload }
 }
 
@@ -205,6 +229,7 @@ export function AccountBillingRoute(handle: Handle) {
 	let cancellationFeedbackPending = false
 	let cancellationFeedbackSent = false
 	let cancellationFeedbackError: string | null = null
+	let promoCode = ''
 	const selectedIntervalByPlan: Record<PaidTier, BillingInterval> = {
 		pro: 'month',
 	}
@@ -213,17 +238,9 @@ export function AccountBillingRoute(handle: Handle) {
 	let appliedError: Error | null = null
 	const billingData = createRouteData({
 		key: 'accountBilling',
-		async load(_href, signal) {
-			const response = await fetch(billingApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (response.status === 401) return routeDataRedirect('/login')
-			const payload = await readJson<AccountBillingLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load billing.')
-			}
+		async load(href, signal) {
+			const payload = await fetchOrgBilling(href, signal)
+			if (payload === 'unauthorized') return routeDataRedirect('/login')
 			return payload
 		},
 	})
@@ -233,12 +250,21 @@ export function AccountBillingRoute(handle: Handle) {
 		messageTone = payload.error ? 'error' : 'info'
 	}
 
-	async function startCheckout(plan: PaidTier, interval: BillingInterval) {
+	async function startCheckout(
+		orgSlug: string,
+		plan: PaidTier,
+		interval: BillingInterval,
+		promo: string,
+	) {
 		if (checkoutPending) return
 		checkoutPending = { plan, interval }
 		message = null
 		handle.update()
-		const result = await requestProCheckout(interval)
+		const result = await requestProCheckout({
+			orgSlug,
+			interval,
+			promoCode: promo,
+		})
 		if (result.ok) {
 			if (result.mode === 'portal') {
 				// More than one active subscription: the portal update flow
@@ -310,6 +336,12 @@ export function AccountBillingRoute(handle: Handle) {
 					: 'ready'
 
 		const billing = snapshot.data
+		const orgSlug = billingOrgSlug(currentHref)
+		// Only team organizations show this name; the signup one reads "you".
+		const orgName = billing
+			? orgIdentity(billing.org, { displayName: '', avatarUrl: null }).name
+			: `@${orgSlug}`
+		const canManage = billing?.org.canManage ?? false
 		const subscriptionStatus = billing?.subscriptionStatus?.trim() || null
 		const statusInfo = subscriptionStatus
 			? describeSubscriptionStatus(subscriptionStatus)
@@ -320,11 +352,12 @@ export function AccountBillingRoute(handle: Handle) {
 		const retiredPlan = isRetiredPaidSubscription(billing)
 		const canSwitchToPro =
 			retiredPlan &&
+			canManage &&
 			billing != null &&
 			billing.purchasablePlans.includes('pro') &&
 			!paymentActionNeeded
 		const showManageCta = Boolean(
-			billing?.configured && billing.hasStripeCustomer,
+			canManage && billing?.configured && billing.hasStripeCustomer,
 		)
 		const planSourcesDiffer =
 			billing != null &&
@@ -349,7 +382,11 @@ export function AccountBillingRoute(handle: Handle) {
 			>
 				<AccountPageHeader
 					title="Billing"
-					description="Your plan, Stripe subscription, and referral link."
+					description={
+						billing && !billing.org.personal
+							? `${orgName}'s Kody plan. Pro is billed per seat: every owner and member is one.`
+							: 'Your plan, Stripe subscription, and referral link.'
+					}
 					currentHref={currentHref}
 				/>
 
@@ -415,9 +452,11 @@ export function AccountBillingRoute(handle: Handle) {
 										{statusInfo.label}
 									</span>
 								) : null}
-								<a href={billing.usageHref} mix={css(mutedLinkCss)}>
-									view usage
-								</a>
+								{billing.usageHref ? (
+									<a href={billing.usageHref} mix={css(mutedLinkCss)}>
+										view usage
+									</a>
+								) : null}
 							</div>
 							{statusInfo && statusInfo.tone !== 'action' ? (
 								<p mix={css(descriptionCss)}>{statusInfo.detail}</p>
@@ -437,7 +476,7 @@ export function AccountBillingRoute(handle: Handle) {
 									{formatCancelDate(billing.cancelAt)}.
 								</p>
 							) : null}
-							{billing.creditsEligible ? (
+							{billing.creditsEligible && billing.creditsHref ? (
 								<p mix={css({ margin: 0 })}>
 									<a href={billing.creditsHref} mix={css(primaryLinkCss)}>
 										Manage credits
@@ -457,8 +496,10 @@ export function AccountBillingRoute(handle: Handle) {
 														'click',
 														() =>
 															void startCheckout(
+																orgSlug,
 																'pro',
 																billing.stripeInterval ?? 'month',
+																'',
 															),
 													),
 													css(primaryButtonCss),
@@ -652,11 +693,11 @@ export function AccountBillingRoute(handle: Handle) {
 								>
 									{/* Soft-nav fetch follows the Stripe 302 and fails (KODY-88). */}
 									<a
-										href={billingPortalPath}
+										href={billingPortalPath(orgSlug)}
 										data-rmx-document
 										mix={[
 											on('click', (event) => {
-												navigateBillingPortalOnPrimaryClick(event)
+												navigateBillingPortalOnPrimaryClick(event, orgSlug)
 											}),
 											css({
 												...(statusInfo?.tone === 'action'
@@ -674,26 +715,43 @@ export function AccountBillingRoute(handle: Handle) {
 							</AccountManagementPanel>
 						) : null}
 
+						{!canManage ? (
+							<AccountManagementMessage tone="info">
+								Only owners and billing admins can change {orgName}'s plan.
+							</AccountManagementMessage>
+						) : null}
+
 						{renderAccountBillingPlans({
 							billing,
 							activeStripePlan,
 							paymentActionNeeded,
 							checkoutPending,
 							selectedIntervalByPlan,
+							promoCode,
 							onIntervalChange: (plan, interval) => {
 								selectedIntervalByPlan[plan] = interval
 								handle.update()
 							},
+							onPromoCodeChange: (value) => {
+								promoCode = value
+								handle.update()
+							},
 							onStartCheckout: (plan, interval) =>
-								void startCheckout(plan, interval),
+								void startCheckout(orgSlug, plan, interval, promoCode),
 						})}
 					</>
 				) : null}
 
 				<p mix={css({ margin: 0 })}>
-					<a href="/account" mix={css(primaryLinkCss)}>
-						Back to account
-					</a>
+					{billing && !billing.org.personal ? (
+						<a href={`/@${orgSlug}`} mix={css(primaryLinkCss)}>
+							Back to {orgName}
+						</a>
+					) : (
+						<a href="/account" mix={css(primaryLinkCss)}>
+							Back to account
+						</a>
+					)}
 				</p>
 			</AccountManagementShell>
 		)

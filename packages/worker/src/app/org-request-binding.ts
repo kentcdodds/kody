@@ -1,14 +1,17 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
-import { parseOrgResourcePath } from '#universal/org-pages.ts'
+import {
+	parseOrgBillingPath,
+	parseOrgResourcePath,
+} from '#universal/org-pages.ts'
 
 export type RequestOrgResolution = OrgBinding | 'personal' | 'denied'
 
 const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
 
 /**
- * The organization for this request. Resource URLs under `/@slug/...` bind
- * that organization when the actor is a member or holds a grant. Every other
- * URL keeps the signup organization.
+ * The organization for this request. Resource and billing URLs under
+ * `/@slug/...` bind that organization when the actor is a member or holds a
+ * grant. Every other URL keeps the signup organization.
  */
 export function loadRequestOrgResolution(
 	request: Request,
@@ -27,8 +30,10 @@ async function resolveRequestOrg(
 	env: Env,
 	personId: string,
 ): Promise<RequestOrgResolution> {
-	const parsed = parseOrgResourcePath(new URL(request.url).pathname)
-	if (!parsed) return 'personal'
-	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, parsed.slug)
+	const pathname = new URL(request.url).pathname
+	const slug =
+		parseOrgResourcePath(pathname)?.slug ?? parseOrgBillingPath(pathname)?.slug
+	if (!slug) return 'personal'
+	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'
 }

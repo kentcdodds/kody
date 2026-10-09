@@ -3,7 +3,10 @@ import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
-import { AccountManagementPanel } from '#client/routes/account-management-components.tsx'
+import {
+	accountInputCss,
+	AccountManagementPanel,
+} from '#client/routes/account-management-components.tsx'
 import { type BillingInterval } from '#client/routes/billing-checkout.ts'
 import {
 	colors,
@@ -117,13 +120,23 @@ export function isRetiredPaidSubscription(
 	return active === 'standard' || !billing.creditsEligible
 }
 
+/** "3 seats · $36/month" for organizations with more than the signup seat. */
+export function describeSeatPricing(seats: number, interval: BillingInterval) {
+	const label = seats === 1 ? '1 seat' : `${seats} seats`
+	return interval === 'year'
+		? `${label} · $${120 * seats}/year`
+		: `${label} · $${12 * seats}/month`
+}
+
 export function renderAccountBillingPlans(input: {
 	billing: AccountBillingLoaderData
 	activeStripePlan: StripePaidPlan | null
 	paymentActionNeeded: boolean
 	checkoutPending: CheckoutPending
 	selectedIntervalByPlan: Record<PaidTier, BillingInterval>
+	promoCode: string
 	onIntervalChange: (plan: PaidTier, interval: BillingInterval) => void
+	onPromoCodeChange: (value: string) => void
 	onStartCheckout: (plan: PaidTier, interval: BillingInterval) => void
 }) {
 	const {
@@ -134,6 +147,7 @@ export function renderAccountBillingPlans(input: {
 		selectedIntervalByPlan,
 	} = input
 	const retired = isRetiredPaidSubscription(billing)
+	const { canManage, personal, seats } = billing.org
 	return (
 		<AccountManagementPanel title="Plans">
 			<div
@@ -158,6 +172,7 @@ export function renderAccountBillingPlans(input: {
 						!(paidTier && retired) &&
 						planCoversTier(billing.effectivePlan, tier.id)
 					const purchasable =
+						canManage &&
 						paidTier != null &&
 						billing.purchasablePlans.includes(paidTier) &&
 						!paymentActionNeeded
@@ -215,11 +230,21 @@ export function renderAccountBillingPlans(input: {
 								</span>
 							) : null}
 							<p mix={css(descriptionCss)}>{tier.description}</p>
-							<p mix={css({ margin: 0 })}>
-								<a href="/account/usage" mix={css(primaryLinkCss)}>
-									See your current usage
-								</a>
-							</p>
+							{paidTier && !personal ? (
+								<p
+									mix={css({ margin: 0, color: colors.text })}
+									data-testid="billing-seat-pricing"
+								>
+									{describeSeatPricing(seats, selectedIntervalByPlan[paidTier])}
+								</p>
+							) : null}
+							{billing.usageHref ? (
+								<p mix={css({ margin: 0 })}>
+									<a href={billing.usageHref} mix={css(primaryLinkCss)}>
+										See your current usage
+									</a>
+								</p>
+							) : null}
 							{intervalSwitch && paidTier ? (
 								<div
 									mix={css({
@@ -313,6 +338,38 @@ export function renderAccountBillingPlans(input: {
 											<span>Annual</span>
 										</label>
 									</fieldset>
+									{activeStripePlan ? null : (
+										<label mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span
+												mix={css({
+													fontSize: typography.fontSize.sm,
+													color: colors.text,
+												})}
+											>
+												Promo code (optional)
+											</span>
+											<input
+												type="text"
+												name="promo-code"
+												autocomplete="off"
+												spellcheck={false}
+												maxLength={64}
+												value={input.promoCode}
+												data-field-ring
+												mix={[
+													css(promoInputCss),
+													on('input', (event) =>
+														input.onPromoCodeChange(
+															(event.currentTarget as HTMLInputElement).value,
+														),
+													),
+												]}
+											/>
+											<span mix={css(descriptionCss)}>
+												Promo codes apply to monthly billing.
+											</span>
+										</label>
+									)}
 									<div>
 										<button
 											type="button"
@@ -353,6 +410,8 @@ export function renderAccountBillingPlans(input: {
 		</AccountManagementPanel>
 	)
 }
+
+const promoInputCss = { ...accountInputCss, maxWidth: '16rem' }
 
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })

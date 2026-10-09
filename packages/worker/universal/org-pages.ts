@@ -2,8 +2,8 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 
 /**
  * Account sections that own organization resources. Person pages (login,
- * passkeys, email claims, experiments, billing) stay on `/account`.
- * Billing stays there until the billing move.
+ * passkeys, email claims, experiments) stay on `/account`. Billing belongs to
+ * the organization itself and has its own routes (see `parseOrgBillingPath`).
  */
 const orgOwnedAccountSections = [
 	'activity',
@@ -79,6 +79,29 @@ export function parseOrgResourcePath(
 	return { slug, section, rest }
 }
 
+/**
+ * `/@acme/billing`, `/@acme/billing.json`, and `/@acme/billing/<step>`.
+ * Subscriptions are stored per organization (not per person like resource
+ * sections), so billing binds team organizations as well as the signup one.
+ */
+export function parseOrgBillingPath(pathname: string): { slug: string } | null {
+	const match = /^\/@([^/]+)\/billing(?:\.json|\/[^/]+)?\/?$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	return isOrganizationSlug(slug) ? { slug } : null
+}
+
+export function orgBillingPath(slug: string) {
+	return `/@${slug}/billing`
+}
+
+/**
+ * Roles whose preset includes `billing:write`. Only decides which links to
+ * show; the billing routes authorize every request.
+ */
+export function orgRoleManagesBilling(role: OrgRole | null) {
+	return role === 'owner' || role === 'billing'
+}
+
 /** Slug of `/@slug` or `/@slug/...`, when the first segment is a handle. */
 export function orgSlugFromPathname(pathname: string) {
 	const match = /^\/@([^/]+)(?:\/|$)/.exec(pathname)
@@ -137,6 +160,7 @@ export function accountAliasPath(pathname: string) {
 /** Same kind of page in `targetSlug` when the path is an org resource; otherwise that organization's home. */
 export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
+	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
 	const parsed = parseOrgResourcePath(pathname)
 	if (!parsed) return `/@${targetSlug}`
 	return orgResourcePath(targetSlug, parsed.section, parsed.rest)
