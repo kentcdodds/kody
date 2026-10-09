@@ -1,3 +1,4 @@
+import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { type Handle } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -277,6 +278,7 @@ export function HomeRoute(handle: Handle) {
 							<a href={connectHref} class="landing-pill landing-hero-cta">
 								{landingHeroPrimaryCta}
 							</a>
+							<BuildWithAgentButton />
 							<a href={howItWorksHref} class="landing-hero-secondary">
 								{landingHeroSecondaryCta}
 							</a>

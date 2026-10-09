@@ -160,6 +160,12 @@ export const businessCss = {
 		color: '#56615a',
 		marginBottom: '25px',
 	},
+	'& .hero-actions': {
+		display: 'flex',
+		flexWrap: 'wrap',
+		alignItems: 'center',
+		gap: '12px',
+	},
 	'& .hero-copy .text-link': {
 		display: 'block',
 		width: 'fit-content',
