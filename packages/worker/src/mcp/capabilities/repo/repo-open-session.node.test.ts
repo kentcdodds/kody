@@ -58,14 +58,31 @@ function createEntitlementsDatabase(user: {
 				bind(...params: Array<unknown>) {
 					return {
 						async first() {
-							if (!query.includes('SELECT plan, stripe_plan')) {
-								throw new Error(`Unsupported first query: ${query}`)
+							if (query.includes('SELECT 1 AS present FROM users')) {
+								const [email, stableUserId] = params
+								return email === user.email &&
+									stableUserId === user.stable_user_id
+									? { present: 1 }
+									: null
 							}
-							const [email, stableUserId] = params
-							return email === user.email &&
-								stableUserId === user.stable_user_id
-								? { plan: user.plan }
-								: null
+							if (
+								query.includes('FROM orgs') &&
+								(query.includes('SELECT plan, stripe_plan') ||
+									query.includes('entitlement_ladder'))
+							) {
+								return null
+							}
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
+								const [email, stableUserId] = params
+								return email === user.email &&
+									stableUserId === user.stable_user_id
+									? { plan: user.plan }
+									: null
+							}
+							throw new Error(`Unsupported first query: ${query}`)
 						},
 					}
 				},

@@ -34,7 +34,29 @@ function createDatabase(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan, stripe_plan')) {
+							if (query.includes('SELECT 1 AS present FROM users')) {
+								const email = params[0]
+								const stableUserId = params[1]
+								const user = tables
+									.get('users')
+									?.find(
+										(row) =>
+											row['email'] === email &&
+											row['stable_user_id'] === stableUserId,
+									)
+								return user ? ({ present: 1 } as T) : null
+							}
+							if (
+								query.includes('FROM orgs') &&
+								(query.includes('SELECT plan, stripe_plan') ||
+									query.includes('entitlement_ladder'))
+							) {
+								return null
+							}
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
 								const email = params[0]
 								const stableUserId = params[1]
 								const user = tables

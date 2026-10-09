@@ -230,7 +230,13 @@ export function createDatabase(
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
-							if (query.includes('SELECT plan, stripe_plan')) {
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
+								if (query.includes('FROM orgs')) {
+									return null
+								}
 								const pairLookup = query.includes('email = ?')
 								return selectOne('users', (row) =>
 									pairLookup
@@ -381,6 +387,16 @@ export function createDatabase(
 							// Cold bootstrap probes for a users row; none seeded here so
 							// null triggers synthetic-context free-plan allow.
 							if (query.includes('SELECT 1 AS present FROM users')) {
+								if (query.includes('email = ?')) {
+									return selectOne(
+										'users',
+										(row) =>
+											row['email'] === params[0] &&
+											row['stable_user_id'] === params[1],
+									)
+										? ({ present: 1 } as T)
+										: null
+								}
 								return selectOne(
 									'users',
 									(row) => row['stable_user_id'] === params[0],

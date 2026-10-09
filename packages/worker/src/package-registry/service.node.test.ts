@@ -998,8 +998,20 @@ function createEntitlementsDatabase(input: {
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
-							if (query.includes('SELECT plan, stripe_plan')) {
-								const user = users.find((row) => row.email === params[0])
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
+								if (query.includes('FROM orgs')) {
+									return null
+								}
+								const pairLookup = query.includes('email = ?')
+								const user = pairLookup
+									? users.find(
+											(row) =>
+												row.email === params[0] && input.userId === params[1],
+										)
+									: users.find((row) => row.email === params[0])
 								return (user ? { plan: user.plan } : null) as T | null
 							}
 							if (query.includes('SELECT first_saved_package_at FROM users')) {
@@ -1008,6 +1020,13 @@ function createEntitlementsDatabase(input: {
 							// Synthetic-context probe: no users row in this mock, so the
 							// storage reserve path applies free-plan semantics without a DO.
 							if (query.includes('SELECT 1 AS present FROM users')) {
+								if (query.includes('email = ?')) {
+									const user = users.find(
+										(row) =>
+											row.email === params[0] && input.userId === params[1],
+									)
+									return user ? ({ present: 1 } as T) : null
+								}
 								return null
 							}
 							if (
