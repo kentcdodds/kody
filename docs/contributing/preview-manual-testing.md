@@ -132,6 +132,11 @@ For those paths, sufficient evidence is the local admin seed (`kody@example.com`
 / `ilikecode`) plus targeted Workers or unit tests — not a preview `/admin`
 session and not raw D1 writes.
 
+The one exception is the operator/CI-only
+[migration rehearsal](./preview-migration-rehearsal.md): its `seed` action
+creates a site admin on a `kody-branch-*` preview, with private credentials that
+leave CI only sealed to the operator's key. PR previews never get an admin.
+
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
 the product JSON APIs (`/account/*.json` in
