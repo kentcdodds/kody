@@ -20,19 +20,27 @@
  * {@link jevSearchScoreBudgetMs} fall back to the pre-Jev hybrid order.
  * After Score, keep uses an adaptive cutoff: high bar first, one secondary
  * floor if that keep-set is empty, then a true empty ranked list (never
- * restore hybrid noise when every Jev score is weak).
+ * restore hybrid noise when every Jev score is weak). The one exception:
+ * hybrid candidates whose package name, kody id, or name leaf equals a query
+ * term (or an adjacent query phrase) stay, in hybrid order
+ * (`keepPath: kept-identity`). `dropbox shared link` can still return the
+ * `dropbox` package; description-only overlap stays dropped.
  *
  * Offline / deterministic embedding paths never call Jev.
  */
 
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jevSearchRerankFlagKey } from '#universal/feature-flags/registry.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 
 import {
 	type JevSearchRerankOutcome,
 	type SearchCandidate,
 } from './search-types.ts'
-import { type SearchIntent } from './understand-search-query.ts'
+import {
+	extractMeaningfulSearchTokens,
+	type SearchIntent,
+} from './understand-search-query.ts'
 
 export type { JevSearchRerankOutcome }
 export { jevSearchRerankFlagKey }
@@ -81,7 +89,7 @@ export const jevSearchMinKeepScore = 1.5
 /**
  * Secondary keep floor when nothing clears {@link jevSearchMinKeepScore}.
  * Mid-tier Jev scores stay in Jev order; weaker still yields a true empty
- * list (no hybrid fallback).
+ * list except identity-term package hits ({@link keepIdentityTermHybridCandidates}).
  */
 export const jevSearchSecondaryKeepScore = 0.75
 
@@ -94,6 +102,7 @@ export const jevSearchLoweredKeepClusterGap = 0.5
 export const jevSearchKeepPaths = [
 	'kept-high',
 	'kept-lowered',
+	'kept-identity',
 	'empty',
 ] as const
 
@@ -171,7 +180,8 @@ export type JevScoredCandidate = {
 
 /**
  * Adaptive keep after Jev Score sort: high bar, then one secondary floor
- * (with a relative cluster near the top score), else true empty.
+ * (with a relative cluster near the top score), else true empty. Identity-term
+ * package hits are applied by the caller when this returns empty.
  */
 export function selectJevKeptCandidates(
 	ranked: ReadonlyArray<JevScoredCandidate>,
@@ -196,6 +206,52 @@ export function selectJevKeptCandidates(
 		return { kept: [], keepPath: 'empty' }
 	}
 	return { kept: lowered, keepPath: 'kept-lowered' }
+}
+
+function addPackageIdentityKey(
+	tokens: Set<string>,
+	phrases: Set<string>,
+	value: string,
+) {
+	const parts = extractMeaningfulSearchTokens(value)
+	if (parts.length === 1 && parts[0]) {
+		tokens.add(parts[0])
+		return
+	}
+	if (parts.length >= 2) phrases.add(parts.join(' '))
+}
+
+/**
+ * Package name, kody id, or name leaf equals one query term, or the whole
+ * identity equals one adjacent query phrase. Description and tag overlap
+ * does not count.
+ */
+export function hybridCandidateMatchesIdentityTerm(
+	candidate: SearchCandidate,
+	intent: SearchIntent,
+): boolean {
+	if (candidate.match.type !== 'package') return false
+	const tokens = new Set<string>()
+	const phrases = new Set<string>()
+	const { kodyId, name } = candidate.match
+	for (const value of [kodyId, name, getPackageNameLeaf(name)]) {
+		addPackageIdentityKey(tokens, phrases, value)
+	}
+	if (intent.meaningfulTokens.some((token) => tokens.has(token))) return true
+	return intent.phrases.some((phrase) => phrases.has(phrase))
+}
+
+/** Hybrid order, identity-term package hits only. */
+export function keepIdentityTermHybridCandidates(input: {
+	candidates: ReadonlyArray<SearchCandidate>
+	intent: SearchIntent
+	limit: number
+}): Array<SearchCandidate> {
+	return input.candidates
+		.filter((candidate) =>
+			hybridCandidateMatchesIdentityTerm(candidate, input.intent),
+		)
+		.slice(0, Math.max(1, input.limit))
 }
 
 type JevScoreAnswer = {
@@ -709,7 +765,9 @@ function mean(values: ReadonlyArray<number>): number {
 /**
  * Reorder and drop hybrid candidates with Jev Score. When every score misses
  * the adaptive keep floors, returns a true empty ranked list (not hybrid
- * order). Failures and low mean confidence still fall back to hybrid.
+ * order) unless a hybrid candidate matches an identity term — those package
+ * hits stay in hybrid order. Failures and low mean confidence still fall
+ * back to hybrid.
  *
  * Gate order: flag → paid plan → empty/offline/AI → necessity → Score.
  */
@@ -891,6 +949,29 @@ export async function rerankSearchCandidatesWithJev(input: {
 
 		const { kept, keepPath } = selectJevKeptCandidates(ranked)
 		if (kept.length === 0) {
+			const identityKept = keepIdentityTermHybridCandidates({
+				candidates: hybridCandidates,
+				intent: input.intent,
+				limit: input.limit,
+			})
+			if (identityKept.length > 0) {
+				const keptIds = new Set(identityKept.map((candidate) => candidate.id))
+				return {
+					candidates: identityKept,
+					outcome: 'applied',
+					durationMs: performance.now() - startedAt,
+					candidatesBefore,
+					candidatesAfter: identityKept.length,
+					droppedCount: pool.filter((candidate) => !keptIds.has(candidate.id))
+						.length,
+					meanConfidence,
+					top1Type: identityKept[0]?.type ?? null,
+					keepPath: 'kept-identity',
+					model: jevSearchModel,
+					aiCallCount: tally.aiCallCount,
+					usage,
+				}
+			}
 			return {
 				candidates: [],
 				outcome: 'fallback-empty-after-drop',

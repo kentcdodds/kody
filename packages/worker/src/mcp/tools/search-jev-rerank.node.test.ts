@@ -15,8 +15,8 @@ import {
 	resolveJevSearchRecallLimit,
 	selectJevKeptCandidates,
 } from './search-jev-rerank.ts'
+import { understandSearchQuery,type SearchIntent } from './understand-search-query.ts'
 import { type SearchCandidate } from './search-types.ts'
-import { type SearchIntent } from './understand-search-query.ts'
 
 function makeCandidate(
 	overrides: Partial<SearchCandidate> & {
@@ -310,6 +310,66 @@ test('rerankSearchCandidatesWithJev skips offline or flag-off and applies Score 
 		candidatesAfter: 0,
 		droppedCount: emptyAfterDrop.candidatesBefore,
 	})
+
+	const dropboxIntent = understandSearchQuery({
+		query: 'dropbox shared link',
+		entities: [],
+	})
+	const dropboxPackage = makeCandidate({
+		id: 'dropbox',
+		title: '@acme/dropbox',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-dropbox',
+			kodyId: 'dropbox',
+			name: '@acme/dropbox',
+			title: '@acme/dropbox',
+			description: 'Direct download URLs and shared-link helpers.',
+			tags: ['files'],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const descriptionOnlyPackage = makeCandidate({
+		id: 'notes',
+		title: '@acme/notes',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-notes',
+			kodyId: 'notes',
+			name: '@acme/notes',
+			title: '@acme/notes',
+			description: 'dropbox shared link notes that are not the package.',
+			tags: ['shared', 'link'],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const identityKept = await rerank(
+		scoreRun(() => ({ score: jevSearchMinKeepScore - 1, confidence: 0.9 })),
+		{
+			query: 'dropbox shared link',
+			intent: dropboxIntent,
+			limit: 5,
+			candidates: makeNecessityRunPool([
+				descriptionOnlyPackage,
+				dropboxPackage,
+				makeCandidate({ id: 'shared', title: 'Shared link capability' }),
+			]),
+		},
+	)
+	expect(identityKept).toMatchObject({
+		outcome: 'applied',
+		keepPath: 'kept-identity',
+		top1Type: 'package',
+	})
+	expect(idsOf(identityKept)).toEqual(['dropbox'])
+	expect(identityKept.candidatesAfter).toBe(1)
+	expect(identityKept.droppedCount).toBeGreaterThan(0)
 
 	const midTier = await rerank(
 		scoreRun((key) => {

@@ -47,7 +47,7 @@ const jevRerankTelemetrySchema = z
 			.enum(jevSearchKeepPaths)
 			.optional()
 			.describe(
-				'Adaptive keep path after Jev Score (`kept-high` | `kept-lowered` | `empty`). Present when Score ran and mean confidence cleared the floor.',
+				'Adaptive keep path after Jev Score (`kept-high` | `kept-lowered` | `kept-identity` | `empty`). Present when Score ran and mean confidence cleared the floor. `kept-identity` keeps package name, kody id, or leaf hits when every Score misses the floors.',
 			),
 		errorReason: z
 			.string()
