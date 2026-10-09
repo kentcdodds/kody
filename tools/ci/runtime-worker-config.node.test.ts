@@ -228,6 +228,9 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 	expect(previewEnv?.workflows?.[0]?.name).toBe(
 		'kody-pr-7-runtime-dynamic-callable-workflows',
 	)
+	expect(String(previewEnv?.workflows?.[0]?.name).length).toBeLessThanOrEqual(
+		64,
+	)
 	// Preview has no package-app domain, so no routes are published.
 	expect(previewEnv?.routes).toBeUndefined()
 	// The main worker's resolved vars are merged in.
@@ -248,6 +251,27 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		name: 'kody-pr-7-runtime-dynamic-callable-workflows',
 		script_name: 'kody-pr-7-runtime',
 	})
+})
+
+test('generate truncates long branch preview workflow names to 64 chars', async () => {
+	const { runtime, patchedMain } = await generateRuntime({
+		envName: 'preview',
+		workerPrefix: 'kody-branch-local-execute-parity-0092',
+		mainWorkerName: 'kody-branch-local-execute-parity-0092',
+	})
+	const workflowName = runtime.env?.preview?.workflows?.[0]?.name
+	expect(typeof workflowName).toBe('string')
+	expect(String(workflowName).length).toBeLessThanOrEqual(64)
+	expect(String(workflowName)).toMatch(/-dynamic-callable-workflows$/)
+	expect(String(workflowName)).toMatch(
+		/-[0-9a-f]{8}-dynamic-callable-workflows$/,
+	)
+	expect(patchedMain.env?.preview?.workflows?.[0]?.name).toBe(workflowName)
+	// Untruncated would be 72 characters and wrangler would reject the config.
+	expect(
+		'kody-branch-local-execute-parity-0092-runtime-dynamic-callable-workflows'
+			.length,
+	).toBe(72)
 })
 
 const packageAppRoutes = [

@@ -8,6 +8,12 @@ hold Cloudflare or site-admin credentials.
 Everything here runs on `kody-branch-<slug>` previews only. PR previews redeploy
 and reseed on every push; the scripts and workflow refuse them.
 
+Cloudflare workflow binding names are capped at 64 characters. Long
+`preview_name` values still deploy: the runtime/platform generators truncate the
+dynamic-callable workflow name with the same helper used for other preview
+resources. Prefer a short slug when you can (for example `lep-0092` instead of
+`local-execute-parity-0092`) so logs and dashboards stay readable.
+
 ## The run, in order
 
 Operators run these from a checkout of `main` with `gh` authenticated (agents

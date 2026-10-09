@@ -7,8 +7,10 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 
 import {
 	cloudflareApiRequest,
+	cloudflareWorkflowNameMaxLength,
 	deleteArtifactsNamespace,
 	deleteCloudflareQueue,
+	dynamicCallableWorkflowName,
 	emailSendingEventTypes,
 	emptyR2Bucket,
 	encodeR2ObjectKey,
@@ -29,6 +31,24 @@ import {
 	setArtifactsNamespaceOnWranglerEnv,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
+
+test('dynamicCallableWorkflowName stays within 64 chars and digests collisions', () => {
+	const short = dynamicCallableWorkflowName('kody-pr-7-runtime')
+	expect(short).toBe('kody-pr-7-runtime-dynamic-callable-workflows')
+	expect(short.length).toBeLessThanOrEqual(cloudflareWorkflowNameMaxLength)
+
+	const a = dynamicCallableWorkflowName(
+		'kody-branch-abcdefghijklmnopqrstuvwxyza-runtime',
+	)
+	const b = dynamicCallableWorkflowName(
+		'kody-branch-abcdefghijklmnopqrstuvwxyzb-runtime',
+	)
+	expect(a.length).toBeLessThanOrEqual(cloudflareWorkflowNameMaxLength)
+	expect(b.length).toBeLessThanOrEqual(cloudflareWorkflowNameMaxLength)
+	expect(a).not.toBe(b)
+	expect(a).toMatch(/-[0-9a-f]{8}-dynamic-callable-workflows$/)
+	expect(b).toMatch(/-[0-9a-f]{8}-dynamic-callable-workflows$/)
+})
 
 const thisDir = path.dirname(fileURLToPath(import.meta.url))
 const workerWranglerConfigPath = path.resolve(

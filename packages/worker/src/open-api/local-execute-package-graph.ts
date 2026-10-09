@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
+import { packageStorageOwnerIdFromCaller } from '#worker/package-registry/package-owner.ts'
 import {
 	buildLocalExecutePackageGraph,
 	LocalExecutePackageGraphError,
@@ -10,7 +12,6 @@ import {
 	type NativeApiOperationDefinition,
 } from './native-operation-helpers.ts'
 import { type NativeApiOperationId } from './operations.ts'
-import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
 
 export const localExecutePackageGraphInputSchema = z
 	.object({
@@ -60,7 +61,7 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 						buildLocalExecutePackageGraph({
 							env: ctx.env,
 							baseUrl: ctx.callerContext.baseUrl,
-							userId: ctx.callerContext.user.userId,
+							userId: packageStorageOwnerIdFromCaller(ctx.callerContext),
 							code: input.code,
 						}),
 				)

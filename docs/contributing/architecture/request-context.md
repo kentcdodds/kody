@@ -79,11 +79,11 @@ wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,
 
 ## Storage keys
 
-Storage still reads `callerContext.user.userId` (or the package's stored owner
-for Automation). That still equals `request.org.id` for a personal-org grant; a
-team-org grant can already carry a different `request.org.id`. Moving storage
-reads to `request.org.id` is the step that must land before those grants touch
-org-keyed data.
+Package import lookup and ad-hoc execute bundling read `request.org.id` (via
+`packageStorageOwnerIdFromCaller`) so a Use-grant outside collaborator bound to
+the owner's org resolves that org's packages. Other storage paths may still read
+`callerContext.user.userId`; that still equals `request.org.id` for a
+personal-org connection. Prefer `request.org.id` whenever the data is org-keyed.
 
 ## What to read when changing it
 

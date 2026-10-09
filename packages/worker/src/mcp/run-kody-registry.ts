@@ -95,6 +95,7 @@ import {
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
+import { packageStorageOwnerIdFromCaller } from '#worker/package-registry/package-owner.ts'
 import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	isDirectBundleDependency,
@@ -661,7 +662,8 @@ export async function runModuleWithRegistry(
 		serverTiming?: Array<{ name: string; durationMs: number }>
 	}
 > {
-	const userId = callerContext.user?.userId ?? ''
+	const actorUserId = callerContext.user?.userId ?? ''
+	const packageOwnerUserId = packageStorageOwnerIdFromCaller(callerContext)
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
 	const isAdHocExecute = shouldRecordExecuteUsageForRun({
@@ -693,7 +695,7 @@ export async function runModuleWithRegistry(
 				await buildKodyModuleBundle({
 					env,
 					baseUrl: callerContext.baseUrl,
-					userId,
+					userId: packageOwnerUserId,
 					sourceFiles: createAdHocExecuteSourceFiles(code),
 					entryPoint: 'entry.ts',
 					reuseCachedBundle: true,
@@ -709,7 +711,7 @@ export async function runModuleWithRegistry(
 			durationMs: Date.now() - bundleStartedAtMs,
 		})
 		const conversationId = options?.conversationId?.trim()
-		if (conversationId && userId) {
+		if (conversationId && actorUserId) {
 			const packageIds = bundled.dependencies
 				.filter(isDirectBundleDependency)
 				.map((dependency) => dependency.packageId)
@@ -718,7 +720,7 @@ export async function runModuleWithRegistry(
 				await scheduleAgentPackageConversationUses(
 					env,
 					{
-						userId,
+						userId: actorUserId,
 						packageIds,
 						conversationId,
 					},
@@ -864,8 +866,11 @@ export function createComputedPackageImportTools(input: {
 					'Computed kody:@ import requires a non-empty specifier string.',
 				)
 			}
-			const userId = input.callerContext.user?.userId
-			if (!userId) {
+			const actorUserId = input.callerContext.user?.userId
+			const packageOwnerUserId = packageStorageOwnerIdFromCaller(
+				input.callerContext,
+			)
+			if (!packageOwnerUserId) {
 				throw new Error(
 					'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
 				)
@@ -878,16 +883,16 @@ export function createComputedPackageImportTools(input: {
 			const artifact = await resolveComputedPackageImportArtifact({
 				env: input.env,
 				baseUrl: input.baseUrl,
-				userId,
+				userId: packageOwnerUserId,
 				specifier,
 			})
 			const conversationId = input.conversationId?.trim()
 			const calleePackageId = artifact.packageContext?.packageId?.trim()
-			if (conversationId && calleePackageId) {
+			if (conversationId && actorUserId && calleePackageId) {
 				await scheduleAgentPackageConversationUses(
 					input.env,
 					{
-						userId,
+						userId: actorUserId,
 						packageIds: [calleePackageId],
 						conversationId,
 					},
@@ -1136,7 +1141,7 @@ export async function runBundledModuleWithRegistry(
 			await hydrateKodyRuntimeModules({
 				env,
 				baseUrl: callerContext.baseUrl,
-				userId: callerContext.user?.userId ?? '',
+				userId: packageStorageOwnerIdFromCaller(callerContext),
 				modules: bundle.modules,
 			})
 		runServerTiming.push({
