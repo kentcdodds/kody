@@ -1458,6 +1458,7 @@ export async function handleAuthorizeRequest(
 	let approvedEmail = ''
 	let approvedUsername = ''
 	let approvedUserId = ''
+	let requiresOrgChoiceReload = false
 	if (hasFormCredentials) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -1553,38 +1554,15 @@ export async function handleAuthorizeRequest(
 		approvedEmail = normalizedEmail
 		approvedUsername = username
 		approvedUserId = personIdFromStored(userRecord.stable_user_id)
-		// Inline login never saw the org picker (loader had no session). Establish
-		// a browser session and reload authorize when the account has several orgs
-		// and neither the form nor `?org=` named one, so the picker can render.
-		setCookie = await createAuthCookie(
-			{
-				stableUserId: approvedUserId,
-				email: approvedEmail,
-				rememberMe: false,
-			},
-			isSecureRequest(request),
-		)
+		// Inline login never saw the org picker (loader had no session). After
+		// email verification, establish a browser session and reload authorize
+		// when the account has several orgs and neither the form nor `?org=`
+		// named one, so the picker can render.
 		const formOrgSlug = readOrgSlugFromForm(formData)
 		const urlOrgSlug = readOrgSlugFromUrl(request.url)
 		if (!formOrgSlug && !urlOrgSlug) {
 			const accessible = await listOrgsForPerson(env.APP_DB, approvedUserId)
-			if (accessible.length > 1) {
-				const reloadTo = request.url
-				const cookieHeaders = createSetCookieHeaders([setCookie])
-				if (wantsJson(request)) {
-					return jsonResponse(
-						{ ok: true, redirectTo: reloadTo, requiresOrgChoice: true },
-						{ headers: cookieHeaders },
-					)
-				}
-				return new Response(null, {
-					status: 302,
-					headers: {
-						Location: reloadTo,
-						...(setCookie ? { 'Set-Cookie': setCookie } : {}),
-					},
-				})
-			}
+			requiresOrgChoiceReload = accessible.length > 1
 		}
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
@@ -1669,6 +1647,34 @@ export async function handleAuthorizeRequest(
 			'email_verification_required',
 			createSetCookieHeaders([setCookie]),
 		)
+	}
+
+	if (hasFormCredentials) {
+		setCookie = await createAuthCookie(
+			{
+				stableUserId: approvedUserId,
+				email: approvedEmail,
+				rememberMe: false,
+			},
+			isSecureRequest(request),
+		)
+		if (requiresOrgChoiceReload) {
+			const reloadTo = request.url
+			const cookieHeaders = createSetCookieHeaders([setCookie])
+			if (wantsJson(request)) {
+				return jsonResponse(
+					{ ok: true, redirectTo: reloadTo, requiresOrgChoice: true },
+					{ headers: cookieHeaders },
+				)
+			}
+			return new Response(null, {
+				status: 302,
+				headers: {
+					Location: reloadTo,
+					...(setCookie ? { 'Set-Cookie': setCookie } : {}),
+				},
+			})
+		}
 	}
 
 	const resolvedScopes = resolveScopes(authRequest.scope)
