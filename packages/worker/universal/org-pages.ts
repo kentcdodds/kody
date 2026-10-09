@@ -218,15 +218,17 @@ export function organizationsWithSignupFallback(input: {
 /**
  * Name and avatar every org row shows. The signup organization carries the
  * person's own name and photo; other organizations have no image yet, so
- * their avatar falls back to the initial of the name (or slug).
+ * their avatar falls back to the initial of the name (or slug). Profile edits
+ * rename the person, not the signup organization row, so the person's current
+ * name wins there.
  */
 export function orgIdentity(
 	org: Pick<OrganizationSummary, 'slug' | 'displayName' | 'personal'>,
 	viewer: { displayName: string; avatarUrl: string | null },
 ) {
 	const name =
-		org.displayName?.trim() ||
 		(org.personal ? viewer.displayName.trim() : '') ||
+		org.displayName?.trim() ||
 		null
 	return {
 		name: name ?? `@${org.slug}`,

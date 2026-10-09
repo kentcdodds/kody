@@ -141,6 +141,10 @@ test('org rows show the signup organization as the person and others by name or 
 		avatarName: 'Ada Lovelace',
 		avatarUrl: '/avatars/ada.png',
 	})
+	expect(orgIdentity(personal, viewer).name).toBe('Ada Lovelace')
+	expect(
+		orgIdentity(personal, { displayName: ' ', avatarUrl: null }).name,
+	).toBe('Ada')
 	expect(orgIdentity(acme, viewer)).toEqual({
 		name: 'Acme',
 		handle: '@acme',
