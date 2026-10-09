@@ -2,99 +2,67 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Kody for agencies</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Build, deliver, and maintain client automations with Kody. Reuse your agency's best work across client organizations."
+    />
+    <title>Kody for agencies | Build a business around better workflows</title>
     <style>
       @font-face {
         font-family: Display;
         src: url(../../../packages/worker/public/fonts/bricolage-grotesque-latin.woff2);
+        font-display: swap;
       }
       @font-face {
         font-family: Body;
         src: url(../../../packages/worker/public/fonts/wix-madefor-text-latin.woff2);
+        font-display: swap;
+      }
+      :root {
+        --ink: #202c2a;
+        --muted: #66716b;
+        --paper: #f6f5ee;
+        --line: #d7dbd0;
+        --green: #203e33;
+        --lime: #d9ee8b;
+        --orange: #c94f29;
       }
       * {
         box-sizing: border-box;
       }
       html {
         scroll-behavior: smooth;
+        scroll-padding-top: 24px;
       }
       body {
         margin: 0;
-        background: #f7f7ef;
-        color: #18382e;
-        font-family: Body, Arial, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.55 Body,
+          Arial,
+          sans-serif;
       }
       button,
       a,
       input {
         font: inherit;
       }
+      button {
+        cursor: pointer;
+      }
       a {
         color: inherit;
         text-decoration: none;
       }
-      button {
-        cursor: pointer;
-      }
       button:focus-visible,
-      a:focus-visible,
-      input:focus-visible {
-        outline: 3px solid #cc603b;
-        outline-offset: 4px;
+      a:focus-visible {
+        outline: 3px solid #d86635;
+        outline-offset: 5px;
       }
-      .wrap {
-        max-width: 1240px;
-        margin: auto;
-        padding: 0 40px;
-      }
-      nav {
-        height: 100px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-bottom: 1px solid #d7ded2;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        font: 700 30px Display;
-      }
-      .brand img {
-        width: 39px;
-        height: 39px;
-      }
-      .navlinks {
-        display: flex;
-        gap: 30px;
-        align-items: center;
-        font-size: 14px;
-      }
-      .button {
-        display: inline-flex;
-        align-items: center;
-        gap: 26px;
-        padding: 16px 22px;
-        background: #183e31;
-        color: #fff;
-        border: 0;
-        border-radius: 6px;
-        font-weight: 600;
-      }
-      .button.light {
-        background: #d8ed8b;
-        color: #19382d;
-      }
-      .arrow {
-        font-size: 21px;
-      }
-      .hero {
-        padding: 72px 0 62px;
-        display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
-        gap: 60px;
-        align-items: end;
+      button {
+        color: inherit;
       }
       h1,
       h2,
@@ -102,979 +70,1289 @@
       p {
         margin: 0;
       }
+      h1,
+      h2,
+      h3 {
+        font-family: Display, Arial, sans-serif;
+      }
       h1 {
-        font: 600 64px/1.04 Display;
-        max-width: 660px;
-      }
-      h1 span {
-        color: #628345;
-      }
-      p {
-        line-height: 1.65;
-      }
-      .hero p {
-        font-size: 20px;
-        max-width: 420px;
-        margin: 0 0 28px;
-      }
-      .workspace {
-        border: 1px solid #b9c7b2;
-        border-radius: 12px;
-        background: #fff;
-        box-shadow: 0 20px 60px #203a2512;
-        overflow: hidden;
-        display: grid;
-        grid-template-columns: 220px 1fr;
-        min-height: 465px;
-      }
-      .sidebar {
-        padding: 25px 16px;
-        background: #edf0e6;
-        border-right: 1px solid #d8dfd2;
-      }
-      .studio {
-        font-weight: 700;
-        padding: 0 10px 26px;
-        display: flex;
-        gap: 9px;
-        align-items: center;
-      }
-      .studio b {
-        display: grid;
-        place-items: center;
-        background: #18382e;
-        color: #e3ecaa;
-        width: 28px;
-        height: 28px;
-        border-radius: 6px;
-        font: 600 15px Display;
-      }
-      .sidelabel {
-        font-size: 12px;
-        color: #67796a;
-        margin: 20px 11px 9px;
-      }
-      .client {
-        width: 100%;
-        text-align: left;
-        padding: 11px;
-        border: 0;
-        background: none;
-        border-radius: 5px;
-        color: #40574a;
-        font-size: 14px;
-      }
-      .client.active {
-        background: #d8e1cc;
-        color: #18382e;
-        font-weight: 700;
-      }
-      .dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #bb7861;
-        margin-right: 9px;
-      }
-      .client:nth-of-type(2) .dot {
-        background: #94a369;
-      }
-      .client:nth-of-type(3) .dot {
-        background: #8a9dac;
-      }
-      .main {
-        padding: 28px 34px;
-      }
-      .toolbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 15px;
-      }
-      .crumb {
-        font-size: 12px;
-        color: #728072;
-        margin-bottom: 9px;
-      }
-      .main h3 {
-        font: 600 28px Display;
-      }
-      .share {
-        background: white;
-        border: 1px solid #c9d4c3;
-        padding: 9px 16px;
-        border-radius: 5px;
-        color: #244733;
-      }
-      .people {
-        font-size: 12px;
-        color: #728072;
-        margin: 13px 0 27px;
-      }
-      .tabs {
-        display: flex;
-        gap: 28px;
-        border-bottom: 1px solid #e1e6dc;
-        font-size: 13px;
-        margin-bottom: 5px;
-      }
-      .tab {
-        padding: 0 0 12px;
-        border: 0;
-        background: none;
-        color: #6e7d6e;
-      }
-      .tab.active {
-        color: #193e31;
-        border-bottom: 2px solid #193e31;
-      }
-      .row {
-        display: grid;
-        grid-template-columns: 44px 1fr 100px 80px;
-        align-items: center;
-        gap: 13px;
-        padding: 20px 0;
-        border-bottom: 1px solid #e8ece4;
-      }
-      .fileicon {
-        width: 38px;
-        height: 42px;
-        display: grid;
-        place-items: center;
-        border-radius: 7px;
-        font-size: 20px;
-        background: #f4eadf;
-        color: #ad6846;
-      }
-      .row:nth-child(2) .fileicon {
-        background: #e9efda;
-        color: #64852f;
-      }
-      .row:nth-child(3) .fileicon {
-        background: #e7eef2;
-        color: #477784;
-      }
-      .name {
+        font-size: clamp(48px, 6.4vw, 86px);
+        line-height: 0.99;
+        letter-spacing: -4px;
         font-weight: 600;
-        font-size: 14px;
-      }
-      .detail {
-        font-size: 12px;
-        color: #7b857a;
-        margin-top: 5px;
-      }
-      .kind {
-        font-size: 12px;
-        color: #6a7e6c;
-      }
-      .badge {
-        font-size: 11px;
-        padding: 5px 8px;
-        background: #edf4df;
-        border-radius: 4px;
-        text-align: center;
-        color: #526b32;
-      }
-      .connected {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 24px;
-        font-size: 12px;
-        color: #6b7c68;
-      }
-      .connected strong {
-        color: #294736;
-        font-weight: 500;
-      }
-      .agents {
-        display: flex;
-        gap: 7px;
-        margin-left: auto;
-      }
-      .agents span {
-        background: #f4f4ee;
-        padding: 6px 10px;
-        border-radius: 4px;
-        color: #53604f;
-      }
-      .under {
-        padding: 24px 0 64px;
-        display: flex;
-        justify-content: space-between;
-        gap: 24px;
-        font-size: 14px;
-        color: #687863;
-      }
-      .under p {
-        max-width: 570px;
-      }
-      .under a {
-        color: #203f31;
-        border-bottom: 1px solid #aab6a0;
-        align-self: start;
-        padding-bottom: 4px;
-        white-space: nowrap;
-      }
-      .story {
-        padding: 82px 0;
-        border-top: 1px solid #d7ded2;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 100px;
       }
       h2 {
-        font: 600 48px/1.08 Display;
+        font-size: clamp(36px, 4vw, 54px);
+        line-height: 1.05;
+        letter-spacing: -2px;
+        font-weight: 600;
       }
-      .story p {
-        font-size: 17px;
-        margin-top: 24px;
-        color: #526753;
-        max-width: 435px;
+      h3 {
+        font-size: 23px;
+        line-height: 1.2;
+        letter-spacing: -0.6px;
       }
-      .permission {
-        align-self: center;
-        background: #e9eedf;
-        padding: 28px 32px;
-        border-radius: 8px;
+      .wrap {
+        max-width: 1320px;
+        padding: 0 48px;
+        margin: auto;
       }
-      .permission h3 {
-        font: 600 20px Display;
-        margin-bottom: 23px;
+      .nav {
+        height: 90px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
       }
-      .person {
+      .brand {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 16px 0;
-        border-top: 1px solid #d0dac5;
+        gap: 9px;
+        font: 700 29px Display;
+      }
+      .brand img {
+        width: 36px;
+        height: 36px;
+      }
+      .brand span {
+        font: 14px Body;
+        border-left: 1px solid #bac2b6;
+        padding-left: 17px;
+        margin-left: 7px;
+      }
+      .navlinks {
+        display: flex;
+        align-items: center;
+        gap: 28px;
         font-size: 14px;
       }
-      .avatar {
-        width: 33px;
-        height: 33px;
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--green);
+        color: white;
+        padding: 14px 21px;
+        font-weight: 600;
+        font-size: 14px;
+        transition:
+          background 0.15s,
+          transform 0.15s;
+      }
+      .button:hover {
+        background: #325543;
+        transform: translateY(-1px);
+      }
+      .button.light {
+        background: var(--lime);
+        color: #20342a;
+      }
+      .button.light:hover {
+        background: #e8f8b5;
+      }
+      .arrow {
+        font-size: 21px;
+        font-weight: 400;
+        line-height: 1;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr;
+        gap: 65px;
+        padding: 72px 0 50px;
+        align-items: end;
+      }
+      .hero h1 span {
+        color: #738645;
+      }
+      .hero-copy {
+        padding-bottom: 6px;
+        max-width: 405px;
+      }
+      .hero-copy p {
+        font-size: 19px;
+        line-height: 1.6;
+        color: #56615a;
+        margin-bottom: 25px;
+      }
+      .hero-copy .text-link {
+        display: block;
+        width: fit-content;
+        margin-top: 17px;
+        font-size: 14px;
+        border-bottom: 1px solid #aab3a3;
+      }
+      .showcase {
+        border: 1px solid #c7cebd;
+        background: #e7eadc;
+        border-radius: 13px;
+        padding: 15px;
+        box-shadow: 0 18px 45px #263a2210;
+      }
+      .example-tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 0 15px;
+        align-items: center;
+      }
+      .example-tabs button {
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 10px 17px;
+        font-size: 14px;
+        color: #5d685a;
+      }
+      .example-tabs button[aria-pressed="true"] {
+        background: var(--green);
+        color: white;
+      }
+      .example-tabs button:hover {
+        border-color: #9bac91;
+      }
+      .example-label {
+        margin-left: auto;
+        font-size: 12px;
+        color: #63705d;
+        padding-right: 5px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 235px 1fr;
+        min-height: 400px;
+        border: 1px solid #cbd1c6;
+        border-radius: 8px;
+        overflow: hidden;
+        background: white;
+      }
+      .studio {
+        padding: 23px 20px;
+        background: #f6f7f2;
+        border-right: 1px solid #e0e3d9;
+      }
+      .studio-brand {
+        font-size: 14px;
+        font-weight: 700;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .studio-icon {
         display: grid;
         place-items: center;
-        background: #d5ddc6;
+        background: #dfe7d0;
+        width: 29px;
+        height: 29px;
+        border-radius: 7px;
+      }
+      .studio small {
+        display: block;
+        color: #788170;
+        font-size: 11px;
+        margin: 28px 0 10px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+      }
+      .space {
+        padding: 9px 11px;
+        font-size: 13px;
+        color: #6b7565;
+      }
+      .space.active {
+        background: #e4ead8;
+        color: #243c29;
+        border-radius: 5px;
+        font-weight: 600;
+      }
+      .studio-bottom {
+        border-top: 1px solid #e0e3d9;
+        margin-top: 30px;
+        padding-top: 16px;
+        font-size: 12px;
+        color: #788170;
+      }
+      .studio-bottom strong {
+        display: block;
+        color: #35432e;
+        font-weight: 500;
+        margin-top: 6px;
+      }
+      .workspace {
+        min-width: 0;
+      }
+      .appbar {
+        height: 58px;
+        padding: 0 25px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #e9ece4;
+        font-size: 12px;
+        color: #798171;
+      }
+      .appbar strong {
+        color: #394735;
+        font-weight: 500;
+      }
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+      }
+      .live:before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 100%;
+        background: #5f955c;
+      }
+      .workbody {
+        display: grid;
+        grid-template-columns: 0.85fr 1.15fr;
+        gap: 28px;
+        padding: 28px;
+      }
+      .request-label {
+        font-size: 11px;
+        color: #808776;
+        margin-bottom: 13px;
+      }
+      .request {
+        font-size: 20px;
+        font-family: Display;
+        line-height: 1.4;
+        letter-spacing: -0.4px;
+      }
+      .pipeline {
+        margin-top: 22px;
+        display: grid;
+        gap: 9px;
+        font-size: 12px;
+      }
+      .pipeline div {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .check {
+        font-size: 11px;
+        width: 19px;
+        height: 19px;
         border-radius: 50%;
+        background: #edf3e5;
+        color: #477349;
+        display: grid;
+        place-items: center;
+      }
+      .trigger {
+        font-size: 11px;
+        margin-top: 21px;
+        color: #757d6b;
+        border-top: 1px solid #e4e8de;
+        padding-top: 12px;
+      }
+      .output {
+        border: 1px solid #dfe4d7;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 5px 18px #2d412409;
+        min-width: 0;
+      }
+      .output-bar {
+        background: #f6f8f0;
+        padding: 10px 14px;
+        font-size: 11px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #6b7760;
+      }
+      .mode-tabs {
+        display: flex;
+        gap: 3px;
+      }
+      .mode-tabs button {
+        font-size: 11px;
+        padding: 4px 8px;
+        background: transparent;
+        border: 0;
+        border-radius: 4px;
+        color: #738168;
+      }
+      .mode-tabs button[aria-pressed="true"] {
+        background: white;
+        box-shadow: 0 1px 4px #17240a19;
+        color: #233b2a;
+      }
+      .output-content {
+        padding: 20px;
+      }
+      .output-content h3 {
+        font-size: 20px;
+      }
+      .output-sub {
+        font-size: 11px;
+        color: #7a8174;
+        margin: 4px 0 18px;
+      }
+      .data-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        font-size: 12px;
+        padding: 11px 0;
+        border-top: 1px solid #e9ece3;
+      }
+      .data-row span:last-child {
+        white-space: nowrap;
+      }
+      .output-foot {
+        font-size: 11px;
+        color: #537045;
+        background: #eef4e5;
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-top: 12px;
+      }
+      .agent-prompt {
+        font-size: 12px;
+        background: #f0f2e9;
+        padding: 12px;
+        border-radius: 5px;
+        margin-bottom: 18px;
+      }
+      .agent-result {
+        font-size: 14px;
+        line-height: 1.7;
+      }
+      .agent-tool {
+        font: 10px/1.6 monospace;
+        color: #69765e;
+        margin-bottom: 10px;
+        overflow-wrap: anywhere;
+      }
+      .demo-caption {
+        font-size: 12px;
+        color: #74806a;
+        margin: 12px 0 0;
+        text-align: right;
+      }
+      .capabilities {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 29px 15px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+        color: #63705e;
+      }
+      .capabilities span {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .capabilities b {
+        font-size: 17px;
+        color: #7c8d60;
+        font-weight: 400;
+      }
+      .reuse {
+        display: grid;
+        grid-template-columns: 1fr 1.08fr;
+        gap: 100px;
+        align-items: center;
+        padding: 120px 0;
+      }
+      .section-copy p {
+        font-size: 18px;
+        color: #66715f;
+        line-height: 1.7;
+        margin-top: 25px;
+        max-width: 420px;
+      }
+      .section-copy .text-link {
+        display: inline-block;
+        font-size: 14px;
+        border-bottom: 1px solid #829471;
+        margin-top: 25px;
+      }
+      .library {
+        background: #e9ecdf;
+        border: 1px solid #d9dfce;
+        border-radius: 12px;
+        padding: 30px;
+      }
+      .package {
+        background: white;
+        border: 1px solid #d5ddc8;
+        padding: 21px;
+        border-radius: 7px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+        box-shadow: 0 5px 12px #2f452609;
+      }
+      .package-icon {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 44px;
+        background: #e6eed7;
+        border-radius: 6px;
+        font: 24px Display;
+        color: #637c44;
+      }
+      .package strong {
+        display: block;
+        font-size: 15px;
+      }
+      .package small {
+        color: #89927e;
+        font-size: 12px;
+      }
+      .branches {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 17px;
+        margin-top: 35px;
+        position: relative;
+      }
+      .branches:before {
+        content: "";
+        position: absolute;
+        left: 25%;
+        right: 25%;
+        top: -20px;
+        border-top: 1px solid #a9b899;
+        height: 20px;
+        border-left: 1px solid #a9b899;
+        border-right: 1px solid #a9b899;
+      }
+      .branches:after {
+        content: "";
+        position: absolute;
+        height: 15px;
+        top: -35px;
+        left: 50%;
+        border-left: 1px solid #a9b899;
+      }
+      .client {
+        background: #f9faf5;
+        padding: 18px;
+        border: 1px solid #d2dcc5;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      .client strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 13px;
+      }
+      .client p {
+        color: #7b876d;
+        font-size: 11px;
+        margin-top: 7px;
+      }
+      .client .tag {
+        display: inline-block;
+        background: #e8eedf;
+        padding: 3px 7px;
+        border-radius: 4px;
+        margin-top: 13px;
+        font-size: 10px;
+        color: #5b7446;
+      }
+      .library-note {
+        font-size: 12px;
+        color: #76836a;
+        margin-top: 18px;
+        text-align: center;
+      }
+      .ownership {
+        background: var(--green);
+        color: #f7f9ee;
+        padding: 85px 0 90px;
+      }
+      .ownership-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.1fr;
+        gap: 90px;
+        align-items: start;
+      }
+      .ownership h2 {
+        max-width: 430px;
+      }
+      .ownership .section-copy p {
+        color: #b5c7b8;
+      }
+      .access {
+        border: 1px solid #526c56;
+        border-radius: 9px;
+        overflow: hidden;
+      }
+      .access-title {
+        padding: 18px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 14px;
+        background: #2a493b;
+      }
+      .access-title span {
+        font-size: 11px;
+        color: #bbcfb6;
+      }
+      .person {
+        display: grid;
+        grid-template-columns: 32px 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 20px;
+        border-top: 1px solid #45604b;
+        font-size: 13px;
+      }
+      .avatar {
+        background: #62764f;
+        color: #f4f8e5;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        height: 30px;
+        font-size: 11px;
+      }
+      .person small {
+        display: block;
+        color: #a5bda6;
         font-size: 11px;
       }
       .role {
-        margin-left: auto;
-        color: #64775e;
-        font-size: 12px;
+        font-size: 11px;
+        color: #d6e6c8;
+        border: 1px solid #6a805c;
+        border-radius: 4px;
+        padding: 4px 8px;
       }
-      .permission small {
-        display: block;
-        margin-top: 17px;
-        font-size: 12px;
-        color: #5b6e55;
-      }
-      .examples {
-        background: #193e31;
-        color: #f0f5e5;
-        padding: 72px 0;
-      }
-      .examples .wrap {
+      .ownership-notes {
         display: grid;
-        grid-template-columns: 1fr 1.12fr;
-        gap: 95px;
+        grid-template-columns: 1fr 1fr;
+        gap: 35px;
+        margin-top: 34px;
       }
-      .examples h2 {
+      .ownership-notes h3 {
+        font-size: 17px;
+        letter-spacing: 0;
+      }
+      .ownership-notes p {
+        font-size: 13px;
+        color: #b5c7b8;
+        margin-top: 9px;
+      }
+      .offer {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 100px;
+        padding: 100px 0;
+        align-items: center;
+      }
+      .offer p {
+        font-size: 18px;
+        color: #65705f;
+        margin-top: 25px;
         max-width: 450px;
       }
-      .usecase {
-        padding: 24px 0;
-        border-bottom: 1px solid #42614f;
+      .offer-card {
+        border-left: 1px solid #c8d2bb;
+        padding-left: 40px;
       }
-      .usecase:first-child {
-        padding-top: 0;
+      .offer-card h3 {
+        font-size: 24px;
       }
-      .usecase h3 {
-        font: 500 23px Display;
-        color: #dceda7;
-      }
-      .usecase p {
+      .offer-card ul {
+        padding: 0;
+        list-style: none;
+        margin: 20px 0 28px;
+        color: #64705b;
         font-size: 15px;
-        line-height: 1.6;
-        margin-top: 9px;
-        color: #c1d1bd;
       }
-      .closing {
-        padding: 87px 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 35px;
+      .offer-card li {
+        padding: 9px 0;
+        border-bottom: 1px solid #dee2d5;
       }
-      .closing h2 {
-        max-width: 680px;
+      .offer-card li:before {
+        content: "✓";
+        margin-right: 12px;
+        color: #698647;
       }
       footer {
-        border-top: 1px solid #d7ded2;
-        padding: 25px 0;
+        border-top: 1px solid var(--line);
+        padding: 25px 0 35px;
         display: flex;
         justify-content: space-between;
         font-size: 12px;
-        color: #6d7c68;
+        color: #76806b;
+      }
+      footer a {
+        border-bottom: 1px solid #b5bfaa;
       }
       dialog {
-        border: 1px solid #c6d0bf;
+        border: 1px solid #cbd5c0;
         border-radius: 12px;
         padding: 35px;
         max-width: 460px;
-        width: calc(100% - 32px);
-        color: #18382e;
-        background: #f7f7ef;
-        box-shadow: 0 25px 100px #17362340;
+        width: calc(100% - 36px);
+        color: var(--ink);
+        background: var(--paper);
       }
       dialog::backdrop {
-        background: #102a2355;
-        backdrop-filter: blur(3px);
+        background: #10261899;
+        backdrop-filter: blur(4px);
       }
       dialog h2 {
         font-size: 32px;
-        margin: 10px 0 20px;
+        letter-spacing: -1px;
+        margin-right: 25px;
       }
       dialog p {
+        margin: 18px 0 25px;
+        color: #687460;
         font-size: 15px;
-        margin: 15px 0;
       }
       .close {
-        float: right;
-        border: 0;
+        position: absolute;
+        right: 15px;
+        top: 10px;
         background: none;
-        color: #18382e;
-        font-size: 24px;
+        border: 0;
+        font-size: 26px;
       }
-      .preview-note {
-        font-size: 12px !important;
-        color: #6b7764;
+      .skip {
+        position: absolute;
+        left: 15px;
+        top: -100px;
       }
-      .permission-modal .person {
-        font-size: 13px;
+      .skip:focus {
+        top: 10px;
+        background: white;
+        padding: 10px;
+        z-index: 10;
       }
-      a:hover {
-        opacity: 0.8;
+      [hidden] {
+        display: none !important;
       }
-      .client:hover {
-        background: #e0e7d5;
-      }
-      @media (max-width: 900px) {
+      @media (min-width: 1500px) {
         .hero {
-          gap: 30px;
-        }
-        h1 {
-          font-size: 58px;
-        }
-        .hero p {
-          font-size: 17px;
-        }
-        .workspace {
-          grid-template-columns: 175px 1fr;
-        }
-        .main {
-          padding: 25px;
-        }
-        .agents {
-          display: none;
-        }
-        .story {
-          gap: 40px;
-        }
-        .examples .wrap {
-          gap: 45px;
-        }
-        .navlinks > a:first-child {
-          display: none;
+          padding-top: 85px;
+          padding-bottom: 65px;
         }
       }
-      @media (max-width: 640px) {
+      @media (max-width: 1000px) {
         .wrap {
-          padding: 0 22px;
-        }
-        nav {
-          height: 80px;
-        }
-        .navlinks {
-          gap: 10px;
-        }
-        .navlinks .button {
-          padding: 11px 13px;
-          font-size: 12px;
+          padding: 0 30px;
         }
         .hero {
-          grid-template-columns: 1fr;
-          padding: 43px 0 35px;
-          gap: 25px;
-        }
-        h1 {
-          font-size: 52px;
-          max-width: 370px;
-        }
-        .hero p {
-          max-width: 360px;
-          margin-bottom: 20px;
-        }
-        .workspace {
-          grid-template-columns: 1fr;
-          min-height: 0;
-        }
-        .sidebar {
-          padding: 15px;
-          border-right: 0;
-          border-bottom: 1px solid #d8dfd2;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 3px;
-        }
-        .studio {
-          width: 100%;
-          padding: 0 0 10px;
-        }
-        .sidelabel {
-          display: none;
-        }
-        .client {
-          width: auto;
-          font-size: 11px;
-          padding: 9px;
-        }
-        .main {
-          padding: 23px 17px;
-        }
-        .main h3 {
-          font-size: 24px;
-        }
-        .row {
-          grid-template-columns: 33px 1fr 60px;
-          gap: 10px;
-          padding: 17px 0;
-        }
-        .kind {
-          display: none;
-        }
-        .name {
-          font-size: 12px;
-        }
-        .detail {
-          font-size: 10px;
-        }
-        .fileicon {
-          width: 30px;
-          height: 35px;
-        }
-        .badge {
-          font-size: 10px;
-        }
-        .connected {
-          font-size: 10px;
-          gap: 4px;
-        }
-        .under {
-          padding: 20px 0 40px;
-          display: block;
-          font-size: 12px;
-        }
-        .under a {
-          display: inline-block;
-          margin-top: 15px;
-        }
-        .story {
-          padding: 45px 0;
-          grid-template-columns: 1fr;
-          gap: 30px;
-        }
-        h2 {
-          font-size: 37px;
-        }
-        .story p {
-          font-size: 16px;
-          margin-top: 18px;
-        }
-        .permission {
-          padding: 23px;
-        }
-        .examples {
-          padding: 45px 0;
-        }
-        .examples .wrap {
-          grid-template-columns: 1fr;
           gap: 35px;
         }
-        .closing {
-          padding: 47px 0;
-          display: block;
+        .hero h1 {
+          font-size: 65px;
+          letter-spacing: -3px;
         }
-        .closing .button {
-          margin-top: 25px;
+        .hero-copy p {
+          font-size: 17px;
         }
-        .closing h2 {
-          font-size: 36px;
+        .app {
+          grid-template-columns: 175px 1fr;
+        }
+        .studio {
+          padding: 20px 12px;
+        }
+        .workbody {
+          gap: 20px;
+          padding: 20px;
+        }
+        .reuse,
+        .ownership-grid,
+        .offer {
+          gap: 45px;
+        }
+        .capabilities {
+          font-size: 11px;
+        }
+        .navlinks {
+          gap: 19px;
+        }
+      }
+      @media (max-width: 760px) {
+        .wrap {
+          padding: 0 20px;
+        }
+        .nav {
+          height: 76px;
+        }
+        .brand {
+          font-size: 25px;
+        }
+        .brand span {
+          font-size: 12px;
+          padding-left: 10px;
+          margin-left: 0;
+        }
+        .brand img {
+          width: 31px;
+          height: 31px;
+        }
+        .navlinks > a {
+          display: none;
+        }
+        .navlinks .button {
+          font-size: 12px;
+          padding: 10px 12px;
+          gap: 10px;
+        }
+        .hero {
+          grid-template-columns: 1fr;
+          padding: 45px 0 32px;
+          gap: 24px;
+        }
+        .hero h1 {
+          font-size: 46px;
+          letter-spacing: -2px;
+          max-width: 530px;
+        }
+        .hero-copy {
+          max-width: 490px;
+        }
+        .hero-copy p {
+          font-size: 17px;
+          margin-bottom: 20px;
+        }
+        .hero-copy .text-link {
+          display: inline-block;
+          margin-left: 15px;
+          margin-top: 0;
+          font-size: 12px;
+        }
+        .showcase {
+          padding: 8px;
+        }
+        .example-tabs {
+          gap: 2px;
+          padding-bottom: 8px;
+          justify-content: space-between;
+        }
+        .example-tabs button {
+          padding: 9px 8px;
+          font-size: 11px;
+        }
+        .example-label {
+          display: none;
+        }
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .studio {
+          display: none;
+        }
+        .appbar {
+          padding: 0 15px;
+          height: 45px;
+          font-size: 11px;
+        }
+        .workbody {
+          grid-template-columns: 1fr;
+          padding: 20px;
+          gap: 22px;
+        }
+        .request {
+          font-size: 21px;
+        }
+        .pipeline {
+          grid-template-columns: 1fr;
+          gap: 7px;
+          margin-top: 14px;
+        }
+        .trigger {
+          margin-top: 14px;
+        }
+        .output-content {
+          min-height: 225px;
+        }
+        .demo-caption {
+          font-size: 10px;
+          margin-top: 8px;
+        }
+        .capabilities {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          padding: 22px 0;
+          gap: 15px;
+          font-size: 11px;
+        }
+        .reuse {
+          grid-template-columns: 1fr;
+          padding: 65px 0;
+          gap: 30px;
+        }
+        .section-copy p {
+          font-size: 16px;
+          margin-top: 20px;
+        }
+        .library {
+          padding: 20px;
+        }
+        .client {
+          padding: 12px;
+        }
+        .ownership {
+          padding: 60px 0;
+        }
+        .ownership-grid {
+          grid-template-columns: 1fr;
+          gap: 30px;
+        }
+        .ownership-notes {
+          gap: 22px;
+        }
+        .offer {
+          grid-template-columns: 1fr;
+          gap: 30px;
+          padding: 65px 0;
+        }
+        .offer p {
+          font-size: 16px;
+          margin-top: 20px;
+        }
+        .offer-card {
+          padding-left: 0;
+          border-left: 0;
+        }
+        .person {
+          padding: 16px 13px;
+        }
+        .access-title {
+          padding: 16px 13px;
+        }
+        .role {
+          font-size: 10px;
+        }
+        .hero-copy .button {
+          gap: 12px;
+          padding: 13px 16px;
         }
         footer {
           gap: 20px;
+          font-size: 11px;
         }
       }
       @media (prefers-reduced-motion: reduce) {
         html {
           scroll-behavior: auto;
         }
-      }
-      .ownership {
-        font-size: 13px !important;
-        margin: -10px 0 24px !important;
-      }
-      .run-preview {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 15px;
-        padding: 20px;
-        margin-top: 18px;
-        background: #f0f3e8;
-        border-radius: 6px;
-        font-size: 13px;
-      }
-      .run-preview p {
-        font-size: 12px;
-        color: #627559;
-        margin: 7px 0 0 24px;
-      }
-      .run-dot {
-        color: #56803a;
-        margin-right: 10px;
-      }
-      .activity-row {
-        display: flex;
-        gap: 22px;
-        padding: 22px 0;
-        border-bottom: 1px solid #e1e6dc;
-        font-size: 13px;
-      }
-      .activity-time {
-        width: 62px;
-        flex-shrink: 0;
-        color: #728072;
-        font-size: 11px;
-      }
-      .activity-row p {
-        color: #6a7e6c;
-        font-size: 12px;
-        margin-top: 6px;
-      }
-      @media (min-width: 901px) {
-        h1 {
-          font-size: 60px;
-        }
-        .hero {
-          grid-template-columns: 1.15fr 0.85fr;
-          align-items: center;
-          padding-top: 55px;
-          padding-bottom: 45px;
-        }
-      }
-      @media (max-width: 640px) {
-        h1 {
-          font-size: 44px;
-        }
-        .tabs {
-          gap: 18px;
-          font-size: 12px;
-        }
-        .run-preview {
-          padding: 15px;
-          align-items: start;
-        }
-        .run-preview strong {
-          font-size: 12px;
-        }
-        .run-preview .share {
-          font-size: 11px;
-          white-space: nowrap;
-          padding: 8px;
-        }
-        .run-preview p {
-          margin-left: 0;
-        }
-        .activity-row {
-          gap: 12px;
+        * {
+          transition: none !important;
         }
       }
     </style>
   </head>
   <body>
+    <a href="#main" class="skip">Skip to content</a>
     <div class="wrap">
-      <nav aria-label="Main navigation">
+      <nav class="nav" aria-label="Main navigation">
         <a class="brand" href="#"
           ><img
             src="../../../packages/worker/public/logo-64.webp"
             alt=""
-          />kody</a
+          />kody<span>for agencies</span></a
         >
         <div class="navlinks">
-          <a href="#client-spaces">Client spaces</a
-          ><a class="button" href="#demo" data-demo
-            >Book an agency demo <span aria-hidden="true">↗</span></a
-          >
+          <a href="#in-action">See it in action</a
+          ><a href="#client-spaces">Client ownership</a
+          ><button class="button demo-button">
+            Book a demo <span class="arrow" aria-hidden="true">↗</span>
+          </button>
         </div>
       </nav>
-      <main>
+      <main id="main">
         <section class="hero">
           <h1>
-            Build client workflows.<br /><span
-              >Make them part of the business.</span
+            Turn your expertise<br />into your clients’<br /><span
+              >everyday software.</span
             >
           </h1>
-          <div>
+          <div class="hero-copy">
             <p>
-              Kody gives your agency a shared home to build, run, and maintain
-              client automations. Choose who owns and maintains the work.
-              Clients use it from their AI agent or an app.
+              Build automations and apps for your clients with AI. Deliver them
+              in Kody, reuse your best work, and stay on to keep it running.
             </p>
-            <a class="button" href="#demo" data-demo
-              >Book an agency demo
-              <span class="arrow" aria-hidden="true">↗</span></a
+            <button class="button demo-button">
+              Book an agency demo
+              <span class="arrow" aria-hidden="true">↗</span></button
+            ><a href="#in-action" class="text-link"
+              >Explore a client workflow ↓</a
             >
           </div>
         </section>
         <section
-          class="workspace"
-          aria-label="Interactive example client workspace"
+          class="showcase"
+          id="in-action"
+          aria-label="Interactive client workflow examples"
         >
-          <aside class="sidebar">
-            <div class="studio"><b>N</b> Northline Studio</div>
-            <div class="sidelabel">Client spaces</div>
-            <button class="client active" data-client="0">
-              <span class="dot"></span>Acme Construction</button
-            ><button class="client" data-client="1">
-              <span class="dot"></span>Fieldwork Co.</button
-            ><button class="client" data-client="2">
-              <span class="dot"></span>Studio operations
-            </button>
-          </aside>
-          <div class="main">
-            <div class="toolbar">
-              <div>
-                <div class="crumb">Northline Studio / Client spaces</div>
-                <h3 id="client-title">Acme Construction</h3>
+          <div class="example-tabs" role="group" aria-label="Choose a workflow">
+            <button data-example="invoices" aria-pressed="true">
+              Monthly invoicing</button
+            ><button data-example="audit" aria-pressed="false">
+              Nightly audits</button
+            ><button data-example="onboarding" aria-pressed="false">
+              Client onboarding</button
+            ><span class="example-label">Interactive example</span>
+          </div>
+          <div class="app">
+            <aside class="studio">
+              <div class="studio-brand">
+                <span class="studio-icon" aria-hidden="true">N</span>Northline
+                Studio
               </div>
-              <button class="share" id="share">Share ↗</button>
-            </div>
-            <p class="people">
-              Owned by Northline Studio · Shared with Acme finance
-            </p>
-            <div class="tabs" role="tablist" aria-label="Workspace content">
-              <button
-                class="tab active"
-                role="tab"
-                aria-selected="true"
-                data-tab="work"
-              >
-                Workflows</button
-              ><button
-                class="tab"
-                role="tab"
-                aria-selected="false"
-                data-tab="access"
-              >
-                People & access</button
-              ><button
-                class="tab"
-                role="tab"
-                aria-selected="false"
-                data-tab="activity"
-              >
-                Activity
-              </button>
-            </div>
-            <div id="rows"></div>
-            <div class="run-preview">
-              <div>
-                <span class="run-dot">✓</span
-                ><strong id="run-title">Monthly invoicing</strong>
-                <p id="run-detail">
-                  Scheduled run · Drafts prepared for finance
-                </p>
+              <small>Client organizations</small>
+              <div class="space active">◈ &nbsp; Acme Construction</div>
+              <div class="space">◈ &nbsp; Fieldwork Co.</div>
+              <div class="space">◈ &nbsp; Studio operations</div>
+              <small>Your library</small>
+              <div class="space">▧ &nbsp; Shared packages</div>
+              <div class="studio-bottom">
+                Maintained by<strong>Northline delivery team</strong>
               </div>
-              <button class="share" id="inspect-run">View run ↗</button>
-            </div>
-            <div class="connected">
-              <span style="color: #68964c">●</span> Available to connected
-              agents
-              <div class="agents">
-                <span>Claude</span><span>ChatGPT</span><span>Codex</span>
+            </aside>
+            <div class="workspace">
+              <div class="appbar">
+                <span
+                  >Acme Construction &nbsp; / &nbsp;
+                  <strong id="workflow-name">Monthly invoicing</strong></span
+                ><span class="live">Active</span>
+              </div>
+              <div class="workbody">
+                <div>
+                  <p class="request-label">The client’s request</p>
+                  <p class="request" id="request"></p>
+                  <div class="pipeline" id="pipeline"></div>
+                  <p class="trigger" id="trigger"></p>
+                </div>
+                <div class="output">
+                  <div class="output-bar">
+                    <span>Client view</span>
+                    <div
+                      class="mode-tabs"
+                      role="group"
+                      aria-label="Client interface"
+                    >
+                      <button data-mode="app" aria-pressed="true">App</button
+                      ><button data-mode="agent" aria-pressed="false">
+                        AI agent
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    class="output-content"
+                    id="result"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
+          <p class="demo-caption">Illustrative workflow and client data</p>
         </section>
-        <div class="under">
-          <p>
-            Explore an example workspace. Switch clients, inspect access, or
-            view activity.
-          </p>
-          <a href="#client-spaces">See how ownership works ↓</a>
+        <div class="capabilities">
+          <span><b aria-hidden="true">↗</b>Build with your AI agent</span
+          ><span><b aria-hidden="true">◷</b>Run on schedules or webhooks</span
+          ><span><b aria-hidden="true">▧</b>Deliver apps and agent tools</span
+          ><span><b aria-hidden="true">◈</b>Manage client access</span>
         </div>
-        <section class="story" id="client-spaces">
-          <div>
-            <h2>Client work belongs<br />to the business.</h2>
+        <section class="reuse">
+          <div class="section-copy">
+            <h2>Your best work.<br />A head start on<br />the next client.</h2>
             <p>
-              Keep workflows, connections, and data in a space with clear
-              ownership. Give your builders access to maintain the work and your
-              clients access to use it.
+              Package the logic you’ve already solved. Bring it into the next
+              project with that client’s connections, data, and business rules.
             </p>
             <p>
-              People change roles. Clients take work in-house. Hand over
-              ownership and remove access without starting over in someone
-              else’s chat.
+              Build your agency’s library as you deliver. Spend the next
+              engagement on what makes that business different.
             </p>
-          </div>
-          <div class="permission">
-            <h3>Monthly invoicing</h3>
-            <p class="ownership">Owner: Acme Construction</p>
-            <div class="person">
-              <span class="avatar">NS</span>Northline Studio<span class="role"
-                >Can edit</span
-              >
-            </div>
-            <div class="person">
-              <span class="avatar">AC</span>Acme finance team<span class="role"
-                >Can run</span
-              >
-            </div>
-            <div class="person">
-              <span class="avatar">JL</span>Jamie Lee<span class="role"
-                >Can run</span
-              >
-            </div>
-            <small
-              >Let people use a connection without exposing its secret.</small
+            <a href="#client-spaces" class="text-link"
+              >Keep each client’s work separate ↓</a
             >
+          </div>
+          <div
+            class="library"
+            aria-label="A shared package used in separate client organizations"
+          >
+            <div class="package">
+              <span class="package-icon" aria-hidden="true">▧</span>
+              <div>
+                <strong>Invoice reconciliation</strong
+                ><small>Northline Studio / shared package</small>
+              </div>
+            </div>
+            <div class="branches">
+              <div class="client">
+                <strong>Acme Construction</strong>
+                <p>Acme accounting connection</p>
+                <p>Job codes + progress billing</p>
+                <span class="tag">Acme owns the data</span>
+              </div>
+              <div class="client">
+                <strong>Fieldwork Co.</strong>
+                <p>Fieldwork accounting connection</p>
+                <p>Retainers + monthly billing</p>
+                <span class="tag">Fieldwork owns the data</span>
+              </div>
+            </div>
+            <p class="library-note">
+              Shared logic. Separate connections and records.
+            </p>
           </div>
         </section>
       </main>
     </div>
-    <section class="examples">
-      <div class="wrap">
-        <h2>Your next client<br />shouldn’t mean<br />starting from zero.</h2>
+    <section class="ownership" id="client-spaces">
+      <div class="wrap ownership-grid">
+        <div class="section-copy">
+          <h2>Your agency runs it.<br />Your client owns it.</h2>
+          <p>
+            Give each client an organization for their workflows, connections,
+            and data. Keep your team involved for ongoing work, or hand it over
+            when the engagement ends.
+          </p>
+        </div>
         <div>
-          <article class="usecase">
-            <h3>Reuse the parts you’ve already built.</h3>
-            <p>
-              Build reusable packages for your integrations, reporting, and
-              business rules. Compose them into a workflow for the next client,
-              with that client’s own connections and data.
-            </p>
-          </article>
-          <article class="usecase">
-            <h3>Keep running when the chat closes.</h3>
-            <p>
-              Run saved workflows on a schedule or from a webhook. Inspect the
-              run history when something needs attention, then improve the
-              workflow your team maintains.
-            </p>
-          </article>
-          <article class="usecase">
-            <h3>Let clients choose how they use it.</h3>
-            <p>
-              One client prefers Claude. Another uses ChatGPT. Someone in
-              finance just needs a button. Give them access to the same
-              underlying workflow.
-            </p>
-          </article>
+          <div class="access">
+            <div class="access-title">
+              Acme Construction <span>People & access</span>
+            </div>
+            <div class="person">
+              <span class="avatar">AL</span>
+              <div>Alex Lee<small>Acme Construction</small></div>
+              <span class="role">Owner</span>
+            </div>
+            <div class="person">
+              <span class="avatar">NS</span>
+              <div>Northline Studio<small>Agency delivery team</small></div>
+              <span class="role">Can maintain</span>
+            </div>
+            <div class="person">
+              <span class="avatar">JT</span>
+              <div>Jordan Taylor<small>Acme operations</small></div>
+              <span class="role">Can run</span>
+            </div>
+          </div>
+          <div class="ownership-notes">
+            <div>
+              <h3>Share the right access</h3>
+              <p>
+                Let people run a workflow without giving them its credentials or
+                permission to change it.
+              </p>
+            </div>
+            <div>
+              <h3>Leave a clear history</h3>
+              <p>
+                See who ran or changed the work. Remove a teammate without
+                removing the client’s tools.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
     <div class="wrap">
-      <section class="closing">
-        <h2>Bring the workflow<br />your client relies on.</h2>
-        <a class="button" href="#demo" data-demo
-          >Book an agency demo
-          <span class="arrow" aria-hidden="true">↗</span></a
-        >
+      <section class="offer">
+        <div>
+          <h2>Build an ongoing service<br />around client operations.</h2>
+          <p>
+            Deliver the first workflow. Add the next one. Stay involved as your
+            client’s systems, people, and processes change.
+          </p>
+        </div>
+        <div class="offer-card">
+          <h3>Bring a real client process.</h3>
+          <ul>
+            <li>Walk through how you’d build it</li>
+            <li>Map your team and client access</li>
+            <li>Plan the delivery and handoff</li>
+          </ul>
+          <button class="button demo-button">
+            Book an agency demo <span class="arrow" aria-hidden="true">↗</span>
+          </button>
+        </div>
       </section>
-      <footer><span>Kody for agencies</span></footer>
+      <footer>
+        <span>Kody for agencies</span><a href="#main">Back to top ↑</a>
+      </footer>
     </div>
-    <dialog id="demo">
+    <dialog id="demo" aria-labelledby="demo-title">
       <button class="close" aria-label="Close dialog">×</button>
-      <h2>Let’s talk about your agency.</h2>
+      <h2 id="demo-title">Let’s talk about your first client workflow.</h2>
       <p>
-        We’ll walk through who owns it, how it runs, and what your client needs
-        to use it. Bring an invoicing process, a recurring report, or an
-        internal tool.
+        This is a design preview. The agency demo booking link will go here
+        before the page is published.
       </p>
-      <p class="preview-note">
-        Design preview. Connect this button to your booking calendar before
-        publishing.
-      </p>
-      <button class="button" onclick="this.closest('dialog').close()">
-        Back to the page
-      </button>
-    </dialog>
-    <dialog id="sharing" class="permission-modal">
-      <button class="close" aria-label="Close dialog">×</button>
-      <h2>Share this space</h2>
-      <div class="person">
-        Northline Studio<span class="role">Can edit</span>
-      </div>
-      <div class="person" id="client-access">
-        Acme Construction<span class="role">Can run</span>
-      </div>
-      <p>
-        Invite someone to this space, or share individual apps and workflows.
-      </p>
-      <p class="preview-note">Example permissions for this design preview.</p>
+      <button class="button close-demo">Back to the page</button>
     </dialog>
     <script>
-      const clients = [
-        {
-          name: "Acme Construction",
-          items: [
-            [
-              "↗",
-              "Monthly invoicing",
-              "Scheduled monthly · Client-owned connection",
-              "App",
-              "Can run",
-            ],
-            [
-              "◈",
-              "Project handover",
-              "Reusable handover skill · Maintained by your team",
-              "Knowledge",
-              "Can read",
-            ],
-            [
-              "▤",
-              "Weekly project report",
-              "Scheduled every Monday · Shared with client",
-              "Dashboard",
-              "Can view",
-            ],
+      const examples = {
+        invoices: {
+          title: "Monthly invoicing",
+          request:
+            "“Turn our completed jobs into invoice drafts. Flag anything that doesn’t add up.”",
+          steps: [
+            "Read completed jobs",
+            "Match rates and purchase orders",
+            "Prepare drafts for review",
           ],
-        },
-        {
-          name: "Fieldwork Co.",
-          items: [
-            [
-              "↗",
-              "Client intake",
-              "Turn a new brief into a project",
-              "Workflow",
-              "Can run",
-            ],
-            [
-              "◈",
-              "Brand playbook",
-              "Voice, references, and approved assets",
-              "Knowledge",
-              "Can read",
-            ],
-            [
-              "▤",
-              "Campaign report",
-              "Results your client can come back to",
-              "Dashboard",
-              "Can view",
-            ],
+          trigger: "Runs on the 1st of each month · Accounting connection",
+          heading: "October invoice review",
+          sub: "Acme Construction · Drafts ready for review",
+          rows: [
+            ["Riverside renovation", "$4,800"],
+            ["Oak Street fit-out", "$7,250"],
+            ["Depot maintenance", "Missing PO"],
           ],
+          foot: "2 drafts prepared · 1 item needs your review",
+          prompt: "What needs my attention before we invoice?",
+          tool: "invoice_reconciliation.review()",
+          answer:
+            "Two jobs have invoice drafts ready. Depot maintenance is missing a purchase order. Add the PO before creating its draft.",
         },
-        {
-          name: "Studio operations",
-          items: [
-            [
-              "↗",
-              "Nightly code audit",
-              "Your team’s shared review workflow",
-              "Skill",
-              "Can edit",
-            ],
-            [
-              "◈",
-              "Agency playbook",
-              "How your team gets work done",
-              "Knowledge",
-              "Can edit",
-            ],
-            [
-              "▤",
-              "Client overview",
-              "Work across your client spaces",
-              "Dashboard",
-              "Can view",
-            ],
+        audit: {
+          title: "Nightly audits",
+          request:
+            "“Check every open project for missing paperwork and give our team a list each morning.”",
+          steps: [
+            "Read open projects",
+            "Check required documents",
+            "Save the exceptions report",
           ],
+          trigger: "Runs nightly at 02:00 · Project records connection",
+          heading: "Morning exceptions",
+          sub: "Acme Construction · Latest nightly audit",
+          rows: [
+            ["Riverside renovation", "Insurance expired"],
+            ["Oak Street fit-out", "All checks passed"],
+            ["Depot maintenance", "Permit missing"],
+          ],
+          foot: "2 exceptions ready for the operations team",
+          prompt: "Which projects need attention this morning?",
+          tool: "project_audit.latest_exceptions()",
+          answer:
+            "Riverside has an expired insurance certificate. Depot is missing a permit. Oak Street passed all document checks.",
         },
-      ];
-      let selected = 0,
-        tab = "work";
-      function render() {
-        document.querySelector("#client-title").textContent =
-          clients[selected].name;
-        document.querySelector(".people").textContent =
-          selected === 2
-            ? "Owned by Northline Studio · Internal team access"
-            : "Owned by " +
-              clients[selected].name +
-              " · Maintained by Northline Studio";
-        document.querySelector("#run-title").textContent =
-          clients[selected].items[0][1];
-        document.querySelector("#run-detail").textContent = [
-          "Scheduled run · Drafts prepared for finance",
-          "Client request · Intake ready for review",
-          "Scheduled run · Audit ready for review",
-        ][selected];
-        document.querySelector("#client-access").firstChild.textContent =
-          clients[selected].name;
-        document.querySelector("#rows").innerHTML =
-          tab === "work"
-            ? clients[selected].items
-                .map(
-                  (x) =>
-                    `<div class="row"><span class="fileicon" aria-hidden="true">${x[0]}</span><div><div class="name">${x[1]}</div><div class="detail">${x[2]}</div></div><span class="kind">${x[3]}</span><span class="badge">${x[4]}</span></div>`,
-                )
-                .join("")
-            : tab === "activity"
-              ? `<div class="activity-row"><span class="activity-time">09:02</span><div><strong>${clients[selected].items[0][1]} completed</strong><p>Triggered by ${selected === 1 ? "Jamie Lee" : "schedule"} · Result saved in this space</p></div></div><div class="activity-row"><span class="activity-time">08:58</span><div><strong>Jamie Lee updated the workflow</strong><p>Changed validation rules · Northline Studio</p></div></div><div class="activity-row"><span class="activity-time">Yesterday</span><div><strong>Client access granted</strong><p>Can run workflows · Cannot edit source</p></div></div>`
-              : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
-      }
-      document.querySelectorAll("[data-client]").forEach(
-        (b) =>
-          (b.onclick = () => {
-            selected = Number(b.dataset.client);
-            document
-              .querySelectorAll("[data-client]")
-              .forEach((x) => x.classList.toggle("active", x === b));
-            render();
-          }),
-      );
-      document.querySelectorAll("[data-tab]").forEach(
-        (b) =>
-          (b.onclick = () => {
-            tab = b.dataset.tab;
-            document.querySelectorAll("[data-tab]").forEach((x) => {
-              x.classList.toggle("active", x === b);
-              x.setAttribute("aria-selected", String(x === b));
-            });
-            render();
-          }),
-      );
-      document.querySelectorAll("[data-demo]").forEach(
-        (a) =>
-          (a.onclick = (e) => {
-            e.preventDefault();
-            document.querySelector("#demo").showModal();
-          }),
-      );
-      document.querySelector("#share").onclick = () =>
-        document.querySelector("#sharing").showModal();
-      document
-        .querySelectorAll(".close")
-        .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
-      document.querySelector("#inspect-run").onclick = () => {
-        document.querySelector('[data-tab="activity"]').click();
+        onboarding: {
+          title: "Client onboarding",
+          request:
+            "“When a deal closes, set up the project and tell us what we still need from the client.”",
+          steps: [
+            "Read the closed deal",
+            "Create the project checklist",
+            "Request the missing details",
+          ],
+          trigger: "Triggered by a closed deal · CRM connection",
+          heading: "Riverside project setup",
+          sub: "Acme Construction · New project checklist",
+          rows: [
+            ["Project workspace", "Created"],
+            ["Primary contact", "Added"],
+            ["Site access details", "Requested"],
+          ],
+          foot: "Project ready · Waiting for site access details",
+          prompt: "Is the Riverside project ready to start?",
+          tool: "project_onboarding.get_status()",
+          answer:
+            "The project workspace and primary contact are set up. Site access details have been requested and are still outstanding.",
+        },
       };
+      let current = "invoices",
+        mode = "app";
+      const result = document.getElementById("result");
+      function render() {
+        const x = examples[current];
+        document.getElementById("workflow-name").textContent = x.title;
+        document.getElementById("request").textContent = x.request;
+        document.getElementById("pipeline").replaceChildren(
+          ...x.steps.map((s) => {
+            const row = document.createElement("div");
+            const tick = document.createElement("span");
+            tick.className = "check";
+            tick.textContent = "✓";
+            tick.setAttribute("aria-hidden", "true");
+            row.append(tick, document.createTextNode(s));
+            return row;
+          }),
+        );
+        document.getElementById("trigger").textContent = x.trigger;
+        result.replaceChildren();
+        function el(tag, cls, text) {
+          const n = document.createElement(tag);
+          n.className = cls;
+          n.textContent = text;
+          result.append(n);
+          return n;
+        }
+        if (mode === "app") {
+          el("h3", "", x.heading);
+          el("p", "output-sub", x.sub);
+          x.rows.forEach(([name, status]) => {
+            const row = el("div", "data-row", "");
+            for (const text of [name, status]) {
+              const span = document.createElement("span");
+              span.textContent = text;
+              row.append(span);
+            }
+          });
+          el("p", "output-foot", x.foot);
+        } else {
+          el("p", "agent-prompt", x.prompt);
+          el("p", "agent-tool", x.tool);
+          el("p", "agent-result", x.answer);
+          el(
+            "p",
+            "output-foot",
+            "Using Acme’s shared workflow and permissions",
+          );
+        }
+      }
+      document.querySelectorAll("[data-example]").forEach((button) =>
+        button.addEventListener("click", () => {
+          current = button.dataset.example;
+          document
+            .querySelectorAll("[data-example]")
+            .forEach((b) =>
+              b.setAttribute("aria-pressed", String(b === button)),
+            );
+          render();
+        }),
+      );
+      document.querySelectorAll("[data-mode]").forEach((button) =>
+        button.addEventListener("click", () => {
+          mode = button.dataset.mode;
+          document
+            .querySelectorAll("[data-mode]")
+            .forEach((b) =>
+              b.setAttribute("aria-pressed", String(b === button)),
+            );
+          render();
+        }),
+      );
+      const dialog = document.getElementById("demo");
+      document
+        .querySelectorAll(".demo-button")
+        .forEach((b) => b.addEventListener("click", () => dialog.showModal()));
+      document
+        .querySelectorAll(".close,.close-demo")
+        .forEach((b) => b.addEventListener("click", () => dialog.close()));
       render();
     </script>
   </body>

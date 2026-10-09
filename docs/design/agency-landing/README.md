@@ -1,9 +1,8 @@
 # Agency landing page design
 
-Interactive landing page prototype for discussion. The copy assumes the
-finished Teams experience: client spaces, shared workflows, permissions, and
-people bringing their own AI agent. All client names and workspace contents
-are illustrative.
+Interactive pre-sale design for discussion. The copy assumes the finished
+Teams experience: client organizations, shared workflows, permissions,
+ownership, and handoff. Client names and workflow data are illustrative.
 
 Serve the repository root:
 
@@ -14,23 +13,11 @@ python3 -m http.server 8768 --bind 127.0.0.1
 Open <http://127.0.0.1:8768/docs/design/agency-landing/>.
 The page uses the repository's existing fonts and logo.
 
-Switch client spaces, open People & access, and try Share. The demo CTA opens
-a placeholder dialog and needs a booking destination before publishing.
-This prototype does not create accounts, change permissions, or collect leads.
+Switch between monthly invoicing, nightly audits, and client onboarding.
+Each example has an app view and an AI-agent view. The demo buttons open a
+placeholder dialog; a real booking destination is required before publishing.
+No workflows execute, permissions change, or leads are collected.
 
-Review the positioning, visual direction, client examples, and demo offer here.
-Production routing and booking integration are outside this design draft.
-
-## October 9 direction
-
-The research in the Marketing chat changes the emphasis from shared files and
-agent choice to client operations: business ownership, reusable packages,
-scheduled execution, handoff, and activity history. Shared connections and
-agent compatibility are useful capabilities, not exclusive differentiators.
-
-The activity feed and run summary are illustrative UI, not execution evidence.
-Ownership transfer and Teams controls remain part of the assumed finished
-product for this pre-sale design. No competitor superiority, traffic forecast,
-customer endorsement, or compliance claim is made. The agency page supports
-sales conversations; keyword research for broader acquisition pages does not
-establish search demand for this agency page.
+The [research notes](./research.md) explain the competitor and adjacent-product
+patterns behind the revised design. Production routing and booking integration
+are outside this draft.
