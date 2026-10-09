@@ -16,6 +16,7 @@ import {
  * MCP capabilities re-wrap this as `McpCallerError` so agent staging mistakes
  * stay on `mcp-event` lines and out of Sentry.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export class PlatformOauthAppValidationError extends Error {
 	constructor(message: string) {
 		super(message)
@@ -457,7 +458,7 @@ export async function renamePlatformOauthApp(input: {
 		input.db
 			.prepare(
 				`UPDATE user_integrations SET platform_app_slug = ?
-				WHERE platform_app_slug = ?`,
+				WHERE platform_app_slug = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(newSlug, slug),
 		input.db
@@ -505,7 +506,7 @@ export async function countConnectionsForPlatformApp(input: {
 		.prepare(
 			`SELECT count(*) AS count
 			FROM user_integrations
-			WHERE platform_app_slug = ?`,
+			WHERE platform_app_slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.slug)
 		.first<{ count: number }>()

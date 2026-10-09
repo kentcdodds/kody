@@ -25,6 +25,7 @@ import {
 	rollbackPersonalOrgAfterFailedSignup,
 } from '#worker/orgs/signup-provision.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'
 	| 'invalid_username'
@@ -88,7 +89,7 @@ async function deleteUserBestEffort(input: {
 	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
 	try {
 		await input.db
-			.prepare(`DELETE FROM users WHERE id = ?`)
+			.prepare(`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`)
 			.bind(input.userId)
 			.run()
 	} catch (error) {
@@ -119,7 +120,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	}
 
 	const existingUser = await input.db
-		.prepare(`SELECT id FROM users WHERE email = ?`)
+		.prepare(`SELECT id FROM users WHERE email = ?${andLiveDeletedAtSql()}`)
 		.bind(email)
 		.first<{ id: number }>()
 	if (existingUser) {

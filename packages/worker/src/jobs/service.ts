@@ -121,6 +121,7 @@ import {
 	packageOwnedJobDeleteErrorMessage,
 } from './job-retention.ts'
 import { buildPackageJobId, packageIdFromJobId } from './package-job-id.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 
@@ -1239,7 +1240,7 @@ export async function deleteJob(input: {
 			if (storageCleared) {
 				try {
 					await input.env.APP_DB.prepare(
-						`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+						`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
 					)
 						.bind(input.userId, storageId)
 						.run()

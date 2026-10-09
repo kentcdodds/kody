@@ -5,6 +5,7 @@ import {
 } from '#worker/identity/email-verification-failed-subscription-event.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
 import { type RecordedTransactionalDelivery } from './verification-delivery.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type VerificationNotifyEnv = Pick<
 	Env,
@@ -25,7 +26,7 @@ export async function notifyAdminsOfVerificationDeliveryFailure(input: {
 	try {
 		if (!isUserEmailVerificationFailedStatus(input.event.status)) return
 		const user = await input.env.APP_DB.prepare(
-			`SELECT username, email, stable_user_id FROM users WHERE id = ?`,
+			`SELECT username, email, stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(input.event.userId)
 			.first<{

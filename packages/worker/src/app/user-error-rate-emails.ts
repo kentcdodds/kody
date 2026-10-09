@@ -4,6 +4,7 @@ import { buildUserErrorRateEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { routes } from '#universal/routes.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
@@ -67,7 +68,7 @@ export async function sendUserErrorRateEmails(input: {
 		 INNER JOIN users u ON u.stable_user_id = r.user_id
 		 WHERE r.month = ?
 		   AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
-		   AND u.deleting_at IS NULL
+		   AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 		   AND u.account_type = 'person'
 		   AND u.email_verified_at IS NOT NULL
 		 GROUP BY u.stable_user_id

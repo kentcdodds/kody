@@ -3,6 +3,7 @@ import {
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type SecretBucketRow,
 	type SecretEntryRow,
@@ -37,7 +38,7 @@ export async function getSecretBucket(input: {
 			FROM secret_buckets
 			WHERE user_id = ? AND scope = ? AND binding_key = ?
 				AND (expires_at IS NULL OR expires_at > ?)
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.scope, input.bindingKey, now)
 		.first<Record<string, unknown>>()
@@ -84,7 +85,7 @@ export async function getSecretEntry(input: {
 			`SELECT bucket_id, name, description, encrypted_value, allowed_hosts, allowed_packages, expires_at, created_at, updated_at
 			FROM secret_entries
 			WHERE bucket_id = ? AND name = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.bucketId, input.name)
 		.first<Record<string, unknown>>()
@@ -176,6 +177,7 @@ function prepareUpdateApprovedUserSecretEntryForPackageStatement(input: {
 					SELECT id
 					FROM secret_buckets
 					WHERE user_id = ? AND scope = 'user' AND binding_key = ''
+						AND deleted_at IS NULL
 					LIMIT 1
 				)
 				AND json_valid(allowed_packages)
@@ -183,7 +185,7 @@ function prepareUpdateApprovedUserSecretEntryForPackageStatement(input: {
 					SELECT 1
 					FROM json_each(allowed_packages)
 					WHERE value = ?
-				)`,
+				)${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.description,
@@ -266,6 +268,7 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 					SELECT id
 					FROM secret_buckets
 					WHERE user_id = ? AND scope = 'user' AND binding_key = ''
+						AND deleted_at IS NULL
 					LIMIT 1
 				)
 				AND json_valid(allowed_packages)
@@ -288,7 +291,9 @@ export async function updateApprovedUserSecretEntriesForPackageAtomically(input:
 							FROM json_each(e.allowed_packages)
 							WHERE value = ?
 						)
-				) = ?`,
+						AND e.deleted_at IS NULL
+						AND b.deleted_at IS NULL
+				) = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			...input.updates.flatMap((update) => [update.name, update.description]),
@@ -318,7 +323,9 @@ export async function deleteSecretEntry(input: {
 	name: string
 }): Promise<boolean> {
 	const result = await input.db
-		.prepare(`DELETE FROM secret_entries WHERE bucket_id = ? AND name = ?`)
+		.prepare(
+			`DELETE FROM secret_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.bucketId, input.name)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -337,7 +344,7 @@ export async function listSecretBucketsByScope(input: {
 			FROM secret_buckets
 			WHERE user_id = ? AND scope = ?
 				AND (expires_at IS NULL OR expires_at > ?)
-			ORDER BY binding_key ASC`,
+			ORDER BY binding_key ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.scope, now)
 		.all<Record<string, unknown>>()
@@ -353,7 +360,7 @@ export async function listSecretMetadataForBucket(input: {
 			`SELECT ? AS scope, ? AS binding_key, name, description, allowed_hosts, allowed_packages, created_at, updated_at, expires_at AS entry_expires_at, ? AS bucket_expires_at
 			FROM secret_entries
 			WHERE bucket_id = ?
-			ORDER BY name ASC`,
+			ORDER BY name ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.bucket.scope,
@@ -378,7 +385,7 @@ export async function listUserScopeSecretMetadata(input: {
 			JOIN secret_entries e ON e.bucket_id = b.id
 			WHERE b.user_id = ? AND b.scope = 'user'
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			ORDER BY e.name ASC`,
+			ORDER BY e.name ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, now)
 		.all<Record<string, unknown>>()
@@ -412,7 +419,7 @@ export async function listSecretLocationsByNameForUser(input: {
 			WHERE b.user_id = ? AND e.name = ?
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
 				AND (e.expires_at IS NULL OR e.expires_at > ?)
-			ORDER BY b.scope ASC, b.binding_key ASC`,
+			ORDER BY b.scope ASC, b.binding_key ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.name, now, now)
 		.all<Record<string, unknown>>()
@@ -452,7 +459,7 @@ export async function listPackageScopeSecretMetadata(input: {
 				JOIN secret_entries e ON e.bucket_id = b.id
 				WHERE b.user_id = ? AND b.scope = 'package'
 					AND b.binding_key IN (${placeholders})
-					AND (b.expires_at IS NULL OR b.expires_at > ?)
+					AND (b.expires_at IS NULL OR b.expires_at > ?)${andLiveDeletedAtSql('b')}${andLiveDeletedAtSql('e')}
 				ORDER BY e.name ASC`,
 			)
 			.bind(input.userId, ...idChunk, now)

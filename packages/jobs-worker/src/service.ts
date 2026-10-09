@@ -200,6 +200,21 @@ export class JobsService
 		await jobsStore(this.env).purgeUserJobsData(input)
 	}
 
+	async softDeleteJobsForUser(input: {
+		userId: string
+		deletedAt: string
+	}): Promise<number> {
+		return jobsStore(this.env).softDeleteJobsForUser(input)
+	}
+
+	async restoreJobsForUser(input: {
+		userId: string
+		deletedAt: string
+		restoredAt: string
+	}): Promise<number> {
+		return jobsStore(this.env).restoreJobsForUser(input)
+	}
+
 	async syncAlarm(input: {
 		userId: string
 	}): Promise<{ ok: true; userId: string; nextRunAt: string | null }> {

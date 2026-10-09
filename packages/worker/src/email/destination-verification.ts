@@ -20,6 +20,7 @@ import {
 	transactionalEmailDestinationVerificationKind,
 } from './verification-delivery.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const emailDestinationRateLimitConfig = {
 	maxRequests: 3,
 	windowSeconds: 15 * 60,
@@ -281,7 +282,7 @@ export async function resendEmailDestinationVerification(input: {
 	const row = await input.env.APP_DB.prepare(
 		`SELECT id, email, verified_at, is_default
 		 FROM email_notification_destinations
-		 WHERE id = ? AND user_id = ?`,
+		 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.destinationId, input.userId)
 		.first<{
@@ -369,7 +370,7 @@ export async function verifyEmailDestinationToken(input: {
 			`SELECT p.id, p.user_id, p.destination_id, p.expires_at, d.email
 			 FROM pending_email_destination_verifications p
 			 LEFT JOIN email_notification_destinations d ON d.id = p.destination_id
-			 WHERE p.token_hash = ?`,
+			 WHERE p.token_hash = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(tokenHash)
 		.first<{

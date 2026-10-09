@@ -342,6 +342,9 @@ export const EnvSchema = object({
 	// unless DR_EXPORT_ENABLED is the literal string "true" and credentials
 	// are present. Secrets are set out-of-band via the Cloudflare API.
 	DR_EXPORT_ENABLED: optionalNonEmptyStringSchema,
+	// Soft-delete purge lane (Teams P7). Default false: first production
+	// enable is dry-run via adminSoftDeletePurgeRun, then flip to "true".
+	SOFT_DELETE_PURGE_ENABLED: optionalNonEmptyStringSchema,
 	DR_BACKUP_ACCOUNT_ID: optionalNonEmptyStringSchema,
 	DR_BACKUP_BUCKET_NAME: optionalNonEmptyStringSchema,
 	DR_BACKUP_ACCESS_KEY_ID: optionalNonEmptyStringSchema,

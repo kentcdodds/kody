@@ -10,6 +10,7 @@ import {
 import { calculateUserD1StorageBytes } from '#worker/entitlements/service.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { parseOwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type DailyResourceRead = {
 	resource: DailyEntitlementResource
@@ -63,7 +64,9 @@ function countDeltaParity(input: {
 
 async function userExists(db: D1Database, stableUserId: string) {
 	const row = await db
-		.prepare(`SELECT 1 AS present FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT 1 AS present FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(stableUserId)
 		.first<{ present: number }>()
 	return row != null
@@ -134,7 +137,9 @@ async function readDeletionParity(input: {
 	stableUserId: string
 }): Promise<DeletionParity> {
 	const d1DeletingRow = await input.db
-		.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.stableUserId)
 		.first<{ deleting_at: string | null }>()
 	const d1DeletingAt = d1DeletingRow?.deleting_at ?? null

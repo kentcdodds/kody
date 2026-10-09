@@ -4,6 +4,7 @@ import {
 	webhookUrlRotationGraceExpiresAt,
 } from './types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type WebhookEndpointRow = {
 	id: string
 	user_id: string
@@ -93,7 +94,7 @@ export async function upsertWebhookEndpointSecret(input: {
 								hmac_secret_encrypted = ?,
 								rotated_at = ?,
 								enabled = ?
-							WHERE user_id = ? AND id = ?`,
+							WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 						)
 						.bind(
 							previousExpiresAt,
@@ -115,7 +116,7 @@ export async function upsertWebhookEndpointSecret(input: {
 								url_secret_encrypted = ?,
 								rotated_at = ?,
 								enabled = ?
-							WHERE user_id = ? AND id = ?`,
+							WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 						)
 						.bind(
 							previousExpiresAt,
@@ -137,7 +138,7 @@ export async function upsertWebhookEndpointSecret(input: {
 								url_secret_encrypted = ?,
 								hmac_secret_encrypted = ?,
 								rotated_at = ?
-							WHERE user_id = ? AND id = ?`,
+							WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 						)
 						.bind(
 							previousExpiresAt,
@@ -157,7 +158,7 @@ export async function upsertWebhookEndpointSecret(input: {
 								url_secret_hash = ?,
 								url_secret_encrypted = ?,
 								rotated_at = ?
-							WHERE user_id = ? AND id = ?`,
+							WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 						)
 						.bind(
 							previousExpiresAt,
@@ -216,7 +217,7 @@ export async function setWebhookEndpointHmacSecret(input: {
 		.prepare(
 			`UPDATE webhook_endpoints
 			SET hmac_secret_encrypted = ?
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.hmacSecretEncrypted, input.userId, input.endpointId)
 		.run()
@@ -237,7 +238,7 @@ export async function listWebhookEndpointsForUser(input: {
 			`SELECT *
 			FROM webhook_endpoints
 			WHERE user_id = ?
-			ORDER BY created_at DESC, id DESC`,
+			ORDER BY created_at DESC, id DESC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.all<WebhookEndpointRow>()
@@ -255,7 +256,7 @@ export async function getWebhookEndpointByKey(input: {
 			`SELECT *
 			FROM webhook_endpoints
 			WHERE user_id = ? AND package_id = ? AND webhook_name = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.packageId, input.webhookName)
 		.first<WebhookEndpointRow>()
@@ -272,7 +273,7 @@ export async function getWebhookEndpointByIdForUser(input: {
 			`SELECT *
 			FROM webhook_endpoints
 			WHERE id = ? AND user_id = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.endpointId, input.userId)
 		.first<WebhookEndpointRow>()
@@ -290,7 +291,7 @@ export async function setWebhookEndpointEnabled(input: {
 		.prepare(
 			`UPDATE webhook_endpoints
 			SET enabled = ?
-			WHERE user_id = ? AND package_id = ? AND webhook_name = ?`,
+			WHERE user_id = ? AND package_id = ? AND webhook_name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.enabled ? 1 : 0,
@@ -320,7 +321,7 @@ export async function clearWebhookEndpointPreviousUrlSecret(input: {
 			`UPDATE webhook_endpoints
 			SET previous_url_secret_hash = NULL,
 				previous_url_secret_expires_at = NULL
-			WHERE user_id = ? AND id = ? AND url_secret_hash = ?`,
+			WHERE user_id = ? AND id = ? AND url_secret_hash = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.endpointId, input.urlSecretHash)
 		.run()

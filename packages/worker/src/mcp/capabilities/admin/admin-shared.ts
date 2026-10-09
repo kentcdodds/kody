@@ -12,6 +12,7 @@ import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /** Site-admin tools: the `admin` role gates them, not org permissions. */
 export const adminCapabilityAccess = {
@@ -249,7 +250,7 @@ export async function resolveActingAdminUserId(
 		throw new Error('Authenticated admin account was not found.')
 	}
 	const row = await ctx.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?`,
+		`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(stableUserId)
 		.first<{ id: number }>()

@@ -8,6 +8,7 @@ import {
 	type PlatformFeedbackStatus,
 } from './types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const platformFeedbackOutcomeEmailKvKeyPrefix =
 	'platform-feedback-outcome-email:v1'
 export const platformFeedbackOutcomeEmailClaimTtlSeconds = 30 * 24 * 60 * 60
@@ -49,7 +50,7 @@ async function readSubmitterMailTarget(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT email, suspended_at, email_outbound_paused_at FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<{

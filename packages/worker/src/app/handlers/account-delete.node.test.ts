@@ -1,16 +1,16 @@
 import { beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
-import type * as AccountDeletion from '#app/account-deletion.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
 import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { UserDeleteBlockedSoleOwnerError } from '#worker/orgs/soft-delete.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUserForDeletion: vi.fn(),
-	deleteUserAccount: vi.fn(),
+	softDeleteUserAccount: vi.fn(),
 	scheduleUserDeletedEvent: vi.fn(),
 	findOne: vi.fn(),
 	verifyPassword: vi.fn(),
@@ -21,12 +21,13 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mocks.readAuthenticatedAppUserForDeletion(...args),
 }))
 
-vi.mock('#app/account-deletion.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof AccountDeletion>()
+vi.mock('#worker/orgs/soft-delete.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/orgs/soft-delete.ts')>()
 	return {
 		...actual,
-		deleteUserAccount: (...args: Array<unknown>) =>
-			mocks.deleteUserAccount(...args),
+		softDeleteUserAccount: (...args: Array<unknown>) =>
+			mocks.softDeleteUserAccount(...args),
 	}
 })
 
@@ -48,7 +49,6 @@ vi.mock('@kody-internal/shared/password-hash.ts', () => ({
 }))
 
 const { createAccountDeleteHandler } = await import('./account-delete.ts')
-const { AccountDeletionBillingError } = await import('#app/account-deletion.ts')
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -88,7 +88,7 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('account deletion requires GOODBYE KODY, password when one exists, and emits user.deleted', async () => {
+test('account deletion requires GOODBYE KODY, password when one exists, and soft-deletes', async () => {
 	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValueOnce(null)
 	const unauthenticated = await requestDelete({
 		confirmation: accountDeletionConfirmationPhrase,
@@ -101,9 +101,10 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 		password_hash: 'pbkdf2_sha256$100000$salt$hash',
 	})
 	mocks.verifyPassword.mockResolvedValue(false)
-	mocks.deleteUserAccount.mockResolvedValue({
-		deletedRowCounts: { users: 1 },
-		warnings: [],
+	mocks.softDeleteUserAccount.mockResolvedValue({
+		userId: 'stable-ada',
+		deletedAt: '2026-10-01T12:00:00.000Z',
+		deletedOrgIds: ['stable-ada'],
 	})
 
 	const rejections = [
@@ -118,7 +119,7 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 	for (const [body, status] of rejections) {
 		expect([body, (await requestDelete(body)).status]).toEqual([body, status])
 	}
-	expect(mocks.deleteUserAccount).not.toHaveBeenCalled()
+	expect(mocks.softDeleteUserAccount).not.toHaveBeenCalled()
 
 	mocks.verifyPassword.mockResolvedValue(true)
 	const deleted = await requestDelete({
@@ -128,13 +129,17 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 	expect(deleted.status).toBe(200)
 	expect(await deleted.json()).toMatchObject({
 		ok: true,
-		deletedRowCounts: { users: 1 },
+		softDeleted: true,
+		restoreWindowDays: 30,
+		userId: 'stable-ada',
+		deletedOrgIds: ['stable-ada'],
 	})
 	expect(deleted.headers.get('Set-Cookie') ?? '').toContain('kody_session=')
-	expect(mocks.deleteUserAccount).toHaveBeenCalledWith({
+	expect(mocks.softDeleteUserAccount).toHaveBeenCalledWith({
 		env: expect.objectContaining({ COOKIE_SECRET: testCookieSecret }),
-		dbUserId: 7,
-		mcpUserId: 'stable-ada',
+		userId: 'stable-ada',
+		actorUserId: 'stable-ada',
+		actorUsername: 'ada',
 	})
 	expect(mocks.scheduleUserDeletedEvent).toHaveBeenCalledWith({
 		env: expect.objectContaining({ COOKIE_SECRET: testCookieSecret }),
@@ -149,14 +154,14 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 		id: 7,
 		password_hash: 'oauth_created_no_usable_password',
 	})
-	mocks.deleteUserAccount.mockClear()
+	mocks.softDeleteUserAccount.mockClear()
 	mocks.scheduleUserDeletedEvent.mockClear()
 	const oauthDeleted = await requestDelete({
 		confirmation: accountDeletionConfirmationPhrase,
 	})
 	expect(oauthDeleted.status).toBe(200)
 	expect(mocks.verifyPassword).toHaveBeenCalledTimes(2)
-	expect(mocks.deleteUserAccount).toHaveBeenCalledOnce()
+	expect(mocks.softDeleteUserAccount).toHaveBeenCalledOnce()
 	expect(mocks.scheduleUserDeletedEvent).toHaveBeenCalledOnce()
 
 	expect(auditEventSummaries()).toEqual([
@@ -168,11 +173,11 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 	])
 })
 
-test('a Stripe cancellation failure keeps the session and tells the user the subscription was not canceled', async () => {
+test('sole Owner of an org with other members is blocked with a 409', async () => {
 	signInOauthOnlyUser()
-	mocks.deleteUserAccount.mockRejectedValueOnce(
-		new AccountDeletionBillingError([
-			'Stripe subscription sub_1 could not be canceled: HTTP 503',
+	mocks.softDeleteUserAccount.mockRejectedValueOnce(
+		new UserDeleteBlockedSoleOwnerError([
+			{ orgId: 'org-acme', orgSlug: 'acme' },
 		]),
 	)
 
@@ -180,10 +185,11 @@ test('a Stripe cancellation failure keeps the session and tells the user the sub
 		confirmation: accountDeletionConfirmationPhrase,
 	})
 
-	expect(response.status).toBe(503)
+	expect(response.status).toBe(409)
 	expect(await response.json()).toEqual({
 		error:
-			'We could not refund and cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.',
+			'Account deletion is blocked while you are the only Owner of @acme. Promote another Owner or remove the other members first.',
+		blockers: [{ orgId: 'org-acme', orgSlug: 'acme' }],
 	})
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	expect(mocks.scheduleUserDeletedEvent).not.toHaveBeenCalled()
@@ -191,58 +197,28 @@ test('a Stripe cancellation failure keeps the session and tells the user the sub
 	expect(logAuditEventSpy.mock.calls.at(-1)?.[0]).toMatchObject({
 		action: 'account_delete',
 		result: 'failure',
-		reason: 'billing_cancel_failed',
+		reason: 'sole_owner_with_members',
 	})
 })
 
-test('a successful deletion reports issued refunds as display amounts', async () => {
+test('a successful soft deletion reports restore window metadata', async () => {
 	signInOauthOnlyUser()
-	mocks.deleteUserAccount.mockResolvedValueOnce({
-		deletedRowCounts: { users: 1 },
-		warnings: [],
-		stripeRefunds: [
-			{
-				subscriptionId: 'sub_1',
-				amountMinor: 1234,
-				currency: 'usd',
-				invoiceId: 'in_1',
-				creditNoteId: 'cn_1',
-			},
-			{
-				subscriptionId: 'sub_2',
-				amountMinor: 500,
-				currency: 'jpy',
-				invoiceId: 'in_2',
-				creditNoteId: 'cn_2',
-			},
-		],
+	mocks.softDeleteUserAccount.mockResolvedValueOnce({
+		userId: 'stable-ada',
+		deletedAt: '2026-10-01T12:00:00.000Z',
+		deletedOrgIds: ['stable-ada', 'org-side'],
 	})
 
-	const refunded = await requestDelete({
+	const softDeleted = await requestDelete({
 		confirmation: accountDeletionConfirmationPhrase,
 	})
-	expect(refunded.status).toBe(200)
-	expect(await refunded.json()).toMatchObject({
+	expect(softDeleted.status).toBe(200)
+	const body = await softDeleted.json()
+	expect(body).toMatchObject({
 		ok: true,
-		stripeRefunds: [
-			expect.objectContaining({ creditNoteId: 'cn_1' }),
-			expect.objectContaining({ creditNoteId: 'cn_2' }),
-		],
-		refunds: [
-			{ amount: '$12.34', currency: 'USD' },
-			{ amount: '¥500', currency: 'JPY' },
-		],
+		softDeleted: true,
+		restoreWindowDays: 30,
+		deletedOrgIds: ['stable-ada', 'org-side'],
 	})
-
-	// No refund, no summary field: the panel redirects straight home.
-	mocks.deleteUserAccount.mockResolvedValueOnce({
-		deletedRowCounts: { users: 1 },
-		warnings: [],
-		stripeRefunds: [],
-	})
-	const plain = await requestDelete({
-		confirmation: accountDeletionConfirmationPhrase,
-	})
-	expect(plain.status).toBe(200)
-	expect(await plain.json()).not.toHaveProperty('refunds')
+	expect(body).not.toHaveProperty('refunds')
 })

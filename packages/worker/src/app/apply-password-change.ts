@@ -17,6 +17,7 @@ import {
 	clearSecondFactorsAndConnections,
 } from '#app/clear-account-factors.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type { ClearedAccountFactors }
 
 export type ApplyPasswordChangeResult =
@@ -118,7 +119,7 @@ export async function applyPasswordChange(
 			.prepare(
 				`UPDATE users
 				 SET password_hash = ?, password_changed_at = ?, updated_at = ?
-				 WHERE id = ? AND deleting_at IS NULL`,
+				 WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 			.bind(passwordHash, changedAt, updatedAt, input.userId)
 			.run()

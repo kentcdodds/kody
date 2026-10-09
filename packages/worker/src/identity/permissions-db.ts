@@ -1,4 +1,5 @@
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type PermissionRow = {
 	role_name: string
@@ -81,7 +82,7 @@ export async function listAdminStableUserIds(
 				 FROM users u
 				 INNER JOIN user_roles ur ON ur.user_id = u.id
 				 INNER JOIN roles r ON r.id = ur.role_id
-				 WHERE r.name = 'admin'`,
+				 WHERE r.name = 'admin'${andLiveDeletedAtSql()}`,
 			)
 			.all<{ stable_user_id: string }>()
 		return [...new Set((result.results ?? []).map((row) => row.stable_user_id))]

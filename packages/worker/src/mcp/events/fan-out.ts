@@ -27,6 +27,7 @@ import {
 	type McpEventSubscriptionRecord,
 } from './subscriptions-repo.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type McpEventFanOutResult = {
 	status:
 		| 'skipped_not_mcp'
@@ -44,7 +45,9 @@ async function isMcpEventsExtensionEnabledForUser(input: {
 	userId: string
 }): Promise<boolean> {
 	const row = await input.db
-		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId)
 		.first<{ id: number }>()
 	if (!row) return false

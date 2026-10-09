@@ -7,6 +7,7 @@ import {
 import { usageEventTypes } from '#universal/usage-event-types.ts'
 import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { stableUserIdSchema } from './admin-shared.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const adminFeatureFlagOverrideSchema = z.object({
 	stableUserId: stableUserIdSchema,
@@ -93,7 +94,9 @@ export async function resolveTargetUser(
 			throw new Error('stableUserId must be a valid stable user id.')
 		}
 		const row = await db
-			.prepare(`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?`)
+			.prepare(
+				`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(stableUserId)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
@@ -107,7 +110,9 @@ export async function resolveTargetUser(
 			throw new Error('username must not be empty.')
 		}
 		const row = await db
-			.prepare(`SELECT id, stable_user_id FROM users WHERE username = ?`)
+			.prepare(
+				`SELECT id, stable_user_id FROM users WHERE username = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(username)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {

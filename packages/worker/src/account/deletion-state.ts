@@ -8,6 +8,7 @@ import {
 } from '#worker/entitlements/user-meter-client.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export class AccountDeletionInProgressError extends Error {
 	constructor() {
@@ -184,7 +185,7 @@ export async function markAccountDeleting(input: {
 		.prepare(
 			`UPDATE users
 			SET deleting_at = ?, updated_at = ?
-			WHERE id = ? AND deleting_at IS NULL`,
+			WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(now, now, input.dbUserId)
 		.run()
@@ -193,7 +194,7 @@ export async function markAccountDeleting(input: {
 		.prepare(
 			`SELECT stable_user_id, deleting_at
 			FROM users
-			WHERE id = ?`,
+			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.dbUserId)
 		.first<{ stable_user_id: string; deleting_at: string | null }>()
@@ -223,7 +224,7 @@ export async function markAccountDeleting(input: {
 				.prepare(
 					`UPDATE users
 					SET deleting_at = NULL, updated_at = ?
-					WHERE id = ? AND deleting_at = ?`,
+					WHERE id = ? AND deleting_at = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(now, input.dbUserId, now)
 				.run()
@@ -254,7 +255,7 @@ export async function abortAccountDeleting(input: {
 		.prepare(
 			`SELECT stable_user_id
 			FROM users
-			WHERE id = ?`,
+			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.dbUserId)
 		.first<{ stable_user_id: string }>()
@@ -264,7 +265,7 @@ export async function abortAccountDeleting(input: {
 				.prepare(
 					`UPDATE users
 					SET deleting_at = NULL, updated_at = ?
-					WHERE id = ? AND deleting_at = ?`,
+					WHERE id = ? AND deleting_at = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(now, input.dbUserId, input.expectedDeletingAt)
 				.run()
@@ -272,7 +273,7 @@ export async function abortAccountDeleting(input: {
 				.prepare(
 					`UPDATE users
 					SET deleting_at = NULL, updated_at = ?
-					WHERE id = ?`,
+					WHERE id = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(now, input.dbUserId)
 				.run()
@@ -332,7 +333,7 @@ export async function abortAccountDeletingByStableUserId(input: {
 		.prepare(
 			`SELECT id
 			FROM users
-			WHERE stable_user_id = ?`,
+			WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.stableUserId)
 		.first<{ id: number }>()
@@ -352,7 +353,9 @@ export async function assertAccountWritableDb(
 	stableUserId: string,
 ) {
 	const row = await db
-		.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(stableUserId)
 		.first<{ deleting_at: string | null }>()
 	if (!row || row.deleting_at) {
@@ -371,7 +374,9 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	stableUserId: string
 }) {
 	const row = await input.db
-		.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.stableUserId)
 		.first<{ deleting_at: string | null }>()
 	const deletingAt = row?.deleting_at

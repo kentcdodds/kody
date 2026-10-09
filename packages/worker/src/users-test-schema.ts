@@ -1,4 +1,5 @@
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Shared `users` provisioning for `*.workers.test.ts` suites. Local D1 starts
@@ -187,7 +188,7 @@ export async function ensureUsersTestSchema(input: {
 		await input.db
 			.prepare(
 				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
-				 ON users(stable_user_id)`,
+				 ON users(stable_user_id)${andLiveDeletedAtSql()}`,
 			)
 			.run()
 	} catch {

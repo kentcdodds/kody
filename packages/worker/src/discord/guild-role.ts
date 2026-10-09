@@ -14,6 +14,7 @@
  */
 
 import { parseStripePlanName, type PlanName } from '#universal/plans.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export {
 	readOfficialDiscordGuildMembership,
@@ -455,7 +456,9 @@ async function readUserStripePlan(
 	userId: number,
 ): Promise<PlanName | null> {
 	const row = await db
-		.prepare(`SELECT stripe_plan FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT stripe_plan FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(userId)
 		.first<{ stripe_plan: string | null }>()
 	return parseStripePlanName(row?.stripe_plan)

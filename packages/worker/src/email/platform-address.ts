@@ -1,5 +1,6 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { isPermanentlyReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * The label prepended to the app hostname to form the default user email
@@ -153,7 +154,7 @@ async function findUserAccount(input: {
 			.prepare(
 				`SELECT email, stable_user_id, username
 				 FROM users
-				 WHERE email = ? AND stable_user_id = ?`,
+				 WHERE email = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(email, userId)
 			.first<{
@@ -177,7 +178,7 @@ async function findUserAccount(input: {
 		.prepare(
 			`SELECT email, username
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{

@@ -17,6 +17,7 @@ import {
 	retireOtherEmailVerificationTokens,
 } from './email-verification-tokens.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export class AdminEmailVerificationError extends Error {
 	readonly code: 'not_found' | 'already_verified'
 
@@ -51,7 +52,7 @@ export async function markAdminUserEmailVerified(
 			`UPDATE users
 			 SET email_verified_at = COALESCE(email_verified_at, ?),
 			     updated_at = ?
-			 WHERE id = ? AND deleting_at IS NULL`,
+			 WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(verifiedAt, utcSqliteTimestamp(now), existingRow.id)
 		.run()

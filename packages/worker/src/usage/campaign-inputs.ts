@@ -11,6 +11,7 @@ import {
 	usageCampaignStrongUseMinExecuteEvents,
 } from './campaign-states.ts'
 import { type UsageCampaignSnapshot } from './campaign-evaluator.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type UsageCampaignCandidate = {
 	stable_user_id: string
@@ -179,7 +180,7 @@ async function readNearStockCap(input: {
 		const [packages, secrets] = await Promise.all([
 			input.db
 				.prepare(
-					`SELECT COUNT(*) AS count FROM saved_packages WHERE user_id = ?`,
+					`SELECT COUNT(*) AS count FROM saved_packages WHERE user_id = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(input.user.stable_user_id)
 				.first<{ count: number }>(),
@@ -188,7 +189,7 @@ async function readNearStockCap(input: {
 					`SELECT COUNT(*) AS count FROM secret_entries se
 					 JOIN secret_buckets sb ON sb.id = se.bucket_id
 					 WHERE sb.user_id = ?
-					   AND (sb.expires_at IS NULL OR sb.expires_at > ?)`,
+					   AND (sb.expires_at IS NULL OR sb.expires_at > ?)${andLiveDeletedAtSql()}`,
 				)
 				.bind(input.user.stable_user_id, input.now.toISOString())
 				.first<{ count: number }>(),

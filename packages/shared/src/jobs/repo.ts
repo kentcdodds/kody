@@ -5,6 +5,10 @@ import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 type JobRowRecord = {
 	id: string
 	user_id: string
+	/** Provenance only (Teams P3+). Falls back to user_id when absent. */
+	created_by_user_id: string | null
+	deleted_at: string | null
+	deleting_at: string | null
 	name: string
 	source_id: string
 	published_commit: string | null
@@ -120,6 +124,12 @@ function mapRow(row: Record<string, unknown>): JobRow {
 	return {
 		id: record.id,
 		user_id: String(row['user_id']),
+		created_by_user_id:
+			row['created_by_user_id'] == null
+				? null
+				: String(row['created_by_user_id']),
+		deleted_at: row['deleted_at'] == null ? null : String(row['deleted_at']),
+		deleting_at: row['deleting_at'] == null ? null : String(row['deleting_at']),
 		name: record.name,
 		source_id: record.sourceId,
 		published_commit: record.publishedCommit ?? null,
@@ -264,7 +274,9 @@ export async function getJobRowById(
 	jobId: string,
 ): Promise<JobRow | null> {
 	const result = await db
-		.prepare(`SELECT * FROM jobs WHERE id = ? AND user_id = ?`)
+		.prepare(
+			`SELECT * FROM jobs WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
 		.bind(jobId, userId)
 		.first<Record<string, unknown>>()
 	return result ? mapRow(result) : null
@@ -276,7 +288,7 @@ export async function listJobRowsByUserId(
 ): Promise<Array<JobRow>> {
 	const { results } = await db
 		.prepare(
-			`SELECT * FROM jobs WHERE user_id = ? ORDER BY next_run_at ASC, name ASC`,
+			`SELECT * FROM jobs WHERE user_id = ? AND deleted_at IS NULL ORDER BY next_run_at ASC, name ASC`,
 		)
 		.bind(userId)
 		.all<Record<string, unknown>>()
@@ -632,6 +644,39 @@ export async function refreshPackageJobRowIdentity(input: {
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
+}
+
+export async function softDeleteJobRowsForUser(input: {
+	db: D1Database
+	userId: string
+	deletedAt: string
+}): Promise<number> {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs
+			 SET deleted_at = ?, enabled = 0, updated_at = ?
+			 WHERE user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.deletedAt, input.deletedAt, input.userId)
+		.run()
+	return result.meta.changes ?? 0
+}
+
+export async function restoreJobRowsForUser(input: {
+	db: D1Database
+	userId: string
+	deletedAt: string
+	restoredAt: string
+}): Promise<number> {
+	const result = await input.db
+		.prepare(
+			`UPDATE jobs
+			 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
+			 WHERE user_id = ? AND deleted_at = ?`,
+		)
+		.bind(input.restoredAt, input.userId, input.deletedAt)
+		.run()
+	return result.meta.changes ?? 0
 }
 
 export async function deleteJobRow(

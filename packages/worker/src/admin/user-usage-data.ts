@@ -22,6 +22,7 @@ import {
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const adminUsageMetrics = [
 	'execute',
@@ -78,7 +79,7 @@ export async function loadAdminUserUsageData(
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
 		`SELECT id, username, email, stripe_price_id, stable_user_id, ${userEntitlementColumnsSql()}
-		 FROM users WHERE stable_user_id = ?`,
+		 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
@@ -219,7 +220,7 @@ async function userHasAdminRole(db: D1Database, stableUserId: string) {
 			 INNER JOIN roles r ON r.id = ur.role_id
 			 WHERE u.stable_user_id = ?
 				AND r.name = 'admin'
-				AND u.deleting_at IS NULL`,
+				AND u.deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<{ present: number }>()

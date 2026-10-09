@@ -1,4 +1,5 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Read-only "is this account's email verified?" check, split out from the app
@@ -22,7 +23,7 @@ export async function isAccountEmailVerified(input: {
 		const row = await input.db
 			.prepare(
 				`SELECT email_verified_at FROM users
-				 WHERE email = ? AND stable_user_id = ?`,
+				 WHERE email = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(normalizedEmail, stableUserId)
 			.first<{ email_verified_at: string | null }>()
@@ -32,7 +33,9 @@ export async function isAccountEmailVerified(input: {
 	// Browser sessions carry email only.
 	if (normalizedEmail) {
 		const row = await input.db
-			.prepare(`SELECT email_verified_at FROM users WHERE email = ?`)
+			.prepare(
+				`SELECT email_verified_at FROM users WHERE email = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(normalizedEmail)
 			.first<{ email_verified_at: string | null }>()
 		return Boolean(row?.email_verified_at)
@@ -41,7 +44,9 @@ export async function isAccountEmailVerified(input: {
 	// Package-runtime / grant contexts with only the stable id.
 	if (!stableUserId) return false
 	const row = await input.db
-		.prepare(`SELECT email_verified_at FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT email_verified_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(stableUserId)
 		.first<{ email_verified_at: string | null }>()
 	return Boolean(row?.email_verified_at)

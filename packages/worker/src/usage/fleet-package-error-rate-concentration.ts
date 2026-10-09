@@ -7,6 +7,7 @@ import {
 	isFleetPackageErrorRateConcentrationKind,
 	type FleetPackageErrorRateConcentration,
 } from '#universal/fleet-package-error-rate-concentration.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { queryAnalyticsEngineSql } from './aggregate-rollups.ts'
 import { fleetPackageErrorRateMetrics } from './fleet-package-error-rate-subscription-event.ts'
 
@@ -368,7 +369,7 @@ async function loadUsernames(db: D1Database, ownerIds: Array<string>) {
 			.prepare(
 				`SELECT stable_user_id, username
 				FROM users
-				WHERE deleting_at IS NULL
+				WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
 					AND stable_user_id IN (${placeholders})`,
 			)
 			.bind(...chunk)
@@ -391,7 +392,7 @@ async function loadPackageKodyIds(db: D1Database, packageIds: Array<string>) {
 			.prepare(
 				`SELECT id, kody_id
 				FROM saved_packages
-				WHERE id IN (${placeholders})`,
+				WHERE id IN (${placeholders})${andLiveDeletedAtSql()}`,
 			)
 			.bind(...chunk)
 			.all<{ id: string; kody_id: string }>()

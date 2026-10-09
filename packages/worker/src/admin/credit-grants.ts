@@ -33,6 +33,7 @@ import {
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { parseOwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type AdminUserTarget } from './users-data.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const adminCreditLedgerLimit = 20
 
@@ -60,19 +61,25 @@ async function loadCreditGrantTarget(
 		const stableUserId = parseOwnerId(target.stableUserId)
 		if (!stableUserId) return null
 		return db
-			.prepare(`SELECT ${columns} FROM users WHERE stable_user_id = ?`)
+			.prepare(
+				`SELECT ${columns} FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(stableUserId)
 			.first<CreditGrantTargetRow>()
 	}
 	if (target.email !== undefined) {
 		return db
-			.prepare(`SELECT ${columns} FROM users WHERE lower(email) = ?`)
+			.prepare(
+				`SELECT ${columns} FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(normalizeEmail(target.email))
 			.first<CreditGrantTargetRow>()
 	}
 	if (target.username !== undefined) {
 		return db
-			.prepare(`SELECT ${columns} FROM users WHERE username = ?`)
+			.prepare(
+				`SELECT ${columns} FROM users WHERE username = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(target.username.trim())
 			.first<CreditGrantTargetRow>()
 	}
@@ -88,7 +95,7 @@ async function loadGranterUsernames(
 	const rows = await db
 		.prepare(
 			`SELECT stable_user_id, username FROM users
-			 WHERE stable_user_id IN (${unique.map(() => '?').join(', ')})`,
+			 WHERE stable_user_id IN (${unique.map(() => '?').join(', ')})${andLiveDeletedAtSql()}`,
 		)
 		.bind(...unique)
 		.all<{ stable_user_id: string; username: string }>()
@@ -270,7 +277,7 @@ export async function setAdminCreditEligibility(input: {
 		stableUserId,
 		usersStatement: db
 			.prepare(
-				`UPDATE users SET admin_credits_eligible = ?, updated_at = ? WHERE id = ?`,
+				`UPDATE users SET admin_credits_eligible = ?, updated_at = ? WHERE id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(adminCreditsEligible, updatedAt, row.id),
 		orgSetClause: 'admin_credits_eligible = ?, updated_at = ?',

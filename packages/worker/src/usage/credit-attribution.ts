@@ -4,6 +4,7 @@
  * each billable `recordUsage` write instead.
  */
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	buildCreditAttributionBreakdown,
 	creditAttributionMeterFromComputeResource,
@@ -349,7 +350,7 @@ async function loadPackageAttributionLabels(input: {
 				`SELECT id, kody_id, name
 				 FROM saved_packages
 				 WHERE user_id = ?
-				 AND id IN (${placeholders})`,
+				 AND id IN (${placeholders})${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.stableUserId, ...chunk)
 			.all<{ id: string; kody_id: string; name: string }>()

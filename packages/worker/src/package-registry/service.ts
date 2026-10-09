@@ -73,6 +73,7 @@ import {
 	isPackageOwnedStorageId,
 } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -191,7 +192,7 @@ export async function clearPackageOwnedStorageBucket(input: {
 	if (!storageCleared) return false
 	try {
 		await input.env.APP_DB.prepare(
-			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?`,
+			`DELETE FROM user_storage_buckets WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(input.userId, input.storageId)
 			.run()
@@ -366,7 +367,7 @@ export async function refreshSavedPackageProjection(input: {
 				let isFirstSavedPackage = false
 				try {
 					const beforePackage = await input.env.APP_DB.prepare(
-						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?`,
+						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 					)
 						.bind(input.userId)
 						.first<{ first_saved_package_at: string | null }>()

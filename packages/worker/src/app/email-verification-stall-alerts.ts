@@ -8,6 +8,7 @@ import {
 } from '#worker/identity/email-verification-stall.ts'
 import { dispatchUserEmailVerificationStalledSubscriptionEvent } from '#worker/identity/email-verification-stalled-package-subscriptions.ts'
 import { buildUserEmailVerificationStalledEvent } from '#worker/identity/email-verification-stalled-subscription-event.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export { shouldRunEmailVerificationStallAlertCron }
 export { emailVerificationStallAfterMinutes, emailVerificationStallScanLimit }
@@ -144,7 +145,7 @@ async function queryStalledVerificationRows(input: {
 			.prepare(
 				`SELECT username, email, stable_user_id, email_verification_delivery_at
 				FROM users
-				WHERE ${stallClause}
+				WHERE ${stallClause}${andLiveDeletedAtSql()}
 				ORDER BY email_verification_delivery_at ASC, COALESCE(stable_user_id, '') ASC
 				LIMIT ?`,
 			)
@@ -156,7 +157,7 @@ async function queryStalledVerificationRows(input: {
 		.prepare(
 			`SELECT username, email, stable_user_id, email_verification_delivery_at
 			FROM users
-			WHERE ${stallClause}
+			WHERE ${stallClause}${andLiveDeletedAtSql()}
 				AND (
 					email_verification_delivery_at > ?
 					OR (

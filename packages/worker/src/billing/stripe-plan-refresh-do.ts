@@ -7,6 +7,7 @@ import {
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { stripePlanRefreshBackstopDelayMs } from './stripe-plan-refresh-client.ts'
 import { refreshStripePlanForUser } from './subscription-sync.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const userIdStorageKey = 'user-id'
 
@@ -45,7 +46,7 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 		const user = await this.env.APP_DB.prepare(
 			`SELECT id, stripe_customer_id
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(userId)
 			.first<{ id: number; stripe_customer_id: string | null }>()

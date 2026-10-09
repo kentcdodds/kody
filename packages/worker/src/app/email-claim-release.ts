@@ -10,6 +10,7 @@ import {
 } from '#worker/identity/email-claims.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const emailClaimReleaseRequestRateLimitConfig = {
 	maxRequests: 3,
@@ -167,7 +168,7 @@ export async function verifyEmailClaimReleaseToken(input: {
 			        u.email AS current_email
 			 FROM pending_email_claim_releases pec
 			 INNER JOIN users u ON u.id = pec.user_id
-			 WHERE pec.token_hash = ?`,
+			 WHERE pec.token_hash = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(tokenHash)
 		.first<{

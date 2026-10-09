@@ -35,6 +35,7 @@ import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.
 import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export class BillingLinkError extends Error {
 	readonly code:
@@ -76,7 +77,7 @@ export async function refreshStripePlanForUser(input: {
 	const previous = await input.env.APP_DB.prepare(
 		`SELECT email, stable_user_id, stripe_price_id,
 		        ${userEntitlementColumnsSql()}
-		 FROM users WHERE id = ?`,
+		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.first<
@@ -126,7 +127,7 @@ export async function refreshStripePlanForUser(input: {
 			`UPDATE users
 			 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
 			     stripe_plan_refreshed_at = ?, entitlement_ladder = ?
-			 WHERE id = ? AND stripe_customer_id = ?`,
+			 WHERE id = ? AND stripe_customer_id = ?${andLiveDeletedAtSql()}`,
 		).bind(
 			resolved.stripePlan,
 			resolved.stripePriceId,
@@ -215,7 +216,7 @@ async function loadBillingUserById(
 	userId: number,
 ): Promise<BillingUser | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, email, stable_user_id FROM users WHERE id = ?`,
+		`SELECT id, email, stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(userId)
 		.first<{ id: number; email: string; stable_user_id: string }>()
@@ -259,7 +260,7 @@ export async function resolveBillingUserForCheckoutLink(input: {
 		null
 	if (stableUserIdHint) {
 		const row = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE stable_user_id = ?`,
+			`SELECT id, email, stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(stableUserIdHint)
 			.first<{ id: number; email: string; stable_user_id: string }>()
@@ -277,7 +278,7 @@ export async function resolveBillingUserForCheckoutLink(input: {
 	const customerId = input.customerId?.trim()
 	if (customerId) {
 		const userRow = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE stripe_customer_id = ?`,
+			`SELECT id, email, stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(customerId)
 			.first<{ id: number; email: string; stable_user_id: string }>()
@@ -319,7 +320,7 @@ export async function resolveBillingUserForCheckoutLink(input: {
 	if (customerEmail) {
 		const normalized = normalizeEmail(customerEmail)
 		const row = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE lower(email) = ?`,
+			`SELECT id, email, stable_user_id FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(normalized)
 			.first<{ id: number; email: string; stable_user_id: string }>()
@@ -353,7 +354,7 @@ export async function findUserIdByStripeCustomerId(input: {
 	const customerId = input.customerId.trim()
 	if (!customerId) return null
 	const userRow = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stripe_customer_id = ?`,
+		`SELECT id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(customerId)
 		.first<{ id: number }>()
@@ -436,7 +437,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 	}
 
 	const claimedBy = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stripe_customer_id = ? AND id != ?`,
+		`SELECT id FROM users WHERE stripe_customer_id = ? AND id != ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(customerId, input.user.id)
 		.first<{ id: number }>()
@@ -451,7 +452,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 	// redirect target), so never let a later checkout session silently
 	// replace an established linkage.
 	const existing = await input.env.APP_DB.prepare(
-		`SELECT stripe_customer_id FROM users WHERE id = ?`,
+		`SELECT stripe_customer_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.user.id)
 		.first<{ stripe_customer_id: string | null }>()
@@ -472,7 +473,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			usersStatement: input.env.APP_DB.prepare(
 				`UPDATE users
 				 SET stripe_customer_id = ?, updated_at = ?
-				 WHERE id = ?`,
+				 WHERE id = ?${andLiveDeletedAtSql()}`,
 			).bind(customerId, updatedAt, input.user.id),
 			orgSetClause: 'stripe_customer_id = ?, updated_at = ?',
 			orgValues: [customerId, updatedAt],

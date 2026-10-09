@@ -50,6 +50,7 @@ import { adminReservedUsernameAddCapability } from './admin-reserved-username-ad
 import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
 import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
 import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-account-purge-run.ts'
+import { adminSoftDeletePurgeRunCapability } from './admin-soft-delete-purge-run.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -89,6 +90,7 @@ export const adminDomain = defineDomain({
 		'maintenance',
 		'retention',
 		'unverified account purge',
+		'soft delete purge',
 		'reserved username',
 		'credits',
 		'credit grant',
@@ -108,6 +110,7 @@ export const adminDomain = defineDomain({
 		adminAccountWriteLeaseRepairCapability,
 		adminAccountDeletionAbortCapability,
 		adminUnverifiedAccountPurgeRunCapability,
+		adminSoftDeletePurgeRunCapability,
 		adminPlatformAccountCreateCapability,
 		adminPlatformOauthAppSaveCapability,
 		adminPlatformOauthAppListCapability,

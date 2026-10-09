@@ -22,6 +22,7 @@
 import { coalescedCountUsageEventTypes } from '#universal/usage-event-types.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { listSystemInboundUsageRows } from '#worker/email/system-inbound-delivery-store.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const usageAggregationCronGateMinutes = 5
 export const usageAggregationCronIntervalMinutes = 60
@@ -355,7 +356,7 @@ export async function filterLiveUsageRows<T extends { user_id: string }>(
 			db
 				.prepare(
 					`SELECT stable_user_id FROM users
-					WHERE deleting_at IS NULL
+					WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
 						AND stable_user_id IN (${placeholders})`,
 				)
 				.bind(...chunk)
@@ -441,7 +442,7 @@ async function deleteNonLiveUserRollups(input: {
 						SELECT 1 FROM users
 						WHERE stable_user_id = usage_rollups.user_id
 							AND deleting_at IS NULL
-					)`,
+					)${andLiveDeletedAtSql()}`,
 			)
 			.bind(...input.months)
 			.run(),

@@ -5,6 +5,7 @@ import {
 } from './types.ts'
 
 /** Flat cap; rules are created by the authenticated owner, this is just runaway-growth protection. */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const maxEmailSenderRulesPerUser = 200
 
 export class EmailSenderRuleValidationError extends Error {
@@ -84,7 +85,7 @@ export async function listEmailSenderRules(input: {
 			`SELECT *
 			FROM email_sender_rules
 			WHERE user_id = ?
-			ORDER BY created_at ASC, id ASC`,
+			ORDER BY created_at ASC, id ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
@@ -111,7 +112,7 @@ export async function upsertEmailSenderRule(input: {
 			WHERE user_id = ?
 				AND kind = ?
 				AND value = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.kind, value)
 		.first<Record<string, unknown>>()
@@ -124,7 +125,7 @@ export async function upsertEmailSenderRule(input: {
 					note = ?,
 					updated_at = ?
 				WHERE id = ?
-					AND user_id = ?`,
+					AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.effect, note, timestamp, String(existing['id']), input.userId)
 			.run()
@@ -189,7 +190,7 @@ export async function deleteEmailSenderRule(input: {
 		.prepare(
 			`DELETE FROM email_sender_rules
 			WHERE id = ?
-				AND user_id = ?`,
+				AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.ruleId, input.userId)
 		.run()
@@ -214,7 +215,7 @@ export async function evaluateEmailSenderRules(input: {
 			WHERE user_id = ?
 				AND kind = 'address'
 				AND value = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, senderAddress)
 		.first<Record<string, unknown>>()
@@ -241,7 +242,7 @@ export async function evaluateEmailSenderRules(input: {
 					OR ? LIKE '%.' || value
 				)
 			ORDER BY length(value) DESC, id ASC
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, senderDomain, senderDomain)
 		.first<Record<string, unknown>>()

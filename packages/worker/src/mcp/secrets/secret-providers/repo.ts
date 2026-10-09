@@ -3,6 +3,7 @@ import {
 	type SecretProviderGrantRecord,
 } from './types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type BindingRow = {
 	user_id: string
 	provider_id: string
@@ -125,7 +126,7 @@ export async function deleteSecretProviderBinding(
 	await db
 		.prepare(
 			`DELETE FROM secret_provider_bindings
-			WHERE user_id = ? AND provider_id = ?`,
+			WHERE user_id = ? AND provider_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.providerId)
 		.run()
@@ -140,7 +141,7 @@ export async function getSecretProviderBinding(
 			`SELECT user_id, provider_id, package_id, door_secret_name, config_json,
 				created_at, updated_at
 			FROM secret_provider_bindings
-			WHERE user_id = ? AND provider_id = ?`,
+			WHERE user_id = ? AND provider_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.providerId)
 		.first<BindingRow>()
@@ -157,7 +158,7 @@ export async function listSecretProviderBindings(
 				created_at, updated_at
 			FROM secret_provider_bindings
 			WHERE user_id = ?
-			ORDER BY provider_id ASC`,
+			ORDER BY provider_id ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.all<BindingRow>()

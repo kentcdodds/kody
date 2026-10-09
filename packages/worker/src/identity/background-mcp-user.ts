@@ -3,6 +3,7 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
 import { resolveDisplayName } from './username.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const backgroundMcpUserCacheTtlMs = 60_000
 const backgroundMcpUserCacheMaxEntries = 1_000
@@ -36,7 +37,7 @@ async function loadBackgroundMcpUser(
 		.prepare(
 			`SELECT id, email, username, display_name, suspended_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{

@@ -43,6 +43,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
@@ -203,7 +204,7 @@ function buildAdminUserListWhereClause(
 	filters: AdminUserListFilters,
 	now: Date,
 ) {
-	const conditions: Array<string> = []
+	const conditions: Array<string> = ['deleted_at IS NULL']
 	const params: Array<string> = []
 	if (filters.query) {
 		const pattern = d1ContainsLikePattern(filters.query)
@@ -256,7 +257,7 @@ export async function adminUserMatchesListFilters(
 		? `${whereClause} AND stable_user_id = ?`
 		: 'WHERE stable_user_id = ?'
 	const row = await env.APP_DB.prepare(
-		`SELECT 1 AS found FROM users ${membershipWhere} LIMIT 1`,
+		`SELECT 1 AS found FROM users ${membershipWhere}${andLiveDeletedAtSql()} LIMIT 1`,
 	)
 		.bind(...params, stableUserId)
 		.first<{ found: number }>()
@@ -284,13 +285,15 @@ export async function loadAdminUsersData(
 	)
 
 	const [totalResult, userRows, selectedUser] = await Promise.all([
-		env.APP_DB.prepare(`SELECT COUNT(*) AS total FROM users ${whereClause}`)
+		env.APP_DB.prepare(
+			`SELECT COUNT(*) AS total FROM users ${whereClause}${andLiveDeletedAtSql()}`,
+		)
 			.bind(...params)
 			.first<{ total: number }>(),
 		env.APP_DB.prepare(
 			`SELECT ${adminUserRowSelectSql}
 			 FROM users
-			 ${whereClause}
+			 ${whereClause}${andLiveDeletedAtSql()}
 			 ORDER BY id ASC
 			 LIMIT ? OFFSET ?`,
 		)
@@ -342,7 +345,7 @@ export async function loadAdminUserByTarget(
 				.prepare(
 					`SELECT ${adminUserRowSelectSql}
 					 FROM users
-					 WHERE stable_user_id = ?`,
+					 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 				)
 				.bind(stableUserId)
 				.first<AdminUserRow>()
@@ -351,7 +354,7 @@ export async function loadAdminUserByTarget(
 					.prepare(
 						`SELECT ${adminUserRowSelectSql}
 						 FROM users
-						 WHERE email = ? COLLATE NOCASE`,
+						 WHERE email = ? COLLATE NOCASE${andLiveDeletedAtSql()}`,
 					)
 					.bind(email)
 					.first<AdminUserRow>()
@@ -360,7 +363,7 @@ export async function loadAdminUserByTarget(
 						.prepare(
 							`SELECT ${adminUserRowSelectSql}
 							 FROM users
-							 WHERE username = ? COLLATE NOCASE`,
+							 WHERE username = ? COLLATE NOCASE${andLiveDeletedAtSql()}`,
 						)
 						.bind(username)
 						.first<AdminUserRow>()
@@ -400,7 +403,9 @@ export async function updateAdminUserPlan(
 		nextStripePlan: stripePlan,
 	})
 	const entitlementRow = await db
-		.prepare(`SELECT ${userEntitlementColumnsSql()} FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT ${userEntitlementColumnsSql()} FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(existingRow.id)
 		.first<UserEntitlementRow>()
 	if (entitlementRow) {
@@ -422,7 +427,7 @@ export async function updateAdminUserPlan(
 		stableUserId: existing.stableUserId,
 		usersStatement: db
 			.prepare(
-				`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
+				`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(nextPlan, nextLadder, updatedAt, existingRow.id),
 		orgSetClause: 'plan = ?, entitlement_ladder = ?, updated_at = ?',
@@ -447,7 +452,9 @@ export async function updateAdminUserSuspension(
 
 	const now = utcSqliteTimestamp()
 	await db
-		.prepare(`UPDATE users SET suspended_at = ?, updated_at = ? WHERE id = ?`)
+		.prepare(
+			`UPDATE users SET suspended_at = ?, updated_at = ? WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.suspended ? now : null, now, existing.id)
 		.run()
 
@@ -470,7 +477,7 @@ export async function clearAdminUserEmailOutboundPause(
 
 	await db
 		.prepare(
-			`UPDATE users SET email_outbound_paused_at = NULL, updated_at = ? WHERE id = ?`,
+			`UPDATE users SET email_outbound_paused_at = NULL, updated_at = ? WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(utcSqliteTimestamp(), existing.id)
 		.run()
@@ -618,7 +625,7 @@ export async function loadAdminUserRowByStableUserId(
 		.prepare(
 			`SELECT ${adminUserRowSelectSql}
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<AdminUserRow>()

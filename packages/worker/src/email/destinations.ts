@@ -7,6 +7,7 @@ import {
 	type EmailNotificationDestination,
 } from '#universal/email-destinations.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export {
 	identityEmailDestinationId,
 	maxAdditionalEmailNotificationDestinations,
@@ -78,7 +79,7 @@ export async function loadEmailDestinationAccount(input: {
 			.prepare(
 				`SELECT id, email, email_verified_at, stable_user_id
 				 FROM users
-				 WHERE id = ? AND deleting_at IS NULL`,
+				 WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.dbUserId)
 			.first<{
@@ -100,7 +101,7 @@ export async function loadEmailDestinationAccount(input: {
 			.prepare(
 				`SELECT id, email, email_verified_at, stable_user_id
 				 FROM users
-				 WHERE stable_user_id = ? AND deleting_at IS NULL`,
+				 WHERE stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.stableUserId)
 			.first<{
@@ -141,7 +142,7 @@ async function listAdditionalDestinationRows(
 			`SELECT id, email, verified_at, is_default
 			 FROM email_notification_destinations
 			 WHERE user_id = ?
-			 ORDER BY created_at ASC, email ASC`,
+			 ORDER BY created_at ASC, email ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.all<DestinationRow>()
@@ -229,7 +230,7 @@ export async function addEmailNotificationDestination(input: {
 		.prepare(
 			`SELECT id, email, verified_at, is_default
 			 FROM email_notification_destinations
-			 WHERE user_id = ? AND email = ?`,
+			 WHERE user_id = ? AND email = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(account.id, email)
 		.first<DestinationRow>()
@@ -307,7 +308,7 @@ export async function markEmailNotificationDestinationVerified(input: {
 			`UPDATE email_notification_destinations
 			 SET verified_at = COALESCE(verified_at, ?)
 			 WHERE id = ? AND user_id = ?
-			 RETURNING id, email, verified_at, is_default`,
+			 RETURNING id, email, verified_at, is_default${andLiveDeletedAtSql()}`,
 		)
 		.bind(verifiedAt, input.destinationId, input.userId)
 		.first<DestinationRow>()
@@ -337,7 +338,7 @@ export async function setDefaultEmailNotificationDestination(input: {
 			.prepare(
 				`UPDATE email_notification_destinations
 				 SET is_default = 0
-				 WHERE user_id = ? AND is_default = 1`,
+				 WHERE user_id = ? AND is_default = 1${andLiveDeletedAtSql()}`,
 			)
 			.bind(account.id)
 			.run()
@@ -353,7 +354,7 @@ export async function setDefaultEmailNotificationDestination(input: {
 		.prepare(
 			`SELECT id, email, verified_at, is_default
 			 FROM email_notification_destinations
-			 WHERE id = ? AND user_id = ?`,
+			 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.destinationId, account.id)
 		.first<DestinationRow>()
@@ -375,14 +376,14 @@ export async function setDefaultEmailNotificationDestination(input: {
 			.prepare(
 				`UPDATE email_notification_destinations
 				 SET is_default = 0
-				 WHERE user_id = ? AND is_default = 1`,
+				 WHERE user_id = ? AND is_default = 1${andLiveDeletedAtSql()}`,
 			)
 			.bind(account.id),
 		input.db
 			.prepare(
 				`UPDATE email_notification_destinations
 				 SET is_default = 1
-				 WHERE id = ? AND user_id = ?`,
+				 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(row.id, account.id),
 	])
@@ -414,7 +415,7 @@ export async function removeEmailNotificationDestination(input: {
 	const deleted = await input.db
 		.prepare(
 			`DELETE FROM email_notification_destinations
-			 WHERE id = ? AND user_id = ?`,
+			 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.destinationId, account.id)
 		.run()
@@ -441,7 +442,7 @@ export async function deleteEmailNotificationDestinationRow(input: {
 	await input.db
 		.prepare(
 			`DELETE FROM email_notification_destinations
-			 WHERE id = ? AND user_id = ?`,
+			 WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.destinationId, input.userId)
 		.run()
@@ -460,7 +461,7 @@ export async function reconcileDestinationsAfterIdentityEmailChange(input: {
 	await input.db
 		.prepare(
 			`DELETE FROM email_notification_destinations
-			 WHERE user_id = ? AND email = ?`,
+			 WHERE user_id = ? AND email = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, email)
 		.run()
@@ -499,7 +500,7 @@ export async function resolveDefaultNotificationEmail(input: {
 		.prepare(
 			`SELECT email
 			 FROM email_notification_destinations
-			 WHERE user_id = ? AND is_default = 1 AND verified_at IS NOT NULL`,
+			 WHERE user_id = ? AND is_default = 1 AND verified_at IS NOT NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(account.id)
 		.first<{ email: string }>()

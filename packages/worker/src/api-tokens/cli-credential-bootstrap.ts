@@ -21,6 +21,7 @@ import {
 } from './service.ts'
 
 /** Distinct from `kody_at_` so chat/logs can show the CLI command safely. */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const cliBootstrapCodePrefix = 'kody_bc_'
 
 const bootstrapCodeIdLength = 16
@@ -417,7 +418,7 @@ export async function redeemCliCredentialBootstrap(input: {
 			.prepare(
 				`SELECT deleting_at, suspended_at, password_changed_at
 				 FROM users
-				 WHERE stable_user_id = ?`,
+				 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(row.user_id)
 			.first<{

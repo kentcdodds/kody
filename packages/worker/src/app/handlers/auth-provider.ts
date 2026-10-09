@@ -102,6 +102,7 @@ import {
  * Accounts created through social login have no usable password until the
  * user sets one via password reset; verifyPassword rejects this sentinel.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const oauthNoUsablePasswordHash = unusablePasswordHash.oauthCreated
 
 function getCallbackRedirectUri(env: Env, url: URL, provider: OauthProviderId) {
@@ -688,7 +689,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					const stamped = await env.APP_DB.prepare(
 						`UPDATE users
 						 SET email_verified_at = ?, updated_at = CURRENT_TIMESTAMP
-						 WHERE id = ? AND deleting_at IS NULL`,
+						 WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 					)
 						.bind(new Date().toISOString(), existingUser.id)
 						.run()
@@ -732,7 +733,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				invalidatePackageAppOwnerCache({ stableUserId })
 				await rollbackPersonalOrgAfterFailedSignup(env.APP_DB, stableUserId)
 				try {
-					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+					await env.APP_DB.prepare(
+						`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+					)
 						.bind(userId)
 						.run()
 				} catch (rollbackError) {

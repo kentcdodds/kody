@@ -50,6 +50,7 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { runCreditAutoRefill } from './credit-auto-refill.ts'
 import { sendCreditLowBalanceEmail } from '#app/user-account-emails.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
@@ -186,7 +187,7 @@ export async function listCreditDebitCandidates(input: {
 				${userEntitlementColumnsSql('u')}
 			 FROM users u
 			 LEFT JOIN credit_wallets w ON w.user_id = u.stable_user_id
-			 WHERE u.deleting_at IS NULL
+			 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 			   AND u.stable_user_id > ?
 			   AND (
 				w.user_id IS NOT NULL

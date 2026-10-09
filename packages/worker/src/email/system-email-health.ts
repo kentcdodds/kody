@@ -1,5 +1,6 @@
 import { systemEmailOwnerId } from './email-owner.ts'
 import { assertSystemEmailGraphAuthority } from './system-email-authority.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type SystemEmailHealth = {
 	authority: {
@@ -78,7 +79,7 @@ export async function loadSystemEmailHealth(input: {
 					WHERE provider_message_id IS NOT NULL
 				) AS provider_links
 			FROM system_email_graph_authority authority
-			WHERE authority.singleton = 1`,
+			WHERE authority.singleton = 1${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			systemEmailOwnerId,

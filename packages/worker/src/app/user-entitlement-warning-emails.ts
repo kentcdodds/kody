@@ -1,4 +1,5 @@
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
 	buildUserEntitlementWarningEmail,
@@ -747,7 +748,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-				 WHERE u.deleting_at IS NULL
+				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
@@ -764,13 +765,14 @@ export async function listUsersForEntitlementWarningSweep(
 				 FROM (
 					SELECT user_id, COUNT(*) AS stock_count
 					FROM saved_packages
+					WHERE deleted_at IS NULL
 					GROUP BY user_id
 					HAVING COUNT(*) >= ?
 					ORDER BY stock_count DESC
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
-				 WHERE u.deleting_at IS NULL
+				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL`,
 				)
@@ -783,14 +785,16 @@ export async function listUsersForEntitlementWarningSweep(
 					SELECT sb.user_id, COUNT(*) AS stock_count
 					FROM secret_entries se
 					JOIN secret_buckets sb ON sb.id = se.bucket_id
-					WHERE sb.expires_at IS NULL OR sb.expires_at > ?
+					WHERE (sb.expires_at IS NULL OR sb.expires_at > ?)
+						AND se.deleted_at IS NULL
+						AND sb.deleted_at IS NULL
 					GROUP BY sb.user_id
 					HAVING COUNT(*) >= ?
 					ORDER BY stock_count DESC
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
-				 WHERE u.deleting_at IS NULL
+				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL`,
 				)
@@ -812,7 +816,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-				 WHERE u.deleting_at IS NULL
+				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
@@ -831,7 +835,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-				 WHERE u.deleting_at IS NULL
+				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,

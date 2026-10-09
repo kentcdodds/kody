@@ -19,6 +19,7 @@ import {
 	type ReferralRejectReason,
 } from '#universal/referral-program.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type ReferralAttributionOutcome =
 	| { outcome: 'attributed' }
 	| { outcome: 'ignored'; reason: 'missing_code' | 'unknown_referrer' | 'self' }
@@ -154,7 +155,7 @@ export async function attributeReferralAtSignup(input: {
 		.prepare(
 			`SELECT stable_user_id, account_type
 			 FROM users
-			 WHERE username = ?`,
+			 WHERE username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(code)
 		.first<{ stable_user_id: string; account_type: string | null }>()
@@ -201,7 +202,7 @@ async function loadParty(
 			        stripe_customer_id, account_type,
 			        referral_standard_credit_expires_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<ReferralParty>()
@@ -496,7 +497,7 @@ export async function loadReferralProgramSummary(input: {
 		.prepare(
 			`SELECT referral_standard_credit_expires_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.stableUserId)
 		.first<{ referral_standard_credit_expires_at: string | null }>()
@@ -511,7 +512,7 @@ export async function loadReferralProgramSummary(input: {
 				 WHERE r.referrer_stable_user_id = ?
 				   AND r.status IN ('pending', 'rewarded')
 				 ORDER BY r.created_at DESC
-				 LIMIT 50`,
+				 ${andLiveDeletedAtSql()} LIMIT 50`,
 			)
 			.bind(input.stableUserId)
 			.all<{

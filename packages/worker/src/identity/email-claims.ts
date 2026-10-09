@@ -1,6 +1,7 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type EmailClaimStatus = 'claimed' | 'released'
 
@@ -91,7 +92,7 @@ export async function isEmailReservedForOtherAccount(
 	if (!normalized) return false
 
 	const currentOwner = await db
-		.prepare(`SELECT id FROM users WHERE email = ?`)
+		.prepare(`SELECT id FROM users WHERE email = ?${andLiveDeletedAtSql()}`)
 		.bind(normalized)
 		.first<{ id: number }>()
 	if (currentOwner && currentOwner.id !== exceptUserId) return true
@@ -252,7 +253,7 @@ export async function allocateSignupIdentity(
 	if (!normalized) return { ok: false, reason: 'current_email' }
 
 	const currentOwner = await db
-		.prepare(`SELECT id FROM users WHERE email = ?`)
+		.prepare(`SELECT id FROM users WHERE email = ?${andLiveDeletedAtSql()}`)
 		.bind(normalized)
 		.first<{ id: number }>()
 	if (currentOwner) return { ok: false, reason: 'current_email' }

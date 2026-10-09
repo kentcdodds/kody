@@ -14,6 +14,7 @@ import {
 	entitySourceRowSchema,
 } from './types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
 	return entitySourceRowSchema.parse({
 		id: String(row['id']),
@@ -75,7 +76,9 @@ export async function getEntitySourceById(
 	id: string,
 ): Promise<EntitySourceRow | null> {
 	const result = await db
-		.prepare(`SELECT * FROM entity_sources WHERE id = ?`)
+		.prepare(
+			`SELECT * FROM entity_sources WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(id)
 		.first<Record<string, unknown>>()
 	return result ? mapEntitySourceRow(result) : null
@@ -91,7 +94,9 @@ export async function listEntitySourcesByIds(
 	for (const idChunk of chunkArray(uniqueIds, maxD1BoundParameters)) {
 		const placeholders = idChunk.map(() => '?').join(', ')
 		const { results } = await db
-			.prepare(`SELECT * FROM entity_sources WHERE id IN (${placeholders})`)
+			.prepare(
+				`SELECT * FROM entity_sources WHERE id IN (${placeholders})${andLiveDeletedAtSql()}`,
+			)
 			.bind(...idChunk)
 			.all<Record<string, unknown>>()
 		for (const row of results ?? []) {
@@ -109,7 +114,9 @@ export async function getEntitySourceByIdForUser(
 	},
 ): Promise<EntitySourceRow | null> {
 	const result = await db
-		.prepare(`SELECT * FROM entity_sources WHERE id = ? AND user_id = ?`)
+		.prepare(
+			`SELECT * FROM entity_sources WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.id, input.userId)
 		.first<Record<string, unknown>>()
 	return result ? mapEntitySourceRow(result) : null
@@ -127,7 +134,7 @@ export async function getEntitySourceByEntity(
 		.prepare(
 			`SELECT * FROM entity_sources
 			WHERE user_id = ? AND entity_kind = ? AND entity_id = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.entityKind, input.entityId)
 		.first<Record<string, unknown>>()
@@ -139,7 +146,9 @@ export async function getEntitySourceByRepoId(
 	repoId: string,
 ): Promise<EntitySourceRow | null> {
 	const result = await db
-		.prepare(`SELECT * FROM entity_sources WHERE repo_id = ? LIMIT 1`)
+		.prepare(
+			`SELECT * FROM entity_sources WHERE repo_id = ? ${andLiveDeletedAtSql()} LIMIT 1`,
+		)
 		.bind(repoId)
 		.first<Record<string, unknown>>()
 	return result ? mapEntitySourceRow(result) : null
@@ -153,7 +162,7 @@ export async function listEntitySourcesByUser(
 		.prepare(
 			`SELECT * FROM entity_sources
 			WHERE user_id = ?
-			ORDER BY updated_at DESC, created_at DESC`,
+			ORDER BY updated_at DESC, created_at DESC${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.all<Record<string, unknown>>()
@@ -204,7 +213,7 @@ export async function updateEntitySource(
 			.prepare(
 				`UPDATE entity_sources
 			SET ${assignments.join(', ')}
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(...values, input.id, input.userId)
 			.run(),
@@ -260,7 +269,7 @@ export async function markEntitySourcePendingExternalReconcile(
 						ELSE external_check_until
 					END,
 					updated_at = ?
-				WHERE id = ? AND user_id = ?`,
+				WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(checkUntil, checkUntil, updatedAt, input.id, input.userId)
 			.run(),
@@ -317,7 +326,7 @@ export async function listEntitySourcesForExternalReconcile(
 			`SELECT * FROM entity_sources
 			WHERE entity_kind = 'package'
 				${pendingClause}
-				${afterClause}
+				${afterClause}${andLiveDeletedAtSql()}
 			ORDER BY COALESCE(last_external_check_at, created_at) ASC, id ASC
 			LIMIT ?`,
 		)
@@ -340,7 +349,7 @@ export async function deleteEntitySource(
 		})
 	}
 	const result = await env.APP_DB.prepare(
-		`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`,
+		`DELETE FROM entity_sources WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.id, input.userId)
 		.run()

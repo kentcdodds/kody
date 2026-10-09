@@ -21,6 +21,7 @@ import {
 } from '#mcp/auth-audit.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability, type CapabilitySpec } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type CapabilityAccessRequirement = Pick<
 	Capability | CapabilitySpec,
@@ -70,7 +71,9 @@ async function resolveFeatureFlagUserId(
 	stableUserId: string,
 ): Promise<number | null> {
 	const row = await db
-		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(stableUserId)
 		.first<{ id: number }>()
 	return row?.id ?? null

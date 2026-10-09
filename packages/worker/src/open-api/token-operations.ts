@@ -35,6 +35,7 @@ import {
 	normalizeConnectionProfileName,
 } from '#universal/connection-profiles/names.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const scopeSchema = z.enum(
 	apiTokenScopes as [ApiTokenScope, ...Array<ApiTokenScope>],
 )
@@ -275,7 +276,7 @@ export const tokenOperationDefinitions: Record<
 					throw invalidRequest(connectionProfileNameErrorMessage(nameError))
 				}
 				const userRow = await ctx.env.APP_DB.prepare(
-					`SELECT id FROM users WHERE stable_user_id = ?`,
+					`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 				)
 					.bind(userIdOf(ctx))
 					.first<{ id: number }>()

@@ -4,6 +4,7 @@ import {
 	type ValueScope,
 } from './types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type ValueMetadataRow = {
 	scope: ValueScope
 	binding_key: string
@@ -29,7 +30,7 @@ export async function getValueBucket(input: {
 			FROM value_buckets
 			WHERE user_id = ? AND scope = ? AND binding_key = ?
 				AND (expires_at IS NULL OR expires_at > ?)
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.scope, input.bindingKey, now)
 		.first<Record<string, unknown>>()
@@ -76,7 +77,7 @@ export async function getValueEntry(input: {
 			`SELECT bucket_id, name, description, value, created_at, updated_at
 			FROM value_entries
 			WHERE bucket_id = ? AND name = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.bucketId, input.name)
 		.first<Record<string, unknown>>()
@@ -119,7 +120,9 @@ export async function deleteValueEntry(input: {
 	name: string
 }): Promise<boolean> {
 	const result = await input.db
-		.prepare(`DELETE FROM value_entries WHERE bucket_id = ? AND name = ?`)
+		.prepare(
+			`DELETE FROM value_entries WHERE bucket_id = ? AND name = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.bucketId, input.name)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -134,7 +137,7 @@ export async function listValueMetadataForBucket(input: {
 			`SELECT ? AS scope, ? AS binding_key, name, description, value, created_at, updated_at, ? AS expires_at
 			FROM value_entries
 			WHERE bucket_id = ?
-			ORDER BY name ASC`,
+			ORDER BY name ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.bucket.scope,
@@ -163,7 +166,7 @@ export async function userHasPersistedValues(input: {
 			INNER JOIN value_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ?
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, now)
 		.first<{ found: number }>()
@@ -194,7 +197,7 @@ export async function listValueMetadataForBuckets(input: {
 			FROM value_entries e
 			INNER JOIN value_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ? AND b.id IN (${inPlaceholders})
-				AND (b.expires_at IS NULL OR b.expires_at > ?)
+				AND (b.expires_at IS NULL OR b.expires_at > ?)${andLiveDeletedAtSql('e')}${andLiveDeletedAtSql('b')}
 			ORDER BY CASE b.id ${bucketOrderCase} END, e.name ASC`,
 		)
 		.bind(input.userId, ...bucketIds, now, ...bucketIds)

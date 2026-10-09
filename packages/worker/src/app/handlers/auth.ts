@@ -70,6 +70,7 @@ import {
 	rollbackPersonalOrgAfterFailedSignup,
 } from '#worker/orgs/signup-provision.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
 
@@ -422,7 +423,9 @@ export function createAuthHandler(env: Env) {
 							env.APP_DB,
 							signupUser.stableUserId,
 						)
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+						await env.APP_DB.prepare(
+							`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+						)
 							.bind(signupUser.id)
 							.run()
 					} catch (deleteError) {
@@ -455,7 +458,9 @@ export function createAuthHandler(env: Env) {
 						env.APP_DB,
 						signupUser.stableUserId,
 					)
-					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+					await env.APP_DB.prepare(
+						`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+					)
 						.bind(signupUser.id)
 						.run()
 				}

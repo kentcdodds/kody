@@ -161,6 +161,10 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0065 — Org seats, prepaid credits, and Free-tier fallback at $0](./0065-org-seats-and-free-tier-fallback.md)
   — org-billed seats and credits; empty wallet uses Free rate/compute limits
   (supersedes 0051 hard stop); Stripe writes stay Kody-only
+- [0066 — Teams soft delete, restore window, and purge lane](./0066-soft-delete-and-purge.md)
+  — 30-day restore window, live `deleted_at IS NULL` reads plus scanner, purge
+  lane with `deleting_at`, org vs user deletion split, purge audit in
+  `org_audit_events`, first purge dry-run, no feature flag
 
 ## Historical / UI / implementation
 

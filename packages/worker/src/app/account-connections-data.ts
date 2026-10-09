@@ -7,6 +7,7 @@ import {
 } from '#app/oauth-providers.ts'
 import { listPasskeysForUser } from '#app/passkeys.ts'
 import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type ConnectionRow = {
 	id: number
@@ -30,7 +31,9 @@ async function listConnections(db: D1Database, userId: number) {
 
 async function hasUsablePassword(db: D1Database, userId: number) {
 	const row = await db
-		.prepare(`SELECT password_hash FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT password_hash FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(userId)
 		.first<{ password_hash: string }>()
 	// Sentinel hashes (admin-created / OAuth-created accounts) never verify,

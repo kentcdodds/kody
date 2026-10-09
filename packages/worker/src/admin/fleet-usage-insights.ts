@@ -39,6 +39,7 @@ import {
 	type AdminUsageMetric,
 } from '#universal/loader-data.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const adminFleetTopConsumersLimit = 10
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
@@ -331,7 +332,7 @@ async function queryTopRuntimeDurationConsumers(
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
 				AND r.metric IN (${metricPlaceholders})
-				AND u.deleting_at IS NULL
+				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 			 GROUP BY u.stable_user_id, u.username
 			 ORDER BY total_duration_ms DESC
 			 LIMIT ?`,
@@ -364,7 +365,7 @@ async function queryTopEventCountConsumers(
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
-				AND u.deleting_at IS NULL
+				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 			 GROUP BY u.stable_user_id, u.username
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
@@ -406,7 +407,7 @@ async function queryDynamicWorkerCost(
 				 INNER JOIN users u ON u.stable_user_id = r.user_id
 				 WHERE r.month = ?
 					AND r.metric = 'dynamic_worker_day'
-					AND u.deleting_at IS NULL
+					AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 				 ORDER BY r.event_count DESC
 				 LIMIT ?`,
 			)
@@ -462,7 +463,7 @@ async function queryTopDurationConsumersByMetric(
 				WHERE r.month = ?
 					AND r.metric IN (${metricPlaceholders})
 					AND r.total_duration_ms > 0
-					AND u.deleting_at IS NULL
+					AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 			 ) AS ranked
 			 WHERE ranked.rank_in_metric <= ?
 			 ORDER BY ranked.metric ASC, ranked.total_duration_ms DESC`,
@@ -568,7 +569,7 @@ async function listActiveUsersForEntitlementSweep(
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
-				AND u.deleting_at IS NULL
+				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 			 GROUP BY u.stable_user_id, u.username, ${entitlementColumns}
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
@@ -590,7 +591,7 @@ async function listAdminStableUserIds(db: D1Database) {
 			 INNER JOIN user_roles ur ON ur.user_id = u.id
 			 INNER JOIN roles r ON r.id = ur.role_id
 			 WHERE r.name = 'admin'
-				AND u.deleting_at IS NULL`,
+				AND u.deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.all<{ stable_user_id: string }>()
 	return new Set((rows.results ?? []).map((row) => row.stable_user_id))

@@ -11,6 +11,7 @@ import { readAccountComputeOverage } from '#worker/billing/compute-overage-accou
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const creditAttributionMeterSchema = z.enum([
 	'unique_worker_days',
@@ -169,7 +170,7 @@ async function enrichUnspentPackageAttributionRow(input: {
 	if (row.name !== row.packageId && row.href) return row
 	const saved = await input.db
 		.prepare(
-			`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+			`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(row.packageId, input.stableUserId)
 		.first<{ kody_id: string; name: string }>()

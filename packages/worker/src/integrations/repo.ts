@@ -19,6 +19,7 @@ import {
 	isIntegrationRefreshPolicy,
 	type IntegrationRefreshPolicy,
 } from './refresh-policy.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type JoinedIntegration,
 	type UserIntegrationConnection,
@@ -149,7 +150,7 @@ const joinedSelectColumns = `
 const joinedFromClause = `
 	FROM user_integrations i
 	LEFT JOIN user_oauth_apps a
-		ON a.user_id = i.user_id AND a.slug = i.app_slug
+		ON a.user_id = i.user_id AND a.slug = i.app_slug${andLiveDeletedAtSql('a')}
 	LEFT JOIN platform_oauth_apps p
 		ON p.slug = i.platform_app_slug
 `
@@ -162,7 +163,7 @@ export async function listJoinedIntegrationsForUser(input: {
 		.prepare(
 			`SELECT ${joinedSelectColumns}
 			${joinedFromClause}
-			WHERE i.user_id = ?
+			WHERE i.user_id = ?${andLiveDeletedAtSql('i')}
 			ORDER BY i.name ASC`,
 		)
 		.bind(input.userId)
@@ -179,7 +180,7 @@ export async function getJoinedIntegrationByName(input: {
 		.prepare(
 			`SELECT ${joinedSelectColumns}
 			${joinedFromClause}
-			WHERE i.user_id = ? AND i.name = ?
+			WHERE i.user_id = ? AND i.name = ?${andLiveDeletedAtSql('i')}
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.name)
@@ -196,7 +197,7 @@ export async function getOauthAppBySlug(input: {
 		.prepare(
 			`SELECT ${appSelectColumns}
 			FROM user_oauth_apps
-			WHERE user_id = ? AND slug = ?
+			WHERE user_id = ? AND slug = ?${andLiveDeletedAtSql()}
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.slug)
@@ -213,7 +214,7 @@ export async function listOauthAppsByProvider(input: {
 		.prepare(
 			`SELECT ${appSelectColumns}
 			FROM user_oauth_apps
-			WHERE user_id = ? AND provider = ?
+			WHERE user_id = ? AND provider = ?${andLiveDeletedAtSql()}
 			ORDER BY slug ASC`,
 		)
 		.bind(input.userId, input.provider)
@@ -231,7 +232,7 @@ export async function findOauthAppByClientCredentials(input: {
 			`SELECT ${appSelectColumns}
 			FROM user_oauth_apps
 			WHERE user_id = ?
-				AND client_id = ?
+				AND client_id = ?${andLiveDeletedAtSql()}
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.clientId)
@@ -266,7 +267,7 @@ export async function findOauthAppByAppTuple(input: {
 				AND use_pkce IS ?
 				AND token_exchange_style IS ?
 				AND scope_separator IS ?
-				AND extra_authorize_params_json = ?
+				AND extra_authorize_params_json = ?${andLiveDeletedAtSql()}
 			LIMIT 1`,
 		)
 		.bind(
@@ -311,7 +312,7 @@ export async function listOauthAppsWithConnectionCounts(input: {
 				) AS connection_count
 			FROM user_oauth_apps a
 			WHERE a.user_id = ?
-			ORDER BY a.slug ASC`,
+			ORDER BY a.slug ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.all<UserOauthAppWithCountRow>()
@@ -330,7 +331,7 @@ export async function countConnectionsForApp(input: {
 		.prepare(
 			`SELECT count(*) AS count
 			FROM user_integrations
-			WHERE user_id = ? AND app_slug = ?`,
+			WHERE user_id = ? AND app_slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.appSlug)
 		.first<{ count: number }>()
@@ -408,7 +409,7 @@ export async function updateOauthAppClientCredentials(input: {
 			`UPDATE user_oauth_apps
 			SET client_id = ?,
 				updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
+			WHERE user_id = ? AND slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.clientId,
@@ -428,7 +429,7 @@ export async function deleteOauthApp(input: {
 	const result = await input.db
 		.prepare(
 			`DELETE FROM user_oauth_apps
-			WHERE user_id = ? AND slug = ?`,
+			WHERE user_id = ? AND slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.slug)
 		.run()
@@ -499,7 +500,7 @@ export async function addPlatformIntegrationRequiredHosts(input: {
 					ORDER BY host
 				)
 			)
-			WHERE user_id = ? AND name = ? AND platform_app_slug IS NOT NULL`,
+			WHERE user_id = ? AND name = ? AND platform_app_slug IS NOT NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(JSON.stringify(input.hosts), input.userId, input.name)
 		.run()
@@ -513,7 +514,7 @@ export async function deleteIntegrationConnection(input: {
 	const result = await input.db
 		.prepare(
 			`DELETE FROM user_integrations
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.name)
 		.run()
@@ -533,7 +534,7 @@ export async function getIntegrationCredentialCiphertexts(input: {
 			`SELECT access_token_encrypted, refresh_token_encrypted
 			FROM user_integrations
 			WHERE user_id = ? AND name = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.name)
 		.first<{
@@ -563,7 +564,7 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 				refresh_token_encrypted = COALESCE(?, refresh_token_encrypted),
 				refresh_policy = ?,
 				updated_at = ?
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.accessTokenEncrypted,
@@ -586,7 +587,7 @@ export async function getOauthAppClientSecretCiphertext(input: {
 			`SELECT client_secret_encrypted
 			FROM user_oauth_apps
 			WHERE user_id = ? AND slug = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.slug)
 		.first<{ client_secret_encrypted: string | null }>()
@@ -604,7 +605,7 @@ export async function updateOauthAppClientSecretCiphertext(input: {
 		.prepare(
 			`UPDATE user_oauth_apps
 			SET client_secret_encrypted = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
+			WHERE user_id = ? AND slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.clientSecretEncrypted, now, input.userId, input.slug)
 		.run()
@@ -624,7 +625,7 @@ export async function updateIntegrationUsage(input: {
 			SET usage_mode = ?,
 				allowed_packages_json = ?,
 				updated_at = ?
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.usageMode,
@@ -716,7 +717,7 @@ export async function writeIntegrationAuthFailure(input: {
 				auth_failed_http_status = ?,
 				auth_failed_reconnectable = ?,
 				updated_at = ?
-			WHERE user_id = ? AND name = ? AND token_refreshed_at IS ?`,
+			WHERE user_id = ? AND name = ? AND token_refreshed_at IS ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			now,
@@ -749,7 +750,7 @@ export async function clearIntegrationAuthFailure(input: {
 				auth_failed_http_status = NULL,
 				auth_failed_reconnectable = NULL,
 				updated_at = ?
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(now, input.userId, input.name)
 		.run()

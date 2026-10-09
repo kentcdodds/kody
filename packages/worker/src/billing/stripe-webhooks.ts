@@ -53,6 +53,7 @@ import {
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const stripeEventSchema = object({
 	id: string(),
 	type: string(),
@@ -306,7 +307,7 @@ async function handleInvoicePaymentFailed(input: {
 		return
 	}
 	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE id = ?`,
+		`SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(result.userId)
 		.first<{ stable_user_id: string }>()
@@ -335,7 +336,7 @@ export async function latestReferrerPaidPeriodEnd(input: {
 	referrerStableUserId: string
 }): Promise<string | null> {
 	const row = await input.env.APP_DB.prepare(
-		`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`,
+		`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.referrerStableUserId)
 		.first<{ stripe_customer_id: string | null }>()
@@ -382,7 +383,7 @@ async function handleInvoicePaid(input: {
 	if (!qualifies) return
 
 	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?`,
+		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(customerId)
 		.first<{ stable_user_id: string }>()

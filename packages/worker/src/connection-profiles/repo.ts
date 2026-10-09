@@ -11,6 +11,7 @@ import {
 } from '#universal/connection-profiles/names.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type ConnectionProfileRecord = {
 	id: string
@@ -77,7 +78,7 @@ export async function listConnectionProfiles(input: {
 			`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 			 FROM connection_profiles
 			 WHERE user_id = ?
-			 ORDER BY name COLLATE NOCASE ASC`,
+			 ORDER BY name COLLATE NOCASE ASC${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.all<ConnectionProfileRow>()
@@ -100,7 +101,7 @@ export async function getConnectionProfileByName(input: {
 				.prepare(
 					`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 					 FROM connection_profiles
-					 WHERE user_id = ? AND org_id = ? AND name = ?
+					 WHERE user_id = ? AND org_id = ? AND name = ?${andLiveDeletedAtSql()}
 					 LIMIT 1`,
 				)
 				.bind(input.userId, orgId, name)
@@ -109,7 +110,7 @@ export async function getConnectionProfileByName(input: {
 				.prepare(
 					`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 					 FROM connection_profiles
-					 WHERE user_id = ? AND name = ?
+					 WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}
 					 LIMIT 1`,
 				)
 				.bind(input.userId, name)
@@ -127,7 +128,7 @@ export async function getConnectionProfileById(input: {
 			`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 			 FROM connection_profiles
 			 WHERE user_id = ? AND id = ?
-			 LIMIT 1`,
+			 ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(input.userId, input.profileId)
 		.first<ConnectionProfileRow>()
@@ -246,7 +247,7 @@ export async function updateConnectionProfile(input: {
 			.prepare(
 				`UPDATE connection_profiles
 				 SET name = ?, grants_json = ?, updated_at = ?
-				 WHERE user_id = ? AND id = ?`,
+				 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(
 				name,
@@ -280,7 +281,9 @@ export async function deleteConnectionProfile(input: {
 	profileId: string
 }): Promise<void> {
 	const result = await input.db
-		.prepare(`DELETE FROM connection_profiles WHERE user_id = ? AND id = ?`)
+		.prepare(
+			`DELETE FROM connection_profiles WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId, input.profileId)
 		.run()
 	if ((result.meta?.changes ?? 0) === 0) {

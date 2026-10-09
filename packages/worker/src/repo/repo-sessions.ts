@@ -1,3 +1,4 @@
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
 	repoSessionIndexRpc,
@@ -79,7 +80,7 @@ export async function deleteRepoSessionsBySourceForUser(
 			`DELETE FROM user_storage_buckets
 			WHERE user_id = ?
 				AND kind = 'repo_session'
-				AND storage_id IN (${placeholders})`,
+				AND storage_id IN (${placeholders})${andLiveDeletedAtSql()}`,
 		)
 			.bind(
 				input.userId,

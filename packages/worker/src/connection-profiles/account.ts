@@ -15,6 +15,7 @@ import {
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { buildMcpServerUrl } from '#worker/onboarding-prompts.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export { connectionProfileNameMaxLength }
 
@@ -43,7 +44,9 @@ export async function isConnectionProfilesEnabledForUser(input: {
 }) {
 	try {
 		const row = await input.db
-			.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+			.prepare(
+				`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(input.userId)
 			.first<{ id: number }>()
 		if (!row) return false

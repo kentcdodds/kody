@@ -11,6 +11,7 @@ import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
 import { mcpOAuthResourceUri } from '#worker/oauth-provider-options.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type AuthRequest } from '@cloudflare/workers-oauth-provider'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Resolve the connection profile name for an authorize request, and normalize
@@ -95,7 +96,9 @@ export async function resolveAuthorizeConnectionProfile(input: {
 
 async function resolveDbUserId(db: D1Database, stableUserId: string) {
 	const row = await db
-		.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+		.prepare(
+			`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(stableUserId)
 		.first<{ id: number }>()
 	return row?.id ?? null

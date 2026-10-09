@@ -18,6 +18,7 @@ import {
  * narrower identity than `AuthenticatedAppUser`: no roles, no permissions, and
  * nothing that would let the package-app origin act on first-party surfaces.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type PackageAppOwner = {
 	/** Stable (hashed) user id used for every userId-scoped read. */
 	userId: string
@@ -70,7 +71,9 @@ export async function invalidatePackageAppOwnerCacheForDbUserId(
 ) {
 	try {
 		const row = await db
-			.prepare(`SELECT stable_user_id FROM users WHERE id = ?`)
+			.prepare(
+				`SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(dbUserId)
 			.first<{ stable_user_id: string }>()
 		if (row?.stable_user_id) {

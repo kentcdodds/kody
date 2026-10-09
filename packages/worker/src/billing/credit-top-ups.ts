@@ -13,6 +13,7 @@ import {
 } from './org-stripe-metadata.ts'
 
 /** Checkout Session metadata marking a prepaid credit top-up. */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const creditTopUpMetadataKey = 'kody_credit_top_up'
 
 export class CreditTopUpError extends Error {
@@ -129,7 +130,7 @@ export async function applyCreditTopUpFromCheckoutSession(input: {
 		)
 	}
 	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stable_user_id = ? AND deleting_at IS NULL`,
+		`SELECT stable_user_id FROM users WHERE stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 	)
 		.bind(stableUserId)
 		.first<{ stable_user_id: string }>()

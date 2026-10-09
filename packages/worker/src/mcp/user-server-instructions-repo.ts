@@ -1,10 +1,11 @@
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export async function getMcpUserServerInstructions(
 	db: D1Database,
 	userId: string,
 ): Promise<string | null> {
 	const row = await db
 		.prepare(
-			'SELECT instructions FROM mcp_user_server_instructions WHERE user_id = ? LIMIT 1',
+			`SELECT instructions FROM mcp_user_server_instructions WHERE user_id = ? ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(userId)
 		.first<{ instructions: string }>()
@@ -19,7 +20,9 @@ export async function saveMcpUserServerInstructions(
 	const trimmed = instructions.trim()
 	if (trimmed === '') {
 		await db
-			.prepare('DELETE FROM mcp_user_server_instructions WHERE user_id = ?')
+			.prepare(
+				`DELETE FROM mcp_user_server_instructions WHERE user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(userId)
 			.run()
 		return

@@ -6,6 +6,7 @@ import {
 } from '#worker/repo/identity-icon.ts'
 import { type EntityKind } from '#worker/repo/types.ts'
 import { listAllMailboxEmailObjectRefs } from './mailbox-r2-references.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type AccountR2Binding = 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
 
@@ -68,7 +69,7 @@ async function listUserCommunityListings(env: Env, userId: string) {
 			WHERE community_listings.owner_user_id = ?
 				AND community_listings.rowid > ?
 			ORDER BY community_listings.rowid
-			LIMIT ?`,
+			${andLiveDeletedAtSql()} LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
 			.all<{
@@ -107,7 +108,7 @@ async function listUserIdentityIcons(env: Env, userId: string) {
 			WHERE entity_sources.user_id = ?
 				AND entity_sources.rowid > ?
 			ORDER BY entity_sources.rowid
-			LIMIT ?`,
+			${andLiveDeletedAtSql()} LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
 			.all<{
@@ -151,7 +152,9 @@ export async function collectAccountR2Inventory(input: {
 			}),
 			listUserCommunityListings(input.env, input.userId),
 			listUserIdentityIcons(input.env, input.userId),
-			input.env.APP_DB.prepare(`SELECT avatar_key FROM users WHERE id = ?`)
+			input.env.APP_DB.prepare(
+				`SELECT avatar_key FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
 				.bind(input.dbUserId)
 				.first<{ avatar_key: string | null }>(),
 		])

@@ -17,6 +17,7 @@ import {
  * already stores. Dismissal lives on `users.onboarding_checklist_dismissed_at`.
  */
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type { OnboardingChecklistItem, OnboardingChecklistItemId }
 
 export type OnboardingChecklist = {
@@ -152,7 +153,7 @@ async function readDismissedAtColumn(db: D1Database, userId: string) {
 			`SELECT onboarding_checklist_dismissed_at
 			 FROM users
 			 WHERE stable_user_id = ?
-			 LIMIT 1`,
+			 ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(userId)
 		.first<{ onboarding_checklist_dismissed_at: string | null }>()
@@ -170,7 +171,7 @@ async function writeDismissedAtColumn(
 			`UPDATE users
 			 SET onboarding_checklist_dismissed_at = ?,
 			     updated_at = CURRENT_TIMESTAMP
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(dismissedAt, userId)
 		.run()

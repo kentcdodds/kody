@@ -1,5 +1,6 @@
 import { resolveSavedPackageRef, listSavedPackagesByUserId } from './repo.ts'
 import { type SavedPackageRecord } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type PlatformAccountRef = {
 	username: string
@@ -19,7 +20,7 @@ async function listPlatformAccounts(
 ): Promise<Array<PlatformAccountRef>> {
 	const result = await db
 		.prepare(
-			`SELECT username, stable_user_id FROM users WHERE account_type = 'platform' ORDER BY username ASC`,
+			`SELECT username, stable_user_id FROM users WHERE account_type = 'platform' ORDER BY username ASC${andLiveDeletedAtSql()}`,
 		)
 		.all<{ username: string; stable_user_id: string }>()
 	return (result.results ?? []).map((row) => ({

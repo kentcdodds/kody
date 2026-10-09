@@ -13,6 +13,7 @@ import {
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type { AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 export type { FeatureFlagAudience } from '#universal/feature-flags/audiences.ts'
@@ -208,7 +209,9 @@ async function readExperimentsOptInForUser(
 ): Promise<boolean> {
 	if (userId === null) return false
 	const row = await db
-		.prepare(`SELECT experiments_opt_in FROM users WHERE id = ?`)
+		.prepare(
+			`SELECT experiments_opt_in FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(userId)
 		.first<{ experiments_opt_in: number }>()
 	return row?.experiments_opt_in === 1
@@ -337,7 +340,9 @@ export async function getFeatureFlagEvaluationsForUser(
 				)
 				.bind(userId),
 			db
-				.prepare(`SELECT experiments_opt_in FROM users WHERE id = ?`)
+				.prepare(
+					`SELECT experiments_opt_in FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+				)
 				.bind(userId),
 		])
 		globalRows = d1ResultRows<GlobalEvaluationRow>(
@@ -515,7 +520,7 @@ export async function listFeatureFlagsForAdmin(
 			`SELECT f.key, f.enabled, f.rollout_percent, f.audience, f.note,
 				u.stable_user_id AS updated_by_stable_user_id, f.updated_at
 			 FROM feature_flags f
-			 LEFT JOIN users u ON u.id = f.updated_by`,
+			 LEFT JOIN users u ON u.id = f.updated_by${andLiveDeletedAtSql()}`,
 		)
 		.all<GlobalFlagRow>()
 	const globalByKey = new Map(
@@ -528,7 +533,7 @@ export async function listFeatureFlagsForAdmin(
 				u.stable_user_id
 			 FROM feature_flag_user_overrides o
 			 JOIN users u ON u.id = o.user_id
-			 ORDER BY o.flag_key ASC, u.username ASC`,
+			 ORDER BY o.flag_key ASC, u.username ASC${andLiveDeletedAtSql()}`,
 		)
 		.all<OverrideFlagRow>()
 	const overridesByKey = new Map<

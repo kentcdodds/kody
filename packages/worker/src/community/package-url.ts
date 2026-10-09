@@ -20,6 +20,7 @@ import {
  * are renameable, so a URL that no longer resolves directly is followed through
  * the retirement tables below before it is treated as missing.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export function getCommunityPackageHref(input: {
 	username: string
 	kodyId: string
@@ -303,7 +304,7 @@ async function findCurrentUsernameForRetiredUsername(input: {
 			`SELECT users.username AS username
 			FROM username_redirects
 			JOIN users ON users.stable_user_id = username_redirects.user_id
-			WHERE username_redirects.old_username = ?`,
+			WHERE username_redirects.old_username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.oldUsername)
 		.first<{ username: string | null }>()

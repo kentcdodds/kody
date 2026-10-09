@@ -20,6 +20,7 @@ import {
 	isUserEmailOutboundPausedReason,
 } from './outbound-paused-subscription-event.ts'
 import { type EmailDeliveryStatus } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Bounced sends tolerated per user per UTC day before outbound email is
@@ -103,7 +104,7 @@ export async function applyOutboundEmailAbusePause(input: {
 	const result = await input.env.APP_DB.prepare(
 		`UPDATE users
 		 SET email_outbound_paused_at = ?, updated_at = ?
-		 WHERE stable_user_id = ? AND email_outbound_paused_at IS NULL`,
+		 WHERE stable_user_id = ? AND email_outbound_paused_at IS NULL${andLiveDeletedAtSql()}`,
 	)
 		.bind(now.toISOString(), now.toISOString(), input.userId)
 		.run()
@@ -156,7 +157,7 @@ async function notifyAdminsOfOutboundEmailPause(input: {
 	try {
 		if (!isUserEmailOutboundPausedReason(input.deliveryStatus)) return
 		const pausedUser = await input.env.APP_DB.prepare(
-			`SELECT username, email FROM users WHERE stable_user_id = ?`,
+			`SELECT username, email FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(input.userId)
 			.first<{ username: string; email: string }>()

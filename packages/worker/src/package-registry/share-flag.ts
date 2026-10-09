@@ -1,5 +1,6 @@
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export { packageShareGrantsFlagKey }
 
@@ -21,7 +22,9 @@ export async function isPackageShareGrantsEnabled(input: {
 			const stable = input.stableUserId.trim()
 			if (!stable) return false
 			const row = await input.db
-				.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+				.prepare(
+					`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+				)
 				.bind(stable)
 				.first<{ id: number }>()
 			userId = row?.id ?? null

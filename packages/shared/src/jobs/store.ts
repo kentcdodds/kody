@@ -25,7 +25,9 @@ import {
 	listJobRowsPage,
 	listJobStorageIdRowsForUser,
 	refreshPackageJobRowIdentity,
+	restoreJobRowsForUser,
 	retryClaimedJobRow,
+	softDeleteJobRowsForUser,
 	sumJobRowsStorageBytesForUser,
 	updateJobRow,
 	type JobCountBySourceId,
@@ -154,6 +156,17 @@ export type JobsStore = {
 	getJobInsights(): Promise<{ total: number; enabled: number }>
 	/** Deletes every job and archived-artifact row for the user. */
 	purgeUserJobsData(input: { userId: string }): Promise<void>
+	/** Soft-delete live jobs for an org/user owner (Teams P7). */
+	softDeleteJobsForUser(input: {
+		userId: string
+		deletedAt: string
+	}): Promise<number>
+	/** Restore jobs soft-deleted together at `deletedAt`. */
+	restoreJobsForUser(input: {
+		userId: string
+		deletedAt: string
+		restoredAt: string
+	}): Promise<number>
 }
 
 /** D1-backed {@link JobsStore} used by the jobs worker (and dev/test fallback). */
@@ -240,5 +253,8 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 				.bind(input.userId)
 				.run()
 		},
+		softDeleteJobsForUser: (input) =>
+			softDeleteJobRowsForUser({ db, ...input }),
+		restoreJobsForUser: (input) => restoreJobRowsForUser({ db, ...input }),
 	}
 }

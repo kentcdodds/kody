@@ -1,4 +1,5 @@
 import { normalizeUsername } from '#worker/identity/username.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type ProvisionPersonalOrgInput = {
 	stableUserId: string
@@ -58,7 +59,7 @@ export async function ensurePersonalOrg(
 	input: ProvisionPersonalOrgInput,
 ) {
 	const existing = await db
-		.prepare(`SELECT id FROM orgs WHERE id = ?`)
+		.prepare(`SELECT id FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
 		.bind(input.stableUserId)
 		.first<{ id: string }>()
 	if (existing) return
@@ -241,12 +242,16 @@ export async function deletePersonalOrgForRollback(
 	try {
 		await runProvisionStatements([
 			db
-				.prepare(`DELETE FROM org_memberships WHERE org_id = ?`)
+				.prepare(
+					`DELETE FROM org_memberships WHERE org_id = ?${andLiveDeletedAtSql()}`,
+				)
 				.bind(stableUserId),
 			db
 				.prepare(`DELETE FROM handles WHERE user_id = ? OR org_id = ?`)
 				.bind(stableUserId, stableUserId),
-			db.prepare(`DELETE FROM orgs WHERE id = ?`).bind(stableUserId),
+			db
+				.prepare(`DELETE FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
+				.bind(stableUserId),
 		])
 	} catch (error) {
 		console.error('Failed to roll back personal org rows:', error)

@@ -6,6 +6,7 @@ import {
 	type OrgRole,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type OrgRecord = {
 	id: string
@@ -31,7 +32,7 @@ export async function getOrgById(db: D1Database, orgId: string) {
 	return await db
 		.prepare(
 			`SELECT ${orgSelect}
-			 FROM orgs WHERE id = ?`,
+			 FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
 		.first<OrgRecord>()
@@ -43,7 +44,7 @@ export async function getOrgBySlug(db: D1Database, slug: string) {
 	return await db
 		.prepare(
 			`SELECT ${orgSelect}
-			 FROM orgs WHERE slug = ?`,
+			 FROM orgs WHERE slug = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(normalized)
 		.first<OrgRecord>()
@@ -320,7 +321,7 @@ export async function loadOrgBindingForPerson(
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
 			   AND m.org_id = m.user_id
-			   AND m.deleted_at IS NULL
+			   AND m.deleted_at IS NULL${andLiveDeletedAtSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(personId)

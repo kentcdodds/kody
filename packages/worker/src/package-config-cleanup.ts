@@ -1,3 +1,4 @@
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export async function deleteAllPackageScopedSecrets(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
@@ -5,7 +6,7 @@ export async function deleteAllPackageScopedSecrets(input: {
 }) {
 	const result = await input.env.APP_DB.prepare(
 		`DELETE FROM secret_buckets
-		WHERE user_id = ? AND scope = 'package' AND binding_key = ?`,
+		WHERE user_id = ? AND scope = 'package' AND binding_key = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId, input.packageId)
 		.run()
@@ -35,7 +36,7 @@ export async function removeAllSecretApprovalsForPackage(input: {
 			SELECT 1
 			FROM json_each(e.allowed_packages)
 			WHERE value = ?
-		)`,
+		)${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.packageId, input.userId, input.packageId)
 		.run()
@@ -49,7 +50,7 @@ export async function deleteAllAppScopedValues(input: {
 }) {
 	const result = await input.env.APP_DB.prepare(
 		`DELETE FROM value_buckets
-		WHERE user_id = ? AND scope = ? AND binding_key = ?`,
+		WHERE user_id = ? AND scope = ? AND binding_key = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId, 'app', input.appId)
 		.run()

@@ -7,6 +7,7 @@ import {
 	type EmailVerificationDeliveryStatus,
 } from '#universal/email-verification-delivery.ts'
 import { type EmailDeliveryStatus } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const transactionalEmailVerificationKind = 'email_verification'
 export const transactionalEmailDestinationVerificationKind =
@@ -116,7 +117,7 @@ export async function loadUserEmailVerificationDelivery(
 		.prepare(
 			`SELECT email_verification_delivery_status, email_verification_delivery_class, email_verification_delivery_at
 			 FROM users
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{
@@ -152,7 +153,7 @@ export async function setUserEmailVerificationDelivery(input: {
 			     email_verification_delivery_detail = ?,
 			     email_verification_delivery_class = ?,
 			     updated_at = ?
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.status,
@@ -178,7 +179,7 @@ export async function clearUserEmailVerificationDelivery(
 			     email_verification_delivery_detail = NULL,
 			     email_verification_delivery_class = NULL,
 			     updated_at = ?
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(now, userId)
 		.run()

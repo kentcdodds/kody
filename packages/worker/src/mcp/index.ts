@@ -27,6 +27,7 @@ import {
 	runWithInboundRequestSignal,
 } from './inbound-request-signal.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
 	onboardingNoticeConversationIds?: Array<string>
@@ -65,7 +66,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 			this.ctx.waitUntil(
 				(async () => {
 					const before = await this.env.APP_DB.prepare(
-						`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?`,
+						`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 					)
 						.bind(userId)
 						.first<{ first_mcp_connected_at: string | null }>()

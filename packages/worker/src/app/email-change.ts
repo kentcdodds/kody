@@ -15,6 +15,7 @@ import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { reconcileDestinationsAfterIdentityEmailChange } from '#worker/email/destinations.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const emailChangeTokenBytes = 32
 const emailChangeTokenExpiryMs = 24 * 60 * 60 * 1000
@@ -160,7 +161,7 @@ export async function verifyEmailChangeToken(input: {
 			`SELECT pec.id, pec.user_id, pec.new_email, pec.expires_at, u.email, u.stable_user_id
 			 FROM pending_email_changes pec
 			 INNER JOIN users u ON u.id = pec.user_id
-			 WHERE pec.token_hash = ?`,
+			 WHERE pec.token_hash = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(tokenHash)
 		.first<{
@@ -184,7 +185,9 @@ export async function verifyEmailChangeToken(input: {
 
 	const newEmail = normalizeEmail(record.new_email)
 	const existing = await input.db
-		.prepare(`SELECT id FROM users WHERE email = ? AND id != ?`)
+		.prepare(
+			`SELECT id FROM users WHERE email = ? AND id != ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(newEmail, record.user_id)
 		.first<{ id: number }>()
 	if (existing) return { ok: false, reason: 'email_conflict' }
@@ -207,7 +210,7 @@ export async function verifyEmailChangeToken(input: {
 				     email_verified_at = ?,
 				     stable_user_id = ?,
 				     updated_at = CURRENT_TIMESTAMP
-				 WHERE id = ?`,
+				 WHERE id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(newEmail, verifiedAt, stableUserId, record.user_id)
 			.run()

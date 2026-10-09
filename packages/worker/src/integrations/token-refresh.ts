@@ -18,6 +18,7 @@ import { isAccountEmailLabel } from './account-identity.ts'
 import { getPlatformOauthAppClientSecret } from './platform-apps.ts'
 import { getJoinedIntegration } from './service.ts'
 import { type JoinedIntegration } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * `refreshed: false` is the clear skip for `not_applicable` connections
@@ -183,7 +184,7 @@ async function maybePersistGoogleAccountLabel(input: {
 			`UPDATE user_integrations
 			SET account_label = ?, updated_at = ?
 			WHERE user_id = ? AND name = ?
-				AND (account_label IS NULL OR account_label = '')`,
+				AND (account_label IS NULL OR account_label = '')${andLiveDeletedAtSql()}`,
 		)
 			.bind(email, now, input.userId, input.name)
 			.run()
@@ -642,7 +643,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 			auth_failed_provider_description = NULL,
 			auth_failed_http_status = NULL,
 			auth_failed_reconnectable = NULL
-		WHERE user_id = ? AND name = ?`,
+		WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(refreshedAt, refreshedAt, input.userId, connection.name)
 		.run()

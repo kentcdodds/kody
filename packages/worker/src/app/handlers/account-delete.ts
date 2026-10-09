@@ -9,16 +9,12 @@ import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { isAccountDeletionConfirmation } from '#universal/account-deletion-confirmation.ts'
 import { type routes } from '#universal/routes.ts'
 import {
-	AccountDeletionBillingError,
-	AccountDeletionCleanupError,
-	AccountDeletionInventoryError,
-	deleteUserAccount,
-} from '#app/account-deletion.ts'
-import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
+	UserDeleteBlockedSoleOwnerError,
+	softDeleteUserAccount,
+} from '#worker/orgs/soft-delete.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { scheduleUserDeletedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
-import { formatStripeMinorAmount } from '#worker/billing/minor-amount.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 function readDeleteRequestFields(body: unknown) {
@@ -30,48 +26,6 @@ function readDeleteRequestFields(body: unknown) {
 		confirmation:
 			typeof record.confirmation === 'string' ? record.confirmation : null,
 		password: typeof record.password === 'string' ? record.password : null,
-	}
-}
-
-type AccountDeletionFailure =
-	| AccountDeletionInventoryError
-	| AccountDeletionBillingError
-	| AccountDeletionCleanupError
-	| AccountDeletionWritersActiveError
-
-function accountDeletionFailureReason(error: AccountDeletionFailure) {
-	if (error instanceof AccountDeletionWritersActiveError)
-		return 'writers_active'
-	if (error instanceof AccountDeletionInventoryError) {
-		return 'inventory_incomplete'
-	}
-	if (error instanceof AccountDeletionBillingError) {
-		return 'billing_cancel_failed'
-	}
-	return 'cleanup_incomplete'
-}
-
-function accountDeletionFailureMessage(error: AccountDeletionFailure) {
-	if (error instanceof AccountDeletionBillingError) {
-		return 'We could not refund and cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.'
-	}
-	return 'Account deletion could not complete safely. Try again later.'
-}
-
-/**
- * Display-ready refund summary for the deletion panel. Keeps the raw
- * `stripeRefunds` entries in the response too for operators; this is the
- * human-readable line the UI shows.
- */
-function summarizeRefunds(
-	refunds: Awaited<ReturnType<typeof deleteUserAccount>>['stripeRefunds'],
-) {
-	if (refunds.length === 0) return {}
-	return {
-		refunds: refunds.map((refund) => ({
-			amount: formatStripeMinorAmount(refund.amountMinor, refund.currency),
-			currency: refund.currency.toUpperCase(),
-		})),
 	}
 }
 
@@ -158,38 +112,38 @@ export function createAccountDeleteHandler(env: Env) {
 				}
 			}
 
-			let result: Awaited<ReturnType<typeof deleteUserAccount>>
+			let result: Awaited<ReturnType<typeof softDeleteUserAccount>>
 			try {
-				result = await deleteUserAccount({
+				result = await softDeleteUserAccount({
 					env,
-					dbUserId: user.userId,
-					mcpUserId: user.mcpUser.userId,
+					userId: user.mcpUser.userId,
+					actorUserId: user.mcpUser.userId,
+					actorUsername: user.username,
 				})
 			} catch (error) {
-				if (
-					!(
-						error instanceof AccountDeletionInventoryError ||
-						error instanceof AccountDeletionBillingError ||
-						error instanceof AccountDeletionCleanupError ||
-						error instanceof AccountDeletionWritersActiveError
+				if (error instanceof UserDeleteBlockedSoleOwnerError) {
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'account_delete',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'sole_owner_with_members',
+					})
+					const orgList = error.blockers
+						.map((blocker) => `@${blocker.orgSlug}`)
+						.join(', ')
+					return Response.json(
+						{
+							error: `Account deletion is blocked while you are the only Owner of ${orgList}. Promote another Owner or remove the other members first.`,
+							blockers: error.blockers,
+						},
+						{ status: 409 },
 					)
-				) {
-					throw error
 				}
-				void logAuditEvent({
-					db: auditDatabaseFromEnv(env),
-					category: 'auth',
-					action: 'account_delete',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: accountDeletionFailureReason(error),
-				})
-				return Response.json(
-					{ error: accountDeletionFailureMessage(error) },
-					{ status: 503 },
-				)
+				throw error
 			}
 
 			scheduleUserDeletedEvent({
@@ -209,6 +163,7 @@ export function createAccountDeleteHandler(env: Env) {
 				email: user.email,
 				ip: requestIp,
 				path: url.pathname,
+				reason: 'soft_deleted',
 			})
 
 			const headers = new Headers({ 'Content-Type': 'application/json' })
@@ -220,8 +175,9 @@ export function createAccountDeleteHandler(env: Env) {
 			return new Response(
 				JSON.stringify({
 					ok: true,
+					softDeleted: true,
+					restoreWindowDays: 30,
 					...result,
-					...summarizeRefunds(result.stripeRefunds ?? []),
 				}),
 				{ status: 200, headers },
 			)

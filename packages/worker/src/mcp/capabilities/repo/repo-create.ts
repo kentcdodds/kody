@@ -10,6 +10,7 @@ import {
 	insertUserRepo,
 } from '#worker/repo/user-repos.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const repoCreateCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
@@ -59,7 +60,7 @@ export const repoCreateCapability = defineDomainCapability(
 				resource: 'repos',
 			})
 			const existing = await ctx.env.APP_DB.prepare(
-				`SELECT id FROM user_repos WHERE user_id = ? AND name = ?`,
+				`SELECT id FROM user_repos WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(user.userId, name)
 				.first<{ id: string }>()

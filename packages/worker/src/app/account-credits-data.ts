@@ -41,6 +41,7 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const recentLedgerLimit = 10
 
@@ -107,7 +108,7 @@ export async function loadAccountCreditsUser(input: {
 }): Promise<AccountCreditsUser | null> {
 	const row = await input.env.APP_DB.prepare(
 		`SELECT id, stable_user_id, stripe_customer_id, ${userEntitlementColumnsSql()}
-		 FROM users WHERE id = ?`,
+		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.first<

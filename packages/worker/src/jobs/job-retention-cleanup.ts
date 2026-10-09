@@ -20,6 +20,7 @@ import {
  * excludes live/held jobs; remaining inactive rows are skipped or deleted
  * cheaply so backlogs shrink across hourly ticks without a durable cursor.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const jobRetentionRunTimeBudgetMs = 15_000
 
 /** Stay under D1's 100 bound-parameter limit when loading user preferences. */
@@ -51,7 +52,7 @@ export async function readJobRetentionPreferencesForUser(input: {
 				job_retention_failed_once_days,
 				job_retention_disabled_recurring_days
 			FROM users
-			WHERE stable_user_id = ?`,
+			WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.first<{
@@ -101,7 +102,7 @@ export async function updateJobRetentionPreferencesForUser(input: {
 					job_retention_failed_once_days = ?,
 					job_retention_disabled_recurring_days = ?,
 					updated_at = ?
-				WHERE stable_user_id = ?`,
+				WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(
 				successOnceDays,
@@ -155,7 +156,7 @@ async function loadPreferencesByUserId(
 					job_retention_failed_once_days,
 					job_retention_disabled_recurring_days
 				FROM users
-				WHERE stable_user_id IN (${placeholders})`,
+				WHERE stable_user_id IN (${placeholders})${andLiveDeletedAtSql()}`,
 			)
 			.bind(...chunk)
 			.all<UserRetentionRow>()

@@ -26,6 +26,7 @@ import {
 	readCreditWallet,
 } from './credit-wallet.ts'
 import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type SignupWelcomeCreditResult = {
 	applied: boolean
@@ -52,7 +53,7 @@ async function setSignupWelcomeCreditsPending(input: {
 			.prepare(
 				`UPDATE users
 				 SET signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP
-				 WHERE stable_user_id = ?`,
+				 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(pending, input.userId),
 		orgSetClause:
@@ -68,7 +69,7 @@ async function isSignupWelcomeCreditsPending(
 	const row = await db
 		.prepare(
 			`SELECT signup_welcome_credits_pending AS pending
-			 FROM users WHERE stable_user_id = ?`,
+			 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{ pending: number }>()

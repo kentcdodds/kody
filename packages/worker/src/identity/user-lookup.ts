@@ -1,5 +1,6 @@
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type PublicUserIdentity = {
 	userId: number
@@ -19,7 +20,7 @@ export async function findPublicUserIdentityByStableUserId(input: {
 		.prepare(
 			`SELECT id, username, email, stable_user_id
 				FROM users
-				WHERE stable_user_id = ?`,
+				WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{
@@ -49,7 +50,7 @@ export async function findPublicUserIdentityByUsername(input: {
 		.prepare(
 			`SELECT id, username, email, stable_user_id
 				FROM users
-				WHERE username = ?`,
+				WHERE username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(username)
 		.first<{
@@ -83,7 +84,7 @@ export async function resolvePublicUsername(input: {
 		.prepare(
 			`SELECT username
 				FROM users
-				WHERE email = ?`,
+				WHERE email = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(email)
 		.first<{ username: string | null }>()

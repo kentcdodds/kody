@@ -19,6 +19,7 @@ import {
 	readWebpDimensions,
 } from './community-icon.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const userAvatarR2KeyPrefix = 'user-avatars/'
 const userAvatarCacheControl = 'public, max-age=31536000, immutable'
 
@@ -165,7 +166,7 @@ export async function saveUserAvatar(input: {
 			})
 
 			const existing = await input.env.APP_DB.prepare(
-				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?`,
+				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(input.numericUserId, input.stableUserId)
 				.first<{ avatar_key: string | null }>()
@@ -192,7 +193,7 @@ export async function saveUserAvatar(input: {
 			const update = await input.env.APP_DB.prepare(
 				`UPDATE users
 		SET avatar_key = ?, updated_at = ?
-		WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL`,
+		WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 				.bind(
 					r2Key,
@@ -237,7 +238,7 @@ export async function deleteUserAvatar(input: {
 		async write() {
 			await assertAccountWritableDb(input.env.APP_DB, input.stableUserId)
 			const existing = await input.env.APP_DB.prepare(
-				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?`,
+				`SELECT avatar_key FROM users WHERE id = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(input.numericUserId, input.stableUserId)
 				.first<{ avatar_key: string | null }>()
@@ -247,7 +248,7 @@ export async function deleteUserAvatar(input: {
 			const update = await input.env.APP_DB.prepare(
 				`UPDATE users
 				SET avatar_key = NULL, updated_at = ?
-				WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL`,
+				WHERE id = ? AND stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 				.bind(utcSqliteTimestamp(), input.numericUserId, input.stableUserId)
 				.run()

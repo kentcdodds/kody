@@ -4,6 +4,7 @@ import {
 	utf8ToBase64Url,
 } from '@kody-internal/shared/base64.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const tipsUnsubscribePath = '/unsubscribe/tips'
 export const tipsUnsubscribeLabel = 'Unsubscribe from tips'
 export const tipsUnsubscribeOneClickBody = 'List-Unsubscribe=One-Click'
@@ -128,7 +129,7 @@ export async function optOutTipsEmails(input: {
 		.prepare(
 			`SELECT stable_user_id
 			 FROM users
-			 WHERE stable_user_id = ? AND deleting_at IS NULL`,
+			 WHERE stable_user_id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId)
 		.first<{ stable_user_id: string }>()

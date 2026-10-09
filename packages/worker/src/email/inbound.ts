@@ -60,6 +60,7 @@ import {
 	storeIdempotentInboundEmail,
 } from './service.ts'
 import { handleSystemInboundEmail } from './system-inbound-email.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Rejection audit writes are best-effort (the SMTP reject already happened),
@@ -243,7 +244,7 @@ export async function handleInboundEmail(
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
 				`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, admin_credits_eligible, email_verified_at, suspended_at FROM users
-			WHERE email = ? AND stable_user_id = ?`,
+			WHERE email = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(identity.email, userId)
 				.first<{

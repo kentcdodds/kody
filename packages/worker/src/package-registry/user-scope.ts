@@ -4,6 +4,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type UsernameRow = {
 	username?: unknown
 }
@@ -25,7 +26,7 @@ export async function getPackageScopeByUserId(db: D1Database, userId: string) {
 			`SELECT username
 			FROM users
 			WHERE stable_user_id = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 		.bind(userId)
 		.first<UsernameRow>()

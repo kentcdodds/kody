@@ -1,3 +1,4 @@
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 /**
  * Workers-unit D1 does not apply migrations. Suites that call packageGet
  * (which lists package-scoped secret metadata) need these tables.
@@ -14,7 +15,7 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				UNIQUE(user_id, scope, binding_key)
-			)`,
+			)${andLiveDeletedAtSql()}`,
 		)
 		.run()
 	await db
@@ -31,7 +32,7 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				PRIMARY KEY (bucket_id, name)
-			)`,
+			)${andLiveDeletedAtSql()}`,
 		)
 		.run()
 	await db
@@ -45,7 +46,7 @@ export async function ensureSecretBucketsTestSchema(db: D1Database) {
 				created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 				PRIMARY KEY (user_id, provider_id)
-			)`,
+			)${andLiveDeletedAtSql()}`,
 		)
 		.run()
 	await db

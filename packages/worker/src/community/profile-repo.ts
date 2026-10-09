@@ -3,6 +3,7 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { listingNeedsRepublish } from './listing-needs-republish.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { extractCommunityListingLikeTokens } from './repo.ts'
 import {
 	type CommunityActivityEventType,
@@ -61,7 +62,7 @@ export async function getUserSocialRowByUsername(
 		.prepare(
 			`SELECT ${userSocialSelectColumns}
 			FROM users
-			WHERE username = ?`,
+			WHERE username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(username)
 		.first<Record<string, unknown>>()
@@ -78,7 +79,7 @@ export async function getUserSocialRowByStableId(
 		.prepare(
 			`SELECT ${userSocialSelectColumns}
 			FROM users
-			WHERE stable_user_id = ?`,
+			WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(trimmed)
 		.first<Record<string, unknown>>()
@@ -118,7 +119,7 @@ export async function updateUserProfileFields(
 		.prepare(
 			`UPDATE users
 			SET ${assignments.join(', ')}
-			WHERE id = ?`,
+			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(...values, input.numericUserId)
 		.run()
@@ -235,8 +236,8 @@ export async function listCommunityActivityForActors(
 							l.kody_id AS listing_kody_id, u.username, u.display_name,
 							u.avatar_key
 						FROM community_activity_events e
-						JOIN community_listings l ON l.id = e.listing_id AND l.status = 'active'
-						JOIN users u ON u.stable_user_id = e.actor_user_id ${publicProfileClause}
+						JOIN community_listings l ON l.id = e.listing_id AND l.status = 'active'${andLiveDeletedAtSql('l')}
+						JOIN users u ON u.stable_user_id = e.actor_user_id ${publicProfileClause}${andLiveDeletedAtSql('u')}
 						WHERE e.actor_user_id IN (${placeholders})
 						ORDER BY e.created_at DESC
 						LIMIT ?`,
@@ -250,11 +251,11 @@ export async function listCommunityActivityForActors(
 							l.kody_id AS listing_kody_id, u.username, u.display_name,
 							u.avatar_key
 						FROM community_forks f
-						JOIN community_listings l ON l.id = f.listing_id AND l.status = 'active'
+						JOIN community_listings l ON l.id = f.listing_id AND l.status = 'active'${andLiveDeletedAtSql('l')}
 						JOIN saved_packages sp ON sp.id = f.forked_package_id
 							AND sp.user_id = f.forker_user_id
-							AND sp.is_private = 0
-						JOIN users u ON u.stable_user_id = f.forker_user_id ${publicProfileClause}
+							AND sp.is_private = 0${andLiveDeletedAtSql('sp')}
+						JOIN users u ON u.stable_user_id = f.forker_user_id ${publicProfileClause}${andLiveDeletedAtSql('u')}
 						WHERE f.forker_user_id IN (${placeholders})
 						ORDER BY f.created_at DESC
 						LIMIT ?`,
@@ -293,7 +294,7 @@ export async function countPublicSavedPackagesForUser(
 		.prepare(
 			`SELECT COUNT(*) AS count
 			FROM saved_packages
-			WHERE user_id = ? AND is_private = 0 AND hidden = 0`,
+			WHERE user_id = ? AND is_private = 0 AND hidden = 0${andLiveDeletedAtSql()}`,
 		)
 		.bind(userId)
 		.first<{ count: number }>()
@@ -308,7 +309,7 @@ export async function countActiveListingsForOwner(
 		.prepare(
 			`SELECT COUNT(*) AS count
 			FROM community_listings
-			WHERE owner_user_id = ? AND status = 'active'`,
+			WHERE owner_user_id = ? AND status = 'active'${andLiveDeletedAtSql()}`,
 		)
 		.bind(ownerUserId)
 		.first<{ count: number }>()
@@ -333,11 +334,12 @@ export async function listPublicProfilePackages(
 	},
 ): Promise<Array<PublicProfilePackageListRow>> {
 	const conditions = input.includePrivate
-		? ['saved_packages.user_id = ?']
+		? ['saved_packages.user_id = ?', 'saved_packages.deleted_at IS NULL']
 		: [
 				'saved_packages.user_id = ?',
 				'saved_packages.is_private = 0',
 				'saved_packages.hidden = 0',
+				'saved_packages.deleted_at IS NULL',
 			]
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
@@ -368,6 +370,7 @@ export async function listPublicProfilePackages(
 				AND es.entity_kind = 'package'
 				AND es.entity_id = saved_packages.id
 			WHERE ${conditions.join(' AND ')}
+				AND (es.id IS NULL OR es.deleted_at IS NULL)
 			ORDER BY saved_packages.updated_at DESC${limitClause}`,
 	)
 	const bound =
@@ -432,7 +435,7 @@ export async function listPublicProfilePackages(
 					AND es.entity_id = sp.id
 				WHERE cl.owner_user_id = ?
 					AND cl.status = 'active'
-					AND cl.package_id IN (${placeholders})`,
+					AND cl.package_id IN (${placeholders})${andLiveDeletedAtSql('cl')}${andLiveDeletedAtSql('sp')}${andLiveDeletedAtSql('es')}`,
 			)
 			.bind(input.ownerStableUserId, ...idChunk)
 			.all<{
@@ -489,7 +492,7 @@ export async function countWebhooksByPackageId(
 			.prepare(
 				`SELECT package_id, COUNT(*) AS count
 				FROM webhook_endpoints
-				WHERE user_id = ? AND package_id IN (${placeholders})
+				WHERE user_id = ? AND package_id IN (${placeholders})${andLiveDeletedAtSql()}
 				GROUP BY package_id`,
 			)
 			.bind(input.ownerStableUserId, ...idChunk)

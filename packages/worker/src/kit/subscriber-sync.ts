@@ -6,6 +6,7 @@
 
 import { waitUntil } from 'cloudflare:workers'
 import { parseStripePlanName } from '#universal/plans.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 const DEFAULT_KIT_SIGNED_UP_TAG_ID = 21252175
@@ -388,7 +389,7 @@ export async function maybeSyncKitSubscriberForUser(input: {
 				        first_saved_package_at, stripe_plan
 				 FROM users
 				 WHERE email = ? AND deleting_at IS NULL
-				 LIMIT 1`,
+				 ${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 				.bind(email)
 				.first<KitUserRow>()
@@ -397,7 +398,7 @@ export async function maybeSyncKitSubscriberForUser(input: {
 				        first_saved_package_at, stripe_plan
 				 FROM users
 				 WHERE stable_user_id = ? AND deleting_at IS NULL
-				 LIMIT 1`,
+				 ${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 				.bind(stableUserId)
 				.first<KitUserRow>()
@@ -470,7 +471,7 @@ export async function reconcileKitSubscribers(input: {
 		   AND account_type = 'person'
 		   AND email IS NOT NULL
 		 ORDER BY updated_at DESC
-		 LIMIT ?`,
+		 ${andLiveDeletedAtSql()} LIMIT ?`,
 	)
 		.bind(kitSubscriberSyncSweepLimit)
 		.all<KitUserRow>()

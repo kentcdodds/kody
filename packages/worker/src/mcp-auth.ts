@@ -40,6 +40,7 @@ import { recordInboundMcpConnectionLastUsed } from '#worker/inbound-mcp-connecti
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { readConnectionProfileNameFromGrantProps } from '#worker/connection-profiles/oauth.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -520,7 +521,7 @@ export async function handleMcpRequest({
 	ctx.waitUntil(
 		(async () => {
 			const before = await env.APP_DB.prepare(
-				`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?`,
+				`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(mcpUser.userId)
 				.first<{ first_mcp_connected_at: string | null }>()

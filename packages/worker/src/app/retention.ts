@@ -7,6 +7,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { hasActiveRepoSessionForSource } from '#worker/repo/repo-sessions.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type RetentionPolicy = {
 	table: string
@@ -275,7 +276,7 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 					WHERE source.user_id = published_bundle_artifacts.user_id
 						AND source.id = published_bundle_artifacts.source_id
 						AND source.published_commit = published_bundle_artifacts.published_commit
-				)`,
+				)${andLiveDeletedAtSql()}`,
 		)
 			.bind(input.id, input.kvKey, input.cutoff)
 			.run(),
@@ -371,7 +372,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 					AND source.published_commit = artifact.published_commit
 			)
 		ORDER BY artifact.created_at ASC, artifact.id ASC
-		LIMIT ?`,
+		${andLiveDeletedAtSql()} LIMIT ?`,
 		)
 			.bind(cutoff, batchSize)
 			.all<{

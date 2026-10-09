@@ -19,6 +19,7 @@ import {
 	setFeatureFlagUserOverride,
 } from '#worker/feature-flags/service.ts'
 import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export function createAdminFeatureFlagsHandler(env: Env) {
 	return {
@@ -380,7 +381,9 @@ async function resolveOverrideUserId(
 			}
 		}
 		const row = await db
-			.prepare(`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?`)
+			.prepare(
+				`SELECT id, stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(stableUserId)
 			.first<{ id: number; stable_user_id: string }>()
 		if (!row) {
@@ -400,7 +403,9 @@ async function resolveOverrideUserId(
 		}
 	}
 	const row = await db
-		.prepare(`SELECT id, stable_user_id FROM users WHERE username = ?`)
+		.prepare(
+			`SELECT id, stable_user_id FROM users WHERE username = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(username)
 		.first<{ id: number; stable_user_id: string }>()
 	if (!row) {

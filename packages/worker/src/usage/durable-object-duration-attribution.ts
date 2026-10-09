@@ -29,6 +29,7 @@ import {
 	userMeterDurableObjectName,
 } from '#worker/user-scoped-durable-object-name.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const durableObjectDurationAttributionObjectLimit = 10_000
 const graphqlTimeoutMs = 30_000
 
@@ -113,17 +114,17 @@ export async function buildDurableObjectOwnerMap(
 	const [users, buckets, apps] = await Promise.all([
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
-				`SELECT stable_user_id FROM users WHERE deleting_at IS NULL`,
+				`SELECT stable_user_id FROM users WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			).all<{ stable_user_id: string }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
-				`SELECT user_id, storage_id, kind FROM user_storage_buckets`,
+				`SELECT user_id, storage_id, kind FROM user_storage_buckets${andLiveDeletedAtSql()}`,
 			).all<{ user_id: string; storage_id: string; kind: string }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
-				`SELECT user_id, id FROM saved_packages WHERE has_app = 1`,
+				`SELECT user_id, id FROM saved_packages WHERE has_app = 1${andLiveDeletedAtSql()}`,
 			).all<{ user_id: string; id: string }>(),
 		),
 	])

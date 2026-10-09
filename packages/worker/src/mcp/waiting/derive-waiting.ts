@@ -32,6 +32,7 @@ import {
 	type WaitingSignals,
 } from '#universal/waiting.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type DeriveWaitingUser = {
 	userId: number
 	stableUserId: string
@@ -71,7 +72,7 @@ export async function deriveWaitingItemsForStableUser(input: {
 }): Promise<Array<WaitingItem>> {
 	try {
 		const userRow = await input.env.APP_DB.prepare(
-			`SELECT id, username, email_verified_at FROM users WHERE stable_user_id = ? LIMIT 1`,
+			`SELECT id, username, email_verified_at FROM users WHERE stable_user_id = ? ${andLiveDeletedAtSql()} LIMIT 1`,
 		)
 			.bind(input.stableUserId)
 			.first<{
@@ -348,7 +349,7 @@ async function probeActivationStamps(db: D1Database, userId: string) {
 				`SELECT first_search_at, first_execute_at, first_saved_package_at
 				 FROM users
 				 WHERE stable_user_id = ?
-				 LIMIT 1`,
+				 ${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 			.bind(userId)
 			.first<ActivationStampRow>()

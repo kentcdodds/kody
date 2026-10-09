@@ -1,4 +1,5 @@
 import { isValidKodyInstanceName } from '@kody-internal/shared/stable-name.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type UserRepoRow = {
 	id: string
@@ -101,7 +102,7 @@ export async function getUserRepoById(
 		.prepare(
 			`SELECT ${userRepoSelectColumns}
 			FROM user_repos
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.repoId)
 		.first<Record<string, unknown>>()
@@ -117,7 +118,7 @@ export async function getUserRepoByName(
 		.prepare(
 			`SELECT ${userRepoSelectColumns}
 			FROM user_repos
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, normalized)
 		.first<Record<string, unknown>>()
@@ -141,8 +142,8 @@ export async function listUserRepos(
 			LEFT JOIN entity_sources
 				ON entity_sources.user_id = user_repos.user_id
 				AND entity_sources.entity_kind = 'repo'
-				AND entity_sources.entity_id = user_repos.id
-			WHERE user_repos.user_id = ?
+				AND entity_sources.entity_id = user_repos.id${andLiveDeletedAtSql('entity_sources')}
+			WHERE user_repos.user_id = ?${andLiveDeletedAtSql('user_repos')}
 			ORDER BY user_repos.name ASC`,
 		)
 		.bind(userId)
@@ -183,7 +184,7 @@ export async function updateUserRepo(
 		.prepare(
 			`UPDATE user_repos
 			SET ${assignments.join(', ')}
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(...values)
 		.run()
@@ -195,7 +196,9 @@ export async function deleteUserRepo(
 	input: { userId: string; repoId: string },
 ): Promise<boolean> {
 	const result = await db
-		.prepare(`DELETE FROM user_repos WHERE user_id = ? AND id = ?`)
+		.prepare(
+			`DELETE FROM user_repos WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId, input.repoId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -210,7 +213,7 @@ export async function renameUserRepo(
 		.prepare(
 			`UPDATE user_repos
 			SET name = ?, updated_at = ?
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(name, new Date().toISOString(), input.userId, input.repoId)
 		.run()

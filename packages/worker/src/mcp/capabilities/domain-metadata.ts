@@ -11,6 +11,7 @@ export const capabilityDomainNames = {
 	jobs: 'jobs',
 	mcpServers: 'mcpServers',
 	meta: 'meta',
+	orgs: 'orgs',
 	packages: 'packages',
 	repo: 'repo',
 	runs: 'runs',

@@ -13,6 +13,7 @@ import {
 	auditAdminCapabilityInvocation,
 } from './admin-shared.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const inputSchema = z.object({
 	scope: z
 		.string()
@@ -68,7 +69,7 @@ export const adminPackageScopeGrantCreateCapability = defineDomainCapability(
 					const grantee = await ctx.env.APP_DB.prepare(
 						`SELECT username, email, account_type, stable_user_id
 						FROM users
-						WHERE username = ?`,
+						WHERE username = ?${andLiveDeletedAtSql()}`,
 					)
 						.bind(username)
 						.first<{

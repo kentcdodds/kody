@@ -24,6 +24,7 @@ import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
 import { publishCommunityListing } from '#worker/community/service.ts'
 import { resolveOwnedUserRepo } from './resolve-user-repo.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const repoIdentitySchema = z
 	.object({
@@ -197,7 +198,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			})
 			if (publishResult.status !== 'ok') {
 				await ctx.env.APP_DB.prepare(
-					`DELETE FROM saved_packages WHERE user_id = ? AND id = ?`,
+					`DELETE FROM saved_packages WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 				)
 					.bind(user.userId, packageId)
 					.run()

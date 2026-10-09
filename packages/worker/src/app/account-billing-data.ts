@@ -16,6 +16,7 @@ import {
 import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import { loadReferralProgramSummary } from '#worker/entitlements/referral-program.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const billingErrorMessages: Record<string, string> = {
 	billing_not_configured: 'Billing is not configured on this deployment.',
@@ -89,7 +90,7 @@ export async function loadAccountBillingData(input: {
 		        stable_user_id, second_agent_standard_gift_expires_at,
 		        referral_standard_credit_expires_at
 		 FROM users
-		 WHERE id = ?`,
+		 WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.first<BillingUserRow>()

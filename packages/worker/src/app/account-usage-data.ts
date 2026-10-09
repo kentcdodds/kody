@@ -16,6 +16,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
@@ -44,7 +45,7 @@ export async function loadAccountUsageData(input: {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
 		`SELECT id, stable_user_id, username, stripe_customer_id, ${userEntitlementColumnsSql()}
-		 FROM users WHERE id = ?`,
+		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.first<UsageUserRow>()

@@ -1,3 +1,9 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Purge scans and claims unverified person accounts, including rows already
+ * soft-deleted or mid-deletion.
+ */
 import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'

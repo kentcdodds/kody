@@ -32,6 +32,7 @@ import {
 	type PackageShareRole,
 } from './share-rbac.ts'
 import { type SavedPackageRecord } from './types.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const packageShareStatuses = [
 	'pending',
@@ -229,7 +230,7 @@ export async function findPersonUserByEmail(
 		.prepare(
 			`SELECT id, username, email, stable_user_id, account_type
 			FROM users
-			WHERE email = ?`,
+			WHERE email = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(normalized)
 		.first<{
@@ -512,7 +513,7 @@ export async function findAcceptedPackageShareGrantByName(input: {
 				`SELECT ${grantSelectColumns}
 				FROM package_share_grants
 				WHERE package_id IN (
-					SELECT id FROM saved_packages WHERE name = ?
+					SELECT id FROM saved_packages WHERE name = ?${andLiveDeletedAtSql()}
 				)
 					AND grantee_user_id = ?
 					AND status = 'accepted'

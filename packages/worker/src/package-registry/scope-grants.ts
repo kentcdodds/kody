@@ -4,6 +4,7 @@ import {
 	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 function isUsersPlatformSchemaUnavailable(error: unknown) {
 	const message = getErrorMessage(error)
 	return (
@@ -57,7 +58,7 @@ export async function listPlatformAccountUsernames(
 	try {
 		const result = await db
 			.prepare(
-				`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC`,
+				`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC${andLiveDeletedAtSql()}`,
 			)
 			.all<{ username: string }>()
 		return (result.results ?? []).map((row) => row.username)
@@ -79,7 +80,7 @@ export async function getPlatformAccountByUsername(
 				`SELECT id, username, email, account_type, stable_user_id
 			FROM users
 			WHERE username = ?
-			LIMIT 1`,
+			${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 			.bind(username)
 			.first<{
@@ -110,7 +111,9 @@ export async function isPlatformAccountStableUserId(
 	if (!trimmed) return false
 	try {
 		const row = await db
-			.prepare(`SELECT account_type FROM users WHERE stable_user_id = ?`)
+			.prepare(
+				`SELECT account_type FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			)
 			.bind(trimmed)
 			.first<{ account_type: string }>()
 		return row?.account_type === 'platform'
@@ -186,10 +189,6 @@ export async function listPackageScopeGrants(
 		scopeOwnerUserId?: string
 	} = {},
 ): Promise<Array<PackageScopeGrantRow>> {
-	const where =
-		input.scopeOwnerUserId === undefined
-			? ''
-			: 'WHERE grants.scope_owner_user_id = ?'
 	const statement = db.prepare(
 		`SELECT
 			grants.scope_owner_user_id,
@@ -203,7 +202,11 @@ export async function listPackageScopeGrants(
 			ON scope_users.stable_user_id = grants.scope_owner_user_id
 		INNER JOIN users AS grantee_users
 			ON grantee_users.stable_user_id = grants.grantee_user_id
-		${where}
+		${
+			input.scopeOwnerUserId === undefined
+				? 'WHERE 1=1'
+				: 'WHERE grants.scope_owner_user_id = ?'
+		}${andLiveDeletedAtSql('scope_users')}${andLiveDeletedAtSql('grantee_users')}
 		ORDER BY grants.created_at ASC`,
 	)
 	const rows =

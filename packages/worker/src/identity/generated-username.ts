@@ -4,9 +4,10 @@ import {
 	usernameFromEmail,
 } from '#worker/identity/username.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export async function userExistsByUsername(db: D1Database, username: string) {
 	const row = await db
-		.prepare(`SELECT id FROM users WHERE username = ?`)
+		.prepare(`SELECT id FROM users WHERE username = ?${andLiveDeletedAtSql()}`)
 		.bind(username)
 		.first<{ id: number }>()
 	return Boolean(row)

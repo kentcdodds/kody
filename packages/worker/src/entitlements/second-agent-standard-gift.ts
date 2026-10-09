@@ -13,6 +13,7 @@ import {
 	type SecondAgentStandardGiftState,
 } from '#universal/second-agent-standard-gift.ts'
 import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type SecondAgentStandardGiftEvaluation =
 	| { outcome: 'below_threshold' }
@@ -79,7 +80,7 @@ export async function loadSecondAgentStandardGift(
 			`SELECT second_agent_standard_gift_granted_at,
 			        second_agent_standard_gift_expires_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(stableUserId)
 		.first<{
@@ -114,7 +115,7 @@ export async function evaluateSecondAgentStandardGift(input: {
 			        second_agent_standard_gift_granted_at,
 			        second_agent_standard_gift_expires_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.stableUserId)
 		.first<GiftUserRow>()
@@ -148,7 +149,7 @@ export async function evaluateSecondAgentStandardGift(input: {
 				     second_agent_standard_gift_expires_at = ?,
 				     updated_at = ?
 				 WHERE stable_user_id = ?
-				   AND second_agent_standard_gift_granted_at IS NULL`,
+				   AND second_agent_standard_gift_granted_at IS NULL${andLiveDeletedAtSql()}`,
 			)
 			.bind(grantedAt, write.expiresAt, updatedAt, input.stableUserId),
 		orgSetClause: `second_agent_standard_gift_granted_at = ?,

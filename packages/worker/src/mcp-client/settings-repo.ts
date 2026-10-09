@@ -11,6 +11,7 @@ import {
 	type McpServerUsageMode,
 } from './usage-mode.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const selectColumns =
 	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json, last_error'
 
@@ -22,7 +23,7 @@ export async function listMcpServerSettingRows(input: {
 		.prepare(
 			`SELECT ${selectColumns}
 			FROM mcp_server_settings
-			WHERE user_id = ?
+			WHERE user_id = ?${andLiveDeletedAtSql()}
 			ORDER BY name ASC`,
 		)
 		.bind(input.userId)
@@ -38,7 +39,7 @@ export async function listEnabledMcpServerSettingRows(input: {
 		.prepare(
 			`SELECT ${selectColumns}
 			FROM mcp_server_settings
-			WHERE user_id = ? AND enabled = 1
+			WHERE user_id = ? AND enabled = 1${andLiveDeletedAtSql()}
 			ORDER BY name ASC`,
 		)
 		.bind(input.userId)
@@ -55,7 +56,7 @@ export async function getMcpServerSettingRowById(input: {
 		.prepare(
 			`SELECT ${selectColumns}
 			FROM mcp_server_settings
-			WHERE user_id = ? AND id = ?
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.id)
@@ -72,7 +73,7 @@ export async function getMcpServerSettingRowByName(input: {
 		.prepare(
 			`SELECT ${selectColumns}
 			FROM mcp_server_settings
-			WHERE user_id = ? AND name = ?
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}
 			LIMIT 1`,
 		)
 		.bind(input.userId, input.name)
@@ -123,7 +124,7 @@ export async function updateMcpServerSettingRow(input: {
 				url = ?,
 				enabled = ?,
 				updated_at = ?
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.row.name,
@@ -152,7 +153,7 @@ export async function updateMcpServerSettingUsageRow(input: {
 			SET usage_mode = ?,
 				allowed_packages_json = ?,
 				updated_at = ?
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.usageMode,
@@ -178,7 +179,7 @@ export async function updateMcpServerSettingLastErrorRow(input: {
 			`UPDATE mcp_server_settings
 			SET last_error = ?,
 				updated_at = ?
-			WHERE user_id = ? AND id = ?`,
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.lastError, input.updatedAt ?? now, input.userId, input.id)
 		.run()
@@ -191,7 +192,9 @@ export async function deleteMcpServerSettingRow(input: {
 	id: string
 }): Promise<boolean> {
 	const result = await input.db
-		.prepare(`DELETE FROM mcp_server_settings WHERE user_id = ? AND id = ?`)
+		.prepare(
+			`DELETE FROM mcp_server_settings WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId, input.id)
 		.run()
 	return (result.meta.changes ?? 0) > 0

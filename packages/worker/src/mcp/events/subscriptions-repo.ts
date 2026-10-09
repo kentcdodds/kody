@@ -17,6 +17,7 @@ import {
  * is part of the id so a refresh from a different (or unrestricted) grant
  * cannot overwrite another grant's stored limits.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type McpEventSubscriptionKey = {
 	userId: string
 	oauthClientId: string
@@ -137,7 +138,7 @@ export async function getMcpEventSubscription(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT ${selectColumns} FROM mcp_event_subscriptions
-			 WHERE user_id = ? AND id = ?`,
+			 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.id)
 		.first<McpEventSubscriptionRow>()
@@ -154,7 +155,7 @@ export async function countLiveMcpEventSubscriptionsForPrincipal(input: {
 		.prepare(
 			`SELECT COUNT(*) AS count FROM mcp_event_subscriptions
 			 WHERE user_id = ? AND oauth_client_id = ?
-			   AND (refresh_before IS NULL OR refresh_before > ?)`,
+			   AND (refresh_before IS NULL OR refresh_before > ?)${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.oauthClientId, input.now.toISOString())
 		.first<{ count: number }>()
@@ -181,7 +182,7 @@ export async function findRecentMcpEventCallbackVerification(input: {
 			`SELECT id, secret_encrypted, verified_at FROM mcp_event_subscriptions
 			 WHERE user_id = ? AND oauth_client_id = ? AND callback_url = ?
 			   AND verified_at IS NOT NULL AND verified_at > ?
-			 ORDER BY verified_at DESC`,
+			 ORDER BY verified_at DESC${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.userId,
@@ -232,7 +233,7 @@ export async function upsertMcpEventSubscription(input: {
 	const existingRow = await input.db
 		.prepare(
 			`SELECT ${selectColumns} FROM mcp_event_subscriptions
-			 WHERE user_id = ? AND id = ?`,
+			 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.key.userId, input.id)
 		.first<McpEventSubscriptionRow>()
@@ -312,7 +313,9 @@ export async function deleteMcpEventSubscription(input: {
 	id: string
 }): Promise<boolean> {
 	const result = await input.db
-		.prepare(`DELETE FROM mcp_event_subscriptions WHERE user_id = ? AND id = ?`)
+		.prepare(
+			`DELETE FROM mcp_event_subscriptions WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId, input.id)
 		.run()
 	return (result.meta?.changes ?? 0) > 0
@@ -326,7 +329,7 @@ export async function deleteExpiredMcpEventSubscriptions(input: {
 	await input.db
 		.prepare(
 			`DELETE FROM mcp_event_subscriptions
-			 WHERE user_id = ? AND refresh_before IS NOT NULL AND refresh_before <= ?`,
+			 WHERE user_id = ? AND refresh_before IS NOT NULL AND refresh_before <= ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.now.toISOString())
 		.run()
@@ -344,7 +347,7 @@ export async function listDeliverableMcpEventSubscriptions(input: {
 			`SELECT ${selectColumns} FROM mcp_event_subscriptions
 			 WHERE user_id = ? AND event_name = ? AND active = 1
 			   AND verified_at IS NOT NULL
-			   AND (refresh_before IS NULL OR refresh_before > ?)
+			   AND (refresh_before IS NULL OR refresh_before > ?)${andLiveDeletedAtSql()}
 			 ORDER BY id`,
 		)
 		.bind(input.userId, input.eventName, input.now.toISOString())
@@ -363,7 +366,7 @@ export async function mcpEventSubscriptionSecretMatches(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT secret_encrypted FROM mcp_event_subscriptions
-			 WHERE user_id = ? AND id = ?`,
+			 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.id)
 		.first<{ secret_encrypted: string }>()
@@ -390,7 +393,7 @@ export async function readMcpEventSubscriptionSigningSecrets(input: {
 	const row = await input.db
 		.prepare(
 			`SELECT secret_encrypted, previous_secret_encrypted, previous_secret_expires_at
-			 FROM mcp_event_subscriptions WHERE user_id = ? AND id = ?`,
+			 FROM mcp_event_subscriptions WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.id)
 		.first<
@@ -441,7 +444,7 @@ export async function recordMcpEventDeliveryOutcome(input: {
 			.prepare(
 				`UPDATE mcp_event_subscriptions
 				 SET last_delivery_at = ?, last_error = NULL, updated_at = ?
-				 WHERE user_id = ? AND id = ?`,
+				 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 			)
 			.bind(nowIso, nowIso, input.userId, input.id)
 			.run()
@@ -451,7 +454,7 @@ export async function recordMcpEventDeliveryOutcome(input: {
 		.prepare(
 			`UPDATE mcp_event_subscriptions
 			 SET last_error = ?, updated_at = ?
-			 WHERE user_id = ? AND id = ?`,
+			 WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.outcome.error, nowIso, input.userId, input.id)
 		.run()
@@ -471,14 +474,14 @@ export async function deleteMcpEventSubscriptionsForOauthClient(input: {
 		input.userId === undefined
 			? await input.db
 					.prepare(
-						`DELETE FROM mcp_event_subscriptions WHERE oauth_client_id = ?`,
+						`DELETE FROM mcp_event_subscriptions WHERE oauth_client_id = ?${andLiveDeletedAtSql()}`,
 					)
 					.bind(input.oauthClientId)
 					.run()
 			: await input.db
 					.prepare(
 						`DELETE FROM mcp_event_subscriptions
-						 WHERE oauth_client_id = ? AND user_id = ?`,
+						 WHERE oauth_client_id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 					)
 					.bind(input.oauthClientId, input.userId)
 					.run()
@@ -491,7 +494,9 @@ export async function deleteMcpEventSubscriptionsForUser(input: {
 	userId: string
 }): Promise<number> {
 	const result = await input.db
-		.prepare(`DELETE FROM mcp_event_subscriptions WHERE user_id = ?`)
+		.prepare(
+			`DELETE FROM mcp_event_subscriptions WHERE user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.userId)
 		.run()
 	return result.meta?.changes ?? 0

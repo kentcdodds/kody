@@ -25,6 +25,7 @@ import {
  * layer do not pull in the token-minting pipeline. Re-exported for app-layer
  * callers that read it alongside the token helpers below.
  */
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export {
 	assertAccountEmailVerified,
 	emailVerificationRequiredMessage,
@@ -176,7 +177,7 @@ export async function verifyEmailToken(input: {
 			        u.stable_user_id, u.email_verified_at
 			 FROM email_verifications ev
 			 INNER JOIN users u ON u.id = ev.user_id
-			 WHERE ev.token_hash = ?`,
+			 WHERE ev.token_hash = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(tokenHash)
 		.first<{
@@ -214,7 +215,7 @@ export async function verifyEmailToken(input: {
 			`UPDATE users
 			 SET email_verified_at = COALESCE(email_verified_at, ?),
 			     updated_at = CURRENT_TIMESTAMP
-			 WHERE id = ? AND deleting_at IS NULL`,
+			 WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
 		)
 		.bind(verifiedAt, record.user_id)
 		.run()

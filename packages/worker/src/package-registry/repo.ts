@@ -10,6 +10,7 @@ import {
 	getPackageNameScope,
 	isScopedPackageName,
 } from './package-name.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	kodyPackageIdPattern,
 	type SavedPackageCommunityProvenance,
@@ -49,7 +50,7 @@ const savedPackageCommunityProvenanceJoins = `LEFT JOIN community_forks
 				AND community_forks.forker_user_id = saved_packages.user_id
 			LEFT JOIN community_listings
 				ON community_listings.id = community_forks.listing_id
-				AND community_listings.status = 'active'`
+				AND community_listings.status = 'active'${andLiveDeletedAtSql('community_listings')}`
 
 function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 	return {
@@ -245,7 +246,7 @@ export async function updateSavedPackage(
 		.prepare(
 			`UPDATE saved_packages
 			SET ${assignments.join(', ')}
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(...values, input.packageId, input.userId)
 		.run()
@@ -264,7 +265,7 @@ export async function getSavedPackageLockedAt(
 		.prepare(
 			`SELECT locked_at
 			FROM saved_packages
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.packageId, input.userId)
 		.first<{ locked_at: string | null }>()
@@ -286,7 +287,7 @@ export async function setSavedPackageLockedAt(
 		.prepare(
 			`UPDATE saved_packages
 			SET locked_at = ?, updated_at = ?
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(
 			input.lockedAt,
@@ -306,7 +307,9 @@ export async function deleteSavedPackage(
 	},
 ) {
 	const result = await db
-		.prepare(`DELETE FROM saved_packages WHERE id = ? AND user_id = ?`)
+		.prepare(
+			`DELETE FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
+		)
 		.bind(input.packageId, input.userId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -323,7 +326,7 @@ export async function getSavedPackageById(
 		.prepare(
 			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
-			WHERE id = ? AND user_id = ?`,
+			WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.packageId, input.userId)
 		.first<Record<string, unknown>>()
@@ -339,7 +342,7 @@ export async function getSavedPackageByIdAny(
 		.prepare(
 			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
-			WHERE id = ?`,
+			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(packageId)
 		.first<Record<string, unknown>>()
@@ -358,7 +361,7 @@ export async function getSavedPackageWithCommunityProvenanceById(
 			`SELECT ${savedPackageCommunityProvenanceSelectColumns}
 			FROM saved_packages
 			${savedPackageCommunityProvenanceJoins}
-			WHERE saved_packages.id = ? AND saved_packages.user_id = ?`,
+			WHERE saved_packages.id = ? AND saved_packages.user_id = ?${andLiveDeletedAtSql('saved_packages')}`,
 		)
 		.bind(input.packageId, input.userId)
 		.first<Record<string, unknown>>()
@@ -455,7 +458,7 @@ async function resolveSavedPackageRefRow(
 		`SELECT ${input.columns}
 			FROM saved_packages
 			${input.joins}
-			WHERE ${where}
+			WHERE ${where}${andLiveDeletedAtSql('saved_packages')}
 			ORDER BY ${orderBy}
 			LIMIT 1`
 	const live = await db
@@ -525,7 +528,7 @@ export async function getSavedPackageByName(
 		.prepare(
 			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
-			WHERE name = ? AND user_id = ?`,
+			WHERE name = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.name, input.userId)
 		.first<Record<string, unknown>>()
@@ -542,7 +545,7 @@ export async function listSavedPackagesByUserId(
 		.prepare(
 			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
-			WHERE user_id = ?
+			WHERE user_id = ?${andLiveDeletedAtSql()}
 			ORDER BY updated_at DESC`,
 		)
 		.bind(input.userId)
@@ -561,7 +564,7 @@ export async function listSavedPackagesWithCommunityProvenanceByUserId(
 			`SELECT ${savedPackageCommunityProvenanceSelectColumns}
 			FROM saved_packages
 			${savedPackageCommunityProvenanceJoins}
-			WHERE saved_packages.user_id = ?
+			WHERE saved_packages.user_id = ?${andLiveDeletedAtSql('saved_packages')}
 			ORDER BY saved_packages.updated_at DESC`,
 		)
 		.bind(input.userId)
@@ -585,7 +588,7 @@ export async function listSavedPackagesBySlugs(
 			.prepare(
 				`SELECT ${savedPackageSelectColumns}
 				FROM saved_packages
-				WHERE user_id = ? AND ${savedPackageSlugSql} IN (${placeholders})`,
+				WHERE user_id = ? AND ${savedPackageSlugSql} IN (${placeholders})${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.userId, ...slugChunk)
 			.all<Record<string, unknown>>()
@@ -615,7 +618,7 @@ export async function listSavedPackagesByIds(
 			.prepare(
 				`SELECT ${savedPackageSelectColumns}
 				FROM saved_packages
-				WHERE user_id = ? AND id IN (${placeholders})`,
+				WHERE user_id = ? AND id IN (${placeholders})${andLiveDeletedAtSql()}`,
 			)
 			.bind(input.userId, ...idChunk)
 			.all<Record<string, unknown>>()
@@ -646,7 +649,7 @@ export async function listSavedPackageCommunityProvenanceByIds(
 				`SELECT ${savedPackageCommunityProvenanceSelectColumns}
 				FROM saved_packages
 				${savedPackageCommunityProvenanceJoins}
-				WHERE saved_packages.user_id = ? AND saved_packages.id IN (${placeholders})`,
+				WHERE saved_packages.user_id = ? AND saved_packages.id IN (${placeholders})${andLiveDeletedAtSql('saved_packages')}`,
 			)
 			.bind(input.userId, ...idChunk)
 			.all<Record<string, unknown>>()
@@ -713,14 +716,16 @@ export async function searchSavedPackagesByUserId(
 
 	const [totalRow, rows] = await Promise.all([
 		db
-			.prepare(`SELECT COUNT(*) AS total FROM saved_packages ${whereClause}`)
+			.prepare(
+				`SELECT COUNT(*) AS total FROM saved_packages ${whereClause}${andLiveDeletedAtSql()}`,
+			)
 			.bind(...params)
 			.first<{ total: number }>(),
 		db
 			.prepare(
 				`SELECT ${savedPackageSelectColumns}
 				FROM saved_packages
-				${whereClause}
+				${whereClause}${andLiveDeletedAtSql()}
 				ORDER BY ${orderBy}
 				LIMIT ? OFFSET ?`,
 			)
@@ -747,7 +752,7 @@ export async function listSavedPackagesPage(
 		.prepare(
 			`SELECT ${savedPackageSelectColumns}
 			FROM saved_packages
-			WHERE id > ?
+			WHERE id > ?${andLiveDeletedAtSql()}
 			ORDER BY id
 			LIMIT ?`,
 		)

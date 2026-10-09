@@ -30,6 +30,7 @@ import {
  * recreate an inventory row that account, package, or job deletion removed.
  */
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type StorageBucketKind =
 	| 'job'
 	| 'package'
@@ -274,7 +275,7 @@ export async function deleteStorageBucketInventory(input: {
 	const result = await input.db
 		.prepare(
 			`DELETE FROM user_storage_buckets
-			WHERE user_id = ? AND storage_id = ?`,
+			WHERE user_id = ? AND storage_id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.userId, input.storageId)
 		.run()
@@ -336,7 +337,7 @@ export async function listStorageBucketsMissingEstimates(input: {
 			FROM user_storage_buckets
 			WHERE estimated_bytes IS NULL
 			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
-			LIMIT ?`,
+			${andLiveDeletedAtSql()} LIMIT ?`,
 		)
 		.bind(input.limit)
 		.all<{
@@ -456,7 +457,7 @@ export async function listUserStorageBucketIds(input: {
 		`SELECT storage_id AS storageId
 		FROM user_storage_buckets
 		WHERE user_id = ? AND kind <> 'repo_session'
-		ORDER BY storage_id ASC`,
+		ORDER BY storage_id ASC${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.all<{ storageId: string }>()
@@ -482,7 +483,7 @@ export async function listUserStorageBucketEstimates(input: {
 		`SELECT storage_id AS storageId, kind, estimated_bytes AS estimatedBytes
 		FROM user_storage_buckets
 		WHERE user_id = ?
-		ORDER BY storage_id ASC`,
+		ORDER BY storage_id ASC${andLiveDeletedAtSql()}`,
 	)
 		.bind(input.userId)
 		.all<{
@@ -508,7 +509,7 @@ export async function listPlatformStorageBuckets(input: {
 			`SELECT user_id AS userId, storage_id AS storageId
 			FROM user_storage_buckets
 			WHERE kind <> 'repo_session'
-			ORDER BY user_id ASC, storage_id ASC`,
+			ORDER BY user_id ASC, storage_id ASC${andLiveDeletedAtSql()}`,
 		)
 		.all<{ userId: string; storageId: string }>()
 	return result.results ?? []

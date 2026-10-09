@@ -102,6 +102,7 @@ import {
 
 // The subset of the provider's OAuthHelpers that deletion consumes, kept
 // structural so node tests can pass small stubs as `OAUTH_PROVIDER`.
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type OAuthHelpersShape = OAuthGrantHelpers & {
 	deleteClient?(clientId: string): Promise<unknown>
 }
@@ -309,7 +310,7 @@ async function listUserVectorIds(env: Env, userId: string) {
 
 async function getUserBillingIdentity(env: Env, dbUserId: number) {
 	const row = await env.APP_DB.prepare(
-		`SELECT stripe_customer_id, email FROM users WHERE id = ?`,
+		`SELECT stripe_customer_id, email FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(dbUserId)
 		.first<{ stripe_customer_id: string | null; email: string | null }>()
@@ -330,7 +331,7 @@ async function listUserSourceSnapshots(env: Env, userId: string) {
 	const sourceRows = await env.APP_DB.prepare(
 		`SELECT id, published_commit, repo_id
 		FROM entity_sources
-		WHERE user_id = ?`,
+		WHERE user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(userId)
 		.all<{ id: string; published_commit: string | null; repo_id: string }>()
@@ -345,7 +346,7 @@ async function listUserSavedPackages(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id, kody_id, source_id, has_app
 		FROM saved_packages
-		WHERE user_id = ?`,
+		WHERE user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(userId)
 		.all<{
@@ -377,7 +378,7 @@ async function listUserMcpServers(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id
 		FROM mcp_server_settings
-		WHERE user_id = ?`,
+		WHERE user_id = ?${andLiveDeletedAtSql()}`,
 	)
 		.bind(userId)
 		.all<{ id: string }>()
@@ -1468,7 +1469,7 @@ async function deleteUserScopedRowsAndUser(input: {
 		}
 	})
 	const userStatement = input.env.APP_DB.prepare(
-		`DELETE FROM users WHERE id = ?`,
+		`DELETE FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
 	).bind(input.dbUserId)
 	const results = await input.env.APP_DB.batch([
 		...operations.map((operation) => operation.statement),

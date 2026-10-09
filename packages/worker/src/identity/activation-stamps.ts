@@ -7,6 +7,7 @@
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
 import { type OnboardingFunnelEnv } from './onboarding-funnel-event.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 function nowIso(at?: string) {
 	return at ?? new Date().toISOString()
@@ -57,7 +58,7 @@ export async function stampFirstMcpConnected(
 						OR (mcp_client_name IS NULL AND ?2 IS NOT NULL)
 						OR last_active_at IS NULL
 						OR date(last_active_at) < date(?1)
-					)`,
+					)${andLiveDeletedAtSql()}`,
 			)
 			.bind(at, clientName, utcSqliteTimestamp(), input.stableUserId)
 			.run()
@@ -76,7 +77,7 @@ export async function userHasFirstExecute(
 				`SELECT first_execute_at
 				 FROM users
 				 WHERE stable_user_id = ?
-				 LIMIT 1`,
+				 ${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 			.bind(userId)
 			.first<{ first_execute_at: string | null }>()
@@ -96,7 +97,7 @@ export async function userHasFirstSearch(
 				`SELECT first_search_at
 				 FROM users
 				 WHERE stable_user_id = ?
-				 LIMIT 1`,
+				 ${andLiveDeletedAtSql()} LIMIT 1`,
 			)
 			.bind(userId)
 			.first<{ first_search_at: string | null }>()
@@ -319,7 +320,7 @@ export async function touchLastActiveAt(
 				SET last_active_at = ?1,
 					updated_at = ?2
 				WHERE stable_user_id = ?3
-					AND (last_active_at IS NULL OR date(last_active_at) < date(?1))`,
+					AND (last_active_at IS NULL OR date(last_active_at) < date(?1))${andLiveDeletedAtSql()}`,
 			)
 			.bind(at, utcSqliteTimestamp(), input.stableUserId)
 			.run()

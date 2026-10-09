@@ -8,6 +8,7 @@ import {
 	getUsernameFormatValidationError,
 } from '#worker/identity/username.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 type McpOAuthGrantProps = {
 	userId?: unknown
@@ -85,7 +86,7 @@ export async function buildMcpUserContextFromGrantProps(
 			`SELECT id, email, username, display_name, stable_user_id,
 				deleting_at, email_verified_at, suspended_at, password_changed_at
 			 FROM users
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(userId)
 			.first<GrantUserRow>()

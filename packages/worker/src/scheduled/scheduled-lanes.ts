@@ -5,6 +5,7 @@ import { checkEmailVerificationStallsAndNotify } from '#app/email-verification-s
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
 import { pruneUnverifiedAccounts } from '#worker/account/unverified-account-purge.ts'
+import { pruneSoftDeleted } from '#worker/orgs/purge.ts'
 import { reconcileKitSubscribers } from '#worker/kit/subscriber-sync.ts'
 import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
 import { sendUserErrorRateEmails } from '#app/user-error-rate-emails.ts'
@@ -104,6 +105,11 @@ export async function runScheduledLane(input: {
 			return pruneRetention({ env: input.env, now: input.scheduledAt })
 		case 'unverified_account_purge':
 			return pruneUnverifiedAccounts({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'soft_delete_purge':
+			return pruneSoftDeleted({
 				env: input.env,
 				now: input.scheduledAt,
 			})

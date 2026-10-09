@@ -47,6 +47,7 @@ import {
 	type SavedPackageWithCommunityProvenanceRecord,
 } from '#worker/package-registry/types.ts'
 
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
@@ -278,7 +279,7 @@ async function loadPackageCreditAttributionRow(input: {
 	try {
 		const userRow = await input.env.APP_DB.prepare(
 			`SELECT ${userEntitlementColumnsSql()}
-			 FROM users WHERE stable_user_id = ?`,
+			 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(input.stableUserId)
 			.first<UserEntitlementRow>()
@@ -312,7 +313,7 @@ async function loadPackageCreditAttributionRow(input: {
 			attribution.name === attribution.packageId
 		) {
 			const saved = await input.env.APP_DB.prepare(
-				`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+				`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
 			)
 				.bind(input.packageId, input.stableUserId)
 				.first<{ kody_id: string; name: string }>()
