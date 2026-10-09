@@ -343,6 +343,22 @@
 		{
 			"filename": "0085-drop-package-invocation-tokens.sql",
 			"sha256": "dce13ccc023c9b518e57b7875d62370a2aab78907ec86d14f5641638f7299274"
+		},
+		{
+			"filename": "0086-teams-orgs-tables.sql",
+			"sha256": "615a6a029138636d330fb00adcc62d0e9861953724e81360428a724f5d44c29d"
+		},
+		{
+			"filename": "0087-teams-soft-delete-columns.sql",
+			"sha256": "1efae53551878eae60756c9adcadd470d6d43fda545c59b2ae7c07e9dd48919d"
+		},
+		{
+			"filename": "0088-teams-actor-columns.sql",
+			"sha256": "c6607cec887773590bfe1589e10565fe7d7c2e3b0cfc3734228fbd72add6327e"
+		},
+		{
+			"filename": "0089-teams-orgs-backfill.sql",
+			"sha256": "898e71ae22a3ceaa4d94e1a233c31c93e093bc8b3d967ea86a27060c424011ee"
 		}
 	]
 }
