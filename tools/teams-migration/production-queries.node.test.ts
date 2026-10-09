@@ -122,20 +122,46 @@ function createAppDb() {
 			],
 		],
 	] as const
-	for (const [packageId, userId, commit, dependencies] of artifacts) {
+	const insertArtifact = (
+		packageId: string,
+		userId: string,
+		commit: string,
+		entryPoint: string,
+		dependencies: ReadonlyArray<object>,
+	) =>
 		run(
 			`INSERT INTO published_bundle_artifacts (id, user_id, source_id, published_commit, artifact_kind, entry_point, kv_key, dependencies_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, 'module', 'index.ts', 'kv', ?, '2026-10-01', '2026-10-01')`,
-			`artifact-${packageId}-${commit}`,
+			VALUES (?, ?, ?, ?, 'module', ?, 'kv', ?, '2026-10-01', '2026-10-01')`,
+			`artifact-${packageId}-${commit}-${entryPoint}`,
 			userId,
 			`src-${packageId}`,
 			commit,
+			entryPoint,
 			JSON.stringify(dependencies),
 		)
+	for (const [packageId, userId, commit, dependencies] of artifacts) {
+		insertArtifact(packageId, userId, commit, 'index.ts', dependencies)
 	}
+	// Another export of the same packages reaches the same dependency
+	// transitively; each import still reports once, as direct.
+	insertArtifact('kody-a', 'kody-id', 'c2', 'app.ts', [
+		dependency('tools-x', { platformOwned: true, transitive: true }),
+	])
+	insertArtifact('carol-guest', 'carol-id', 'c2', 'app.ts', [
+		dependency('alice-shared', {
+			shareOwned: true,
+			storageOwnerUserId: 'alice-id',
+			transitive: true,
+		}),
+	])
+	// A revoked earlier share and the current accepted one.
 	run(
-		`INSERT INTO package_share_grants (id, package_id, owner_user_id, grantee_user_id, status, invited_at)
-		VALUES ('share-1', 'alice-shared', 'alice-id', 'carol-id', 'accepted', '2026-10-01')`,
+		`INSERT INTO package_share_grants (id, package_id, owner_user_id, grantee_user_id, status, invited_at, updated_at)
+		VALUES ('share-0', 'alice-shared', 'alice-id', 'carol-id', 'revoked', '2026-09-01', '2026-09-02')`,
+	)
+	run(
+		`INSERT INTO package_share_grants (id, package_id, owner_user_id, grantee_user_id, status, invited_at, updated_at)
+		VALUES ('share-1', 'alice-shared', 'alice-id', 'carol-id', 'accepted', '2026-10-01', '2026-10-01')`,
 	)
 	return sqlite
 }
@@ -206,10 +232,17 @@ function createFakeStripe() {
 		id: string,
 		status: string,
 		priceIds: Array<string>,
+		hasMoreItems = false,
 	) => ({
 		id,
 		status,
-		items: { data: priceIds.map((priceId) => ({ price: { id: priceId } })) },
+		items: {
+			data: priceIds.map((priceId, index) => ({
+				id: `${id}_item_${index}`,
+				price: { id: priceId },
+			})),
+			has_more: hasMoreItems,
+		},
 	})
 	const pages = [
 		{
@@ -224,7 +257,8 @@ function createFakeStripe() {
 			data: [
 				subscription('sub_4', 'canceled', ['price_gone']),
 				subscription('sub_5', 'past_due', [retiredStandardPriceId]),
-				subscription('sub_6', 'active', ['price_new']),
+				// Two unmapped prices, the second past the embedded item page.
+				subscription('sub_6', 'active', ['price_new'], true),
 			],
 			has_more: false,
 		},
@@ -234,6 +268,14 @@ function createFakeStripe() {
 		const url = new URL(String(input))
 		requests.push(`${init?.method} ${url.pathname}?${url.searchParams}`)
 		expect(init?.method).toBe('GET')
+		if (url.pathname === '/v1/subscription_items') {
+			expect(url.searchParams.get('subscription')).toBe('sub_6')
+			expect(url.searchParams.get('starting_after')).toBe('sub_6_item_0')
+			return Response.json({
+				data: [{ id: 'sub_6_item_1', price: { id: 'price_new_b' } }],
+				has_more: false,
+			})
+		}
 		const page = url.searchParams.get('starting_after') === 'sub_3' ? 1 : 0
 		return Response.json(pages[page])
 	}
@@ -354,6 +396,12 @@ test('runProductionQueries answers all five questions with reads only', async ()
 					subscriptions: 1,
 				},
 				{
+					priceId: 'price_new_b',
+					status: 'active',
+					mapping: 'unmapped',
+					subscriptions: 1,
+				},
+				{
 					priceId: proPriceId,
 					status: 'active',
 					mapping: 'purchasable-pro',
@@ -378,6 +426,7 @@ test('runProductionQueries answers all five questions with reads only', async ()
 	expect(stripe.requests).toEqual([
 		'GET /v1/subscriptions?status=all&limit=100',
 		'GET /v1/subscriptions?status=all&limit=100&starting_after=sub_3',
+		'GET /v1/subscription_items?subscription=sub_6&limit=100&starting_after=sub_6_item_0',
 	])
 })
 

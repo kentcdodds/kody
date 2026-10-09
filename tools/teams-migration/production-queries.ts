@@ -135,12 +135,16 @@ LEFT JOIN entity_sources AS dependency_source
 LEFT JOIN users AS dependency_owner
 	ON dependency_owner.stable_user_id = dependency_source.user_id`
 
-export const crossPlatformScopeDependenciesSql = `SELECT DISTINCT
+/**
+ * One row per (package, dependency): a dependency that is direct in one
+ * artifact and transitive in another counts once, as direct.
+ */
+export const crossPlatformScopeDependenciesSql = `SELECT
 	p.id AS package_id,
 	owner.username AS scope,
 	dependency_source.entity_id AS dependency_package_id,
 	dependency_owner.username AS dependency_scope,
-	CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END AS transitive
+	MIN(CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END) AS transitive
 ${currentArtifactDependencies}
 JOIN users AS owner
 	ON owner.stable_user_id = artifact.user_id
@@ -148,33 +152,53 @@ JOIN users AS owner
 WHERE artifact.published_commit = source.published_commit
 	AND dependency_owner.account_type = 'platform'
 	AND dependency_source.user_id != artifact.user_id
+GROUP BY p.id, owner.username, dependency_source.entity_id, dependency_owner.username
 ORDER BY package_id, dependency_package_id`
 
 /**
  * A guest package that imports another person's package can only have
  * resolved it through a share grant (`resolveShareGrantedPackageImport`), so
  * this matches either the `shareOwned` stamp or a person-owned dependency
- * from another owner, and reports the grant row when there is one.
+ * from another owner. One row per (guest package, shared package), with the
+ * most relevant grant row: accepted, then pending, then the latest other.
  */
-export const sharedPackageImportsSql = `SELECT DISTINCT
-	p.id AS guest_package_id,
-	COALESCE(dependency_source.entity_id, json_extract(dependency.value, '$.packageId')) AS shared_package_id,
+export const sharedPackageImportsSql = `WITH imports AS (
+	SELECT
+		p.id AS guest_package_id,
+		artifact.user_id AS guest_user_id,
+		COALESCE(dependency_source.entity_id, json_extract(dependency.value, '$.packageId')) AS shared_package_id,
+		MIN(CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END) AS transitive
+	${currentArtifactDependencies}
+	WHERE artifact.published_commit = source.published_commit
+		AND (
+			json_extract(dependency.value, '$.shareOwned') = 1
+			OR (
+				dependency_owner.account_type = 'person'
+				AND dependency_source.user_id != artifact.user_id
+			)
+		)
+	GROUP BY 1, 2, 3
+)
+SELECT
+	imports.guest_package_id,
+	imports.shared_package_id,
 	grant_row.id AS share_grant_id,
 	grant_row.status AS share_status,
-	CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END AS transitive
-${currentArtifactDependencies}
+	imports.transitive
+FROM imports
 LEFT JOIN package_share_grants AS grant_row
-	ON grant_row.package_id = COALESCE(dependency_source.entity_id, json_extract(dependency.value, '$.packageId'))
-	AND grant_row.grantee_user_id = artifact.user_id
-WHERE artifact.published_commit = source.published_commit
-	AND (
-		json_extract(dependency.value, '$.shareOwned') = 1
-		OR (
-			dependency_owner.account_type = 'person'
-			AND dependency_source.user_id != artifact.user_id
-		)
+	ON grant_row.id = (
+		SELECT candidate.id
+		FROM package_share_grants AS candidate
+		WHERE candidate.package_id = imports.shared_package_id
+			AND candidate.grantee_user_id = imports.guest_user_id
+		ORDER BY
+			CASE candidate.status WHEN 'accepted' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+			candidate.updated_at DESC,
+			candidate.id
+		LIMIT 1
 	)
-ORDER BY guest_package_id, shared_package_id`
+ORDER BY imports.guest_package_id, imports.shared_package_id`
 
 export type PlatformAccountRow = {
 	userId: number
@@ -357,13 +381,12 @@ export function classifyStripePrice(
 /** Ended subscriptions never move to an org (§7.2). */
 const endedSubscriptionStatuses = new Set(['canceled', 'incomplete_expired'])
 
-type StripeSubscriptionPage = {
-	data: Array<{
-		id: string
-		status: string
-		items: { data: Array<{ price: { id: string } }> }
-	}>
-	has_more: boolean
+type StripeList<Item> = { data: Array<Item>; has_more: boolean }
+type StripeSubscriptionItem = { id: string; price: { id: string } }
+type StripeSubscription = {
+	id: string
+	status: string
+	items: StripeList<StripeSubscriptionItem>
 }
 
 export async function countStripeSubscriptions(input: {
@@ -374,33 +397,67 @@ export async function countStripeSubscriptions(input: {
 }): Promise<StripeSubscriptionCounts> {
 	const fetcher = input.fetcher ?? fetch
 	const baseUrl = input.apiBaseUrl ?? 'https://api.stripe.com'
-	const counts = new Map<
-		string,
-		{ priceId: string; status: string; subscriptions: number }
-	>()
-	let subscriptions = 0
-	let startingAfter: string | undefined
-	do {
-		const url = new URL('/v1/subscriptions', baseUrl)
-		url.searchParams.set('status', 'all')
-		url.searchParams.set('limit', '100')
-		if (startingAfter) url.searchParams.set('starting_after', startingAfter)
+	const stripeGet = async <Item>(
+		pathname: string,
+		params: Record<string, string>,
+	) => {
+		const url = new URL(pathname, baseUrl)
+		for (const [name, value] of Object.entries(params)) {
+			url.searchParams.set(name, value)
+		}
 		const response = await fetcher(url, {
 			method: 'GET',
 			headers: { authorization: `Bearer ${input.secretKey}` },
 		})
 		if (!response.ok) {
-			throw new Error(
-				`Stripe GET /v1/subscriptions failed (${response.status}).`,
-			)
+			throw new Error(`Stripe GET ${pathname} failed (${response.status}).`)
 		}
-		const page = (await response.json()) as StripeSubscriptionPage
+		return (await response.json()) as StripeList<Item>
+	}
+	/** Stripe embeds only the first page of a subscription's items. */
+	const readPriceIds = async (subscription: StripeSubscription) => {
+		const items = [...subscription.items.data]
+		let more = subscription.items.has_more
+		while (more) {
+			const page = await stripeGet<StripeSubscriptionItem>(
+				'/v1/subscription_items',
+				{
+					subscription: subscription.id,
+					limit: '100',
+					starting_after: items.at(-1)?.id ?? '',
+				},
+			)
+			items.push(...page.data)
+			more = page.has_more && page.data.length > 0
+		}
+		return new Set(items.map((item) => item.price.id))
+	}
+
+	const counts = new Map<
+		string,
+		{ priceId: string; status: string; subscriptions: number }
+	>()
+	let subscriptions = 0
+	let unmapped = 0
+	let startingAfter: string | undefined
+	do {
+		const page = await stripeGet<StripeSubscription>('/v1/subscriptions', {
+			status: 'all',
+			limit: '100',
+			...(startingAfter ? { starting_after: startingAfter } : {}),
+		})
 		for (const subscription of page.data) {
 			if (endedSubscriptionStatuses.has(subscription.status)) continue
 			subscriptions += 1
-			const priceIds = new Set(
-				subscription.items.data.map((item) => item.price.id),
-			)
+			const priceIds = await readPriceIds(subscription)
+			if (
+				[...priceIds].some(
+					(priceId) =>
+						classifyStripePrice(input.billingEnv, priceId) === 'unmapped',
+				)
+			) {
+				unmapped += 1
+			}
 			for (const priceId of priceIds) {
 				const key = `${priceId}\u0000${subscription.status}`
 				const entry = counts.get(key) ?? {
@@ -424,14 +481,7 @@ export async function countStripeSubscriptions(input: {
 			(a, b) =>
 				a.priceId.localeCompare(b.priceId) || a.status.localeCompare(b.status),
 		)
-	return {
-		skipped: false,
-		subscriptions,
-		unmapped: byPrice
-			.filter((entry) => entry.mapping === 'unmapped')
-			.reduce((sum, entry) => sum + entry.subscriptions, 0),
-		byPrice,
-	}
+	return { skipped: false, subscriptions, unmapped, byPrice }
 }
 
 /** Production price ids come from the committed Wrangler vars. */
