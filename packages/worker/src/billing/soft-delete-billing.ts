@@ -18,6 +18,7 @@ const billableStatuses = new Set([
 	'past_due',
 	'unpaid',
 	'paused',
+	'incomplete',
 ])
 
 function isBillableSubscription(subscription: StripeSubscription) {
