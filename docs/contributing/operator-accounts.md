@@ -78,8 +78,8 @@ into generated Wrangler configs at deploy, not into the committed
 Production names from committed Wrangler / ensure scripts
 ([setup-manifest.md](./setup-manifest.md)):
 
-- **KV** — `OAUTH_KV` title `kody-production-oauth`; `BUNDLE_ARTIFACTS_KV` title
-  `kody-production-bundle-artifacts`. Preview titles are per-PR.
+- **KV** — `OAUTH_KV` title `kody-oauth`; `BUNDLE_ARTIFACTS_KV` title
+  `kody-bundle-artifacts`. Preview titles are per-PR.
 - **R2** — `kody-community-assets`, `kody-email-blobs`,
   `kody-repo-session-blobs`, `kody-nx-cache`. DR: `kody-production-backups`.
   Preview uses `kody-preview-*` prefixes.
