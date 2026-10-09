@@ -255,6 +255,8 @@ function registerPreloadPatterns(
 registerPreloadPatterns(
 	[
 		routePattern(routes.account),
+		routePattern(routes.accountSecurity),
+		routePattern(routes.accountData),
 		routePattern(routes.accountBilling),
 		routePattern(routes.accountBillingSuccess),
 		routePattern(routes.accountUsage),
@@ -299,7 +301,7 @@ registerPreloadPatterns(
 		routePattern(routes.accountEmailDetail),
 		routePattern(routes.accountTwoFactor),
 		routePattern(routes.accountOrganizationsNew),
-		routePattern(routes.accountInvites),
+		routePattern(routes.accountOrganizations),
 		routePattern(routes.orgActivity),
 		routePattern(routes.orgConnections),
 		routePattern(routes.orgEmail),
@@ -307,6 +309,7 @@ registerPreloadPatterns(
 		routePattern(routes.orgJobs),
 		routePattern(routes.orgMcpServers),
 		routePattern(routes.orgMemories),
+		routePattern(routes.orgPackages),
 		routePattern(routes.orgSecretProviders),
 		routePattern(routes.orgSecrets),
 		routePattern(routes.orgShared),

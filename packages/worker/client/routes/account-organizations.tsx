@@ -12,15 +12,14 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { type IconName, renderIcon } from '#universal/icon.tsx'
-import { type AccountInvitesLoaderData } from '#universal/loader-data.ts'
+import { renderIcon } from '#universal/icon.tsx'
+import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
 import {
 	currentSwitcherSlug,
 	orderOrganizations,
 	orgIdentity,
 	orgRoleLabel,
 	organizationsWithSignupFallback,
-	type OrganizationSummary,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -116,81 +115,6 @@ function renderOrgRow(input: {
 	)
 }
 
-function renderButtonIcon(name: IconName) {
-	return renderIcon(name, { size: '1.05rem' })
-}
-
-/**
- * Account overview's Organizations section: every organization the person
- * belongs to, the one the header is acting in marked Current, then the
- * create and invites actions.
- */
-export function renderAccountOrganizationsPanel(input: {
-	organizations: ReadonlyArray<OrganizationSummary>
-	username: string
-	viewer: OrgViewer
-	inviteCount: number
-	lastUsedOrganization: string | null
-	currentPathname: string
-}) {
-	const organizations = orderOrganizations(
-		organizationsWithSignupFallback({
-			organizations: input.organizations,
-			username: input.username,
-		}),
-	)
-	const currentSlug = currentSwitcherSlug({
-		pathname: input.currentPathname,
-		organizations,
-		lastUsedSlug: input.lastUsedOrganization,
-	})
-	return (
-		<AccountManagementPanel
-			title="Organizations"
-			description="Each organization has its own packages, secrets, and members. Switch between them from the header."
-			ariaLabel="Organizations"
-		>
-			<ul mix={css(orgListCss)} data-testid="account-organizations">
-				{organizations.map((org) =>
-					renderOrgRow({
-						key: org.slug,
-						slug: org.slug,
-						displayName: org.displayName,
-						personal: org.personal,
-						viewer: input.viewer,
-						detail: orgRoleLabel(org.role),
-						pills:
-							org.slug === currentSlug
-								? [{ label: 'Current', tone: 'accent' }]
-								: [],
-						href: routes.profile.href({ username: org.slug }),
-						testId: 'account-organization',
-					}),
-				)}
-			</ul>
-			<div mix={css(accountActionsCss)}>
-				<a
-					href={routes.accountOrganizationsNew.href()}
-					mix={css(getGhostButtonCss({ size: 'sm' }))}
-				>
-					{renderButtonIcon('plus')}
-					Create organization
-				</a>
-				<a
-					href={routes.accountInvites.href()}
-					mix={css(getGhostButtonCss({ size: 'sm' }))}
-				>
-					{renderButtonIcon('mail')}
-					Invites
-					{input.inviteCount > 0 ? (
-						<span mix={css(countBadgeCss)}>{input.inviteCount}</span>
-					) : null}
-				</a>
-			</div>
-		</AccountManagementPanel>
-	)
-}
-
 /** Lowercase, hyphenated, and trimmed to the slug rules, for the auto-fill. */
 function slugFromName(name: string) {
 	return name
@@ -219,7 +143,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	const initialHref = readCurrentRouterHref(handle)
 	const consumed = tryConsumeRouteLoaderData(
 		handle,
-		'accountOrganizations',
+		'accountOrganizationsNew',
 		initialHref,
 	)
 	let syncedHref = initialHref
@@ -327,7 +251,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								Create organization
 							</button>
 							<a
-								href={routes.account.href()}
+								href={routes.accountOrganizations.href()}
 								mix={css(getGhostButtonCss({ size: 'sm' }))}
 							>
 								Cancel
@@ -340,30 +264,32 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	}
 }
 
-async function fetchInvites(signal: AbortSignal) {
-	const response = await fetch(routes.accountInvitesApi.href(), {
+async function fetchOrganizations(signal: AbortSignal) {
+	const response = await fetch(routes.accountOrganizationsApi.href(), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
 	})
 	if (response.status === 401) return 'unauthorized' as const
-	const payload = await readJson<AccountInvitesLoaderData>(response)
+	const payload = await readJson<AccountOrganizationsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load invites.')
+		throw new Error('Unable to load organizations.')
 	}
 	return payload
 }
 
-export async function accountInvitesRouteLoader(
+export async function accountOrganizationsRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const payload = await fetchInvites(signal)
+	const payload = await fetchOrganizations(signal)
 	if (payload === 'unauthorized') return routeLoaderRedirect('/login')
-	return { accountInvites: payload }
+	return { accountOrganizations: payload }
 }
 
-function inviteRoleLabel(invite: AccountInvitesLoaderData['invites'][number]) {
+function inviteRoleLabel(
+	invite: AccountOrganizationsLoaderData['invites'][number],
+) {
 	if (invite.kind !== 'membership') return 'Access grant'
 	switch (invite.role) {
 		case 'owner':
@@ -375,11 +301,86 @@ function inviteRoleLabel(invite: AccountInvitesLoaderData['invites'][number]) {
 	}
 }
 
-export function AccountInvitesRoute(handle: Handle) {
-	const invitesData = createRouteData({
-		key: 'accountInvites',
+function renderOrganizationList(
+	data: AccountOrganizationsLoaderData,
+	currentPathname: string,
+) {
+	const organizations = orderOrganizations(
+		organizationsWithSignupFallback({
+			organizations: data.organizations,
+			username: data.username,
+		}),
+	)
+	const currentSlug = currentSwitcherSlug({
+		pathname: currentPathname,
+		organizations,
+		lastUsedSlug: data.lastUsedOrganization,
+	})
+	return (
+		<ul mix={css(orgListCss)} data-testid="account-organizations">
+			{organizations.map((org) =>
+				renderOrgRow({
+					key: org.slug,
+					slug: org.slug,
+					displayName: org.displayName,
+					personal: org.personal,
+					viewer: data.viewer,
+					detail: orgRoleLabel(org.role),
+					pills:
+						org.slug === currentSlug
+							? [{ label: 'Current', tone: 'accent' }]
+							: [],
+					href: routes.profile.href({ username: org.slug }),
+					testId: 'account-organization',
+				}),
+			)}
+		</ul>
+	)
+}
+
+function renderInvites(invites: AccountOrganizationsLoaderData['invites']) {
+	if (invites.length === 0) {
+		return (
+			<div mix={css(emptyStateCss)} data-testid="invites-empty">
+				<span aria-hidden="true" mix={css(emptyIconCss)}>
+					{renderIcon('inbox', { size: '1.5rem' })}
+				</span>
+				<div mix={css({ display: 'grid', gap: spacing.xs })}>
+					<p mix={css(emptyTitleCss)}>No invites waiting</p>
+					<p mix={css(mutedCopyCss)}>
+						When someone invites you to an organization, it shows up here.
+					</p>
+				</div>
+			</div>
+		)
+	}
+	return (
+		<ul mix={css(orgListCss)} data-testid="invites-list">
+			{invites.map((invite) =>
+				renderOrgRow({
+					key: invite.id,
+					slug: invite.orgSlug,
+					displayName: invite.orgDisplayName,
+					personal: false,
+					viewer: { displayName: '', avatarUrl: null },
+					detail: `Expires ${formatTimestampDate(invite.expiresAt)}`,
+					pills: [{ label: inviteRoleLabel(invite), tone: 'quiet' }],
+					testId: 'invite',
+				}),
+			)}
+		</ul>
+	)
+}
+
+/**
+ * Every organization the person belongs to, the one the header is acting in
+ * marked Current, and the invites waiting on them.
+ */
+export function AccountOrganizationsRoute(handle: Handle) {
+	const organizationsData = createRouteData({
+		key: 'accountOrganizations',
 		async load(_href, signal) {
-			const payload = await fetchInvites(signal)
+			const payload = await fetchOrganizations(signal)
 			if (payload === 'unauthorized') return routeDataRedirect('/login')
 			return payload
 		},
@@ -387,76 +388,76 @@ export function AccountInvitesRoute(handle: Handle) {
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
-		const snapshot = invitesData.read(handle, href)
-		const invites = snapshot.data?.ok ? snapshot.data.invites : []
+		const snapshot = organizationsData.read(handle, href)
+		const data = snapshot.data?.ok ? snapshot.data : null
 		const pending = snapshot.kind === 'pending'
 		const status: AccountStatus =
 			snapshot.kind === 'error'
 				? 'error'
-				: pending && !snapshot.data
+				: pending && !data
 					? 'loading'
 					: 'ready'
 		return (
-			<AccountManagementShell busy={pending && Boolean(snapshot.data)}>
+			<AccountManagementShell busy={pending && Boolean(data)}>
 				<AccountPageHeader
-					title="Invites"
-					description="Invitations to join an organization. To accept one, paste the invite prompt you were sent into your agent."
+					title="Organizations"
+					description="Each organization has its own repositories, secrets, and members. Switch between them from the header."
 					currentHref={href}
+					actions={
+						<a
+							href={routes.accountOrganizationsNew.href()}
+							data-testid="account-organizations-create"
+							mix={css(getPillButtonCss({ size: 'sm' }))}
+						>
+							{renderIcon('plus', { size: '1.05rem' })}
+							Create organization
+						</a>
+					}
 				/>
-				<AccountManagementPanel title="Pending invites">
-					{status === 'loading' ? (
-						<p role="status" mix={css(mutedCopyCss)}>
-							Loading invites…
-						</p>
-					) : null}
-					{status === 'error' ? (
-						<div mix={css(noticeCardCss)} data-testid="invites-error">
-							<AccountManagementMessage tone="error">
-								{snapshot.error?.message ?? 'Unable to load invites.'}
-							</AccountManagementMessage>
-							<div>
-								<button
-									type="button"
-									mix={[
-										css(getGhostButtonCss({ size: 'sm' })),
-										on('click', () => invitesData.reload(handle, href)),
-									]}
-								>
-									Try again
-								</button>
-							</div>
+				{status === 'loading' ? (
+					<p role="status" mix={css(mutedCopyCss)}>
+						Loading organizations…
+					</p>
+				) : null}
+				{status === 'error' ? (
+					<div mix={css(noticeCardCss)} data-testid="organizations-error">
+						<AccountManagementMessage tone="error">
+							{snapshot.error?.message ?? 'Unable to load organizations.'}
+						</AccountManagementMessage>
+						<div>
+							<button
+								type="button"
+								mix={[
+									css(getGhostButtonCss({ size: 'sm' })),
+									on('click', () => organizationsData.reload(handle, href)),
+								]}
+							>
+								Try again
+							</button>
 						</div>
-					) : null}
-					{status === 'ready' && invites.length === 0 ? (
-						<div mix={css(emptyStateCss)} data-testid="invites-empty">
-							<span aria-hidden="true" mix={css(emptyIconCss)}>
-								{renderIcon('inbox', { size: '1.5rem' })}
-							</span>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<p mix={css(emptyTitleCss)}>No invites waiting</p>
-								<p mix={css(mutedCopyCss)}>
-									When someone invites you to an organization, it shows up here.
-								</p>
-							</div>
-						</div>
-					) : null}
-					{status === 'ready' && invites.length > 0 ? (
-						<ul mix={css(orgListCss)} data-testid="invites-list">
-							{invites.map((invite) =>
-								renderOrgRow({
-									key: invite.id,
-									slug: invite.orgSlug,
-									displayName: invite.orgDisplayName,
-									personal: false,
-									viewer: { displayName: '', avatarUrl: null },
-									detail: `Expires ${formatTimestampDate(invite.expiresAt)}`,
-									pills: [{ label: inviteRoleLabel(invite), tone: 'quiet' }],
-									testId: 'invite',
-								}),
+					</div>
+				) : null}
+				{status === 'ready' && data ? (
+					<>
+						<AccountManagementPanel
+							title="Your organizations"
+							ariaLabel="Your organizations"
+						>
+							{renderOrganizationList(
+								data,
+								new URL(href, 'http://localhost').pathname,
 							)}
-						</ul>
-					) : null}
-				</AccountManagementPanel>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							id="invites"
+							title="Invites"
+							description="To accept an invite, paste the invite prompt you were sent into your agent."
+							ariaLabel="Invites"
+						>
+							{renderInvites(data.invites)}
+						</AccountManagementPanel>
+					</>
+				) : null}
 			</AccountManagementShell>
 		)
 	}
@@ -556,20 +557,6 @@ const orgRowChevronCss = {
 	display: 'inline-flex',
 	flexShrink: 0,
 	color: colors.textMuted,
-}
-
-const countBadgeCss = {
-	minWidth: '1.35rem',
-	padding: '0.1rem 0.4rem',
-	boxSizing: 'border-box' as const,
-	borderRadius: radius.full,
-	backgroundColor: colors.primary,
-	color: colors.onPrimary,
-	fontSize: typography.fontSize.xs,
-	fontWeight: 700,
-	lineHeight: 1.3,
-	textAlign: 'center' as const,
-	fontVariantNumeric: 'tabular-nums',
 }
 
 const formCss = {

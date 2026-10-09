@@ -94,13 +94,15 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		file: 'account.md',
 		paths: [
 			'/account',
+			'/account/security',
+			'/account/data',
 			'/account/delete',
+			'/account/organizations',
 			'/account/organizations/new',
-			'/account/invites',
 		],
 		apis: [
 			'/account/profile.json',
-			'/account/invites.json',
+			'/account/organizations.json',
 			'/account/profile/avatar.json',
 			'/account/email-change.json',
 			'/account/email-claim-release.json',

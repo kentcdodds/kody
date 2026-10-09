@@ -37,6 +37,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountRouteLoader,
 	),
+	[routePattern(routes.accountSecurity)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountRouteLoader,
+	),
+	[routePattern(routes.accountData)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountRouteLoader,
+	),
 	[routePattern(routes.accountBilling)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountBillingRouteLoader,
@@ -402,6 +410,12 @@ export const clientRoutes = {
 	[routePattern(routes.notFoundPage)]: <NotFoundPage />,
 	[routePattern(routes.internalErrorPage)]: <InternalErrorPage />,
 	[routePattern(routes.account)]: (
+		<LazyAccountRoute render={(m) => <m.AccountRoute />} />
+	),
+	[routePattern(routes.accountSecurity)]: (
+		<LazyAccountRoute render={(m) => <m.AccountRoute />} />
+	),
+	[routePattern(routes.accountData)]: (
 		<LazyAccountRoute render={(m) => <m.AccountRoute />} />
 	),
 	[routePattern(routes.accountBilling)]: (

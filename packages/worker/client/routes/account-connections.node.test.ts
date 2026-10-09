@@ -6,10 +6,13 @@ import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
 import { AccountConnectionsRoute } from '#client/routes/account-connections.tsx'
 import {
-	accountNavItemsFor,
 	accountPackagesNavHref,
+	accountRailGroups,
 	accountRailOrgSlug,
-} from '#client/routes/account-management-components.tsx'
+	isAccountNavItemActive,
+	isAccountRailPath,
+	workspaceRailGroups,
+} from '#client/routes/account-rail.ts'
 import { type SessionInfo } from '#client/session.ts'
 import {
 	accountConnectionAgentIds,
@@ -92,9 +95,13 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain(`href="${routes.accountMcpOauthClients.href()}"`)
 	// No cold-path loading copy when the SSR payload is present.
 	expect(html).not.toContain('Loading connections')
-	// The rail marks this page current and links Repositories to the profile.
+	// The workspace rail marks this page current and links Repositories to
+	// the workspace list, not the public profile.
+	expect(html).toContain('aria-label="Workspace sections"')
 	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
-	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Repositories<\/a>/)
+	expect(html).toMatch(
+		/href="\/@jane\/packages"[^>]*>[\s\S]*?Repositories<\/a>/,
+	)
 	expect(html).toContain('data-icon="box"')
 })
 
@@ -311,47 +318,95 @@ test('connection profiles list only granted packages and add more through a pack
 	expect(createForm).not.toContain('pkg-3"')
 })
 
-test('account rail lists Connections and Repositories at the same level as the other sections', () => {
-	const items = accountNavItemsFor({
+test('account rail holds only the person: profile, security, organizations, experiments, data', () => {
+	const items = accountRailGroups().flatMap((group) => group.items)
+	expect(items.map((item) => [item.label, item.href])).toEqual([
+		['Profile', '/account'],
+		['Security', '/account/security'],
+		['Organizations', '/account/organizations'],
+		['Experiments', '/account/experiments'],
+		['Data & deletion', '/account/data'],
+	])
+	const security = items.find((item) => item.label === 'Security')
+	expect(
+		security && isAccountNavItemActive(security, '/account/passkeys'),
+	).toBe(true)
+	const profile = items.find((item) => item.label === 'Profile')
+	expect(profile && isAccountNavItemActive(profile, '/account/security')).toBe(
+		false,
+	)
+	for (const path of [
+		'/account',
+		'/account/security',
+		'/account/two-factor',
+		'/account/passkeys',
+		'/account/organizations',
+		'/account/organizations/new',
+		'/account/experiments',
+		'/account/data',
+	]) {
+		expect(isAccountRailPath(path), path).toBe(true)
+	}
+	for (const path of [
+		'/account/billing',
+		'/account/usage',
+		'/account/credits',
+		'/account/mcp-oauth-clients',
+		'/@jane/secrets',
+		'/@jane/packages',
+	]) {
+		expect(isAccountRailPath(path), path).toBe(false)
+	}
+})
+
+test('workspace rail groups what the organization owns and keeps its slug in every link', () => {
+	const groups = workspaceRailGroups({
 		orgSlug: 'jane',
 		personal: true,
 		showShared: true,
 	})
-	expect(items.map((item) => item.label)).toContain('Shared')
-	expect(items.map((item) => item.label)).toContain('Secret providers')
+	expect(
+		groups.map((group) => [group.label, group.items.map((item) => item.label)]),
+	).toEqual([
+		['Build', ['Repositories', 'Jobs', 'Workflows', 'Webhooks']],
+		['Access', ['Connections', 'Integrations', 'MCP servers', 'Shared']],
+		['Data', ['Secrets', 'Secret providers', 'Memories', 'Email']],
+		['Activity', ['Activity', 'Waiting']],
+		['Organization', ['Billing', 'Usage']],
+	])
+	const items = groups.flatMap((group) => group.items)
+	// Repositories is the workspace list, not the public profile.
+	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
+		'/@jane/packages',
+	)
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
 		'/@jane/secret-providers',
 	)
-	expect(items.map((item) => item.label)).toContain('Experiments')
-	expect(items.find((item) => item.label === 'Experiments')?.href).toBe(
-		'/account/experiments',
-	)
-	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
-		'/@jane/connections',
-	)
-	// Repositories is the profile page — the canonical repo list — not the
-	// `/account/packages` redirect, unless the session has no username yet.
-	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@jane',
-	)
-	expect(accountPackagesNavHref({ orgSlug: null, personal: true })).toBe(
-		'/account/packages',
-	)
+	const usage = items.find((item) => item.label === 'Usage')
+	expect(usage && isAccountNavItemActive(usage, '/account/credits')).toBe(true)
+	const connections = items.find((item) => item.label === 'Connections')
+	expect(
+		connections &&
+			isAccountNavItemActive(connections, '/account/mcp-oauth-clients'),
+	).toBe(true)
+	expect(
+		connections &&
+			isAccountNavItemActive(connections, '/@jane/connections/new'),
+	).toBe(true)
+	expect(accountPackagesNavHref(null)).toBe('/account/packages')
+
+	const withoutShared = workspaceRailGroups({
+		orgSlug: 'jane',
+		personal: true,
+		showShared: false,
+	}).flatMap((group) => group.items)
+	expect(withoutShared.map((item) => item.label)).not.toContain('Shared')
 })
 
-test('account rail keeps the selected organization slug for section links', () => {
-	const items = accountNavItemsFor({
-		orgSlug: 'acme',
-		personal: false,
-		showShared: false,
-	})
-	expect(items.find((item) => item.label === 'Secrets')?.href).toBe(
-		'/@acme/secrets',
-	)
-	expect(items.find((item) => item.label === 'Jobs')?.href).toBe('/@acme/jobs')
-	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@acme/packages',
-	)
+test('workspace rail is empty for a team organization until its storage lands (#3073)', () => {
+	expect(
+		workspaceRailGroups({ orgSlug: 'acme', personal: false, showShared: true }),
+	).toEqual([])
 })
 
 test('account rail org slug prefers the path org over username', () => {

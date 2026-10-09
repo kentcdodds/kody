@@ -100,7 +100,7 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	const railHtml = await renderToString(
 		jsx(AccountManagementLinkNav, {
 			label: 'Admin sections',
-			items,
+			groups: [{ label: null, items }],
 		}),
 	)
 	expect(railHtml).toContain('data-account-nav')
@@ -133,6 +133,33 @@ test('inline link nav stays in flow and is not a second account rail', async () 
 	expect(readRulesFor(inlineHtml, 'nav')).not.toContain('position: absolute')
 })
 
+test('grouped rail names its groups and whose settings they are', async () => {
+	const html = await renderToString(
+		jsx(AccountManagementLinkNav, {
+			label: 'Workspace sections',
+			heading: { eyebrow: 'Workspace', name: '@jane' },
+			groups: [
+				{
+					label: 'Build',
+					items: [
+						{ href: '/@jane/packages', label: 'Repositories', active: true },
+					],
+				},
+				{
+					label: 'Data',
+					items: [{ href: '/@jane/secrets', label: 'Secrets', active: false }],
+				},
+			],
+		}),
+	)
+	expect(html).toContain('>Workspace</span>')
+	expect(html).toContain('>@jane</span>')
+	expect(html).toContain('role="group" aria-label="Build"')
+	expect(html).toContain('role="group" aria-label="Data"')
+	// The phone summary names the workspace and the current section.
+	expect(html).toMatch(/<summary>[\s\S]*?>@jane<\/span>[\s\S]*?>Repositories</)
+})
+
 test('account shell grows into main so a short page has no band above the footer', async () => {
 	const shellHtml = await renderToString(
 		jsx(AccountManagementShell, { children: jsx('p', { children: 'Short' }) }),
@@ -141,6 +168,11 @@ test('account shell grows into main so a short page has no band above the footer
 	expect(shellRules).toContain('flex-grow: 1')
 	expect(shellRules).toContain('width: 100%')
 	expect(shellRules).toContain('align-content: start')
+	// With a rail, the shell is at least as tall as the rail's measured link
+	// column, so a short page never hides links behind an inner scroll.
+	expect(shellHtml).toContain(
+		'min-height: calc(var(--account-rail-height, 0px)',
+	)
 
 	// `<main>` keeps growing in the 100vh app frame (sticky footer) and hands
 	// that growth to the shell through a flex column.
@@ -182,7 +214,7 @@ test('account page header puts the phone section menu above the heading', async 
 			currentHref: routes.accountConnections.href(),
 		}),
 	)
-	const menu = connectionsHtml.indexOf('>Account sections</span>')
+	const menu = connectionsHtml.indexOf('>Workspace</span>')
 	const heading = connectionsHtml.indexOf('<h1')
 	const trigger = connectionsHtml.indexOf(
 		'data-entity-explainer-trigger="connections"',
@@ -203,7 +235,8 @@ test('account page header puts the phone section menu above the heading', async 
 		}),
 	)
 	expect(billingHtml.indexOf('<h1')).toBeGreaterThan(
-		billingHtml.indexOf('>Account sections</span>'),
+		billingHtml.indexOf('>Workspace</span>'),
 	)
+	expect(billingHtml).toContain('aria-label="Workspace sections"')
 	expect(billingHtml).not.toContain('data-entity-explainer')
 })

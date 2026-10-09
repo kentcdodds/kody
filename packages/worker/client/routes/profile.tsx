@@ -33,7 +33,11 @@ import {
 	renderProfileIdentity,
 } from '#client/routes/profile-identity.tsx'
 import { renderOrgHomeMain } from '#client/routes/org-home.tsx'
-import { orgIdentity, orgRoleLabel } from '#universal/org-pages.ts'
+import {
+	orgIdentity,
+	orgRoleLabel,
+	parseOrgResourcePath,
+} from '#universal/org-pages.ts'
 import { ProfileRepositorySearchInput } from './profile-search-field.tsx'
 import { profileListForUsername } from './profile-list-for-username.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
@@ -285,6 +289,86 @@ export function ProfileRoute(handle: Handle) {
 			)
 		}
 
+		// `/@slug/packages` is the workspace Repositories page, which supplies
+		// its own shell and heading; filter links stay on that page.
+		const currentPathname = new URL(currentHref, 'http://localhost').pathname
+		const embedded =
+			parseOrgResourcePath(currentPathname)?.section === 'packages'
+		const basePath = embedded ? currentPathname : undefined
+		const repositoryList = (
+			<>
+				<form
+					method="get"
+					action={basePath ?? routes.profile.href({ username })}
+					role="search"
+					mix={css(searchFormCss)}
+				>
+					{filters.visibility !== 'all' ? (
+						<input type="hidden" name="visibility" value={filters.visibility} />
+					) : null}
+					{filters.listing !== 'all' ? (
+						<input type="hidden" name="listing" value={filters.listing} />
+					) : null}
+					{filters.hidden !== 'all' ? (
+						<input type="hidden" name="hidden" value={filters.hidden} />
+					) : null}
+					{filters.app !== 'all' ? (
+						<input type="hidden" name="app" value={filters.app} />
+					) : null}
+					{filters.package !== 'all' ? (
+						<input type="hidden" name="package" value={filters.package} />
+					) : null}
+					{filters.sort !== 'updated' ? (
+						<input type="hidden" name="sort" value={filters.sort} />
+					) : null}
+					{filters.dir !== defaultProfilePackageSortDirection(filters.sort) ? (
+						<input type="hidden" name="dir" value={filters.dir} />
+					) : null}
+					<label mix={css(searchFieldCss)}>
+						<span mix={css(fieldLabelCss)}>Search repositories</span>
+						<ProfileRepositorySearchInput
+							username={username}
+							basePath={basePath}
+							filters={filters}
+						/>
+					</label>
+					<button
+						type="submit"
+						mix={css({ ...getPrimaryButtonCss(), alignSelf: 'end' })}
+					>
+						Search
+					</button>
+				</form>
+
+				{visibleList ? (
+					<ProfileContent
+						profile={visibleList.profile}
+						packages={visibleList.packages}
+						activity={visibleList.activity}
+						query={searchQuery || null}
+						visibility={filters.visibility}
+						listing={filters.listing}
+						hidden={filters.hidden}
+						app={filters.app}
+						package={filters.package}
+						sort={filters.sort}
+						dir={filters.dir}
+						isSelf={readyShell?.isSelf === true}
+						queryAppliedByLoader={queryAppliedByLoader}
+						basePath={basePath}
+					/>
+				) : null}
+			</>
+		)
+
+		if (embedded) {
+			return (
+				<div mix={css(mainCss)} data-testid="workspace-repositories">
+					{repositoryList}
+				</div>
+			)
+		}
+
 		return (
 			<section mix={css(pageCss)} data-testid="profile-page">
 				<div mix={css(layoutCss)}>
@@ -292,70 +376,7 @@ export function ProfileRoute(handle: Handle) {
 
 					<div mix={css(mainCss)}>
 						<h2 mix={css(packagesHeadingCss)}>Repositories</h2>
-						<form
-							method="get"
-							action={routes.profile.href({ username })}
-							role="search"
-							mix={css(searchFormCss)}
-						>
-							{filters.visibility !== 'all' ? (
-								<input
-									type="hidden"
-									name="visibility"
-									value={filters.visibility}
-								/>
-							) : null}
-							{filters.listing !== 'all' ? (
-								<input type="hidden" name="listing" value={filters.listing} />
-							) : null}
-							{filters.hidden !== 'all' ? (
-								<input type="hidden" name="hidden" value={filters.hidden} />
-							) : null}
-							{filters.app !== 'all' ? (
-								<input type="hidden" name="app" value={filters.app} />
-							) : null}
-							{filters.package !== 'all' ? (
-								<input type="hidden" name="package" value={filters.package} />
-							) : null}
-							{filters.sort !== 'updated' ? (
-								<input type="hidden" name="sort" value={filters.sort} />
-							) : null}
-							{filters.dir !==
-							defaultProfilePackageSortDirection(filters.sort) ? (
-								<input type="hidden" name="dir" value={filters.dir} />
-							) : null}
-							<label mix={css(searchFieldCss)}>
-								<span mix={css(fieldLabelCss)}>Search repositories</span>
-								<ProfileRepositorySearchInput
-									username={username}
-									filters={filters}
-								/>
-							</label>
-							<button
-								type="submit"
-								mix={css({ ...getPrimaryButtonCss(), alignSelf: 'end' })}
-							>
-								Search
-							</button>
-						</form>
-
-						{visibleList ? (
-							<ProfileContent
-								profile={visibleList.profile}
-								packages={visibleList.packages}
-								activity={visibleList.activity}
-								query={searchQuery || null}
-								visibility={filters.visibility}
-								listing={filters.listing}
-								hidden={filters.hidden}
-								app={filters.app}
-								package={filters.package}
-								sort={filters.sort}
-								dir={filters.dir}
-								isSelf={readyShell?.isSelf === true}
-								queryAppliedByLoader={queryAppliedByLoader}
-							/>
-						) : null}
+						{repositoryList}
 					</div>
 				</div>
 			</section>

@@ -10,6 +10,10 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
+import {
+	createAccountOrganizationsApiHandler,
+	createAccountOrganizationsHandler,
+} from '#app/handlers/account-organizations.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
 import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
@@ -424,35 +428,102 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		return { ...page, loaderData: readAppRootProps(page.html).loaderData }
 	}
 
-	const account = await signedIn(createAccountHandler, '/account')
+	const accountPage =
+		(title: 'Profile' | 'Security' | 'Data & deletion') => (env: Env) =>
+			createAccountHandler(env, title)
+	const account = await signedIn(accountPage('Profile'), '/account')
 	expect(account.response.status).toBe(200)
-	// Connected agents moved to `/account/connections`; Overview only links
-	// there. The rail carries Connections and Repositories (the profile is the
-	// canonical repository list, so the nav links there rather than the
-	// `/account/packages` redirect).
+	// `/account` is the Profile view in the account rail. The header has one
+	// menu: organizations, then the person's own links and Log out. The
+	// workspace sections and connected agents live elsewhere.
 	expectHtml(
 		account.html,
 		[
 			'aria-label="Account sections"',
+			'href="/account/security"',
+			'href="/account/organizations"',
+			'href="/account/data"',
+			'data-testid="org-switcher-account-group"',
+			'href="/@account-user"',
+			'action="/logout"',
+			'/pending-verification',
+		],
+		[
+			'aria-label="Workspace sections"',
+			'aria-label="Connected agents"',
+			'aria-label="Connected accounts"',
+			'aria-label="Session"',
 			'data-testid="site-header-account"',
 			'data-testid="site-header-profile"',
-			'data-testid="site-header-account-menu"',
-			'href="/@account-user"',
-			'aria-label="@account-user"',
 			'data-testid="account-connections-link"',
-			'href="/@account-user/connections"',
-			'>Connections</a>',
-			'data-icon="link"',
-			'data-icon="box"',
-			'/pending-verification',
-			'action="/logout"',
-			'aria-label="Session"',
+			'Download account export',
 		],
-		['aria-label="Connected agents"'],
 	)
-	expect(account.html).toMatch(
-		/href="\/@account-user"[^>]*>[\s\S]*?Repositories<\/a>/,
+	expect(account.html).toMatch(/href="\/account"[^>]*aria-current="page"/)
+
+	const security = await signedIn(accountPage('Security'), '/account/security')
+	expect(security.response.status).toBe(200)
+	expectHtml(
+		security.html,
+		[
+			'<title>Security',
+			'aria-label="Connected accounts"',
+			'href="/account/two-factor"',
+			'href="/account/passkeys"',
+		],
+		['Download account export'],
 	)
+	expect(security.html).toMatch(
+		/href="\/account\/security"[^>]*aria-current="page"/,
+	)
+
+	// Organizations and invites are one page in the account rail; the JSON
+	// twin serves the same payload.
+	const organizations = await signedIn(
+		createAccountOrganizationsHandler,
+		'/account/organizations',
+	)
+	expect(organizations.response.status).toBe(200)
+	expectHtml(organizations.html, [
+		'<title>Organizations',
+		'data-testid="account-organizations"',
+		'data-testid="account-organization"',
+		'id="invites"',
+		'data-testid="invites-empty"',
+		'href="/account/organizations/new"',
+	])
+	expect(organizations.html).toMatch(
+		/href="\/account\/organizations"[^>]*aria-current="page"/,
+	)
+	const organizationsPayload = {
+		ok: true,
+		username: 'account-user',
+		viewer: { displayName: 'account-user', avatarUrl: null },
+		organizations: [],
+		lastUsedOrganization: null,
+		invites: [],
+	}
+	expect(organizations.loaderData?.accountOrganizations).toEqual(
+		organizationsPayload,
+	)
+	const organizationsApi = await createAccountOrganizationsApiHandler(
+		env,
+	).handler({ request: get('/account/organizations.json', cookie) } as never)
+	expect(organizationsApi.status).toBe(200)
+	expect(await organizationsApi.json()).toEqual(organizationsPayload)
+	const anonymousOrganizationsApi = await createAccountOrganizationsApiHandler(
+		env,
+	).handler({ request: get('/account/organizations.json') } as never)
+	expect(anonymousOrganizationsApi.status).toBe(401)
+
+	const data = await signedIn(accountPage('Data & deletion'), '/account/data')
+	expect(data.response.status).toBe(200)
+	expectHtml(
+		data.html,
+		['Download account export', '>Delete account<'],
+		['aria-label="Connected accounts"'],
+	)
+
 	expect(account.loaderData?.accountProfile).toEqual({
 		ok: true,
 		email: 'user@example.com',
@@ -464,9 +535,6 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		avatarUrl: null,
 		profileVisibility: 'public',
 		formerEmails: [],
-		organizations: [],
-		inviteCount: 0,
-		lastUsedOrganization: null,
 	})
 	expect(account.loaderData?.accountConnections).toEqual(
 		emptyAccountConnections,
@@ -529,7 +597,10 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		enabled: false,
 	})
-	expect(twoFactor.html).not.toContain('action="/logout"')
+	expect(twoFactor.html).not.toContain('aria-label="Session"')
+	expect(twoFactor.html).toMatch(
+		/href="\/account\/security"[^>]*aria-current="page"/,
+	)
 	const passkeys = await signedIn(
 		createAccountPasskeysHandler,
 		'/account/passkeys',
@@ -567,7 +638,10 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 	expect(connections.response.status).toBe(200)
 	expectHtml(connections.html, [
-		'aria-label="Account sections"',
+		'aria-label="Workspace sections"',
+		'>Workspace<',
+		'>@account-user<',
+		'href="/@account-user/packages"',
 		'aria-label="Connected agents"',
 		'aria-label="MCP URL"',
 		'data-testid="account-connections-verify-note"',
@@ -617,8 +691,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(unknownAgent.response.status).toBe(404)
 
 	const accountLinked = await signedIn(
-		createAccountHandler,
-		'/account?oauthLinked=google',
+		accountPage('Security'),
+		'/account/security?oauthLinked=google',
 	)
 	expect(accountLinked.response.status).toBe(200)
 	expect(accountLinked.loaderData?.accountConnections).toEqual(
@@ -652,7 +726,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(positions).toEqual([...positions].sort((a, b) => a - b))
 
 	const anonymousAccount = await runHtml(
-		createAccountHandler(env),
+		createAccountHandler(env, 'Profile'),
 		get('/account'),
 	)
 	expect(anonymousAccount.response.status).toBe(302)

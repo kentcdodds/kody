@@ -95,7 +95,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 	} = props
 	return (
 		<AccountManagementPanel
-			title="Profile"
+			title="Profile details"
 			description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."
 		>
 			<form

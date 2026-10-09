@@ -9,6 +9,7 @@ import {
 	type AccountConnectionsLoaderData,
 } from '#universal/loader-data.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
+import { routes } from '#universal/routes.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	getDangerPillCss,
@@ -81,7 +82,10 @@ export function createAccountConnections(handle: Handle) {
 		connectionsMessage = null
 		handle.update()
 		try {
-			const errorMessage = await startSocialSignIn(providerId, null)
+			const errorMessage = await startSocialSignIn(
+				providerId,
+				routes.accountSecurity.href(),
+			)
 			if (errorMessage) {
 				connectionsMessage = { text: errorMessage, tone: 'error' }
 				connectionsBusy = false

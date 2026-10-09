@@ -14,9 +14,96 @@ type AccountManagementLinkNavItem = {
 	icon?: IconName
 }
 
+type AccountManagementLinkNavGroup = {
+	label: string | null
+	items: Array<AccountManagementLinkNavItem>
+}
+
 type AccountManagementLinkNavProps = {
 	label: string
+	/** Names whose settings these are: "Account", or "Workspace" plus `@slug`. */
+	heading?: { eyebrow: string; name?: string }
+	groups: Array<AccountManagementLinkNavGroup>
+}
+
+type AccountManagementInlineLinkNavProps = {
+	label: string
 	items: Array<AccountManagementLinkNavItem>
+}
+
+/** Set on the shell so it is at least as tall as the rail's link column. */
+export const accountRailHeightVar = '--account-rail-height'
+
+const railHeadingCss = {
+	display: 'grid',
+	gap: '0.1rem',
+	padding: '0 0.7rem 0.6rem',
+	margin: 0,
+	minWidth: 0,
+}
+
+const railEyebrowCss = {
+	fontSize: '0.72rem',
+	fontWeight: 650,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const railNameCss = {
+	fontWeight: 650,
+	fontSize: '0.98rem',
+	color: colors.text,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap' as const,
+}
+
+const railGroupLabelCss = {
+	margin: 0,
+	padding: '0.85rem 0.7rem 0.3rem',
+	fontSize: '0.72rem',
+	fontWeight: 650,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const railGroupCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.15rem',
+}
+
+function renderRailHeading(heading: AccountManagementLinkNavProps['heading']) {
+	if (!heading) return null
+	return (
+		<p mix={css(railHeadingCss)} data-account-nav-heading>
+			<span mix={css(railEyebrowCss)}>{heading.eyebrow}</span>
+			{heading.name ? <span mix={css(railNameCss)}>{heading.name}</span> : null}
+		</p>
+	)
+}
+
+function renderRailGroups(
+	groups: Array<AccountManagementLinkNavGroup>,
+	linkCss: Parameters<typeof css>[0],
+) {
+	return groups.map((group, index) => (
+		<div
+			key={group.label ?? `group-${index}`}
+			role={group.label ? 'group' : undefined}
+			aria-label={group.label ?? undefined}
+			mix={css(railGroupCss)}
+		>
+			{group.label ? (
+				<p aria-hidden="true" mix={css(railGroupLabelCss)}>
+					{group.label}
+				</p>
+			) : null}
+			{renderAccountNavLinks(group.items, linkCss)}
+		</div>
+	))
 }
 
 /** `.account-nav a` — quiet link pills; only the current one goes green. */
@@ -112,7 +199,9 @@ export function AccountManagementLinkNav(
 	handle: Handle<AccountManagementLinkNavProps>,
 ) {
 	return () => {
-		const current = handle.props.items.find((item) => item.active)
+		const current = handle.props.groups
+			.flatMap((group) => group.items)
+			.find((item) => item.active)
 		return (
 			<>
 				<nav
@@ -147,22 +236,43 @@ export function AccountManagementLinkNav(
 					})}
 				>
 					<div
-						mix={css({
-							// Sticks under the site header on a long page. The
-							// cap is the shell (`100%`) and the viewport, so a
-							// link list taller than either scrolls inside the
-							// rail instead of stretching the shell.
-							position: 'sticky',
-							top: '5rem',
-							display: 'flex',
-							flexDirection: 'column',
-							gap: '0.15rem',
-							maxHeight: 'min(100%, calc(100dvh - 6.5rem))',
-							overflowY: 'auto',
-							overscrollBehavior: 'contain',
-						})}
+						mix={[
+							css({
+								// Sticks under the site header on a long page. The
+								// shell is held at least this tall (see the ref), so
+								// only a viewport shorter than the list makes it
+								// scroll inside the rail.
+								position: 'sticky',
+								top: '5rem',
+								display: 'flex',
+								flexDirection: 'column',
+								gap: '0.15rem',
+								maxHeight: 'min(100%, calc(100dvh - 6.5rem))',
+								overflowY: 'auto',
+								overscrollBehavior: 'contain',
+							}),
+							ref((node, signal) => {
+								if (!(node instanceof HTMLElement)) return
+								const shell = node.closest<HTMLElement>('[data-account-shell]')
+								if (!shell || typeof ResizeObserver === 'undefined') return
+								const sync = () => {
+									shell.style.setProperty(
+										accountRailHeightVar,
+										`${node.scrollHeight}px`,
+									)
+								}
+								const observer = new ResizeObserver(sync)
+								observer.observe(node)
+								sync()
+								signal.addEventListener('abort', () => {
+									observer.disconnect()
+									shell.style.removeProperty(accountRailHeightVar)
+								})
+							}),
+						]}
 					>
-						{renderAccountNavLinks(handle.props.items, accountNavLinkCss)}
+						{renderRailHeading(handle.props.heading)}
+						{renderRailGroups(handle.props.groups, accountNavLinkCss)}
 					</div>
 				</nav>
 				<details
@@ -179,7 +289,11 @@ export function AccountManagementLinkNav(
 				>
 					<summary>
 						{renderIcon('menu', { size: '1.05em' })}
-						<span>{handle.props.label}</span>
+						<span>
+							{handle.props.heading?.name ??
+								handle.props.heading?.eyebrow ??
+								handle.props.label}
+						</span>
 						{current ? (
 							<span mix={css(accountMobileMenuCurrentCss)}>
 								{current.label}
@@ -187,7 +301,7 @@ export function AccountManagementLinkNav(
 						) : null}
 					</summary>
 					<nav aria-label={handle.props.label}>
-						{renderAccountNavLinks(handle.props.items, accountMobileNavLinkCss)}
+						{renderRailGroups(handle.props.groups, accountMobileNavLinkCss)}
 					</nav>
 				</details>
 			</>
@@ -202,7 +316,7 @@ export function AccountManagementLinkNav(
  * instance stacks on top of the admin/account sections.
  */
 export function AccountManagementInlineLinkNav(
-	handle: Handle<AccountManagementLinkNavProps>,
+	handle: Handle<AccountManagementInlineLinkNavProps>,
 ) {
 	return () => (
 		<nav

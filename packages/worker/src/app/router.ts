@@ -322,8 +322,8 @@ import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
 import { createOrgAccountRedirectMiddleware } from '#app/org-account-redirect.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 import {
-	createAccountInvitesApiHandler,
-	createAccountInvitesHandler,
+	createAccountOrganizationsApiHandler,
+	createAccountOrganizationsHandler,
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
@@ -414,12 +414,14 @@ export function createAppRouter(env: Env) {
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
-			account: createAccountHandler(env),
+			account: createAccountHandler(env, 'Profile'),
+			accountSecurity: createAccountHandler(env, 'Security'),
+			accountData: createAccountHandler(env, 'Data & deletion'),
+			accountOrganizations: createAccountOrganizationsHandler(env),
+			accountOrganizationsApi: createAccountOrganizationsApiHandler(env),
 			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
 			accountOrganizationsNewPost:
 				createAccountOrganizationsNewPostHandler(env),
-			accountInvites: createAccountInvitesHandler(env),
-			accountInvitesApi: createAccountInvitesApiHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
