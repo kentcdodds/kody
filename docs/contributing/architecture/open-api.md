@@ -101,9 +101,9 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
   (capability operations take it from `orgPermission`; native operations declare
   it in `nativeRoute`). `authorize` step 4 narrows the compiled role by
   `credential.scopes`. There is no separate `x-kody-scope` check. `org:execute`
-  is the CapabilityProxy / package-graph / execute grant. `none` means the
-  surface touches no org data (own tokens, who-am-I, discovery, site-admin
-  tools).
+  is the CapabilityProxy / package-graph / execute route grant; each resolved
+  `kody:@…` import also needs `package:execute`. `none` means the surface
+  touches no org data (own tokens, who-am-I, discovery, site-admin tools).
 - TTL: tokens require an explicit lifetime: `lifetime` `short` (1h idle / 24h
   max) or `long` (14d idle / 3mo max), or both `idle_ttl_seconds` (60–1209600)
   and `max_lifetime_seconds` (up to 7776000). Each authenticated request slides
@@ -141,9 +141,10 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
 The cloud half of local execute. The CLI runs modules in a local workerd and
 forwards each `kody:runtime` call here. Static `kody:@…` imports are resolved by
-`POST /v1/local-execute/package-graph` (same `org:execute` permission): origin
-returns published, stamped importable-module artifacts for embedding — it does
-**not** execute the user module and does not silently hop to `kody.execute`. See
+`POST /v1/local-execute/package-graph` (`org:execute` on the route;
+`package:execute` per imported package): origin returns published, stamped
+importable-module artifacts for embedding — it does **not** execute the user
+module and does not silently hop to `kody.execute`. See
 [Local CLI execute](../../guides/local-execute.md) and
 [Open API](../../guides/open-api.md).
 

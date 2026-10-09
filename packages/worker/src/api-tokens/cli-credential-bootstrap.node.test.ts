@@ -345,6 +345,22 @@ test('bootstrap respects parent token scopes', async () => {
 	).rejects.toThrow(/scopes it does not hold/)
 })
 
+test('bootstrap without explicit scopes intersects defaults with the parent', async () => {
+	const { db } = createDb()
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		lifetime: 'short',
+		parent: {
+			scopes: ['token:delete', 'org:execute', 'org:read'],
+			maxExpiresAt: at(24 * 60 * 60).toISOString(),
+		},
+		now: start,
+	})
+	expect(minted.scopes).toEqual(['org:execute', 'org:read'])
+	expect(minted.scopes).not.toContain('package:execute')
+})
+
 test('bootstrap long lifetime clamps absolute max to a shorter API-token parent', async () => {
 	const { db } = createDb()
 	const parentRemainingSeconds = 30 * 24 * 60 * 60
