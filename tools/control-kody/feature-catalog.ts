@@ -142,6 +142,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		],
 		apis: [
 			'/account/packages.json',
+			'/@:orgSlug/packages.json',
 			'/account/packages/:packageId/approve-publish.json',
 			'/account/packages/:packageId/files.json',
 			'/profiles/:username/packages/:kodyId/approve-publish.json',

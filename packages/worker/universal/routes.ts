@@ -245,6 +245,7 @@ export const routes = route({
 	orgMcpServers: get('/@:orgSlug/mcp-servers(/*rest)'),
 	orgMemories: get('/@:orgSlug/memories(/*rest)'),
 	orgPackages: get('/@:orgSlug/packages'),
+	orgPackagesApi: get('/@:orgSlug/packages.json'),
 	orgSecretProviders: get('/@:orgSlug/secret-providers(/*rest)'),
 	orgSecrets: get('/@:orgSlug/secrets(/*rest)'),
 	orgValues: get('/@:orgSlug/values(/*rest)'),

@@ -18,7 +18,10 @@ import {
 } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { type RouteLoaderResult } from '#client/route-loader.ts'
+import {
+	routeLoaderRedirect,
+	type RouteLoaderResult,
+} from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
@@ -54,6 +57,36 @@ function getCurrentUsername(handle: Handle) {
 	return getProfileUsernameFromPathname(readRouterPathname(handle))
 }
 
+/**
+ * Cache key for the loaded shell and list. The workspace list and the public
+ * profile under the same handle are different data.
+ */
+function getCurrentLoadKey(handle: Handle) {
+	const pathname = readRouterPathname(handle)
+	const name = getProfileUsernameFromPathname(pathname)
+	if (!name) return null
+	return isWorkspaceRepositoriesPath(pathname) ? `${name}/packages` : name
+}
+
+/** `/@slug/packages`: the workspace Repositories page, not a public profile. */
+function isWorkspaceRepositoriesPath(pathname: string) {
+	return parseOrgResourcePath(pathname)?.section === 'packages'
+}
+
+/**
+ * Workspace lists go through the organization gate the document route uses;
+ * `key` is the URL handle (an org slug there, a username on a profile).
+ */
+function profileDataHref(
+	pathname: string,
+	key: string,
+	searchParams: URLSearchParams,
+) {
+	return isWorkspaceRepositoriesPath(pathname)
+		? routes.orgPackagesApi.href({ orgSlug: key }, { searchParams })
+		: routes.profileApi.href({ username: key }, { searchParams })
+}
+
 export async function profileRouteLoader(
 	url: URL,
 	signal: AbortSignal,
@@ -66,13 +99,14 @@ export async function profileRouteLoader(
 	}
 
 	const response = await fetch(
-		routes.profileApi.href({ username }, { searchParams: url.searchParams }),
+		profileDataHref(url.pathname, username, url.searchParams),
 		{
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
 			signal,
 		},
 	)
+	if (response.status === 401) return routeLoaderRedirect('/login')
 	if (response.status === 404) {
 		return {
 			profileShell: { ok: false, unavailable: true },
@@ -93,28 +127,28 @@ export function ProfileRoute(handle: Handle) {
 	let shell: ProfileShellLoaderData | ProfileUnavailableLoaderData | null = null
 	let list: ProfileListLoaderData | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
-	let shellLoadedForUsername: string | null = null
-	let listLoadedForUsername: string | null = null
-	let shellRequestedForUsername: string | null = null
+	let shellLoadedFor: string | null = null
+	let listLoadedFor: string | null = null
+	let shellRequestedFor: string | null = null
 	let shellLoadRequestId = 0
 
 	async function loadShell() {
 		const username = getCurrentUsername(handle)
-		if (!username) return
+		const loadKey = getCurrentLoadKey(handle)
+		if (!username || !loadKey) return
 
 		const requestId = ++shellLoadRequestId
-		if (shellLoadedForUsername !== username) {
+		if (shellLoadedFor !== loadKey) {
 			shellStatus = 'loading'
 			list = null
-			listLoadedForUsername = null
+			listLoadedFor = null
 			handle.update()
 		}
 
 		try {
-			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
-				.searchParams
+			const current = new URL(readCurrentRouterHref(handle), 'http://localhost')
 			const response = await fetch(
-				routes.profileApi.href({ username }, { searchParams: search }),
+				profileDataHref(current.pathname, username, current.searchParams),
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
@@ -124,8 +158,8 @@ export function ProfileRoute(handle: Handle) {
 			if (response.status === 404) {
 				shell = { ok: false, unavailable: true }
 				list = null
-				shellLoadedForUsername = username
-				listLoadedForUsername = null
+				shellLoadedFor = loadKey
+				listLoadedFor = null
 				shellStatus = 'ready'
 				handle.update()
 				return
@@ -136,13 +170,13 @@ export function ProfileRoute(handle: Handle) {
 			}
 			shell = toProfileShellLoaderData(payload)
 			list = toProfileListLoaderData(payload)
-			shellLoadedForUsername = username
-			listLoadedForUsername = username
+			shellLoadedFor = loadKey
+			listLoadedFor = loadKey
 			shellStatus = 'ready'
 			handle.update()
 		} catch {
 			if (requestId !== shellLoadRequestId) return
-			shellLoadedForUsername = username
+			shellLoadedFor = loadKey
 			shellStatus = 'error'
 			handle.update()
 		}
@@ -156,9 +190,14 @@ export function ProfileRoute(handle: Handle) {
 
 	return () => {
 		const username = getCurrentUsername(handle)
+		const loadKey = getCurrentLoadKey(handle)
 		const currentHref = readCurrentRouterHref(handle)
+		const currentPathname = new URL(currentHref, 'http://localhost').pathname
+		// `/@slug/packages` is the workspace Repositories page, which supplies
+		// its own shell and heading; filter links stay on that page.
+		const embedded = isWorkspaceRepositoriesPath(currentPathname)
 
-		if (!username) {
+		if (!username || !loadKey) {
 			return (
 				<section mix={css(pageCss)}>
 					<h1 mix={css(unavailableTitleCss)}>This profile isn't available.</h1>
@@ -174,13 +213,13 @@ export function ProfileRoute(handle: Handle) {
 		if (routeShell) {
 			shell = routeShell
 			if (routeShell.ok) {
-				shellLoadedForUsername = username
+				shellLoadedFor = loadKey
 				shellStatus = 'ready'
 			} else {
-				shellLoadedForUsername = username
+				shellLoadedFor = loadKey
 				shellStatus = 'ready'
 				list = null
-				listLoadedForUsername = null
+				listLoadedFor = null
 			}
 		}
 		const routeList = tryConsumeRouteLoaderData(
@@ -190,22 +229,20 @@ export function ProfileRoute(handle: Handle) {
 		)
 		if (routeList) {
 			list = routeList
-			listLoadedForUsername = username
+			listLoadedFor = loadKey
 		}
 
 		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) &&
-			shellLoadedForUsername !== username
+			consumeStaleNavigationData(currentHref) && shellLoadedFor !== loadKey
 		if (
 			(needsStaleRefresh ||
-				(shellLoadedForUsername !== username &&
-					shellRequestedForUsername !== username)) &&
+				(shellLoadedFor !== loadKey && shellRequestedFor !== loadKey)) &&
 			typeof document !== 'undefined'
 		) {
-			if (shellLoadedForUsername !== username) {
+			if (shellLoadedFor !== loadKey) {
 				shellStatus = 'loading'
 			}
-			shellRequestedForUsername = username
+			shellRequestedFor = loadKey
 			handle.queueTask(loadShell)
 		}
 
@@ -213,11 +250,9 @@ export function ProfileRoute(handle: Handle) {
 			shellStatus === 'ready' &&
 			shell != null &&
 			!shell.ok &&
-			shellLoadedForUsername === username
+			shellLoadedFor === loadKey
 		const readyShell =
-			shell != null && shell.ok && shellLoadedForUsername === username
-				? shell
-				: null
+			shell != null && shell.ok && shellLoadedFor === loadKey ? shell : null
 		const filters = readProfilePackageFiltersFromHref(currentHref, {
 			allowOwnerFilters: readyShell?.isSelf === true,
 		})
@@ -226,11 +261,23 @@ export function ProfileRoute(handle: Handle) {
 			currentHref,
 			'http://localhost',
 		).searchParams.has('limit')
-		const visibleList = profileListForUsername(
-			list,
-			listLoadedForUsername,
-			username,
-		)
+		const visibleList = embedded
+			? listLoadedFor === loadKey
+				? list
+				: null
+			: profileListForUsername(list, listLoadedFor, username)
+
+		if (embedded && showUnavailable) {
+			return (
+				<p
+					mix={css(pageDescriptionCss)}
+					role="status"
+					data-testid="workspace-repositories-unavailable"
+				>
+					This workspace's repositories aren't available.
+				</p>
+			)
+		}
 
 		const memberOrg = showUnavailable
 			? readAppSession(handle)?.session?.organizations?.find(
@@ -289,11 +336,6 @@ export function ProfileRoute(handle: Handle) {
 			)
 		}
 
-		// `/@slug/packages` is the workspace Repositories page, which supplies
-		// its own shell and heading; filter links stay on that page.
-		const currentPathname = new URL(currentHref, 'http://localhost').pathname
-		const embedded =
-			parseOrgResourcePath(currentPathname)?.section === 'packages'
 		const basePath = embedded ? currentPathname : undefined
 		const repositoryList = (
 			<>

@@ -317,7 +317,10 @@ import {
 	createAccountOrganizationsNewHandler,
 	createAccountOrganizationsNewPostHandler,
 } from '#app/handlers/account-organizations.ts'
-import { createOrgSectionHandler } from '#app/handlers/org-section.ts'
+import {
+	createOrgPackagesApiHandler,
+	createOrgSectionHandler,
+} from '#app/handlers/org-section.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
@@ -610,6 +613,7 @@ export function createAppRouter(env: Env) {
 			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
 			orgPackages: createOrgSectionHandler(env, 'packages'),
+			orgPackagesApi: createOrgPackagesApiHandler(env),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
 			orgSecrets: createOrgSectionHandler(env, 'secrets'),
 			orgValues: createOrgSectionHandler(env, 'values'),

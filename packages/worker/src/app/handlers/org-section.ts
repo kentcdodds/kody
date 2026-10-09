@@ -1,8 +1,15 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type Action } from 'remix/router'
+import {
+	personalOrgId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
+import {
+	loadRequestOrgResolution,
+	type RequestOrgResolution,
+} from '#app/org-request-binding.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { createAccountActivityHandler } from '#app/handlers/account-activity.ts'
 import { createAccountConnectionsHandler } from '#app/handlers/account-connected-agents.ts'
@@ -17,9 +24,15 @@ import { createAccountValuesHandler } from '#app/handlers/account-values.ts'
 import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
 import { createAccountWebhooksHandler } from '#app/handlers/account-webhooks.ts'
 import { createAccountWorkflowsHandler } from '#app/handlers/account-workflows.ts'
-import { createProfileHandler } from '#app/handlers/profile.tsx'
+import {
+	createProfileApiHandler,
+	createProfileHandler,
+} from '#app/handlers/profile.tsx'
+import { jsonResponse } from '#worker/json-response.ts'
+import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import { type OrgOwnedAccountSection } from '#universal/org-pages.ts'
+import { type routes } from '#universal/routes.ts'
 
 type SectionHandler = {
 	handler: (ctx: never) => Response | Promise<Response>
@@ -110,6 +123,25 @@ function sectionParams(
 	}
 }
 
+/**
+ * Why `/@slug/<section>` is closed to this person, or null when it is open.
+ * Storage still keys resources by person id (personal org id === userId), so
+ * a non-personal org would show the actor's personal data under the wrong
+ * slug until storage follows request.org.id (#3073).
+ */
+function orgSectionDenial(
+	resolution: RequestOrgResolution,
+	personId: PersonId,
+): string | null {
+	if (resolution === 'denied' || resolution === 'personal') {
+		return 'Organization unavailable'
+	}
+	if (resolution.org.id !== personalOrgId(personId)) {
+		return 'Organization resources unavailable'
+	}
+	return null
+}
+
 export function createOrgSectionHandler(
 	env: Env,
 	section: OrgOwnedAccountSection,
@@ -128,25 +160,12 @@ export function createOrgSectionHandler(
 				env,
 				user.mcpUser.userId,
 			)
-			if (resolution === 'denied' || resolution === 'personal') {
+			const denial = orgSectionDenial(resolution, user.mcpUser.userId)
+			if (denial || typeof resolution === 'string') {
 				return renderAppPage({
 					request: ctx.request,
 					env,
-					title: 'Organization unavailable',
-					notFound: true,
-					status: 404,
-				})
-			}
-			// Storage still keys resources by person id (personal org id ===
-			// userId). Non-personal org URLs would show the actor's personal
-			// data under the wrong slug until storage follows request.org.id.
-			const isPersonalOrg =
-				resolution.org.id === personalOrgId(user.mcpUser.userId)
-			if (!isPersonalOrg) {
-				return renderAppPage({
-					request: ctx.request,
-					env,
-					title: 'Organization resources unavailable',
+					title: denial ?? 'Organization unavailable',
 					notFound: true,
 					status: 404,
 				})
@@ -180,4 +199,35 @@ export function createOrgSectionHandler(
 			})
 		},
 	}
+}
+
+/**
+ * JSON for the workspace Repositories page, behind the same gate as
+ * `/@slug/packages`. The list is the signed-in person's own inventory, looked
+ * up by their current username because the personal-org slug does not follow
+ * a username change.
+ */
+export function createOrgPackagesApiHandler(env: Env) {
+	const profileApi = createProfileApiHandler(env)
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized' }, 401)
+			}
+			const binding = await loadOrgBindingForSlug(
+				env.APP_DB,
+				user.mcpUser.userId,
+				params.orgSlug,
+			)
+			const denial = orgSectionDenial(binding ?? 'denied', user.mcpUser.userId)
+			if (denial) return jsonResponse({ ok: false, error: denial }, 404)
+			return profileApi.handler({
+				request,
+				params: { username: user.username },
+				url: new URL(request.url),
+			} as never)
+		},
+	} satisfies Action<typeof routes.orgPackagesApi>
 }
