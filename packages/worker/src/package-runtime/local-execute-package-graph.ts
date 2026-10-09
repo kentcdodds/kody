@@ -1,3 +1,4 @@
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { loadLocalExecuteRuntimeSupport } from '#worker/local-execute-runtime-support-load.ts'
 import { packageSpecifierPrefix } from './package-import-resolution.ts'
@@ -378,6 +379,10 @@ function mapPrepareFailure(
 	imports: ReadonlyArray<string>,
 ): LocalExecutePackageGraphError {
 	if (error instanceof LocalExecutePackageGraphError) return error
+	// Scope/permission denials must surface as AuthorizationError →
+	// Open API `insufficient_scope` (names `package:execute`), not as a
+	// misleading "package was not found".
+	if (error instanceof AuthorizationError) throw error
 	const message =
 		error instanceof Error
 			? error.message

@@ -3,7 +3,9 @@
 - **Status:** accepted
 - **Date:** 2026-10-01
 - **Amended:** 2026-10-06 (required lifetimes, active-token cap 500, reclaim);
-  2026-10-09 (Teams P4: default eventual scopes are `org:execute` + `org:read`)
+  2026-10-09 (Teams P4: default eventual scopes are `org:execute` + `org:read`);
+  2026-10-09 (default scopes also include `package:execute` so local `kody:@…`
+  package-graph resolution works)
 - **Amends:** [0053](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md),
   [0055](./0055-cli-mcp-oauth-local-execute-http.md)
 
@@ -121,7 +123,9 @@ a flagless / default-lifetime mint path.
   local execute; single-task agents use `short`.
 - Ordinary and bootstrap tokens share the same idle/max ceilings (14 days / 3
   months). Cap reclaim is generic in `mintApiToken`.
-- **As of Teams P4:** default eventual scopes are `org:execute` + `org:read`
-  (org permissions; no write-implies-read). Do not mint the original
+- **As of Teams P4:** default eventual scopes are `org:execute` + `org:read` +
+  `package:execute` (org permissions; no write-implies-read). `package:execute`
+  is required because package-graph / import resolution checks it on each
+  `kody:@…` import under request permissions. Do not mint the original
   `local-execute` / `account:read` names, or `tokens:write`. Parent tokens still
   cannot escalate scopes or outlive their own `max_expires_at`.

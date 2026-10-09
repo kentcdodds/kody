@@ -46,7 +46,7 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				`Org-permission scopes for the eventual \`kody_at_\` (default \`org:execute\` + \`org:read\`). There is no write-implies-read hierarchy.\n${scopeListDescription}`,
+				`Org-permission scopes for the eventual \`kody_at_\` (default \`org:execute\` + \`org:read\` + \`package:execute\`). There is no write-implies-read hierarchy.\n${scopeListDescription}`,
 			),
 		lifetime: lifetimeAliasSchema
 			.optional()

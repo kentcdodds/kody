@@ -235,11 +235,14 @@ test('usageByPackageGet packageId returns that package slice of the period', asy
 		},
 	)
 	expect(unspentOwned.rows).toHaveLength(1)
-	expect(unspentOwned.rows[0]).toMatchObject({
+	expect(unspentOwned.rows[0]).toEqual({
 		packageId: 'pkg-alpha',
 		name: 'Alpha Bot',
 		href: `/@${username}/alpha-bot`,
 		creditsMicroUsd: 0,
+		share: 0,
+		meters: [],
+		cumulative: [],
 		isAdHoc: false,
 	})
 })

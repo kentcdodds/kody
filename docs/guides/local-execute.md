@@ -17,9 +17,10 @@ module in a local workerd and forwards each `kody:runtime` call through the
 CapabilityProxy. Do **not** use hosted MCP `execute` for agent work when a local
 or Open API path exists.
 
-Auth: `--token` / `KODY_API_TOKEN` (`kody_at_…` with `org:execute`), or when no
-API token is set, the access token from `kody login` (MCP OAuth) as Bearer on
-CapabilityProxy and package-graph routes.
+Auth: `--token` / `KODY_API_TOKEN` (`kody_at_…` with `org:execute`; add
+`package:execute` when the module imports `kody:@…`), or when no API token is
+set, the access token from `kody login` (MCP OAuth) as Bearer on CapabilityProxy
+and package-graph routes.
 
 ## Setup
 
@@ -50,18 +51,19 @@ without `KODY_API_TOKEN`.
 npx @kodycodes/cli login   # once
 ```
 
-**CI / headless only:** scoped `KODY_API_TOKEN` (`kody_at_…` with
-`org:execute`), usually from MCP `api` `tokenCreate` with a required lifetime.
-Put the value in the environment; never paste it into chat. Prefer the env var
-over `--token`. When set, `KODY_API_TOKEN` wins over `kody login` / bootstrap
-store. Minting details: [Open API](./open-api.md) (`guide:open_api`).
+**CI / headless only:** scoped `KODY_API_TOKEN` (`kody_at_…` with `org:execute`,
+plus `package:execute` for saved-package imports), usually from MCP `api`
+`tokenCreate` with a required lifetime. Put the value in the environment; never
+paste it into chat. Prefer the env var over `--token`. When set,
+`KODY_API_TOKEN` wins over `kody login` / bootstrap store. Minting details:
+[Open API](./open-api.md) (`guide:open_api`).
 
 ```json
 {
 	"operationId": "tokenCreate",
 	"params": {
 		"name": "kody-cli-local",
-		"scopes": ["org:execute", "org:read"],
+		"scopes": ["org:execute", "org:read", "package:execute"],
 		"lifetime": "short"
 	}
 }

@@ -181,7 +181,7 @@ export async function resolveSavedPackageImport(input: {
 
 function allowResolvedPackageImport(
 	resolution: ResolvedPackageImport,
-): ResolvedPackageImport | null {
+): ResolvedPackageImport {
 	const access = getRequestPermissions()
 	// Outside a request binding (jobs, apps, nested runtimes) → allow.
 	if (!access) return resolution
@@ -193,9 +193,15 @@ function allowResolvedPackageImport(
 	const decision = checkPermission(
 		access,
 		'package:execute',
-		reachedPackage(access.orgId, { id: resolution.row.id }),
+		reachedPackage(access.orgId, {
+			id: resolution.row.id,
+			label: resolution.row.name,
+		}),
 	)
-	return decision.allowed ? resolution : null
+	// Do not collapse a scope/permission denial into "package not found" —
+	// callers (CLI package-graph) need the missing scope named.
+	if (!decision.allowed) throw decision.error
+	return resolution
 }
 
 export async function resolvePlatformScopedPackageImport(input: {

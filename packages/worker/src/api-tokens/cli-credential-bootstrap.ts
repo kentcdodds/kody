@@ -35,9 +35,17 @@ export const cliCredentialBootstrapPolicy = {
 	maxRedeemTtlSeconds: 15 * 60,
 	maxOutstandingCodesPerUser: 5,
 	defaultName: 'kody-cli-bootstrap',
+	/**
+	 * `org:execute` + `org:read` cover CapabilityProxy and account reads.
+	 * `package:execute` is required so `POST /v1/local-execute/package-graph`
+	 * can resolve `kody:@…` imports (request permissions check package:execute
+	 * per import). Without it, default bootstrap tokens fail closed on every
+	 * saved-package local execute.
+	 */
 	defaultScopes: [
 		'org:execute',
 		'org:read',
+		'package:execute',
 	] as const satisfies ReadonlyArray<ApiTokenScope>,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
 	maxIdleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds,
@@ -222,11 +230,24 @@ export async function mintCliCredentialBootstrap(input: {
 	const name = readTokenName(
 		input.name ?? cliCredentialBootstrapPolicy.defaultName,
 	)
+	const parent = input.parent
+	const requestedScopesExplicitly = input.scopes !== undefined
 	let scopes: Array<ApiTokenScope>
 	try {
-		scopes = normalizeApiTokenScopes(
+		const requested = normalizeApiTokenScopes(
 			input.scopes ?? [...cliCredentialBootstrapPolicy.defaultScopes],
 		)
+		// API-token parents that omit `scopes` get the intersection of defaults
+		// and what they hold. Otherwise adding `package:execute` to defaults
+		// would break package-free bootstrap from older org:execute+org:read
+		// parents. Explicit `scopes` still escalate-check against the parent.
+		// MCP / session callers (no parent) keep the full default set.
+		scopes =
+			parent && !requestedScopesExplicitly
+				? requested.filter((scope) =>
+						apiTokenScopeIncludes(parent.scopes, scope),
+					)
+				: requested
 	} catch (error) {
 		throw new McpCallerError(
 			error instanceof Error ? error.message : String(error),
@@ -235,8 +256,16 @@ export async function mintCliCredentialBootstrap(input: {
 	if (scopes.length === 0) {
 		throw new McpCallerError('At least one scope is required.')
 	}
-	const parent = input.parent
-	if (parent) {
+	if (
+		parent &&
+		!requestedScopesExplicitly &&
+		!apiTokenScopeIncludes(scopes, 'org:execute')
+	) {
+		throw new McpCallerError(
+			'A token cannot mint a CLI bootstrap code without holding org:execute.',
+		)
+	}
+	if (parent && requestedScopesExplicitly) {
 		const missing = scopes.filter(
 			(scope) => !apiTokenScopeIncludes(parent.scopes, scope),
 		)
