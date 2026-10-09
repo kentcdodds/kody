@@ -67,7 +67,7 @@ import { handleStatusIncidentEventRequest } from '#worker/status-incidents/maint
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
-import { fetchPreservingWebSocketUpgrade } from '#worker/package-runtime/websocket-upgrade.ts'
+import { forwardRuntimeWorkerFetch } from '#worker/package-runtime/package-app-diagnostics.ts'
 import {
 	isNamespacedAppEndpointPath,
 	retiredConnectorsPathPrefix,
@@ -834,7 +834,7 @@ async function fetchWithDynamicWorkerBudget(
 	if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
 		// Sentry instruments Fetcher.fetch and rebuilds Requests, dropping the
 		// forbidden Upgrade header. Preserve WebSocket upgrades explicitly.
-		return fetchPreservingWebSocketUpgrade(env.RUNTIME_WORKER, request)
+		return forwardRuntimeWorkerFetch(env.RUNTIME_WORKER, request)
 	}
 
 	// Host isolation for hosted package apps before first-party surfaces,
