@@ -509,12 +509,19 @@ export type RehearsalSeedStatus = {
 	state: RehearsalSeedState
 	count: number
 	expected: number
+	daveUsername: string | null
 	app: RehearsalDatabase
 }
 
-export function classifyRehearsalSeedCount(count: number): RehearsalSeedState {
-	if (!Number.isFinite(count) || count <= 0) return 'empty'
-	if (count >= rehearsalSeedRosterSize) return 'complete'
+export function classifyRehearsalSeed(input: {
+	count: number
+	daveUsername: string | null
+}): RehearsalSeedState {
+	if (!Number.isFinite(input.count) || input.count <= 0) return 'empty'
+	if (input.count < rehearsalSeedRosterSize) return 'partial'
+	// Dave's rename is the last durable APP_DB write in seedRehearsal. Six
+	// accounts can exist earlier; that is still an incomplete seed.
+	if (input.daveUsername === renamedDaveUsername) return 'complete'
 	return 'partial'
 }
 
@@ -527,17 +534,20 @@ export async function rehearsalSeedStatus(
 	)
 	if (!app) throw new Error('No app database for this preview.')
 	const emails = rehearsalSeedEmails.map((email) => `'${email}'`).join(', ')
-	const rows = await queryD1<{ n: number }>(
+	const daveEmail = rehearsalUser('dave').email
+	const rows = await queryD1<{ n: number; dave_username: string | null }>(
 		client,
 		app.uuid,
-		`SELECT COUNT(*) AS n FROM users WHERE email IN (${emails})`,
+		`SELECT (SELECT COUNT(*) FROM users WHERE email IN (${emails})) AS n, (SELECT username FROM users WHERE email = '${daveEmail}') AS dave_username`,
 	)
 	const count = Number(rows[0]?.n ?? 0)
+	const daveUsername = rows[0]?.dave_username ?? null
 	return {
 		workerName,
-		state: classifyRehearsalSeedCount(count),
+		state: classifyRehearsalSeed({ count, daveUsername }),
 		count,
 		expected: rehearsalSeedRosterSize,
+		daveUsername,
 		app,
 	}
 }
