@@ -274,16 +274,27 @@ export async function softDeleteGrant(input: {
 	grantId: string
 }) {
 	const now = new Date().toISOString()
-	const result = await input.db
+	const deleteGrant = input.db
 		.prepare(
 			`UPDATE grants
 			 SET deleted_at = ?, updated_at = ?
 			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
 		)
 		.bind(now, now, input.grantId, input.orgId)
-		.run()
-	if (!changesOf(result)) throw new Error('Grant was not found in this org.')
-	await bumpAccessEpochStatement(input.db, input.orgId).run()
+	const results = await (async () => {
+		if (typeof input.db.batch === 'function') {
+			return await input.db.batch([
+				deleteGrant,
+				bumpAccessEpochStatement(input.db, input.orgId),
+			])
+		}
+		const result = await deleteGrant.run()
+		await bumpAccessEpochStatement(input.db, input.orgId).run()
+		return [result]
+	})()
+	if (!changesOf(results[0])) {
+		throw new Error('Grant was not found in this org.')
+	}
 }
 
 /**

@@ -284,7 +284,7 @@ export function buildComputeOverageCreditsGuidance(
 		case 'funded':
 			return `Usage past the include is charged from your credits at ${rate}. When credits run out, rate and compute limits match Free until you top up.`
 		case 'empty':
-			return `With no credits left, rate and compute limits match Free until you top up. Add credits at ${accountCreditsPath} to restore Pro rates; usage past the include is charged at ${rate}.`
+			return `With no credits left, rate and compute limits match Free until you top up. Add credits at ${accountCreditsPath} to restore Pro rates; past-include usage is charged at ${rate} after you top up.`
 		case 'none':
 			if (plan === 'max') return ''
 			return plan === 'free'
