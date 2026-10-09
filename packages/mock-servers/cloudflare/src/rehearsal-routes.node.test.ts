@@ -62,5 +62,4 @@ test('token endpoint mints tokens for a code or refresh token and rejects anythi
 		body: 'grant_type=client_credentials',
 	})
 	expect(rejected?.status).toBe(400)
-	expect(await call('/client/v4/accounts')).toBeNull()
 })

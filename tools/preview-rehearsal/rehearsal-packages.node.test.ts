@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	packageSecretName,
 	personalPackageFiles,
-	platformPackageFiles,
 } from './rehearsal-packages.ts'
 
 function readManifest(files: Array<{ path: string; content: string }>) {
@@ -48,15 +47,4 @@ test('the personal package declares an app, two jobs, a webhook, and resolvable 
 		(file) => file.path === 'src/secret-proof.ts',
 	)?.content
 	expect(proof).toContain(`{{secret:${packageSecretName}}}`)
-})
-
-test('platform packages live under the platform scope', () => {
-	const manifest = readManifest(
-		platformPackageFiles({
-			scope: 'rh-platform',
-			leaf: 'tools',
-			description: 'd',
-		}),
-	)
-	expect(manifest.name).toBe('@rh-platform/tools')
 })

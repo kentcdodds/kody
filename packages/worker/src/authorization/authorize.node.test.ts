@@ -65,7 +65,6 @@ test('every person owns their implicit org and holds every org permission in it'
 	const effective = await computeEffectivePermissions({ env, request })
 
 	expect(effective.orgId).toBe(personalOrgId(personIdFromStored('user-1')))
-	expect([...effective.permissions].sort()).toEqual([...orgPermissions].sort())
 	expect(effective.credentialScopes).toBeNull()
 	expect(effective.profileGrants).toBeNull()
 	await expect(

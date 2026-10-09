@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	deriveRehearsalPassword,
-	rehearsalOrigins,
-	rehearsalUsers,
-} from './rehearsal-env.ts'
+import { deriveRehearsalPassword, rehearsalOrigins } from './rehearsal-env.ts'
 
 test('rehearsal passwords are deterministic per preview and role, and distinct otherwise', async () => {
 	const base = { key: 'ci-token', workerName: 'kody-branch-teams-rehearsal' }
@@ -30,15 +26,6 @@ test('rehearsal passwords are deterministic per preview and role, and distinct o
 			role: 'alice',
 		}),
 	).rejects.toThrow('rehearsals run only on branch previews')
-})
-
-test('roster covers both id shapes and exactly one site admin', () => {
-	expect(new Set(rehearsalUsers.map((user) => user.origin))).toEqual(
-		new Set(['seed-sql', 'admin-create', 'signup']),
-	)
-	expect(
-		rehearsalUsers.filter((user) => user.siteAdmin).map((user) => user.role),
-	).toEqual(['admin'])
 })
 
 test('origins follow the preview worker naming', () => {

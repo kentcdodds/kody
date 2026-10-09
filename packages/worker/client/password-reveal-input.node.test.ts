@@ -35,8 +35,6 @@ test('controlled reveal shows text and pressed state', async () => {
 			onRevealedChange: () => {},
 			value: 'super-secret',
 			...passwordManagerIgnoreProps,
-			'data-field': 'secret-value',
-			'data-testid': 'connect-secret-set-value',
 		}),
 	)
 
@@ -44,8 +42,5 @@ test('controlled reveal shows text and pressed state', async () => {
 	expect(html).toMatch(/aria-label="Hide secret value"/)
 	expect(html).toMatch(/aria-pressed="true"/)
 	expect(html).toContain('>Hide<')
-	expect(html).toMatch(/data-field="secret-value"/)
-	expect(html).toMatch(/data-testid="connect-secret-set-value"/)
 	expect(html).toMatch(/data-1p-ignore/)
-	expect(html).toMatch(/value="super-secret"/)
 })

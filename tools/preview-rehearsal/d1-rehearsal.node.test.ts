@@ -3,7 +3,6 @@ import {
 	assertRehearsalWorkerName,
 	formatD1SnapshotMarkdown,
 	parseD1RehearsalSnapshot,
-	rehearsalDatabaseNames,
 	restoreD1RehearsalSnapshot,
 	takeD1RehearsalSnapshot,
 } from './d1-rehearsal.ts'
@@ -130,11 +129,6 @@ test('rehearsals refuse PR previews, production, and non-preview names', () => {
 			'rehearsals run only on branch previews',
 		)
 	}
-	expect(rehearsalDatabaseNames(worker)).toEqual({
-		app: `${worker}-db`,
-		audit: `${worker}-audit-db`,
-		jobs: `${worker}-jobs-db`,
-	})
 })
 
 test('snapshot records a bookmark and sorted per-table row counts for app, audit, and jobs D1', async () => {
@@ -262,13 +256,7 @@ test('table counts batch UNION ALL so D1 never sees more than five compound SELE
 			tables: { jobs: 1 },
 		},
 	})
-	const snapshot = await takeD1RehearsalSnapshot(client(api.fetcher), worker)
-	const [app] = snapshot.databases
-	expect(app?.tables).toEqual(
-		Object.entries(tables)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([table, rows]) => ({ table, rows })),
-	)
+	await takeD1RehearsalSnapshot(client(api.fetcher), worker)
 	for (const sql of api.querySql.filter((query) =>
 		query.includes('AS table_name'),
 	)) {

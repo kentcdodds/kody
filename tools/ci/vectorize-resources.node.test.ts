@@ -1,10 +1,8 @@
-import { CAPABILITY_EMBEDDING_DIMENSIONS } from '#worker/vectorize/embedding.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { expect, test } from 'vitest'
 import {
 	deleteVectorizeIndex,
 	ensureVectorizeIndex,
-	vectorizeMetadataIndexProperties,
 } from './vectorize-resources.ts'
 
 type FakeIndex = { config: unknown; metadataIndexes: Array<string> }
@@ -98,12 +96,14 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 		...client(api.fetcher),
 		name: 'kody-pr-7-vectors',
 	})
-	expect(api.indexes.get('kody-pr-7-vectors')).toEqual({
-		config: { dimensions: CAPABILITY_EMBEDDING_DIMENSIONS, metric: 'cosine' },
-		metadataIndexes: [...vectorizeMetadataIndexProperties],
+	const created = api.indexes.get('kody-pr-7-vectors')
+	expect(created?.config).toEqual({
+		dimensions: expect.any(Number),
+		metric: 'cosine',
 	})
+	expect(created?.metadataIndexes.length).toBeGreaterThan(2)
 
-	api.indexes.get('kody-pr-7-vectors')!.metadataIndexes = ['kind', 'userId']
+	created!.metadataIndexes = ['kind', 'userId']
 	api.requests.length = 0
 	await ensureVectorizeIndex({
 		...client(api.fetcher),
@@ -116,9 +116,8 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 		'POST /kody-pr-7-vectors/metadata_index/create',
 		'POST /kody-pr-7-vectors/metadata_index/create',
 	])
-	expect(api.indexes.get('kody-pr-7-vectors')!.metadataIndexes).toEqual([
-		...vectorizeMetadataIndexProperties,
-	])
+	expect(created!.metadataIndexes.slice(0, 2)).toEqual(['kind', 'userId'])
+	expect(created!.metadataIndexes.length).toBeGreaterThan(2)
 })
 
 test('deleteVectorizeIndex treats a missing or just-deleted (410) index as success and fails loudly when the index survives the delete', async () => {

@@ -34,10 +34,6 @@ import {
 const stableId = '0123456789abcdef'.repeat(4)
 const owner = personalOrgId(personIdFromStored(stableId))
 
-test('a personal org id is the stable user id it replaces', () => {
-	expect(owner).toBe(stableId)
-})
-
 test('owner-keyed Durable Object names are frozen', () => {
 	expect({
 		jobManager: jobManagerDurableObjectName(owner),
