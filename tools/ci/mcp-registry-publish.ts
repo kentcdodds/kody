@@ -206,6 +206,40 @@ export async function decidePublish(input: {
 	})
 }
 
+export async function interpretPublishError(input: {
+	text: string
+	local: ServerJson
+	fetchImpl?: typeof fetch
+}): Promise<PublishDecision> {
+	if (!isDuplicateVersionPublishError(input.text)) {
+		return {
+			action: 'fail',
+			reason: input.text || 'mcp-publisher publish failed.',
+		}
+	}
+	const lookup = await lookupPublishedServer({
+		name: input.local.name,
+		version: input.local.version,
+		fetchImpl: input.fetchImpl,
+	})
+	if (!lookup.ok) {
+		return {
+			action: 'fail',
+			reason: `Publish reported a duplicate version, but registry lookup failed (${lookup.error}). Cannot confirm the published payload matches.`,
+		}
+	}
+	if (!lookup.server) {
+		return {
+			action: 'fail',
+			reason: `Publish reported a duplicate version, but ${input.local.name}@${input.local.version} was not visible on lookup. Cannot confirm the published payload matches.`,
+		}
+	}
+	return classifyPublishedVersion({
+		local: input.local,
+		published: lookup.server,
+	})
+}
+
 async function gitOutput(
 	args: ReadonlyArray<string>,
 	cwd: string,
@@ -387,16 +421,30 @@ export async function main(args = process.argv.slice(2)) {
 			}
 		}
 		case 'interpret-error': {
-			const text = readFlag(args, '--text') ?? ''
-			if (isDuplicateVersionPublishError(text)) {
-				console.log(
-					'::notice::Version already published; treating duplicate publish as success.',
-				)
-				return
+			const local = parseServerJson(readFileSync(defaultServerJsonPath, 'utf8'))
+			const decision = await interpretPublishError({
+				text: readFlag(args, '--text') ?? '',
+				local,
+			})
+			switch (decision.action) {
+				case 'skip':
+					console.log(`::notice::${decision.reason}`)
+					return
+				case 'fail':
+					console.error(`::error::${decision.reason}`)
+					process.exitCode = 1
+					return
+				case 'publish':
+					console.error(
+						`::error::${decision.reason} Duplicate publish cannot retry from interpret-error.`,
+					)
+					process.exitCode = 1
+					return
+				default: {
+					const _exhaustive: never = decision
+					return _exhaustive
+				}
 			}
-			console.error(text || 'mcp-publisher publish failed.')
-			process.exitCode = 1
-			return
 		}
 		case 'check-version-bump': {
 			const result = await checkServerJsonVersionBump()

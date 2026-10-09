@@ -8,8 +8,10 @@ import {
 	classifyPublishedVersion,
 	classifyServerJsonChange,
 	decidePublish,
+	interpretPublishError,
 	isDuplicateVersionPublishError,
 	main,
+	resolveServerJsonValidationBase,
 	parsePublishedServerResponse,
 	parseServerJson,
 	registryServerVersionUrl,
@@ -145,13 +147,48 @@ test('decidePublish skips a matching published version and publishes a 404', asy
 	expect(lookupFailed.action).toBe('publish')
 })
 
-test('duplicate publisher output is success; other errors stay fatal', () => {
-	expect(
-		isDuplicateVersionPublishError(
-			'Error: publish failed: server returned status 400: {"errors":[{"message":"invalid version: cannot publish duplicate version"}]}',
-		),
-	).toBe(true)
+test('duplicate publisher output is success only when the published payload matches', async () => {
+	const duplicateText =
+		'Error: publish failed: server returned status 400: {"errors":[{"message":"invalid version: cannot publish duplicate version"}]}'
+	expect(isDuplicateVersionPublishError(duplicateText)).toBe(true)
 	expect(isDuplicateVersionPublishError('unauthorized')).toBe(false)
+
+	const match = await interpretPublishError({
+		text: duplicateText,
+		local: localServer,
+		fetchImpl: async () => jsonResponse(200, { server: localServer }),
+	})
+	expect(match.action).toBe('skip')
+
+	const drift = await interpretPublishError({
+		text: duplicateText,
+		local: { ...localServer, description: 'New copy' },
+		fetchImpl: async () => jsonResponse(200, { server: localServer }),
+	})
+	expect(drift.action).toBe('fail')
+
+	const lookupFailed = await interpretPublishError({
+		text: duplicateText,
+		local: localServer,
+		fetchImpl: async () => jsonResponse(503, { title: 'Unavailable' }),
+	})
+	expect(lookupFailed.action).toBe('fail')
+
+	const missing = await interpretPublishError({
+		text: duplicateText,
+		local: localServer,
+		fetchImpl: async () => jsonResponse(404, { title: 'Not Found' }),
+	})
+	expect(missing.action).toBe('fail')
+
+	const other = await interpretPublishError({
+		text: 'unauthorized',
+		local: localServer,
+		fetchImpl: async () => {
+			throw new Error('should not look up')
+		},
+	})
+	expect(other).toEqual({ action: 'fail', reason: 'unauthorized' })
 })
 
 test('checkServerJsonVersionBump reports metadata drift against the Git base', async () => {
@@ -192,6 +229,31 @@ test('checkServerJsonVersionBump reports metadata drift against the Git base', a
 		git: async () => null,
 	})
 	expect(skipped).toMatchObject({ ok: true, kind: 'skipped' })
+
+	const multiCommitPush = await checkServerJsonVersionBump({
+		head: { ...localServer, version: '1.0.4', description: 'New copy' },
+		env: { MCP_REGISTRY_VALIDATION_BASE: 'base' },
+		git,
+	})
+	expect(multiCommitPush).toMatchObject({ ok: true, kind: 'ok' })
+})
+
+test('resolveServerJsonValidationBase prefers the explicit pre-push SHA over HEAD^1', async () => {
+	const git = async (args: ReadonlyArray<string>) => {
+		const command = args.join(' ')
+		if (command === 'rev-parse HEAD^{commit}') return 'head\n'
+		if (command === 'rev-parse before^{commit}') return 'before\n'
+		if (command === 'rev-parse HEAD^1') return 'parent\n'
+		if (command === 'merge-base HEAD origin/main') return 'head\n'
+		if (command === 'merge-base HEAD main') return 'head\n'
+		return null
+	}
+	await expect(
+		resolveServerJsonValidationBase({
+			env: { MCP_REGISTRY_VALIDATION_BASE: 'before' },
+			git,
+		}),
+	).resolves.toBe('before')
 })
 
 test('CLI decide and interpret-error write the workflow contract', async () => {
@@ -203,10 +265,6 @@ test('CLI decide and interpret-error write the workflow contract', async () => {
 	process.env.GITHUB_OUTPUT = outputPath
 
 	consoleError.mockImplementation(() => {})
-	process.exitCode = undefined
-	await main(['interpret-error', '--text', 'cannot publish duplicate version'])
-	expect(process.exitCode).toBeUndefined()
-
 	process.exitCode = undefined
 	await main(['interpret-error', '--text', 'unauthorized'])
 	expect(process.exitCode).toBe(1)
@@ -233,4 +291,11 @@ test('publish workflow decides before publish and treats duplicate version as su
 	expect(source).toContain('mcp-registry-publish.ts decide')
 	expect(source).toContain('mcp-registry-publish.ts interpret-error')
 	expect(source).toContain('steps.decide.outputs.action')
+})
+
+test('validate passes the PR base or pre-push SHA to the server.json version check', () => {
+	const source = readFileSync('.github/workflows/validate.yml', 'utf8')
+	expect(source).toContain('MCP_REGISTRY_VALIDATION_BASE')
+	expect(source).toContain('github.event.pull_request.base.sha')
+	expect(source).toContain('github.event.before')
 })

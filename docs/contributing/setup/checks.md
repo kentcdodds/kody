@@ -132,7 +132,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   misspellings to empty strings instead of failing the run, so a typo in
   `deploy.yml` would otherwise first appear on a production deploy. It also
   requires a `server.json` version bump when registry metadata changes: the MCP
-  Registry cannot republish a version.
+  Registry cannot republish a version. CI passes the PR base SHA or the pre-push
+  `github.event.before` as `MCP_REGISTRY_VALIDATION_BASE` so a multi-commit main
+  push that already bumped the version is one change.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
