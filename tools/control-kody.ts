@@ -66,6 +66,7 @@ import {
 import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
+	applySessionRequestBody,
 	parseSessionRequest,
 	previewSeedEmail,
 	previewSeedPassword,
@@ -130,8 +131,13 @@ const usageLines = [
 	'Prefer MCP/API/control-kody execute for proof; browse only when UI is under',
 	'test. Example: browse --origin <preview> --path /@user/pkg --record',
 	'',
-	'request spec is METHOD /path [status] [json-body]. Separate arguments',
-	'are joined, so POST /path 400 \'{"action":"add"}\' sends the body.',
+	'request spec is METHOD /path [status] [json-body] [--form name=value]...',
+	'[--multipart]. Separate arguments are joined, so',
+	'POST /path 400 \'{"action":"add"}\' sends JSON and',
+	'POST /account/organizations/new --form slug=x-org --form displayName=X',
+	'sends application/x-www-form-urlencoded. --multipart sends',
+	'multipart/form-data; a --form value starting with @ is a file path',
+	'(POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png).',
 	'request fetches GET/HEAD first and only POSTs /auth when the response is',
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists. --email keys the',
@@ -300,12 +306,21 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 
 	if (options.command === 'request') {
 		const positional: Array<string> = []
-		parseSharedFlags(rest, options, positional)
+		parseSharedFlags(rest, options, positional, { requestSpec: true })
 		if (positional.length > 0) {
 			const spec = positional.join(' ')
 			const parsed = parseSessionRequest(spec)
 			if (options.body) {
+				if (parsed.form) {
+					throw new ControlKodyError(
+						'--body JSON cannot be combined with --form',
+					)
+				}
 				parsed.body = JSON.parse(options.body)
+			}
+			if (parsed.dump) options.dump = true
+			if (parsed.contains.length > 0) {
+				options.contains.push(...parsed.contains)
 			}
 			options.request = parsed
 		}
@@ -336,6 +351,7 @@ function parseSharedFlags(
 	argv: Array<string>,
 	options: ControlKodyOptions,
 	positional: Array<string> = [],
+	flags: { requestSpec?: boolean } = {},
 ) {
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index]
@@ -395,6 +411,21 @@ function parseSharedFlags(
 			case '--body': {
 				options.body = requireValue(argv[index + 1], '--body')
 				index += 1
+				break
+			}
+			case '--form': {
+				if (!flags.requestSpec) {
+					throw new ControlKodyError(`Unknown flag ${arg}`)
+				}
+				positional.push('--form', requireValue(argv[index + 1], '--form'))
+				index += 1
+				break
+			}
+			case '--multipart': {
+				if (!flags.requestSpec) {
+					throw new ControlKodyError(`Unknown flag ${arg}`)
+				}
+				positional.push('--multipart')
 				break
 			}
 			case '--package-name': {
@@ -755,12 +786,10 @@ export async function requestAsSession(input: {
 		'User-Agent': controlKodyUserAgent,
 	}
 	if (input.cookieHeader) headers.Cookie = input.cookieHeader
-	if (input.spec.body !== null) headers['Content-Type'] = 'application/json'
 	const response = await fetchImpl(`${input.origin}${input.spec.path}`, {
 		method: input.spec.method,
 		headers,
-		body:
-			input.spec.body === null ? undefined : JSON.stringify(input.spec.body),
+		body: await applySessionRequestBody(input.spec, headers),
 	})
 	const rawBody = await response.text()
 	let body: unknown = rawBody
@@ -1056,7 +1085,7 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'request': {
 			if (!options.request) {
 				throw new ControlKodyError(
-					'request needs METHOD /path [status] [json-body]. Example: request GET /account/waiting.json',
+					'request needs METHOD /path [status] [json-body] [--form name=value]... [--multipart]. Example: request GET /account/waiting.json',
 				)
 			}
 			const origin = await resolveOrigin(options)
@@ -1176,6 +1205,7 @@ async function runCommand(options: ControlKodyOptions) {
 					path: '/account',
 					expectedStatus: null,
 					body: null,
+					form: null,
 					dump: false,
 					contains: [],
 				},

@@ -78,8 +78,11 @@ and fail the job if any expected worker is missing the deployed commit:
 
 Preview deploys also run `node tools/seed-test-data.ts --remote` after deploy,
 seeding `me@kentcdodds.com` / `ilikecode` (a non-admin account; the `jane`
-companion account is only seeded locally). See `.github/workflows/preview.yml`
-for the exact invocation.
+companion account is only seeded locally). A `preview-flag:<key>` label on the
+PR adds `--enable-flag <key>` for keys on
+`tools/preview-seed-flag-allowlist.ts`. See `.github/workflows/preview.yml` for
+the exact invocation and
+[Manual preview testing](../preview-manual-testing.md#feature-flags-on-the-preview-seed).
 
 Preview cleanup also deletes the matching GitHub environment
 (`preview-<pr-number>`). That API requires repository administration write

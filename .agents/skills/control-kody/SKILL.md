@@ -17,6 +17,9 @@ npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
 npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
+npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
+npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
+npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <merge-sha>
@@ -42,6 +45,23 @@ methods log in first when no cookie exists.
 A `--` separator is optional. `--request` specs take trailing `--dump` /
 `--contains <text>` like `request`:
 `preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
+
+JSON is the default body. Repeat `--form name=value` for
+`application/x-www-form-urlencoded`. Add `--multipart` for
+`multipart/form-data`; a value that starts with `@` is a file path. Create
+organization is form-only (`request.formData()`), so script it as:
+
+```bash
+npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
+```
+
+`preview --request` does not follow redirects. `--contains` also searches the
+`Location` header, which is `/@x-org` after a successful create and the error
+URL when the form is rejected. Avatar upload is the multipart route:
+
+```bash
+npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
+```
 
 `browse` reuses the seed cookie from `.tmp/control-kody-cookie` (after `login`
 or `preview`) and injects it into headed Playwright Chromium the same way E2E
@@ -69,7 +89,11 @@ before opening a Feature Map PR.
 
 - Local: `jane@example.com` / `ilikecode` (non-admin)
 - Preview: `me@kentcdodds.com` / `ilikecode` (non-admin, empty until you create
-  data through JSON APIs, or `package-create` for a saved package)
+  data through JSON APIs, or `package-create` for a saved package). Experimenter
+  flags stay off unless the PR is labeled `preview-flag:<key>` for a key in
+  `tools/preview-seed-flag-allowlist.ts`. Example: label
+  `preview-flag:connection-profiles`, wait for 🔎 Preview, then
+  `npm run control-kody -- request GET /account/connected-agents.json --origin <preview> --dump --contains '"connectionProfilesEnabled":true'`.
 - `/admin` 403 and `/mcp` 401 are expected for those seeds
 - Admin-gated states cannot be preview-tested with the public seed; use the
   local admin account plus Workers or unit tests

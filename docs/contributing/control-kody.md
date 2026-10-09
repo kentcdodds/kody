@@ -11,6 +11,8 @@ npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
 npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
 npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
+npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
+npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
@@ -62,6 +64,16 @@ exists.
 `--check` work without a `--` separator. A `--request` spec accepts the same
 trailing `--dump` / `--contains <text>` flags as `request`, for example
 `preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
+
+Repeat `--form name=value` to send `application/x-www-form-urlencoded`. Add
+`--multipart` for `multipart/form-data`; a `@` value is a file path
+(`--form avatar=@./avatar.png`). `POST /account/organizations/new` reads
+`request.formData()` (`slug`, `displayName`) and redirects. `preview --request`
+leaves the redirect manual, and `--contains` also sees `Location`:
+
+```bash
+npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
+```
 
 `browse` reuses the seed cookie stored in `.tmp/control-kody-cookie` (from
 `login` or `preview`) and injects it into headed Playwright Chromium via

@@ -32,6 +32,9 @@ export function createFakeImagesBinding(): FakeImagesBinding {
 		async info() {
 			throw new Error('Fake ImagesBinding.info is not implemented.')
 		},
+		text() {
+			throw new Error('Fake ImagesBinding.text is not implemented.')
+		},
 		input(stream: ReadableStream<Uint8Array>) {
 			let transform: ImageTransform | null = null
 			const transformer = {
