@@ -148,6 +148,48 @@ test('selectConsentOrg uses form, then URL, then the sole org', async () => {
 			urlOrg: null,
 		}),
 	).toEqual({ orgId: ada, slug: 'ada' })
+	expect(
+		await selectConsentOrg({
+			db,
+			userId: ada,
+			formSlug: 'ada',
+			urlOrg: { orgId: ada, slug: 'ada' },
+		}),
+	).toEqual({ orgId: ada, slug: 'ada' })
+})
+
+test('selectConsentOrg rejects form slug that disagrees with ?org=', async () => {
+	const db = await createDb()
+	const ada = testStableUserIdFromEmail('ada@example.com')
+	const gus = testStableUserIdFromEmail('gus@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: gus,
+		username: 'gus',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (user_id, org_id, role, created_at)
+			 VALUES (?, ?, 'member', ?)`,
+		)
+		.bind(ada, gus, '2026-01-02T00:00:00.000Z')
+		.run()
+	await expect(
+		selectConsentOrg({
+			db,
+			userId: ada,
+			formSlug: 'ada',
+			urlOrg: { orgId: gus, slug: 'gus' },
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			isOrgAuthorizeError(error) && error.message.includes('do not match'),
+	)
 })
 
 test('selectConsentOrgsForLoader auto-selects a sole org and keeps multi unspecified', () => {

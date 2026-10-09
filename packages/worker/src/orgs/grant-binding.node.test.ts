@@ -55,4 +55,13 @@ test('loadOrgBindingFromGrantProps prefers stamped orgId and falls back to userI
 			grantProps: { orgId: gus, userId: ada },
 		}),
 	).toBeNull()
+	// props.userId that is not a reachable org fails closed (no personal
+	// fallback after the userId path).
+	expect(
+		await loadOrgBindingFromGrantProps({
+			db,
+			personId: ada,
+			grantProps: { userId: gus },
+		}),
+	).toBeNull()
 })

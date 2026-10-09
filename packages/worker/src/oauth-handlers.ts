@@ -75,7 +75,10 @@ import {
 import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
 import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
 import { isOrgAuthorizeError } from '#worker/orgs/authorize-error.ts'
-import { orgGrantFields } from '#worker/orgs/oauth-grant.ts'
+import {
+	grantMatchesConsentOrg,
+	orgGrantFields,
+} from '#worker/orgs/oauth-grant.ts'
 import {
 	readOrgSlugFromForm,
 	resolveAuthorizeOrg,
@@ -1207,29 +1210,6 @@ async function tryHandleSilentOidcAuthorize(
 		return respondAuthorizeError(request, resolvedScopes.error)
 	}
 
-	const existingGrants = await listUserOAuthGrantsForClient(
-		helpers,
-		approvedUserId,
-		authRequest.clientId,
-	)
-	const hasMatchingConsent = existingGrants.some((grant) =>
-		resolvedScopes.every((scope) => grant.scope.includes(scope)),
-	)
-	if (!hasMatchingConsent) {
-		const redirectTo = oidcClientErrorRedirect(
-			authRequest,
-			'consent_required',
-			'Consent is required for this client.',
-		)
-		if (redirectTo) return Response.redirect(redirectTo, 302)
-		return respondAuthorizeError(
-			request,
-			'Consent is required for this client.',
-			401,
-			'consent_required',
-		)
-	}
-
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
@@ -1255,6 +1235,35 @@ async function tryHandleSilentOidcAuthorize(
 			return respondAuthorizeError(request, error.message)
 		}
 		throw error
+	}
+
+	const existingGrants = await listUserOAuthGrantsForClient(
+		helpers,
+		approvedUserId,
+		authRequest.clientId,
+	)
+	const hasMatchingConsent = existingGrants.some(
+		(grant) =>
+			resolvedScopes.every((scope) => grant.scope.includes(scope)) &&
+			grantMatchesConsentOrg({
+				metadata: grant.metadata,
+				userId: approvedUserId,
+				orgId: authorizeOrg.orgId,
+			}),
+	)
+	if (!hasMatchingConsent) {
+		const redirectTo = oidcClientErrorRedirect(
+			authRequest,
+			'consent_required',
+			'Consent is required for this client.',
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(
+			request,
+			'Consent is required for this client.',
+			401,
+			'consent_required',
+		)
 	}
 	const profileFields = connectionProfileGrantFields(connectionProfileName)
 	const orgFields = orgGrantFields(authorizeOrg.orgId)

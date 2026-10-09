@@ -105,6 +105,7 @@ export async function resolveAccessibleOrgBySlug(input: {
 
 /**
  * Consent / silent-OIDC org: form slug → `?org=` → sole accessible org.
+ * When both form and `?org=`/resource name an org, they must agree.
  */
 export async function selectConsentOrg(input: {
 	db: D1Database
@@ -114,11 +115,17 @@ export async function selectConsentOrg(input: {
 }): Promise<AuthorizeOrg> {
 	const formSlug = input.formSlug ? normalizeOrgSlug(input.formSlug) : null
 	if (formSlug) {
-		return await resolveAccessibleOrgBySlug({
+		const fromForm = await resolveAccessibleOrgBySlug({
 			db: input.db,
 			userId: input.userId,
 			slug: formSlug,
 		})
+		if (input.urlOrg && input.urlOrg.orgId !== fromForm.orgId) {
+			throw new OrgAuthorizeError(
+				'Organization on the form and authorize request do not match.',
+			)
+		}
+		return fromForm
 	}
 	if (input.urlOrg) return input.urlOrg
 	const orgs = await listOrgsForPerson(input.db, input.userId)

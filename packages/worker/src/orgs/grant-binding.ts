@@ -26,12 +26,9 @@ export async function loadOrgBindingFromGrantProps(input: {
 	}
 	const fallbackOrgId = readOrgIdFromGrantPropsOrUserId(input.grantProps)
 	if (fallbackOrgId) {
-		const bound = await loadOrgBindingForOrg(
-			input.db,
-			input.personId,
-			fallbackOrgId,
-		)
-		if (bound) return bound
+		// ADR 0064: orgId ?? userId only. Do not fall through to the caller's
+		// personal org when that lookup fails (hides props.userId mismatch).
+		return await loadOrgBindingForOrg(input.db, input.personId, fallbackOrgId)
 	}
 	try {
 		return await loadOrgBindingForPerson(input.db, input.personId)

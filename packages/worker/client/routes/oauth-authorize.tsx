@@ -166,10 +166,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	// Stay false through SSR and the first client render so hydrate matches
 	// the disabled form. Flip after queueTask, once submit handlers are bound.
 	let consentInteractive = false
+	// Tracks the picker choice so the grant heading matches the submitted org.
+	let pickedOrgSlug: string | null | undefined
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
 		handle.update()
+	}
+
+	function readDisplayedOrgSlug() {
+		if (pickedOrgSlug !== undefined) return pickedOrgSlug
+		return info?.selectedOrgSlug ?? null
 	}
 
 	function readQueryError() {
@@ -222,6 +229,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					payload.selectedOrgSlug,
 				),
 			}
+			pickedOrgSlug = undefined
 			status = 'ready'
 			allowClientReset = false
 			message = null
@@ -229,6 +237,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		} catch {
 			if (requestId !== activeInfoRequestId) return
 			info = null
+			pickedOrgSlug = undefined
 			status = 'error'
 			allowClientReset = false
 			message = {
@@ -263,11 +272,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				orgs: routeData.orgs,
 				selectedOrgSlug: routeData.selectedOrgSlug,
 			}
+			pickedOrgSlug = undefined
 			status = 'ready'
 			allowClientReset = false
 			message = null
 		} else {
 			info = null
+			pickedOrgSlug = undefined
 			status = 'error'
 			allowClientReset = routeData.allowClientReset
 			message = { type: 'error', text: routeData.error }
@@ -498,9 +509,10 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 		const hydrated = consentInteractive
 		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
+		const displayedOrgSlug = readDisplayedOrgSlug()
 		const orgField = oauthAuthorizeOrgField({
 			orgs: info?.orgs ?? [],
-			selectedOrgSlug: info?.selectedOrgSlug ?? null,
+			selectedOrgSlug: displayedOrgSlug,
 			signedIn: isLoggedIn,
 		})
 		const actionsDisabled =
@@ -542,7 +554,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					? renderOauthAuthorizeGrant({
 							clientLabel,
 							scopes,
-							selectedOrgSlug: info?.selectedOrgSlug ?? null,
+							selectedOrgSlug: displayedOrgSlug,
 						})
 					: null}
 				{isLoggedIn ? (
@@ -667,8 +679,12 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						/>
 						{renderAuthorizeOrgField({
 							orgs: info?.orgs ?? [],
-							selectedOrgSlug: info?.selectedOrgSlug ?? null,
+							selectedOrgSlug: displayedOrgSlug,
 							signedIn: isLoggedIn,
+							onSelectedOrgSlugChange: (slug) => {
+								pickedOrgSlug = slug
+								handle.update()
+							},
 						})}
 						{renderHoneypot()}
 						{!isLoggedIn && isSessionReady ? (

@@ -1,4 +1,5 @@
 import { css } from 'remix/component'
+import { on } from '#client/event-mixin.ts'
 import {
 	oauthAuthorizeGrantHeading,
 	oauthAuthorizeOrgField,
@@ -24,6 +25,7 @@ export function renderAuthorizeOrgField(input: {
 	orgs: ReadonlyArray<OAuthAuthorizeConsentOrg>
 	selectedOrgSlug: string | null
 	signedIn: boolean
+	onSelectedOrgSlugChange?: (slug: string | null) => void
 }) {
 	const field = oauthAuthorizeOrgField(input)
 	switch (field.kind) {
@@ -44,7 +46,19 @@ export function renderAuthorizeOrgField(input: {
 						name="org"
 						required
 						data-testid="oauth-authorize-org"
-						mix={css(inputCss)}
+						mix={[
+							css(inputCss),
+							input.onSelectedOrgSlugChange
+								? on('change', (event) => {
+										const target = event.currentTarget
+										if (!(target instanceof HTMLSelectElement)) return
+										const value = target.value.trim()
+										input.onSelectedOrgSlugChange?.(
+											value.length > 0 ? value : null,
+										)
+									})
+								: null,
+						]}
 					>
 						{field.selectedSlug ? null : (
 							<option value="" disabled selected>

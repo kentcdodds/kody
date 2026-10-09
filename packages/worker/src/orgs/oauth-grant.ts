@@ -29,6 +29,33 @@ export function readOrgIdFromGrantMetadata(metadata: unknown): string | null {
 	return readOrgIdField(metadata, 'orgId')
 }
 
+/**
+ * Org bound on a listed grant for silent-consent reuse.
+ * Prefer `metadata.orgId`; pre-P4 grants fall back to the grant subject's
+ * user id (personal org) until P9 (#3057).
+ */
+export function readOrgIdFromGrantMetadataOrUserId(input: {
+	metadata: unknown
+	userId: string
+}): string | null {
+	const stamped = readOrgIdFromGrantMetadata(input.metadata)
+	if (stamped) return stamped
+	const userId = input.userId.trim()
+	return userId.length > 0 ? userId : null
+}
+
+export function grantMatchesConsentOrg(input: {
+	metadata: unknown
+	userId: string
+	orgId: string
+}): boolean {
+	const bound = readOrgIdFromGrantMetadataOrUserId({
+		metadata: input.metadata,
+		userId: input.userId,
+	})
+	return bound === input.orgId
+}
+
 export type TokenExchangeOrgStampInput = {
 	props?: unknown
 	grantType?: string

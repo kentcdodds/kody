@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	grantMatchesConsentOrg,
 	orgGrantFields,
 	readOrgIdFromGrantMetadata,
+	readOrgIdFromGrantMetadataOrUserId,
 	readOrgIdFromGrantProps,
 	readOrgIdFromGrantPropsOrUserId,
 	stampOrgIdOnTokenExchange,
@@ -24,6 +26,43 @@ test('readOrgId helpers ignore missing or blank values', () => {
 	expect(
 		readOrgIdFromGrantPropsOrUserId({ orgId: 'org-1', userId: 'user-1' }),
 	).toBe('org-1')
+})
+
+test('grantMatchesConsentOrg uses metadata.orgId then userId fallback', () => {
+	expect(
+		grantMatchesConsentOrg({
+			metadata: { orgId: 'org-acme' },
+			userId: 'user-1',
+			orgId: 'org-acme',
+		}),
+	).toBe(true)
+	expect(
+		grantMatchesConsentOrg({
+			metadata: { orgId: 'org-acme' },
+			userId: 'user-1',
+			orgId: 'org-ada',
+		}),
+	).toBe(false)
+	expect(
+		grantMatchesConsentOrg({
+			metadata: {},
+			userId: 'user-1',
+			orgId: 'user-1',
+		}),
+	).toBe(true)
+	expect(
+		grantMatchesConsentOrg({
+			metadata: {},
+			userId: 'user-1',
+			orgId: 'org-acme',
+		}),
+	).toBe(false)
+	expect(
+		readOrgIdFromGrantMetadataOrUserId({
+			metadata: null,
+			userId: 'user-1',
+		}),
+	).toBe('user-1')
 })
 
 test('stampOrgIdOnTokenExchange backfills orgId from userId and no-ops when set', () => {
