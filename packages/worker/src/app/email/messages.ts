@@ -464,7 +464,7 @@ export function buildCreditsLowBalanceEmail(input: {
 		preheader: `Balance: ${input.balanceLabel}.`,
 		heading: 'Credits running low',
 		body: [
-			`Your Kody credit balance is ${input.balanceLabel}. When credits run out, usage past your monthly include stops until you add more.`,
+			`Your Kody credit balance is ${input.balanceLabel}. When credits run out, rate and compute limits match Free until you top up.`,
 		],
 		action: { label: 'Add credits', url: input.creditsUrl },
 		illustration: creditsIllustration,

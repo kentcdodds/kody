@@ -67,7 +67,7 @@ test('purchasable Stripe Pro stays credits-eligible with Max stock and Standard 
 	expect(emptyLimits).toEqual(proCreditsEmptyWalletPlanLimits)
 	expect(emptyLimits.maxSavedPackages).toBe(10_000)
 	expect(emptyLimits.maxConcurrentWorkflows).toBe(200)
-	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(50)
+	expect(emptyLimits.maxUniqueWorkerDaysPerMonth).toBe(350)
 	expect(emptyLimits.maxExecuteCallsPerDay).toBe(150)
 })
 

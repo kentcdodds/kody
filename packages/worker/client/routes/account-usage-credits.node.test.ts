@@ -414,7 +414,7 @@ test('credits alarm shows once, above the Credits section, linking into it', asy
 	)
 	expect(html.split('data-credits-alarm=')).toHaveLength(2)
 	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
-	expect(text).toContain('Runs past the include are stopped')
+	expect(text).toContain('Rate and compute limits match Free')
 	expect(html).toMatch(/href="\/account\/usage#credits"[^>]*>Add credits</)
 	expect(html.indexOf('data-credits-alarm')).toBeLessThan(
 		html.indexOf('id="credits"'),
