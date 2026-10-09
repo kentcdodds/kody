@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest'
-import { readFlags, readTokenLifetime, rehearsalUsage } from './run.ts'
+import {
+	readFlags,
+	readTokenLifetime,
+	rehearsalUsage,
+	snapshotUsersFromOpenedCredentials,
+} from './run.ts'
 
 test('usage lists seed-status before seed', () => {
 	expect(rehearsalUsage).toContain(
@@ -66,4 +71,39 @@ test('readTokenLifetime requires an explicit lifetime', () => {
 			]),
 		),
 	).toThrow('not both')
+})
+
+test('snapshotUsersFromOpenedCredentials keeps orgSlug and fills roster fallback', () => {
+	expect(
+		snapshotUsersFromOpenedCredentials([
+			{
+				role: 'dave',
+				email: 'rh-dave@example.com',
+				username: 'rh-dave-renamed',
+				orgSlug: 'rh-dave',
+				password: 'secret',
+			},
+			{
+				role: 'bob',
+				email: 'rh-bob@example.com',
+				username: 'rh-bob',
+				password: 'secret',
+			},
+		]),
+	).toEqual([
+		{
+			role: 'dave',
+			email: 'rh-dave@example.com',
+			username: 'rh-dave-renamed',
+			orgSlug: 'rh-dave',
+			password: 'secret',
+		},
+		{
+			role: 'bob',
+			email: 'rh-bob@example.com',
+			username: 'rh-bob',
+			orgSlug: 'rh-bob',
+			password: 'secret',
+		},
+	])
 })

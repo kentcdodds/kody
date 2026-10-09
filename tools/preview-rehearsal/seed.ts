@@ -163,6 +163,11 @@ export type SeedCredentials = {
 		role: RehearsalUser['role']
 		email: string
 		username: string
+		/**
+		 * Personal org slug for `?org=` on consent. Stays the signup username
+		 * forever (dave stays `rh-dave` after rename).
+		 */
+		orgSlug: string
 		password: string
 		cliToken: string
 		everyScopeToken: string
@@ -855,6 +860,7 @@ export async function seedRehearsal(
 				role: user.role,
 				email: user.email,
 				username: user.role === 'dave' ? renamedDaveUsername : user.username,
+				orgSlug: user.username,
 				password: passwords.get(user.role) ?? '',
 				cliToken: tokens.get(user.role)?.cliToken ?? '',
 				everyScopeToken: tokens.get(user.role)?.everyScopeToken ?? '',

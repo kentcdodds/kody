@@ -137,6 +137,38 @@ async function derivedUsers(workerName: string): Promise<Array<SnapshotUser>> {
 	return users
 }
 
+/**
+ * Opened seed credentials must carry `orgSlug` for consent. Older sealed
+ * blobs may omit it; fall back to the roster signup username so dave's
+ * rename never becomes `?org=`. Unknown roles fail loudly.
+ */
+export function snapshotUsersFromOpenedCredentials(
+	users: ReadonlyArray<{
+		role: SnapshotUser['role']
+		email: string
+		username: string
+		orgSlug?: string
+		password: string
+	}>,
+): Array<SnapshotUser> {
+	return users.map((user) => {
+		const roster = rehearsalUsers.find((entry) => entry.role === user.role)
+		const orgSlug = user.orgSlug ?? roster?.username
+		if (!orgSlug) {
+			throw new Error(
+				`Opened credentials for role "${user.role}" are missing orgSlug and the role is not in the rehearsal roster.`,
+			)
+		}
+		return {
+			role: user.role,
+			email: user.email,
+			username: user.username,
+			orgSlug,
+			password: user.password,
+		}
+	})
+}
+
 async function writeJson(path: string, value: unknown, mode?: number) {
 	await writeFile(
 		path,
@@ -236,7 +268,9 @@ async function main(argv: ReadonlyArray<string>) {
 			)
 			const users = []
 			for (const user of await derivedUsers(workerName)) {
-				const session = await openRehearsalSession(origins.app, user)
+				const session = await openRehearsalSession(origins.app, user, {
+					orgSlug: user.orgSlug,
+				})
 				try {
 					const token = await mintCliToken(
 						session,
@@ -270,10 +304,16 @@ async function main(argv: ReadonlyArray<string>) {
 			if (credentialsPath) {
 				const opened = JSON.parse(await readFile(credentialsPath, 'utf8')) as {
 					origins: RehearsalOrigins
-					users: Array<SnapshotUser>
+					users: Array<{
+						role: SnapshotUser['role']
+						email: string
+						username: string
+						orgSlug?: string
+						password: string
+					}>
 				}
 				origins = opened.origins
-				users = opened.users
+				users = snapshotUsersFromOpenedCredentials(opened.users)
 			} else {
 				const workerName = assertRehearsalWorkerName(
 					requireFlag(flags, 'worker'),
