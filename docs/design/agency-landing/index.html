@@ -622,6 +622,15 @@
           scroll-behavior: auto;
         }
       }
+      .ownership { font-size: 13px!important; margin: -10px 0 24px!important; }
+      .run-preview { display:flex; justify-content:space-between; align-items:center; gap:15px; padding:20px; margin-top:18px; background:#f0f3e8; border-radius:6px; font-size:13px; }
+      .run-preview p { font-size:12px; color:#627559; margin:7px 0 0 24px; }
+      .run-dot { color:#56803a; margin-right:10px; }
+      .activity-row { display:flex; gap:22px; padding:22px 0; border-bottom:1px solid #e1e6dc; font-size:13px; }
+      .activity-time { width:62px; flex-shrink:0; color:#728072; font-size:11px; }
+      .activity-row p { color:#6a7e6c; font-size:12px; margin-top:6px; }
+      @media(min-width:901px) { h1 {font-size:60px} .hero{grid-template-columns:1.15fr .85fr;align-items:center;padding-top:55px;padding-bottom:45px} }
+      @media(max-width:640px) { h1{font-size:44px} .tabs{gap:18px;font-size:12px}.run-preview{padding:15px;align-items:start}.run-preview strong{font-size:12px}.run-preview .share{font-size:11px;white-space:nowrap;padding:8px}.run-preview p{margin-left:0}.activity-row{gap:12px} }
     </style>
   </head>
   <body>
@@ -642,11 +651,10 @@
       </nav>
       <main>
         <section class="hero">
-          <h1>Your agency’s AI work.<br /><span>Ready for everyone.</span></h1>
+          <h1>Build client workflows.<br /><span>Make them part of the business.</span></h1>
           <div>
             <p>
-              Give your team and clients one place for the apps, skills, and
-              workflows you build. Everyone brings their own AI.
+              Kody gives your agency a shared home to build, run, and maintain client automations. Choose who owns and maintains the work. Clients use it from their AI agent or an app.
             </p>
             <a class="button" href="#demo" data-demo
               >Book an agency demo
@@ -677,7 +685,7 @@
               </div>
               <button class="share" id="share">Share ↗</button>
             </div>
-            <p class="people">Your team + the people you invite</p>
+            <p class="people">Owned by Northline Studio · Shared with Acme finance</p>
             <div class="tabs" role="tablist" aria-label="Workspace content">
               <button
                 class="tab active"
@@ -685,7 +693,7 @@
                 aria-selected="true"
                 data-tab="work"
               >
-                Shared work</button
+                Workflows</button
               ><button
                 class="tab"
                 role="tab"
@@ -693,9 +701,9 @@
                 data-tab="access"
               >
                 People & access
-              </button>
+              </button><button class="tab" role="tab" aria-selected="false" data-tab="activity">Activity</button>
             </div>
-            <div id="rows"></div>
+            <div id="rows"></div><div class="run-preview"><div><span class="run-dot">✓</span><strong id="run-title">Monthly invoicing</strong><p id="run-detail">Scheduled run · Drafts prepared for finance</p></div><button class="share" id="inspect-run">View run ↗</button></div>
             <div class="connected">
               <span style="color: #68964c">●</span> Available to connected
               agents
@@ -706,24 +714,21 @@
           </div>
         </section>
         <div class="under">
-          <p>Try switching client spaces or opening People & access.</p>
-          <a href="#client-spaces">See how sharing works ↓</a>
+          <p>Explore an example workspace. Switch clients, inspect access, or view activity.</p>
+          <a href="#client-spaces">See how ownership works ↓</a>
         </div>
         <section class="story" id="client-spaces">
           <div>
-            <h2>A place for every client.<br />A say in who gets in.</h2>
+            <h2>Client work belongs<br />to the business.</h2>
             <p>
-              Keep client work in its own space. Give someone permission to run
-              a workflow, invite a teammate to improve it, or share just one
-              report.
+              Keep workflows, connections, and data in a space with clear ownership. Give your builders access to maintain the work and your clients access to use it.
             </p>
             <p>
-              When someone leaves, remove their access. The work stays with your
-              team.
+              People change roles. Clients take work in-house. Hand over ownership and remove access without starting over in someone else’s chat.
             </p>
           </div>
           <div class="permission">
-            <h3>Monthly invoicing</h3>
+            <h3>Monthly invoicing</h3><p class="ownership">Owner: Acme Construction</p>
             <div class="person">
               <span class="avatar">NS</span>Northline Studio<span class="role"
                 >Can edit</span
@@ -748,27 +753,24 @@
     </div>
     <section class="examples">
       <div class="wrap">
-        <h2>Turn what you know<br />into something<br />clients can use.</h2>
+        <h2>Your next client<br />shouldn’t mean<br />starting from zero.</h2>
         <div>
           <article class="usecase">
-            <h3>Hand off the invoicing workflow.</h3>
+            <h3>Reuse the parts you’ve already built.</h3>
             <p>
-              Your client runs it from their agent or a simple app. Your team
-              maintains the workflow in Kody.
+              Build reusable packages for your integrations, reporting, and business rules. Compose them into a workflow for the next client, with that client’s own connections and data.
             </p>
           </article>
           <article class="usecase">
-            <h3>Keep the whole team on the same playbook.</h3>
+            <h3>Keep running when the chat closes.</h3>
             <p>
-              Share your audit skills and company knowledge. New teammates
-              connect their agent and get to work.
+              Run saved workflows on a schedule or from a webhook. Inspect the run history when something needs attention, then improve the workflow your team maintains.
             </p>
           </article>
           <article class="usecase">
-            <h3>Deliver the report. Keep it useful.</h3>
+            <h3>Let clients choose how they use it.</h3>
             <p>
-              Give clients a dashboard they can come back to, with the workflow
-              and data behind it in the same place.
+              One client prefers Claude. Another uses ChatGPT. Someone in finance just needs a button. Give them access to the same underlying workflow.
             </p>
           </article>
         </div>
@@ -776,7 +778,7 @@
     </section>
     <div class="wrap">
       <section class="closing">
-        <h2>Bring a client workflow.<br />Let’s put it to work.</h2>
+        <h2>Bring the workflow<br />your client relies on.</h2>
         <a class="button" href="#demo" data-demo
           >Book an agency demo
           <span class="arrow" aria-hidden="true">↗</span></a
@@ -788,8 +790,7 @@
       <button class="close" aria-label="Close dialog">×</button>
       <h2>Let’s talk about your agency.</h2>
       <p>
-        Bring a workflow you want to share with your team or a client. We’ll
-        walk through how it fits in Kody.
+        We’ll walk through who owns it, how it runs, and what your client needs to use it. Bring an invoicing process, a recurring report, or an internal tool.
       </p>
       <p class="preview-note">
         Design preview. Connect this button to your booking calendar before
@@ -821,21 +822,21 @@
             [
               "↗",
               "Monthly invoicing",
-              "Run from your agent or the app",
+              "Scheduled monthly · Client-owned connection",
               "App",
               "Can run",
             ],
             [
               "◈",
               "Project handover",
-              "Shared project context and instructions",
+              "Reusable handover skill · Maintained by your team",
               "Knowledge",
               "Can read",
             ],
             [
               "▤",
               "Weekly project report",
-              "A live view of project updates",
+              "Scheduled every Monday · Shared with client",
               "Dashboard",
               "Can view",
             ],
@@ -899,6 +900,9 @@
       function render() {
         document.querySelector("#client-title").textContent =
           clients[selected].name;
+        document.querySelector(".people").textContent = selected === 2 ? "Owned by Northline Studio · Internal team access" : "Owned by " + clients[selected].name + " · Maintained by Northline Studio";
+        document.querySelector("#run-title").textContent = clients[selected].items[0][1];
+        document.querySelector("#run-detail").textContent = ["Scheduled run · Drafts prepared for finance", "Client request · Intake ready for review", "Scheduled run · Audit ready for review"][selected];
         document.querySelector("#client-access").firstChild.textContent =
           clients[selected].name;
         document.querySelector("#rows").innerHTML =
@@ -909,7 +913,7 @@
                     `<div class="row"><span class="fileicon" aria-hidden="true">${x[0]}</span><div><div class="name">${x[1]}</div><div class="detail">${x[2]}</div></div><span class="kind">${x[3]}</span><span class="badge">${x[4]}</span></div>`,
                 )
                 .join("")
-            : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
+            : tab === "activity" ? `<div class="activity-row"><span class="activity-time">09:02</span><div><strong>${clients[selected].items[0][1]} completed</strong><p>Triggered by ${selected === 1 ? "Jamie Lee" : "schedule"} · Result saved in this space</p></div></div><div class="activity-row"><span class="activity-time">08:58</span><div><strong>Jamie Lee updated the workflow</strong><p>Changed validation rules · Northline Studio</p></div></div><div class="activity-row"><span class="activity-time">Yesterday</span><div><strong>Client access granted</strong><p>Can run workflows · Cannot edit source</p></div></div>` : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
       }
       document.querySelectorAll("[data-client]").forEach(
         (b) =>
@@ -944,6 +948,7 @@
       document
         .querySelectorAll(".close")
         .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
+      document.querySelector("#inspect-run").onclick = () => { document.querySelector('[data-tab="activity"]').click(); };
       render();
     </script>
   </body>
