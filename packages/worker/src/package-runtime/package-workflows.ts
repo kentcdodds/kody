@@ -1531,6 +1531,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					entityId: input.instanceId,
 					durationMs: Date.now() - input.startedAtMs,
 					outcome: input.outcome,
+					actorUserId: '',
+					automationSource: 'schedule',
 				})
 				return { ok: true }
 			},

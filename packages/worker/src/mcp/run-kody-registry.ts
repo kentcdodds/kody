@@ -105,7 +105,10 @@ import {
 	isDirectBundleDependency,
 	type BundleArtifactDependency,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
@@ -1082,6 +1085,7 @@ export async function runBundledModuleWithRegistry(
 			entityId: options.packageContext.packageId,
 			durationMs: Date.now() - usageStartedAtMs,
 			outcome,
+			...usageAttributionFieldsFromRequest(callerContext.request),
 		})
 	}
 	async function finishObservedRun(input: {
@@ -1214,6 +1218,7 @@ export async function runBundledModuleWithRegistry(
 		const staticCallMeterTools = createPackageStaticCallMeterTools({
 			env,
 			userId: callerContext.user?.userId ?? null,
+			request: callerContext.request,
 			grantedPackageIds: new Set(
 				(bundle.dependencies ?? [])
 					.filter(isDirectBundleDependency)

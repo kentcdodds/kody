@@ -49,6 +49,7 @@ export const emailSendCapability = defineDomainCapability(
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
+				request: ctx.callerContext.request,
 				accountEmail: user.email,
 				recipientPolicy: 'self',
 				to: args.to ?? null,

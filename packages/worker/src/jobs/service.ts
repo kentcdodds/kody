@@ -1408,6 +1408,8 @@ export async function executeJobOnce(input: {
 						entityId: input.job.id,
 						durationMs,
 						outcome,
+						actorUserId: '',
+						automationSource: 'schedule',
 					})
 				}
 			}

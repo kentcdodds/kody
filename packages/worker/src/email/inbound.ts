@@ -305,6 +305,8 @@ export async function handleInboundEmail(
 					bytes: message.rawSize,
 					durationMs: Date.now() - receiveStartedAtMs,
 					outcome: input.outcome,
+					actorUserId: '',
+					automationSource: 'email',
 				})
 			}
 

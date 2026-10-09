@@ -1,4 +1,9 @@
-import { recordUsage, type UsageEnv } from './record-usage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	recordUsage,
+	type UsageEnv,
+	usageAttributionFieldsFromRequest,
+} from './record-usage.ts'
 
 /**
  * Host-side sink for `package_static_call` usage events reported by the
@@ -43,6 +48,7 @@ const maxRecordedEventsPerRun = 200
 export function createPackageStaticCallMeterTools(input: {
 	env: UsageEnv
 	userId: string | null | undefined
+	request?: RequestContext | null
 	/**
 	 * Saved-package UUIDs recorded as direct static dependencies of the running
 	 * bundle at build time (`bundle.dependencies`), from bundler/host
@@ -63,6 +69,7 @@ export function createPackageStaticCallMeterTools(input: {
 					const recorded = await recordStaticCallEvent({
 						env: input.env,
 						userId,
+						request: input.request,
 						grantedPackageIds: input.grantedPackageIds,
 						rawEvent,
 					})
@@ -79,6 +86,7 @@ export function createPackageStaticCallMeterTools(input: {
 async function recordStaticCallEvent(input: {
 	env: UsageEnv
 	userId: string
+	request?: RequestContext | null
 	grantedPackageIds: ReadonlySet<string>
 	rawEvent: unknown
 }) {
@@ -113,6 +121,7 @@ async function recordStaticCallEvent(input: {
 		entityId: packageId,
 		durationMs,
 		outcome,
+		...usageAttributionFieldsFromRequest(input.request),
 	})
 	return true
 }

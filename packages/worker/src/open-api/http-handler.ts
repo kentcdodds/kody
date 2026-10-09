@@ -4,7 +4,10 @@ import {
 } from '#worker/account/deletion-state.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { redeemCliCredentialBootstrap } from '#worker/api-tokens/cli-credential-bootstrap.ts'
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 import { authenticateApiRequest } from './authenticate.ts'
 import {
 	buildOpenApiDocument,
@@ -159,6 +162,7 @@ async function handleOperation(input: {
 	function recordCapabilityProxyObservation(observation: {
 		userId: string
 		failureCode: string
+		request?: Parameters<typeof usageAttributionFieldsFromRequest>[0]
 	}) {
 		if (!isCapabilityProxyOperation(matchedOperation)) return
 		input.waitUntil(
@@ -174,6 +178,7 @@ async function handleOperation(input: {
 					}),
 					durationMs: Date.now() - startedAt,
 					outcome: 'error',
+					...usageAttributionFieldsFromRequest(observation.request),
 				},
 				{ waitUntil: input.waitUntil },
 			),
@@ -214,6 +219,7 @@ async function handleOperation(input: {
 			recordCapabilityProxyObservation({
 				userId: ctx.callerContext.user.userId,
 				failureCode: apiError.code,
+				request: ctx.callerContext.request,
 			})
 		}
 		throw error

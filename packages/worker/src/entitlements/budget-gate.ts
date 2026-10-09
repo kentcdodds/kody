@@ -1,4 +1,6 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type TransactionalEmailEnv } from '#app/email/sender-config.ts'
+import { sendBudgetHitEmail } from '#worker/billing/org-budget-hit-emails.ts'
 import {
 	readOrgBudgetSettings,
 	readUserBudgetMicroUsd,
@@ -6,6 +8,15 @@ import {
 } from '#worker/orgs/billing.ts'
 import { BudgetLimitError, coerceBudgetLimitError } from './errors.ts'
 import { type UserMeterEnv, userMeterRpc } from './user-meter-client.ts'
+
+type OrgBudgetHitEmailEnv = Pick<
+	Env,
+	| 'BUNDLE_ARTIFACTS_KV'
+	| 'CLOUDFLARE_ACCOUNT_ID'
+	| 'CLOUDFLARE_API_BASE_URL'
+	| 'CLOUDFLARE_API_TOKEN'
+> &
+	TransactionalEmailEnv
 
 export type OrgBudgetGateContext = {
 	orgId: string
@@ -68,6 +79,26 @@ function orgSlugLabel(orgSlug: string | null | undefined) {
  * Real-time org budget gate backed by the org-scoped UserMeter durable object
  * (name key is org id; personal org ids match the owner user id).
  */
+function notifyBudgetHitFireAndForget(input: {
+	env: UserMeterEnv & OrgBudgetHitEmailEnv
+	db: D1Database
+	orgId: string
+	actorUserId: string | null
+	budgetError: BudgetLimitError
+	now?: Date
+}) {
+	void sendBudgetHitEmail({
+		env: input.env,
+		db: input.db,
+		orgId: input.orgId,
+		details: input.budgetError.details,
+		actorUserId: input.actorUserId,
+		now: input.now,
+	}).catch((error: unknown) => {
+		console.warn('org-budget-hit-email-failed', error)
+	})
+}
+
 export async function assertWithinOrgBudget(input: {
 	db: D1Database
 	env: UserMeterEnv
@@ -109,7 +140,17 @@ export async function assertWithinOrgBudget(input: {
 		})
 	} catch (error) {
 		const budgetError = coerceBudgetLimitError(error)
-		if (budgetError) throw budgetError
+		if (budgetError) {
+			notifyBudgetHitFireAndForget({
+				env: input.env as UserMeterEnv & OrgBudgetHitEmailEnv,
+				db: input.db,
+				orgId: input.orgId,
+				actorUserId: isAutomation ? null : actorUserId,
+				budgetError,
+				now: input.now,
+			})
+			throw budgetError
+		}
 		throw error
 	}
 }

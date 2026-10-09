@@ -111,6 +111,8 @@ export async function handleSystemInboundEmail(input: {
 			bytes: input.message.rawSize,
 			durationMs: Date.now() - receiveStartedAtMs,
 			outcome: recordInput.outcome,
+			actorUserId: '',
+			automationSource: 'email',
 		})
 	}
 
