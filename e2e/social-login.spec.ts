@@ -45,7 +45,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 
 	await page.goto('/account')
 	await expect(
-		page.getByRole('heading', { name: 'Account', exact: true }),
+		page.getByRole('heading', { level: 1, name: 'Profile', exact: true }),
 	).toBeVisible()
 	// The redesign moved the verified state out of the sentence and into a pill
 	// beside the address, so "(verified)" is no longer part of one contiguous
@@ -54,6 +54,10 @@ ${buildDeleteUserAndPersonalOrgSql({
 	await expect(emailNote).toBeVisible()
 	await expect(emailNote.getByText('verified')).toBeVisible()
 
+	await page.goto('/account/security')
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Security', exact: true }),
+	).toBeVisible()
 	const connectionsCard = page.getByRole('region', {
 		name: 'Connected accounts',
 	})
@@ -64,7 +68,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	clearAuthRateLimitsInE2eDatabase()
 	await waitForClientHydration(page)
 	await connectionsCard.getByRole('button', { name: 'Connect Google' }).click()
-	await expect(page).toHaveURL(/\/account\?oauthLinked=google$/)
+	await expect(page).toHaveURL(/\/account\/security\?oauthLinked=google$/)
 	await expect(page.getByText('Google connected.')).toBeVisible()
 	const googleRow = connectionsCard
 		.getByRole('listitem')
@@ -77,7 +81,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	clearAuthRateLimitsInE2eDatabase()
 	await waitForClientHydration(page)
 	await connectionsCard.getByRole('button', { name: 'Connect Discord' }).click()
-	await expect(page).toHaveURL(/\/account\?oauthLinked=discord$/)
+	await expect(page).toHaveURL(/\/account\/security\?oauthLinked=discord$/)
 	await expect(page.getByText('Discord connected.')).toBeVisible()
 	const discordRow = connectionsCard
 		.getByRole('listitem')

@@ -61,7 +61,11 @@ const authenticatedRoutes: RouteScenario[] = [
 		path: '/account',
 		ready: async (page) => {
 			await expect(
-				page.getByRole('heading', { name: 'Account', exact: true }),
+				page.getByRole('heading', {
+					level: 1,
+					name: 'Profile',
+					exact: true,
+				}),
 			).toBeVisible()
 		},
 	},

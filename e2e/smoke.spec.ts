@@ -47,27 +47,28 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
-	// Header avatar links to the public profile and is labeled @username so
-	// it does not collide with the "Kody" brand link. Desktop also shows
-	// Account to the left of that avatar.
+	// One header menu holds the organization and the person's own links; the
+	// workspace sections are a click away from the Profile page.
 	await expect(
-		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
-			name: 'Account',
-			exact: true,
-		}),
+		page.getByRole('heading', { level: 1, name: 'Profile' }),
 	).toBeVisible()
+	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
+		`@${primaryTestUser.username}: organizations and account`,
+	)
+	await page.goto('/account/jobs')
+	await waitForClientHydration(page)
+	const workspaceRail = page.getByRole('navigation', {
+		name: 'Workspace sections',
+	})
 	await expect(
-		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
-			name: `@${primaryTestUser.username}`,
-		}),
-	).toBeVisible()
-	await expect(
-		page.getByRole('link', { name: 'Secrets', exact: true }),
+		workspaceRail.getByRole('link', { name: 'Secrets', exact: true }),
 	).toBeVisible()
 
 	// SPA-navigate to secrets: the client refetch must hit the same origin
 	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
-	await page.getByRole('link', { name: 'Secrets', exact: true }).click()
+	await workspaceRail
+		.getByRole('link', { name: 'Secrets', exact: true })
+		.click()
 	await expect(page).toHaveURL(
 		new RegExp(`/@${primaryTestUser.username}/secrets$`),
 	)
@@ -78,20 +79,19 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
 
-	// Log out from the account overview. The router intercepts the form POST
-	// and SPA-navigates to /login, so the shell must refresh its session
-	// state without a full document reload (regression: the throttled refresh
-	// kept the username and Log out button visible after logging out).
+	// Log out from the header menu. The router intercepts the form POST and
+	// SPA-navigates to /login, so the shell must refresh its session state
+	// without a full document reload (regression: the throttled refresh kept
+	// the username and Log out button visible after logging out).
 	await page.goto('/account')
 	await expect(page).toHaveURL(/\/account$/)
-	await expect(
-		page.getByRole('navigation', { name: 'Main' }).getByRole('button', {
-			name: 'Log out',
-		}),
-	).toHaveCount(0)
-	const session = page.getByRole('region', { name: 'Session', exact: true })
-	await expect(session).toBeVisible()
-	await session.getByRole('button', { name: 'Log out' }).click()
+	await expect(page.getByRole('region', { name: 'Session' })).toHaveCount(0)
+	await waitForClientHydration(page)
+	await page.getByTestId('org-switcher').click()
+	await page
+		.getByTestId('org-switcher-panel')
+		.getByRole('button', { name: 'Log out' })
+		.click()
 	await expect(page).toHaveURL(/\/login$/)
 	// The redesigned login screen renders without the site header, so the
 	// logged-out state shows the auth card instead of a header "Log in" link.

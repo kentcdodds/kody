@@ -83,7 +83,18 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).not.toHaveAttribute('aria-current', 'true')
 	await expect(wide.panel.getByTestId('org-switcher-create')).toBeVisible()
-	await expect(wide.panel.getByTestId('org-switcher-invites')).toBeVisible()
+	// No invites waiting, so no Invites row; the person's own links follow.
+	await expect(wide.panel.getByTestId('org-switcher-invites')).toHaveCount(0)
+	const accountGroup = wide.panel.getByRole('group', { name: 'Your account' })
+	await expect(
+		accountGroup.getByRole('link', { name: 'Your profile' }),
+	).toHaveAttribute('href', `/@${user.username}`)
+	await expect(
+		accountGroup.getByRole('link', { name: 'Account settings' }),
+	).toHaveAttribute('href', '/account')
+	await expect(
+		accountGroup.getByRole('button', { name: 'Log out' }),
+	).toBeVisible()
 
 	// Arrow keys walk the rows; Escape closes and returns focus to the trigger.
 	await wide.trigger.focus()
@@ -92,26 +103,18 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).toBeFocused()
 	await page.keyboard.press('End')
-	await expect(wide.panel.getByTestId('org-switcher-invites')).toBeFocused()
+	await expect(wide.panel.getByTestId('org-switcher-logout')).toBeFocused()
 	await page.keyboard.press('Escape')
 	await expect(wide.panel).toBeHidden()
 	await expect(wide.trigger).toBeFocused()
 	await expect(wide.trigger).toHaveAttribute('aria-expanded', 'false')
 
-	// Narrow desktop still anchors. A click outside closes it.
+	// At narrow desktop the switcher (last in the header) sits near the
+	// viewport edge, so the panel flips to share the trigger's right edge.
+	// A click outside closes it.
 	await page.setViewportSize({ width: 860, height: 800 })
 	const narrow = await expectPanelAnchoredToTrigger(page)
+	expect(narrow.fitsFromTriggerLeft).toBe(false)
 	await page.mouse.click(20, 700)
 	await expect(narrow.panel).toBeHidden()
-
-	// A trigger at the viewport's edge (a short handle, nothing after it)
-	// flips the panel to share the trigger's right edge.
-	await page.addStyleTag({
-		content:
-			'[data-testid="site-header-account"], [data-testid="site-header-profile"] { display: none !important; }',
-	})
-	const flipped = await expectPanelAnchoredToTrigger(page)
-	expect(flipped.fitsFromTriggerLeft).toBe(false)
-	await page.keyboard.press('Escape')
-	await expect(flipped.panel).toBeHidden()
 })

@@ -70,26 +70,49 @@ test('account section switches keep the current page on screen (no loading flash
 
 	await clickThroughSections(
 		page,
-		'Account sections',
+		'Workspace sections',
 		[
 			{ link: 'Memories', heading: 'Memories' },
 			{ link: 'Secrets', heading: 'Secrets' },
 			{ link: 'Connections', heading: 'Connections' },
 			{ link: 'Workflows', heading: 'Workflows' },
 			{ link: 'Webhooks', heading: 'Webhooks' },
-			{ link: 'Overview', heading: 'Account' },
+			{ link: 'Repositories', heading: 'Repositories' },
 			{ link: 'Jobs', heading: 'Jobs' },
 		],
 		'Jobs',
 	)
 
-	// Repositories sits in the rail at the same level as the other sections and
-	// points at the profile, which is the canonical repository list.
+	// Repositories is the workspace list in the rail, not the public profile.
 	await expect(
 		page
-			.getByRole('navigation', { name: 'Account sections' })
+			.getByRole('navigation', { name: 'Workspace sections' })
 			.getByRole('link', { name: 'Repositories', exact: true }),
-	).toHaveAttribute('href', `/@${user.username}`)
+	).toHaveAttribute('href', `/@${user.username}/packages`)
+
+	// Person settings have their own rail; the header menu is the way across.
+	await page.getByTestId('org-switcher').click()
+	await page
+		.getByTestId('org-switcher-panel')
+		.getByRole('link', { name: 'Account settings' })
+		.click()
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Profile' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('navigation', { name: 'Workspace sections' }),
+	).toHaveCount(0)
+	await clickThroughSections(
+		page,
+		'Account sections',
+		[
+			{ link: 'Security', heading: 'Security' },
+			{ link: 'Organizations', heading: 'Organizations' },
+			{ link: 'Data & deletion', heading: 'Data & deletion' },
+			{ link: 'Profile', heading: 'Profile' },
+		],
+		'Profile',
+	)
 })
 
 test('credits live on the usage page: /account/credits redirects there', async ({
@@ -118,7 +141,7 @@ test('credits live on the usage page: /account/credits redirects there', async (
 	await expect(page.locator('[data-credits-balance]')).toHaveCount(0)
 	await expect(page.getByLabel('Custom amount ($)')).toHaveCount(0)
 
-	const rail = page.getByRole('navigation', { name: 'Account sections' })
+	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
 	await expect(
 		rail.getByRole('link', { name: 'Usage', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
@@ -201,7 +224,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	// Connections stays current in the rail on the add views.
 	await expect(
 		page
-			.getByRole('navigation', { name: 'Account sections' })
+			.getByRole('navigation', { name: 'Workspace sections' })
 			.getByRole('link', { name: 'Connections', exact: true }),
 	).toHaveAttribute('aria-current', 'page')
 
