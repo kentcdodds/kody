@@ -201,7 +201,7 @@ export async function upsertGrant(input: {
 	const now = new Date().toISOString()
 	const existing = await input.db
 		.prepare(
-			`SELECT id FROM grants
+			`SELECT id, org_id FROM grants
 			 WHERE resource_type = ?
 			   AND resource_id = ?
 			   AND subject_type = ?
@@ -214,18 +214,32 @@ export async function upsertGrant(input: {
 			input.subject.type,
 			input.subject.id,
 		)
-		.first<{ id: string }>()
-	const grantId = existing?.id ?? crypto.randomUUID()
+		.first<{ id: string; org_id: string }>()
+	if (existing && existing.org_id !== input.orgId) {
+		throw new Error(
+			'A live grant already exists for this subject and resource in another organization.',
+		)
+	}
+	const inOrg = existing
+		? await input.db
+				.prepare(
+					`SELECT id FROM grants
+					 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(existing.id, input.orgId)
+				.first<{ id: string }>()
+		: null
+	const grantId = inOrg?.id ?? crypto.randomUUID()
 	const statements: Array<{ run(): Promise<unknown> }> = []
-	if (existing) {
+	if (inOrg) {
 		statements.push(
 			input.db
 				.prepare(
 					`UPDATE grants
 					 SET preset = ?, updated_at = ?, created_by_user_id = ?
-					 WHERE id = ?`,
+					 WHERE id = ? AND org_id = ?`,
 				)
-				.bind(input.preset, now, input.createdByUserId, grantId),
+				.bind(input.preset, now, input.createdByUserId, grantId, input.orgId),
 			input.db
 				.prepare(`DELETE FROM grant_permissions WHERE grant_id = ?`)
 				.bind(grantId),
@@ -273,16 +287,24 @@ export async function softDeleteGrant(input: {
 	grantId: string
 }) {
 	const now = new Date().toISOString()
-	const result = await input.db
+	const existing = await input.db
 		.prepare(
-			`UPDATE grants
-			 SET deleted_at = ?, updated_at = ?
+			`SELECT id FROM grants
 			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
 		)
-		.bind(now, now, input.grantId, input.orgId)
-		.run()
-	if (!changesOf(result)) throw new Error('Grant was not found in this org.')
-	await bumpAccessEpochStatement(input.db, input.orgId).run()
+		.bind(input.grantId, input.orgId)
+		.first<{ id: string }>()
+	if (!existing) throw new Error('Grant was not found in this org.')
+	await runBatch(input.db, [
+		input.db
+			.prepare(
+				`UPDATE grants
+				 SET deleted_at = ?, updated_at = ?
+				 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(now, now, input.grantId, input.orgId),
+		bumpAccessEpochStatement(input.db, input.orgId),
+	])
 }
 
 /**

@@ -188,6 +188,13 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 					)
 				}
 				if (membership.role === 'owner') {
+					const access = await computeEffectivePermissions({
+						env: ctx.env,
+						request,
+					})
+					if (!access.isOwner) {
+						throw new McpCallerError('Only an Owner can remove an Owner.')
+					}
 					const owners = await liveOwnerCount(db, request.org.id)
 					if (owners <= 1) {
 						throw new McpCallerError('The last Owner cannot be removed.')

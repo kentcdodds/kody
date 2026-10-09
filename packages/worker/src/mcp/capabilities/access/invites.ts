@@ -7,7 +7,14 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
-import { computeEffectivePermissions } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	computeEffectivePermissions,
+} from '#worker/authorization/authorize.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	addOrgMember,
 	addTeamMember,
@@ -155,9 +162,9 @@ export const inviteCreateCapability = defineDomainCapability(
 	capabilityDomainNames.access,
 	{
 		name: 'inviteCreate',
-		orgPermission: 'member:write',
+		orgPermission: 'none',
 		description:
-			'Invite someone to the organization this request is bound to, by email or username. kind membership adds them with a role (and optional teams). kind grant gives them a preset or permission list on one resource. The token is returned once, with a prompt that tells them to call inviteAccept. Invites expire in 7 days.',
+			'Invite someone to the organization this request is bound to, by email or username. kind membership needs member:write and adds them with a role (and optional teams). kind grant needs manage access on the resource and gives them a preset or permission list. The token is returned once, with a prompt that tells them to call inviteAccept. Invites expire in 7 days.',
 		keywords: ['invite', 'member', 'grant', 'email', 'username'],
 		readOnly: false,
 		idempotent: false,
@@ -180,10 +187,9 @@ export const inviteCreateCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			try {
-				const { user, request, db } = await requireOrgPermission(
-					ctx,
-					'member:write',
-				)
+				const user = requireMcpUser(ctx.callerContext)
+				const request = requireMcpRequest(ctx.callerContext)
+				const db = ctx.env.APP_DB
 				const email = optionalInviteeEmail(args.email)
 				const username = optionalInviteeUsername(args.username)
 				const org = await requireLiveOrg(db, request.org.id)
@@ -196,6 +202,7 @@ export const inviteCreateCapability = defineDomainCapability(
 				let permissions: Array<OrgPermission> | null = null
 				switch (kind) {
 					case 'membership': {
+						await authorize({ env: ctx.env, request }, 'member:write')
 						if (args.resource_type || args.resource_id || args.preset) {
 							throw new McpCallerError(
 								'Membership invites do not take a resource or preset. Use kind grant for that.',
