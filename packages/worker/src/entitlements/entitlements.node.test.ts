@@ -1188,7 +1188,7 @@ test('past-include stop message leads with credits, reads in customer units, and
 		creditsStatus: 'add_credits',
 	})
 	expect(workerCompute.message).toMatch(
-		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, rate and compute limits match Free until you top up\. Add credits at \/account\/usage#credits to restore Pro rates; usage past the include is charged at \$0\.004 per worker-compute day\. Keep package code stable/,
+		/^Worker compute include used up: your "pro" plan includes 350 worker-compute days this UTC month and you have used 412\. With no credits left, rate and compute limits match Free until you top up\. Add credits at \/account\/usage#credits to restore Pro rates; past-include usage is charged at \$0\.004 per worker-compute day after you top up\. Keep package code stable/,
 	)
 	expect(parseComputeOverageLimitMessage(workerCompute.message)).toEqual(
 		workerCompute.details,
