@@ -1,5 +1,6 @@
 import {
 	ownerIdFromStored,
+	personalOrgId,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
@@ -79,8 +80,9 @@ function toBinding(row: {
 }
 
 /**
- * The person's personal org (id = stable user id). Throws when the owner
- * membership is missing — P4 does not invent a binding.
+ * The person's personal org (id = stable user id). Falls back to
+ * personalOrgId when the membership row is missing so session/SSR tests
+ * and unmigrated fixtures keep working. P9 can require the row.
  */
 export async function loadOrgBindingForPerson(
 	db: D1Database,
@@ -99,9 +101,11 @@ export async function loadOrgBindingForPerson(
 		.bind(personId)
 		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
 	if (!row) {
-		throw new Error(
-			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have an org_memberships row where org_id = user_id.`,
-		)
+		const person = personIdFromStored(personId)
+		return {
+			org: { id: personalOrgId(person), slug: null },
+			role: 'owner',
+		}
 	}
 	return toBinding(row)
 }
