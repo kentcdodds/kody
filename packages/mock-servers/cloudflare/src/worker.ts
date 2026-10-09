@@ -11,6 +11,7 @@ import {
 } from '@kody-internal/shared/outbound-email.ts'
 import { createMockCloudflareArtifactsState } from './mock-artifacts-do.ts'
 import { createMockCloudflareEmailState } from './mock-email-messages-do.ts'
+import { routeRehearsal } from './rehearsal-routes.ts'
 
 type MockCloudflareEnv = {
 	MOCK_API_TOKEN?: string
@@ -1029,6 +1030,9 @@ export default {
 		if (request.method === 'POST' && url.pathname === '/__mocks/clear') {
 			return handleClear(request, env, url)
 		}
+
+		const rehearsalResponse = await routeRehearsal(request, url)
+		if (rehearsalResponse) return rehearsalResponse
 
 		const apiResponse = await routeApi(request, env, url)
 		if (apiResponse) return apiResponse

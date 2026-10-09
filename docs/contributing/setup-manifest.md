@@ -117,10 +117,13 @@ This project uses the following resources:
     the same registry inline so maintenance behavior remains testable.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
-  - Preview: `kody-capabilities-preview`
-  - Create once per account, for example:
-    `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
-    (same for preview). **Dimensions must match** the embedding model in
+  - Preview: `<preview-worker-name>-vectors`, created and deleted per preview by
+    `tools/ci/preview-resources.ts` (with metadata indexes) and filled by the
+    preview workflow's builtin reindex. `kody-capabilities-preview` is only the
+    committed placeholder the generated preview config replaces.
+  - Create production once per account, for example:
+    `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`.
+    **Dimensions must match** the embedding model in
     `packages/worker/src/vectorize/embedding.ts` (`@cf/baai/bge-small-en-v1.5`,
     384 dimensions, `cls` pooling).
 - Cloudflare Images binding for package-icon and integration-logo ingest
@@ -781,9 +784,10 @@ How to get/set each value:
     existing rows are rebuilt with compatible vectors. Pooling is not part of
     the fingerprint, so a pooling-only change also needs `force` (or a
     `vectorEmbedFingerprintVersion` bump). After Vectorize data loss, `force` is
-    required so restored D1 fingerprints cannot skip an empty index. Local and
-    preview environments can omit it; CI skips reindex and origin-only
-    execute-smoke when the secret is unset.
+    required so restored D1 fingerprints cannot skip an empty index. Local
+    environments can omit it; production CI skips reindex and origin-only
+    execute-smoke when the secret is unset. Preview deploys generate a random
+    per-deploy value and run the builtin reindex against the per-preview index.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
   - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
     same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only

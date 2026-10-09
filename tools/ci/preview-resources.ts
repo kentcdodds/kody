@@ -32,6 +32,10 @@ import {
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
+import {
+	deleteVectorizeIndex,
+	ensureVectorizeIndex,
+} from './vectorize-resources.ts'
 
 type Command = 'ensure' | 'cleanup' | 'reset-d1'
 
@@ -42,21 +46,22 @@ export type PreviewResourceKind =
 	| 'r2'
 	| 'queue'
 	| 'artifacts'
+	| 'vectorize'
 
 /**
  * Every preview resource name derives from the worker name the preview
  * workflow resolves (`kody-pr-<number>` for pull requests, `kody-branch-<slug>`
  * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
  * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
- * `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
+ * `-jobs-db`, `-vectors`, `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
  * `-repo-session-blobs`, `-webhook-dispatch`, `-webhook-dispatch-dlq`
  * (`truncateWithSuffix` may shorten the base but keeps this shape). The
  * Artifacts namespace uses the bare worker name (`kody-pr-<n>` /
  * `kody-branch-<slug>`) with no suffix. Production names (`kody`,
  * `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`, `kody-oauth`,
- * `kody-webhook-dispatch`, ...) and the shared preview-env names
- * (`kody-preview*`, including `kody-preview-jobs`) never carry a `-pr-<number>`
- * or `-branch-<slug>` segment.
+ * `kody-webhook-dispatch`, ...) and the committed preview-env placeholder
+ * names (`kody-preview*`) never carry a `-pr-<number>` or `-branch-<slug>`
+ * segment.
  */
 export const previewResourceNamePattern =
 	/^kody-(?:pr-\d+|branch-[a-z0-9]+)(?:-[a-z0-9]+)*$/
@@ -159,6 +164,8 @@ export function buildPreviewResourceNames(workerName: string) {
 	const maxLen = 63
 	const d1Suffix = '-db'
 	const auditD1Suffix = '-audit-db'
+	const jobsD1Suffix = '-jobs-db'
+	const vectorizeIndexSuffix = '-vectors'
 	const oauthKvSuffix = '-oauth-kv'
 	const bundleKvSuffix = '-bundle-artifacts-kv'
 	const communityAssetsSuffix = '-community-assets'
@@ -171,6 +178,16 @@ export function buildPreviewResourceNames(workerName: string) {
 	const auditD1DatabaseName = truncateWithSuffix(
 		workerName,
 		auditD1Suffix,
+		maxLen,
+	)
+	const jobsD1DatabaseName = truncateWithSuffix(
+		workerName,
+		jobsD1Suffix,
+		maxLen,
+	)
+	const vectorizeIndexName = truncateWithSuffix(
+		workerName,
+		vectorizeIndexSuffix,
 		maxLen,
 	)
 	const oauthKvTitle = truncateWithSuffix(workerName, oauthKvSuffix, maxLen)
@@ -208,6 +225,10 @@ export function buildPreviewResourceNames(workerName: string) {
 	return {
 		d1DatabaseName,
 		auditD1DatabaseName,
+		/** Per-preview JOBS_DB, created by `jobs-worker-resources.ts --jobs-d1-name`. */
+		jobsD1DatabaseName,
+		/** Per-preview `CAPABILITY_VECTOR_INDEX` shared by origin, platform, and runtime. */
+		vectorizeIndexName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -517,10 +538,42 @@ export async function deletePreviewArtifactsNamespace({
 	})
 }
 
+export async function deletePreviewVectorizeIndex(
+	input: Parameters<typeof deleteVectorizeIndex>[0],
+) {
+	assertPreviewResourceName(input.name, 'vectorize')
+	await deleteVectorizeIndex(input)
+}
+
+/**
+ * Point the generated config's `CAPABILITY_VECTOR_INDEX` at this preview's own
+ * index. Platform and runtime configs copy `index_name` from this config.
+ */
+export function setPreviewVectorizeIndexName(
+	config: Record<string, unknown>,
+	indexName: string,
+) {
+	const envs = config.env as Record<string, Record<string, unknown>> | undefined
+	const vectorize = envs?.preview?.vectorize
+	const entry = Array.isArray(vectorize)
+		? (vectorize as Array<Record<string, unknown>>).find(
+				(candidate) => candidate?.binding === 'CAPABILITY_VECTOR_INDEX',
+			)
+		: undefined
+	if (!entry) {
+		fail(
+			'Generated preview config has no env.preview vectorize binding for "CAPABILITY_VECTOR_INDEX".',
+		)
+	}
+	entry.index_name = indexName
+}
+
 async function ensurePreviewResources(options: CliOptions) {
 	const {
 		d1DatabaseName,
 		auditD1DatabaseName,
+		jobsD1DatabaseName,
+		vectorizeIndexName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -530,6 +583,13 @@ async function ensurePreviewResources(options: CliOptions) {
 		webhookDispatchDeadLetterQueueName,
 		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
+	for (const name of [jobsD1DatabaseName, vectorizeIndexName]) {
+		if (!previewResourceNamePattern.test(name)) {
+			fail(
+				`Refusing to create "${name}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}.`,
+			)
+		}
+	}
 	if (!previewResourceNamePattern.test(artifactsNamespace)) {
 		fail(
 			`Refusing to create Artifacts namespace "${artifactsNamespace}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}. Preview ensure only creates kody-pr-<number>* and kody-branch-<slug>* Artifacts namespaces.`,
@@ -594,6 +654,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		...queueClient,
 		namespace: artifactsNamespace,
 	})
+	await ensureVectorizeIndex({ ...queueClient, name: vectorizeIndexName })
 
 	// Same classifier as production (tools/ci/production-resources.ts), run
 	// against this preview's three script names. A dry run has no live fleet
@@ -664,6 +725,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		await readFile(generatedConfigPath, 'utf8'),
 	)
 	stripOriginDurableObjectMigrations(generatedConfig, 'preview')
+	setPreviewVectorizeIndexName(generatedConfig, vectorizeIndexName)
 	await writeFile(
 		generatedConfigPath,
 		`${JSON.stringify(generatedConfig, null, '\t')}\n`,
@@ -678,6 +740,8 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`d1_database_id=${d1.id}`)
 	console.log(`audit_d1_database_name=${auditD1.name}`)
 	console.log(`audit_d1_database_id=${auditD1.id}`)
+	console.log(`jobs_d1_database_name=${jobsD1DatabaseName}`)
+	console.log(`vectorize_index_name=${vectorizeIndexName}`)
 	console.log(`oauth_kv_title=${oauthKv.title}`)
 	console.log(`oauth_kv_id=${oauthKv.id}`)
 	console.log(`bundle_artifacts_kv_title=${bundleArtifactsKv.title}`)
@@ -762,6 +826,8 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 	const {
 		d1DatabaseName,
 		auditD1DatabaseName,
+		jobsD1DatabaseName,
+		vectorizeIndexName,
 		oauthKvTitle,
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
@@ -776,6 +842,8 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		...workerNames.map((name) => [name, 'worker'] as const),
 		[d1DatabaseName, 'd1'] as const,
 		[auditD1DatabaseName, 'd1'] as const,
+		[jobsD1DatabaseName, 'd1'] as const,
+		[vectorizeIndexName, 'vectorize'] as const,
 		[oauthKvTitle, 'kv'] as const,
 		[bundleArtifactsKvTitle, 'kv'] as const,
 		[communityAssetsBucketName, 'r2'] as const,
@@ -890,7 +958,11 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 			})
 		})
 	}
-	for (const name of [auditD1DatabaseName, d1DatabaseName]) {
+	for (const name of [
+		jobsD1DatabaseName,
+		auditD1DatabaseName,
+		d1DatabaseName,
+	]) {
 		await attempt(`d1 ${name}`, async () => {
 			await deletePreviewD1Database({
 				name,
@@ -899,6 +971,12 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 			})
 		})
 	}
+	await attempt(`vectorize ${vectorizeIndexName}`, async () => {
+		await deletePreviewVectorizeIndex({
+			...queueClient,
+			name: vectorizeIndexName,
+		})
+	})
 	await attempt(`artifacts ${artifactsNamespace}`, async () => {
 		await deletePreviewArtifactsNamespace({
 			namespace: artifactsNamespace,
@@ -916,11 +994,10 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 }
 
 /**
- * Delete only the per-PR app + audit D1 databases so the next preview ensure /
- * migrations apply bootstraps a fresh ledger. Used when rename-aware
- * `d1_migrations` rewrite cannot match (#2776). Never touches production, the
- * shared `kody-preview-jobs` database, or `kody-branch-*` previews (docs and
- * this guard are PR-only).
+ * Delete only the per-PR app, audit, and jobs D1 databases so the next preview
+ * ensure / migrations apply bootstraps a fresh ledger. Used when rename-aware
+ * `d1_migrations` rewrite cannot match (#2776). Never touches production or
+ * `kody-branch-*` previews (docs and this guard are PR-only).
  */
 export const resetPreviewD1WorkerNamePattern = /^kody-pr-\d+$/
 
@@ -937,12 +1014,11 @@ export async function resetPreviewD1Databases(options: {
 			`Refusing to reset D1 databases for "${options.workerName}": reset-d1 is limited to kody-pr-<number> (not branch previews or production).`,
 		)
 	}
-	const { d1DatabaseName, auditD1DatabaseName } = buildPreviewResourceNames(
-		options.workerName,
-	)
-	const names = [auditD1DatabaseName, d1DatabaseName]
-	// Validate both names before deleting either so a truncation mismatch cannot
-	// remove audit-db and then fail on app-db.
+	const { d1DatabaseName, auditD1DatabaseName, jobsD1DatabaseName } =
+		buildPreviewResourceNames(options.workerName)
+	const names = [jobsD1DatabaseName, auditD1DatabaseName, d1DatabaseName]
+	// Validate every name before deleting any so a truncation mismatch cannot
+	// remove one database and then fail on another.
 	for (const name of names) {
 		assertPreviewResourceName(name, 'd1')
 	}
@@ -957,7 +1033,7 @@ export async function resetPreviewD1Databases(options: {
 		})
 	}
 	console.error(
-		`Preview D1 reset for ${options.workerName}: deleted ${d1DatabaseName} and ${auditD1DatabaseName}. Re-run Deploy Preview Resources (or ensure + migrations apply + seed).`,
+		`Preview D1 reset for ${options.workerName}: deleted ${names.join(', ')}. Re-run Deploy Preview Resources (or ensure + migrations apply + seed).`,
 	)
 }
 

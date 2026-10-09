@@ -74,7 +74,8 @@ For preview environments, we do a full resource reset:
 2. Recreate preview app resources and config:
    - `node tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config packages/worker/wrangler-preview.generated.json`
 3. Recreate preview jobs-worker resources and config:
-   - `node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name <preview-worker-name>-jobs --host-worker-name <preview-worker-name> --out-config packages/jobs-worker/wrangler-preview.generated.json`
+   - `node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name <preview-worker-name>-jobs --host-worker-name <preview-worker-name> --jobs-d1-name <preview-worker-name>-jobs-db --out-config packages/jobs-worker/wrangler-preview.generated.json`
+     (`--jobs-d1-name` is the `jobs_d1_database_name` line that step 2 prints)
 4. Re-apply remote migrations:
    - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-preview.generated.json`
    - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config packages/worker/wrangler-preview.generated.json`
