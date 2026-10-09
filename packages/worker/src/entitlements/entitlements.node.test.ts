@@ -108,7 +108,7 @@ function createEntitlementsTestDb(
 				(row) => row.email === params[0] && row.stable_user_id === params[1],
 			)
 			if (!user) return null
-			return planRow(orgById(user.stable_user_id) ?? null)
+			return planRow(orgById(user.stable_user_id))
 		}
 		if (query.includes('SELECT email, plan, email_verified_at')) {
 			const user = byId(params[0])
