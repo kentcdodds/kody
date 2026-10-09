@@ -21,3 +21,7 @@ No workflows execute, permissions change, or leads are collected.
 The [research notes](./research.md) explain the competitor and adjacent-product
 patterns behind the revised design. Production routing and booking integration
 are outside this draft.
+
+The current positioning leads with Kody as the cloud for your AI agents: a
+shared home for code, tools, data, and execution, with agency delivery and
+client ownership supporting that promise.
