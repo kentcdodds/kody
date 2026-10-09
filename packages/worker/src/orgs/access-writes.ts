@@ -16,6 +16,7 @@ import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
+import { assertCanOwnAnotherFreeOrg } from '#worker/orgs/billing.ts'
 
 export type GrantSubject =
 	| { type: 'user'; id: string }
@@ -363,6 +364,8 @@ export async function createOrg(input: {
 }) {
 	const slug = normalizeUsername(input.slug)?.toLowerCase()
 	if (!slug) throw new Error('Organization slug is required.')
+	// New orgs start free; the 2-free-org rule applies before insert.
+	await assertCanOwnAnotherFreeOrg(input.db, input.createdByUserId)
 	const orgId = mintPersonId()
 	const now = new Date().toISOString()
 	await runBatch(input.db, [

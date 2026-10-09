@@ -477,6 +477,8 @@ test('executeJobOnce records job_run usage for success and failure', async () =>
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(env, {
 			userId: row.record.userId,
+			actorUserId: '',
+			automationSource: 'schedule',
 			eventType: 'job_run',
 			entityId: jobView.id,
 			durationMs: outcome.durationMs,

@@ -12,6 +12,7 @@ import {
 	softDeleteOrgMember,
 	updateOrgMemberRole,
 } from '#worker/orgs/access-writes.ts'
+import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	orgRoleSchema,
 	requireLiveOrg,
@@ -19,6 +20,10 @@ import {
 	resolvePersonId,
 	rethrowAccessError,
 } from './shared.ts'
+
+function seatRole(role: string) {
+	return role === 'owner' || role === 'member'
+}
 
 async function liveMembership(db: D1Database, orgId: string, userId: string) {
 	return await db
@@ -147,6 +152,13 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 					userId,
 					role: args.role,
 				})
+				if (seatRole(membership.role) !== seatRole(args.role)) {
+					await syncSeatsAfterMembershipChange({
+						db,
+						env: ctx.env,
+						orgId: request.org.id,
+					})
+				}
 				return { user_id: userId, role: args.role }
 			} catch (error) {
 				rethrowAccessError(error)
@@ -198,6 +210,13 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 					orgId: request.org.id,
 					userId,
 				})
+				if (seatRole(membership.role)) {
+					await syncSeatsAfterMembershipChange({
+						db,
+						env: ctx.env,
+						orgId: request.org.id,
+					})
+				}
 				return { user_id: userId, removed: true as const }
 			} catch (error) {
 				rethrowAccessError(error)

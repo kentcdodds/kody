@@ -746,6 +746,8 @@ test('DynamicCallableWorkflowBase records workflow_run usage on terminal transit
 			expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 			expect(recordUsageSpy).toHaveBeenCalledWith(env, {
 				userId: 'user-1',
+				actorUserId: '',
+				automationSource: 'schedule',
 				eventType: 'workflow_run',
 				entityId: created.id,
 				durationMs: expect.any(Number),

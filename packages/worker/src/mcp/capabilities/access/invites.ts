@@ -21,6 +21,7 @@ import {
 	type GrantResourceType,
 	type StoredInvite,
 } from '#worker/orgs/access-writes.ts'
+import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	authorizeGrantTarget,
 	generateInviteToken,
@@ -97,6 +98,7 @@ function toInvitePayload(invite: StoredInvite, orgSlug: string) {
 
 async function acceptStoredInvite(input: {
 	db: D1Database
+	env: Env
 	invite: StoredInvite
 	acceptedByUserId: string
 }) {
@@ -119,6 +121,13 @@ async function acceptStoredInvite(input: {
 					teamId,
 					userId: input.acceptedByUserId,
 					addedByUserId: invite.invitedByUserId,
+				})
+			}
+			if (role === 'owner' || role === 'member') {
+				await syncSeatsAfterMembershipChange({
+					db: input.db,
+					env: input.env,
+					orgId: invite.orgId,
 				})
 			}
 			break
@@ -348,6 +357,7 @@ export const inviteAcceptCapability = defineDomainCapability(
 				const org = await requireLiveOrg(db, invite.orgId)
 				await acceptStoredInvite({
 					db,
+					env: ctx.env,
 					invite,
 					acceptedByUserId: user.userId,
 				})
