@@ -75,9 +75,9 @@ not enough. Add `--request` / `--check` for the flows this PR changes, or run
 Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR
 origin worker (`kody-pr-<n>`), sibling platform, runtime, and jobs workers
 (`kody-pr-<n>-platform`, `kody-pr-<n>-runtime`, `kody-pr-<n>-jobs`), isolated
-app/audit/jobs D1 resources, KV, mock workers, and a seeded login. The workflow
-comments the URL on the PR. Details of resource names and cleanup live in
-[`preview deploys`](./setup/preview-deploys.md).
+app/audit/jobs D1 resources, a Vectorize index, KV, mock workers, and a seeded
+login. The workflow comments the URL on the PR. Details of resource names and
+cleanup live in [`preview deploys`](./setup/preview-deploys.md).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can
@@ -131,6 +131,11 @@ account deletion kickoff, fleet feature flags) cannot be reproduced on preview.
 For those paths, sufficient evidence is the local admin seed (`kody@example.com`
 / `ilikecode`) plus targeted Workers or unit tests — not a preview `/admin`
 session and not raw D1 writes.
+
+The one exception is the operator/CI-only
+[migration rehearsal](./preview-migration-rehearsal.md): its `seed` action
+creates a site admin on a `kody-branch-*` preview, with private credentials that
+leave CI only sealed to the operator's key. PR previews never get an admin.
 
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through

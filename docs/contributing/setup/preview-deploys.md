@@ -13,8 +13,19 @@ setup pages.
 - Highlight worker: `<preview-worker-name>-highlight`
 - App D1 database: `<preview-worker-name>-db`
 - Audit D1 database: `<preview-worker-name>-audit-db`
-- Jobs D1 database: shared `kody-preview-jobs` (ensured by
-  `jobs-worker-resources.ts`; not per-PR)
+- Jobs D1 database: `<preview-worker-name>-jobs-db` (passed to
+  `jobs-worker-resources.ts --jobs-d1-name`, so a migration rehearsal on one
+  preview cannot corrupt another preview's jobs tables)
+- Vectorize index (`CAPABILITY_VECTOR_INDEX`): `<preview-worker-name>-vectors`
+  (384-dimension cosine with the `kind`, `userId`, `status`, `category`, and
+  `domain` metadata indexes). After the origin is healthy, the workflow runs
+  `tools/ci/reindex-capabilities.ts --phases capabilities --force` with a
+  per-deploy random `CAPABILITY_REINDEX_SECRET` so builtin capability search
+  works on the fresh index (`--force` because APP_DB embed fingerprints can
+  outlive the index they described). A per-preview index (instead of a namespace
+  prefix inside a shared index) keeps production namespace logic unchanged and
+  lets cleanup delete every preview vector in one call; Cloudflare allows 50,000
+  indexes per account.
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - KV namespace (published source snapshots / bundles):
   `<preview-worker-name>-bundle-artifacts-kv`
@@ -25,11 +36,12 @@ setup pages.
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
 When a PR is closed, the cleanup job deletes the preview
-app/platform/runtime/jobs Workers, mock Workers, Queues, per-preview D1/KV/R2,
-the per-PR Artifacts namespace (repos emptied, then namespace deleted when the
-API allows), and these per-PR resources. It does not delete shared names such as
-`kody-preview-jobs`, the shared Artifacts namespaces `production` / `preview`,
-or any production name.
+app/platform/runtime/jobs Workers, mock Workers, Queues, per-preview app, audit,
+and jobs D1, KV, R2, the Vectorize index, the per-PR Artifacts namespace (repos
+emptied, then namespace deleted when the API allows), and these per-PR
+resources. It does not delete the committed `kody-preview*` placeholder names,
+the shared Artifacts namespaces `production` / `preview`, or any production
+name.
 
 Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
 responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
@@ -76,14 +88,14 @@ secret with a token that has that permission. Cleanup intentionally fails when
 that secret is missing or under-scoped so permission regressions are visible.
 
 Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV, R2,
-Queues and their consumers, Artifacts namespaces) first passes through
-`assertPreviewResourceName(name, kind)`, which throws unless the name matches
-`^kody-(pr-<number>|branch-<slug>)(-<segment>)*$`. Production names (`kody`,
-`kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...), shared Artifacts
-namespaces (`production`, `preview`), and the shared `kody-preview*` names never
-match, so a bug or an empty PR number cannot compute a production name and
-delete it. `npm run deploy-guardrails:check` fails if a destructive call in that
-script is not preceded by the guard in the same function.
+Queues and their consumers, Vectorize indexes, Artifacts namespaces) first
+passes through `assertPreviewResourceName(name, kind)`, which throws unless the
+name matches `^kody-(pr-<number>|branch-<slug>)(-<segment>)*$`. Production names
+(`kody`, `kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...), shared
+Artifacts namespaces (`production`, `preview`), and the shared `kody-preview*`
+names never match, so a bug or an empty PR number cannot compute a production
+name and delete it. `npm run deploy-guardrails:check` fails if a destructive
+call in that script is not preceded by the guard in the same function.
 
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path verifies that the selected
@@ -96,7 +108,7 @@ If you ever need to do the same operations manually, use:
 - `node tools/ci/preview-resources.ts ensure --worker-name <name> --out-config <path>`
 - `node tools/ci/preview-resources.ts cleanup --worker-name <name>`
 - `node tools/ci/preview-resources.ts reset-d1 --worker-name <name>` (per-PR
-  app + audit D1 only; see migration renumber race below)
+  app, audit, and jobs D1; see migration renumber race below)
 - `node tools/ci/production-resources.ts ensure --out-config <path>`
 
 ### Migration renumber race on an existing preview D1
@@ -113,16 +125,17 @@ file; the preview deploy job checks out with `fetch-depth: 0`). It does **not**
 guess from the kebab slug alone — that would skip applying revised SQL after a
 rebase that also changed the migration. The script also refuses any wrangler
 config whose binding `database_name` is not a preview name (`kody-pr-*` /
-`kody-branch-*` or shared `kody-preview-jobs`). That is bookkeeping only — not a
-schema drop — and never runs in production.
+`kody-branch-*`). That is bookkeeping only — not a schema drop — and never runs
+in production.
 
 If rewrite cannot match (content changed as well as the name, or git cannot
 recover the old file), use the **reset preview D1** fallback for **PR** preview
-databases only (`kody-pr-<n>-db` and `kody-pr-<n>-audit-db`). This deletes
-preview seed data for that PR; the next Deploy Preview Resources run recreates
-the D1s, applies migrations fresh, and reseeds. It is not a production
-data-drop. Names still pass through `assertPreviewResourceName`, and `reset-d1`
-refuses `kody-branch-*` worker names.
+databases only (`kody-pr-<n>-db`, `kody-pr-<n>-audit-db`, and
+`kody-pr-<n>-jobs-db`). This deletes preview seed data for that PR; the next
+Deploy Preview Resources run recreates the D1s, applies migrations fresh, and
+reseeds. It is not a production data-drop. Names still pass through
+`assertPreviewResourceName`, and `reset-d1` refuses `kody-branch-*` worker
+names.
 
 ```bash
 # Requires CLOUDFLARE_API_TOKEN (+ CLOUDFLARE_ACCOUNT_ID for list/delete).
@@ -131,10 +144,7 @@ node tools/ci/preview-resources.ts reset-d1 --worker-name kody-pr-<n>
 ```
 
 Then re-run the preview workflow (or `preview-resources.ts ensure` followed by
-migrations apply and `tools/seed-test-data.ts --remote`). Do **not** delete the
-shared jobs preview database (`kody-preview-jobs`) this way — that name is
-shared across previews; prefer the sha-match rewrite, or ask before resetting
-it.
+migrations apply and `tools/seed-test-data.ts --remote`).
 
 To **manually test** a PR preview (find the URL, sign in as the seeded user,
 create specific data with `--request`, assert the change), see

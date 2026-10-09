@@ -17,6 +17,8 @@ style, tests, MCP capabilities, and runtime architecture.
   [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Manual PR preview testing](./preview-manual-testing.md)
+- [Preview migration rehearsal](./preview-migration-rehearsal.md) (seed,
+  snapshot, migrate, verify, restore on a branch preview; operator/CI only)
 - [control-kody](./control-kody.md) (Feature Map + CLI; daily
   `@kentcdodds/verification-skill-maintain`)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
