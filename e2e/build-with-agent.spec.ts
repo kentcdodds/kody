@@ -1,4 +1,4 @@
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 
 test('public agent handoff copies a complete prompt and keeps business attribution', async ({
 	page,
@@ -8,6 +8,7 @@ test('public agent handoff copies a complete prompt and keeps business attributi
 	await context.grantPermissions(['clipboard-read', 'clipboard-write'])
 	for (const path of ['/', '/for/business']) {
 		await page.goto(path)
+		await waitForClientHydration(page)
 		const button = page.getByRole('button', {
 			name: 'Build with your agent, copy setup prompt',
 		})

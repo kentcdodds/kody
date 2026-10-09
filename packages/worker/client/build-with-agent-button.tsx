@@ -28,6 +28,11 @@ export function BuildWithAgentButton(handle: Handle<{ business?: boolean }>) {
 								alt=""
 								width={18}
 								height={18}
+								mix={css({
+									background: '#fff',
+									borderRadius: '3px',
+									padding: '2px',
+								})}
 							/>
 						))}
 					</span>
