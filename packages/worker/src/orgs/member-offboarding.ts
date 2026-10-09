@@ -11,6 +11,11 @@ export type MemberSoftRemovedInput = {
 	orgId: string
 	userId: string
 	deletedAt: string
+	/**
+	 * When true, a membership already tombstoned at `deletedAt` still revokes
+	 * credentials and disconnects own-login integrations.
+	 */
+	resume?: boolean
 }
 
 /**
@@ -31,5 +36,6 @@ export async function onMemberSoftRemoved(
 		memberLeftVoluntarily: true,
 		now: new Date(input.deletedAt),
 		oauthHelpers: oauthHelpers ?? null,
+		resumeDeletedAt: input.resume ? input.deletedAt : undefined,
 	})
 }

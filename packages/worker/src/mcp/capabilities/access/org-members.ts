@@ -7,11 +7,8 @@ import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
-import {
-	createOrg,
-	softDeleteOrgMember,
-	updateOrgMemberRole,
-} from '#worker/orgs/access-writes.ts'
+import { createOrg, updateOrgMemberRole } from '#worker/orgs/access-writes.ts'
+import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
@@ -184,7 +181,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 		name: 'orgMemberRemove',
 		orgPermission: 'member:delete',
 		description:
-			'Remove a member from the organization this request is bound to. Their team memberships in this organization end too. The last Owner cannot be removed.',
+			'Remove a member from the organization this request is bound to. Revokes org-bound credentials, disconnects integrations they connected, and keeps their jobs running, the same as when they leave. Their team memberships in this organization end too. The last Owner cannot be removed.',
 		keywords: ['member', 'remove', 'kick'],
 		readOnly: false,
 		idempotent: false,
@@ -224,11 +221,11 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 						throw new McpCallerError('The last Owner cannot be removed.')
 					}
 				}
-				await softDeleteOrgMember({
-					db,
+				await onMemberSoftRemoved({
+					env: ctx.env,
 					orgId: request.org.id,
 					userId,
-					protectLastOwner: removingOwner,
+					deletedAt: new Date().toISOString(),
 				})
 				if (seatRole(membership.role)) {
 					await syncSeatsAfterMembershipChange({

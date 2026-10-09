@@ -111,6 +111,14 @@ export function rethrowAccessError(error: unknown): never {
 				'That team slug is already taken in this organization.',
 			)
 		}
+		if (error.message === 'cannot_remove_last_owner') {
+			throw new McpCallerError('The last Owner cannot be removed.')
+		}
+		if (error.message === 'member_not_found') {
+			throw new McpCallerError(
+				'That person is not a member of this organization.',
+			)
+		}
 		console.error('access-change-failed', error)
 	}
 	throw new McpCallerError('Access change failed.')
