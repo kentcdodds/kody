@@ -6,8 +6,14 @@ import {
 	findWorkflowRunByIdempotencyKey,
 	type PackageWorkflowCreateResult,
 } from '#worker/package-runtime/package-workflows.ts'
-import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
-import { findWorkflowProjectionByBindingIdempotencyKey } from '#worker/run-records/service.ts'
+import {
+	isDeadTerminalWorkflowStatus,
+	terminalWorkflowStatusValues,
+} from '#worker/package-runtime/workflow-statuses.ts'
+import {
+	findWorkflowProjectionByBindingIdempotencyKey,
+	releaseWorkflowProjectionIdempotencyKey,
+} from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 
 /**
@@ -42,16 +48,6 @@ export type DurableEscalationOutcome<T> =
  */
 export const alreadyDispatchedWorkflowStatusExclusion =
 	terminalWorkflowStatusValues
-
-/**
- * Terminal create() statuses that mean the durable work did not succeed.
- * `complete` is excluded: a finished run under the key is an honest dispatched
- * handle (the work already happened). Derived from terminalWorkflowStatusValues
- * so cancelled stays aligned with the cancel projection.
- */
-const deadDurableEscalationStatuses = new Set<string>(
-	terminalWorkflowStatusValues.filter((status) => status !== 'complete'),
-)
 
 const terminalDurableEscalationStatuses = new Set<string>(
 	alreadyDispatchedWorkflowStatusExclusion,
@@ -309,26 +305,42 @@ export async function runWithDurableEscalation<T>(input: {
 			clearTimeout(timer)
 		}
 
-		const workflow = await createDynamicCallableWorkflow({
+		const createBody = {
+			workflowName: input.workflowName,
+			idempotencyKey,
+			code: input.durableCode,
+			params: input.durableParams,
+		}
+		let workflow = await createDynamicCallableWorkflow({
 			env: input.env,
 			userId: input.userId,
 			userEmail: input.userEmail,
 			packageContext: input.packageContext ?? null,
-			body: {
-				workflowName: input.workflowName,
-				idempotencyKey,
-				code: input.durableCode,
-				params: input.durableParams,
-			},
+			body: createBody,
 			lineage: input.lineage,
 		})
-		if (
-			typeof workflow.status === 'string' &&
-			deadDurableEscalationStatuses.has(workflow.status)
-		) {
-			return {
-				kind: 'failed',
-				error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and its idempotency key blocks re-dispatch; the durable work did not complete successfully.`,
+		if (isDeadTerminalWorkflowStatus(workflow.status)) {
+			// Terminal failure (for example Durable Object reset mid-run) must
+			// not keep the semantic key. Release it and create once more so the
+			// same operation can re-dispatch; running and complete still dedupe.
+			await releaseWorkflowProjectionIdempotencyKey({
+				env: input.env as Env,
+				userId: input.userId,
+				id: workflow.id,
+			})
+			workflow = await createDynamicCallableWorkflow({
+				env: input.env,
+				userId: input.userId,
+				userEmail: input.userEmail,
+				packageContext: input.packageContext ?? null,
+				body: createBody,
+				lineage: input.lineage,
+			})
+			if (isDeadTerminalWorkflowStatus(workflow.status)) {
+				return {
+					kind: 'failed',
+					error: `A previous durable run "${workflow.id}" for this operation ended with status "${workflow.status}" and could not be re-dispatched after releasing its idempotency key.`,
+				}
 			}
 		}
 		return {

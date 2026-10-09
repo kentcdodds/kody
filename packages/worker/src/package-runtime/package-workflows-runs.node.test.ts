@@ -65,6 +65,10 @@ vi.mock('#worker/run-records/service.ts', () => ({
 				},
 			]),
 		),
+	releaseWorkflowProjectionIdempotencyKey: (...args: Array<unknown>) =>
+		runRecordMocks.releaseWorkflowProjectionIdempotencyKey(
+			...(args as [{ env: Env; userId: string; id: string }]),
+		),
 	getWorkflowProjection: (...args: Array<unknown>) =>
 		runRecordMocks.getWorkflowProjection(
 			...(args as [{ env: Env; userId: string; id: string }]),
@@ -281,7 +285,8 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		}),
 	])
 
-	// Terminal (errored) projections still satisfy the same-key replay.
+	// Terminal (errored) projections still satisfy same-key replay until the
+	// key is released (durable escalation releases after a dead terminal).
 	runRecordMocks.resetProjections()
 	const erroredFirst = await packageRun(
 		'2026-05-08T19:30:00.000Z',
@@ -297,6 +302,23 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	expect(erroredReplay.id).toBe(erroredFirst.id)
 	expect(erroredReplay.status).toBe('errored')
 	expect(binding.create).toHaveBeenCalledTimes(2)
+
+	await runRecordMocks.releaseWorkflowProjectionIdempotencyKey({
+		env,
+		userId: 'user-1',
+		id: erroredFirst.id,
+	})
+	const afterRelease = await packageRun(
+		'2026-05-08T19:32:00.000Z',
+		'terminal-key',
+	)
+	expect(afterRelease.id).not.toBe(erroredFirst.id)
+	expect(afterRelease.status).toBe('queued')
+	expect(binding.create).toHaveBeenCalledTimes(3)
+	expect(findRun(erroredFirst.id)?.idempotencyKey).toBe(
+		`released:${erroredFirst.id}`,
+	)
+	expect(findRun(afterRelease.id)?.idempotencyKey).toBe('terminal-key')
 
 	// The key is scoped per user.
 	runRecordMocks.resetProjections()

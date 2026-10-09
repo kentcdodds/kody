@@ -10,7 +10,10 @@ import {
 	getRecoveryBookmark,
 	restoreToBookmark,
 } from '#worker/dr/do-pitr.ts'
-import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
+import {
+	releasedWorkflowProjectionIdempotencyKey,
+	terminalWorkflowStatusValues,
+} from '#worker/package-runtime/workflow-statuses.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
 import {
@@ -2663,6 +2666,42 @@ class RunLogBase extends DurableObject<Env> {
 		return { ok: true }
 	}
 
+	/**
+	 * Detach a dead terminal projection from its idempotency key so a later
+	 * create with the same key can mint a new run. Active and `complete` rows
+	 * must keep their keys for dedupe/replay; this only rewrites keys that are
+	 * not already released.
+	 */
+	async releaseWorkflowProjectionIdempotencyKey(input: {
+		id: string
+	}): Promise<{ released: boolean; previousKey: string | null }> {
+		const id = input.id.trim()
+		if (!id) {
+			return { released: false, previousKey: null }
+		}
+		const existing = await this.getWorkflowProjection({ id })
+		if (!existing) {
+			return { released: false, previousKey: null }
+		}
+		const previousKey = existing.idempotencyKey
+		if (previousKey.startsWith('released:')) {
+			return { released: false, previousKey }
+		}
+		const releasedKey = releasedWorkflowProjectionIdempotencyKey(id)
+		const now = new Date().toISOString()
+		this.ctx.storage.sql.exec(
+			`UPDATE workflow_projections
+			SET idempotency_key = ?, updated_at = ?
+			WHERE id = ?`,
+			releasedKey,
+			now,
+			id,
+		)
+		this.retentionIdleConfirmed = false
+		await this.ensureRetentionAlarm()
+		return { released: true, previousKey }
+	}
+
 	async getWorkflowProjection(input: {
 		id: string
 	}): Promise<WorkflowProjectionRecord | null> {
@@ -4049,6 +4088,9 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 	upsertWorkflowProjection: (
 		input: WorkflowProjectionUpsertInput,
 	) => Promise<{ ok: true }>
+	releaseWorkflowProjectionIdempotencyKey: (input: {
+		id: string
+	}) => Promise<{ released: boolean; previousKey: string | null }>
 	getWorkflowProjection: (input: {
 		id: string
 	}) => Promise<WorkflowProjectionRecord | null>

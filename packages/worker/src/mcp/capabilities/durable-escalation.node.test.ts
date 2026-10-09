@@ -75,6 +75,25 @@ const runRecordMocks = vi.hoisted(() => {
 				return { ok: true as const }
 			},
 		),
+		releaseWorkflowProjectionIdempotencyKey: vi.fn(
+			async (input: { userId: string; id: string }) => {
+				const store = userStore(input.userId)
+				const existing = store.get(input.id)
+				if (!existing) {
+					return { released: false, previousKey: null }
+				}
+				if (existing.idempotencyKey.startsWith('released:')) {
+					return { released: false, previousKey: existing.idempotencyKey }
+				}
+				const previousKey = existing.idempotencyKey
+				store.set(input.id, {
+					...existing,
+					idempotencyKey: `released:${input.id}`,
+					updatedAt: new Date().toISOString(),
+				})
+				return { released: true, previousKey }
+			},
+		),
 		findWorkflowProjectionByIdempotencyKey: vi.fn(
 			async (input: {
 				userId: string
@@ -126,6 +145,8 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof RunRecordsServiceModule>()),
 	upsertWorkflowProjection: (input: never) =>
 		runRecordMocks.upsertWorkflowProjection(input),
+	releaseWorkflowProjectionIdempotencyKey: (input: never) =>
+		runRecordMocks.releaseWorkflowProjectionIdempotencyKey(input),
 	findWorkflowProjectionByIdempotencyKey: (input: never) =>
 		runRecordMocks.findWorkflowProjectionByIdempotencyKey(input),
 	findWorkflowProjectionByBindingIdempotencyKey: (input: never) =>
@@ -416,20 +437,35 @@ test('runWithDurableEscalation never throws and reports structured failures', as
 	})
 })
 
-test('budget exhaustion fails closed when create single-flights onto a dead terminal run', async () => {
+test('budget exhaustion releases a dead terminal key and re-dispatches once', async () => {
 	runRecordMocks.resetProjections()
-	mockModule.createDynamicCallableWorkflow.mockResolvedValueOnce(
-		created('dynwf-cancelled-1', 'cancelled'),
-	)
+	const expectedKey = keyFor('user-1')
+	seedProjection('user-1', 'dynwf-cancelled-1', expectedKey, 'cancelled')
+	mockModule.createDynamicCallableWorkflow
+		.mockResolvedValueOnce(created('dynwf-cancelled-1', 'cancelled'))
+		.mockResolvedValueOnce(created('dynwf-retry-1', 'queued'))
 	const cancelledOutcome = await escalate()
-	expect(cancelledOutcome.kind).toBe('failed')
-	if (cancelledOutcome.kind !== 'failed') {
-		throw new Error('Expected cancelled single-flight to fail closed.')
-	}
-	expect(cancelledOutcome.error).toContain('dynwf-cancelled-1')
-	expect(cancelledOutcome.error).toContain('cancelled')
-	expect(cancelledOutcome.error).toContain('blocks re-dispatch')
+	expect(cancelledOutcome).toEqual({
+		kind: 'dispatched',
+		handle: expect.objectContaining({
+			status: 'dispatched',
+			workflow_id: 'dynwf-retry-1',
+			run_status: 'queued',
+			idempotency_key: expectedKey,
+		}),
+	})
+	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenCalledTimes(2)
+	expect(
+		runRecordMocks.releaseWorkflowProjectionIdempotencyKey,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			id: 'dynwf-cancelled-1',
+		}),
+	)
 
+	mockModule.createDynamicCallableWorkflow.mockClear()
+	runRecordMocks.releaseWorkflowProjectionIdempotencyKey.mockClear()
 	mockModule.createDynamicCallableWorkflow.mockResolvedValueOnce(
 		created('dynwf-complete-1', 'complete'),
 	)
@@ -443,6 +479,9 @@ test('budget exhaustion fails closed when create single-flights onto a dead term
 			idempotency_key: keyFor('user-1', completeParts),
 		}),
 	})
+	expect(
+		runRecordMocks.releaseWorkflowProjectionIdempotencyKey,
+	).not.toHaveBeenCalled()
 })
 
 test('budget abort dispatches while the inline attempt is still in flight', async () => {

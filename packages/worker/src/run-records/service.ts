@@ -1017,6 +1017,17 @@ export async function upsertWorkflowProjection(input: {
 	}).upsertWorkflowProjection(input.projection)
 }
 
+export async function releaseWorkflowProjectionIdempotencyKey(input: {
+	env: Env
+	userId: string
+	id: string
+}): Promise<{ released: boolean; previousKey: string | null }> {
+	return await runLogRpc({
+		env: input.env,
+		userId: input.userId,
+	}).releaseWorkflowProjectionIdempotencyKey({ id: input.id })
+}
+
 export async function getWorkflowProjection(input: {
 	env: Env
 	userId: string

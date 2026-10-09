@@ -982,12 +982,36 @@ export async function createDynamicCallableWorkflow(input: {
 		}
 	}
 	const payload = await resolveWorkflowPayload(input)
-	const id = await createDynamicCallableWorkflowInstanceId(payload, {
+	let id = await createDynamicCallableWorkflowInstanceId(payload, {
 		// An explicit idempotency key must single-flight even before the
 		// RunLog projection row is written.
 		includeRunAt: !idempotencyKeyInput,
 	})
-	const existing = await getExistingWorkflowInstance(workflowBinding, id)
+	let existing = await getExistingWorkflowInstance(workflowBinding, id)
+	if (existing && idempotencyKeyInput) {
+		const projectionForId = await getWorkflowProjection({
+			env,
+			userId: input.userId,
+			id,
+		})
+		// A prior release rewrote the projection key while the deterministic
+		// engine id stays occupied. Mint a successor id so the same semantic
+		// key can create a fresh run; projections that still hold the key
+		// (active or complete, or sticky dead) keep single-flight below.
+		if (
+			projectionForId &&
+			projectionForId.idempotencyKey !== idempotencyKeyInput
+		) {
+			id = await createDynamicCallableWorkflowInstanceId(
+				{
+					...payload,
+					idempotencyKey: `${idempotencyKeyInput}:after:${existing.id}`,
+				},
+				{ includeRunAt: false },
+			)
+			existing = await getExistingWorkflowInstance(workflowBinding, id)
+		}
+	}
 	if (existing) {
 		await projectWorkflowRun({
 			env,
