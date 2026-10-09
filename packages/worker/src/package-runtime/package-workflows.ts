@@ -982,30 +982,42 @@ export async function createDynamicCallableWorkflow(input: {
 		}
 	}
 	const payload = await resolveWorkflowPayload(input)
+	// An explicit idempotency key must single-flight even before the
+	// RunLog projection row is written. After a key release the deterministic
+	// engine id (and any later successors) stay occupied, so walk the
+	// `:after:<occupiedId>` chain until an unused id is free or a projection
+	// still holds the semantic key.
+	const maxSuccessorGenerations = 16
 	let id = await createDynamicCallableWorkflowInstanceId(payload, {
-		// An explicit idempotency key must single-flight even before the
-		// RunLog projection row is written.
 		includeRunAt: !idempotencyKeyInput,
 	})
 	let existing = await getExistingWorkflowInstance(workflowBinding, id)
-	if (existing && idempotencyKeyInput) {
-		const projectionForId = await getWorkflowProjection({
-			env,
-			userId: input.userId,
-			id,
-		})
-		// A prior release rewrote the projection key while the deterministic
-		// engine id stays occupied. Mint a successor id so the same semantic
-		// key can create a fresh run; projections that still hold the key
-		// (active or complete, or sticky dead) keep single-flight below.
-		if (
-			projectionForId &&
-			projectionForId.idempotencyKey !== idempotencyKeyInput
+	if (idempotencyKeyInput) {
+		for (
+			let generation = 0;
+			generation < maxSuccessorGenerations;
+			generation += 1
 		) {
+			const projectionForId = await getWorkflowProjection({
+				env,
+				userId: input.userId,
+				id,
+			})
+			if (projectionForId?.idempotencyKey === idempotencyKeyInput) {
+				break
+			}
+			if (!projectionForId && !existing) {
+				break
+			}
+			if (!projectionForId && existing) {
+				// Engine instance without a projection — reclaim below.
+				break
+			}
+			const occupiedId = existing?.id ?? projectionForId!.id
 			id = await createDynamicCallableWorkflowInstanceId(
 				{
 					...payload,
-					idempotencyKey: `${idempotencyKeyInput}:after:${existing.id}`,
+					idempotencyKey: `${idempotencyKeyInput}:after:${occupiedId}`,
 				},
 				{ includeRunAt: false },
 			)

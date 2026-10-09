@@ -320,6 +320,25 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 	)
 	expect(findRun(afterRelease.id)?.idempotencyKey).toBe('terminal-key')
 
+	// A second terminal failure must walk the successor chain (not reuse B).
+	const secondStored = findRun(afterRelease.id)
+	if (!secondStored) throw new Error('Expected second workflow projection.')
+	secondStored.status = 'errored'
+	await runRecordMocks.releaseWorkflowProjectionIdempotencyKey({
+		env,
+		userId: 'user-1',
+		id: afterRelease.id,
+	})
+	const afterSecondRelease = await packageRun(
+		'2026-05-08T19:33:00.000Z',
+		'terminal-key',
+	)
+	expect(afterSecondRelease.id).not.toBe(erroredFirst.id)
+	expect(afterSecondRelease.id).not.toBe(afterRelease.id)
+	expect(afterSecondRelease.status).toBe('queued')
+	expect(binding.create).toHaveBeenCalledTimes(4)
+	expect(findRun(afterSecondRelease.id)?.idempotencyKey).toBe('terminal-key')
+
 	// The key is scoped per user.
 	runRecordMocks.resetProjections()
 	const perUserBinding = createStatefulWorkflowBinding()
