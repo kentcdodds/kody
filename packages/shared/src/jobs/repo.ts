@@ -654,7 +654,10 @@ export async function softDeleteJobRowsForUser(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs
-			 SET deleted_at = ?, enabled = 0, updated_at = ?
+			 SET deleted_at = ?,
+			     enabled_before_soft_delete = enabled,
+			     enabled = 0,
+			     updated_at = ?
 			 WHERE user_id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.deletedAt, input.deletedAt, input.userId)
@@ -671,7 +674,11 @@ export async function restoreJobRowsForUser(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs
-			 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
+			 SET deleted_at = NULL,
+			     deleting_at = NULL,
+			     enabled = COALESCE(enabled_before_soft_delete, enabled),
+			     enabled_before_soft_delete = NULL,
+			     updated_at = ?
 			 WHERE user_id = ? AND deleted_at = ?`,
 		)
 		.bind(input.restoredAt, input.userId, input.deletedAt)
