@@ -145,6 +145,24 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/account/feedback', 'metaPlatformFeedbackList'],
 		['GET', '/v1/account/feedback/{feedback_id}', 'metaPlatformFeedbackGet'],
 		['POST', '/v1/account/feedback', 'metaPlatformFeedbackSubmit'],
+		// Teams access (grants, invites, orgs, teams). Tagged account until
+		// token scopes move to the org vocabulary (P4/P5).
+		['GET', '/v1/access/grants', 'accessList'],
+		['POST', '/v1/access/grants', 'accessGrant'],
+		['POST', '/v1/access/grants/{grant_id}/revoke', 'accessRevoke'],
+		['POST', '/v1/access/invites', 'inviteCreate'],
+		['POST', '/v1/access/invites/accept', 'inviteAccept'],
+		['POST', '/v1/access/invites/{invite_id}/revoke', 'inviteRevoke'],
+		['POST', '/v1/orgs', 'orgCreate'],
+		['PATCH', '/v1/orgs/members/{user_id}', 'orgMemberUpdate'],
+		['DELETE', '/v1/orgs/members/{user_id}', 'orgMemberRemove'],
+		['POST', '/v1/orgs/teams', 'teamCreate'],
+		['POST', '/v1/orgs/teams/{team_id}/members', 'teamMemberAdd'],
+		[
+			'DELETE',
+			'/v1/orgs/teams/{team_id}/members/{user_id}',
+			'teamMemberRemove',
+		],
 	]),
 	...capabilityRoutes('search', [
 		[

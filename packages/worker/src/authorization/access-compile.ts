@@ -329,10 +329,9 @@ function ownerCompiledAccess(orgId: OwnerId, epoch: number): CompiledAccess {
  * Compile what `request`'s actor may do in `request.org`. Automation acts for
  * the org with every permission. Results are cached in access_cache by epoch.
  *
- * Owners and Automation do not need grant rows. When APP_DB is not queryable
- * (unit tests that stub an empty env), they still receive full owner access at
- * epoch 0. Member, Billing, and outside-collaborator paths require a real DB
- * and fail loudly without one.
+ * Owners and Automation hold every permission without reading grants or
+ * access_epoch (the role alone decides). Member, Billing, and outside
+ * collaborator paths load grants and require a real APP_DB.
  */
 export async function compileAccessForRequest(input: {
 	db: D1Database
@@ -341,20 +340,12 @@ export async function compileAccessForRequest(input: {
 	const { request } = input
 	const orgId = request.org.id
 	const role = request.membership?.role ?? null
-	const isOwnerPath = !request.actor || role === 'owner'
 
-	if (isOwnerPath && !dbCanPrepare(input.db)) {
+	if (!request.actor || role === 'owner') {
 		return ownerCompiledAccess(orgId, 0)
 	}
 
 	const epochOrNull = await readOrgEpoch(input.db, orgId)
-
-	if (!request.actor || role === 'owner') {
-		// P3 dual path: Owner access works before every fixture provisions an
-		// orgs row. Cleanup: require the row once seeds and tests always do.
-		return ownerCompiledAccess(orgId, epochOrNull ?? 0)
-	}
-
 	if (epochOrNull === null) {
 		throw new Error(`Org ${orgId} was not found while compiling access.`)
 	}
