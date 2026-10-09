@@ -348,6 +348,12 @@ export async function abortAccountDeletingByStableUserId(input: {
 	})
 }
 
+/**
+ * OwnerIds may be a personal org (same id as `users.stable_user_id`) or a
+ * team org (`orgs.id` with no users row). Missing the users row is not
+ * "deleting" for a live team org — packageSave under that org leases on the
+ * org id.
+ */
 export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: string,
@@ -358,7 +364,17 @@ export async function assertAccountWritableDb(
 		)
 		.bind(stableUserId)
 		.first<{ deleting_at: string | null }>()
-	if (!row || row.deleting_at) {
+	if (row) {
+		if (row.deleting_at) throw new AccountDeletionInProgressError()
+		return
+	}
+	const org = await db
+		.prepare(
+			`SELECT deleting_at FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(stableUserId)
+		.first<{ deleting_at: string | null }>()
+	if (!org || org.deleting_at) {
 		throw new AccountDeletionInProgressError()
 	}
 }
@@ -366,7 +382,8 @@ export async function assertAccountWritableDb(
 /**
  * After dropping a leftover UserMeter tombstone, re-read D1. A deletion that
  * started in that window already wrote `users.deleting_at` and may have had
- * its DO fence cleared; restore that tombstone before failing closed.
+ * its DO fence cleared; restore that tombstone before failing closed. Team
+ * org OwnerIds have no users row — fall through to {@link assertAccountWritableDb}.
  */
 async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	db: D1Database
@@ -387,8 +404,9 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 			stableUserId: input.stableUserId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
+		throw new AccountDeletionInProgressError()
 	}
-	throw new AccountDeletionInProgressError()
+	await assertAccountWritableDb(input.db, input.stableUserId)
 }
 
 export async function assertAccountWritable(env: Env, stableUserId: string) {
