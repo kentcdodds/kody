@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { basename, dirname } from 'node:path'
+import { basename, dirname, extname } from 'node:path'
 import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
@@ -488,7 +488,12 @@ export async function applySessionRequestBody(
 			for (const field of spec.form.fields) {
 				if (field.filePath) {
 					const bytes = await readFile(field.filePath)
-					form.append(field.name, new Blob([bytes]), basename(field.filePath))
+					const contentType = contentTypeForFormFile(field.filePath)
+					form.append(
+						field.name,
+						new Blob([bytes], contentType ? { type: contentType } : undefined),
+						basename(field.filePath),
+					)
 				} else {
 					form.append(field.name, field.value)
 				}
@@ -505,6 +510,19 @@ export async function applySessionRequestBody(
 		return JSON.stringify(spec.body)
 	}
 	return undefined
+}
+
+const formFileContentTypes: Record<string, string> = {
+	gif: 'image/gif',
+	jpeg: 'image/jpeg',
+	jpg: 'image/jpeg',
+	png: 'image/png',
+	webp: 'image/webp',
+}
+
+function contentTypeForFormFile(filePath: string) {
+	const extension = extname(filePath).slice(1).toLowerCase()
+	return formFileContentTypes[extension]
 }
 
 export function sessionResponseSearchText(

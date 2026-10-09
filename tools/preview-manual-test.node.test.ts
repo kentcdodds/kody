@@ -491,6 +491,7 @@ test('preview --request sends urlencoded and multipart form bodies', async () =>
 		expect(upload?.contentType).toMatch(/^multipart\/form-data; boundary=/)
 		expect(upload?.body).toContain('name="avatar"')
 		expect(upload?.body).toContain('filename="avatar.png"')
+		expect(upload?.body).toContain('Content-Type: image/png')
 		expect(upload?.body).toContain('png-bytes')
 	} finally {
 		await rm(avatarDir, { recursive: true, force: true })
