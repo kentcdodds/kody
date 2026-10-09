@@ -200,6 +200,17 @@ test('buildUnboundRuntimeHelperNextStep ignores inherited Object keys', () => {
 	expect(buildUnboundRuntimeHelperNextStep('toString')).toContain('`toString`')
 })
 
+test('events next step names package-owned runtimes, not execute static imports', () => {
+	const nextStep = buildUnboundRuntimeHelperNextStep('events')
+	expect(nextStep).toContain('package jobs')
+	expect(nextStep).toContain('subscription handlers')
+	expect(nextStep).toContain('package apps')
+	expect(nextStep).toContain('statically imported package export')
+	expect(nextStep).not.toContain(
+		"statically import the owning package's export so it runs in that context",
+	)
+})
+
 test('rewriteNullPackagesInvokeErrorMessage requires packages.invoke source evidence', () => {
 	const bare = "Cannot read properties of null (reading 'invoke')"
 	const packagesInvokeModules = {

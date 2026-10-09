@@ -213,8 +213,9 @@ Rules:
 - Payloads are capped at 64 KiB (canonical JSON). Store large data with
   `packageStorage()` and emit a reference instead.
 - `events.dispatch` is unavailable in ad hoc `execute` runs — topics belong to
-  packages, so emit from package code (or statically import a package export
-  that dispatches).
+  packages. Emit from a package-owned runtime (package job, subscription
+  handler, or package app). Statically importing a package export from `execute`
+  does not bind `events`.
 
 ### Delivery semantics
 

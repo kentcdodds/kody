@@ -71,7 +71,7 @@ export const unboundRuntimeHelperNextSteps: Readonly<Record<string, string>> = {
 	packages:
 		'`packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
 	events:
-		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
+		'`events` is only bound in saved-package runtime contexts that can dispatch package events (package jobs, subscription handlers, and package apps). Ad hoc execute — including a statically imported package export — leaves events unbound; emit from a package job or guard with `if (events) { ... }`.',
 	packageSecrets:
 		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
 	email:
