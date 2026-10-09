@@ -221,13 +221,19 @@ Current flag state cannot reconstruct who was inside a percentage rollout last
 week, so measured flags record **exposures** at their configured write site
 `(stable user id, flag key, on/off, assignment source, timestamp)`. Most flags
 use the two evaluation chokepoints (the app session flag cache and the MCP
-caller flag resolver). Each chokepoint records **once per HTTP / MCP request**
-(memoized on the `Request` or `McpCallerContext`); call sites within the same
-request reuse that evaluation and do not re-write exposures. Flags with
-`exposureRecording: 'paid-ranked-search'` (Jev) write only from paid list-mode
-ranked search so free opt-ins and non-search traffic stay outside that
-experiment frame. The write path mirrors usage metering — the `FLAG_EXPOSURES`
-Analytics Engine dataset in production/preview, the D1
+caller flag resolver). The app session cache records **once per HTTP request**.
+The MCP resolver records when it loads a user's evaluations, at most **once per
+15 second TTL per isolate**, and call sites in that window reuse the evaluation.
+Stateless `/mcp` builds a new caller context per request, so this replaces the
+old 2–4 exposure writes per tools/call. **Lower exposure counts are expected and
+more accurate**: they count the assignment the user saw, not each call site or
+each stateless request inside the window. A kill switch or override can be stale
+until the TTL expires. Evaluation failures are not cached and fail closed (every
+flag off) without an exposure write, and execute does not spend daily quota on
+that failure. Flags with `exposureRecording: 'paid-ranked-search'` (Jev) write
+only from paid list-mode ranked search so free opt-ins and non-search traffic
+stay outside that experiment frame. The write path mirrors usage metering — the
+`FLAG_EXPOSURES` Analytics Engine dataset in production/preview, the D1
 `feature_flag_exposure_rollups` table (migration `0001-squashed-init.sql`,
 90-day retention) in local dev and tests — and never throws.
 

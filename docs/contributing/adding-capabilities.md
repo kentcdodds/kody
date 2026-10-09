@@ -190,12 +190,14 @@ export const exampleFlaggedCapability = defineDomainCapability(
 )
 ```
 
-`getCapabilityRegistryForContext` resolves the caller's evaluated flag map once
-per request (via `resolveCallerFeatureFlags`, which also records measured-flag
-exposures once for that request) and passes it into the same access filter used
-for `requiredRole` / `requiredPermission`. Execute-time assertions reuse that
-request-scoped map when needed. Do **not** cache flag decisions into Vectorize
-metadata, session-scoped data, or a cross-request TTL.
+`getCapabilityRegistryForContext` resolves the caller's evaluated flag map (via
+`resolveCallerFeatureFlags`) and passes it into the same access filter used for
+`requiredRole` / `requiredPermission`. Call sites share that read. Stateless
+`/mcp` also reuses it for 15 seconds per user per isolate; measured flags record
+an exposure when that entry is filled, so exposure counts are lower than a write
+per call site and that lower count is the accurate one. Execute does not spend
+daily quota when evaluation throws. Do **not** cache flag decisions into
+Vectorize metadata or session-scoped data.
 
 ### Admin domain
 
