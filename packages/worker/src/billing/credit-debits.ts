@@ -451,10 +451,12 @@ export async function settleCreditDebitMonth(input: {
 			batchCommitted = false
 		}
 	}
-	// Funded wallets replay budget MTD from committed ledger debits
-	// (idempotent absolute replace). Recovers a prior post-commit UserMeter
-	// failure even when this run charged $0.
-	if (charge) {
+	// Funded and empty wallets replay budget MTD from committed ledger
+	// debits (idempotent absolute replace). Empty must still run: the debit
+	// that hit $0 is the one most likely to need recovery, and the next
+	// hourly settle would otherwise skip until a later top-up. Free/`none`
+	// never debit, so skip those.
+	if (input.entitlement.creditWallet !== 'none') {
 		try {
 			await syncOrgBudgetSpendFromCreditLedger({
 				db: input.db,
