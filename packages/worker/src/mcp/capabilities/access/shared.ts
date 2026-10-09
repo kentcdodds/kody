@@ -111,7 +111,7 @@ export function rethrowAccessError(error: unknown): never {
 				'That team slug is already taken in this organization.',
 			)
 		}
-		throw new McpCallerError(error.message)
+		console.error('access-change-failed', error)
 	}
 	throw new McpCallerError('Access change failed.')
 }

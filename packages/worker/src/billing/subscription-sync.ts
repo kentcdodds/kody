@@ -147,6 +147,21 @@ export async function refreshStripePlanForUser(input: {
 			nextLadder,
 			stripePlanRefreshedAt,
 		],
+		// Allow null org customer ids only while the users row still holds
+		// this customer (dual-write lag). A stale refresh whose users UPDATE
+		// matches zero rows must not write plan columns onto a null org.
+		orgWhereSuffix: ` AND (
+			stripe_customer_id = ?
+			OR (
+				stripe_customer_id IS NULL
+				AND EXISTS (
+					SELECT 1 FROM users u
+					WHERE u.stable_user_id = orgs.id
+					  AND u.stripe_customer_id = ?
+				)
+			)
+		)`,
+		orgWhereValues: [input.customerId, input.customerId],
 	})
 	waitUntil(
 		maybeSyncDiscordGuildRolesForUser({

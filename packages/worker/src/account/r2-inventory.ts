@@ -1,3 +1,9 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Account deletion / purge inventory must enumerate tombstoned rows so KV, R2,
+ * and DO cleanup still run after soft-delete.
+ */
 import { accountUserOwnedR2Surfaces } from '#worker/account/user-owned-surfaces.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
 import {
@@ -6,7 +12,6 @@ import {
 } from '#worker/repo/identity-icon.ts'
 import { type EntityKind } from '#worker/repo/types.ts'
 import { listAllMailboxEmailObjectRefs } from './mailbox-r2-references.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type AccountR2Binding = 'EMAIL_BLOBS' | 'COMMUNITY_ASSETS'
 
@@ -66,9 +71,8 @@ async function listUserCommunityListings(env: Env, userId: string) {
 				AND entity_sources.user_id = community_listings.owner_user_id
 				AND entity_sources.entity_kind = 'package'
 				AND entity_sources.entity_id = community_listings.package_id
-				AND entity_sources.deleted_at IS NULL
 			WHERE community_listings.owner_user_id = ?
-				AND community_listings.rowid > ?${andLiveDeletedAtSql('community_listings')}
+				AND community_listings.rowid > ?
 			ORDER BY community_listings.rowid LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
@@ -106,7 +110,7 @@ async function listUserIdentityIcons(env: Env, userId: string) {
 				entity_sources.indexed_commit
 			FROM entity_sources
 			WHERE entity_sources.user_id = ?
-				AND entity_sources.rowid > ?${andLiveDeletedAtSql('entity_sources')}
+				AND entity_sources.rowid > ?
 			ORDER BY entity_sources.rowid LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
@@ -151,9 +155,7 @@ export async function collectAccountR2Inventory(input: {
 			}),
 			listUserCommunityListings(input.env, input.userId),
 			listUserIdentityIcons(input.env, input.userId),
-			input.env.APP_DB.prepare(
-				`SELECT avatar_key FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
-			)
+			input.env.APP_DB.prepare(`SELECT avatar_key FROM users WHERE id = ?`)
 				.bind(input.dbUserId)
 				.first<{ avatar_key: string | null }>(),
 		])

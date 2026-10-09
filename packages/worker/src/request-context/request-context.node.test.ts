@@ -6,6 +6,7 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	createMcpCallerContext,
+	parseMcpCallerContext,
 	parseMcpCallerContextWire,
 	toMcpCallerContextWire,
 } from '#mcp/context.ts'
@@ -206,4 +207,34 @@ test('the request context is derived, never part of the persisted caller context
 			source: { kind: 'mcp-oauth' },
 		}).request,
 	).toBeNull()
+})
+
+test('orgBinding round-trips on the wire so the org slug survives a user rename', () => {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user,
+		source: { kind: 'session' },
+		orgBinding: {
+			org: { id: ownerIdFromStored(stableId), slug: 'legacy-slug' },
+			role: 'member',
+		},
+	})
+	expect(callerContext.request?.org.slug).toBe('legacy-slug')
+	const wire = toMcpCallerContextWire(callerContext)
+	expect(wire.orgBinding).toEqual({
+		org: { id: stableId, slug: 'legacy-slug' },
+		role: 'member',
+	})
+
+	const serialized = JSON.parse(JSON.stringify(wire)) as {
+		user: { username: string }
+	}
+	serialized.user.username = 'ada-renamed'
+	const rederived = parseMcpCallerContext(serialized, { kind: 'session' })
+	expect(rederived.user?.username).toBe('ada-renamed')
+	expect(rederived.request?.org).toEqual({
+		id: stableId,
+		slug: 'legacy-slug',
+	})
+	expect(rederived.request?.membership).toEqual({ role: 'member' })
 })

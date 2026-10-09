@@ -106,9 +106,16 @@ export async function syncOrgSeatQuantity(input: {
 		return { previousQuantity, nextQuantity }
 	}
 
+	// Seats can change while the Stripe subscription list is in flight; confirm
+	// the count right before writing so we never push a stale quantity.
+	const confirmedQuantity = Math.max(1, await countLiveSeats(input.db, orgId))
+	if (previousQuantity === confirmedQuantity) {
+		return { previousQuantity, nextQuantity: confirmedQuantity }
+	}
+
 	await updateSubscriptionItemQuantity(input.env, {
 		subscriptionItemId,
-		quantity: nextQuantity,
+		quantity: confirmedQuantity,
 	})
 	const emailEnv = input.emailEnv
 	if (input.notifySeatChange !== false && billing.slug && emailEnv) {
@@ -118,10 +125,10 @@ export async function syncOrgSeatQuantity(input: {
 			orgId,
 			slug: billing.slug,
 			previousQuantity,
-			nextQuantity,
+			nextQuantity: confirmedQuantity,
 		}).catch((error: unknown) => {
 			console.warn('org-seat-change-email-failed', error)
 		})
 	}
-	return { previousQuantity, nextQuantity }
+	return { previousQuantity, nextQuantity: confirmedQuantity }
 }

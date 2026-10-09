@@ -4,18 +4,23 @@
  */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
+/**
+ * Bind order: SET `values`, then the org id (`WHERE id = ?`), then
+ * `orgWhereValues` for any `?` placeholders in `orgWhereSuffix`.
+ */
 export function preparePersonalOrgBillingUpdate(
 	db: D1Database,
 	stableUserId: string,
 	setClause: string,
 	values: ReadonlyArray<unknown>,
 	orgWhereSuffix = '',
+	orgWhereValues: ReadonlyArray<unknown> = [],
 ) {
 	return db
 		.prepare(
 			`UPDATE orgs SET ${setClause} WHERE id = ?${andLiveDeletedAtSql()}${orgWhereSuffix}`,
 		)
-		.bind(...values, stableUserId)
+		.bind(...values, stableUserId, ...orgWhereValues)
 }
 
 export async function batchUsersAndPersonalOrgBillingUpdate(input: {
@@ -25,6 +30,7 @@ export async function batchUsersAndPersonalOrgBillingUpdate(input: {
 	orgSetClause: string
 	orgValues: ReadonlyArray<unknown>
 	orgWhereSuffix?: string
+	orgWhereValues?: ReadonlyArray<unknown>
 }) {
 	return await input.db.batch([
 		input.usersStatement,
@@ -34,6 +40,7 @@ export async function batchUsersAndPersonalOrgBillingUpdate(input: {
 			input.orgSetClause,
 			input.orgValues,
 			input.orgWhereSuffix ?? '',
+			input.orgWhereValues ?? [],
 		),
 	])
 }

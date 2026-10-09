@@ -1,11 +1,15 @@
 import { parseSafe } from 'remix/data-schema'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	mcpCallerContextSchema,
 	type McpCallerContext,
 	type McpCallerContextWire,
 	type McpExecutionOrigin,
+	type McpOrgBinding,
 	type McpRepoContext,
 	type McpStorageContext,
 	type McpUserContext,
@@ -26,6 +30,32 @@ type McpCallerContextWireInput = {
 	storageContext?: McpStorageContext | null
 	repoContext?: McpRepoContext | null
 	connectionProfileName?: string | null
+	/**
+	 * DB-backed org membership when available. Persisted on the wire so
+	 * background re-derivation keeps the org. Omitted derives the personal org
+	 * from the user.
+	 */
+	orgBinding?:
+		| RequestOrgBinding
+		| McpOrgBinding
+		| {
+				org: { id: string; slug: string | null }
+				role: RequestOrgBinding['role']
+		  }
+		| null
+}
+
+function normalizeWireOrgBinding(
+	binding: McpCallerContextWireInput['orgBinding'],
+): McpOrgBinding | null {
+	if (!binding) return null
+	return {
+		org: {
+			id: ownerIdFromStored(binding.org.id as string),
+			slug: binding.org.slug,
+		},
+		role: binding.role,
+	}
 }
 
 /** The persisted form only (job `caller_context_json`); no request context. */
@@ -39,6 +69,7 @@ export function createMcpCallerContextWire(
 		storageContext: input.storageContext ?? null,
 		repoContext: input.repoContext ?? null,
 		connectionProfileName: input.connectionProfileName ?? null,
+		orgBinding: normalizeWireOrgBinding(input.orgBinding),
 	}
 }
 
@@ -46,11 +77,6 @@ export function createMcpCallerContext(
 	input: McpCallerContextWireInput & {
 		/** How this request reached Kody; decides actor, attribution, credential. */
 		source: RequestSource
-		/**
-		 * DB-backed org membership when available. MCP/API call sites that do
-		 * not pass this still derive personalOrgId from the user.
-		 */
-		orgBinding?: RequestOrgBinding
 		/** API-token scopes; null/omitted does not narrow the actor. */
 		scopes?: ReadonlyArray<OrgPermission> | null
 	},
@@ -63,7 +89,7 @@ export function createMcpCallerContext(
 					user: wire.user,
 					source: input.source,
 					profileName: wire.connectionProfileName,
-					orgBinding: input.orgBinding,
+					orgBinding: wire.orgBinding ?? undefined,
 					scopes: input.scopes ?? null,
 				})
 			: null,
@@ -79,9 +105,10 @@ export function parseMcpCallerContextWire(
 		const message = result.issues.map((issue) => issue.message).join(', ')
 		throw new Error(`Invalid MCP caller context: ${message}`)
 	}
-	const { user, ...rest } = result.value
+	const { user, orgBinding, ...rest } = result.value
 	return createMcpCallerContextWire({
 		...rest,
+		orgBinding: normalizeWireOrgBinding(orgBinding),
 		user: user ? { ...user, userId: personIdFromStored(user.userId) } : null,
 	})
 }
@@ -91,8 +118,10 @@ export function parseMcpCallerContext(
 	value: unknown,
 	source: RequestSource,
 ): McpCallerContext {
+	const wire = parseMcpCallerContextWire(value)
 	return createMcpCallerContext({
-		...parseMcpCallerContextWire(value),
+		...wire,
+		orgBinding: wire.orgBinding ?? undefined,
 		source,
 	})
 }

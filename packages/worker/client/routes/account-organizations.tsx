@@ -1,7 +1,10 @@
 import { type Handle, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { readJson } from '#client/routes/account-approval-shared.ts'
+import {
+	type AccountStatus,
+	readJson,
+} from '#client/routes/account-approval-shared.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
@@ -12,6 +15,7 @@ import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import { getAuthInputCss } from '#universal/styles/style-primitives.ts'
 import {
+	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
@@ -127,19 +131,37 @@ export function AccountInvitesRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		const snapshot = invitesData.read(handle, href)
 		const invites = snapshot.data?.ok ? snapshot.data.invites : []
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && !snapshot.data
+					? 'loading'
+					: 'ready'
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && Boolean(snapshot.data)}>
 				<AccountPageHeader
 					title="Invites"
 					description="Invites waiting for you. Accept one by pasting its prompt into an agent."
 					currentHref={href}
 				/>
 				<AccountManagementPanel title="Pending invites">
-					{invites.length === 0 ? (
+					{status === 'loading' ? (
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							Loading invites…
+						</p>
+					) : null}
+					{status === 'error' ? (
+						<AccountManagementMessage tone="error">
+							{snapshot.error?.message ?? 'Unable to load invites.'}
+						</AccountManagementMessage>
+					) : null}
+					{status === 'ready' && invites.length === 0 ? (
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
 							No invites waiting.
 						</p>
-					) : (
+					) : null}
+					{status === 'ready' && invites.length > 0 ? (
 						<ul mix={css({ margin: 0, paddingLeft: '1.1rem' })}>
 							{invites.map((invite) => (
 								<li key={invite.id}>
@@ -149,7 +171,7 @@ export function AccountInvitesRoute(handle: Handle) {
 								</li>
 							))}
 						</ul>
-					)}
+					) : null}
 				</AccountManagementPanel>
 			</AccountManagementShell>
 		)

@@ -338,7 +338,7 @@ async function listUserSourceSnapshots(env: Env, userId: string) {
 	const sourceRows = await env.APP_DB.prepare(
 		`SELECT id, published_commit, repo_id
 		FROM entity_sources
-		WHERE user_id = ?${andLiveDeletedAtSql()}`,
+		WHERE user_id = ?`,
 	)
 		.bind(userId)
 		.all<{ id: string; published_commit: string | null; repo_id: string }>()
@@ -353,7 +353,7 @@ async function listUserSavedPackages(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id, kody_id, source_id, has_app
 		FROM saved_packages
-		WHERE user_id = ?${andLiveDeletedAtSql()}`,
+		WHERE user_id = ?`,
 	)
 		.bind(userId)
 		.all<{
@@ -385,7 +385,7 @@ async function listUserMcpServers(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id
 		FROM mcp_server_settings
-		WHERE user_id = ?${andLiveDeletedAtSql()}`,
+		WHERE user_id = ?`,
 	)
 		.bind(userId)
 		.all<{ id: string }>()

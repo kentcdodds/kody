@@ -4,6 +4,7 @@
  * Soft-delete and restore must read and update tombstoned rows.
  */
 
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isWithinSoftDeleteRestoreWindow } from '#worker/soft-delete/window.ts'
 import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
@@ -14,6 +15,9 @@ import {
 	orgOwnedUserIdSoftDeleteTables,
 } from '#worker/orgs/data-targets.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
+import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
+import { revokeOAuthGrantsForOrg } from '#worker/orgs/offboarding.ts'
 
 export class OrgRestoreWindowExpiredError extends Error {
 	constructor() {
@@ -204,6 +208,35 @@ export async function softDeleteOrg(input: {
 		.bind(input.orgId)
 		.run()
 
+	const oauthHelpers = (await resolveOAuthHelpers(input.env)) as
+		| OAuthGrantHelpers
+		| undefined
+	if (oauthHelpers) {
+		const members = await appDb
+			.prepare(
+				`SELECT user_id FROM org_memberships
+				 WHERE org_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(input.orgId)
+			.all<{ user_id: string }>()
+		for (const member of members.results ?? []) {
+			await revokeOAuthGrantsForOrg({
+				helpers: oauthHelpers,
+				memberUserId: member.user_id,
+				orgId: input.orgId,
+			})
+		}
+		// Personal org: owner id equals org id; also revoke grants listed under
+		// that user id when memberships were never expanded.
+		if (!(members.results ?? []).some((row) => row.user_id === input.orgId)) {
+			await revokeOAuthGrantsForOrg({
+				helpers: oauthHelpers,
+				memberUserId: input.orgId,
+				orgId: input.orgId,
+			})
+		}
+	}
+
 	const resourceRowsSoftDeleted = await softDeleteOrgOwnedAppRows({
 		appDb,
 		orgId: input.orgId,
@@ -214,6 +247,7 @@ export async function softDeleteOrg(input: {
 		deletedAt,
 	})
 	await syncJobManagerAlarm({ env: input.env, userId: input.orgId })
+	invalidatePackageAppOwnerCache({ stableUserId: input.orgId })
 
 	await logOrgAuditEvent({
 		env: input.env,
@@ -462,6 +496,8 @@ export async function softDeleteUserAccount(input: {
 		detailsJson: JSON.stringify({ deletedAt, deletedOrgIds }),
 		createdAt: deletedAt,
 	})
+
+	invalidatePackageAppOwnerCache({ stableUserId: input.userId })
 
 	return { userId: input.userId, deletedAt, deletedOrgIds }
 }

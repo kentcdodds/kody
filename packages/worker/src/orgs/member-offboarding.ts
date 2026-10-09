@@ -3,6 +3,8 @@
  */
 
 import { offboardOrgMember } from '#worker/orgs/offboarding.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
+import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 
 export type MemberSoftRemovedInput = {
 	env: Env
@@ -18,6 +20,9 @@ export type MemberSoftRemovedInput = {
 export async function onMemberSoftRemoved(
 	input: MemberSoftRemovedInput,
 ): Promise<void> {
+	const oauthHelpers = (await resolveOAuthHelpers(input.env)) as
+		| OAuthGrantHelpers
+		| undefined
 	await offboardOrgMember({
 		appDb: input.env.APP_DB,
 		env: input.env,
@@ -25,5 +30,6 @@ export async function onMemberSoftRemoved(
 		memberUserId: input.userId,
 		memberLeftVoluntarily: true,
 		now: new Date(input.deletedAt),
+		oauthHelpers: oauthHelpers ?? null,
 	})
 }

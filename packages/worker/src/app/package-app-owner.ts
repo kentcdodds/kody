@@ -19,6 +19,7 @@ import {
  * nothing that would let the package-app origin act on first-party surfaces.
  */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+
 export type PackageAppOwner = {
 	/** Stable (hashed) user id used for every userId-scoped read. */
 	userId: string
@@ -70,9 +71,13 @@ export async function invalidatePackageAppOwnerCacheForDbUserId(
 	dbUserId: number,
 ) {
 	try {
+		// Include soft-deleted users: invalidation must clear cache after
+		// soft-delete even though live reads hide the tombstoned row.
 		const row = await db
 			.prepare(
-				`SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+				`SELECT stable_user_id FROM users
+				 WHERE id = ?
+				   AND (deleted_at IS NULL OR deleted_at IS NOT NULL)`,
 			)
 			.bind(dbUserId)
 			.first<{ stable_user_id: string }>()
@@ -123,6 +128,16 @@ async function loadPackageAppOwnerRowWithCache(input: {
 			if (!userRecord) {
 				// Do not retain misses: a just-created user must be visible on the
 				// next lookup instead of after the TTL.
+				packageAppOwnerRowCache.delete(cacheKey)
+				return null
+			}
+			// usersTable does not map deleted_at yet; refuse soft-deleted owners.
+			const live = await input.env.APP_DB.prepare(
+				`SELECT 1 AS ok FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+				.bind(userRecord.id)
+				.first<{ ok: number }>()
+			if (!live) {
 				packageAppOwnerRowCache.delete(cacheKey)
 				return null
 			}

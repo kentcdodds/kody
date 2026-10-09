@@ -1002,7 +1002,7 @@ function createEntitlementsDatabase(input: {
 								query.includes('SELECT plan, stripe_plan') ||
 								query.includes('entitlement_ladder')
 							) {
-								if (query.includes('FROM orgs')) {
+								if (/\b(?:FROM|JOIN) orgs\b/.test(query)) {
 									return null
 								}
 								const pairLookup = query.includes('email = ?')
