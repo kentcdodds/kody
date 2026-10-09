@@ -1,4 +1,5 @@
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 /**
@@ -178,6 +179,11 @@ export async function seedAccount(input: {
 			)
 			.run()
 	}
+	await provisionPersonalOrg(input.db, {
+		stableUserId,
+		username: input.username,
+	})
+
 	const row = await input.db
 		.prepare(`SELECT id FROM users WHERE email = ?`)
 		.bind(input.email)

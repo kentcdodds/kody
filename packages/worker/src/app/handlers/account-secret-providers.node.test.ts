@@ -11,6 +11,7 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { grantSecretProviderToPackage } from '#mcp/secrets/secret-providers/service.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -37,6 +38,10 @@ async function seedUser(
 			CURRENT_TIMESTAMP
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: testStableUserIdFromEmail(input.email),
+		username: input.username,
+	})
 }
 
 function seedPackage(

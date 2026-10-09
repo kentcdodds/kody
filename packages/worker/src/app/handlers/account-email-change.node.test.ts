@@ -16,6 +16,7 @@ import {
 } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createAccountEmailChangeHandler } from './account-email-change.ts'
 
@@ -64,6 +65,10 @@ async function seedUser(
 			${input.verified === false ? 'NULL' : 'CURRENT_TIMESTAMP'}
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: input.username,
+	})
 	return stableUserId
 }
 

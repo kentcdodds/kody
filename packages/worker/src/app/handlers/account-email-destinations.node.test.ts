@@ -9,6 +9,7 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { identityEmailDestinationId } from '#universal/email-destinations.ts'
 import { createAccountEmailDestinationsHandler } from './account-email-destinations.ts'
@@ -42,6 +43,10 @@ async function seedUser(
 			${input.verified === false ? 'NULL' : 'CURRENT_TIMESTAMP'}
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: 'owner',
+	})
 	return stableUserId
 }
 

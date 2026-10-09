@@ -8,6 +8,7 @@ import {
 } from '#app/handlers/webauthn.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -24,14 +25,16 @@ function setup() {
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
 	} as unknown as Parameters<typeof createAccountPasskeysApiHandler>[0]
-	const seedUser = (id: number, username: string) => {
+	const seedUser = async (id: number, username: string) => {
 		const email = `${username}@example.com`
+		const stableUserId = testStableUserIdFromEmail(email)
 		sqlite
 			.prepare(
 				`INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
 				VALUES (?, ?, ?, ?, 'unused', CURRENT_TIMESTAMP)`,
 			)
-			.run(id, username, email, testStableUserIdFromEmail(email))
+			.run(id, username, email, stableUserId)
+		await provisionPersonalOrgForSqliteUser(sqlite, { stableUserId, username })
 	}
 	const seedPasskey = (input: {
 		id: string
@@ -98,8 +101,8 @@ type PasskeysPayload = {
 
 test('account passkeys API lists labels/dates, renames owned keys, and deletes while ignoring other users', async () => {
 	const { sqlite, env, seedUser, seedPasskey } = setup()
-	seedUser(1, 'one')
-	seedUser(2, 'two')
+	await seedUser(1, 'one')
+	await seedUser(2, 'two')
 	seedPasskey({
 		id: 'passkey-user-1',
 		userId: 1,
@@ -190,7 +193,7 @@ test('registration options require authentication and exclude existing credentia
 	const handler = createWebauthnRegistrationHandler(env)
 	expect((await run(handler, '/webauthn/registration')).status).toBe(401)
 
-	seedUser(1, 'one')
+	await seedUser(1, 'one')
 	seedPasskey({ id: 'passkey-user-1', userId: 1 })
 	const response = await run(handler, '/webauthn/registration', {
 		cookie: await userOneCookie(),

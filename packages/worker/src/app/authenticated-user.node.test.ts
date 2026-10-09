@@ -56,7 +56,21 @@ function createUsersDb(
 				const statement = {
 					query,
 					bind: () => statement,
-					first: async () => null,
+					first: async () => {
+						if (
+							normalized.includes('from org_memberships') &&
+							normalized.includes('inner join orgs')
+						) {
+							const slug =
+								typeof user?.username === 'string' ? user.username : 'html-user'
+							return {
+								org_id: stableUserId,
+								org_slug: slug,
+								role: 'owner',
+							}
+						}
+						return null
+					},
 					run: async () => ({ meta: { changes: 0 } }),
 					async all() {
 						if (rolesError && normalized.includes('from user_roles')) {

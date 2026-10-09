@@ -102,6 +102,9 @@ test('buildSeedSql seeds each account with its roles', () => {
 	)
 	expect(sql).toContain(seedStableUserIdFromEmail('kody@example.com'))
 	expect(sql).toContain(seedStableUserIdFromEmail('jane@example.com'))
+	expect(sql).toContain('INSERT INTO orgs')
+	expect(sql).toContain('INSERT OR IGNORE INTO org_memberships')
+	expect(sql).toContain('INSERT INTO handles')
 })
 
 test('seeded users keep a stored stable id and use a deterministic fixture id', () => {

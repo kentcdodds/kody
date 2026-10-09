@@ -27,6 +27,7 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -99,6 +100,10 @@ async function setupTwoFactor({ seedUser = true } = {}) {
 			VALUES (1, 'kody', 'kody@example.com', ${quoteSqlString(stableUserId)},
 				${quoteSqlString(passwordHash)}, CURRENT_TIMESTAMP);
 		`)
+		await provisionPersonalOrgForSqliteUser(sqlite, {
+			stableUserId,
+			username: 'kody',
+		})
 	}
 	const env = {
 		APP_DB: db,

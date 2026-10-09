@@ -28,6 +28,7 @@ import {
 	registerOAuthClient,
 	type AppAuthUser,
 } from './mcp-oauth-client.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import {
 	buildRoleAssignmentSql,
 	seedStableUserIdFromEmail,
@@ -285,6 +286,10 @@ WHERE u.email = ? AND r.name = 'user'`,
 		)
 		.bind(user.email)
 		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId: seedStableUserIdFromEmail(user.email),
+		username: user.username,
+	})
 }
 
 export async function markEmailVerifiedInMcpTestDatabase(input: {

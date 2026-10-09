@@ -10,6 +10,7 @@ import { createAccountMcpOauthClientsApiHandler } from '#app/handlers/account-mc
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -33,6 +34,10 @@ async function seedUser(
 			${verifiedSql}
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: input.username,
+	})
 }
 
 function createAppEnv(

@@ -116,6 +116,81 @@ FROM users u, roles r
 WHERE u.email = ${quoteSqlString(input.email)} AND r.name = ${quoteSqlString(input.role)};`.trim()
 }
 
+function personalOrgSlugFromUsername(username: string) {
+	return username.trim().toLowerCase()
+}
+
+/**
+ * Personal org + owner membership + handle for a seeded fixture user
+ * (`org_id = stable_user_id`, slug/handle = normalized username).
+ */
+export function buildSeedPersonalOrgSql(input: {
+	stableUserId: string
+	username: string
+}) {
+	const stableUserId = quoteSqlString(input.stableUserId)
+	const slug = quoteSqlString(personalOrgSlugFromUsername(input.username))
+	return `
+INSERT INTO orgs (
+	id,
+	slug,
+	display_name,
+	bio,
+	avatar_key,
+	profile_visibility,
+	plan,
+	entitlement_ladder,
+	stripe_customer_id,
+	stripe_plan,
+	stripe_price_id,
+	stripe_plan_refreshed_at,
+	stripe_credits_eligible,
+	admin_credits_eligible,
+	second_agent_standard_gift_granted_at,
+	second_agent_standard_gift_expires_at,
+	referral_standard_credit_expires_at,
+	signup_welcome_credits_pending,
+	created_by_user_id,
+	created_at,
+	updated_at
+) VALUES (
+	${stableUserId},
+	${slug},
+	NULL,
+	NULL,
+	NULL,
+	'public',
+	'free',
+	'public',
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	0,
+	0,
+	NULL,
+	NULL,
+	NULL,
+	0,
+	${stableUserId},
+	CURRENT_TIMESTAMP,
+	CURRENT_TIMESTAMP
+)
+ON CONFLICT(id) DO UPDATE SET
+	slug = excluded.slug,
+	updated_at = CURRENT_TIMESTAMP;
+INSERT OR IGNORE INTO org_memberships (
+	org_id, user_id, role, invited_by_user_id, created_at, deleted_at
+) VALUES (
+	${stableUserId}, ${stableUserId}, 'owner', NULL, CURRENT_TIMESTAMP, NULL
+);
+INSERT INTO handles (handle, user_id, org_id, created_at)
+VALUES (${slug}, ${stableUserId}, ${stableUserId}, CURRENT_TIMESTAMP)
+ON CONFLICT(handle) DO UPDATE SET
+	user_id = excluded.user_id,
+	org_id = excluded.org_id;`.trim()
+}
+
 export function buildSeedUserSql(input: {
 	email: string
 	username: string
@@ -139,6 +214,10 @@ ON CONFLICT(email) DO UPDATE SET
   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
   plan = COALESCE(users.plan, excluded.plan),
   updated_at = CURRENT_TIMESTAMP;
+${buildSeedPersonalOrgSql({
+	stableUserId: seedStableUserIdFromEmail(input.email),
+	username: input.username,
+})}
 ${roleSql}`.trim()
 }
 
