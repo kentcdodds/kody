@@ -202,7 +202,16 @@ async function loadLiveGrantRows(
 	return result.results ?? []
 }
 
+function dbCanPrepare(db: D1Database) {
+	return typeof db?.prepare === 'function'
+}
+
 async function readOrgEpoch(db: D1Database, orgId: string): Promise<number> {
+	if (!dbCanPrepare(db)) {
+		throw new Error(
+			`APP_DB cannot prepare statements while compiling access for org ${orgId}.`,
+		)
+	}
 	const row = await db
 		.prepare(`SELECT access_epoch FROM orgs WHERE id = ?`)
 		.bind(orgId)
@@ -293,9 +302,24 @@ function compileFromRoleAndGrants(input: {
 	}
 }
 
+function ownerCompiledAccess(orgId: OwnerId, epoch: number): CompiledAccess {
+	return {
+		orgId,
+		epoch,
+		isOwner: true,
+		orgPermissions: allOrgPermissions,
+		resourcePermissions: new Map(),
+	}
+}
+
 /**
  * Compile what `request`'s actor may do in `request.org`. Automation acts for
  * the org with every permission. Results are cached in access_cache by epoch.
+ *
+ * Owners and Automation do not need grant rows. When APP_DB is not queryable
+ * (unit tests that stub an empty env), they still receive full owner access at
+ * epoch 0. Member, Billing, and outside-collaborator paths require a real DB
+ * and fail loudly without one.
  */
 export async function compileAccessForRequest(input: {
 	db: D1Database
@@ -303,25 +327,24 @@ export async function compileAccessForRequest(input: {
 }): Promise<CompiledAccess> {
 	const { request } = input
 	const orgId = request.org.id
+	const role = request.membership?.role ?? null
+	const isOwnerPath = !request.actor || role === 'owner'
+
+	if (isOwnerPath && !dbCanPrepare(input.db)) {
+		return ownerCompiledAccess(orgId, 0)
+	}
+
 	const epoch = await readOrgEpoch(input.db, orgId)
 
-	if (!request.actor) {
-		return {
-			orgId,
-			epoch,
-			isOwner: true,
-			orgPermissions: allOrgPermissions,
-			resourcePermissions: new Map(),
-		}
+	if (!request.actor || role === 'owner') {
+		return ownerCompiledAccess(orgId, epoch)
 	}
 
 	const userId = request.actor.userId
 	const cached = await readAccessCache(input.db, orgId, userId, epoch)
 	if (cached) return cached
 
-	const role = request.membership?.role ?? null
-	const grantRows =
-		role === 'owner' ? [] : await loadLiveGrantRows(input.db, orgId, userId)
+	const grantRows = await loadLiveGrantRows(input.db, orgId, userId)
 	const compiled = compileFromRoleAndGrants({
 		orgId,
 		epoch,
