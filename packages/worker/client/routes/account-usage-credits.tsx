@@ -577,7 +577,7 @@ export function AccountUsageCreditsSection(
 					<p mix={css(descriptionCss)} data-credits-balance-note>
 						{credits.hasCredits
 							? 'Usage past your monthly include is charged from these credits.'
-							: 'With no credits left, usage past your monthly include stops. Add credits to keep going.'}
+							: 'With no credits left, rate and compute limits match Free until you top up. Add credits to restore Pro rates.'}
 					</p>
 				</AccountManagementPanel>
 

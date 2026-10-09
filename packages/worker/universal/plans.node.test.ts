@@ -206,8 +206,14 @@ test('purchasable Pro has Max stock always; empty wallet uses Free rates; funded
 			[10, 'pro', 'email_sends_per_day', 'public', 'empty'],
 		]),
 	).toEqual([])
-	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(50)
-	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(500_000_000)
+	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(
+		proCreditsEmptyWalletPlanLimits.maxUniqueWorkerDaysPerMonth,
+	)
+	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(
+		proCreditsEmptyWalletPlanLimits.maxDurableObjectRowsReadPerMonth,
+	)
+	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(350)
+	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(5_000_000_000)
 
 	// Retired $49 Pro keeps its own table.
 	expect(resolvePlanLimits('pro', 'public', 'none')).toEqual(planLimits.pro)

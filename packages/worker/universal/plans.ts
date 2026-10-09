@@ -224,8 +224,10 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
  *   Pro overlays, manual grants, `max`). Credits are never used or debited;
  *   these plans keep their own hard caps.
  * - `empty` — purchasable Pro with a balance at or below $0. Max stock and
- *   concurrency stay on {@link proCreditsPlanLimits}; rate/compute/email and
- *   monthly includes match {@link planLimits.free} until credits are added.
+ *   concurrency stay on {@link proCreditsPlanLimits}; rate/compute/email
+ *   match {@link planLimits.free} until credits are added. Monthly Worker
+ *   compute and Rows read includes stay on the Pro include (they are the
+ *   allotment already burned before the wallet hit zero).
  * - `funded` — purchasable Pro with a balance above $0. Past the include,
  *   the rate/compute fields in {@link creditsUnlockedLimitFields} can reach
  *   {@link creditsUnlockMultiplier}× the include (capped at the `max`
@@ -640,8 +642,10 @@ export const proCreditsPlanLimits: PlanLimits = {
 }
 
 /**
- * Purchasable Pro at $0: Max stock/concurrency from {@link proCreditsPlanLimits}
- * with Free rate/compute/email/job-interval ceilings (ADR 0064).
+ * Purchasable Pro at $0: Max stock/concurrency and Pro monthly includes from
+ * {@link proCreditsPlanLimits}, with Free rate/compute/email/job-interval
+ * ceilings (ADR 0064). Monthly UWD/DO includes stay on the Pro allotment so
+ * debit and warning copy keep the seat include the org already burned.
  */
 export const proCreditsEmptyWalletPlanLimits: PlanLimits = {
 	...proCreditsPlanLimits,
@@ -657,9 +661,6 @@ export const proCreditsEmptyWalletPlanLimits: PlanLimits = {
 	maxAutomationInvocationsPerDay:
 		planLimits.free.maxAutomationInvocationsPerDay,
 	minJobIntervalMs: planLimits.free.minJobIntervalMs,
-	maxUniqueWorkerDaysPerMonth: planLimits.free.maxUniqueWorkerDaysPerMonth,
-	maxDurableObjectRowsReadPerMonth:
-		planLimits.free.maxDurableObjectRowsReadPerMonth,
 }
 
 /**

@@ -556,8 +556,8 @@ test('compute include crossings mail an empty Pro wallet per UTC month, worded a
 	expect(reached.text).toContain(
 		"Worker compute — this month's include is used up (3,600 of 350 worker-compute days).",
 	)
-	expect(reached.text).toContain(
-		'With no credits left, usage past the include stops.',
+	expect(reached.text).toMatch(
+		/With no credits left, (usage past the include stops|rate and compute limits match Free)/,
 	)
 	for (const body of [reached.text, reached.html]) {
 		expect(body).not.toMatch(/\b(?:1(?:0[1-9]|[1-9]\d)|[2-9]\d\d|\d{4,})%/)

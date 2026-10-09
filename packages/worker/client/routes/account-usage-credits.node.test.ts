@@ -302,7 +302,7 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 	expect(
 		missing(html, [
 			'−$0.12',
-			'With no credits left, usage past your monthly include stops. Add credits to keep going.',
+			'With no credits left, rate and compute limits match Free until you top up. Add credits to restore Pro rates.',
 			'value="25"',
 			'value="100"',
 			'Auto-refilled',

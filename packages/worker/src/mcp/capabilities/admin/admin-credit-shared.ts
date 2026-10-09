@@ -34,7 +34,7 @@ export const adminCreditWalletSchema = z.object({
 	unlocked: z
 		.boolean()
 		.describe(
-			'True when eligible with a positive balance, so usage past the include runs on credits. False on an eligible wallet means usage past the include stops.',
+			'True when eligible with a positive balance, so usage past the include runs on credits. False on an eligible wallet means rate and compute limits match Free.',
 		),
 	balanceMicroUsd: z
 		.number()

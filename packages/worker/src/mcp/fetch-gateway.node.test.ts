@@ -841,6 +841,8 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		env,
 		{
 			userId: 'user-123',
+			actorUserId: 'user-123',
+			automationSource: '',
 			eventType: 'outbound_fetch',
 			entityId: 'api.example.com',
 			durationMs: expect.any(Number),

@@ -2496,7 +2496,7 @@ export type AccountUsageCreditsWallet = {
 	balanceMicroUsd: number
 	/**
 	 * Eligible wallet with credits left: usage past the include runs on
-	 * credits. False means usage past the include stops.
+	 * credits. False means rate and compute limits match Free.
 	 */
 	hasCredits: boolean
 	packsCents: Array<number>

@@ -228,7 +228,7 @@ export function includedComputeSummary(input: {
 				? `Past this month's include, usage runs on credits: ${formatOnCreditsMicroUsd(onCredits)} so far.`
 				: 'Included with Pro each month. Past the include, usage runs on credits.'
 		case 'empty':
-			return 'Included with Pro each month. With no credits, usage past the include stops.'
+			return 'Included with Pro each month. With no credits, rate and compute limits match Free until you top up.'
 		case 'none':
 			return input.plan === 'max'
 				? 'Included each month.'
@@ -323,9 +323,9 @@ export function resolveCreditsAlarm(input: {
 				return {
 					kind: 'include_used_no_credits',
 					tone: 'warn',
-					title: 'Runs past the include are stopped',
+					title: 'Rate and compute limits match Free',
 					body: input.canBuyCredits
-						? "This month's include is used up and there are no credits left. Add credits to keep going."
+						? "This month's include is used up and there are no credits left. Add credits to restore Pro rates."
 						: "This month's include is used up and there are no credits left. Subscribe to Pro to add credits.",
 					action,
 				}
@@ -335,7 +335,7 @@ export function resolveCreditsAlarm(input: {
 					kind: 'include_nearly_used_no_credits',
 					tone: 'info',
 					title: "This month's include is nearly used",
-					body: 'With no credits, usage past the include stops. Add credits to keep going past it.',
+					body: 'With no credits, rate and compute limits match Free. Add credits to keep Pro rates past the include.',
 					action,
 				}
 			}
@@ -352,7 +352,7 @@ export function resolveCreditsAlarm(input: {
 					kind: 'auto_refill_capped',
 					tone: 'warn',
 					title: 'Auto-refill hit its monthly cap',
-					body: `Balance: ${balance}. Raise the cap or add credits. When credits run out, usage past the include stops.`,
+					body: `Balance: ${balance}. Raise the cap or add credits. When credits run out, rate and compute limits match Free.`,
 					action,
 				}
 			}

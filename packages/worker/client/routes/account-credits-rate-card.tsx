@@ -42,7 +42,7 @@ export function renderCreditsDebitRateCard(
 				})}
 			>
 				Usage within the monthly include is free. Past it, credits pay these
-				rates until they run out; then usage past the include stops.
+				rates until they run out; then rate and compute limits match Free.
 			</p>
 			{/* Narrow viewports: one stacked card per meter (no page blow-out). */}
 			<ul

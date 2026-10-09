@@ -274,8 +274,8 @@ export function PricingRoute(handle: Handle) {
 						Usage past the include is charged from credits (Worker compute and
 						Rows read). Daily and weekly limits can go up to{' '}
 						{creditsUnlockMultiplier}× Pro&rsquo;s included limits on credits.
-						When credits run out, usage past the include stops. No overage
-						invoices.
+						When credits run out, rate and compute limits match Free until you
+						top up. No overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Execute calls and outbound fetches count per day and per week;
