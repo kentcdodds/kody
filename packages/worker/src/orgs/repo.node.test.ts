@@ -6,6 +6,7 @@ import { provisionPersonalOrg, renameUserHandle } from './provision.ts'
 import {
 	countPendingInvitesForPerson,
 	listOrganizationsForPerson,
+	listPendingInvitesForPerson,
 	listOrgsForPerson,
 	loadOrgBindingForOrg,
 	loadOrgBindingForPerson,
@@ -264,4 +265,63 @@ test('listOrganizationsForPerson puts the signup organization first and includes
 			now: '2026-02-01T00:00:00.000Z',
 		}),
 	).toBe(1)
+	expect(
+		await listPendingInvitesForPerson(db, {
+			email: 'Ada@Example.com',
+			username: 'ada',
+			now: '2026-02-01T00:00:00.000Z',
+		}),
+	).toEqual([
+		{ id: 'invite-1', orgSlug: 'zeta', kind: 'membership', role: null },
+	])
+})
+
+test('pending invites exclude deleted and suspended orgs', async () => {
+	const db = await createDb()
+	const inviterId = 'a'.repeat(64)
+	const orgs = [
+		{ id: 'b'.repeat(64), slug: 'live', deletedAt: null, suspendedAt: null },
+		{
+			id: 'c'.repeat(64),
+			slug: 'gone',
+			deletedAt: '2026-01-05T00:00:00.000Z',
+			suspendedAt: null,
+		},
+		{
+			id: 'd'.repeat(64),
+			slug: 'paused',
+			deletedAt: null,
+			suspendedAt: '2026-01-05T00:00:00.000Z',
+		},
+	]
+	for (const org of orgs) {
+		await db
+			.prepare(
+				`INSERT INTO orgs (id, slug, display_name, deleted_at, suspended_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')`,
+			)
+			.bind(org.id, org.slug, org.slug, org.deletedAt, org.suspendedAt)
+			.run()
+		await db
+			.prepare(
+				`INSERT INTO invites (
+				   id, org_id, kind, invitee_email, token_hash, status,
+				   invited_by_user_id, expires_at, created_at
+				 ) VALUES (
+				   ?, ?, 'membership', 'ada@example.com', ?, 'pending',
+				   ?, '2099-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'
+				 )`,
+			)
+			.bind(`invite-${org.slug}`, org.id, `hash-${org.slug}`, inviterId)
+			.run()
+	}
+	const query = {
+		email: 'ada@example.com',
+		username: 'ada',
+		now: '2026-02-01T00:00:00.000Z',
+	}
+	expect(await countPendingInvitesForPerson(db, query)).toBe(1)
+	expect(
+		(await listPendingInvitesForPerson(db, query)).map((i) => i.orgSlug),
+	).toEqual(['live'])
 })

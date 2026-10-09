@@ -43,6 +43,12 @@ test('mcp context schemas accept valid user and caller payloads', () => {
 	expect(
 		parseSafe(mcpCallerContextSchema, {
 			baseUrl: 'https://example.com',
+			orgBinding: { org: { id: 'org-1', slug: 'acme' }, role: 'member' },
+		}).success,
+	).toBe(true)
+	expect(
+		parseSafe(mcpCallerContextSchema, {
+			baseUrl: 'https://example.com',
 			executionOrigin: 'untrusted',
 		}).success,
 	).toBe(false)

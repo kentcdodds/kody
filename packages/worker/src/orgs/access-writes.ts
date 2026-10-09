@@ -297,29 +297,6 @@ export async function softDeleteGrant(input: {
 	])
 }
 
-/**
- * Creator Manage grant on a new resource (Teams spec §3.5). Written for Owners
- * too so a demoted Owner keeps control of what they built.
- */
-export async function writeCreatorManageGrant(input: {
-	db: D1Database
-	orgId: string
-	resourceType: OrgResourceType
-	resourceId: string
-	creatorUserId: string
-}) {
-	return await upsertGrant({
-		db: input.db,
-		orgId: input.orgId,
-		resourceType: input.resourceType,
-		resourceId: input.resourceId,
-		subject: { type: 'user', id: input.creatorUserId },
-		preset: 'manage',
-		permissions: null,
-		createdByUserId: input.creatorUserId,
-	})
-}
-
 export async function updateOrgMemberRole(input: {
 	db: D1Database
 	orgId: string

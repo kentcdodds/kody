@@ -284,6 +284,16 @@ export function createAccountProfileApiHandler(env: Env) {
 							claimedUsername: username,
 							restoreUsername: previousUsername,
 						})
+					} catch (rollbackError) {
+						console.error(
+							JSON.stringify({
+								message: 'username-change handle rollback failed',
+								userId: packageUserId,
+								error: getErrorMessage(rollbackError),
+							}),
+						)
+					}
+					try {
 						await db.update(usersTable, user.userId, {
 							username: previousUsername,
 							updated_at: utcSqliteTimestamp(),
@@ -294,7 +304,8 @@ export function createAccountProfileApiHandler(env: Env) {
 					} catch (rollbackError) {
 						console.error(
 							JSON.stringify({
-								message: 'username-change rollback failed after package error',
+								message:
+									'username-change user rollback failed after package error',
 								userId: packageUserId,
 								error: getErrorMessage(rollbackError),
 							}),

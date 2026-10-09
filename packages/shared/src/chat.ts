@@ -8,8 +8,8 @@ import {
 	type InferOutput,
 	union,
 } from 'remix/data-schema'
-import { type PersonId } from './owner-person-ids.ts'
-import { type RequestContext } from './request-context.ts'
+import { type OwnerId, type PersonId } from './owner-person-ids.ts'
+import { type OrgRole, type RequestContext } from './request-context.ts'
 
 export const mcpUserContextSchema = object({
 	userId: string(),
@@ -44,6 +44,17 @@ export const mcpExecutionOriginSchema = union([
 	literal('background'),
 ])
 
+export const mcpOrgBindingSchema = object({
+	org: object({
+		id: string(),
+		slug: nullable(string()),
+	}),
+	/** Null for grant-only outside collaborators. */
+	role: nullable(
+		union([literal('owner'), literal('member'), literal('billing')]),
+	),
+})
+
 export const mcpCallerContextSchema = object({
 	baseUrl: string(),
 	executionOrigin: optional(mcpExecutionOriginSchema),
@@ -56,6 +67,11 @@ export const mcpCallerContextSchema = object({
 	 * profile's grant allowlist (empty allowlist denies everything).
 	 */
 	connectionProfileName: optional(nullable(string())),
+	/**
+	 * DB-backed org membership the request acts in. Absent / null derives the
+	 * person's personal org from `user`.
+	 */
+	orgBinding: optional(nullable(mcpOrgBindingSchema)),
 })
 
 type McpUserContextInferred = InferOutput<typeof mcpUserContextSchema>
@@ -76,6 +92,10 @@ export type McpUserContext = Omit<
 export type McpStorageContext = InferOutput<typeof mcpStorageContextSchema>
 export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
 export type McpExecutionOrigin = InferOutput<typeof mcpExecutionOriginSchema>
+export type McpOrgBinding = {
+	org: { id: OwnerId; slug: string | null }
+	role: OrgRole | null
+}
 type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
 
 /**
@@ -84,18 +104,20 @@ type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
  */
 export type McpCallerContextWire = Omit<
 	McpCallerContextInferred,
-	'user' | 'connectionProfileName'
+	'user' | 'connectionProfileName' | 'orgBinding'
 > & {
 	user?: McpUserContext | null
 	connectionProfileName?: string | null
+	orgBinding?: McpOrgBinding | null
 }
 
 /**
  * A caller context with its resolved request context: the org whose data the
  * call reads and writes, the acting person (if any), attribution, and the
  * credential. `createMcpCallerContext` and `parseMcpCallerContext` derive it
- * from `user` plus the request source; it is never read from serialized
- * input. Null only when there is no signed-in user.
+ * from `user` (plus the optional wire `orgBinding`) and the request source;
+ * `request` itself is never serialized or read from serialized input. Null
+ * only when there is no signed-in user.
  */
 export type McpCallerContext = McpCallerContextWire & {
 	request: RequestContext | null

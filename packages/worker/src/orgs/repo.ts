@@ -262,12 +262,15 @@ export async function countPendingInvitesForPerson(
 	const row = await db
 		.prepare(
 			`SELECT COUNT(*) AS count
-			 FROM invites
-			 WHERE status = 'pending'
-			   AND expires_at > ?
+			 FROM invites i
+			 INNER JOIN orgs o ON o.id = i.org_id
+			 WHERE i.status = 'pending'
+			   AND i.expires_at > ?
+			   AND o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
 			   AND (
-			     lower(COALESCE(invitee_email, '')) = lower(?)
-			     OR lower(COALESCE(invitee_username, '')) = lower(?)
+			     lower(COALESCE(i.invitee_email, '')) = lower(?)
+			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)
 			   )`,
 		)
 		.bind(input.now, input.email, input.username)
@@ -293,6 +296,8 @@ export async function listPendingInvitesForPerson(
 			 INNER JOIN orgs o ON o.id = i.org_id
 			 WHERE i.status = 'pending'
 			   AND i.expires_at > ?
+			   AND o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
 			   AND (
 			     lower(COALESCE(i.invitee_email, '')) = lower(?)
 			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)

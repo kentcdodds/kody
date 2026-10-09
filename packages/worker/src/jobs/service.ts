@@ -57,6 +57,7 @@ import {
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { stampFirstJob } from '#worker/identity/activation-stamps.ts'
 import {
+	isBudgetLimitError,
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
 	JobIntervalFloorError,
@@ -1397,6 +1398,7 @@ export async function executeJobOnce(input: {
 				if (
 					!isEntitlementLimitError(error) &&
 					!isComputeOverageLimitError(error) &&
+					!isBudgetLimitError(error) &&
 					!isAccountSuspendedError(error)
 				) {
 					completedOccurrence = true

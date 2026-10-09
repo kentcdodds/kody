@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
 import {
 	authorize,
@@ -56,8 +56,8 @@ function inviteMatchesUser(
 ) {
 	if (!invite.inviteeEmail && !invite.inviteeUsername) return false
 	if (invite.inviteeEmail) {
-		const email = normalizeEmail(user.email)
-		if (email !== invite.inviteeEmail) return false
+		const email = normalizeEmailAddress(user.email)
+		if (!email || email !== invite.inviteeEmail) return false
 	}
 	if (invite.inviteeUsername) {
 		const username = normalizeUsername(user.username ?? '')

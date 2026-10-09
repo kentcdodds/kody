@@ -146,6 +146,8 @@ export async function refreshStripePlanForUser(input: {
 			nextLadder,
 			stripePlanRefreshedAt,
 		],
+		orgWhereSuffix: ' AND stripe_customer_id = ?',
+		orgWhereValues: [input.customerId],
 	})
 	waitUntil(
 		maybeSyncDiscordGuildRolesForUser({
