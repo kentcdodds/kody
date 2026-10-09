@@ -35,11 +35,52 @@ test('sendViaCloudflareEmailProvider prefers the EMAIL binding and skips REST', 
 	})
 	expect(result).toEqual({ messageId: 'binding-1', via: 'binding' })
 	expect(send).toHaveBeenCalledOnce()
-	expect(send.mock.calls[0]?.[0]).toMatchObject({
-		from: 'owner@inbox.example.com',
-		to: 'pager@example.com',
-		subject: 'Verify',
+	expect(send).toHaveBeenCalledWith(
+		expect.objectContaining({
+			from: 'owner@inbox.example.com',
+			to: 'pager@example.com',
+			subject: 'Verify',
+		}),
+	)
+})
+
+test('sendViaCloudflareEmailProvider falls back to REST when the binding throws', async () => {
+	consoleWarn.mockImplementation(() => {})
+	using _server = createMswNodeServer(
+		[
+			http.post(apiUrl, () =>
+				HttpResponse.json({
+					success: true,
+					result: { message_id: 'rest-after-binding-fail' },
+				}),
+			),
+		],
+		{ onUnhandledFrame: 'bypass' },
+	)
+	const send = vi.fn(async () => {
+		throw new Error('binding unavailable')
 	})
+	const result = await sendViaCloudflareEmailProvider({
+		env: {
+			EMAIL: { send } as unknown as SendEmail,
+			CLOUDFLARE_ACCOUNT_ID: mockAccountId,
+			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
+			CLOUDFLARE_API_TOKEN: 'token',
+		},
+		from: 'owner@inbox.example.com',
+		to: ['pager@example.com'],
+		subject: 'Verify',
+		html: '<p>Verify</p>',
+		text: 'Verify',
+	})
+	expect(result).toEqual({
+		messageId: 'rest-after-binding-fail',
+		via: 'rest',
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-binding-failed-falling-back-to-rest',
+		expect.any(Error),
+	)
 })
 
 test('sendViaCloudflareEmailProvider falls back to REST and rejects permanent bounces', async () => {

@@ -125,15 +125,20 @@ export class CloudflareEmailProviderSkippedError extends Error {
 }
 
 /**
- * Send through the Workers Email binding when present; otherwise Email
- * Sending REST. Throws when the provider does not accept the message.
+ * Prefer the Workers Email binding; fall back to Email Sending REST when the
+ * binding is missing or throws (preview workers and some cold-send failures).
+ * Throws when neither path accepts the message.
  */
 export async function sendViaCloudflareEmailProvider(
 	input: ProviderSendInput,
 ): Promise<ProviderSendResult> {
-	const bindingResult = await sendViaBinding(input)
-	if (bindingResult.sent) {
-		return { messageId: bindingResult.messageId, via: 'binding' }
+	try {
+		const bindingResult = await sendViaBinding(input)
+		if (bindingResult.sent) {
+			return { messageId: bindingResult.messageId, via: 'binding' }
+		}
+	} catch (error) {
+		console.warn('cloudflare-email-binding-failed-falling-back-to-rest', error)
 	}
 	return { messageId: await sendViaRest(input), via: 'rest' }
 }
