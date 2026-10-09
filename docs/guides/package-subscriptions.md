@@ -192,8 +192,8 @@ search/detail projections so subscribers can discover payload shapes.
 
 ### Emitting
 
-Emit from any package runtime context (exports, subscription handlers,
-package-owned jobs, apps, retrievers) with the `events` helper:
+`events` is bound only in package jobs, subscription handlers, and package apps.
+Emit from those runtimes (including package modules they load):
 
 ```ts
 import { events } from 'kody:runtime'
@@ -213,9 +213,8 @@ Rules:
 - Payloads are capped at 64 KiB (canonical JSON). Store large data with
   `packageStorage()` and emit a reference instead.
 - `events.dispatch` is unavailable in ad hoc `execute` runs — topics belong to
-  packages. Emit from a package-owned runtime (package job, subscription
-  handler, or package app). Statically importing a package export from `execute`
-  does not bind `events`.
+  packages. Statically importing a package export from `execute` does not bind
+  `events`.
 
 ### Delivery semantics
 

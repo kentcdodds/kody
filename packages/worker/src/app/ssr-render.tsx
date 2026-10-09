@@ -22,6 +22,7 @@ import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
+import { markSentryReported } from '#app/sentry-reported-error.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import { buildSsrSentryClientConfig } from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
@@ -194,6 +195,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 								pathname: requestUrl.pathname,
 							},
 						})
+						// Pre-first-chunk failures also reject openDocumentStream and
+						// reach handleRequest; skip a second capture there.
+						markSentryReported(error)
 					} catch {
 						// Sentry must never break the SSR error path.
 					}
