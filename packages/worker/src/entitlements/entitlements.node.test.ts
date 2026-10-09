@@ -64,13 +64,16 @@ const countedTables = [
 function createEntitlementsTestDb(
 	input: {
 		users?: Array<TestUser>
+		orgs?: Array<TestUser>
 		counts?: Partial<Record<(typeof countedTables)[number], number>>
 	} = {},
 ) {
 	const users = input.users ?? []
+	const orgs = input.orgs ?? []
 	const counts = input.counts ?? {}
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const byId = (id: unknown) => users.find((row) => row.stable_user_id === id)
+	const orgById = (id: unknown) => orgs.find((row) => row.stable_user_id === id)
 	const planRow = (user: TestUser | undefined) =>
 		user
 			? {
@@ -84,20 +87,26 @@ function createEntitlementsTestDb(
 				}
 			: null
 
+	function entitlementPlanFirst(query: string, params: Array<unknown>) {
+		// Pair match is required: omitted bind params or email-only fixtures
+		// must not resolve a plan.
+		if (query.includes('email = ?')) {
+			return planRow(
+				users.find(
+					(row) => row.email === params[0] && row.stable_user_id === params[1],
+				),
+			)
+		}
+		return planRow(byId(params[0]))
+	}
+
 	function first(query: string, params: Array<unknown>) {
 		if (query.includes('FROM credit_wallets')) return null
+		if (/SELECT plan(, [a-z_, ]+)? FROM orgs/.test(query)) {
+			return planRow(orgById(params[0]))
+		}
 		if (/SELECT plan(, [a-z_, ]+)? FROM users/.test(query)) {
-			// Pair match is required: omitted bind params or email-only fixtures
-			// must not resolve a plan.
-			if (query.includes('email = ?')) {
-				return planRow(
-					users.find(
-						(row) =>
-							row.email === params[0] && row.stable_user_id === params[1],
-					),
-				)
-			}
-			return planRow(byId(params[0]))
+			return entitlementPlanFirst(query, params)
 		}
 		if (query.includes('SELECT email, plan, email_verified_at')) {
 			const user = byId(params[0])
