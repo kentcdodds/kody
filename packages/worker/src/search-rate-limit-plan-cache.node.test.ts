@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { consumeSearchRateLimit } from './search-rate-limit.ts'
@@ -18,6 +19,11 @@ test('back-to-back searches resolve the rate-limit plan from the hot-path cache'
 		)
 		.bind(stableUserId)
 		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId,
+		username: 'cached',
+		plan: 'standard',
+	})
 	const statements: Array<string> = []
 	const counted = new Proxy(db, {
 		get(target, property, receiver) {
@@ -39,6 +45,7 @@ test('back-to-back searches resolve the rate-limit plan from the hot-path cache'
 	}
 	expect(await consumeSearchRateLimit(input)).toBe('standard')
 	expect(await consumeSearchRateLimit(input)).toBe('standard')
+	// One org-first JOIN (FROM users … INNER JOIN orgs); the second call hits cache.
 	expect(
 		statements.filter((query) => /\bFROM users\b/i.test(query)),
 	).toHaveLength(1)

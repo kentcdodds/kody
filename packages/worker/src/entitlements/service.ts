@@ -269,41 +269,43 @@ async function loadEntitlementRowForStableUserId(
 	db: D1Database,
 	input: { stableUserId: string; email: string | null | undefined },
 ): Promise<UserEntitlementRow | null> {
-	const columns = userEntitlementColumnsSql()
+	const orgColumns = userEntitlementColumnsSql('o')
+	const userColumns = userEntitlementColumnsSql('u')
 	const email = input.email?.trim().toLowerCase()
 
+	// When email is provided, require a live users row for (email, stable id)
+	// before reading org billing — a mismatched caller context must not inherit
+	// another account's plan. Prefer orgs; fall back to users columns.
 	if (email) {
-		const verifiedUser = await db
+		const orgRow = await db
 			.prepare(
-				`SELECT 1 AS present FROM users
-				 WHERE email = ? AND stable_user_id = ? AND deleting_at IS NULL`,
+				`SELECT ${orgColumns}
+				 FROM users u
+				 INNER JOIN orgs o ON o.id = u.stable_user_id
+				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL`,
 			)
 			.bind(email, input.stableUserId)
-			.first<{ present: number }>()
-		if (!verifiedUser) return null
-
-		const orgRow = await db
-			.prepare(`SELECT ${columns} FROM orgs WHERE id = ?`)
-			.bind(input.stableUserId)
 			.first<UserEntitlementRow>()
 		if (orgRow) return orgRow
 
 		return await db
 			.prepare(
-				`SELECT ${columns} FROM users WHERE email = ? AND stable_user_id = ?`,
+				`SELECT ${userColumns}
+				 FROM users u
+				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL`,
 			)
 			.bind(email, input.stableUserId)
 			.first<UserEntitlementRow>()
 	}
 
 	const orgRow = await db
-		.prepare(`SELECT ${columns} FROM orgs WHERE id = ?`)
+		.prepare(`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?`)
 		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
 	if (orgRow) return orgRow
 
 	return await db
-		.prepare(`SELECT ${columns} FROM users WHERE stable_user_id = ?`)
+		.prepare(`SELECT ${userColumns} FROM users u WHERE u.stable_user_id = ?`)
 		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
 }
