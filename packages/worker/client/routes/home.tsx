@@ -47,6 +47,10 @@ import {
 	landingVsHeading,
 	landingVsItems,
 } from '#universal/landing-home-copy.ts'
+import {
+	accountDeletedConfirmationMessage,
+	isAccountDeletedHome,
+} from '#universal/account-deletion-confirmation.ts'
 import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
 	pickWalkthroughHosts,
@@ -231,9 +235,22 @@ export function HomeRoute(handle: Handle) {
 		const isSignedIn = onboardingReady && loggedIn
 		const connectHref = isSignedIn ? onboardingPath : homepageSignupPath
 
+		const showAccountDeleted = isAccountDeletedHome(
+			new URL(currentHref, 'https://kody.local').search,
+		)
+
 		return (
 			<div aria-busy={busy ? 'true' : undefined}>
 				{busy ? renderRoutePendingStatus() : null}
+				{showAccountDeleted ? (
+					<p
+						role="status"
+						data-testid="account-deleted-notice"
+						class="landing-account-deleted"
+					>
+						{accountDeletedConfirmationMessage}
+					</p>
+				) : null}
 				<section class="landing-hero">
 					<div class="landing-hero-intro">
 						<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">

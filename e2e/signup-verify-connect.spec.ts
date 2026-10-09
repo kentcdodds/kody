@@ -5,6 +5,7 @@ import {
 } from './d1-utils.ts'
 import {
 	extractVerifyEmailPath,
+	findConnectAgentEmail,
 	findVerificationEmail,
 	listE2eCloudflareMockMessages,
 	type MockEmailMessage,
@@ -36,7 +37,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 	page,
 	baseURL,
 }) => {
-	test.setTimeout(process.env.CI ? 90_000 : 45_000)
+	test.setTimeout(process.env.CI ? 120_000 : 90_000)
 	const origin = new URL(baseURL ?? 'http://127.0.0.1:3847').origin
 	const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 	const email = `e2e-signup-${runId}@example.com`
@@ -123,6 +124,19 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			page.getByRole('link', { name: 'Continue to onboarding' }),
 		).toBeVisible()
 
+		let connectAgentEmail = null as MockEmailMessage | null
+		await expect
+			.poll(
+				async () => {
+					const payload = await listE2eCloudflareMockMessages()
+					connectAgentEmail = findConnectAgentEmail(payload.messages, email)
+					return connectAgentEmail
+				},
+				{ timeout: 15_000 },
+			)
+			.not.toBeNull()
+		expect(connectAgentEmail?.subject).toBe('Connect the agent you already use')
+
 		const sessionAfter = await page.request.get('/session')
 		expect(sessionAfter.ok()).toBe(true)
 		const sessionAfterBody = (await sessionAfter.json()) as {
@@ -134,7 +148,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		expect(sessionAfterBody.session?.emailVerified).toBe(true)
 
 		await page.getByRole('link', { name: 'Continue to onboarding' }).click()
-		await expect(page).toHaveURL(/\/onboarding/)
+		await expect(page).toHaveURL(/\/onboarding/, { timeout: 20_000 })
 		await waitForClientHydration(page)
 		await expect(
 			page.getByRole('heading', { name: /Get started with\s*Kody/i }),
@@ -182,6 +196,26 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		expect(mcpAfterVerify.headers.get('www-authenticate') ?? '').toContain(
 			`${origin}/.well-known/oauth-protected-resource/mcp`,
 		)
+
+		await page.goto('/account')
+		await waitForClientHydration(page)
+		await expect(
+			page.getByText('Change password', { exact: true }),
+		).toBeVisible()
+		await page.getByTestId('delete-account').click()
+		await page.getByTestId('delete-account-confirmation').fill('GOODBYE KODY')
+		await page.getByTestId('delete-account-password').fill(password)
+		await page.getByTestId('delete-account-confirm').click()
+		await expect(page).toHaveURL(/\/\?accountDeleted=1$/)
+		await expect(page.getByTestId('account-deleted-notice')).toHaveText(
+			'Your Kody account has been deleted',
+		)
+		const sessionAfterDelete = await page.request.get('/session')
+		expect(sessionAfterDelete.ok()).toBe(true)
+		const sessionAfterDeleteBody = (await sessionAfterDelete.json()) as {
+			ok?: boolean
+		}
+		expect(sessionAfterDeleteBody.ok).toBe(false)
 	} finally {
 		deleteUserInE2eDatabase(email)
 	}
