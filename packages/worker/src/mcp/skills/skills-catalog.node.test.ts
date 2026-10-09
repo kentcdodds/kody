@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	ProtocolError,
 	ResourceNotFoundError,
@@ -137,6 +140,34 @@ test('anonymous callers get an empty catalog without touching storage', async ()
 	})
 	expect(catalog).toEqual([])
 	expect(mocks.listOwn).not.toHaveBeenCalled()
+})
+
+test('an org-bound connection lists the org skills, not the acting person skills', async () => {
+	mocks.listOwn.mockImplementation(
+		async (_db: unknown, input: { userId: string }) =>
+			input.userId === 'org-1'
+				? [savedPackage({ userId: 'org-1' })]
+				: [savedPackage({ id: 'pkg-person', userId: 'user-1' })],
+	)
+	mocks.readIndex.mockImplementation(async () => buildIndex(savedPackage()))
+	const catalog = await loadCallerSkillsCatalog({
+		env,
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://kody.example',
+			user: {
+				userId: personIdFromStored('user-1'),
+				email: 'a@example.com',
+				displayName: 'A',
+			},
+			orgBinding: {
+				org: { id: ownerIdFromStored('org-1'), slug: 'acme' },
+				role: 'owner',
+			},
+		}),
+	})
+	expect(mocks.listOwn).toHaveBeenCalledWith(env.APP_DB, { userId: 'org-1' })
+	expect(catalog).toHaveLength(1)
 })
 
 test('lists the caller org skills from KV indexes, skipping hidden and skill-less packages', async () => {

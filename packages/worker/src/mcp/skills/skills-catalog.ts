@@ -81,7 +81,7 @@ async function listVisibleSkillPackageRecords(input: {
 	// visibility (execute-only profiles must not pull SKILL.md / assets).
 	const records = await listSavedPackagesWithCommunityProvenanceByUserId(
 		input.env.APP_DB,
-		{ userId },
+		{ userId: request.org.id },
 	)
 	return records.filter(
 		(record) =>

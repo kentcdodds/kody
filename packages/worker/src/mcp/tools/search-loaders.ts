@@ -86,21 +86,22 @@ export async function loadSearchRowsAndRegistry(input: {
 				loadOptionalSearchRows({
 					userId: input.userId,
 					loadPackages: async () => {
-						const userId = input.userId
-						if (!userId) {
+						if (!input.userId) {
 							return { rows: [], warnings: [] }
 						}
+						// Packages are keyed by the bound org, not the acting person.
+						const ownerId = request?.org.id ?? input.userId
 						const savedPackages = await applySavedPackageForkListingAncestry({
 							env: input.env,
 							records: await listSavedPackagesWithCommunityProvenanceByUserId(
 								input.env.APP_DB,
-								{ userId },
+								{ userId: ownerId },
 							),
 						})
 						return await buildSavedPackageSearchRows({
 							env: input.env,
 							baseUrl: input.callerContext.baseUrl,
-							userId,
+							userId: ownerId,
 							records: savedPackages.filter(
 								(pkg) =>
 									(input.includeHiddenPackages ? true : !pkg.hidden) &&

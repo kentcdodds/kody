@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -177,6 +180,40 @@ test('only mcp: true topics from readable saved packages are listed, sorted by n
 		userId: 'user-1',
 		sourceId: 'source-pkg-gateway',
 	})
+})
+
+test('an org-bound connection lists the org packages, not the acting person packages', async () => {
+	arrange(null)
+	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://kody.example.com',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'one@example.com',
+			displayName: 'One',
+		},
+		orgBinding: {
+			org: { id: ownerIdFromStored('org-1'), slug: 'acme' },
+			role: 'owner',
+		},
+	})
+	mocks.listSavedPackagesByUserId.mockImplementation(
+		async (_db: unknown, input: { userId: string }) =>
+			input.userId === 'org-1'
+				? [{ ...savedPackage('pkg-alerts', 'alerts'), userId: 'org-1' }]
+				: [],
+	)
+	const sources = await listMcpEventSources({ env, callerContext })
+	expect(mocks.listSavedPackagesByUserId).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'org-1',
+	})
+	expect([...sources.keys()]).toEqual([
+		'@kentcdodds/alerts.fired',
+		'@kentcdodds/discord.message.created',
+	])
+	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: 'org-1' }),
+	)
 })
 
 test('connection profile grants hide packages the connection cannot read', async () => {
