@@ -190,11 +190,18 @@ function holdsPermission(
 ) {
 	if (access.isOwner) return true
 	if (access.permissions.has(permission)) return true
-	if (!resource) return false
-	const granted = access.resourcePermissions.get(
-		resourceGrantKey(resource.type, resource.id),
-	)
-	return granted?.has(permission) ?? false
+	if (resource) {
+		const granted = access.resourcePermissions.get(
+			resourceGrantKey(resource.type, resource.id),
+		)
+		return granted?.has(permission) ?? false
+	}
+	// Surface / discovery checks (§6.3): the permission is held somewhere in
+	// the org when any resource grant includes it.
+	for (const granted of access.resourcePermissions.values()) {
+		if (granted.has(permission)) return true
+	}
+	return false
 }
 
 function deny(input: {
