@@ -486,10 +486,7 @@ function __kodyScanStreamingBody(source) {
 			if (done) {
 				if (carry.byteLength > 0) {
 					const text = __kodyBytesToAscii(carry);
-					if (
-						__kodyRequestHasSecretPlaceholders("", {}, text) ||
-						__kodyUnclosedCouldBeSecret(text)
-					) {
+					if (__kodyEofHasUnresolvedSecret(text)) {
 						controller.error(__kodyStreamingSecretError());
 						return;
 					}
@@ -536,58 +533,17 @@ function __kodyScanStreamingBody(source) {
 	});
 }
 
-async function __kodyReadBoundedBody(source, limit) {
-	const reader = source.getReader();
-	const chunks = [];
-	let total = 0;
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) {
-			return { kind: "bytes", bytes: __kodyConcatBytes(chunks) };
-		}
-		const chunk =
-			value instanceof Uint8Array ? value : new Uint8Array(value);
-		total += chunk.byteLength;
-		if (total > limit) {
-			const prefix = __kodyConcatBytes([...chunks, chunk]);
-			const decision = __kodyStreamingDecision(__kodyBytesToAscii(prefix));
-			if (decision.reject != null) {
-				try {
-					await reader.cancel();
-				} catch {
-					// The thrown probe error is the caller-facing failure.
-				}
-				throw decision.reject === "window"
-					? __kodyStreamingWindowError()
-					: __kodyStreamingSecretError();
-			}
-			const rest = new ReadableStream({
-				start(controller) {
-					if (prefix.byteLength > 0) controller.enqueue(prefix);
-				},
-				async pull(controller) {
-					const next = await reader.read();
-					if (next.done) {
-						controller.close();
-						return;
-					}
-					const nextChunk =
-						next.value instanceof Uint8Array
-							? next.value
-							: new Uint8Array(next.value);
-					controller.enqueue(nextChunk);
-				},
-				cancel(reason) {
-					return reader.cancel(reason);
-				},
-			});
-			return {
-				kind: "stream",
-				stream: __kodyScanStreamingBody(rest),
-			};
-		}
-		chunks.push(chunk);
-	}
+function __kodyEofHasUnresolvedSecret(text) {
+	if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
+	const lastClose = text.lastIndexOf("}}");
+	const rest = lastClose === -1 ? text : text.slice(lastClose + 2);
+	const open = rest.lastIndexOf("{{");
+	if (open === -1) return false;
+	const tail = rest.slice(open);
+	// "{{" by itself is not a placeholder. A longer unclosed prefix of
+	// {{secret:…}} or {{integration-token:…}} still fails closed.
+	if (tail.length <= 2) return false;
+	return __kodyUnclosedCouldBeSecret(tail);
 }
 
 async function __kodyBlobHasSecretPlaceholder(blob) {
@@ -595,12 +551,7 @@ async function __kodyBlobHasSecretPlaceholder(blob) {
 	let carry = "";
 	while (true) {
 		const { done, value } = await reader.read();
-		if (done) {
-			return (
-				__kodyRequestHasSecretPlaceholders("", {}, carry) ||
-				__kodyUnclosedCouldBeSecret(carry)
-			);
-		}
+		if (done) return __kodyEofHasUnresolvedSecret(carry);
 		const chunk =
 			value instanceof Uint8Array ? value : new Uint8Array(value);
 		const text = carry + __kodyBytesToAscii(chunk);
@@ -724,29 +675,13 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				streamingBody = __kodyScanStreamingBody(merged.body);
 				reuseOriginal = false;
 			} else {
-				// Request bodies are already streams, including ones built from
-				// a string. Read that stream directly (no clone — a clone tees
-				// and buffers the unread side). Bodies that fit the inspection
-				// window keep the buffered probe so a short {{secret:…}} still
-				// hops. Larger bodies continue as a stream.
-				const bounded = await __kodyReadBoundedBody(
-					merged.body,
-					__kodyStreamingPlaceholderLimit,
-				);
-				if (bounded.kind === "stream") {
-					if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
-						throw __kodyStreamingHeaderError();
-					}
-					streamingBody = bounded.stream;
-					reuseOriginal = false;
-				} else {
-					bodyBytes = bounded.bytes;
-					reuseOriginal = false;
-					preservedRequest = new Request(merged, {
-						body: bounded.bytes,
-						duplex: "half",
-					});
-				}
+				// String, bytes, and URLSearchParams become streams inside a
+				// Request. Probe a clone and forward the original Request so
+				// cache, credentials, and redirect replay stay intact. Caller
+				// ReadableStream bodies are handled above.
+				bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
+				reuseOriginal = false;
+				preservedRequest = merged;
 			}
 		} else {
 			preservedRequest = merged;
@@ -763,12 +698,27 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		if (__kodyIsCallerByteStream(streamingBody)) {
 			fallbackInit.duplex = "half";
 		}
-		const signal =
-			init?.signal ?? (input instanceof Request ? input.signal : null);
-		if (signal != null) fallbackInit.signal = signal;
-		const redirect =
-			init?.redirect ?? (input instanceof Request ? input.redirect : null);
-		if (redirect != null) fallbackInit.redirect = redirect;
+		const source = init ?? {};
+		const requestSource = input instanceof Request ? input : null;
+		for (const key of [
+			"cache",
+			"credentials",
+			"integrity",
+			"keepalive",
+			"mode",
+			"redirect",
+			"referrer",
+			"referrerPolicy",
+			"signal",
+		]) {
+			const value =
+				source[key] != null
+					? source[key]
+					: requestSource
+						? requestSource[key]
+						: null;
+			if (value != null) fallbackInit[key] = value;
+		}
 		return __kodyNativeFetch(url, fallbackInit);
 	}
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {

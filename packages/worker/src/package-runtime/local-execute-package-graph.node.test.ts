@@ -605,20 +605,28 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		const largeRequest = new Request('https://api.example.com/post', {
 			method: 'POST',
 			body: largePayload,
+			cache: 'no-store',
+			headers: { authorization: 'Bearer {{secret:demoToken}}' },
 		})
 		await __kodyGatewayFetch(largeRequest)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/post',
+				headers: { authorization: 'Bearer {{secret:demoToken}}' },
+			},
+		})
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const trailingBraces = new Blob(['report {{'])
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: trailingBraces,
+		})
 		expect(gatewayCalls).toHaveLength(0)
-		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
-		expect((ambientCalls[0]?.init as RequestInit).body).toBeInstanceOf(
-			ReadableStream,
-		)
-		expect(
-			new TextDecoder().decode(
-				await new Response(
-					(ambientCalls[0]?.init as RequestInit).body as ReadableStream,
-				).arrayBuffer(),
-			),
-		).toBe(largePayload)
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(trailingBraces)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
