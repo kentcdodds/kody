@@ -47,9 +47,9 @@ The only cookies are the session cookie (`kody_session`), the one-week last-wins
 referral cookie (`kody_ref`) set by `/signup?ref=<username>` share links, and
 the package-app session cookie on `kody.run` (`__Host-kody_pkg_session` on
 HTTPS, `kody_pkg_session` on HTTP). Short-lived cookies support two-factor
-verification, passkey challenges, and OAuth login. Analytics (Fathom) is
-cookieless. The browser uses sessionStorage for first-touch signup attribution
-and scroll restoration, not tracking cookies.
+verification, passkey challenges, and OAuth login. Analytics (Fathom and Scarf)
+are cookieless. The browser uses sessionStorage for first-touch signup
+attribution and scroll restoration, not tracking cookies.
 
 Account export includes your profile columns and activity you authored. The
 browser download is a bounded metadata manifest; use its `accountExportSection`
@@ -315,6 +315,11 @@ data needed for their role:
   purposes
 - Sentry — application error reporting and operational diagnostics
 - Fathom — privacy-focused website traffic analytics
+- Scarf — company-level analytics on public marketing pages and docs. We send
+  the public page path, without query strings or fragments. Scarf uses the
+  request IP address to identify companies, discards the raw IP address, and
+  does not set cookies. We skip these requests when your browser sends Global
+  Privacy Control or Do Not Track.
 
 ## Your choices and rights
 

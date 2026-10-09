@@ -46,8 +46,8 @@ synchronous, for callers that already hold the compiled permissions.
    packages and actions it lists. Profiles list packages only, so they do not
    narrow other resources or org-level checks.
 
-Every person is the Owner of their implicit org today, so steps 2 to 4 never
-deny. Profiles and the signed-in step are the denials that can fire.
+Every person is the Owner of their implicit org, so steps 2 to 4 never deny.
+Profiles and the signed-in step are the denials that can fire.
 
 ### Checking many resources
 

@@ -2,16 +2,19 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
-import { privacyRetentionPeriods } from './privacy-retention.ts'
+import {
+	privacyRetentionPeriods,
+	privacySubprocessors,
+} from './privacy-retention.ts'
 
 const privacyDocPath = join(
 	dirname(fileURLToPath(import.meta.url)),
 	'../../../docs/use/privacy.md',
 )
 
-function readDocRetentionBullets(markdown: string) {
-	const section = markdown.split(/^## How long Kody keeps data$/m)[1]
-	if (!section) throw new Error('privacy.md is missing its retention section')
+function readDocSectionBullets(markdown: string, heading: string) {
+	const section = markdown.split(new RegExp(`^## ${heading}$`, 'm'))[1]
+	if (!section) throw new Error(`privacy.md is missing its ${heading} section`)
 	const body = section.split(/^## /m)[0] ?? ''
 	const bullets: Array<string> = []
 	for (const line of body.split('\n')) {
@@ -25,6 +28,17 @@ function readDocRetentionBullets(markdown: string) {
 }
 
 test('docs/use/privacy.md retention list matches the /privacy page source', () => {
-	const bullets = readDocRetentionBullets(readFileSync(privacyDocPath, 'utf8'))
+	const bullets = readDocSectionBullets(
+		readFileSync(privacyDocPath, 'utf8'),
+		'How long Kody keeps data',
+	)
 	expect(bullets).toEqual([...privacyRetentionPeriods])
+})
+
+test('docs/use/privacy.md subprocessors match the /privacy page source', () => {
+	const bullets = readDocSectionBullets(
+		readFileSync(privacyDocPath, 'utf8'),
+		'Service providers',
+	)
+	expect(bullets).toEqual([...privacySubprocessors])
 })

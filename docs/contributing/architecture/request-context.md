@@ -7,7 +7,7 @@ inbound email, or a platform event. It answers four questions in one shape:
 
 | Field         | Question                                   | Today                                       |
 | ------------- | ------------------------------------------ | ------------------------------------------- |
-| `org`         | Whose data does this touch?                | The person's implicit org (`id`, `slug`)    |
+| `org`         | Whose data does this touch?                | The bound org (`id`, `slug`); personal orgs reuse `stable_user_id` |
 | `actor`       | Who is acting?                             | The signed-in person; `null` for Automation |
 | `attribution` | Who is the run billed and audited to?      | `user` or `automation` (source + source id) |
 | `credential`  | What authenticated it, and does it narrow? | Kind, id, bound org, scopes, profile name   |
@@ -65,11 +65,10 @@ the starter could do.
 
 `deriveRequestContext` chooses org binding from an optional DB-backed
 `orgBinding` (via `loadOrgBindingForPerson` on browser sessions and MCP OAuth)
-or falls back to `resolveOrgBinding`, which still maps every person to
-`personalOrgId(user.userId)` with slug from username. That fallback remains for
-sync paths and tests until phase 4 threads membership through every MCP/API
-caller. Call sites pass `orgBinding` only; they do not reimplement membership
-rules.
+or falls back to `resolveOrgBinding`, which maps every person to
+`personalOrgId(user.userId)` with slug from username. That fallback covers sync
+paths and tests. Call sites pass `orgBinding` only; they do not reimplement
+membership rules.
 
 The persisted caller context (job `caller_context_json`, MCP agent props) stays
 wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,

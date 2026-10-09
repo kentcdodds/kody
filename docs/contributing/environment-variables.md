@@ -91,6 +91,18 @@ Optional Wrangler `var` (public, non-secret; see
   is required for `sendBeacon` duration/events, not for the image pageview
   beacon.
 
+## Scarf
+
+No Wrangler var. The client pixel id lives in
+`packages/worker/client/scarf-analytics.ts`. It fires only on
+`https://kody.codes` public marketing and docs paths (homepage, pricing, FAQ,
+case studies, community, blog catalog slugs, and official docs slugs). Preview,
+local, and other hosts never send. The pixel includes the public path and no
+query string, fragment, referrer, or account id. Global Privacy Control and Do
+Not Track skip the request. The CSP in
+`packages/worker/src/app/security-headers.ts` allowlists
+`https://static.scarf.sh` in `img-src` only.
+
 ## YouTube watch overlay
 
 Optional Wrangler vars (public, non-secret; see

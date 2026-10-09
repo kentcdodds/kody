@@ -600,8 +600,8 @@ If the body is the invoke envelope (`{ "params": { … } }` with optional
 as a string or null. A top-level JSON object that is not that envelope is the
 first argument as-is, so sibling fields such as `route` and `dryRun` stay
 visible even when a nested `params` object is present. Arrays and non-objects
-are **400** `invalid_params`. Default `inputMode: "request"` is unchanged: the
-export still receives `{ webhook, request }`.
+are **400** `invalid_params`. Default `inputMode: "request"` passes
+`{ webhook, request }` as the export's first argument.
 
 Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 `idempotencyKey` is accepted when the header is absent. Same key + same payload

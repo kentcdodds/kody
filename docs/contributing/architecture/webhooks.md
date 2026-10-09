@@ -63,7 +63,7 @@ is rotated.
 
 `inputMode: "params"` is the first-party trusted-client contract. The bound
 export's first argument is the parsed JSON object. When that object is the
-invoke-token envelope (`params` plus optional `idempotencyKey`, `source`, and
+invoke envelope (`params` plus optional `idempotencyKey`, `source`, and
 `topic`), the platform unwraps `params`. `idempotencyKey` counts only as a
 non-empty string, and `source` / `topic` only as a string or null. An
 application payload that includes a nested `params` object next to other keys

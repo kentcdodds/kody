@@ -8,8 +8,8 @@ Production has two public HTTP entrypoints:
 
 - **App origin** (`kody.codes`) — `packages/worker/src/index.ts`. Remix, MCP
   HTTP (`/mcp`), OAuth, inbound email, and queue consumers. Runtime-owned paths
-  (`/@{username}/packages/…`, package-invocation API, inline `/apps`) forward
-  over the `RUNTIME_WORKER` service binding to `kody-runtime`.
+  (package-app origin hosts and inline `/@{username}/packages/…` on the app
+  origin) forward over the `RUNTIME_WORKER` service binding to `kody-runtime`.
 - **Package-app origin** (`kody.run`) — `packages/worker/src/runtime-worker.ts`.
   Zone routes on that script; the origin handler does not see this host in
   production.

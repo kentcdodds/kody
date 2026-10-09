@@ -11,7 +11,10 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
-import { privacyRetentionPeriods } from '#universal/privacy-retention.ts'
+import {
+	privacyRetentionPeriods,
+	privacySubprocessors,
+} from '#universal/privacy-retention.ts'
 import { privacyLastUpdated } from './legal-last-updated.ts'
 
 export function PrivacyRoute(_handle: Handle) {
@@ -351,27 +354,9 @@ export function PrivacyRoute(_handle: Handle) {
 					only the data needed for their role:
 				</p>
 				<ul mix={css(listCss)}>
-					<li>
-						Cloudflare — application hosting, database, object storage, email
-						delivery, security, network infrastructure, and Workers AI
-						embeddings and ranked-search scoring
-					</li>
-					<li>Stripe — paid subscriptions, billing, and payment records</li>
-					<li>
-						Kit — product email subscriptions when you submit your email for
-						those purposes
-					</li>
-					<li>
-						Sentry — application error reporting and operational diagnostics
-					</li>
-					<li>Fathom — privacy-focused website traffic analytics</li>
-					<li>
-						Scarf, company-level analytics on public marketing pages and docs.
-						We send the public page path, without query strings or fragments.
-						Scarf uses the request IP address to identify companies, discards
-						the raw IP address, and does not set cookies. We skip these requests
-						when your browser sends Global Privacy Control or Do Not Track.
-					</li>
+					{privacySubprocessors.map((provider) => (
+						<li key={provider}>{provider}</li>
+					))}
 				</ul>
 				<p mix={css(descriptionCss)}>
 					The only cookies are the session cookie (<code>kody_session</code>),
@@ -381,9 +366,9 @@ export function PrivacyRoute(_handle: Handle) {
 					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
 					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
 					two-factor verification, passkey challenges, and OAuth login.
-					Analytics (Fathom) is cookieless. The browser uses sessionStorage for
-					first-touch signup attribution and scroll restoration, not tracking
-					cookies.
+					Analytics (Fathom and Scarf) are cookieless. The browser uses
+					sessionStorage for first-touch signup attribution and scroll
+					restoration, not tracking cookies.
 				</p>
 			</section>
 
