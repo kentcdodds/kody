@@ -26,8 +26,17 @@ document covers event capture and rollups only.
 ## Per-user isolation
 
 Usage metering follows the repo-wide isolation invariant: every event carries a
-required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
-table is keyed by `user_id`. Admin and account reads stay scoped to one user.
+required billing scope id on `UsageEvent.userId`, the Analytics Engine index is
+that same id, and D1 rollups are keyed by `usage_rollups.user_id`. For Teams,
+that id is the **org billing id** (`orgId`): migrated personal orgs use the same
+string as before, so existing rows and queries keep working during the
+personal-org soak. Types and call sites still often name the field `userId` even
+though Analytics Engine `blob1` and `index1` are the org id.
+
+**Actor attribution** is separate: who triggered the metered unit lives in
+`actorUserId` / Analytics Engine `blob10` (empty for Automation runs). Org
+members share one rollup; account usage breakdowns can split by actor where
+`usage_attribution_daily` is populated.
 
 ## The event schema
 
@@ -36,7 +45,7 @@ One schema covers every chokepoint. It is defined in
 
 ```ts
 type UsageEvent = {
-	userId: string // required; owning user
+	userId: string // required; org billing id (rollup / AE index1 and blob1)
 	eventType: UsageEventType // see the metric table below
 	entityId?: string | null // metered entity id when one exists
 	durationMs?: number | null // wall-clock duration of the metered unit
@@ -51,8 +60,20 @@ type UsageEvent = {
 	codeChars?: number | null // module-graph text length; AE double4
 	paramsChars?: number | null // stable JSON length of params; AE double5
 	packageId?: string | null // saved package id when known; AE blob9 (empty = Ad hoc)
+	actorUserId?: string | null // person who triggered the unit; AE blob10 ('' = Automation)
+	automationSource?: string | null // closed automation source; AE blob11
 }
 ```
+
+When `actorUserId` and `automationSource` are omitted at write time,
+`usageEventBlobs()` defaults `blob10` to `userId` (org billing id) for
+interactive runs and leaves `blob11` empty. Explicit Automation runs use
+`actorUserId: ''` and a non-empty `automationSource` when known. Allowed
+`automationSource` values written to Analytics Engine are `''`, `webhook`,
+`schedule`, and `email` (platform `event` automations map to `''`). Blob
+positions are centralized in `usageEventBlobIndexes` in
+`packages/worker/src/usage/record-usage.ts` (0-based array indexes; Analytics
+Engine SQL names them `blob1` through `blob11`).
 
 `eventType` is a closed union defined in the dependency-free
 `packages/worker/universal/usage-event-types.ts` (re-exported by
@@ -398,13 +419,23 @@ export does not list them.
    `preview` environments in `packages/worker/wrangler.jsonc`). When the binding
    is present, each event is one non-blocking `writeDataPoint` call and nothing
    else — a per-event D1 upsert would serialize every metered request (execute,
-   fetch, email, jobs, ...) on D1's single writer. Data point layout:
-   - `indexes`: `[userId]`
-   - `blobs`:
-     `[userId, eventType, entityId ?? '', outcome, timestamp, surface ?? '', executeShape ?? '', cacheReuse ?? '', packageId ?? '']`
-     (`surface` is blob6, `executeShape` is blob7, `cacheReuse` is blob8,
-     `packageId` is blob9; all empty when unset). Empty `packageId` means Ad hoc
-     for customer credit attribution on `/account/usage`
+   fetch, email, jobs, ...) on D1's single writer. Data point layout (see
+   `usageEventBlobIndexes` in `packages/worker/src/usage/record-usage.ts`):
+   - `indexes`: `[userId]` where `userId` is the org billing id
+   - `blobs` (Analytics Engine `blob1` through `blob11`):
+     - blob1: org billing id (same as `UsageEvent.userId`)
+     - blob2: `eventType`
+     - blob3: `entityId ?? ''`
+     - blob4: `outcome`
+     - blob5: event `timestamp` (ISO 8601)
+     - blob6: `surface ?? ''`
+     - blob7: `executeShape ?? ''`
+     - blob8: `cacheReuse ?? ''`
+     - blob9: `packageId ?? ''` (empty means Ad hoc for customer credit
+       attribution on `/account/usage`)
+     - blob10: `actorUserId` (`''` for Automation; otherwise defaults to org
+       billing id when unset on the event)
+     - blob11: `automationSource` (`''` | `webhook` | `schedule` | `email`)
    - `doubles`:
      `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0, codeChars ?? 0, paramsChars ?? 0]`.
      Coalesced points (`coalescedCountUsageEventTypes`:
@@ -450,6 +481,15 @@ export does not list them.
    The rollup is the cheap read path for month-to-date admin and cohort views:
    one point lookup per user, metric, and month.
 
+3. **D1 `usage_attribution_daily`** (billable-unit breakdown for
+   `/account/usage`) stores daily units per org billing id, package, and meter.
+   Columns `actor_user_id` and `automation_source` mirror Analytics Engine
+   `blob10` and `blob11`. Local dev upserts them on each billable `recordUsage`
+   write; production recomputes from Analytics Engine in
+   `packages/worker/src/usage/credit-attribution.ts`. Writers should populate
+   attribution on the event (or rely on the `usageEventBlobs()` defaults) so
+   these columns are not left null when actor or automation context exists.
+
 ## Agent package conversation uses
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
@@ -471,16 +511,25 @@ Helpers live in `packages/worker/src/usage/agent-package-conversation-uses.ts`.
 ## Helper contract
 
 ```ts
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 
 await recordUsage(env, {
-	userId,
+	userId: orgBillingId,
+	...usageAttributionFieldsFromRequest(requestContext),
 	eventType: 'job_run',
 	entityId: job.id,
 	durationMs,
 	outcome: execution.ok ? 'success' : 'error',
 })
 ```
+
+`usageAttributionFieldsFromRequest` maps a `RequestContext` to `actorUserId` /
+`automationSource` when the chokepoint has one: interactive requests stamp the
+signed-in actor; Automation requests use `actorUserId: ''` and the closed
+automation source when present.
 
 Guarantees and rules:
 
@@ -696,11 +745,11 @@ GROUP BY stage
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
-  the `index1` user id; blob/double positions are listed above. Remember that
-  Analytics Engine samples: count with `sum(_sample_interval)` and sum values
-  with `sum(doubleN * _sample_interval)`. Coalesced points store their unit
-  count (RPCs or rows read) in `double3`, so those metrics' `event_count` is
-  `sum(if(double3 > 0, double3, 1.0) * _sample_interval)` and `total_bytes`
+  the `index1` org billing id; blob/double positions are listed above. Remember
+  that Analytics Engine samples: count with `sum(_sample_interval)` and sum
+  values with `sum(doubleN * _sample_interval)`. Coalesced points store their
+  unit count (RPCs or rows read) in `double3`, so those metrics' `event_count`
+  is `sum(if(double3 > 0, double3, 1.0) * _sample_interval)` and `total_bytes`
   stays 0.
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.
