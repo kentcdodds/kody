@@ -1,7 +1,10 @@
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
+import {
+	normalizeRedirectTo,
+	resolvePostAuthLandingPath,
+} from '#universal/safe-redirect.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -89,7 +92,9 @@ export function VerifyRoute(handle: Handle) {
 				return
 			}
 
-			window.location.assign(getRedirectTo() ?? '/account')
+			window.location.assign(
+				resolvePostAuthLandingPath(getRedirectTo()) ?? '/account',
+			)
 		} catch {
 			status = 'idle'
 			message = 'Network error. Please try again.'

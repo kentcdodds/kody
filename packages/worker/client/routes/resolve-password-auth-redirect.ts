@@ -1,4 +1,7 @@
-import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
+import {
+	normalizeRedirectTo,
+	resolvePostAuthLandingPath,
+} from '#universal/safe-redirect.ts'
 import { buildPendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 
 /**
@@ -6,6 +9,7 @@ import { buildPendingVerificationPath } from '#client/routes/pending-verificatio
  * response. Signup that still needs email verification goes to the dedicated
  * pending page so users are not dropped into MCP connect flow. A safe
  * redirectTo (such as an OAuth authorize URL) is preserved for continue-after-verify.
+ * Authorize resumes drop `prompt=login` so the new session can consent.
  */
 export function resolvePasswordAuthRedirect(input: {
 	mode: 'login' | 'signup'
@@ -22,5 +26,5 @@ export function resolvePasswordAuthRedirect(input: {
 	if (input.mode === 'signup' && input.emailVerificationRequired) {
 		return buildPendingVerificationPath(redirectTo)
 	}
-	return redirectTo ?? '/account'
+	return resolvePostAuthLandingPath(redirectTo) ?? '/account'
 }

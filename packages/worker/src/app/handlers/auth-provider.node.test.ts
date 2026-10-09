@@ -349,6 +349,45 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	)
 })
 
+test('github sign-in to MCP authorize strips prompt=login on return', async () => {
+	const { db } = createMigratedDb()
+	const env = createAppEnv(db)
+
+	msw.use(
+		http.post('https://github.com/login/oauth/access_token', () =>
+			HttpResponse.json({ access_token: 'github-access-token' }),
+		),
+		http.get('https://api.github.com/user', () =>
+			HttpResponse.json({
+				id: 99002,
+				login: 'authorize-octo',
+				name: 'Authorize Octo',
+				email: 'authorize-octo@example.com',
+			}),
+		),
+		http.get('https://api.github.com/user/emails', () =>
+			HttpResponse.json([
+				{
+					email: 'authorize-octo@example.com',
+					primary: true,
+					verified: true,
+				},
+			]),
+		),
+	)
+
+	const authorizeResume =
+		'/oauth/authorize?client_id=c&prompt=login&state=s&code_challenge=x&code_challenge_method=S256'
+	const { response } = await completeProviderFlow(env, 'github', {
+		startUrl: `http://example.com/auth/github?redirectTo=${encodeURIComponent(authorizeResume)}`,
+	})
+	expect(response.status).toBe(302)
+	expect(response.headers.get('Location')).toBe(
+		'/oauth/authorize?client_id=c&state=s&code_challenge=x&code_challenge_method=S256&accountCreated=1',
+	)
+	expect(setsCookie(response, 'kody_session=')).toBe(true)
+})
+
 test('google sign-in links a matching verified email to the existing account', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db)

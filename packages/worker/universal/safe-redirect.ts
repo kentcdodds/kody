@@ -30,12 +30,53 @@ export function normalizeRedirectTo(value: string | null | undefined) {
 	return value
 }
 
+/**
+ * After authentication, drop `login` from OIDC `prompt` on an authorize
+ * resume so the new session is not treated as signed-out (`prompt=login`).
+ * Accepts absolute URLs or same-origin paths; preserves the input shape.
+ * Other prompt values are kept.
+ */
+export function stripLoginFromAuthorizePrompt(requestUrl: string): string {
+	const absolute = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(requestUrl)
+	const url = absolute
+		? new URL(requestUrl)
+		: new URL(requestUrl, 'https://kody.invalid')
+	const prompt = url.searchParams.get('prompt')
+	if (prompt) {
+		const remaining = prompt
+			.split(/\s+/)
+			.filter((value) => value.length > 0 && value !== 'login')
+		if (remaining.length > 0) {
+			url.searchParams.set('prompt', remaining.join(' '))
+		} else {
+			url.searchParams.delete('prompt')
+		}
+	}
+	if (absolute) return url.toString()
+	return `${url.pathname}${url.search}${url.hash}`
+}
+
+/**
+ * Safe post-auth landing path. When the resume target is `/oauth/authorize`,
+ * strips `prompt=login` so consent can use the session just established.
+ */
+export function resolvePostAuthLandingPath(
+	redirectTo: string | null | undefined,
+): string | null {
+	const normalized = normalizeRedirectTo(redirectTo)
+	if (!normalized) return null
+	if (!normalized.startsWith('/oauth/authorize')) return normalized
+	return stripLoginFromAuthorizePrompt(normalized)
+}
+
 /** Destination after email verification succeeds when no safer target exists. */
 export const defaultPostVerificationRedirect = '/onboarding'
 
 /** Destination after email verification succeeds from pending/verify flows. */
 export function resolvePostVerificationRedirect(redirectTo?: string | null) {
-	return normalizeRedirectTo(redirectTo) ?? defaultPostVerificationRedirect
+	return (
+		resolvePostAuthLandingPath(redirectTo) ?? defaultPostVerificationRedirect
+	)
 }
 
 /** Success CTA for `/verify-email`, preserving a safe OAuth (or other) resume target. */

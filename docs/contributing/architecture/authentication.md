@@ -753,16 +753,22 @@ routed from `packages/worker/src/index.ts`.
   the client do not include `iss`. Kody is not OpenID Certified. `/api/me`
   remains the OAuth-protected JSON helper for grant props; it is not the OIDC
   UserInfo endpoint.
-- On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
-  auth links; those links preserve the full authorize URL in `redirectTo` so
-  successful login returns to the original OAuth request. Password signup lands
-  on `/pending-verification` with that safe `redirectTo` preserved for
+- On `/oauth/authorize`, unauthenticated users can log in with the same methods
+  as `/login` (password, social providers including GitHub, and passkey) inline,
+  or via top-nav / “full sign-in page” links. Those flows preserve the full
+  authorize URL in `redirectTo` so successful login returns to the original
+  OAuth request (client_id, redirect_uri, PKCE, state, scope, org). After auth,
+  `prompt=login` is stripped from that resume target so the new session is not
+  treated as signed-out on the consent screen. Password signup lands on
+  `/pending-verification` with that safe `redirectTo` preserved for
   continue-after-verify. The authorize tab itself should stay open when the
   email link is opened elsewhere, so the original OAuth query remains resumable.
   Signed-in vs signed-out chrome on that page comes from the SSR-embedded app
   session; the route does not wait on a separate browser `/session` fetch before
   rendering approve or login. The approve control stays inert until hydration so
-  the visible button cannot submit a GET that drops `client_id`.
+  the visible button cannot submit a GET that drops `client_id`. Inline
+  authorize login was always password-only until the GitHub-consent fix; that
+  was the original design, not a recent regression from Teams P4 (#3060).
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 
