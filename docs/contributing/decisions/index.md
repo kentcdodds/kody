@@ -112,8 +112,9 @@ Open these before proposing a new primitive, surface, or storage home.
   Waiting suppression; wait only when the connect response implied refresh
 - [0053 — Scoped API tokens are a separate credential class, not MCP OAuth scopes](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)
   — `kody_at_` tokens authenticate the Open API and CapabilityProxy; MCP OAuth
-  stays one full grant; amended by 0055 for CLI login on local-execute HTTP and
-  by 0056 for explicit session→CLI bootstrap codes
+  stays one full grant; amended by 0055 for CLI login on local-execute HTTP, by
+  0056 for explicit session→CLI bootstrap codes, and by Teams P4 so token scopes
+  are org permissions
 - [0054 — No vendor-specific platform logic](./0054-no-vendor-specific-platform-logic.md)
   — capabilities stay generic; third parties configure via params/presets, not
   `foo-hub`-style type forks in platform schema or handlers
@@ -123,9 +124,10 @@ Open these before proposing a new primitive, surface, or storage home.
   bootstrap without a second interactive OAuth
 - [0056 — Explicit MCP/API session → CLI credential bootstrap](./0056-cli-credential-bootstrap.md)
   (amended 2026-10-06: required lifetimes, 500-token cap, reclaim by soonest
-  expiry) — one-shot `kody_bc_…` code from `cliCredentialBootstrap`
-  (capability + Open API); CLI redeems for `kody_at_…` without chat-facing
-  secrets or host-token scavenging
+  expiry; 2026-10-09 Teams P4: default scopes `org:execute` + `org:read`) —
+  one-shot `kody_bc_…` code from `cliCredentialBootstrap` (capability + Open
+  API); CLI redeems for `kody_at_…` without chat-facing secrets or host-token
+  scavenging
 - [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
   — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
   TanStack, Preact, or any other framework; packages bring frameworks themselves
@@ -147,10 +149,11 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0062 — One org access check, declared by every surface](./0062-one-access-check.md)
   — `authorize` is the one org check; every capability declares `orgPermission`
   and every Open API operation publishes `x-kody-permission`; site admin stays
-  separate
+  separate. Teams P4 removed the leftover `x-kody-scope` check
 - [0063 — Teams P3 expand adds org rows without moving storage keys](./0063-teams-expand-orgs.md)
-  — personal orgs reuse `stable_user_id` as `orgs.id`; additive tables, billing
-  dual-read/write, and `org_audit_events` without moving storage keys
+  — `orgs` / `org_memberships` / `handles` land; personal orgs reuse
+  `users.stable_user_id` as `orgs.id` so storage keys do not move; entitlements
+  dual-write; soft-delete columns are additive
 - [0064 — OAuth consent binds a grant to one org](./0064-oauth-org-binding.md) —
   stamp `orgId` on grant props and metadata; `?org=` plus consent picker (no
   flag; one org = no picker); connection profiles stay org-bound narrowing, not

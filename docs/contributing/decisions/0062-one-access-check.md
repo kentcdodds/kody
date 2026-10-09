@@ -2,6 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-09
+- **Amended:** 2026-10-09 (Teams P4: tokens carry org permissions;
+  `x-kody-scope` check removed)
 
 ## Context
 
@@ -39,9 +41,12 @@ We do **not**:
 
 - change behavior: every person is the Owner of their implicit org, so only
   connection profiles and missing sign-in can deny
-- rewrite API token scopes: the legacy `x-kody-scope` check stays until tokens
-  carry org permissions
 - filter discovery by org permission
+
+**Amended (Teams P4, 2026-10-09):** API tokens carry org permissions.
+`authorize` step 4 (credential scopes) is the only token narrowing check. P4
+removed the legacy `x-kody-scope` Open API field and the write-implies-read
+hierarchy. Operations publish `x-kody-permission` only.
 
 ## Consequences
 
