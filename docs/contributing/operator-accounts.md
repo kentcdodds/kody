@@ -62,12 +62,12 @@ Fleet table and request path:
 
 ### D1
 
-| Name            | Binding / role          | Production UUID (committed on the DR control plane) |
-| --------------- | ----------------------- | --------------------------------------------------- |
-| `kody`          | `APP_DB`                | `8c1014d1-6b41-4695-a0a2-159071f0f919`              |
-| `kody-audit`    | `AUDIT_DB`              | not committed                                       |
-| `kody-jobs`     | `JOBS_DB`               | `5410331e-4d25-47e4-a1e5-a248f7cc764c`              |
-| `kody-preview*` | per-PR / shared preview | created by `tools/ci/preview-resources.ts`          |
+| Name         | Binding / role             | Production UUID (committed on the DR control plane) |
+| ------------ | -------------------------- | --------------------------------------------------- |
+| `kody`       | `APP_DB`                   | `8c1014d1-6b41-4695-a0a2-159071f0f919`              |
+| `kody-audit` | `AUDIT_DB`                 | not committed                                       |
+| `kody-jobs`  | `JOBS_DB`                  | `5410331e-4d25-47e4-a1e5-a248f7cc764c`              |
+| `kody-pr-*`  | per-preview app/audit/jobs | created by `tools/ci/preview-resources.ts`          |
 
 Dashboard: **Workers & Pages → D1**. Remote `database_id` values are written
 into generated Wrangler configs at deploy, not into the committed
@@ -88,8 +88,9 @@ Production names from committed Wrangler / ensure scripts
   `kody-community-activity-dispatch`,
   `kody-community-listing-published-dispatch`, `kody-package-events-dispatch`,
   `kody-scheduled-dispatch`, `kody-webhook-dispatch`.
-- **Vectorize** — `kody-capabilities-prod` / `kody-capabilities-preview` (384
-  dimensions, cosine, `@cf/baai/bge-small-en-v1.5`).
+- **Vectorize** — `kody-capabilities-prod` (384 dimensions, cosine,
+  `@cf/baai/bge-small-en-v1.5`). Previews use per-preview
+  `<preview-worker-name>-vectors` indexes.
 - **Analytics Engine** — `kody_usage_events`, `kody_flag_exposures`,
   `kody_email_events`, `kody_mcp_protocol_events`,
   `kody_package_invoke_specifier_events`, `kody_execute_interpretable_events`,

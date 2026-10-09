@@ -12,7 +12,6 @@ import {
 	planRenamedMigrationRewrites,
 	readD1DatabaseNameFromConfig,
 	resolveHistoricalMigrationContent,
-	sharedPreviewJobsD1DatabaseName,
 } from './rewrite-renamed-preview-migrations.ts'
 
 function digest(filename: string, sql: string) {
@@ -209,12 +208,11 @@ test('resolveHistoricalMigrationContent recovers SQL from rename via commit pare
 	}
 })
 
-test('isAllowedPreviewD1DatabaseName accepts per-PR and shared jobs preview only', () => {
+test('isAllowedPreviewD1DatabaseName accepts per-preview names only', () => {
 	expect(isAllowedPreviewD1DatabaseName('kody-pr-12-db')).toBe(true)
 	expect(isAllowedPreviewD1DatabaseName('kody-pr-12-audit-db')).toBe(true)
-	expect(isAllowedPreviewD1DatabaseName(sharedPreviewJobsD1DatabaseName)).toBe(
-		true,
-	)
+	expect(isAllowedPreviewD1DatabaseName('kody-pr-12-jobs-db')).toBe(true)
+	expect(isAllowedPreviewD1DatabaseName('kody-preview-jobs')).toBe(false)
 	expect(isAllowedPreviewD1DatabaseName('kody')).toBe(false)
 	expect(isAllowedPreviewD1DatabaseName('kody-audit')).toBe(false)
 	expect(isAllowedPreviewD1DatabaseName('kody-jobs')).toBe(false)

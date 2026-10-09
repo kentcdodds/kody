@@ -17,7 +17,7 @@
  *
  * Never runs against production: requires CLOUDFLARE_ENV=preview, --remote,
  * and a config whose binding resolves to a preview D1 database_name
- * (`kody-pr-*` / `kody-branch-*` or shared `kody-preview-jobs`).
+ * (`kody-pr-*` / `kody-branch-*`).
  */
 
 import { spawnSync } from 'node:child_process'
@@ -234,14 +234,8 @@ export function resolveHistoricalMigrationContent(input: {
 	return null
 }
 
-/** Shared preview jobs D1 is not per-PR named; still preview-only. */
-export const sharedPreviewJobsD1DatabaseName = 'kody-preview-jobs'
-
 export function isAllowedPreviewD1DatabaseName(name: string) {
-	return (
-		previewResourceNamePattern.test(name) ||
-		name === sharedPreviewJobsD1DatabaseName
-	)
+	return previewResourceNamePattern.test(name)
 }
 
 export function readD1DatabaseNameFromConfig(input: {
@@ -293,7 +287,7 @@ export function assertPreviewOnlyD1Target(options: {
 	})
 	if (!isAllowedPreviewD1DatabaseName(databaseName)) {
 		throw new Error(
-			`Refusing to rewrite d1_migrations for database "${databaseName}" (binding ${options.binding}): not a preview D1 name (${String(previewResourceNamePattern)} or ${sharedPreviewJobsD1DatabaseName}).`,
+			`Refusing to rewrite d1_migrations for database "${databaseName}" (binding ${options.binding}): not a preview D1 name (${String(previewResourceNamePattern)}).`,
 		)
 	}
 	return databaseName

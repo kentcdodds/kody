@@ -341,7 +341,8 @@ secrets at rest in D1.
 Worker bindings (see `packages/worker/wrangler.jsonc`):
 
 - **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
-  retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
+  retrieval (`kody-capabilities-prod`; each preview gets its own
+  `<preview-worker-name>-vectors` from `tools/ci/preview-resources.ts`). Create
   indexes with **`--dimensions=384 --metric=cosine`** to match
   `@cf/baai/bge-small-en-v1.5` with `cls` pooling (see
   `packages/worker/src/vectorize/embedding.ts`). The **`test`** Wrangler

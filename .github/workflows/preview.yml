@@ -322,15 +322,16 @@ jobs:
       # workers are new scripts, so the generated config creates the
       # JobManager class fresh instead of running the production script
       # transfer.
-      - name: 🧱 Ensure preview jobs worker resources (D1)
+      - name: 🧱 Ensure preview jobs worker resources (own JOBS_DB)
         id: jobs_resources
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+          JOBS_D1_NAME: ${{ steps.resources.outputs.jobs_d1_database_name }}
         run: |
           set -euo pipefail
-          node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name "${APP_WORKER_NAME}-jobs" --host-worker-name "$APP_WORKER_NAME" --out-config packages/jobs-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
+          node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name "${APP_WORKER_NAME}-jobs" --host-worker-name "$APP_WORKER_NAME" --jobs-d1-name "$JOBS_D1_NAME" --out-config packages/jobs-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (preview jobs)
         env:
@@ -551,12 +552,20 @@ jobs:
           echo "::add-mask::$PREVIEW_COOKIE_SECRET"
           extra_args+=(--set "COOKIE_SECRET=$PREVIEW_COOKIE_SECRET")
 
+          # Origin-only maintenance secret for this deploy's builtin
+          # capability reindex into the preview's own Vectorize index, fresh
+          # per deploy.
+          PREVIEW_REINDEX_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$PREVIEW_REINDEX_SECRET"
+          printf '%s' "$PREVIEW_REINDEX_SECRET" > "$RUNNER_TEMP/capability-reindex-secret"
+          app_extra_args=("${extra_args[@]}" --set "CAPABILITY_REINDEX_SECRET=$PREVIEW_REINDEX_SECRET")
+
           # Intentionally omit KIT_API_KEY so preview/E2E do not write to
           # production Kit.
           # CLOUDFLARE_ARTIFACTS_API_TOKEN carries the real deploy token so
           # Artifacts createToken/fork REST hits api.cloudflare.com while
           # CLOUDFLARE_API_TOKEN stays the per-PR mock credential for email.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${app_extra_args[@]}"
           # The runtime worker intentionally reuses the same dotenv-based sync
           # here (unlike production, which uses a strict runtime-lane
           # allowlist): the preview values are .env.example placeholders plus
@@ -632,6 +641,18 @@ jobs:
             cat health.json >&2
           fi
           exit 1
+
+      # Each preview owns its Vectorize index, so builtin capability vectors are
+      # written here the same way the production deploy writes them.
+      - name: 🧭 Reindex builtin capability vectors (preview Vectorize)
+        shell: bash
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+        run: |
+          set -euo pipefail
+          CAPABILITY_REINDEX_SECRET="$(cat "$RUNNER_TEMP/capability-reindex-secret")"
+          export CAPABILITY_REINDEX_SECRET
+          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities
 
       - name: 🩺 Healthcheck platform worker (preview)
         shell: bash
@@ -766,6 +787,10 @@ jobs:
           API_URL: ${{ steps.deploy_api.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
+          JOBS_D1_DATABASE_NAME:
+            ${{ steps.resources.outputs.jobs_d1_database_name }}
+          VECTORIZE_INDEX_NAME:
+            ${{ steps.resources.outputs.vectorize_index_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
         run: |
           {
@@ -788,6 +813,12 @@ jobs:
             fi
             if [ -n "${D1_DATABASE_NAME:-}" ]; then
               printf 'D1: `%s`\n' "$D1_DATABASE_NAME"
+            fi
+            if [ -n "${JOBS_D1_DATABASE_NAME:-}" ]; then
+              printf 'Jobs D1: `%s`\n' "$JOBS_D1_DATABASE_NAME"
+            fi
+            if [ -n "${VECTORIZE_INDEX_NAME:-}" ]; then
+              printf 'Vectorize: `%s`\n' "$VECTORIZE_INDEX_NAME"
             fi
             if [ -n "${OAUTH_KV_TITLE:-}" ]; then
               printf 'KV: `%s`\n' "$OAUTH_KV_TITLE"
@@ -978,7 +1009,7 @@ jobs:
 
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: 🧹 Delete preview Workers and resources (D1 + KV + R2)
+      - name: 🧹 Delete preview Workers and resources (D1 + KV + R2 + Vectorize)
         if: always()
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
