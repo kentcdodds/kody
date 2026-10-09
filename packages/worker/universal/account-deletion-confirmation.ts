@@ -5,7 +5,7 @@ export function isAccountDeletionConfirmation(value: string) {
 }
 
 /** Homepage query that carries the post-delete confirmation across sign-out. */
-export const accountDeletedQueryParam = 'accountDeleted'
+const accountDeletedQueryParam = 'accountDeleted'
 
 export const accountDeletedConfirmationMessage =
 	'Your Kody account has been deleted'
