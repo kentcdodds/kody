@@ -131,7 +131,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 			return agents
 		},
 		/** `actions` renders under the list (the Connections list page puts Add connection there). */
-		render(options?: { actions?: RemixNode }) {
+		render(options?: { actions?: RemixNode; pathname?: string }) {
 			const groups = groupConnectedAgents(agents)
 			return (
 				<AccountManagementPanel
@@ -313,7 +313,10 @@ export function createAccountConnectedAgents(handle: Handle) {
 									</details>
 									{isAccountConnectionAgent(group.kind) ? (
 										<a
-											href={accountConnectionsNewHref(group.kind)}
+											href={accountConnectionsNewHref(
+												group.kind,
+												options?.pathname,
+											)}
 											data-testid="connected-agent-view-steps"
 											data-agent-kind={group.kind}
 											data-prevent-scroll-reset=""

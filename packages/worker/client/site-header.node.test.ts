@@ -108,7 +108,10 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(html).toContain('aria-label="Organization @acme"')
+	// Personal org keeps the section; non-personal lands on org home (#3073).
 	expect(html).toContain('href="/@ada/secrets"')
+	expect(html).toContain('href="/@acme"')
+	expect(html).not.toContain('href="/@acme/secrets"')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {

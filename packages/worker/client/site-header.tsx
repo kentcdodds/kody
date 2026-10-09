@@ -155,9 +155,15 @@ function OrgSwitcher(
 				}
 			}
 			const role = entry.showRole ? orgRoleLabel(entry.org.role) : null
+			// Non-personal org resource pages stay gated until storage follows
+			// request.org.id (#3073), so switching into those orgs lands on
+			// `/@slug` instead of a not-found section URL.
+			const href = entry.org.personal
+				? switchOrgPath(handle.props.currentPathname, entry.org.slug)
+				: `/@${entry.org.slug}`
 			return {
 				key: entry.org.slug,
-				href: switchOrgPath(handle.props.currentPathname, entry.org.slug),
+				href,
 				label: `@${entry.org.slug}`,
 				detail: role,
 				current: entry.org.slug === pathSlug,

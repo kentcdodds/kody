@@ -13,6 +13,7 @@ import {
 import { type SessionInfo } from '#client/session.ts'
 import {
 	accountConnectionAgentIds,
+	accountConnectionsListHref,
 	accountConnectionsNewHref,
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
@@ -216,6 +217,26 @@ test('connections views parse from the pathname', () => {
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
 		'/account/connections/new/grok-cli',
 	)
+	expect(accountConnectionsListHref('/@jane/connections')).toBe(
+		'/@jane/connections',
+	)
+	expect(accountConnectionsNewHref(null, '/@jane/connections')).toBe(
+		'/@jane/connections/new',
+	)
+	expect(accountConnectionsNewHref('cursor', '/@jane/connections')).toBe(
+		'/@jane/connections/new/cursor',
+	)
+})
+
+test('connections list under /@slug keeps Add and View steps on org paths', async () => {
+	const html = await renderConnectionsPage(
+		connectedCursor,
+		'/@jane/connections',
+	)
+	expect(html).toContain('href="/@jane/connections/new"')
+	expect(html).toContain('href="/@jane/connections/new/cursor"')
+	expect(html).not.toContain('href="/account/connections/new"')
+	expect(html).not.toContain('href="/account/connections/new/cursor"')
 })
 
 test('connections page swaps the copy card for a verify note while the email is unverified', async () => {
