@@ -1,4 +1,9 @@
 /**
+ * soft-delete-read-filter: opt-out
+ *
+ * Soft-delete stamps `deleted_at` before canceling Stripe. Customer id lookup
+ * must still see the tombstoned org/user row.
+ *
  * Cancel Kody Stripe subscriptions when an account/org is soft-deleted so the
  * restore window does not keep charging. Hard purge still runs the fuller
  * account-deletion billing path (refunds + customer delete).
@@ -10,7 +15,6 @@ import {
 	listSubscriptions,
 	type StripeSubscription,
 } from './stripe-client.ts'
-import { readOrgStripeCustomerId } from '#worker/orgs/billing.ts'
 
 const billableStatuses = new Set([
 	'active',
@@ -25,12 +29,30 @@ function isBillableSubscription(subscription: StripeSubscription) {
 	return billableStatuses.has(subscription.status)
 }
 
+/** Prefer org customer, else personal user customer — including soft-deleted. */
+async function readStripeCustomerIdIncludingSoftDeleted(
+	db: D1Database,
+	ownerId: string,
+): Promise<string | null> {
+	const org = await db
+		.prepare(`SELECT stripe_customer_id FROM orgs WHERE id = ?`)
+		.bind(ownerId)
+		.first<{ stripe_customer_id: string | null }>()
+	const orgCustomer = org?.stripe_customer_id?.trim()
+	if (orgCustomer) return orgCustomer
+	const user = await db
+		.prepare(`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`)
+		.bind(ownerId)
+		.first<{ stripe_customer_id: string | null }>()
+	return user?.stripe_customer_id?.trim() || null
+}
+
 export async function cancelKodySubscriptionsForSoftDelete(input: {
 	env: Env
 	/** Org id or personal stable user id that owns the Stripe customer. */
 	ownerId: string
 }): Promise<{ canceled: number; customerId: string | null }> {
-	const customerId = await readOrgStripeCustomerId(
+	const customerId = await readStripeCustomerIdIncludingSoftDeleted(
 		input.env.APP_DB,
 		input.ownerId,
 	)
