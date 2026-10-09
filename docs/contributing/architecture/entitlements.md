@@ -609,10 +609,9 @@ each so paged consumers never double-count them. `UserMeter.purge()` clears
 counters, inbound delivery claims, storage state, write leases, and inbound MCP
 last-used rows via `deleteAll`, then restores an existing deletion tombstone so
 in-flight cleanup stays fenced. After the D1 `users` row is deleted, origin
-calls `clearUserMeterDeletionTombstone` so the purged object keeps no state. New
-signups get random ids, but a legacy email-hash id may already have been
-re-signed up before random minting: a live D1 row that collides with a leftover
-DO tombstone clears that tombstone on the next `withAccountWriteLease` acquire.
+calls `clearUserMeterDeletionTombstone` so the purged object keeps no state. If
+that clear fails, a live D1 row that collides with a leftover DO tombstone
+clears it on the next `withAccountWriteLease` acquire.
 
 ### Account-deletion write fencing
 

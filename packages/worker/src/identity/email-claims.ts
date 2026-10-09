@@ -1,4 +1,3 @@
-import { toHex } from '@kody-internal/shared/hex.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
@@ -28,15 +27,6 @@ export type ReleasableEmailClaimResult =
 			ok: false
 			reason: 'current_email' | 'not_claimed' | 'already_released'
 	  }
-
-export type LegacyEmailHashReservation = {
-	userId: number
-	stableUserId: string
-	email: string
-	username: string
-	createdAt: string
-	emailVerifiedAt: string | null
-}
 
 export async function findActiveEmailClaim(
 	db: D1Database,
@@ -88,70 +78,9 @@ export async function listFormerEmailClaims(
 	}))
 }
 
-export async function isEmailClaimReleased(db: D1Database, email: string) {
-	const normalized = normalizeEmail(email)
-	if (!normalized) return false
-	const active = await findActiveEmailClaim(db, normalized)
-	if (active) return false
-	const released = await db
-		.prepare(
-			`SELECT 1 AS present
-			 FROM user_email_claims
-			 WHERE email = ? AND status = 'released'
-			 LIMIT 1`,
-		)
-		.bind(normalized)
-		.first<{ present: number }>()
-	return Boolean(released)
-}
-
 /**
- * Accounts created before random id minting (and before explicit claim rows)
- * carry `stable_user_id = sha256(signup email)`. An account that changed email
- * before `user_email_claims` existed has no claim row for that signup address,
- * so the hash is the only record that it still reserves it. This lookup only
- * recognizes those legacy reservations; it never mints identity.
- */
-export async function findLegacyEmailHashReservation(
-	db: D1Database,
-	email: string,
-): Promise<LegacyEmailHashReservation | null> {
-	const normalized = normalizeEmail(email)
-	if (!normalized) return null
-	const digest = await crypto.subtle.digest(
-		'SHA-256',
-		new TextEncoder().encode(normalized),
-	)
-	const row = await db
-		.prepare(
-			`SELECT id, stable_user_id, email, username, created_at, email_verified_at
-			 FROM users
-			 WHERE stable_user_id = ?`,
-		)
-		.bind(toHex(new Uint8Array(digest)))
-		.first<{
-			id: number
-			stable_user_id: string
-			email: string
-			username: string
-			created_at: string
-			email_verified_at: string | null
-		}>()
-	if (!row || normalizeEmail(row.email) === normalized) return null
-	return {
-		userId: row.id,
-		stableUserId: row.stable_user_id,
-		email: row.email,
-		username: row.username,
-		createdAt: row.created_at,
-		emailVerifiedAt: row.email_verified_at,
-	}
-}
-
-/**
- * True when another account currently uses this address as login, holds an
- * active former-email claim, or still holds a legacy email-hash reservation
- * ({@link findLegacyEmailHashReservation}) it has not released.
+ * True when another account currently uses this address as login or holds an
+ * active former-email claim.
  */
 export async function isEmailReservedForOtherAccount(
 	db: D1Database,
@@ -168,18 +97,12 @@ export async function isEmailReservedForOtherAccount(
 	if (currentOwner && currentOwner.id !== exceptUserId) return true
 
 	const active = await findActiveEmailClaim(db, normalized)
-	if (active && active.userId !== exceptUserId) return true
-
-	if (await isEmailClaimReleased(db, normalized)) return false
-
-	const legacy = await findLegacyEmailHashReservation(db, normalized)
-	return legacy !== null && legacy.userId !== exceptUserId
+	return Boolean(active && active.userId !== exceptUserId)
 }
 
 export async function resolveReleasableEmailClaim(input: {
 	db: D1Database
 	userId: number
-	stableUserId: string
 	currentEmail: string
 	email: string
 }): Promise<ReleasableEmailClaimResult> {
@@ -206,11 +129,6 @@ export async function resolveReleasableEmailClaim(input: {
 		.bind(input.userId, email)
 		.first<{ present: number }>()
 	if (ownReleased) return { ok: false, reason: 'already_released' }
-
-	const legacy = await findLegacyEmailHashReservation(input.db, email)
-	if (legacy?.stableUserId === input.stableUserId) {
-		return { ok: true, email }
-	}
 	return { ok: false, reason: 'not_claimed' }
 }
 

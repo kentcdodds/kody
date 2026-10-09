@@ -50,7 +50,6 @@ function getEmailClaimReleaseConfig(input: {
 export async function createEmailClaimReleaseVerification(input: {
 	env: Env
 	userId: number
-	stableUserId: string
 	currentEmail: string
 	email: string
 	requestUrl: string | URL
@@ -59,7 +58,6 @@ export async function createEmailClaimReleaseVerification(input: {
 	const releasable = await resolveReleasableEmailClaim({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		stableUserId: input.stableUserId,
 		currentEmail: input.currentEmail,
 		email,
 	})
@@ -166,7 +164,7 @@ export async function verifyEmailClaimReleaseToken(input: {
 	const record = await input.db
 		.prepare(
 			`SELECT pec.id, pec.user_id, pec.email, pec.expires_at,
-			        u.email AS current_email, u.stable_user_id
+			        u.email AS current_email
 			 FROM pending_email_claim_releases pec
 			 INNER JOIN users u ON u.id = pec.user_id
 			 WHERE pec.token_hash = ?`,
@@ -178,7 +176,6 @@ export async function verifyEmailClaimReleaseToken(input: {
 			email: string
 			expires_at: number
 			current_email: string
-			stable_user_id: string
 		}>()
 	const now = input.now ?? new Date()
 
@@ -194,7 +191,6 @@ export async function verifyEmailClaimReleaseToken(input: {
 	const releasable = await resolveReleasableEmailClaim({
 		db: input.db,
 		userId: record.user_id,
-		stableUserId: record.stable_user_id,
 		currentEmail: record.current_email,
 		email: record.email,
 	})

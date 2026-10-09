@@ -41,7 +41,6 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
-import { findLegacyEmailHashReservation } from '#worker/identity/email-claims.ts'
 import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
@@ -616,27 +615,6 @@ export async function loadAdminUserRowByStableUserId(
 		)
 		.bind(stableUserId)
 		.first<AdminUserRow>()
-}
-
-export type StableUserIdConflict = {
-	stableUserId: string
-	username: string
-	created_at: string
-	email_verified: boolean
-}
-
-export async function findStableUserIdConflictByEmail(
-	db: D1Database,
-	email: string,
-): Promise<StableUserIdConflict | null> {
-	const reservation = await findLegacyEmailHashReservation(db, email)
-	if (!reservation) return null
-	return {
-		stableUserId: reservation.stableUserId,
-		username: reservation.username,
-		created_at: reservation.createdAt,
-		email_verified: Boolean(reservation.emailVerifiedAt),
-	}
 }
 
 function isRoleName(value: string): value is RoleName {

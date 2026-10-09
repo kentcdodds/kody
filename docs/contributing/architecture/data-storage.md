@@ -368,14 +368,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   with its own new random id. Email change requires a verified current address
   (`users.email_verified_at` is non-null). A former-email claim collision at
   signup is a controlled 409 (`former_email_claimed`) that does not leak the
-  account's current email. Legacy accounts that changed email before
-  `user_email_claims` existed still reserve their signup address only through
-  the email-hash id (`findLegacyEmailHashReservation`); operators inspect those
-  with `adminUserStableIdConflict` (returns stable user id, username,
-  `created_at`, and email-verified state — never content). Optional community
-  profile fields are `display_name`, `bio`, and `profile_visibility` (default
-  `public`). `experiments_opt_in` is the account preference for the feature-flag
-  `experiments_opt_in` audience, edited at `/account/experiments`.
+  account's current email. Only `users.email` and active `user_email_claims`
+  rows reserve an address; a legacy email-hash id reserves nothing. Optional
+  community profile fields are `display_name`, `bio`, and `profile_visibility`
+  (default `public`). `experiments_opt_in` is the account preference for the
+  feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
   `account_type` (`'person'` default or `'platform'`) distinguishes normal
   signups from operator-provisioned platform accounts that own official package
   scopes (see [Platform accounts](./platform-accounts.md)). First-touch

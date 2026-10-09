@@ -3,6 +3,7 @@ import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
@@ -1001,16 +1002,19 @@ test('OAuth signup persists first-touch UTMs from the start URL through login st
 	)
 })
 
-test('OAuth signup returns a controlled error when stable_user_id already exists', async () => {
+test('OAuth signup returns a controlled error when another account claims the email', async () => {
 	const { sqlite, db } = createMigratedDb()
-	const victimEmail = 'victim-oauth@example.com'
+	const claimedEmail = 'former-oauth@example.com'
 	await seedUser(sqlite, {
 		id: 1,
-		email: 'attacker-oauth@example.com',
-		username: 'attacker-oauth',
-		stableUserId: testStableUserIdFromEmail(victimEmail),
+		email: 'current-oauth@example.com',
+		username: 'current-oauth',
 	})
-	mockGithubProfileExchange(victimEmail)
+	sqlite.exec(`
+		INSERT INTO user_email_claims (user_id, email, status, claimed_at, updated_at)
+		VALUES (1, ${quoteSqlString(claimedEmail)}, 'claimed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+	`)
+	mockGithubProfileExchange(claimedEmail)
 
 	const { response: callback } = await completeProviderFlow(
 		createAppEnv(db),

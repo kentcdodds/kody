@@ -57,7 +57,6 @@ test('email claims reserve former addresses without reminting identity', async (
 		resolveReleasableEmailClaim({
 			db,
 			userId: 1,
-			stableUserId: originalStableUserId,
 			currentEmail,
 			email,
 		})
@@ -105,30 +104,30 @@ test('email claims reserve former addresses without reminting identity', async (
 	})
 })
 
-test('implicit sha256 reservation is releasable before a claim row exists', async () => {
+test('a legacy email-hash id does not reserve its original signup address', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const originalEmail = 'legacy@example.com'
-	const stableUserId = await insertUser(sqlite, {
+	await insertUser(sqlite, {
 		id: 2,
 		email: 'now@example.com',
 		username: 'legacy',
 		stableUserId: testStableUserIdFromEmail(originalEmail),
 	})
 
-	expect(await isEmailReservedForOtherAccount(db, originalEmail)).toBe(true)
-	expect(await allocateSignupIdentity(db, originalEmail)).toEqual({
-		ok: false,
-		reason: 'former_email_claimed',
-	})
+	expect(await isEmailReservedForOtherAccount(db, originalEmail)).toBe(false)
+	const allocated = await allocateSignupIdentity(db, originalEmail)
+	if (!allocated.ok) throw new Error('expected allocation')
+	expect(allocated.stableUserId).not.toBe(
+		testStableUserIdFromEmail(originalEmail),
+	)
 	expect(
 		await resolveReleasableEmailClaim({
 			db,
 			userId: 2,
-			stableUserId,
 			currentEmail: 'now@example.com',
 			email: originalEmail,
 		}),
-	).toEqual({ ok: true, email: originalEmail })
+	).toEqual({ ok: false, reason: 'not_claimed' })
 })
 
 test('signup identity is random and never the email hash', async () => {

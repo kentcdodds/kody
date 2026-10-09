@@ -235,7 +235,6 @@ rule.
 - `adminUserGet`
 - `adminUserCreate`
 - `adminUserUpdate`
-- `adminUserStableIdConflict`
 - `adminUserVerify`
 - `adminAccountWriteLeaseList`
 - `adminAccountWriteLeaseRepair`

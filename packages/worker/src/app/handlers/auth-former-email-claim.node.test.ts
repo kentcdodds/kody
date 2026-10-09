@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { RequestContext } from 'remix/router'
 import { beforeAll, expect, test, vi } from 'vitest'
@@ -13,7 +14,6 @@ import {
 	formerEmailClaimedSignupCode,
 	formerEmailClaimedSignupMessage,
 } from '#universal/email-claim-errors.ts'
-import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -41,18 +41,21 @@ function createMigratedDb() {
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
-function seedSquattingAccount(
+function seedFormerEmailClaim(
 	sqlite: DatabaseSync,
-	input: { email: string; username: string; stableUserId: string },
+	input: { currentEmail: string; username: string; claimedEmail: string },
 ) {
 	sqlite.exec(`
-		INSERT INTO users (username, email, stable_user_id, password_hash)
+		INSERT INTO users (id, username, email, stable_user_id, password_hash)
 		VALUES (
+			1,
 			${quoteSqlString(input.username)},
-			${quoteSqlString(input.email)},
-			${quoteSqlString(input.stableUserId)},
-			'oauth_created_no_usable_password'
+			${quoteSqlString(input.currentEmail)},
+			${quoteSqlString('a'.repeat(64))},
+			'hash'
 		);
+		INSERT INTO user_email_claims (user_id, email, status, claimed_at, updated_at)
+		VALUES (1, ${quoteSqlString(input.claimedEmail)}, 'claimed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 	`)
 }
 
@@ -80,20 +83,19 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('signup returns 409 when sha256(email) collides with an existing stable_user_id', async () => {
-	const victimEmail = 'victim@example.com'
-	const victimStableUserId = testStableUserIdFromEmail(victimEmail)
+test('signup returns 409 when another account claims the email', async () => {
+	const claimedEmail = 'former@example.com'
 	const { sqlite, db } = createMigratedDb()
-	seedSquattingAccount(sqlite, {
-		email: 'attacker@example.com',
-		username: 'attacker',
-		stableUserId: victimStableUserId,
+	seedFormerEmailClaim(sqlite, {
+		currentEmail: 'current@example.com',
+		username: 'current',
+		claimedEmail,
 	})
 	const openHandler = createHandler(db)
 
 	const openResponse = await signup(openHandler, {
-		email: victimEmail,
-		username: 'victim-jane',
+		email: claimedEmail,
+		username: 'newcomer',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -115,4 +117,27 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 		}),
 	)
 	expect(auditEventSummaries()).toEqual(['signup:failure'])
+})
+
+test('signup mints a random id when the email hash matches a legacy account', async () => {
+	const email = 'legacy-original@example.com'
+	const { sqlite, db } = createMigratedDb()
+	const legacyStableUserId = createHash('sha256').update(email).digest('hex')
+	sqlite.exec(`
+		INSERT INTO users (id, username, email, stable_user_id, password_hash)
+		VALUES (1, 'legacy', 'legacy-now@example.com', ${quoteSqlString(legacyStableUserId)}, 'hash');
+	`)
+
+	const response = await signup(createHandler(db), {
+		email,
+		username: 'newcomer-legacy',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(response.status).toBe(200)
+	const created = sqlite
+		.prepare(`SELECT stable_user_id FROM users WHERE email = ?`)
+		.get(email) as { stable_user_id: string }
+	expect(created.stable_user_id).toMatch(/^[a-f0-9]{64}$/)
+	expect(created.stable_user_id).not.toBe(legacyStableUserId)
 })

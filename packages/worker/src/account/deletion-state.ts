@@ -302,9 +302,7 @@ export async function abortAccountDeleting(input: {
  *
  * Completed account deletion deletes the D1 user row but `UserMeter.purge()`
  * restores the tombstone so in-flight cleanup stays fenced. This clear runs
- * after the user row is gone so the purged object holds no state. New accounts
- * get random ids, but a legacy email-hash id could be re-signed up before
- * random minting, so a live row may still collide with a leftover tombstone.
+ * after the user row is gone so the purged object holds no state.
  */
 export async function clearUserMeterDeletionTombstone(input: {
 	env: UserMeterEnv
