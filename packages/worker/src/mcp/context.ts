@@ -1,4 +1,5 @@
 import { parseSafe } from 'remix/data-schema'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	mcpCallerContextSchema,
@@ -47,9 +48,11 @@ export function createMcpCallerContext(
 		source: RequestSource
 		/**
 		 * DB-backed org membership when available. MCP/API call sites that do
-		 * not pass this still derive personalOrgId from the user (P4 cleanup).
+		 * not pass this still derive personalOrgId from the user.
 		 */
 		orgBinding?: RequestOrgBinding
+		/** API-token scopes; null/omitted does not narrow the actor. */
+		scopes?: ReadonlyArray<OrgPermission> | null
 	},
 ): McpCallerContext {
 	const wire = createMcpCallerContextWire(input)
@@ -61,6 +64,7 @@ export function createMcpCallerContext(
 					source: input.source,
 					profileName: wire.connectionProfileName,
 					orgBinding: input.orgBinding,
+					scopes: input.scopes ?? null,
 				})
 			: null,
 	}

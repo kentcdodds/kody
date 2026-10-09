@@ -16,7 +16,7 @@ import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
-	apiTokenScopeSatisfies,
+	apiTokenScopeIncludes,
 	normalizeApiTokenScopes,
 	type ApiTokenScope,
 } from './scopes.ts'
@@ -154,6 +154,7 @@ export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
 const apiTokenRowSchema = object({
 	id: string(),
 	user_id: string(),
+	org_id: nullable(string()),
 	name: string(),
 	token_hash: string(),
 	scopes_json: string(),
@@ -171,7 +172,8 @@ const apiTokenRowSchema = object({
 
 type ApiTokenRow = InferOutput<typeof apiTokenRowSchema>
 
-export type ApiTokenRecord = Omit<ApiTokenRow, 'scopes_json'> & {
+export type ApiTokenRecord = Omit<ApiTokenRow, 'scopes_json' | 'org_id'> & {
+	org_id: string
 	scopes: Array<ApiTokenScope>
 }
 
@@ -181,6 +183,7 @@ export type ApiTokenStatus = 'active' | 'expired' | 'revoked'
 export type ApiTokenView = {
 	id: string
 	name: string
+	org_id: string
 	scopes: Array<ApiTokenScope>
 	status: ApiTokenStatus
 	idle_ttl_seconds: number
@@ -212,9 +215,10 @@ function mapRow(row: Record<string, unknown>): ApiTokenRecord {
 		const message = parsed.issues.map((issue) => issue.message).join(', ')
 		throw new Error(`Invalid API token record: ${message}`)
 	}
-	const { scopes_json, ...rest } = parsed.value
+	const { scopes_json, org_id, ...rest } = parsed.value
 	return {
 		...rest,
+		org_id: org_id && org_id.trim() ? org_id : rest.user_id,
 		scopes: normalizeApiTokenScopes(JSON.parse(scopes_json) as Array<unknown>),
 	}
 }
@@ -234,6 +238,7 @@ export function toApiTokenView(
 	return {
 		id: record.id,
 		name: record.name,
+		org_id: record.org_id,
 		scopes: record.scopes,
 		status: getApiTokenStatus(record, now),
 		idle_ttl_seconds: record.idle_ttl_seconds,
@@ -441,6 +446,8 @@ export type ApiTokenMintParent = {
 export async function mintApiToken(input: {
 	db: D1Database
 	userId: string
+	/** Org this token is bound to. Defaults to the caller's personal org (`userId`). */
+	orgId?: string
 	name: string
 	scopes: ReadonlyArray<unknown>
 	idleTtlSeconds: number
@@ -454,6 +461,7 @@ export async function mintApiToken(input: {
 }): Promise<ApiTokenSecretView> {
 	const now = input.now ?? new Date()
 	const name = readTokenName(input.name)
+	const orgId = input.orgId?.trim() || input.userId
 	let scopes: Array<ApiTokenScope>
 	try {
 		scopes = normalizeApiTokenScopes(input.scopes)
@@ -468,7 +476,7 @@ export async function mintApiToken(input: {
 	const parent = input.parent
 	if (parent) {
 		const missing = scopes.filter(
-			(scope) => !apiTokenScopeSatisfies(parent.scopes, scope),
+			(scope) => !apiTokenScopeIncludes(parent.scopes, scope),
 		)
 		if (missing.length > 0) {
 			throw new McpCallerError(
@@ -525,6 +533,7 @@ export async function mintApiToken(input: {
 	const record: ApiTokenRecord = {
 		id: tokenId,
 		user_id: input.userId,
+		org_id: orgId,
 		name,
 		token_hash: await hashSecret(secret),
 		scopes,
@@ -544,6 +553,7 @@ export async function mintApiToken(input: {
 			`INSERT INTO api_tokens (
 				id,
 				user_id,
+				org_id,
 				name,
 				token_hash,
 				scopes_json,
@@ -554,11 +564,12 @@ export async function mintApiToken(input: {
 				created_at,
 				updated_at,
 				profile_name
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			record.id,
 			record.user_id,
+			record.org_id,
 			record.name,
 			record.token_hash,
 			JSON.stringify(record.scopes),

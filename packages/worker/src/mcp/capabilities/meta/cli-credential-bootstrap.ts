@@ -46,7 +46,7 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				`Scopes for the eventual \`kody_at_\` (default \`local-execute\` + \`account:read\`). \`<resource>:write\` also grants \`<resource>:read\`.\n${scopeListDescription}`,
+				`Org-permission scopes for the eventual \`kody_at_\` (default \`org:execute\` + \`org:read\`). There is no write-implies-read hierarchy.\n${scopeListDescription}`,
 			),
 		lifetime: lifetimeAliasSchema
 			.optional()
@@ -157,6 +157,7 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 			return mintCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
+				orgId: ctx.callerContext.request?.org.id ?? user.userId,
 				...(input.name === undefined ? {} : { name: input.name }),
 				...(input.scopes === undefined ? {} : { scopes: input.scopes }),
 				...(input.lifetime === undefined ? {} : { lifetime: input.lifetime }),

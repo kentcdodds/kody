@@ -10,6 +10,10 @@ import {
 	touchApiToken,
 	type ApiTokenAuthenticationFailure,
 } from '#worker/api-tokens/service.ts'
+import {
+	loadOrgBindingForOrg,
+	loadOrgBindingForPerson,
+} from '#worker/orgs/repo.ts'
 import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { buildMcpUserContextFromGrantProps } from '#worker/mcp-auth-user-context.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
@@ -159,6 +163,19 @@ async function authenticateWithApiToken(input: {
 			),
 		)
 	}
+	const orgId = record.org_id.trim() || record.user_id
+	const orgBinding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		authContext.user.userId,
+		orgId,
+	)
+	if (!orgBinding) {
+		throw unauthorized(
+			'API token is not bound to an org you can access.',
+			true,
+			authContext.user.userId,
+		)
+	}
 	return createApiInvocationContext({
 		env: input.env,
 		callerContext: {
@@ -168,6 +185,8 @@ async function authenticateWithApiToken(input: {
 				executionOrigin: 'interactive',
 				user: authContext.user,
 				connectionProfileName: record.profile_name ?? null,
+				orgBinding,
+				scopes: record.scopes,
 			}),
 			user: authContext.user,
 		},
@@ -231,6 +250,10 @@ async function authenticateWithMcpOauth(input: {
 	const grantScopes =
 		tokenSummary.scope ??
 		(Array.isArray(tokenSummary.grant.scope) ? tokenSummary.grant.scope : [])
+	const orgBinding = await loadOrgBindingForPerson(
+		input.env.APP_DB,
+		authContext.user.userId,
+	)
 	return createApiInvocationContext({
 		env: input.env,
 		callerContext: {
@@ -242,6 +265,7 @@ async function authenticateWithMcpOauth(input: {
 				connectionProfileName: readConnectionProfileNameFromGrantProps(
 					tokenSummary.grant.props,
 				),
+				orgBinding,
 			}),
 			user: authContext.user,
 		},

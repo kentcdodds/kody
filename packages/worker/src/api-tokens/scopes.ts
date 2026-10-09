@@ -1,95 +1,79 @@
 /**
- * Scopes for Kody account API tokens (`kody_at_…`). Each resource has a
- * `:read` and `:write` scope; `:write` also satisfies `:read` for the same
- * resource. `local-execute` unlocks the CapabilityProxy for local execute venues.
+ * API token scopes are org permissions (`resource-type:action`). There is no
+ * implied hierarchy: holding `package:write` does not grant `package:read`.
+ * See `org-permissions.ts` and docs/contributing/architecture/authorization.md.
  */
-export const apiTokenResources = [
-	'account',
-	'memories',
-	'secrets',
-	'packages',
-	'repos',
-	'jobs',
-	'webhooks',
-	'email',
-	'integrations',
-	'mcp-servers',
-	'runs',
-	'storage',
-	'community',
-	'tokens',
-] as const
+import {
+	isOrgPermission,
+	orgPermissions,
+	type OrgPermission,
+} from '@kody-internal/shared/org-permissions.ts'
 
-export type ApiTokenResource = (typeof apiTokenResources)[number]
+export type ApiTokenScope = OrgPermission
 
-export type ApiTokenResourceScope =
-	| `${ApiTokenResource}:read`
-	| `${ApiTokenResource}:write`
+export const isApiTokenScope = isOrgPermission
 
-export const localExecuteScope = 'local-execute'
+export const apiTokenScopes: ReadonlyArray<ApiTokenScope> = orgPermissions
 
-export type ApiTokenScope =
-	| ApiTokenResourceScope
-	| 'search:read'
-	| typeof localExecuteScope
-
-const resourceDescriptions: Record<ApiTokenResource, string> = {
-	account: 'account profile, usage, waiting items, and export',
-	memories: 'memories and MCP server instructions',
-	secrets: 'secret metadata (plaintext is never returned)',
-	packages: 'saved packages, sharing, and subscriptions',
-	repos: 'repos, repo sessions, edits, checks, and publishing',
-	jobs: 'package jobs and workflow runs',
-	webhooks: 'package webhooks and deliveries',
-	email: 'inboxes, messages, senders, and send',
-	integrations: 'OAuth integrations and OAuth apps',
-	'mcp-servers': 'connected MCP servers',
-	runs: 'execution run history',
-	storage: 'durable storage export and query',
-	community: 'public packages, ratings, and profile',
-	tokens: 'API tokens',
-}
-
-export const apiTokenScopeDescriptions: Record<ApiTokenScope, string> = {
-	...(Object.fromEntries(
-		apiTokenResources.flatMap((resource) => [
-			[`${resource}:read`, `Read ${resourceDescriptions[resource]}.`],
-			[
-				`${resource}:write`,
-				`Read and change ${resourceDescriptions[resource]}.`,
-			],
-		]),
-	) as Record<ApiTokenResourceScope, string>),
+const keyScopeDescriptions: Partial<Record<OrgPermission, string>> = {
+	'org:read': 'Read this org’s profile, members, and billing summary.',
+	'org:write': 'Change this org’s profile and settings.',
+	'org:delete': 'Delete this org.',
+	'org:execute':
+		'Run execute and local CapabilityProxy hops for this org (API tokens need this scope; CLI `kody login` OAuth is a separate credential).',
 	'search:read': 'Run unified Kody search.',
-	[localExecuteScope]:
-		'Use the CapabilityProxy from a local execute venue (API tokens need this scope; CLI `kody login` OAuth is a separate credential).',
+	'member:read': 'Read org members.',
+	'member:write': 'Invite and change org members.',
+	'member:delete': 'Remove org members.',
+	'team:read': 'Read teams.',
+	'team:write': 'Create and change teams.',
+	'team:delete': 'Delete teams.',
+	'billing:read': 'Read billing and plan.',
+	'billing:write': 'Change billing and plan.',
+	'audit:read': 'Read the org audit log.',
+	'token:read': 'List and inspect API tokens.',
+	'token:delete': 'Revoke API tokens.',
+	'package:read': 'Read saved packages and package-backed resources.',
+	'package:execute': 'Execute saved packages.',
+	'package:write': 'Change saved packages and package-backed resources.',
+	'package:create': 'Create saved packages.',
+	'package:delete': 'Delete saved packages.',
+	'package:publish': 'Publish packages to the community catalog.',
+	'package:manage_access': 'Manage package access grants.',
+	'secret:use': 'Use secrets without reading plaintext.',
+	'secret:write': 'Create and change secrets (plaintext is never returned).',
+	'memory:read': 'Read memories and MCP server instructions.',
+	'memory:write': 'Create and change memories.',
+	'job:read': 'Read package jobs and workflow runs.',
+	'job:execute': 'Run package jobs.',
+	'email:read': 'Read inboxes and messages.',
+	'email:send': 'Send email.',
+	'integration:read': 'Read OAuth integrations and connected MCP servers.',
+	'integration:use': 'Use connected integrations.',
+	'app:read': 'Read package apps.',
+	'app:execute': 'Run package apps.',
 }
 
-export const apiTokenScopes = Object.keys(
-	apiTokenScopeDescriptions,
-) as Array<ApiTokenScope>
+export const apiTokenScopeDescriptions: Record<ApiTokenScope, string> =
+	Object.fromEntries(
+		orgPermissions.map((permission) => [
+			permission,
+			keyScopeDescriptions[permission] ??
+				`Granted \`${permission}\` in this org.`,
+		]),
+	) as Record<ApiTokenScope, string>
 
-const apiTokenScopeSet: ReadonlySet<string> = new Set(apiTokenScopes)
-
-export function isApiTokenScope(value: unknown): value is ApiTokenScope {
-	return typeof value === 'string' && apiTokenScopeSet.has(value)
-}
-
-export function apiTokenScopeSatisfies(
+/** True when `granted` lists `required` exactly. Org permissions have no hierarchy. */
+export function apiTokenScopeIncludes(
 	granted: ReadonlyArray<ApiTokenScope>,
 	required: ApiTokenScope,
 ) {
-	if (granted.includes(required)) return true
-	if (required.endsWith(':read')) {
-		const writeScope = `${required.slice(0, -':read'.length)}:write`
-		return granted.includes(writeScope as ApiTokenScope)
-	}
-	return false
+	return granted.includes(required)
 }
 
-/** Sorted, de-duplicated scopes; throws on unknown values. */
+/** Sorted, de-duplicated org-permission scopes; throws on unknown values. */
 export function normalizeApiTokenScopes(values: ReadonlyArray<unknown>) {
-	const unknown = values.filter((value) => !isApiTokenScope(value))
+	const unknown = values.filter((value) => !isOrgPermission(value))
 	if (unknown.length > 0) {
 		throw new Error(
 			`Unknown API token scope(s): ${unknown.map(String).join(', ')}.`,

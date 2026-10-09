@@ -142,6 +142,7 @@ export async function applyConnectionProfileMutation(input: {
 				await createConnectionProfile({
 					db: input.env.APP_DB,
 					userId: input.userId,
+					orgId: input.userId,
 					name: typeof body.name === 'string' ? body.name : '',
 					grants: body.grants,
 				})

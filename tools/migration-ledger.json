@@ -359,6 +359,10 @@
 		{
 			"filename": "0089-teams-orgs-backfill.sql",
 			"sha256": "898e71ae22a3ceaa4d94e1a233c31c93e093bc8b3d967ea86a27060c424011ee"
+		},
+		{
+			"filename": "0090-teams-credential-org-binding.sql",
+			"sha256": "b65d1d194368d968d5284e5744cb2b663e02cfccd1b1ecdb731d9c0652b3b9be"
 		}
 	]
 }

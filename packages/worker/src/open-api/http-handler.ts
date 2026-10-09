@@ -18,8 +18,8 @@ import {
 	notFound,
 	toApiError,
 } from './errors.ts'
+import { authorizeSurface } from '#worker/authorization/authorize.ts'
 import {
-	assertApiScope,
 	capabilityProxyObservationEntityId,
 	invokeApiOperation,
 	isCapabilityProxyOperation,
@@ -35,6 +35,23 @@ import {
 import { bootstrapRedeemInputSchema } from './token-operations.ts'
 
 export const openApiDocumentPath = '/openapi.json'
+
+function operationNeedsAccountWriteLease(resolved: {
+	readOnly: boolean
+	permission: string
+}) {
+	if (!resolved.readOnly) return true
+	const { permission } = resolved
+	if (permission === 'none' || permission.endsWith(':read')) return false
+	return (
+		permission.endsWith(':write') ||
+		permission.endsWith(':delete') ||
+		permission.endsWith(':create') ||
+		permission.endsWith(':use') ||
+		permission.endsWith(':send') ||
+		permission.endsWith(':publish')
+	)
+}
 
 function json(body: unknown, init: ResponseInit = {}) {
 	return Response.json(body ?? null, {
@@ -203,11 +220,15 @@ async function handleOperation(input: {
 		matchedOperation,
 		await getStaticRegistry(),
 	)
-	// Scope before param parse so unscoped tokens get 403 insufficient_scope
-	// instead of 400 parse errors. CapabilityProxy preflight failures meter here
-	// (one event); invoke still meters the hop after params are accepted.
+	// Authorize before param parse so under-scoped tokens get 403
+	// insufficient_scope instead of 400 parse errors. CapabilityProxy
+	// preflight failures meter here (one event); invoke still meters the hop
+	// after params are accepted.
 	try {
-		assertApiScope(ctx, resolved.scope)
+		await authorizeSurface(
+			{ env: ctx.env, request: ctx.callerContext.request },
+			resolved.permission,
+		)
 	} catch (error) {
 		const apiError = toApiError(error)
 		if (apiError instanceof ApiError) {
@@ -231,8 +252,7 @@ async function handleOperation(input: {
 			params,
 			ctx,
 		})
-	const writes =
-		!resolved.readOnly || resolved.scope?.endsWith(':write') === true
+	const writes = operationNeedsAccountWriteLease(resolved)
 	if (!writes) {
 		await assertAccountWritableDb(input.env.APP_DB, userId)
 		return json(await run())

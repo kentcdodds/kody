@@ -8,16 +8,19 @@ export type McpAgentSession = {
 export async function registerMcpAgentSession(input: {
 	db: D1Database
 	userId: string
+	/** Org this MCP session is bound to. Defaults to the personal org. */
+	orgId?: string
 	doId: string
 }) {
+	const orgId = input.orgId?.trim() || input.userId
 	await runD1WithRetry(async () => {
 		await input.db
 			.prepare(
-				`INSERT INTO mcp_agent_sessions (do_id, user_id)
-				VALUES (?, ?)
+				`INSERT INTO mcp_agent_sessions (do_id, user_id, org_id)
+				VALUES (?, ?, ?)
 				ON CONFLICT(do_id) DO NOTHING`,
 			)
-			.bind(input.doId, input.userId)
+			.bind(input.doId, input.userId, orgId)
 			.run()
 		const owned = await input.db
 			.prepare(

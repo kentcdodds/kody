@@ -98,9 +98,13 @@ discovery, platform feedback, your own tokens, and site-admin tools, which
 capability declares an org permission, and `operations.node.test.ts` fails when
 an operation publishes no valid permission.
 
-API tokens still carry the older `resource:read|write` scopes, checked by
-`assertApiScope` against each operation's `x-kody-scope`, until token scopes are
-rewritten to the org vocabulary.
+API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
+`authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
+write-implies-read hierarchy and no separate `x-kody-scope` check.
+
+Connection profiles remain an org-bound narrowing layer (not folded into
+scopes). A profile is stored with `org_id` and limits package resources listed
+on that credential; it does not replace token scopes.
 
 ## Site admin
 

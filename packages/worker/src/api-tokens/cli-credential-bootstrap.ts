@@ -6,7 +6,7 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import {
-	apiTokenScopeSatisfies,
+	apiTokenScopeIncludes,
 	normalizeApiTokenScopes,
 	type ApiTokenScope,
 } from './scopes.ts'
@@ -35,8 +35,8 @@ export const cliCredentialBootstrapPolicy = {
 	maxOutstandingCodesPerUser: 5,
 	defaultName: 'kody-cli-bootstrap',
 	defaultScopes: [
-		'local-execute',
-		'account:read',
+		'org:execute',
+		'org:read',
 	] as const satisfies ReadonlyArray<ApiTokenScope>,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
 	maxIdleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds,
@@ -206,6 +206,8 @@ function resolveBootstrapLifetime(input: {
 export async function mintCliCredentialBootstrap(input: {
 	db: D1Database
 	userId: string
+	/** Org the eventual token is bound to. Defaults to the personal org. */
+	orgId?: string
 	name?: string
 	scopes?: ReadonlyArray<unknown>
 	lifetime?: string | null
@@ -235,7 +237,7 @@ export async function mintCliCredentialBootstrap(input: {
 	const parent = input.parent
 	if (parent) {
 		const missing = scopes.filter(
-			(scope) => !apiTokenScopeSatisfies(parent.scopes, scope),
+			(scope) => !apiTokenScopeIncludes(parent.scopes, scope),
 		)
 		if (missing.length > 0) {
 			throw new McpCallerError(
@@ -296,16 +298,18 @@ export async function mintCliCredentialBootstrap(input: {
 		now.getTime() + redeemTtlSeconds * 1000,
 	).toISOString()
 
+	const orgId = input.orgId?.trim() || input.userId
 	await input.db
 		.prepare(
 			`INSERT INTO cli_credential_bootstrap_codes (
-				id, user_id, code_hash, name, scopes_json,
+				id, user_id, org_id, code_hash, name, scopes_json,
 				idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at, consumed_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
 		)
 		.bind(
 			codeId,
 			input.userId,
+			orgId,
 			codeHash,
 			name,
 			JSON.stringify(scopes),
@@ -360,7 +364,7 @@ export async function redeemCliCredentialBootstrap(input: {
 	const codeHash = await hashBootstrapCode(input.code.trim())
 	const row = await input.db
 		.prepare(
-			`SELECT id, user_id, code_hash, name, scopes_json,
+			`SELECT id, user_id, org_id, code_hash, name, scopes_json,
 			        idle_ttl_seconds, max_lifetime_seconds, expires_at, created_at, consumed_at
 			 FROM cli_credential_bootstrap_codes
 			 WHERE id = ?`,
@@ -369,6 +373,7 @@ export async function redeemCliCredentialBootstrap(input: {
 		.first<{
 			id: string
 			user_id: string
+			org_id: string | null
 			code_hash: string
 			name: string
 			scopes_json: string
@@ -457,6 +462,7 @@ export async function redeemCliCredentialBootstrap(input: {
 		const token = await mintApiToken({
 			db: input.db,
 			userId: row.user_id,
+			orgId: row.org_id?.trim() || row.user_id,
 			name: row.name,
 			scopes,
 			idleTtlSeconds: requested.idleTtlSeconds,

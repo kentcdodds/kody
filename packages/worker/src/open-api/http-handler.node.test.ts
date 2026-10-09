@@ -8,6 +8,7 @@ import { cliClientIdMetadataPath } from '#worker/cli-client-metadata.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { handleOpenApiRequest } from './http-handler.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -50,6 +51,10 @@ async function createApi(
 			input.suspended ? '2026-01-01T00:00:00.000Z' : null,
 		)
 	const db = createD1FromSqlite(sqlite)
+	await provisionPersonalOrg(db, {
+		stableUserId: userId,
+		username: 'api-user',
+	})
 	const oauthAccessToken = input.oauthAccessToken
 	const oauthExpiresAtUnix =
 		input.oauthExpiresAtUnix ?? Math.floor(Date.now() / 1000) + 3600
@@ -171,7 +176,7 @@ test('rejects missing, invalid, and revoked tokens with 401', async () => {
 	)
 	expect(missing.body.error?.code).toBe('unauthorized')
 
-	const token = await api.mint(['account:read'])
+	const token = await api.mint(['org:read'])
 	const tampered = `${token.slice(0, -4)}AAAA`
 	const invalid = await api.call('GET', '/v1/me', { token: tampered })
 	expect(invalid.status).toBe(401)
@@ -190,7 +195,7 @@ test('rejects missing, invalid, and revoked tokens with 401', async () => {
 
 test('runs capability operations under the token scope and slides expiry', async () => {
 	const api = await createApi()
-	const token = await api.mint(['account:read'])
+	const token = await api.mint(['org:read'])
 	const me = await api.call('GET', '/v1/me', { token })
 	expect(me.status).toBe(200)
 	expect(JSON.stringify(me.body)).toContain('api-user@example.com')
@@ -198,7 +203,7 @@ test('runs capability operations under the token scope and slides expiry', async
 	const current = await api.call('GET', '/v1/tokens/current', { token })
 	expect(current.status).toBe(200)
 	expect(current.body).toMatchObject({
-		scopes: ['account:read'],
+		scopes: ['org:read'],
 		status: 'active',
 	})
 	expect(current.body['last_used_at']).toEqual(expect.any(String))
@@ -208,7 +213,7 @@ test('runs capability operations under the token scope and slides expiry', async
 	expect(denied.status).toBe(403)
 	expect(denied.body['error']).toMatchObject({
 		code: 'insufficient_scope',
-		details: { required_scope: 'secrets:read' },
+		details: { required_permission: 'secret:use' },
 	})
 
 	const usage = api.sqlite
@@ -221,7 +226,7 @@ test('runs capability operations under the token scope and slides expiry', async
 
 test('writes secrets through path params and never returns the value', async () => {
 	const api = await createApi()
-	const token = await api.mint(['secrets:write'])
+	const token = await api.mint(['secret:use', 'secret:write'])
 	const saved = await api.call('PUT', '/v1/secrets/user/api-test-secret', {
 		token,
 		body: { value: 'super-secret-value', description: 'from the api' },
@@ -250,12 +255,12 @@ test('writes secrets through path params and never returns the value', async () 
 
 test('token minting enforces parent scopes for local-execute', async () => {
 	const api = await createApi()
-	const parent = await api.mint(['tokens:write', 'packages:read'])
+	const parent = await api.mint(['token:delete', 'package:read'])
 	const child = await api.call('POST', '/v1/tokens', {
 		token: parent,
 		body: {
 			name: 'child',
-			scopes: ['packages:read'],
+			scopes: ['package:read'],
 			lifetime: 'short',
 			idle_ttl_seconds: 300,
 			max_lifetime_seconds: 600,
@@ -267,14 +272,14 @@ test('token minting enforces parent scopes for local-execute', async () => {
 		token: parent,
 		body: {
 			name: 'child',
-			scopes: ['packages:read'],
+			scopes: ['package:read'],
 			idle_ttl_seconds: 300,
 			max_lifetime_seconds: 600,
 		},
 	})
 	expect(childOk.status).toBe(200)
 	expect(childOk.body).toMatchObject({
-		scopes: ['packages:read'],
+		scopes: ['package:read'],
 		idle_ttl_seconds: 300,
 		token_type: 'Bearer',
 		created_via: 'api',
@@ -283,7 +288,7 @@ test('token minting enforces parent scopes for local-execute', async () => {
 
 	const missingLifetime = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'no-life', scopes: ['packages:read'] },
+		body: { name: 'no-life', scopes: ['package:read'] },
 	})
 	expect(missingLifetime.status).toBe(400)
 	expect(missingLifetime.body.error?.message).toMatch(
@@ -292,13 +297,13 @@ test('token minting enforces parent scopes for local-execute', async () => {
 
 	const escalate = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'escalate', scopes: ['secrets:read'], lifetime: 'short' },
+		body: { name: 'escalate', scopes: ['secret:use'], lifetime: 'short' },
 	})
 	expect(escalate.status).toBe(400)
 
 	const missingParentScope = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'local', scopes: ['local-execute'], lifetime: 'short' },
+		body: { name: 'local', scopes: ['org:execute'], lifetime: 'short' },
 	})
 	expect(missingParentScope.status).toBe(400)
 
@@ -310,12 +315,12 @@ test('token minting enforces parent scopes for local-execute', async () => {
 
 test('a token can only rotate tokens it could have minted', async () => {
 	const api = await createApi()
-	const rotator = await api.mint(['tokens:write'])
+	const rotator = await api.mint(['token:delete'])
 	const stronger = await mintApiToken({
 		db: api.db,
 		userId: api.userId,
 		name: 'stronger',
-		scopes: ['secrets:write'],
+		scopes: ['secret:use', 'secret:write'],
 		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
 		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'mcp-api',
@@ -326,7 +331,7 @@ test('a token can only rotate tokens it could have minted', async () => {
 	expect(denied.status).toBe(403)
 	expect(denied.body.error).toMatchObject({
 		code: 'insufficient_scope',
-		details: { missing_scopes: ['secrets:write'] },
+		details: { missing_scopes: ['secret:use', 'secret:write'] },
 	})
 	expect(JSON.stringify(denied.body)).not.toMatch(/kody_at_/)
 	const stillWorks = await api.call('GET', '/v1/secrets', {
@@ -338,7 +343,7 @@ test('a token can only rotate tokens it could have minted', async () => {
 		db: api.db,
 		userId: api.userId,
 		name: 'longer',
-		scopes: ['tokens:write'],
+		scopes: ['token:delete'],
 		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
 		maxLifetimeSeconds: 7 * 24 * 60 * 60,
 		createdVia: 'mcp-api',
@@ -355,7 +360,7 @@ test('a token can only rotate tokens it could have minted', async () => {
 		db: api.db,
 		userId: api.userId,
 		name: 'peer',
-		scopes: ['tokens:read'],
+		scopes: ['token:read'],
 		idleTtlSeconds: 60,
 		maxLifetimeSeconds: 60 * 60,
 		createdVia: 'api',
@@ -374,7 +379,7 @@ test('reported expiry includes the slide from the current request', async () => 
 		db: api.db,
 		userId: api.userId,
 		name: 'aged',
-		scopes: ['account:read'],
+		scopes: ['org:read'],
 		idleTtlSeconds,
 		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'api',
@@ -399,10 +404,10 @@ test('local-execute tokens are mintable when the parent holds the scope', async 
 	const parent = await mintWithLocalExecute(api)
 	const minted = await api.call('POST', '/v1/tokens', {
 		token: parent,
-		body: { name: 'local', scopes: ['local-execute'], lifetime: 'short' },
+		body: { name: 'local', scopes: ['org:execute'], lifetime: 'short' },
 	})
 	expect(minted.status).toBe(200)
-	expect(minted.body['scopes']).toEqual(['local-execute'])
+	expect(minted.body['scopes']).toEqual(['org:execute'])
 })
 
 async function mintWithLocalExecute(
@@ -412,7 +417,7 @@ async function mintWithLocalExecute(
 		db: api.db,
 		userId: api.userId,
 		name: 'parent',
-		scopes: ['tokens:write', 'local-execute'],
+		scopes: ['token:delete', 'org:execute'],
 		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
 		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
 		createdVia: 'mcp-api',
@@ -428,14 +433,14 @@ test('capability proxy session matches the CLI preflight contract', async () => 
 	})
 	expect(session.status).toBe(200)
 	expect(session.body).toMatchObject({
-		scopes: ['local-execute', 'tokens:write'],
+		scopes: ['org:execute', 'token:delete'],
 		expiresAt: expect.any(String),
 		maxExpiresAt: expect.any(String),
 		user: { userId: api.userId, email: 'api-user@example.com' },
 	})
 
 	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
-		token: await api.mint(['account:read']),
+		token: await api.mint(['org:read']),
 	})
 	expect(noScope.status).toBe(403)
 	expect(noScope.body.error?.code).toBe('insufficient_scope')
@@ -493,7 +498,7 @@ test('capability proxy records distinguishable observe-only api_call telemetry',
 	expect(session.status).toBe(200)
 
 	const noScope = await api.call('GET', '/v1/capability-proxy/session', {
-		token: await api.mint(['account:read']),
+		token: await api.mint(['org:read']),
 	})
 	expect(noScope.status).toBe(403)
 	expect(noScope.body.error?.code).toBe('insufficient_scope')
@@ -593,7 +598,7 @@ test('capability proxy runs kody:runtime calls and meters each hop', async () =>
 
 test('mirrors the /mcp account gates', async () => {
 	const unverified = await createApi({ emailVerified: false })
-	const unverifiedToken = await unverified.mint(['account:read'])
+	const unverifiedToken = await unverified.mint(['org:read'])
 	const unverifiedResponse = await unverified.call('GET', '/v1/me', {
 		token: unverifiedToken,
 	})
@@ -603,7 +608,7 @@ test('mirrors the /mcp account gates', async () => {
 	)
 
 	const suspended = await createApi({ suspended: true })
-	const suspendedToken = await suspended.mint(['account:read'])
+	const suspendedToken = await suspended.mint(['org:read'])
 	const suspendedResponse = await suspended.call('GET', '/v1/me', {
 		token: suspendedToken,
 	})
@@ -611,7 +616,7 @@ test('mirrors the /mcp account gates', async () => {
 	expect(suspendedResponse.body.error?.code).toBe('account_suspended')
 
 	const reset = await createApi()
-	const resetToken = await reset.mint(['account:read'])
+	const resetToken = await reset.mint(['org:read'])
 	reset.sqlite
 		.prepare(`UPDATE users SET password_changed_at = ? WHERE id = 1`)
 		.run(new Date(Date.now() + 1000).toISOString())
@@ -619,7 +624,7 @@ test('mirrors the /mcp account gates', async () => {
 	expect(resetResponse.status).toBe(401)
 
 	const deleting = await createApi()
-	const deletingToken = await deleting.mint(['account:read'])
+	const deletingToken = await deleting.mint(['org:read'])
 	deleting.sqlite
 		.prepare(`UPDATE users SET deleting_at = ? WHERE id = 1`)
 		.run(new Date().toISOString())
@@ -677,7 +682,7 @@ export default async () => x`,
 	expect(unresolved.body.error?.code).toBe('package_import_unresolved')
 
 	const noScope = await api.call('POST', '/v1/local-execute/package-graph', {
-		token: await api.mint(['account:read']),
+		token: await api.mint(['org:read']),
 		body: { code: 'export default async function main() { return 1 }' },
 	})
 	expect(noScope.status).toBe(403)
@@ -718,7 +723,7 @@ test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async (
 	})
 	expect(session.status).toBe(200)
 	expect(session.body).toMatchObject({
-		scopes: ['local-execute'],
+		scopes: ['org:execute'],
 		expiresAt: expect.any(String),
 		maxExpiresAt: expect.any(String),
 		idleTtlSeconds: expect.any(Number),

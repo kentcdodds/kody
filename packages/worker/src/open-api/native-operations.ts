@@ -1,4 +1,3 @@
-import { localExecuteScope } from '#worker/api-tokens/scopes.ts'
 import { toApiTokenView } from '#worker/api-tokens/service.ts'
 import {
 	capabilityProxyCallInputSchema,
@@ -47,7 +46,7 @@ function capabilityProxySessionFromPrincipal(
 			}
 		}
 		case 'mcp-oauth': {
-			// Effective grant for these surfaces matches a `local-execute` API
+			// Effective grant for these surfaces matches an `org:execute` API
 			// token (full kody.* via CapabilityProxy). OIDC grant scopes are
 			// identity claims, not capability scopes (ADR 0049/0055).
 			const expiresAt = new Date(principal.expiresAtUnix * 1000).toISOString()
@@ -56,7 +55,7 @@ function capabilityProxySessionFromPrincipal(
 				principal.expiresAtUnix - Math.floor(Date.now() / 1000),
 			)
 			return {
-				scopes: [localExecuteScope],
+				scopes: ['org:execute'],
 				expiresAt,
 				maxExpiresAt: expiresAt,
 				idleTtlSeconds: remainingSeconds,
@@ -80,7 +79,7 @@ const capabilityProxyOperationDefinitions: Record<
 	capabilityProxySession: {
 		summary: 'Open a CapabilityProxy session',
 		description:
-			'Preflight for local execute: confirms the bearer is valid (scoped `kody_at_` with `local-execute`, or CLI `kody login` MCP OAuth). Returns scopes, expiry, and proxy limits. Call before starting user code.',
+			'Preflight for local execute: confirms the bearer is valid (scoped `kody_at_` with `org:execute`, or CLI `kody login` MCP OAuth). Returns scopes, expiry, and proxy limits. Call before starting user code.',
 		inputSchema: emptyInputSchema,
 		outputSchema: capabilityProxySessionOutputSchema,
 		readOnly: true,

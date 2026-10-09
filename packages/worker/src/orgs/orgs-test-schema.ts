@@ -59,4 +59,21 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS grants (
+				id TEXT PRIMARY KEY NOT NULL,
+				org_id TEXT NOT NULL,
+				resource_type TEXT NOT NULL,
+				resource_id TEXT NOT NULL,
+				subject_type TEXT NOT NULL,
+				subject_id TEXT NOT NULL,
+				preset TEXT,
+				created_by_user_id TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				deleted_at TEXT
+			)`,
+		)
+		.run()
 }
