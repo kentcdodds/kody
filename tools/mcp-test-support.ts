@@ -28,9 +28,9 @@ import {
 	registerOAuthClient,
 	type AppAuthUser,
 } from './mcp-oauth-client.ts'
-import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import {
 	buildRoleAssignmentSql,
+	buildSeedPersonalOrgSql,
 	seedStableUserIdFromEmail,
 } from './seed-sql.ts'
 
@@ -286,10 +286,15 @@ WHERE u.email = ? AND r.name = 'user'`,
 		)
 		.bind(user.email)
 		.run()
-	await provisionPersonalOrg(db, {
+	const personalOrgSql = buildSeedPersonalOrgSql({
 		stableUserId: seedStableUserIdFromEmail(user.email),
 		username: user.username,
 	})
+	for (const statement of personalOrgSql.split(';')) {
+		const sql = statement.trim()
+		if (!sql) continue
+		await db.prepare(sql).run()
+	}
 }
 
 export async function markEmailVerifiedInMcpTestDatabase(input: {
