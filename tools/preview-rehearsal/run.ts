@@ -130,6 +130,7 @@ async function derivedUsers(workerName: string): Promise<Array<SnapshotUser>> {
 			role: user.role,
 			email: user.email,
 			username: user.role === 'dave' ? renamedDaveUsername : user.username,
+			orgSlug: user.username,
 			password,
 		})
 	}

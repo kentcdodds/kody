@@ -21,6 +21,11 @@ export type SnapshotUser = {
 	role: RehearsalUser['role']
 	email: string
 	username: string
+	/**
+	 * Personal org slug for `?org=` on consent. Migrated orgs keep the
+	 * signup username forever, so this stays `rh-dave` after dave renames.
+	 */
+	orgSlug: string
 	password: string
 }
 
@@ -304,7 +309,7 @@ export async function takeJsonSnapshot(input: {
 	// (for example bob after a scope-grant conversion) must pass ?org= or
 	// consent refuses with "Choose an organization".
 	const admin = await openRehearsalSession(input.origins.app, adminUser, {
-		orgSlug: adminUser.username,
+		orgSlug: adminUser.orgSlug,
 	})
 	const adminView: Record<string, unknown> = {}
 	try {
@@ -325,7 +330,7 @@ export async function takeJsonSnapshot(input: {
 	for (const user of input.users.filter((entry) => entry.role !== 'admin')) {
 		log(`Snapshotting ${user.role}...`)
 		const session = await openRehearsalSession(input.origins.app, user, {
-			orgSlug: user.username,
+			orgSlug: user.orgSlug,
 		})
 		try {
 			people.push(await snapshotPerson(session, user, input.origins, capture))
