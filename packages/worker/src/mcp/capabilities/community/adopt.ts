@@ -37,6 +37,7 @@ export const communityForkAdoptCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityForkAdopt',
+		orgPermission: 'package:create',
 		description:
 			'Return a website adoption URL for a community-forked package. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). This capability never adopts: only the account owner can adopt, signed in on the package settings page, after reviewing the source. Send the approval_url to the user and wait; never treat this call as adoption.',
 		keywords: [

@@ -72,6 +72,7 @@ function createCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
+		orgPermission: 'none',
 		...(featureFlag ? { featureFlag } : {}),
 		source: 'builtin',
 		inputSchema: { type: 'object', properties: {} },
@@ -124,6 +125,7 @@ function createRegistry(
 					readOnly: capability.readOnly,
 					idempotent: capability.idempotent,
 					destructive: capability.destructive,
+					orgPermission: capability.orgPermission,
 					...(capability.featureFlag
 						? { featureFlag: capability.featureFlag }
 						: {}),

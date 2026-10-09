@@ -30,6 +30,7 @@ export const repoGetCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoGet',
+		orgPermission: 'package:read',
 		description:
 			'Load one plain repo for the signed-in user, including live default-branch HEAD and progressive-disclosure hints when the tree is package-shaped.',
 		keywords: ['repo', 'get', 'plain', 'head', 'package-shaped'],

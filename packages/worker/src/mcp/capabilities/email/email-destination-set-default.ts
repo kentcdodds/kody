@@ -16,6 +16,7 @@ export const emailDestinationSetDefaultCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailDestinationSetDefault',
+		orgPermission: 'email:write',
 		description:
 			'Set the default email destination used when emailSend omits `to`. Pass the identity id or a verified additional destination id from emailDestinationList.',
 		keywords: ['email', 'destination', 'default', 'notify'],

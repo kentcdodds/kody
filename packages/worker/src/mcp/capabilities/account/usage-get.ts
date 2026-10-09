@@ -38,6 +38,7 @@ export const usageGetCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
 		name: 'usageGet',
+		orgPermission: 'billing:read',
 		description:
 			'Read the signed-in user’s entitlement usage against plan limits, including monthly Worker compute and Rows read plus execute/outbound hard caps: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
 		keywords: [

@@ -6,6 +6,7 @@ import {
 	apiTokenScopeSatisfies,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
+import { authorizeSurface } from '#worker/authorization/authorize.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	toCapabilityOpenApiPrincipal,
@@ -128,6 +129,10 @@ async function dispatch(input: {
 	switch (operation.kind) {
 		case 'native': {
 			assertApiScope(ctx, operation.scope)
+			await authorizeSurface(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				operation.permission,
+			)
 			return nativeApiOperationDefinitions[operation.operationId].handler(
 				params,
 				ctx,

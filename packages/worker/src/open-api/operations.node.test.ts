@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
+import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 import { apiTokenScopes } from '#worker/api-tokens/scopes.ts'
 import { buildOpenApiDocument, resolveApiOperation } from './document.ts'
@@ -212,6 +213,7 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	expect(danglingRefs).toEqual([])
 
 	const pathParamMismatches: Array<string> = []
+	const missingPermissions: Array<string> = []
 	for (const [path, pathItem] of Object.entries(document.paths)) {
 		for (const operation of Object.values(pathItem)) {
 			const declared = (operation.parameters ?? [])
@@ -224,9 +226,22 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 			}
 			const scope = operation['x-kody-scope']
 			if (scope !== null) expect(apiTokenScopes).toContain(scope)
+			const permission = operation['x-kody-permission']
+			if (permission !== 'none' && !isOrgPermission(permission)) {
+				missingPermissions.push(String(operation.operationId))
+			}
 		}
 	}
 	expect(pathParamMismatches).toEqual([])
+	expect(missingPermissions).toEqual([])
+	expect(
+		document.paths['/v1/packages/{package_id}']?.['get']?.['x-kody-permission'],
+	).toBe('package:read')
+	expect(
+		document.paths['/v1/capability-proxy/call']?.['post']?.[
+			'x-kody-permission'
+		],
+	).toBe('org:execute')
 
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
 	expect(tokenCreate?.['x-kody-scope']).toBe('tokens:write')

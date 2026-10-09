@@ -54,6 +54,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
 		name: 'usageByPackageGet',
+		orgPermission: 'billing:read',
 		description:
 			'Read the signed-in user’s current UTC month past-include credit attribution by package (Where it went): Worker compute and Rows read credits only — not execute, jobs, or package exports. Optional packageId returns that package’s slice of the same period breakdown.',
 		keywords: [

@@ -20,6 +20,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageSubscriptionsList',
+		orgPermission: 'package:read',
 		description:
 			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, integration.auth.failed / integration.auth.succeeded reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected connection episodes, community.fork.upstream_updated fork notifiers, admin platform-feedback, admin community-activity, admin community-listing-published, admin status-incident, admin fleet.package_error_rate.elevated, admin fleet.entitlement.crossed, admin auth.denial.burst, admin email.delivery.burst, admin user.created / user.deleted, admin user.email_verification.failed, admin user.email_verification.stalled, admin user.email_outbound.paused, or admin email.system-message.sent notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented payload, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
 		keywords: [

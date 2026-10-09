@@ -9,6 +9,7 @@ export const webhookDisableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
 		name: 'webhookDisable',
+		orgPermission: 'package:write',
 		description:
 			'Disable a minted package webhook. Ingress returns 404 while disabled (indistinguishable from unknown/unminted).',
 		keywords: ['webhook', 'disable', 'deactivate'],

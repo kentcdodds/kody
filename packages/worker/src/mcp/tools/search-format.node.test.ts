@@ -106,6 +106,7 @@ function capabilityDetail(
 			readOnly: true,
 			idempotent: true,
 			destructive: false,
+			orgPermission: 'none',
 			source: 'builtin',
 			inputFields: [],
 			requiredInputFields: [],

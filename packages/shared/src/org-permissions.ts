@@ -16,7 +16,7 @@ const resourceActions = {
 	email: ['read', 'send', 'write', 'delete', 'manage_access'],
 } as const
 
-type OrgResourceType = keyof typeof resourceActions
+export type OrgResourceType = keyof typeof resourceActions
 
 const orgResourceTypes = Object.keys(resourceActions) as Array<OrgResourceType>
 
@@ -50,7 +50,7 @@ export type OrgPermission =
 	| CreatePermission
 	| (typeof orgLevelPermissionList)[number]
 
-const orgPermissions: ReadonlyArray<OrgPermission> = [
+export const orgPermissions: ReadonlyArray<OrgPermission> = [
 	...orgResourceTypes.flatMap((type) =>
 		resourceActions[type].map(
 			(action) => `${type}:${action}` as ResourcePermission,

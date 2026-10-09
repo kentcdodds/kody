@@ -72,8 +72,9 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Request context](./request-context.md): the one `RequestContext` (org, actor,
   attribution, credential) every request source derives, and lineage for runs
   started by other runs.
-- [Authorization](./authorization.md): role-based access control (RBAC), admin
-  routes, and the `any`-access exception to per-user isolation.
+- [Authorization](./authorization.md): the one org access check (`authorize`),
+  what every surface declares, and site-admin RBAC with its `any`-access
+  exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`free`, `standard`, `pro`,
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared

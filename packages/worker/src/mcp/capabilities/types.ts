@@ -1,6 +1,7 @@
 import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { z, type ZodType } from 'zod'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
+import { type SurfacePermission } from '#worker/authorization/authorize.ts'
 import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 import { type ApiTokenRecord } from '#worker/api-tokens/service.ts'
 import { type CapabilityDomain } from './domain-metadata.ts'
@@ -72,7 +73,15 @@ export type CapabilityDefinition<
 	readOnly?: boolean
 	idempotent?: boolean
 	destructive?: boolean
+	/**
+	 * Org permission the caller must hold to call this capability, checked
+	 * at dispatch by `authorizeSurface`. Handlers still `authorize` the
+	 * concrete resource they touch.
+	 */
+	orgPermission: SurfacePermission
+	/** Site-admin role (separate from org permissions). */
 	requiredRole?: RoleName
+	/** Site-admin permission (separate from org permissions). */
 	requiredPermission?: PermissionString
 	featureFlag?: FeatureFlagKey
 	source?: CapabilitySource
@@ -100,6 +109,7 @@ export type Capability<TResult = CapabilityResult> = {
 	readOnly: boolean
 	idempotent: boolean
 	destructive: boolean
+	orgPermission: SurfacePermission
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
 	featureFlag?: FeatureFlagKey
@@ -123,6 +133,7 @@ export type CapabilitySpec = {
 	readOnly: boolean
 	idempotent: boolean
 	destructive: boolean
+	orgPermission: SurfacePermission
 	requiredRole?: RoleName
 	requiredPermission?: PermissionString
 	featureFlag?: FeatureFlagKey

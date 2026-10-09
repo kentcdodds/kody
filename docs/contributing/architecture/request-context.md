@@ -85,4 +85,5 @@ an org id can differ from a person id.
 - `packages/worker/src/request-context/request-context.ts`: sources, derivation,
   lineage parsing
 - `packages/worker/src/mcp/context.ts`: caller context construction
-- [Authorization](./authorization.md): site-admin RBAC, a separate system
+- [Authorization](./authorization.md): `authorize`, which reads this shape, and
+  site-admin RBAC, a separate system

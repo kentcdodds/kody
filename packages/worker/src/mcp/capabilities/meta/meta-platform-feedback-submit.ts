@@ -13,6 +13,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaPlatformFeedbackSubmit',
+		orgPermission: 'none',
 		description:
 			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. Open `search({ entity: "guide:platform_friction" })` first for the approval flow and content guidance. After submit, use metaPlatformFeedbackGet with the returned feedback_id (or metaPlatformFeedbackList) to check status — including open, triaged, resolved, and dismissed — without a full account export. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notifications. Copies already delivered outside Kody may remain after Kody account deletion under the deployment operator’s retention and deletion controls. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
 		keywords: [

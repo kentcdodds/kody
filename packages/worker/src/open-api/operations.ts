@@ -2,6 +2,7 @@ import {
 	type ApiTokenResource,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
+import { type SurfacePermission } from '#worker/authorization/authorize.ts'
 
 export const apiOperationMethods = [
 	'GET',
@@ -26,9 +27,9 @@ type ApiOperationBase = {
 /**
  * An operation backed by a registry capability. `operationId` is the
  * capability name, inputs are the capability's input schema (path params
- * map to same-named inputs), and the scope follows the capability's
- * `readOnly` flag unless the capability is listed in
- * `writeScopeCapabilityNames`.
+ * map to same-named inputs), its org permission is the capability's
+ * `orgPermission`, and the scope follows the capability's `readOnly` flag
+ * unless the capability is listed in `writeScopeCapabilityNames`.
  */
 export type CapabilityApiOperation = ApiOperationBase & {
 	kind: 'capability'
@@ -61,6 +62,8 @@ export type NativeApiOperation = ApiOperationBase & {
 	operationId: NativeApiOperationId
 	/** `null` means any valid token may call it (it acts on itself). */
 	scope: ApiTokenScope | null
+	/** Org permission, published as `x-kody-permission`. */
+	permission: SurfacePermission
 }
 
 export type ApiOperation = CapabilityApiOperation | NativeApiOperation
@@ -102,9 +105,18 @@ function nativeRoute(
 	path: string,
 	operationId: NativeApiOperationId,
 	scope: ApiTokenScope | null,
+	permission: SurfacePermission,
 	options: Pick<NativeApiOperation, 'tag'> = { tag: 'tokens' },
 ): NativeApiOperation {
-	return { kind: 'native', operationId, method, path, scope, ...options }
+	return {
+		kind: 'native',
+		operationId,
+		method,
+		path,
+		scope,
+		permission,
+		...options,
+	}
 }
 
 const capabilityProxyRoute = {
@@ -309,8 +321,8 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/community/profile', 'communityProfileGet'],
 		['PATCH', '/v1/community/profile', 'communityProfileUpdate'],
 	]),
-	nativeRoute('GET', '/v1/tokens', 'tokenList', 'tokens:read'),
-	nativeRoute('POST', '/v1/tokens', 'tokenCreate', 'tokens:write'),
+	nativeRoute('GET', '/v1/tokens', 'tokenList', 'tokens:read', 'none'),
+	nativeRoute('POST', '/v1/tokens', 'tokenCreate', 'tokens:write', 'none'),
 	...capabilityRoutes('tokens', [
 		[
 			'POST',
@@ -324,23 +336,50 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'/v1/tokens/bootstrap/redeem',
 		'cliCredentialBootstrapRedeem',
 		null,
+		'none',
 	),
-	nativeRoute('GET', '/v1/tokens/current', 'tokenGetCurrent', null),
-	nativeRoute('POST', '/v1/tokens/current/rotate', 'tokenRotateCurrent', null),
-	nativeRoute('DELETE', '/v1/tokens/current', 'tokenRevokeCurrent', null),
-	nativeRoute('GET', '/v1/tokens/{token_id}', 'tokenGet', 'tokens:read'),
+	nativeRoute('GET', '/v1/tokens/current', 'tokenGetCurrent', null, 'none'),
+	nativeRoute(
+		'POST',
+		'/v1/tokens/current/rotate',
+		'tokenRotateCurrent',
+		null,
+		'none',
+	),
+	nativeRoute(
+		'DELETE',
+		'/v1/tokens/current',
+		'tokenRevokeCurrent',
+		null,
+		'none',
+	),
+	nativeRoute(
+		'GET',
+		'/v1/tokens/{token_id}',
+		'tokenGet',
+		'tokens:read',
+		'none',
+	),
 	nativeRoute(
 		'POST',
 		'/v1/tokens/{token_id}/rotate',
 		'tokenRotate',
 		'tokens:write',
+		'none',
 	),
-	nativeRoute('DELETE', '/v1/tokens/{token_id}', 'tokenRevoke', 'tokens:write'),
+	nativeRoute(
+		'DELETE',
+		'/v1/tokens/{token_id}',
+		'tokenRevoke',
+		'tokens:write',
+		'none',
+	),
 	nativeRoute(
 		'GET',
 		'/v1/capability-proxy/session',
 		'capabilityProxySession',
 		'local-execute',
+		'org:execute',
 		capabilityProxyRoute,
 	),
 	nativeRoute(
@@ -348,6 +387,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'/v1/capability-proxy/call',
 		'capabilityProxyCall',
 		'local-execute',
+		'org:execute',
 		capabilityProxyRoute,
 	),
 	nativeRoute(
@@ -355,6 +395,7 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'/v1/local-execute/package-graph',
 		'localExecutePackageGraph',
 		'local-execute',
+		'org:execute',
 		capabilityProxyRoute,
 	),
 ]

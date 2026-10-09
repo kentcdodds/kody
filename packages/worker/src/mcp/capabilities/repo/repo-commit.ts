@@ -12,6 +12,7 @@ export const repoCommitCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoCommit',
+		orgPermission: 'package:write',
 		description: [
 			'Stage all session workspace changes and create a git commit with the given message.',
 			fileLevelApiNote,

@@ -2,6 +2,7 @@ import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { defineCapability } from './define-capability.ts'
 import { defineDomain } from './define-domain.ts'
@@ -25,6 +26,7 @@ test('Zod capability validation failures identify the capability, fields, and re
 	const inputHandler = vi.fn(async () => ({ package_id: 'github' }))
 	const inputCapability = defineCapability({
 		name: 'packageGet',
+		orgPermission: 'none',
 		domain: 'packages',
 		description: 'Get a package.',
 		inputSchema: z.object({ package_id: z.string() }),
@@ -51,6 +53,7 @@ test('Zod capability validation failures identify the capability, fields, and re
 	const outputHandler = vi.fn(async () => ({ package_id: 123 }) as never)
 	const outputCapability = defineCapability({
 		name: 'packageSave',
+		orgPermission: 'none',
 		domain: 'packages',
 		description: 'Save a package.',
 		inputSchema: z.object({ package_id: z.string() }),
@@ -80,6 +83,7 @@ test('defineCapability rejects snake_case and non-identifier builtin names', () 
 	expect(() =>
 		defineCapability({
 			name: 'package_get',
+			orgPermission: 'none',
 			domain: 'packages',
 			description: 'Get a package.',
 			inputSchema: z.object({}),
@@ -90,6 +94,7 @@ test('defineCapability rejects snake_case and non-identifier builtin names', () 
 	expect(() =>
 		defineCapability({
 			name: 'package-get',
+			orgPermission: 'none',
 			domain: 'packages',
 			description: 'Get a package.',
 			inputSchema: z.object({}),
@@ -99,6 +104,7 @@ test('defineCapability rejects snake_case and non-identifier builtin names', () 
 
 	const mcpCapability = defineCapability({
 		name: 'create_issue',
+		orgPermission: 'none',
 		domain: 'mcp:linear',
 		description: 'Create an issue.',
 		source: 'mcp-server',
@@ -116,4 +122,43 @@ test('defineDomain rejects snake_case domain ids', () => {
 			capabilities: [],
 		}),
 	).toThrow(/camelCase/)
+})
+
+test('the dispatch gate checks the declared org permission before the handler runs', async () => {
+	const handler = vi.fn(async () => ({}))
+	const gated = defineCapability({
+		name: 'gatedCapability',
+		orgPermission: 'package:read',
+		domain: 'packages',
+		description: 'Needs package:read.',
+		inputSchema: z.object({}),
+		handler,
+	})
+	const anonymous = {
+		env: {} as Env,
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://heykody.dev',
+			user: null,
+		}),
+	}
+
+	await expect(gated.handler({}, anonymous)).rejects.toBeInstanceOf(
+		AuthorizationError,
+	)
+	expect(handler).not.toHaveBeenCalled()
+	await expect(gated.handler({}, createCapabilityContext())).resolves.toEqual(
+		{},
+	)
+	expect(handler).toHaveBeenCalledTimes(1)
+
+	const ungated = defineCapability({
+		name: 'ungatedCapability',
+		orgPermission: 'none',
+		domain: 'meta',
+		description: 'Touches no org data.',
+		inputSchema: z.object({}),
+		handler: async () => ({ ok: true }),
+	})
+	await expect(ungated.handler({}, anonymous)).resolves.toEqual({ ok: true })
 })

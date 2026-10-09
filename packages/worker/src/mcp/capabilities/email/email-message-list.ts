@@ -13,6 +13,7 @@ export const emailMessageListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailMessageList',
+		orgPermission: 'email:read',
 		description:
 			'List stored inbound and outbound email messages owned by the signed-in user.',
 		keywords: ['email', 'message', 'inbox', 'list', 'quarantine'],

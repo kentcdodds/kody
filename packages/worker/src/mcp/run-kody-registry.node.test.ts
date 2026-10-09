@@ -213,6 +213,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 			capabilities: [
 				defineDomainCapability('admin', {
 					name: 'adminUserList',
+					orgPermission: 'none',
 					description: 'List admin user account metadata',
 					readOnly: true,
 					idempotent: true,

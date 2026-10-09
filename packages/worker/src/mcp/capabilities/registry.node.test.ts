@@ -1,3 +1,4 @@
+import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -128,4 +129,29 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)
+})
+
+test('every capability declares a real org permission, and site-admin tools declare none', async () => {
+	const registry = await getStaticRegistry()
+	const invalid = registry.capabilityList
+		.filter(
+			(capability) =>
+				capability.orgPermission !== 'none' &&
+				!isOrgPermission(capability.orgPermission),
+		)
+		.map((capability) => capability.name)
+	expect(invalid).toEqual([])
+	const siteAdminWithOrgPermission = registry.capabilityList
+		.filter(
+			(capability) =>
+				(capability.requiredRole || capability.requiredPermission) &&
+				capability.orgPermission !== 'none',
+		)
+		.map((capability) => capability.name)
+	expect(siteAdminWithOrgPermission).toEqual([])
+	for (const spec of Object.values(registry.capabilitySpecs)) {
+		expect(spec.orgPermission).toBe(
+			registry.capabilityMap[spec.name]?.orgPermission,
+		)
+	}
 })

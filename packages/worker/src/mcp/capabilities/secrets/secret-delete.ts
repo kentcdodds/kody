@@ -12,6 +12,7 @@ export const secretDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretDelete',
+		orgPermission: 'secret:delete',
 		description:
 			'Delete an existing secret reference for the signed-in user. Plaintext values stay hidden. Use `/connect/secret-set` for user-provided API key, token, and credential entry or rotation. Use this to remove execute-time access to a secret.',
 		keywords: ['secret', 'delete', 'remove', 'revoke', 'credential'],

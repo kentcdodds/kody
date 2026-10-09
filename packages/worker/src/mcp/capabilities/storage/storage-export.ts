@@ -14,6 +14,7 @@ export const storageExportCapability = defineDomainCapability(
 	capabilityDomainNames.storage,
 	{
 		name: 'storageExport',
+		orgPermission: 'package:read',
 		description:
 			'Export one durable storage bucket as JSON for inspection, debugging, or comparisons.',
 		keywords: ['storage', 'export', 'sqlite', 'durable object'],

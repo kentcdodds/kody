@@ -21,6 +21,7 @@ function capability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
+		orgPermission: 'none',
 		source: 'builtin',
 		inputSchema: { type: 'object', properties: {} },
 		inputTypeDefinition: '',

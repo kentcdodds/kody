@@ -10,6 +10,7 @@ export const valueDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
 		name: 'valueDelete',
+		orgPermission: 'package:write',
 		description:
 			'Delete an existing leftover persisted row for the signed-in user.',
 		keywords: ['config', 'delete', 'remove'],

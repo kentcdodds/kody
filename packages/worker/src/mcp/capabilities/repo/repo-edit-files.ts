@@ -15,6 +15,7 @@ export const repoEditFilesCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoEditFiles',
+		orgPermission: 'package:write',
 		description: [
 			'Apply a batch of file-level edits in an active repo session: write, replace, writeJson, delete, or move. Same-path write/replace/writeJson edits in one call compose in order against each prior result.',
 			'Use `write` for whole-file replacements or for creating new files when a unified diff for `repoApplyPatch` would be brittle (for example, single-file job sources or generated package modules). A write replaces the file at `path` with `content` exactly, creates missing parent directories, and treats empty `content` as clearing the file. Each edit returns a per-file diff plus a `changed` flag.',

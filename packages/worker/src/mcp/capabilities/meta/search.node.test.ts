@@ -338,11 +338,12 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 	})
 	expect(naturalLanguage.phaseTimings?.jevRerankMs).toEqual(expect.any(Number))
 
-	const unauthenticated = await searchCapability.handler(
-		{ query: packageId, conversationId: 'meta-unauthenticated' },
-		createContext(null),
-	)
-	expect(unauthenticated.matches).toEqual([])
+	await expect(
+		searchCapability.handler(
+			{ query: packageId, conversationId: 'meta-unauthenticated' },
+			createContext(null),
+		),
+	).rejects.toThrow(/Authenticated MCP user is required/)
 
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},

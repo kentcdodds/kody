@@ -35,6 +35,7 @@ export const usageTrendGetCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
 		name: 'usageTrendGet',
+		orgPermission: 'billing:read',
 		description:
 			'Read the signed-in user’s recent daily usage trend for hosted execute and unique Worker days (plus optional job/automation daily counts), with a cheap monthly rollup series from usage_rollups for charts.',
 		keywords: [

@@ -16,6 +16,7 @@ export const mcpServerRemoveCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
 		name: 'mcpServerRemove',
+		orgPermission: 'integration:delete',
 		description:
 			'Remove a saved MCP server: disconnects it, deletes stored OAuth tokens and client registrations, and removes its kody.mcp capabilities.',
 		keywords: ['mcp', 'server', 'remove', 'delete', 'disconnect', 'client'],

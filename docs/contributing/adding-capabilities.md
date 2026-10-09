@@ -84,6 +84,10 @@ Required (inside the `definition` object):
 
 - `name`: camelCase capability name exposed through `search` and `execute`
 - `description`: capability description shown to the model
+- `orgPermission`: the org permission a caller must hold (`package:read`,
+  `secret:write`, ...), or `'none'` when the capability touches no org data.
+  Dispatch checks it; the handler calls `authorize` with the concrete resource.
+  See [Authorization](./architecture/authorization.md#org-access).
 - `inputSchema`: Zod or plain JSON Schema
 - `handler(args, ctx)`: async host-side implementation
 
@@ -96,9 +100,10 @@ Optional fields:
 - `tags`: short labels that improve search precision
 - `keywords`: extra synonyms or task words that may not belong in the name
 - `readOnly`, `idempotent`, `destructive`: search hints for capability behavior
-- `requiredRole`: RBAC role required to see or execute the capability
-- `requiredPermission`: RBAC permission string required to see or execute the
-  capability
+- `requiredRole`: site-admin role required to see or execute the capability
+  (declare `orgPermission: 'none'` alongside it)
+- `requiredPermission`: site-admin permission string required to see or execute
+  the capability
 - `featureFlag`: optional feature-flag key from
   `#universal/feature-flags/registry.ts`; when set, the capability is hidden
   from search and denied at execute time unless the flag evaluates enabled for
@@ -127,6 +132,7 @@ export const exampleAdminCapability = defineDomainCapability(
 	{
 		name: 'admin_example_read',
 		description: 'Read admin-only account metadata.',
+		orgPermission: 'none',
 		requiredRole: 'admin',
 		readOnly: true,
 		idempotent: true,
@@ -172,6 +178,7 @@ export const exampleFlaggedCapability = defineDomainCapability(
 	{
 		name: 'example_flagged_action',
 		description: 'Only available when the demo-indicator flag is on.',
+		orgPermission: 'none',
 		featureFlag: 'demo-indicator',
 		inputSchema: z.object({}),
 		async handler(args, ctx) {
@@ -381,6 +388,7 @@ export const exampleCapability = defineDomainCapability(
 	{
 		name: 'example_action',
 		description: 'Example capability.',
+		orgPermission: 'package:read',
 		tags: ['example'],
 		keywords: ['demo'],
 		inputSchema,

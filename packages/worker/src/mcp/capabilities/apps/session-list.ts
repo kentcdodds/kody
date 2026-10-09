@@ -22,6 +22,7 @@ export const sessionListCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
 	{
 		name: 'sessionList',
+		orgPermission: 'app:read',
 		description:
 			'List active websocket sessions for a package app, optionally filtered by facet or subscribed topic.',
 		keywords: ['app', 'websocket', 'session', 'list', 'facet', 'topic'],

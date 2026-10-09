@@ -28,6 +28,7 @@ export const secretProviderLockCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderLock',
+		orgPermission: 'secret:use',
 		description:
 			'Return a website approval URL so the account owner can grant a saved package use of one external secret-provider ref (canonical i/<item-id>/<field>: UUID or 1Password Connect 26-char id). This capability does not change grants. Send the approval_url to the user and wait. Ad hoc execute does not need this grant; saved packages do.',
 		keywords: [

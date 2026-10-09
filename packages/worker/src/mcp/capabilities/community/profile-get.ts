@@ -23,6 +23,7 @@ export const communityProfileGetCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityProfileGet',
+		orgPermission: 'org:read',
 		description:
 			'Load a community user profile with packages and recent activity. Omit username to load your own profile (includes a private profile and private, hidden, or unpublished packages). Other users see only public packages. Private profiles of other users return user_found false without leaking existence.',
 		keywords: ['community', 'profile', 'user', 'bio', 'packages', 'activity'],

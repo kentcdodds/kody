@@ -16,6 +16,7 @@ export const communityForkCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityFork',
+		orgPermission: 'package:create',
 		description:
 			'Fork a public package into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. When the listing leaf is already taken by an unrelated package and you omit `kody_id`, Kody picks the next free leaf (for example `leaf-2`). Pass an explicit package name leaf (or `@owner/leaf`) to choose the name yourself.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],

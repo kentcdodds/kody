@@ -85,6 +85,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
 		name: 'webhookDeliveryList',
+		orgPermission: 'package:read',
 		description:
 			'List recent inbound webhook deliveries for one minted package webhook from run records (metadata only; payload bodies are never stored).',
 		keywords: ['webhook', 'delivery', 'log', 'debug', 'history', 'runs'],

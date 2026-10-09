@@ -8,6 +8,7 @@ import {
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
 import { apiTokenIdleTtlDescription } from '#worker/api-tokens/service.ts'
+import { type SurfacePermission } from '#worker/authorization/authorize.ts'
 import { apiErrorCodes } from './errors.ts'
 import {
 	apiOperationUsesQueryInputs,
@@ -46,6 +47,8 @@ type OpenApiOperation = {
 	responses: Record<string, unknown>
 	security: Array<Record<string, Array<string>>>
 	'x-kody-scope': ApiTokenScope | null
+	/** Org permission the caller must hold (`none`: touches no org data). */
+	'x-kody-permission': SurfacePermission
 	'x-kody-read-only': boolean
 	'x-kody-feature-flag'?: string
 }
@@ -74,6 +77,7 @@ export type ResolvedApiOperation = {
 	inputSchema: JsonSchema
 	outputSchema: JsonSchema | null
 	scope: ApiTokenScope | null
+	permission: SurfacePermission
 	readOnly: boolean
 	featureFlag: string | null
 }
@@ -174,6 +178,7 @@ export function resolveApiOperation(
 				inputSchema: z.toJSONSchema(definition.inputSchema) as JsonSchema,
 				outputSchema: z.toJSONSchema(definition.outputSchema) as JsonSchema,
 				scope: operation.scope,
+				permission: operation.permission,
 				readOnly: definition.readOnly,
 				featureFlag: null,
 			}
@@ -192,6 +197,7 @@ export function resolveApiOperation(
 				outputSchema:
 					(capability.outputSchema as JsonSchema | undefined) ?? null,
 				scope: resolveCapabilityOperationScope(operation, capability),
+				permission: capability.orgPermission,
 				readOnly: capability.readOnly,
 				featureFlag: capability.featureFlag ?? null,
 			}
@@ -201,6 +207,14 @@ export function resolveApiOperation(
 			throw new Error(`Unhandled API operation: ${String(exhaustive)}`)
 		}
 	}
+}
+
+function describeWithPermission(resolved: ResolvedApiOperation) {
+	const permission =
+		resolved.permission === 'none'
+			? 'none (touches no org data)'
+			: `\`${resolved.permission}\``
+	return `${resolved.description}\n\nOrg permission: ${permission}.`
 }
 
 function buildOperation(
@@ -283,7 +297,7 @@ function buildOperation(
 	return {
 		operationId: operation.operationId,
 		summary: summarize(resolved.description),
-		description: resolved.description,
+		description: describeWithPermission(resolved),
 		tags: [operation.tag],
 		...(parameters.length > 0 ? { parameters } : {}),
 		...(requestBody ? { requestBody } : {}),
@@ -296,6 +310,7 @@ function buildOperation(
 		},
 		security: [{ apiToken: resolved.scope ? [resolved.scope] : [] }],
 		'x-kody-scope': resolved.scope,
+		'x-kody-permission': resolved.permission,
 		'x-kody-read-only': resolved.readOnly,
 		...(resolved.featureFlag
 			? { 'x-kody-feature-flag': resolved.featureFlag }

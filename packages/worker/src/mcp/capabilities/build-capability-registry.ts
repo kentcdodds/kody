@@ -105,6 +105,7 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 					readOnly: capability.readOnly,
 					idempotent: capability.idempotent,
 					destructive: capability.destructive,
+					orgPermission: capability.orgPermission,
 					...(capability.requiredRole
 						? { requiredRole: capability.requiredRole }
 						: {}),

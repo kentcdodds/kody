@@ -9,6 +9,7 @@ export const secretProviderUnbindCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderUnbind',
+		orgPermission: 'secret:delete',
 		description:
 			'Remove the account binding for an external secret provider id. Unbind and rebind to a different package drop every grant for that provider. Does not return secret values.',
 		keywords: ['secret', 'provider', 'unbind', 'disconnect'],

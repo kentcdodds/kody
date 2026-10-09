@@ -13,6 +13,7 @@ export const metaPlatformFeedbackListCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaPlatformFeedbackList',
+		orgPermission: 'none',
 		description:
 			"List platform feedback submissions owned by the signed-in user, newest first. Optional status filter (open, triaged, resolved, dismissed). Each row has id, category, summary, status, created_at, and updated_at (outcome time when resolved or dismissed). Never exposes reviewer identity, admin notes, or other users' feedback. Use metaPlatformFeedbackGet for details on one id.",
 		keywords: [

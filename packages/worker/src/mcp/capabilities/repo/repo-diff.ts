@@ -12,6 +12,7 @@ export const repoDiffCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoDiff',
+		orgPermission: 'package:read',
 		description: [
 			'Return git diff for the active repo session workspace.',
 			fileLevelApiNote,

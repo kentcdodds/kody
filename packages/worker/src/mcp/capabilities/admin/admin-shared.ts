@@ -13,7 +13,9 @@ import { planNames } from '#universal/plans.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 
+/** Site-admin tools: the `admin` role gates them, not org permissions. */
 export const adminCapabilityAccess = {
+	orgPermission: 'none',
 	requiredRole: 'admin',
 	readOnly: true,
 	idempotent: true,
@@ -24,6 +26,7 @@ export const adminCapabilityAccess = {
 // callers (no executionOrigin gate). Accepted residual: cross-user / fleet blast
 // such as adminPackageCodemodApply. See docs/contributing/security.md.
 export const adminMutationCapabilityAccess = {
+	orgPermission: 'none',
 	requiredRole: 'admin',
 	readOnly: false,
 	idempotent: false,

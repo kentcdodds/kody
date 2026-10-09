@@ -9,6 +9,7 @@ export const secretProviderListCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderList',
+		orgPermission: 'secret:use',
 		description:
 			'List account-bound external secret providers (provider id, bound package, door-key secret name, non-secret config). Never returns credential values or vault items. Search does not crawl vaults.',
 		keywords: ['secret', 'provider', '1password', 'binding', 'list'],

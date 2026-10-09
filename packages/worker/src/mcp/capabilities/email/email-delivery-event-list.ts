@@ -33,6 +33,7 @@ export const emailDeliveryEventListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailDeliveryEventList',
+		orgPermission: 'email:read',
 		description:
 			'List stored email delivery events, including outbound provider lifecycle updates and SMTP details.',
 		keywords: [

@@ -17,6 +17,7 @@ export const jobGetCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
 		name: 'jobGet',
+		orgPermission: 'job:read',
 		description:
 			'Load one existing scheduled job for the signed-in user, including debugging fields such as run counters, last error, recent run history from run records (with run ids for runGet log drill-down), current alarm state, and optionally the published source code. Recurring schedules belong on a package (`kody.jobs`); deferred one-shots use `workflows.create`.',
 		keywords: [

@@ -8,6 +8,7 @@ export const communityRateCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityRate',
+		orgPermission: 'org:read',
 		description:
 			'Rate a public package after forking it. Stars measure usefulness (1–5); adaptation_effort measures how hard it was to adapt (1 = trivial, 5 = very hard). Ratings feed community search ranking.',
 		keywords: ['community', 'rate', 'rating', 'stars', 'fork', 'review'],

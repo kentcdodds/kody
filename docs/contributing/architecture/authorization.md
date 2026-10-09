@@ -1,13 +1,88 @@
-# Authorization (RBAC)
+# Authorization
 
-Kody is multi-user with strict per-user isolation as the default. Role-based
-access control (RBAC) adds a **narrow, explicitly-guarded exception** for
-deployment operators: permissions with `access = 'any'` allow specific
-account-administration endpoints to cross user boundaries. Operator-owned system
-email for reserved platform addresses is the other deliberate exception: it is
-stored under the reserved `system:email` owner id, not any human account. See
-[Project intent](../project-intent.md) and the `per-user-isolation` invariant in
-[Primitives map](./primitives.yaml).
+Kody has two permission systems, and neither implies the other:
+
+|            | Org access                                             | Site admin                                               |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| Who        | Every user, in their org                               | Kody staff                                               |
+| Vocabulary | `resource-type:action` (`package:read`, `org:execute`) | `action:entity:access` (`read:user:any`), `admin` role   |
+| Checked by | `authorize` (`packages/worker/src/authorization/`)     | `requiredRole` / `requiredPermission`, `require*` guards |
+| Source     | `packages/shared/src/org-permissions.ts`               | `packages/worker/universal/permissions.ts`               |
+
+Being a site admin grants no org permission. Holding every org permission (an
+org Owner) grants nothing site-wide. Say **site admin** for the second system,
+never "operator" or a bare "admin".
+
+## Org access
+
+Every request carries a `RequestContext`
+([Request context](./request-context.md)). One function decides whether it may
+do something:
+
+```ts
+await authorize({ env, request }, 'package:read', {
+	type: 'package',
+	id: saved.id,
+	orgId: request.org.id,
+	label: saved.name,
+})
+```
+
+Without a resource it checks an org-level permission. It throws
+`AuthorizationError` (an `McpCallerError`) naming the denial code, the
+permission, the org, and the resource. `checkPermission` is the same decision,
+synchronous, for callers that already hold the compiled permissions.
+
+`authorize` runs these steps in order:
+
+1. **Signed in.** A request without a person (`request: null`) is denied.
+2. **Org binding.** The resource must belong to `request.org.id` (`wrong_org`).
+3. **Effective permissions.** `computeEffectivePermissions` compiles the role
+   preset: Owner holds every permission; Member and Billing hold their org-level
+   basics. Automation (no actor) acts for the org that owns the job, webhook, or
+   subscription. The result is cached per request context.
+4. **Credential scopes.** Non-null `credential.scopes` narrow the result.
+5. **Connection profile.** A bound profile narrows package resources to the
+   packages and actions it lists. Profiles list packages only, so they do not
+   narrow other resources or org-level checks.
+
+Every person is the Owner of their implicit org today, so steps 2 to 4 never
+deny. Profiles and the signed-in step are the denials that can fire.
+
+### Surfaces declare their permission
+
+Every capability definition has a required
+`orgPermission: OrgPermission | 'none'`
+(`packages/worker/src/mcp/capabilities/types.ts`), so a capability without one
+does not compile. `defineCapability` checks it at dispatch with
+`authorizeSurface`, after the site-admin and feature-flag gates. Handlers then
+call `authorize` with the concrete resource they touch.
+
+Open API operations publish the same declaration as `x-kody-permission` and in
+each operation's description. Capability operations take it from the capability;
+native operations declare it in `nativeRoute`
+(`packages/worker/src/open-api/operations.ts`).
+
+`none` means the surface touches no org data: who-am-I, static guides,
+discovery, platform feedback, your own tokens, and site-admin tools, which
+`requiredRole` gates instead. `registry.node.test.ts` fails when a site-admin
+capability declares an org permission, and `operations.node.test.ts` fails when
+an operation publishes no valid permission.
+
+API tokens still carry the older `resource:read|write` scopes, checked by
+`assertApiScope` against each operation's `x-kody-scope`, until token scopes are
+rewritten to the org vocabulary.
+
+## Site admin
+
+The rest of this page covers site admin. Kody is multi-user with strict per-user
+isolation as the default. Site-admin RBAC adds a **narrow, explicitly-guarded
+exception** for Kody staff: permissions with `access = 'any'` allow specific
+account-administration endpoints to cross user boundaries. Site-admin-owned
+system email for reserved platform addresses is the other deliberate exception:
+it is stored under the reserved `system:email` owner id, not any human account.
+See [Project intent](../project-intent.md) and the `per-user-isolation`
+invariant in [Primitives map](./primitives.yaml).
 
 User-approved platform feedback is a third narrow exception. A submission
 crosses into the admin review surface only after the user explicitly approves
@@ -20,10 +95,9 @@ scores. This boundary never exposes forked package source, rating notes,
 secrets, or unrelated account content.
 
 For browser and MCP authentication mechanics, see
-[Authentication](./authentication.md). For the org, actor, and credential every
-request carries, see [Request context](./request-context.md).
+[Authentication](./authentication.md).
 
-## Model
+### Model
 
 Users have roles. Roles have permissions. A user's effective permissions are the
 **union** of all permissions attached to their roles.
@@ -620,6 +694,8 @@ assignment happens through the admin UI.
 
 ## What to read when changing authorization
 
+- `packages/worker/src/authorization/authorize.ts` — org access check
+- `packages/shared/src/org-permissions.ts` — org permission vocabulary
 - `packages/worker/universal/permissions.ts` — typed registry
 - `packages/worker/src/identity/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards

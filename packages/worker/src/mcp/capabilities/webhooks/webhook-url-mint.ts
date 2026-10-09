@@ -14,6 +14,7 @@ export const webhookUrlMintCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
 		name: 'webhookUrlMint',
+		orgPermission: 'package:write',
 		description:
 			'Mint (or remint) the URL secret for a package-declared webhook and return an opaque handle plus url_host. The credential URL is never returned — register it with webhookUrlApply. Declaring kody.webhooks alone does not open ingress; minting does.',
 		keywords: ['webhook', 'mint', 'url', 'activate', 'handle', 'inbound'],
