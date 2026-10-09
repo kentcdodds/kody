@@ -276,12 +276,6 @@ async function loadEntitlementRowForStableUserId(
 		.first<UserEntitlementRow>()
 	if (orgRow) return orgRow
 
-	console.error(
-		JSON.stringify({
-			message: 'orgs row missing for entitlement read; falling back to users',
-			stableUserId: input.stableUserId,
-		}),
-	)
 	const email = input.email?.trim().toLowerCase()
 	return await db
 		.prepare(
