@@ -31,7 +31,7 @@ test('youtube thumb proxy 404s unknown and invalid ids', async () => {
 	const env = {
 		YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
-	} as Env
+	} as unknown as Env
 	expect((await callHandler(env, 'not-valid')).status).toBe(404)
 	expect((await callHandler(env, 'abcdefghijk')).status).toBe(404)
 	expect((await callHandler(env, videoId, 'POST')).status).toBe(405)
@@ -53,7 +53,7 @@ test('youtube thumb proxy serves allowlisted first-party bytes', async () => {
 	const env = {
 		YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
-	} as Env
+	} as unknown as Env
 	const response = await callHandler(env, videoId)
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Content-Type')).toBe('image/jpeg')
@@ -90,7 +90,7 @@ test('youtube thumb proxy falls back when maxres is missing', async () => {
 	const env = {
 		YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
-	} as Env
+	} as unknown as Env
 	const response = await callHandler(env, videoId)
 	expect(response.status).toBe(200)
 	expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
@@ -119,7 +119,7 @@ test('youtube thumb proxy 404s when every thumbnail quality is missing', async (
 	const env = {
 		YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
-	} as Env
+	} as unknown as Env
 	expect((await callHandler(env, videoId)).status).toBe(404)
 	expect(
 		fetchMock.mock.calls

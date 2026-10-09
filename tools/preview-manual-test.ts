@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname } from 'node:path'
 import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
@@ -41,9 +41,17 @@ const usageLines = [
 	'  --skip-login        Skip POST /auth and cookie-backed checks',
 	'  --request <spec>    Authenticated HTTP as the seed user (repeatable).',
 	'                      Spec: METHOD /path [status] [json-body]',
+	'                            [--form name=value]... [--multipart]',
 	'                            [--dump] [--contains <text>]',
-	'                      Default success is any 2xx. Examples:',
+	'                      Default success is any 2xx. JSON is the default',
+	'                      body. Repeat --form for application/x-www-form-urlencoded.',
+	'                      Add --multipart for multipart/form-data; a value',
+	'                      that starts with @ is a file path. Redirects stay',
+	'                      manual, and --contains also sees Location.',
+	'                      Examples:',
 	'                      POST /account/secrets.json {"action":"save",...}',
+	'                      POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org',
+	'                      POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png',
 	'                      GET /pricing --dump --contains Worker compute',
 	'                      GET /account/export.json is a metadata manifest;',
 	'                      do not --contains user data there. Verify rows with',
@@ -77,11 +85,23 @@ export type PreviewManualTestOptions = {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+export type SessionFormField = {
+	name: string
+	value: string
+	filePath: string | null
+}
+
+export type SessionRequestForm = {
+	encoding: 'urlencoded' | 'multipart'
+	fields: Array<SessionFormField>
+}
+
 export type SessionRequestSpec = {
 	method: HttpMethod
 	path: string
 	expectedStatus: number | null
 	body: unknown | null
+	form: SessionRequestForm | null
 	dump: boolean
 	contains: Array<string>
 }
@@ -345,9 +365,9 @@ function isHttpMethod(value: string): value is HttpMethod {
 }
 
 const sessionRequestSpecUsage =
-	'METHOD /path [status] [json-body] [--dump] [--contains <text>]'
+	'METHOD /path [status] [json-body] [--form name=value]... [--multipart] [--dump] [--contains <text>]'
 
-const specFlags = ['--dump', '--contains'] as const
+const specFlags = ['--dump', '--contains', '--form', '--multipart'] as const
 
 type SpecFlagMatch = {
 	flag: (typeof specFlags)[number]
@@ -398,7 +418,7 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 	const rest = match[3] ?? ''
 	const flags = findSpecFlags(rest)
 	const head = rest.slice(0, flags[0]?.start ?? rest.length).trim()
-	const { dump, contains } = parseSessionRequestFlags(rest, flags)
+	const { dump, contains, form } = parseSessionRequestFlags(rest, flags)
 	const headMatch = /^(?:(\d{3})(?:\s+|$))?([\s\S]*)$/.exec(head)
 	const methodName = match[1].toUpperCase()
 	if (!isHttpMethod(methodName)) {
@@ -415,6 +435,11 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 		: null
 	const rawBody = headMatch?.[2]?.trim() ?? ''
 	let body: unknown | null = null
+	if (rawBody.length > 0 && form) {
+		throw new PreviewManualTestError(
+			`--request cannot include both a JSON body and --form fields: ${rawBody}\nExpected: ${sessionRequestSpecUsage}`,
+		)
+	}
 	if (rawBody.length > 0) {
 		if (methodName === 'GET') {
 			throw new PreviewManualTestError(
@@ -429,14 +454,85 @@ export function parseSessionRequest(spec: string): SessionRequestSpec {
 			)
 		}
 	}
+	if (form && methodName === 'GET') {
+		throw new PreviewManualTestError(
+			`GET --request cannot include form fields.\nExpected: ${sessionRequestSpecUsage}`,
+		)
+	}
 	return {
 		method: methodName,
 		path,
 		expectedStatus,
 		body,
+		form,
 		dump,
 		contains,
 	}
+}
+
+export async function applySessionRequestBody(
+	spec: Pick<SessionRequestSpec, 'body' | 'form'>,
+	headers: Record<string, string>,
+): Promise<BodyInit | undefined> {
+	if (spec.form) {
+		if (spec.form.encoding === 'urlencoded') {
+			const params = new URLSearchParams()
+			for (const field of spec.form.fields) {
+				params.append(field.name, field.value)
+			}
+			headers['Content-Type'] = 'application/x-www-form-urlencoded'
+			return params.toString()
+		}
+		if (spec.form.encoding === 'multipart') {
+			const form = new FormData()
+			for (const field of spec.form.fields) {
+				if (field.filePath) {
+					const bytes = await readFile(field.filePath)
+					const contentType = contentTypeForFormFile(field.filePath)
+					form.append(
+						field.name,
+						new Blob([bytes], contentType ? { type: contentType } : undefined),
+						basename(field.filePath),
+					)
+				} else {
+					form.append(field.name, field.value)
+				}
+			}
+			return form
+		}
+		const exhaustive: never = spec.form.encoding
+		throw new PreviewManualTestError(
+			`Unsupported form encoding: ${String(exhaustive)}`,
+		)
+	}
+	if (spec.body !== null) {
+		headers['Content-Type'] = 'application/json'
+		return JSON.stringify(spec.body)
+	}
+	return undefined
+}
+
+const formFileContentTypes: Record<string, string> = {
+	gif: 'image/gif',
+	jpeg: 'image/jpeg',
+	jpg: 'image/jpeg',
+	png: 'image/png',
+	webp: 'image/webp',
+}
+
+function contentTypeForFormFile(filePath: string) {
+	const extension = extname(filePath).slice(1).toLowerCase()
+	return formFileContentTypes[extension]
+}
+
+export function sessionResponseSearchText(
+	body: string,
+	location: string | null,
+) {
+	if (!location) return body
+	return body.length > 0
+		? `${body}\nLocation: ${location}`
+		: `Location: ${location}`
 }
 
 function parseSessionRequestFlags(
@@ -444,25 +540,68 @@ function parseSessionRequestFlags(
 	flags: ReadonlyArray<SpecFlagMatch>,
 ) {
 	let dump = false
+	let multipart = false
 	const contains: Array<string> = []
+	const fields: Array<SessionFormField> = []
 	for (const [index, { flag, end }] of flags.entries()) {
 		const value = text.slice(end, flags[index + 1]?.start).trim()
-		if (flag === '--dump') {
+		if (flag === '--dump' || flag === '--multipart') {
 			if (value.length > 0) {
 				throw new PreviewManualTestError(
-					`--request --dump takes no value (got ${JSON.stringify(value)}). Put --contains <text> after it.`,
+					`--request ${flag} takes no value (got ${JSON.stringify(value)}). Put --contains <text> after it.`,
 				)
 			}
-			dump = true
+			if (flag === '--dump') dump = true
+			else multipart = true
 			continue
 		}
-		const needle = unquoteSpecValue(value)
-		if (needle.length === 0) {
+		const raw = unquoteSpecValue(value)
+		if (flag === '--form') {
+			fields.push(parseSessionFormField(raw))
+			continue
+		}
+		if (raw.length === 0) {
 			throw new PreviewManualTestError('--request --contains requires text.')
 		}
-		contains.push(needle)
+		contains.push(raw)
 	}
-	return { dump, contains }
+	if (multipart && fields.length === 0) {
+		throw new PreviewManualTestError(
+			'--request --multipart requires at least one --form name=value field.',
+		)
+	}
+	const fileField = fields.find((field) => field.filePath)
+	if (fileField && !multipart) {
+		throw new PreviewManualTestError(
+			`--request file field ${fileField.name}=@${fileField.filePath} requires --multipart.`,
+		)
+	}
+	const form: SessionRequestForm | null =
+		fields.length === 0
+			? null
+			: { encoding: multipart ? 'multipart' : 'urlencoded', fields }
+	return { dump, contains, form }
+}
+
+function parseSessionFormField(raw: string): SessionFormField {
+	const separator = raw.indexOf('=')
+	if (separator <= 0) {
+		throw new PreviewManualTestError(
+			`--request --form expects name=value (got ${JSON.stringify(raw)}).`,
+		)
+	}
+	const name = raw.slice(0, separator)
+	const value = raw.slice(separator + 1)
+	if (value.startsWith('@')) {
+		const filePath = value.slice(1)
+		if (filePath.length === 0) {
+			throw new PreviewManualTestError(
+				`--request --form ${name}=@ requires a file path.`,
+			)
+		}
+		return { name, value: '', filePath }
+	}
+	return { name, value, filePath: null }
 }
 
 function unquoteSpecValue(value: string) {
@@ -1754,10 +1893,7 @@ async function runAuthenticatedSessionRequest(
 		method: spec.method,
 		headers,
 		redirect: 'manual',
-	}
-	if (spec.body !== null) {
-		headers['Content-Type'] = 'application/json'
-		init.body = JSON.stringify(spec.body)
+		body: await applySessionRequestBody(spec, headers),
 	}
 	const response = await fetchText(deps, `${origin}${spec.path}`, init)
 	if (response.error) {
@@ -1771,13 +1907,14 @@ async function runAuthenticatedSessionRequest(
 		response.status,
 		spec.expectedStatus,
 	)
-	const missing = missingContainsNeedles(response.body, spec.contains)
+	const searchable = sessionResponseSearchText(response.body, response.location)
+	const missing = missingContainsNeedles(searchable, spec.contains)
 	const expected =
 		spec.expectedStatus === null ? '2xx' : String(spec.expectedStatus)
 	const detail = [
 		statusOk
-			? `HTTP ${response.status} ${truncateDetail(response.body)}`
-			: `expected ${expected}, got HTTP ${response.status} ${truncateDetail(response.body)}`,
+			? `HTTP ${response.status} ${truncateDetail(searchable)}`
+			: `expected ${expected}, got HTTP ${response.status} ${truncateDetail(searchable)}`,
 	]
 	let dumpOk = true
 	if (dumpFile) {
@@ -1817,6 +1954,7 @@ type FetchedJson = {
 type FetchedText = {
 	status: number
 	body: string
+	location: string | null
 	setCookie: Array<string>
 	error?: string
 }
@@ -1860,12 +1998,14 @@ async function fetchText(
 		return {
 			status: response.status,
 			body: await response.text().catch(() => ''),
+			location: response.headers.get('location'),
 			setCookie: readSetCookie(response),
 		}
 	} catch (error) {
 		return {
 			status: 0,
 			body: '',
+			location: null,
 			setCookie: [],
 			error: error instanceof Error ? error.message : String(error),
 		}

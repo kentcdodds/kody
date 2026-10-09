@@ -148,6 +148,9 @@ function createWorkflowEnv() {
 			createBatch: async () => {
 				throw new Error('createBatch is not supported in this test')
 			},
+			deleteBatch: async () => {
+				throw new Error('deleteBatch is not supported in this test')
+			},
 		} as Workflow<unknown>,
 	} as Env
 	return { workflowEnv, created }
