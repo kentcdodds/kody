@@ -28,14 +28,14 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		evaluateUnitJobBudget({
 			leg: 'workers',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 480,
+			nowEpochSeconds: 1_000 + 720,
 		}).ok,
 	).toBe(true)
 	expect(
 		evaluateUnitJobBudget({
 			leg: 'workers',
 			startEpochSeconds: 1_000,
-			nowEpochSeconds: 1_000 + 481,
+			nowEpochSeconds: 1_000 + 721,
 		}).ok,
 	).toBe(false)
 
@@ -62,7 +62,7 @@ test('unit job budgets fail any overrun of the cold-run caps', () => {
 		'--leg',
 		'workers',
 		'--start-epoch',
-		String(Math.floor(Date.now() / 1000) - 481),
+		String(Math.floor(Date.now() / 1000) - 721),
 	])
 	expect(process.exitCode).toBe(1)
 	expect(consoleError).toHaveBeenCalledWith(

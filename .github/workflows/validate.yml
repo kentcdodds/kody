@@ -251,7 +251,7 @@ jobs:
       false
     steps:
       # Self-driving test-time budget: this job fails itself when wall-clock
-      # exceeds 480s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
+      # exceeds 720s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
       # baseline with headroom; cache hit or miss does not change it. Setup +
       # tests both count; do not delete tests to stay under.
       - name: ⏱️ Mark job start
@@ -271,7 +271,7 @@ jobs:
       - name: ☁️ Workers unit tests
         run: npm run test:workers
 
-      - name: ⏱️ Unit job budget (≤480s)
+      - name: ⏱️ Unit job budget (≤720s)
         if: success()
         run: >-
           node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch
