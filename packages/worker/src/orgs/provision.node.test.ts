@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
-import { provisionPersonalOrg } from './provision.ts'
+import { ensurePersonalOrg, provisionPersonalOrg } from './provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function createDb() {
@@ -51,4 +51,28 @@ test('provisionPersonalOrg creates org, owner membership, and handle', async () 
 		user_id: stableUserId,
 		org_id: stableUserId,
 	})
+})
+
+test('ensurePersonalOrg is idempotent when the personal org already exists', async () => {
+	const db = await createDb()
+	const stableUserId = testStableUserIdFromEmail('idempotent@example.com')
+	const input = {
+		stableUserId,
+		username: 'idem',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	}
+	await provisionPersonalOrg(db, input)
+	await ensurePersonalOrg(db, { ...input, username: 'idem-renamed' })
+
+	const orgCount = await db
+		.prepare(`SELECT COUNT(*) AS count FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ count: number }>()
+	expect(orgCount?.count).toBe(1)
+
+	const org = await db
+		.prepare(`SELECT slug FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ slug: string }>()
+	expect(org?.slug).toBe('idem')
 })

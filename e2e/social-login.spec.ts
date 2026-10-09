@@ -3,6 +3,7 @@ import {
 	clearAuthRateLimitsInE2eDatabase,
 	executeE2eD1Command,
 } from './d1-utils.ts'
+import { buildDeleteUserAndPersonalOrgSql } from '../tools/seed-sql.ts'
 
 // The test wrangler env ships MOCK_ social-login client ids, so the full
 // start -> provider -> callback redirect round-trip runs in-worker against
@@ -10,8 +11,23 @@ import {
 test('social login signs in via mock GitHub and manages connections', async ({
 	page,
 }) => {
+	const mockSocialEmails = [
+		'mock-github-user@example.com',
+		'mock-google-user@example.com',
+		'mock-discord-user@example.com',
+	]
 	executeE2eD1Command(
-		`DELETE FROM oauth_connections WHERE provider_id IN ('mock-github-user-1', 'mock-google-user-1', 'mock-x-user-1', 'mock-discord-user-1'); DELETE FROM users WHERE email IN ('mock-github-user@example.com', 'mock-google-user@example.com', 'mock-discord-user@example.com');`,
+		`DELETE FROM oauth_connections WHERE provider_id IN ('mock-github-user-1', 'mock-google-user-1', 'mock-x-user-1', 'mock-discord-user-1');
+${buildDeleteUserAndPersonalOrgSql({
+	emails: mockSocialEmails,
+	// OAuth signup mints a new stable_user_id each run; drop orphaned slugs
+	// left when older tests deleted users without org cleanup.
+	orphanPersonalOrgSlugs: [
+		'mock-octo',
+		'mock-google-user',
+		'mock-discord-user',
+	],
+})}`,
 	)
 	clearAuthRateLimitsInE2eDatabase()
 	await page.context().clearCookies()

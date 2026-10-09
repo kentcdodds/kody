@@ -1,4 +1,8 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type OrgRole,
 	type RequestOrg,
@@ -74,9 +78,14 @@ export async function loadOrgBindingForPerson(
 		.bind(personId)
 		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
 	if (!row) {
-		throw new Error(
-			`Missing personal org membership for person ${personId}. Run Teams expand provisioning or migration 0089.`,
-		)
+		// P3 dual path — DB binding when present; personalOrgId fallback until
+		// every create/seed path provisions orgs (cleanup: require membership
+		// after P3 soak / P4).
+		const person = personIdFromStored(personId)
+		return {
+			org: { id: personalOrgId(person), slug: null },
+			role: 'owner',
+		}
 	}
 	return {
 		org: {

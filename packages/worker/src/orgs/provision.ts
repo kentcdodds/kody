@@ -52,6 +52,19 @@ async function runProvisionStatements(
  * Insert the personal org row, owner membership, and live handle for a new
  * person/platform account. Uses plain INSERT so unique conflicts fail loudly.
  */
+/** Idempotent personal org provisioning for seeds and fixture re-runs. */
+export async function ensurePersonalOrg(
+	db: D1Database,
+	input: ProvisionPersonalOrgInput,
+) {
+	const existing = await db
+		.prepare(`SELECT id FROM orgs WHERE id = ?`)
+		.bind(input.stableUserId)
+		.first<{ id: string }>()
+	if (existing) return
+	await provisionPersonalOrg(db, input)
+}
+
 export async function provisionPersonalOrg(
 	db: D1Database,
 	input: ProvisionPersonalOrgInput,

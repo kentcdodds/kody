@@ -1,5 +1,5 @@
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
-import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { ensurePersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 /**
@@ -179,7 +179,7 @@ export async function seedAccount(input: {
 			)
 			.run()
 	}
-	await provisionPersonalOrg(input.db, {
+	await ensurePersonalOrg(input.db, {
 		stableUserId,
 		username: input.username,
 	})

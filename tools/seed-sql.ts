@@ -191,6 +191,58 @@ ON CONFLICT(handle) DO UPDATE SET
 	org_id = excluded.org_id;`.trim()
 }
 
+function deletePersonalOrgRowsForStableUserIdsSubquery(
+	stableUserIdSubquery: string,
+) {
+	return `
+DELETE FROM org_memberships
+WHERE org_id IN (${stableUserIdSubquery})
+   OR user_id IN (${stableUserIdSubquery});
+DELETE FROM handles
+WHERE user_id IN (${stableUserIdSubquery})
+   OR org_id IN (${stableUserIdSubquery});
+DELETE FROM orgs WHERE id IN (${stableUserIdSubquery});`.trim()
+}
+
+/** Remove fixture users and their personal org rows (E2E / local re-seed). */
+export function buildDeleteUserAndPersonalOrgSql(input: {
+	emails: Array<string>
+	/** Orphan org slugs when users were deleted without org cleanup. */
+	orphanPersonalOrgSlugs?: Array<string>
+}) {
+	if (
+		input.emails.length === 0 &&
+		(input.orphanPersonalOrgSlugs?.length ?? 0) === 0
+	) {
+		return ''
+	}
+	const statements: Array<string> = []
+	if (input.emails.length > 0) {
+		const emailList = input.emails
+			.map((email) => quoteSqlString(email))
+			.join(', ')
+		const stableUserIdSubquery = `SELECT stable_user_id FROM users WHERE email IN (${emailList})`
+		statements.push(
+			deletePersonalOrgRowsForStableUserIdsSubquery(stableUserIdSubquery),
+		)
+		statements.push(`DELETE FROM users WHERE email IN (${emailList});`)
+	}
+	const orphanSlugs = input.orphanPersonalOrgSlugs ?? []
+	if (orphanSlugs.length > 0) {
+		const slugList = orphanSlugs.map((slug) => quoteSqlString(slug)).join(', ')
+		statements.push(
+			`
+DELETE FROM org_memberships
+WHERE org_id IN (SELECT id FROM orgs WHERE slug IN (${slugList}));
+DELETE FROM handles
+WHERE handle IN (${slugList})
+   OR org_id IN (SELECT id FROM orgs WHERE slug IN (${slugList}));
+DELETE FROM orgs WHERE slug IN (${slugList});`.trim(),
+		)
+	}
+	return statements.join('\n')
+}
+
 export function buildSeedUserSql(input: {
 	email: string
 	username: string
