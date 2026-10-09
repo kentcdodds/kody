@@ -58,15 +58,16 @@ export async function rewriteStoredApiTokenScopes(
 				)
 			}
 			const rewritten = rewriteLegacyApiTokenScopes(parsed)
-			const createdVia =
-				'created_via' in row ? (row.created_via as string) : null
-			const withParity = shouldRepairLocalExecuteParity({
-				scopes: rewritten,
-				createdVia,
-				table,
-			})
-				? unionLocalExecuteParityScopes(rewritten)
-				: rewritten
+			// Outstanding bootstrap codes keep legacy rewrite only (0092 does
+			// not widen pending codes — parent-cap / short-TTL).
+			const withParity =
+				table === 'api_tokens' &&
+				shouldRepairLocalExecuteParity({
+					scopes: rewritten,
+					createdVia: (row as { created_via?: string }).created_via,
+				})
+					? unionLocalExecuteParityScopes(rewritten)
+					: rewritten
 			const next = JSON.stringify(withParity)
 			if (next === JSON.stringify([...parsed].sort())) continue
 			await db

@@ -180,12 +180,6 @@ test('shouldRepairLocalExecuteParity matches migration 0092 targets', () => {
 			createdVia: 'api',
 		}),
 	).toBe(false)
-	expect(
-		shouldRepairLocalExecuteParity({
-			scopes: ['org:execute', 'org:read', 'package:execute'],
-			table: 'cli_credential_bootstrap_codes',
-		}),
-	).toBe(true)
 })
 
 test('dedupes overlapping expansions, keeps org permissions, and sorts', () => {

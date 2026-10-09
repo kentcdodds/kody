@@ -203,6 +203,9 @@ test('migration 0092 restores local-execute parity on org:execute tokens', () =>
 		),
 	)
 
+	// Pending bootstrap codes are intentionally not widened (short TTL /
+	// parent-cap). Post-deploy mints get parity from TypeScript defaults.
+
 	const local = JSON.parse(
 		(
 			sqlite
@@ -247,14 +250,15 @@ test('migration 0092 restores local-execute parity on org:execute tokens', () =>
 		),
 	).toEqual(['org:execute', 'org:read', 'package:execute'])
 
-	const code = JSON.parse(
-		(
-			sqlite
-				.prepare(
-					`SELECT scopes_json FROM cli_credential_bootstrap_codes WHERE id = ?`,
-				)
-				.get('bc-1') as { scopes_json: string }
-		).scopes_json,
-	) as Array<string>
-	expect(code).toEqual([...localExecuteOrgPermissions, 'org:read'].sort())
+	expect(
+		JSON.parse(
+			(
+				sqlite
+					.prepare(
+						`SELECT scopes_json FROM cli_credential_bootstrap_codes WHERE id = ?`,
+					)
+					.get('bc-1') as { scopes_json: string }
+			).scopes_json,
+		),
+	).toEqual(['org:execute', 'org:read', 'package:execute'])
 })

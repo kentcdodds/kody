@@ -55,19 +55,17 @@ export function unionLocalExecuteParityScopes(
 }
 
 /**
- * Same targets as migration 0092: CLI bootstrap tokens, or tokens that still
- * look like the incomplete 0090 `local-execute` → `org:execute` rewrite
- * (hold `org:execute` but not `package:execute`). Intentional CI tokens that
- * already list `package:execute` are left alone.
+ * Same targets as migration 0092: CLI bootstrap *tokens*, or tokens that
+ * still look like the incomplete 0090 `local-execute` → `org:execute`
+ * rewrite (hold `org:execute` but not `package:execute`). Intentional CI
+ * tokens that already list `package:execute` are left alone. Outstanding
+ * bootstrap *codes* are not repaired (short TTL; parent-cap risk).
  */
 export function shouldRepairLocalExecuteParity(input: {
 	scopes: ReadonlyArray<string>
 	createdVia?: string | null
-	/** Bootstrap-code rows have no created_via; treat as always eligible. */
-	table?: 'api_tokens' | 'cli_credential_bootstrap_codes'
 }): boolean {
 	if (!input.scopes.includes('org:execute')) return false
-	if (input.table === 'cli_credential_bootstrap_codes') return true
 	if (input.createdVia === 'cli-bootstrap') return true
 	return !input.scopes.includes('package:execute')
 }
