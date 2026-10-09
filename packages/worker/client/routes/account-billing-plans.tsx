@@ -5,6 +5,7 @@ import {
 } from '#universal/loader-data.ts'
 import {
 	accountInputCss,
+	AccountManagementMessage,
 	AccountManagementPanel,
 } from '#client/routes/account-management-components.tsx'
 import { type BillingInterval } from '#client/routes/billing-checkout.ts'
@@ -135,6 +136,7 @@ export function renderAccountBillingPlans(input: {
 	checkoutPending: CheckoutPending
 	selectedIntervalByPlan: Record<PaidTier, BillingInterval>
 	promoCode: string
+	checkoutError: string | null
 	onIntervalChange: (plan: PaidTier, interval: BillingInterval) => void
 	onPromoCodeChange: (value: string) => void
 	onStartCheckout: (plan: PaidTier, interval: BillingInterval) => void
@@ -398,6 +400,11 @@ export function renderAccountBillingPlans(input: {
 														: 'Subscribe monthly'}
 										</button>
 									</div>
+									{input.checkoutError ? (
+										<AccountManagementMessage tone="error">
+											{input.checkoutError}
+										</AccountManagementMessage>
+									) : null}
 								</div>
 							) : null}
 						</div>

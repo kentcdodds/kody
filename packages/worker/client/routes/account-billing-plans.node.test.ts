@@ -37,7 +37,10 @@ function billing(
 	}
 }
 
-async function renderPlans(data: AccountBillingLoaderData) {
+async function renderPlans(
+	data: AccountBillingLoaderData,
+	options: { checkoutError?: string } = {},
+) {
 	return renderToString(
 		renderAccountBillingPlans({
 			billing: data,
@@ -46,6 +49,7 @@ async function renderPlans(data: AccountBillingLoaderData) {
 			checkoutPending: null,
 			selectedIntervalByPlan: { pro: 'month' },
 			promoCode: '',
+			checkoutError: options.checkoutError ?? null,
 			onIntervalChange: () => {},
 			onPromoCodeChange: () => {},
 			onStartCheckout: () => {},
@@ -127,4 +131,16 @@ test('seat pricing multiplies the per-seat Pro price by live seats', () => {
 	expect(describeSeatPricing(1, 'month')).toBe('1 seat · $12/month')
 	expect(describeSeatPricing(3, 'month')).toBe('3 seats · $36/month')
 	expect(describeSeatPricing(3, 'year')).toBe('3 seats · $360/year')
+})
+
+test('a rejected checkout explains itself under the Subscribe button', async () => {
+	const error =
+		'Promo codes apply to monthly billing only. Choose monthly to use this code.'
+	const html = await renderPlans(billing(), { checkoutError: error })
+	const button = html.indexOf('Subscribe monthly')
+	const alert = html.indexOf('role="alert"')
+	expect(button).toBeGreaterThan(-1)
+	expect(alert).toBeGreaterThan(button)
+	expect(html.slice(alert)).toContain(error)
+	expect(await renderPlans(billing())).not.toContain('role="alert"')
 })

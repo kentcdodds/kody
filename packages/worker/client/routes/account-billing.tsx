@@ -230,6 +230,8 @@ export function AccountBillingRoute(handle: Handle) {
 	let cancellationFeedbackSent = false
 	let cancellationFeedbackError: string | null = null
 	let promoCode = ''
+	/** Shown under the plan card's Subscribe button, where the customer is looking. */
+	let planCheckoutError: string | null = null
 	const selectedIntervalByPlan: Record<PaidTier, BillingInterval> = {
 		pro: 'month',
 	}
@@ -255,10 +257,12 @@ export function AccountBillingRoute(handle: Handle) {
 		plan: PaidTier,
 		interval: BillingInterval,
 		promo: string,
+		errorPlacement: 'page' | 'plan-card',
 	) {
 		if (checkoutPending) return
 		checkoutPending = { plan, interval }
 		message = null
+		planCheckoutError = null
 		handle.update()
 		const result = await requestProCheckout({
 			orgSlug,
@@ -276,8 +280,12 @@ export function AccountBillingRoute(handle: Handle) {
 			window.location.assign(result.url)
 			return
 		}
-		message = result.error
-		messageTone = 'error'
+		if (errorPlacement === 'plan-card') {
+			planCheckoutError = result.error
+		} else {
+			message = result.error
+			messageTone = 'error'
+		}
 		checkoutPending = null
 		handle.update()
 	}
@@ -500,6 +508,7 @@ export function AccountBillingRoute(handle: Handle) {
 																'pro',
 																billing.stripeInterval ?? 'month',
 																'',
+																'page',
 															),
 													),
 													css(primaryButtonCss),
@@ -728,16 +737,25 @@ export function AccountBillingRoute(handle: Handle) {
 							checkoutPending,
 							selectedIntervalByPlan,
 							promoCode,
+							checkoutError: planCheckoutError,
 							onIntervalChange: (plan, interval) => {
 								selectedIntervalByPlan[plan] = interval
+								planCheckoutError = null
 								handle.update()
 							},
 							onPromoCodeChange: (value) => {
 								promoCode = value
+								planCheckoutError = null
 								handle.update()
 							},
 							onStartCheckout: (plan, interval) =>
-								void startCheckout(orgSlug, plan, interval, promoCode),
+								void startCheckout(
+									orgSlug,
+									plan,
+									interval,
+									promoCode,
+									'plan-card',
+								),
 						})}
 					</>
 				) : null}
