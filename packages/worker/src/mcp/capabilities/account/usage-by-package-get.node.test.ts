@@ -171,6 +171,19 @@ test('usageByPackageGet attributes past-include Worker compute credits by packag
 	).toBe(true)
 })
 
+test('usageByPackageGet rejects whitespace-only packageId', async () => {
+	const { env, stableUserId } = createAttributionEnv()
+	await expect(
+		usageByPackageGetCapability.handler(
+			{ packageId: '   ' },
+			{
+				env,
+				callerContext: callerContext(stableUserId),
+			},
+		),
+	).rejects.toThrow(/Invalid input for capability "usageByPackageGet"/)
+})
+
 test('usageByPackageGet packageId returns that package slice of the period', async () => {
 	const now = new Date()
 	const day = utcDayKey(now)

@@ -75,6 +75,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 		inputSchema: z.object({
 			packageId: z
 				.string()
+				.trim()
 				.min(1)
 				.optional()
 				.describe(
@@ -127,7 +128,7 @@ export const usageByPackageGetCapability = defineDomainCapability(
 				computeOverage,
 				now,
 			})
-			const packageId = args.packageId?.trim()
+			const packageId = args.packageId
 			if (!packageId) return breakdown
 			const row = creditAttributionForPackage(breakdown, packageId)
 			if (!row) {
