@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Kody for agencies</title>
+    <style>
+      @font-face {
+        font-family: Display;
+        src: url(../../../packages/worker/public/fonts/bricolage-grotesque-latin.woff2);
+      }
+      @font-face {
+        font-family: Body;
+        src: url(../../../packages/worker/public/fonts/wix-madefor-text-latin.woff2);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: #f7f7ef;
+        color: #18382e;
+        font-family: Body, Arial, sans-serif;
+      }
+      button,
+      a,
+      input {
+        font: inherit;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      input:focus-visible {
+        outline: 3px solid #cc603b;
+        outline-offset: 4px;
+      }
+      .wrap {
+        max-width: 1240px;
+        margin: auto;
+        padding: 0 40px;
+      }
+      nav {
+        height: 100px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #d7ded2;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font: 700 30px Display;
+      }
+      .brand img {
+        width: 39px;
+        height: 39px;
+      }
+      .navlinks {
+        display: flex;
+        gap: 30px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        gap: 26px;
+        padding: 16px 22px;
+        background: #183e31;
+        color: #fff;
+        border: 0;
+        border-radius: 6px;
+        font-weight: 600;
+      }
+      .button.light {
+        background: #d8ed8b;
+        color: #19382d;
+      }
+      .arrow {
+        font-size: 21px;
+      }
+      .hero {
+        padding: 72px 0 62px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 60px;
+        align-items: end;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      h1 {
+        font: 600 64px/1.04 Display;
+        max-width: 660px;
+      }
+      h1 span {
+        color: #628345;
+      }
+      p {
+        line-height: 1.65;
+      }
+      .hero p {
+        font-size: 20px;
+        max-width: 420px;
+        margin: 0 0 28px;
+      }
+      .workspace {
+        border: 1px solid #b9c7b2;
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 20px 60px #203a2512;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        min-height: 465px;
+      }
+      .sidebar {
+        padding: 25px 16px;
+        background: #edf0e6;
+        border-right: 1px solid #d8dfd2;
+      }
+      .studio {
+        font-weight: 700;
+        padding: 0 10px 26px;
+        display: flex;
+        gap: 9px;
+        align-items: center;
+      }
+      .studio b {
+        display: grid;
+        place-items: center;
+        background: #18382e;
+        color: #e3ecaa;
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        font: 600 15px Display;
+      }
+      .sidelabel {
+        font-size: 12px;
+        color: #67796a;
+        margin: 20px 11px 9px;
+      }
+      .client {
+        width: 100%;
+        text-align: left;
+        padding: 11px;
+        border: 0;
+        background: none;
+        border-radius: 5px;
+        color: #40574a;
+        font-size: 14px;
+      }
+      .client.active {
+        background: #d8e1cc;
+        color: #18382e;
+        font-weight: 700;
+      }
+      .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #bb7861;
+        margin-right: 9px;
+      }
+      .client:nth-of-type(2) .dot {
+        background: #94a369;
+      }
+      .client:nth-of-type(3) .dot {
+        background: #8a9dac;
+      }
+      .main {
+        padding: 28px 34px;
+      }
+      .toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+      }
+      .crumb {
+        font-size: 12px;
+        color: #728072;
+        margin-bottom: 9px;
+      }
+      .main h3 {
+        font: 600 28px Display;
+      }
+      .share {
+        background: white;
+        border: 1px solid #c9d4c3;
+        padding: 9px 16px;
+        border-radius: 5px;
+        color: #244733;
+      }
+      .people {
+        font-size: 12px;
+        color: #728072;
+        margin: 13px 0 27px;
+      }
+      .tabs {
+        display: flex;
+        gap: 28px;
+        border-bottom: 1px solid #e1e6dc;
+        font-size: 13px;
+        margin-bottom: 5px;
+      }
+      .tab {
+        padding: 0 0 12px;
+        border: 0;
+        background: none;
+        color: #6e7d6e;
+      }
+      .tab.active {
+        color: #193e31;
+        border-bottom: 2px solid #193e31;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 44px 1fr 100px 80px;
+        align-items: center;
+        gap: 13px;
+        padding: 20px 0;
+        border-bottom: 1px solid #e8ece4;
+      }
+      .fileicon {
+        width: 38px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        font-size: 20px;
+        background: #f4eadf;
+        color: #ad6846;
+      }
+      .row:nth-child(2) .fileicon {
+        background: #e9efda;
+        color: #64852f;
+      }
+      .row:nth-child(3) .fileicon {
+        background: #e7eef2;
+        color: #477784;
+      }
+      .name {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .detail {
+        font-size: 12px;
+        color: #7b857a;
+        margin-top: 5px;
+      }
+      .kind {
+        font-size: 12px;
+        color: #6a7e6c;
+      }
+      .badge {
+        font-size: 11px;
+        padding: 5px 8px;
+        background: #edf4df;
+        border-radius: 4px;
+        text-align: center;
+        color: #526b32;
+      }
+      .connected {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 24px;
+        font-size: 12px;
+        color: #6b7c68;
+      }
+      .connected strong {
+        color: #294736;
+        font-weight: 500;
+      }
+      .agents {
+        display: flex;
+        gap: 7px;
+        margin-left: auto;
+      }
+      .agents span {
+        background: #f4f4ee;
+        padding: 6px 10px;
+        border-radius: 4px;
+        color: #53604f;
+      }
+      .under {
+        padding: 24px 0 64px;
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        font-size: 14px;
+        color: #687863;
+      }
+      .under p {
+        max-width: 570px;
+      }
+      .under a {
+        color: #203f31;
+        border-bottom: 1px solid #aab6a0;
+        align-self: start;
+        padding-bottom: 4px;
+        white-space: nowrap;
+      }
+      .story {
+        padding: 82px 0;
+        border-top: 1px solid #d7ded2;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 100px;
+      }
+      h2 {
+        font: 600 48px/1.08 Display;
+      }
+      .story p {
+        font-size: 17px;
+        margin-top: 24px;
+        color: #526753;
+        max-width: 435px;
+      }
+      .permission {
+        align-self: center;
+        background: #e9eedf;
+        padding: 28px 32px;
+        border-radius: 8px;
+      }
+      .permission h3 {
+        font: 600 20px Display;
+        margin-bottom: 23px;
+      }
+      .person {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 0;
+        border-top: 1px solid #d0dac5;
+        font-size: 14px;
+      }
+      .avatar {
+        width: 33px;
+        height: 33px;
+        display: grid;
+        place-items: center;
+        background: #d5ddc6;
+        border-radius: 50%;
+        font-size: 11px;
+      }
+      .role {
+        margin-left: auto;
+        color: #64775e;
+        font-size: 12px;
+      }
+      .permission small {
+        display: block;
+        margin-top: 17px;
+        font-size: 12px;
+        color: #5b6e55;
+      }
+      .examples {
+        background: #193e31;
+        color: #f0f5e5;
+        padding: 72px 0;
+      }
+      .examples .wrap {
+        display: grid;
+        grid-template-columns: 1fr 1.12fr;
+        gap: 95px;
+      }
+      .examples h2 {
+        max-width: 450px;
+      }
+      .usecase {
+        padding: 24px 0;
+        border-bottom: 1px solid #42614f;
+      }
+      .usecase:first-child {
+        padding-top: 0;
+      }
+      .usecase h3 {
+        font: 500 23px Display;
+        color: #dceda7;
+      }
+      .usecase p {
+        font-size: 15px;
+        line-height: 1.6;
+        margin-top: 9px;
+        color: #c1d1bd;
+      }
+      .closing {
+        padding: 87px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 35px;
+      }
+      .closing h2 {
+        max-width: 680px;
+      }
+      footer {
+        border-top: 1px solid #d7ded2;
+        padding: 25px 0;
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: #6d7c68;
+      }
+      dialog {
+        border: 1px solid #c6d0bf;
+        border-radius: 12px;
+        padding: 35px;
+        max-width: 460px;
+        width: calc(100% - 32px);
+        color: #18382e;
+        background: #f7f7ef;
+        box-shadow: 0 25px 100px #17362340;
+      }
+      dialog::backdrop {
+        background: #102a2355;
+        backdrop-filter: blur(3px);
+      }
+      dialog h2 {
+        font-size: 32px;
+        margin: 10px 0 20px;
+      }
+      dialog p {
+        font-size: 15px;
+        margin: 15px 0;
+      }
+      .close {
+        float: right;
+        border: 0;
+        background: none;
+        color: #18382e;
+        font-size: 24px;
+      }
+      .preview-note {
+        font-size: 12px !important;
+        color: #6b7764;
+      }
+      .permission-modal .person {
+        font-size: 13px;
+      }
+      a:hover {
+        opacity: 0.8;
+      }
+      .client:hover {
+        background: #e0e7d5;
+      }
+      @media (max-width: 900px) {
+        .hero {
+          gap: 30px;
+        }
+        h1 {
+          font-size: 58px;
+        }
+        .hero p {
+          font-size: 17px;
+        }
+        .workspace {
+          grid-template-columns: 175px 1fr;
+        }
+        .main {
+          padding: 25px;
+        }
+        .agents {
+          display: none;
+        }
+        .story {
+          gap: 40px;
+        }
+        .examples .wrap {
+          gap: 45px;
+        }
+        .navlinks > a:first-child {
+          display: none;
+        }
+      }
+      @media (max-width: 640px) {
+        .wrap {
+          padding: 0 22px;
+        }
+        nav {
+          height: 80px;
+        }
+        .navlinks {
+          gap: 10px;
+        }
+        .navlinks .button {
+          padding: 11px 13px;
+          font-size: 12px;
+        }
+        .hero {
+          grid-template-columns: 1fr;
+          padding: 43px 0 35px;
+          gap: 25px;
+        }
+        h1 {
+          font-size: 52px;
+          max-width: 370px;
+        }
+        .hero p {
+          max-width: 360px;
+          margin-bottom: 20px;
+        }
+        .workspace {
+          grid-template-columns: 1fr;
+          min-height: 0;
+        }
+        .sidebar {
+          padding: 15px;
+          border-right: 0;
+          border-bottom: 1px solid #d8dfd2;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 3px;
+        }
+        .studio {
+          width: 100%;
+          padding: 0 0 10px;
+        }
+        .sidelabel {
+          display: none;
+        }
+        .client {
+          width: auto;
+          font-size: 11px;
+          padding: 9px;
+        }
+        .main {
+          padding: 23px 17px;
+        }
+        .main h3 {
+          font-size: 24px;
+        }
+        .row {
+          grid-template-columns: 33px 1fr 60px;
+          gap: 10px;
+          padding: 17px 0;
+        }
+        .kind {
+          display: none;
+        }
+        .name {
+          font-size: 12px;
+        }
+        .detail {
+          font-size: 10px;
+        }
+        .fileicon {
+          width: 30px;
+          height: 35px;
+        }
+        .badge {
+          font-size: 10px;
+        }
+        .connected {
+          font-size: 10px;
+          gap: 4px;
+        }
+        .under {
+          padding: 20px 0 40px;
+          display: block;
+          font-size: 12px;
+        }
+        .under a {
+          display: inline-block;
+          margin-top: 15px;
+        }
+        .story {
+          padding: 45px 0;
+          grid-template-columns: 1fr;
+          gap: 30px;
+        }
+        h2 {
+          font-size: 37px;
+        }
+        .story p {
+          font-size: 16px;
+          margin-top: 18px;
+        }
+        .permission {
+          padding: 23px;
+        }
+        .examples {
+          padding: 45px 0;
+        }
+        .examples .wrap {
+          grid-template-columns: 1fr;
+          gap: 35px;
+        }
+        .closing {
+          padding: 47px 0;
+          display: block;
+        }
+        .closing .button {
+          margin-top: 25px;
+        }
+        .closing h2 {
+          font-size: 36px;
+        }
+        footer {
+          gap: 20px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav aria-label="Main navigation">
+        <a class="brand" href="#"
+          ><img
+            src="../../../packages/worker/public/logo-64.webp"
+            alt=""
+          />kody</a
+        >
+        <div class="navlinks">
+          <a href="#client-spaces">Client spaces</a
+          ><a class="button" href="#demo" data-demo
+            >Book an agency demo <span aria-hidden="true">↗</span></a
+          >
+        </div>
+      </nav>
+      <main>
+        <section class="hero">
+          <h1>Your agency’s AI work.<br /><span>Ready for everyone.</span></h1>
+          <div>
+            <p>
+              Give your team and clients one place for the apps, skills, and
+              workflows you build. Everyone brings their own AI.
+            </p>
+            <a class="button" href="#demo" data-demo
+              >Book an agency demo
+              <span class="arrow" aria-hidden="true">↗</span></a
+            >
+          </div>
+        </section>
+        <section
+          class="workspace"
+          aria-label="Interactive example client workspace"
+        >
+          <aside class="sidebar">
+            <div class="studio"><b>N</b> Northline Studio</div>
+            <div class="sidelabel">Client spaces</div>
+            <button class="client active" data-client="0">
+              <span class="dot"></span>Acme Construction</button
+            ><button class="client" data-client="1">
+              <span class="dot"></span>Fieldwork Co.</button
+            ><button class="client" data-client="2">
+              <span class="dot"></span>Studio operations
+            </button>
+          </aside>
+          <div class="main">
+            <div class="toolbar">
+              <div>
+                <div class="crumb">Northline Studio / Client spaces</div>
+                <h3 id="client-title">Acme Construction</h3>
+              </div>
+              <button class="share" id="share">Share ↗</button>
+            </div>
+            <p class="people">Your team + the people you invite</p>
+            <div class="tabs" role="tablist" aria-label="Workspace content">
+              <button
+                class="tab active"
+                role="tab"
+                aria-selected="true"
+                data-tab="work"
+              >
+                Shared work</button
+              ><button
+                class="tab"
+                role="tab"
+                aria-selected="false"
+                data-tab="access"
+              >
+                People & access
+              </button>
+            </div>
+            <div id="rows"></div>
+            <div class="connected">
+              <span style="color: #68964c">●</span> Available to connected
+              agents
+              <div class="agents">
+                <span>Claude</span><span>ChatGPT</span><span>Codex</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="under">
+          <p>Try switching client spaces or opening People & access.</p>
+          <a href="#client-spaces">See how sharing works ↓</a>
+        </div>
+        <section class="story" id="client-spaces">
+          <div>
+            <h2>A place for every client.<br />A say in who gets in.</h2>
+            <p>
+              Keep client work in its own space. Give someone permission to run
+              a workflow, invite a teammate to improve it, or share just one
+              report.
+            </p>
+            <p>
+              When someone leaves, remove their access. The work stays with your
+              team.
+            </p>
+          </div>
+          <div class="permission">
+            <h3>Monthly invoicing</h3>
+            <div class="person">
+              <span class="avatar">NS</span>Northline Studio<span class="role"
+                >Can edit</span
+              >
+            </div>
+            <div class="person">
+              <span class="avatar">AC</span>Acme finance team<span class="role"
+                >Can run</span
+              >
+            </div>
+            <div class="person">
+              <span class="avatar">JL</span>Jamie Lee<span class="role"
+                >Can run</span
+              >
+            </div>
+            <small
+              >Let people use a connection without exposing its secret.</small
+            >
+          </div>
+        </section>
+      </main>
+    </div>
+    <section class="examples">
+      <div class="wrap">
+        <h2>Turn what you know<br />into something<br />clients can use.</h2>
+        <div>
+          <article class="usecase">
+            <h3>Hand off the invoicing workflow.</h3>
+            <p>
+              Your client runs it from their agent or a simple app. Your team
+              maintains the workflow in Kody.
+            </p>
+          </article>
+          <article class="usecase">
+            <h3>Keep the whole team on the same playbook.</h3>
+            <p>
+              Share your audit skills and company knowledge. New teammates
+              connect their agent and get to work.
+            </p>
+          </article>
+          <article class="usecase">
+            <h3>Deliver the report. Keep it useful.</h3>
+            <p>
+              Give clients a dashboard they can come back to, with the workflow
+              and data behind it in the same place.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+    <div class="wrap">
+      <section class="closing">
+        <h2>Bring a client workflow.<br />Let’s put it to work.</h2>
+        <a class="button" href="#demo" data-demo
+          >Book an agency demo
+          <span class="arrow" aria-hidden="true">↗</span></a
+        >
+      </section>
+      <footer><span>Kody for agencies</span></footer>
+    </div>
+    <dialog id="demo">
+      <button class="close" aria-label="Close dialog">×</button>
+      <h2>Let’s talk about your agency.</h2>
+      <p>
+        Bring a workflow you want to share with your team or a client. We’ll
+        walk through how it fits in Kody.
+      </p>
+      <p class="preview-note">
+        Design preview. Connect this button to your booking calendar before
+        publishing.
+      </p>
+      <button class="button" onclick="this.closest('dialog').close()">
+        Back to the page
+      </button>
+    </dialog>
+    <dialog id="sharing" class="permission-modal">
+      <button class="close" aria-label="Close dialog">×</button>
+      <h2>Share this space</h2>
+      <div class="person">
+        Northline Studio<span class="role">Can edit</span>
+      </div>
+      <div class="person" id="client-access">
+        Acme Construction<span class="role">Can run</span>
+      </div>
+      <p>
+        Invite someone to this space, or share individual apps and workflows.
+      </p>
+      <p class="preview-note">Example permissions for this design preview.</p>
+    </dialog>
+    <script>
+      const clients = [
+        {
+          name: "Acme Construction",
+          items: [
+            [
+              "↗",
+              "Monthly invoicing",
+              "Run from your agent or the app",
+              "App",
+              "Can run",
+            ],
+            [
+              "◈",
+              "Project handover",
+              "Shared project context and instructions",
+              "Knowledge",
+              "Can read",
+            ],
+            [
+              "▤",
+              "Weekly project report",
+              "A live view of project updates",
+              "Dashboard",
+              "Can view",
+            ],
+          ],
+        },
+        {
+          name: "Fieldwork Co.",
+          items: [
+            [
+              "↗",
+              "Client intake",
+              "Turn a new brief into a project",
+              "Workflow",
+              "Can run",
+            ],
+            [
+              "◈",
+              "Brand playbook",
+              "Voice, references, and approved assets",
+              "Knowledge",
+              "Can read",
+            ],
+            [
+              "▤",
+              "Campaign report",
+              "Results your client can come back to",
+              "Dashboard",
+              "Can view",
+            ],
+          ],
+        },
+        {
+          name: "Studio operations",
+          items: [
+            [
+              "↗",
+              "Nightly code audit",
+              "Your team’s shared review workflow",
+              "Skill",
+              "Can edit",
+            ],
+            [
+              "◈",
+              "Agency playbook",
+              "How your team gets work done",
+              "Knowledge",
+              "Can edit",
+            ],
+            [
+              "▤",
+              "Client overview",
+              "Work across your client spaces",
+              "Dashboard",
+              "Can view",
+            ],
+          ],
+        },
+      ];
+      let selected = 0,
+        tab = "work";
+      function render() {
+        document.querySelector("#client-title").textContent =
+          clients[selected].name;
+        document.querySelector("#client-access").firstChild.textContent =
+          clients[selected].name;
+        document.querySelector("#rows").innerHTML =
+          tab === "work"
+            ? clients[selected].items
+                .map(
+                  (x) =>
+                    `<div class="row"><span class="fileicon" aria-hidden="true">${x[0]}</span><div><div class="name">${x[1]}</div><div class="detail">${x[2]}</div></div><span class="kind">${x[3]}</span><span class="badge">${x[4]}</span></div>`,
+                )
+                .join("")
+            : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
+      }
+      document.querySelectorAll("[data-client]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            selected = Number(b.dataset.client);
+            document
+              .querySelectorAll("[data-client]")
+              .forEach((x) => x.classList.toggle("active", x === b));
+            render();
+          }),
+      );
+      document.querySelectorAll("[data-tab]").forEach(
+        (b) =>
+          (b.onclick = () => {
+            tab = b.dataset.tab;
+            document.querySelectorAll("[data-tab]").forEach((x) => {
+              x.classList.toggle("active", x === b);
+              x.setAttribute("aria-selected", String(x === b));
+            });
+            render();
+          }),
+      );
+      document.querySelectorAll("[data-demo]").forEach(
+        (a) =>
+          (a.onclick = (e) => {
+            e.preventDefault();
+            document.querySelector("#demo").showModal();
+          }),
+      );
+      document.querySelector("#share").onclick = () =>
+        document.querySelector("#sharing").showModal();
+      document
+        .querySelectorAll(".close")
+        .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
+      render();
+    </script>
+  </body>
+</html>
