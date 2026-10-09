@@ -39,7 +39,6 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/discord">Discord</a>
 					<a href="/docs">Docs</a>
 					<a href="/pricing">Pricing</a>
-					<a href="/for/business">For business</a>
 					<a href="/faq">FAQ</a>
 					<a href="/support">Support</a>
 					<a href="/blog">Blog</a>
@@ -57,6 +56,13 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					) : (
 						<a href={handle.props.loginHref}>Log in</a>
 					)}
+					<section
+						aria-labelledby="footer-for-heading"
+						mix={css(footerAudienceCss)}
+					>
+						<h2 id="footer-for-heading">For</h2>
+						<a href="/for/business">Business</a>
+					</section>
 				</nav>
 			</div>
 		</footer>
@@ -151,5 +157,19 @@ const footerNavCss = {
 			minHeight: '44px',
 			padding: '0.55rem 0.75rem',
 		},
+	},
+}
+
+const footerAudienceCss = {
+	gridColumn: '1 / -1',
+	marginTop: '1rem',
+	'& h2': {
+		margin: '0 0 0.5rem',
+		color: colors.text,
+		font: `600 0.92rem/1.4 ${typography.fontFamily}`,
+	},
+	[footerStackMq]: {
+		textAlign: 'center' as const,
+		'& a': { display: 'inline-flex' },
 	},
 }
