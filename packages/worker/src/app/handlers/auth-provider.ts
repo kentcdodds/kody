@@ -788,7 +788,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					stableUserId,
 					username,
 					createdAt,
-					accountType: 'person',
 					plan: resolvePlanWrite(null),
 					signupWelcomeCreditsPending: 1,
 				})
