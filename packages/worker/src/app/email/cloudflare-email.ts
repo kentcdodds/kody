@@ -135,7 +135,9 @@ async function sendViaCloudflareApi(
 				to: redactRecipients(message.to),
 				from: message.from,
 				subject: message.subject,
-				permanent_bounces: payload.result?.permanent_bounces,
+				permanent_bounces: redactRecipients(
+					payload.result?.permanent_bounces ?? [],
+				),
 				message_id: payload.result?.message_id ?? null,
 			}),
 		)
@@ -153,9 +155,11 @@ async function sendViaCloudflareApi(
 }
 
 /**
- * Cloudflare Email Sending can return `success: true` with the recipient in
- * `permanent_bounces` (accepted by the HTTP API, rejected for delivery). Treat
- * that as a send failure so callers do not report success to the user.
+ * Cloudflare Email Sending can return `success: true` with every recipient in
+ * `permanent_bounces` (HTTP accepted, delivery rejected). Treat total bounce as
+ * a send failure so callers do not report success. Partial bounce with at least
+ * one delivered/queued recipient stays ok so multi-recipient outbound is not
+ * marked failed and retried for addresses that already received the message.
  */
 function permanentBounceError(
 	to: string | Array<string>,
@@ -179,10 +183,8 @@ function permanentBounceError(
 		(recipient) => bounced.has(recipient) && !accepted.has(recipient),
 	)
 	if (failedRecipients.length === 0) return null
-	if (failedRecipients.length === recipients.length) {
-		return `Cloudflare Email API permanently bounced every recipient (${failedRecipients.join(', ')}).`
-	}
-	return `Cloudflare Email API permanently bounced: ${failedRecipients.join(', ')}.`
+	if (failedRecipients.length !== recipients.length) return null
+	return `Cloudflare Email API permanently bounced every recipient (${failedRecipients.join(', ')}).`
 }
 
 export async function sendCloudflareEmail(

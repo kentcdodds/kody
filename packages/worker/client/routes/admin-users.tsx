@@ -84,6 +84,7 @@ export function AdminUsersRoute(handle: Handle) {
 	let mintedVerifyUrl: string | null = null
 	let mintedVerifyUrlForStableUserId: string | null = null
 	let destinationEmailDraft = ''
+	let destinationDraftStableUserId: string | null = null
 	const markVerifiedCheck = createDoubleCheck(handle)
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
@@ -687,6 +688,15 @@ export function AdminUsersRoute(handle: Handle) {
 		if (selectedUser && selectedUser.stableUserId !== planDraftStableUserId) {
 			planDraftStableUserId = selectedUser.stableUserId
 			selectedPlanChoice = selectedUser.plan ?? 'free'
+		}
+		// Clear destination draft on selection change so a typed address cannot
+		// verify against a different account.
+		if (
+			selectedUser &&
+			selectedUser.stableUserId !== destinationDraftStableUserId
+		) {
+			destinationDraftStableUserId = selectedUser.stableUserId
+			destinationEmailDraft = ''
 		}
 
 		return (

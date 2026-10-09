@@ -4,6 +4,10 @@ import { buildEmailDestinationVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import {
+	accountSuspendedMessage,
+	getAccountRestrictionsByStableUserId,
+} from '#worker/account/account-suspension.ts'
+import {
 	generateVerificationToken,
 	hashVerificationToken,
 	verificationTokenExpiryMs,
@@ -16,6 +20,7 @@ import {
 	markEmailNotificationDestinationVerified,
 	type EmailNotificationDestination,
 } from './destinations.ts'
+import { emailOutboundPausedMessage } from './outbound-abuse.ts'
 import { resolveUserPlatformSender } from './platform-address.ts'
 import {
 	CloudflareEmailProviderSkippedError,
@@ -172,36 +177,48 @@ async function sendDestinationVerificationEmail(input: {
 	tokenHash: string
 	onSendFailure: () => Promise<void>
 }) {
-	const account = await loadEmailDestinationAccount({
-		db: input.env.APP_DB,
-		dbUserId: input.userId,
-	})
-	if (!account) {
-		throw new Error('Account was not found for destination verification.')
-	}
-
-	const linkConfig = getDestinationLinkConfig({
-		env: input.env,
-		requestUrl: input.requestUrl,
-	})
-	const sender = await resolveUserPlatformSender({
-		db: input.env.APP_DB,
-		env: input.env,
-		accountEmail: account.email,
-		userId: account.stableUserId,
-	})
-	const verificationUrl = buildEmailDestinationVerificationUrl({
-		appBaseUrl: linkConfig.appBaseUrl,
-		token: input.token,
-	})
-	const email = buildEmailDestinationVerificationEmail({
-		appBaseUrl: linkConfig.appBaseUrl,
-		destinationEmail: input.destinationEmail,
-		verificationUrl: verificationUrl.toString(),
-	})
-
-	let messageId: string | null = null
+	let fromForReporting = 'unresolved'
 	try {
+		const account = await loadEmailDestinationAccount({
+			db: input.env.APP_DB,
+			dbUserId: input.userId,
+		})
+		if (!account) {
+			throw new Error('Account was not found for destination verification.')
+		}
+
+		const restrictions = await getAccountRestrictionsByStableUserId({
+			db: input.env.APP_DB,
+			stableUserId: account.stableUserId,
+		})
+		if (restrictions?.suspendedAt) {
+			throw new Error(accountSuspendedMessage)
+		}
+		if (restrictions?.emailOutboundPausedAt) {
+			throw new Error(emailOutboundPausedMessage)
+		}
+
+		const linkConfig = getDestinationLinkConfig({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		})
+		const sender = await resolveUserPlatformSender({
+			db: input.env.APP_DB,
+			env: input.env,
+			accountEmail: account.email,
+			userId: account.stableUserId,
+		})
+		fromForReporting = sender.from
+		const verificationUrl = buildEmailDestinationVerificationUrl({
+			appBaseUrl: linkConfig.appBaseUrl,
+			token: input.token,
+		})
+		const email = buildEmailDestinationVerificationEmail({
+			appBaseUrl: linkConfig.appBaseUrl,
+			destinationEmail: input.destinationEmail,
+			verificationUrl: verificationUrl.toString(),
+		})
+
 		const sendResult = await sendViaCloudflareEmailProvider({
 			env: input.env,
 			from: sender.from,
@@ -210,40 +227,38 @@ async function sendDestinationVerificationEmail(input: {
 			html: email.html,
 			text: email.text,
 		})
-		messageId = sendResult.messageId
+		if (sendResult.messageId) {
+			await registerTransactionalEmailDelivery({
+				db: input.env.APP_DB,
+				providerMessageId: sendResult.messageId,
+				userId: input.userId,
+				recipient: input.destinationEmail,
+				kind: transactionalEmailDestinationVerificationKind,
+			}).catch((error) => {
+				console.warn(
+					'email-destination-verification-delivery-index-failed',
+					error,
+				)
+			})
+		}
 	} catch (error) {
 		if (
 			error instanceof CloudflareEmailProviderSkippedError &&
 			isNonProductionRuntime(input.env)
 		) {
 			console.warn('email-destination-verify-send-skipped', input.userId)
-		} else {
-			await input.onSendFailure()
-			captureDestinationVerificationSendFailure({
-				error,
-				userId: input.userId,
-				destinationEmail: input.destinationEmail,
-				from: sender.from,
-			})
-			throw error instanceof Error
-				? error
-				: new Error('Destination verification could not be sent.')
+			return
 		}
-	}
-
-	if (messageId) {
-		await registerTransactionalEmailDelivery({
-			db: input.env.APP_DB,
-			providerMessageId: messageId,
+		await input.onSendFailure()
+		captureDestinationVerificationSendFailure({
+			error,
 			userId: input.userId,
-			recipient: input.destinationEmail,
-			kind: transactionalEmailDestinationVerificationKind,
-		}).catch((error) => {
-			console.warn(
-				'email-destination-verification-delivery-index-failed',
-				error,
-			)
+			destinationEmail: input.destinationEmail,
+			from: fromForReporting,
 		})
+		throw error instanceof Error
+			? error
+			: new Error('Destination verification could not be sent.')
 	}
 }
 
