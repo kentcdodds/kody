@@ -52,7 +52,10 @@ async function vectorizeIndexExists(client: VectorizeClient, name: string) {
 		return response.result?.name === name
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
-		if (/Cloudflare API request failed \(404\)/.test(message)) return false
+		// A just-deleted index answers 410 vectorize.index.deleted, not 404.
+		if (/Cloudflare API request failed \((404|410)\)/.test(message)) {
+			return false
+		}
 		throw error
 	}
 }

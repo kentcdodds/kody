@@ -13,6 +13,7 @@ function fakeVectorizeApi(
 	options: { ignoreDeletes?: boolean; lookupStatus?: number } = {},
 ) {
 	const indexes = new Map<string, FakeIndex>()
+	const deleted = new Set<string>()
 	const requests: Array<string> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
 	const fetcher: typeof fetch = async (input, init) => {
@@ -37,6 +38,20 @@ function fakeVectorizeApi(
 			)
 		}
 		const index = indexes.get(name)
+		if (!index && deleted.has(name)) {
+			return Response.json(
+				{
+					success: false,
+					errors: [
+						{
+							code: 3001,
+							message: `vectorize.index.deleted - Index name "${name}" was deleted`,
+						},
+					],
+				},
+				{ status: 410 },
+			)
+		}
 		if (!index) {
 			return Response.json(
 				{ success: false, errors: [{ code: 3000, message: 'not found' }] },
@@ -57,7 +72,10 @@ function fakeVectorizeApi(
 		}
 		if (!match?.[2] && method === 'GET') return ok({ name })
 		if (!match?.[2] && method === 'DELETE') {
-			if (!options.ignoreDeletes) indexes.delete(name)
+			if (!options.ignoreDeletes) {
+				indexes.delete(name)
+				deleted.add(name)
+			}
 			return ok({})
 		}
 		throw new Error(`unexpected request ${method} ${url.pathname}`)
@@ -103,7 +121,7 @@ test('ensureVectorizeIndex creates the embedding-shaped index with every filtere
 	])
 })
 
-test('deleteVectorizeIndex treats a missing index as success and fails loudly when the index survives the delete', async () => {
+test('deleteVectorizeIndex treats a missing or just-deleted (410) index as success and fails loudly when the index survives the delete', async () => {
 	consoleError.mockImplementation(() => {})
 	const api = fakeVectorizeApi()
 	await deleteVectorizeIndex({
@@ -121,6 +139,12 @@ test('deleteVectorizeIndex treats a missing index as success and fails loudly wh
 		name: 'kody-pr-8-vectors',
 	})
 	expect(api.indexes.has('kody-pr-8-vectors')).toBe(false)
+	api.requests.length = 0
+	await deleteVectorizeIndex({
+		...client(api.fetcher),
+		name: 'kody-pr-8-vectors',
+	})
+	expect(api.requests).toEqual(['GET /kody-pr-8-vectors'])
 
 	const stubborn = fakeVectorizeApi({ ignoreDeletes: true })
 	await ensureVectorizeIndex({
