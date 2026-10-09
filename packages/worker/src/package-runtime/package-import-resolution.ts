@@ -92,10 +92,11 @@ export async function resolveSavedPackageImport(input: {
 	const decision = checkPermission(
 		access,
 		'package:execute',
-		packageResource(own),
+		packageResource({ id: own.id, userId: own.userId, label: own.name }),
 	)
-	// Do not collapse a scope/permission denial into "package not found" —
-	// callers (CLI package-graph) need the missing scope named.
-	if (!decision.allowed) throw decision.error
-	return { row: own }
+	if (decision.allowed) return { row: own }
+	// A package under another org's storage stays "not found". A credential
+	// scope denial must name the missing scope (CLI package-graph needs it).
+	if (decision.error.code === 'wrong_org') return null
+	throw decision.error
 }

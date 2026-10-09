@@ -460,7 +460,6 @@ test('personal org provision path supports soft delete audit', async () => {
 		stableUserId,
 		username: 'solo',
 		createdAt: '2026-01-01T00:00:00.000Z',
-		accountType: 'person',
 		plan: 'free',
 	})
 	await softDeleteOrg({
