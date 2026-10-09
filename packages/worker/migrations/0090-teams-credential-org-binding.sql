@@ -55,12 +55,15 @@ DROP TABLE __migration_assertions;
 
 -- §5.3 rewrite: one row per (legacy scope, expanded org permission).
 -- Already-valid org permissions are not in this table and pass through.
-CREATE TEMP TABLE legacy_scope_expand (
+-- D1 rejects TEMP tables (SQLITE_AUTH); use a normal helper table like
+-- __migration_assertions and drop it after the rewrite assertions.
+DROP TABLE IF EXISTS __legacy_scope_expand;
+CREATE TABLE __legacy_scope_expand (
 	old TEXT NOT NULL,
 	new TEXT NOT NULL
 );
 
-INSERT INTO legacy_scope_expand (old, new) VALUES
+INSERT INTO __legacy_scope_expand (old, new) VALUES
 	('account:read', 'billing:read'),
 	('account:read', 'member:read'),
 	('account:read', 'org:read'),
@@ -149,12 +152,12 @@ SET scopes_json = (
 				SELECT perm FROM (
 					SELECT e.new AS perm
 					FROM json_each(api_tokens.scopes_json) AS j
-					JOIN legacy_scope_expand e ON e.old = j.value
+					JOIN __legacy_scope_expand e ON e.old = j.value
 					UNION
 					SELECT j.value AS perm
 					FROM json_each(api_tokens.scopes_json) AS j
 					WHERE NOT EXISTS (
-						SELECT 1 FROM legacy_scope_expand e WHERE e.old = j.value
+						SELECT 1 FROM __legacy_scope_expand e WHERE e.old = j.value
 					)
 				)
 				ORDER BY perm
@@ -173,12 +176,12 @@ SET scopes_json = (
 				SELECT perm FROM (
 					SELECT e.new AS perm
 					FROM json_each(cli_credential_bootstrap_codes.scopes_json) AS j
-					JOIN legacy_scope_expand e ON e.old = j.value
+					JOIN __legacy_scope_expand e ON e.old = j.value
 					UNION
 					SELECT j.value AS perm
 					FROM json_each(cli_credential_bootstrap_codes.scopes_json) AS j
 					WHERE NOT EXISTS (
-						SELECT 1 FROM legacy_scope_expand e WHERE e.old = j.value
+						SELECT 1 FROM __legacy_scope_expand e WHERE e.old = j.value
 					)
 				)
 				ORDER BY perm
@@ -330,4 +333,4 @@ WHERE EXISTS (
 );
 
 DROP TABLE __migration_assertions;
-DROP TABLE legacy_scope_expand;
+DROP TABLE __legacy_scope_expand;
