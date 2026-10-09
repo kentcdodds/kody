@@ -39,6 +39,15 @@ function createdByUserIdForAccountType(input: {
 	return input.stableUserId
 }
 
+/** Same logical batch as D1 `batch()`; sequential runs for test mocks without `.batch`. */
+async function runProvisionStatements(
+	statements: Array<{ run(): Promise<unknown> }>,
+) {
+	for (const statement of statements) {
+		await statement.run()
+	}
+}
+
 /**
  * Insert the personal org row, owner membership, and live handle for a new
  * person/platform account. Uses plain INSERT so unique conflicts fail loudly.
@@ -60,7 +69,7 @@ export async function provisionPersonalOrg(
 	const signupWelcomeCreditsPending =
 		Number(input.signupWelcomeCreditsPending) === 1 ? 1 : 0
 
-	await db.batch([
+	await runProvisionStatements([
 		db
 			.prepare(
 				`INSERT INTO orgs (
@@ -145,7 +154,7 @@ export async function renameUserHandle(
 	const newHandle = orgSlugFromUsername(input.newUsername)
 	if (oldHandle === newHandle) return
 	const now = input.now ?? new Date().toISOString()
-	await db.batch([
+	await runProvisionStatements([
 		db
 			.prepare(
 				`UPDATE handles
@@ -168,7 +177,7 @@ export async function deletePersonalOrgForRollback(
 	stableUserId: string,
 ) {
 	try {
-		await db.batch([
+		await runProvisionStatements([
 			db
 				.prepare(`DELETE FROM org_memberships WHERE org_id = ?`)
 				.bind(stableUserId),
