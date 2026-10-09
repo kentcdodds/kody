@@ -59,6 +59,19 @@ test('worker token preflight fails closed on missing or deploy-scope worker toke
 		'Missing GitHub Actions secret CLOUDFLARE_API_TOKEN',
 	)
 
+	const duplicateWorkerTokens = findWorkerTokenProblems(
+		{
+			CLOUDFLARE_API_TOKEN: 'deploy-token',
+			CLOUDFLARE_APP_API_TOKEN: 'shared-worker-token',
+			CLOUDFLARE_RUNTIME_API_TOKEN: 'shared-worker-token',
+			CLOUDFLARE_STATUS_API_TOKEN: 'status-token',
+		},
+		allWorkerTokens,
+	)
+	expect(duplicateWorkerTokens).toEqual([
+		'GitHub Actions secret CLOUDFLARE_RUNTIME_API_TOKEN matches CLOUDFLARE_APP_API_TOKEN. Mint a separate token for each Worker scope.',
+	])
+
 	const previousExitCode = process.exitCode
 	const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 	consoleError.mockImplementation(() => {})

@@ -28,6 +28,7 @@ export function findWorkerTokenProblems(
 ): Array<string> {
 	const deployToken = env[deployTokenEnvName]?.trim() ?? ''
 	const problems: Array<string> = []
+	const workerTokenNamesByValue = new Map<string, WorkerTokenEnvName>()
 	if (!deployToken) {
 		problems.push(
 			`Missing GitHub Actions secret ${deployTokenEnvName} (wrangler + tools/ci deploy token). Cannot verify Worker-scoped tokens are distinct from it.`,
@@ -46,6 +47,14 @@ export function findWorkerTokenProblems(
 			problems.push(
 				`GitHub Actions secret ${name} matches the deploy token ${deployTokenEnvName}. Mint a separate token scoped to ${scope}.`,
 			)
+		}
+		const duplicateName = workerTokenNamesByValue.get(value)
+		if (duplicateName && duplicateName !== name) {
+			problems.push(
+				`GitHub Actions secret ${name} matches ${duplicateName}. Mint a separate token for each Worker scope.`,
+			)
+		} else {
+			workerTokenNamesByValue.set(value, name)
 		}
 	}
 	return problems
