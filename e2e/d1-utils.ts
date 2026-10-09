@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
-import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import {
 	buildDeleteUserAndPersonalOrgSql,
 	buildRoleAssignmentSql,
