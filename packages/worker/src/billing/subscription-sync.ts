@@ -146,7 +146,10 @@ export async function refreshStripePlanForUser(input: {
 			nextLadder,
 			stripePlanRefreshedAt,
 		],
-		orgWhereSuffix: ' AND stripe_customer_id = ?',
+		// Allow null org customer ids (dual-write lag behind users) but still
+		// refuse a stale refresh for a different mirrored customer.
+		orgWhereSuffix:
+			' AND (stripe_customer_id IS NULL OR stripe_customer_id = ?)',
 		orgWhereValues: [input.customerId],
 	})
 	waitUntil(
