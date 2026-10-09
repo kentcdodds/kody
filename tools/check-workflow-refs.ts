@@ -8,6 +8,7 @@
  */
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { checkServerJsonVersionBump } from './ci/mcp-registry-publish.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 export const defaultWorkflowDirectory = path.join('.github', 'workflows')
@@ -221,16 +222,24 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
 		console.log(
 			'Workflow refs ok: every steps.<id>.outputs and needs.<id> reference names an existing id.',
 		)
+	} else {
+		console.error(
+			[
+				`Workflow ref check failed (${String(result.issues.length)} issue(s)).`,
+				'GitHub resolves unknown step and job ids to empty strings instead of failing the workflow.',
+				'',
+				...result.issues.map(formatIssue),
+			].join('\n'),
+		)
+		process.exitCode = 1
+	}
+
+	const versionBump = await checkServerJsonVersionBump({ cwd })
+	if (versionBump.ok) {
+		console.log(versionBump.message)
 		return
 	}
-	console.error(
-		[
-			`Workflow ref check failed (${String(result.issues.length)} issue(s)).`,
-			'GitHub resolves unknown step and job ids to empty strings instead of failing the workflow.',
-			'',
-			...result.issues.map(formatIssue),
-		].join('\n'),
-	)
+	console.error(versionBump.message)
 	process.exitCode = 1
 }
 

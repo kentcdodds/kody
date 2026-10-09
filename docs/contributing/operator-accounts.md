@@ -548,7 +548,12 @@ ship-pr Discord cost lookup; production Kody stays up.
 
 Publishes `server.json` to the public MCP Registry on `main` (and
 `workflow_dispatch`) via `.github/workflows/publish-mcp-registry.yml`. Auth is
-GitHub OIDC (`mcp-publisher login github-oidc`). No extra secret.
+GitHub OIDC (`mcp-publisher login github-oidc`). No extra secret. The job looks
+up the version first: a matching already-published payload is a successful
+no-op, and metadata edits that reuse a published version fail with a bump
+instruction. A late duplicate-version error re-fetches and succeeds only when
+the published payload still matches. `npm run workflows:check` requires that
+same version bump on PRs and main pushes (pre-push SHA).
 
 Dashboard: [MCP Registry](https://github.com/modelcontextprotocol/registry).
 Recovery: GitHub repo admin + OIDC trust on the registry side.

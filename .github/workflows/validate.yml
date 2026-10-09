@@ -168,6 +168,12 @@ jobs:
       - name: 🧾 Workflow refs
         if: ${{ !cancelled() }}
         run: npm run workflows:check
+        env:
+          # PRs compare server.json to the fetched base SHA; main pushes
+          # compare to the pre-push SHA so a multi-commit bump is one change.
+          MCP_REGISTRY_VALIDATION_BASE: >-
+            ${{ github.event.pull_request.base.sha || github.event.before || ''
+            }}
 
       - name: 📚 Docs (temporal)
         if: ${{ !cancelled() }}
