@@ -244,6 +244,34 @@ async function snapshotOrg(
 	}
 }
 
+function listedPackageIds(listing: unknown) {
+	const packages = (listing as { packages?: unknown } | null)?.packages
+	if (!Array.isArray(packages)) return []
+	return packages.flatMap((pkg) => {
+		const id = (pkg as { id?: unknown } | null)?.id
+		return typeof id === 'string' ? [id] : []
+	})
+}
+
+/**
+ * Package ids that show up in more than one owner's `packageList`. Each org
+ * lists only the packages it owns, so any hit is a package injected from
+ * another account (the old platform-account lane).
+ */
+export function findPackagesListedByMoreThanOneOwner(
+	listings: Record<string, unknown>,
+) {
+	const ownersById = new Map<string, Array<string>>()
+	for (const [owner, listing] of Object.entries(listings)) {
+		for (const id of new Set(listedPackageIds(listing))) {
+			ownersById.set(id, [...(ownersById.get(id) ?? []), owner])
+		}
+	}
+	return [...ownersById]
+		.filter(([, owners]) => owners.length > 1)
+		.map(([id, owners]) => ({ id, owners }))
+}
+
 export type JsonSnapshot = {
 	version: 1
 	takenAt: string
@@ -306,6 +334,20 @@ export async function takeJsonSnapshot(input: {
 	}
 	log(`Snapshotting @${rehearsalOrg.slug} as ${orgOwner.role}...`)
 	const org = await snapshotOrg(input.origins, orgOwner, capture)
+	const shared = findPackagesListedByMoreThanOneOwner({
+		...Object.fromEntries(
+			people.map((person) => [person.role, person.packages]),
+		),
+		[`@${rehearsalOrg.slug}`]: 'packages' in org ? org.packages : null,
+	})
+	if (shared.length > 0) {
+		failures.push({
+			check: 'packages.ownedByOneOrg',
+			error: shared
+				.map(({ id, owners }) => `${id} is listed by ${owners.join(', ')}`)
+				.join('; '),
+		})
+	}
 	return {
 		version: 1,
 		takenAt: (input.now ?? (() => new Date()))().toISOString(),
