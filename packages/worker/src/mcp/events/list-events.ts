@@ -3,7 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
-	reachedPackage,
+	packageResource,
 } from '#worker/authorization/authorize.ts'
 import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -51,18 +51,16 @@ export async function listMcpEventSources(input: {
 	if (!userId || !request) {
 		throw new Error('MCP events require an authenticated user.')
 	}
+	const ownerId = request.org.id
 	const [access, savedPackages] = await Promise.all([
 		computeEffectivePermissions({ env: input.env, request }),
-		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
+		listSavedPackagesByUserId(input.env.APP_DB, { userId: ownerId }),
 	])
 	const readablePackages = savedPackages
 		.filter(
 			(savedPackage) =>
-				checkPermission(
-					access,
-					'package:read',
-					reachedPackage(access.orgId, { id: savedPackage.id }),
-				).allowed,
+				checkPermission(access, 'package:read', packageResource(savedPackage))
+					.allowed,
 		)
 		.sort((left, right) => left.kodyId.localeCompare(right.kodyId))
 
@@ -73,7 +71,7 @@ export async function listMcpEventSources(input: {
 				loadMcpEventsForPackage({
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
-					userId,
+					userId: ownerId,
 					savedPackage,
 				}),
 			),

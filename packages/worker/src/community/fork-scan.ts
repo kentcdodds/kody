@@ -52,23 +52,10 @@ export function rewritePackageManifestForFork(input: {
 export function scanCrossScopeReferences(input: {
 	files: Record<string, string>
 	expectedPackageScope: string
-	/**
-	 * Extra scopes treated as same-account. Unused for official platform
-	 * scopes: person-owned forks must not keep `kody:@kody/…` references
-	 * (decision 0035).
-	 */
-	allowedForeignScopes?: ReadonlyArray<string>
 }): Array<CrossScopeReference> {
 	const expectedScope = normalizePackageScope(input.expectedPackageScope)
-	const allowedScopes = new Set(
-		(input.allowedForeignScopes ?? []).map((scope) =>
-			normalizePackageScope(scope),
-		),
-	)
-	const isForeign = (scope: string) => {
-		const normalized = normalizePackageScope(scope)
-		return normalized !== expectedScope && !allowedScopes.has(normalized)
-	}
+	const isForeign = (scope: string) =>
+		normalizePackageScope(scope) !== expectedScope
 	const seen = new Set<string>()
 	const results: Array<CrossScopeReference> = []
 
@@ -110,6 +97,27 @@ export function scanCrossScopeReferences(input: {
 		if (fileCompare !== 0) return fileCompare
 		return left.specifier.localeCompare(right.specifier)
 	})
+}
+
+export function rewriteForkedPackageSelfReferences(input: {
+	files: Record<string, string>
+	originPackageName: string
+	nextPackageName: string
+}): Record<string, string> {
+	const origin = input.originPackageName.trim()
+	const next = input.nextPackageName.trim()
+	if (!origin || origin === next) {
+		return { ...input.files }
+	}
+	const escaped = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+	const pattern = new RegExp(`${escaped}(?=/|["'\`\\s,]|$)`, 'g')
+	const files: Record<string, string> = {}
+	for (const [path, content] of Object.entries(input.files)) {
+		files[path] = content.includes(origin)
+			? content.replace(pattern, next)
+			: content
+	}
+	return files
 }
 
 /**

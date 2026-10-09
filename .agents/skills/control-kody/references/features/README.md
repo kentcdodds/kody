@@ -31,7 +31,6 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [connections](./connections.md) — `/@<slug>/connections`
   (`/account/connections` redirects)
 - [packages](./packages.md) — `/@username`
-- [shared](./shared.md) — `/account/shared`
 - [secrets](./secrets.md) — `/@<slug>/secrets` (`/account/secrets` redirects)
 - [integrations](./integrations.md) — `/account/integrations`
 - [mcp-servers](./mcp-servers.md) — `/account/mcp-servers`

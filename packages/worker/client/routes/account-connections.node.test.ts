@@ -360,16 +360,12 @@ test('account rail holds only the person: profile, security, organizations, expe
 })
 
 test('workspace rail groups what the organization owns and keeps its slug in every link', () => {
-	const groups = workspaceRailGroups({
-		orgSlug: 'jane',
-		personal: true,
-		showShared: true,
-	})
+	const groups = workspaceRailGroups({ orgSlug: 'jane', personal: true })
 	expect(
 		groups.map((group) => [group.label, group.items.map((item) => item.label)]),
 	).toEqual([
 		['Build', ['Repositories', 'Jobs', 'Workflows', 'Webhooks']],
-		['Access', ['Connections', 'Integrations', 'MCP servers', 'Shared']],
+		['Access', ['Connections', 'Integrations', 'MCP servers']],
 		['Data', ['Secrets', 'Secret providers', 'Memories', 'Email']],
 		['Activity', ['Activity', 'Waiting']],
 		['Organization', ['Billing', 'Usage']],
@@ -394,19 +390,10 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 			isAccountNavItemActive(connections, '/@jane/connections/new'),
 	).toBe(true)
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
-
-	const withoutShared = workspaceRailGroups({
-		orgSlug: 'jane',
-		personal: true,
-		showShared: false,
-	}).flatMap((group) => group.items)
-	expect(withoutShared.map((item) => item.label)).not.toContain('Shared')
 })
 
 test('workspace rail is empty for a team organization until its storage lands (#3073)', () => {
-	expect(
-		workspaceRailGroups({ orgSlug: 'acme', personal: false, showShared: true }),
-	).toEqual([])
+	expect(workspaceRailGroups({ orgSlug: 'acme', personal: false })).toEqual([])
 })
 
 test('account rail org slug prefers the path org over username', () => {

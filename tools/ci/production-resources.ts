@@ -18,6 +18,7 @@ import {
 } from './resource-utils.ts'
 import { parseProductionQueueResources } from './production-queue-resources.ts'
 import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
+import { isExecutedDirectly } from '../node-runtime.ts'
 import {
 	inspectOriginProductionScriptState,
 	originBootstrapConfigPath,
@@ -136,7 +137,7 @@ function parseArgs(argv: Array<string>): {
 	return { command, options }
 }
 
-function defaultOauthKvTitle(workerName: string) {
+export function defaultOauthKvTitle(workerName: string) {
 	return truncateWithSuffix(workerName, '-oauth', 63)
 }
 
@@ -893,4 +894,6 @@ async function main() {
 	}
 }
 
-await main()
+if (isExecutedDirectly(import.meta.url)) {
+	await main()
+}

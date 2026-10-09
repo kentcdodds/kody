@@ -1,10 +1,8 @@
-import {
-	normalizeUsername,
-	platformAccountUsername,
-} from '#worker/identity/username.ts'
+import { normalizeUsername } from '#worker/identity/username.ts'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	type PackageCodemod,
+	type PackageCodemodContext,
 	type PackageCodemodFinding,
 	type PackageCodemodTransformResult,
 } from '../types.ts'
@@ -18,10 +16,8 @@ const manualRewriteMessage =
 	'Uses the removed object-only `packages.invoke` API in a shape that cannot be migrated safely; pass the scoped `kody:@owner/package` specifier manually.'
 const manifestScopeMessage =
 	'Package scope could not be read from package.json; migrate removed object-only `packages.invoke` calls manually.'
-const platformScopeMessage =
-	'Platform-owned runtime source uses removed object-only `packages.invoke`, whose target resolved against the runtime caller; migrate this call manually.'
-const platformForkDocsMessage =
-	'Platform-owned package documentation requires the installed user-fork owner to preserve packageStorage semantics; migrate this example manually.'
+const orgScopeMismatchMessage =
+	"The package.json scope is not the package's org. Removed object-only `packages.invoke` targets resolved in the package's org, so rewriting to the manifest scope would retarget them; migrate this call manually."
 const parseFailureMessage =
 	'File references `packages.invoke` but could not be parsed; migrate any removed object-only calls manually.'
 
@@ -46,12 +42,6 @@ const supportedOptionKeys = new Set([
 	'idempotencyKey',
 	'topic',
 ])
-const platformForkDocumentationPackages = new Set([
-	`@${platformAccountUsername}/notify`,
-	`@${platformAccountUsername}/personal-capture`,
-	`@${platformAccountUsername}/stash`,
-])
-
 type AstNode = ModuleAstNode & {
 	start?: number
 	end?: number
@@ -124,8 +114,12 @@ function readPackageScope(files: Record<string, string>): string | null {
 	return match?.[1] ? `@${match[1]}` : null
 }
 
-function isPlatformPackageScope(scope: string) {
-	return normalizeUsername(scope.replace(/^@/, '')) === platformAccountUsername
+function scopeIsPackageOrg(scope: string, context: PackageCodemodContext) {
+	const orgScope = /^@([^/\s]+)\//.exec(context.packageName.trim())?.[1]
+	return (
+		orgScope != null &&
+		normalizeUsername(scope.replace(/^@/, '')) === normalizeUsername(orgScope)
+	)
 }
 
 function isPackagesInvokeCall(node: AstNode) {
@@ -507,24 +501,20 @@ function classifyFiles(
 		.sort((left, right) => left.path.localeCompare(right.path))
 }
 
-function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
+function detect(
+	files: Record<string, string>,
+	context: PackageCodemodContext,
+): Array<PackageCodemodFinding> {
 	const classifications = classifyFiles(files)
 	if (classifications.length === 0) return []
-	if (!readPackageScope(files)) {
+	const scope = readPackageScope(files)
+	if (!scope) {
 		return [{ path: packageManifestPath, message: manifestScopeMessage }]
 	}
-	const scope = readPackageScope(files)
-	if (scope && isPlatformPackageScope(scope)) {
-		const packageNeedsForkOwner = platformForkDocumentationPackages.has(
-			readPackageName(files) ?? '',
-		)
+	if (!scopeIsPackageOrg(scope, context)) {
 		return classifications.map((classification) => ({
 			path: classification.path,
-			message: markdownFilePattern.test(classification.path)
-				? packageNeedsForkOwner
-					? platformForkDocsMessage
-					: (classification.manualMessage ?? rewriteDetectMessage)
-				: platformScopeMessage,
+			message: orgScopeMismatchMessage,
 		}))
 	}
 	return classifications.map((classification) => ({
@@ -548,6 +538,7 @@ function applyRewrites(source: string, rewrites: Array<SourceRewrite>) {
 
 function transform(
 	files: Record<string, string>,
+	context: PackageCodemodContext,
 ): PackageCodemodTransformResult {
 	const classifications = classifyFiles(files)
 	if (classifications.length === 0) {
@@ -558,7 +549,8 @@ function transform(
 			needsManual: [],
 		}
 	}
-	if (!readPackageScope(files)) {
+	const scope = readPackageScope(files)
+	if (!scope) {
 		return {
 			files: { ...files },
 			changed: false,
@@ -568,33 +560,21 @@ function transform(
 			],
 		}
 	}
-	const scope = readPackageScope(files)
-	const platformScope = scope != null && isPlatformPackageScope(scope)
-	const packageNeedsForkOwner = platformForkDocumentationPackages.has(
-		readPackageName(files) ?? '',
-	)
+	if (!scopeIsPackageOrg(scope, context)) {
+		return {
+			files: { ...files },
+			changed: false,
+			changedPaths: [],
+			needsManual: classifications.map((classification) => ({
+				path: classification.path,
+				message: orgScopeMismatchMessage,
+			})),
+		}
+	}
 	const nextFiles = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
 	for (const classification of classifications) {
-		if (
-			platformScope &&
-			packageNeedsForkOwner &&
-			markdownFilePattern.test(classification.path)
-		) {
-			needsManual.push({
-				path: classification.path,
-				message: platformForkDocsMessage,
-			})
-			continue
-		}
-		if (platformScope && !markdownFilePattern.test(classification.path)) {
-			needsManual.push({
-				path: classification.path,
-				message: platformScopeMessage,
-			})
-			continue
-		}
 		if (classification.manualMessage) {
 			needsManual.push({
 				path: classification.path,
@@ -620,9 +600,9 @@ function transform(
 
 /**
  * Repair the removed object-only package invocation API to the required
- * scoped string-first form. Bare kody ids resolve in the invoking package
- * owner's account, so the package manifest scope is the equivalent explicit
- * owner. Ambiguous expressions remain unchanged for operator review.
+ * scoped string-first form. Bare kody ids resolve in the invoking package's
+ * org, so the package manifest scope is the equivalent explicit owner when it
+ * is that org. Ambiguous expressions remain unchanged for operator review.
  */
 export const invokeObjectToSpecifierCodemod = {
 	id: invokeObjectToSpecifierCodemodId,

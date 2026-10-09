@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 function fakeControl(input: {
-	status: 'fork' | 'verify'
+	status: 'verify'
 	label: string
 	listingId?: string
 }) {
@@ -90,7 +90,7 @@ test('install progress stays on the listing that started it', () => {
 		listingId: 'listing-a',
 	})
 	const destination = fakeControl({
-		status: 'fork',
+		status: 'verify',
 		label: 'Fork',
 		listingId: 'listing-b',
 	})
@@ -111,14 +111,14 @@ test('install progress stays on the listing that started it', () => {
 	current = destination.control
 	vi.advanceTimersByTime(installProgressWordHoldMs)
 	expect(origin.attributes.get('aria-label')).toBe('Copying')
-	expect(destination.attributes.get('data-package-title-status')).toBe('fork')
+	expect(destination.attributes.get('data-package-title-status')).toBe('verify')
 	expect(destination.spinner.hidden).toBe(true)
 	expect(destination.attributes.get('aria-label')).toBe('Fork')
 
 	expect(releasePackageTitleInstallProgress('listing-b')).toBe(true)
 	expect(origin.attributes.get('data-package-title-status')).toBe('verify')
 	expect(origin.spinner.hidden).toBe(true)
-	expect(destination.attributes.get('data-package-title-status')).toBe('fork')
+	expect(destination.attributes.get('data-package-title-status')).toBe('verify')
 
 	startPackageTitleInstallProgress(['Forking', 'Copying'], 'listing-b')
 	expect(destination.attributes.get('aria-label')).toBe('Forking')
@@ -133,7 +133,7 @@ test('install progress stays on the listing that started it', () => {
 	expect(destination.spinner.hidden).toBe(false)
 
 	stopPackageTitleInstallProgress({ listingId: 'listing-b' })
-	expect(destination.attributes.get('data-package-title-status')).toBe('fork')
+	expect(destination.attributes.get('data-package-title-status')).toBe('verify')
 	expect(destination.spinner.hidden).toBe(true)
 })
 
@@ -150,14 +150,14 @@ test('a reused status control is not painted or restored for the previous listin
 	startPackageTitleInstallProgress(['Forking', 'Copying'], 'listing-a')
 
 	slot.attributes.set('data-package-title-listing', 'listing-b')
-	slot.attributes.set('data-package-title-status', 'fork')
-	slot.attributes.set('data-package-title-idle', 'fork')
+	slot.attributes.set('data-package-title-status', 'verify')
+	slot.attributes.set('data-package-title-idle', 'verify')
 	slot.attributes.set('aria-label', 'Fork')
 	slot.spinner.hidden = true
 	slot.icon.hidden = false
 
 	vi.advanceTimersByTime(installProgressWordHoldMs)
-	expect(slot.attributes.get('data-package-title-status')).toBe('fork')
+	expect(slot.attributes.get('data-package-title-status')).toBe('verify')
 	expect(slot.attributes.get('aria-label')).toBe('Fork')
 	expect(slot.spinner.hidden).toBe(true)
 

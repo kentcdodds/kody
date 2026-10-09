@@ -10,14 +10,8 @@ export function buildPackageTestHints(input: {
 	packageId: string
 	hasApp: boolean
 	subscriptionTopics: ReadonlyArray<string>
-	packageScope?: string
 }): PackageTestHints | undefined {
-	const packageIdentity = [
-		`package_id: ${JSON.stringify(input.packageId)}`,
-		...(input.packageScope
-			? [`package_scope: ${JSON.stringify(input.packageScope)}`]
-			: []),
-	].join(', ')
+	const packageIdentity = `package_id: ${JSON.stringify(input.packageId)}`
 	const subscriptions = [...new Set(input.subscriptionTopics)]
 		.sort((left, right) => left.localeCompare(right))
 		.map((topic) => ({

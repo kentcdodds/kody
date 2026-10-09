@@ -141,6 +141,7 @@ export async function authorizeOAuthClient(
 	client: OAuthClientRegistration,
 	cookieHeader: string,
 	fetchImpl: FetchLike = fetch,
+	orgSlug?: string,
 ) {
 	const authorizeUrl = new URL('/oauth/authorize', origin)
 	const resource = new URL('/mcp', origin).toString()
@@ -150,6 +151,7 @@ export async function authorizeOAuthClient(
 	authorizeUrl.searchParams.set('scope', mcpOauthScopes.join(' '))
 	authorizeUrl.searchParams.set('state', 'kody-mcp-e2e-state')
 	authorizeUrl.searchParams.set('resource', resource)
+	if (orgSlug) authorizeUrl.searchParams.set('org', orgSlug)
 
 	const response = await fetchImpl(authorizeUrl, {
 		method: 'POST',
@@ -246,6 +248,8 @@ export async function resolveAppMcpAuth(
 		fetchImpl?: FetchLike
 		cookieHeader?: string
 		oauth?: AppMcpOAuthSession
+		/** Bind the connection to this org (`?org=` on authorize). */
+		orgSlug?: string
 	} = {},
 ): Promise<{ cookieHeader: string; oauth: AppMcpOAuthSession }> {
 	if (options.cookieHeader && options.oauth) {
@@ -278,6 +282,7 @@ export async function resolveAppMcpAuth(
 					clientRegistration,
 					cookieHeader,
 					fetchImpl,
+					options.orgSlug,
 				),
 			},
 		}
@@ -293,6 +298,7 @@ export async function resolveAppMcpAuth(
 					clientRegistration,
 					cookieHeader,
 					fetchImpl,
+					options.orgSlug,
 				),
 			},
 		}
@@ -304,12 +310,14 @@ async function mintAccessToken(
 	client: OAuthClientRegistration,
 	cookieHeader: string,
 	fetchImpl: FetchLike,
+	orgSlug?: string,
 ) {
 	const code = await authorizeOAuthClient(
 		origin,
 		client,
 		cookieHeader,
 		fetchImpl,
+		orgSlug,
 	)
 	return exchangeAuthorizationCode(origin, client, code, fetchImpl)
 }
@@ -323,6 +331,7 @@ export async function connectAppMcpClient(
 		fetchImpl?: FetchLike
 		cookieHeader?: string
 		oauth?: AppMcpOAuthSession
+		orgSlug?: string
 	} = {},
 ) {
 	const session = await resolveAppMcpAuth(origin, user, options)
@@ -348,6 +357,7 @@ export async function connectAppMcpClient(
 				extraHeaders: options.extraHeaders,
 				clientName: options.clientName,
 				fetchImpl: options.fetchImpl,
+				orgSlug: options.orgSlug,
 			})
 		}
 		const detail = error instanceof Error ? error.message : String(error)

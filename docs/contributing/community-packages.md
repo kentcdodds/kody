@@ -116,11 +116,9 @@ There is no trusted-listing mark. Public listing records expose
 
 Admin **featured** marks live in `featured_at`. Featured is editorial placement
 on `/community` and listing detail (`featured_at IS NOT NULL`), not a safety
-badge and not a wizard step. Operators publish official starters under a
-platform scope (for example `@kody`) by passing `package_scope` while holding a
-package scope grant; see
-[Platform accounts](./architecture/platform-accounts.md). Surfaces: the
-`Featured` badge on the detail page, the admin-only toggle
+badge and not a wizard step. Operators publish starters from the `@kody` org, an
+ordinary org they belong to, by binding the connection to it like any other org.
+Surfaces: the `Featured` badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), and the admin-only
 `communitySetFeatured` capability. `communityGet` exposes the `featured` flag.
 
@@ -129,14 +127,13 @@ package scope grant; see
 persist-prompt copy can name an already-installed example. The `/onboarding`
 wizard itself is connect an agent, make something useful (one prompt), then
 connect a second agent — see [Onboarding process](./architecture/onboarding.md).
-Official `@kody/*` listings are catalog and fork source — person accounts run
-the owned copy, not the platform package. One-click install on listing detail
-puts a fork icon beside the name for official `@kody/*` packages. Listings from
-another account use the same fork icon and `createDoubleCheck` (the tooltip is
-“This was built by another user. Verify it before using. Click again to confirm
-fork.”; the first click arms that control; the second click sends
-`acknowledged: true`; clicking elsewhere, navigating, or leaving the control
-clears the armed state; the endpoint responds `409` without the flag).
+`@kody/*` listings are ordinary community packages from the `@kody` org: an org
+forks them and runs its own copy. One-click install on listing detail puts a
+fork icon beside the name. Listings from another account use `createDoubleCheck`
+(the tooltip is “This was built by another user. Verify it before using. Click
+again to confirm fork.”; the first click arms that control; the second click
+sends `acknowledged: true`; clicking elsewhere, navigating, or leaving the
+control clears the armed state; the endpoint responds `409` without the flag).
 User-facing install UX:
 [Public packages](../use/community-packages.md#one-click-install). `/community`
 cards overlay a per-request `viewerInstall` when the viewer already has a
@@ -294,12 +291,11 @@ pass, `refreshSavedPackageProjection` — the same projection step
 `repoPublishSession` ends with, so declared jobs are scheduled immediately. When
 checks fail (typically cross-scope imports), the fork stays inert and the
 failing checks are returned for agent follow-up. The HTTP surface is
-`POST /community/:listingId/install.json` (authenticated). Official `@kody/*`
-listings skip acknowledgement. Third-party listings must send
-`acknowledged: true` or the handler responds `409`. There is intentionally
-**no** MCP capability for install: agents must go through `communityFork` +
-repo-session review, so a prompt-injected agent cannot silently activate
-community code.
+`POST /community/:listingId/install.json` (authenticated). Listings from another
+account (including `@kody/*`) must send `acknowledged: true` or the handler
+responds `409`. There is intentionally **no** MCP capability for install: agents
+must go through `communityFork` + repo-session review, so a prompt-injected
+agent cannot silently activate community code.
 
 ## MCP capabilities
 
@@ -364,8 +360,7 @@ Client routes: `packages/worker/client/routes/community*`
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (login required;
   other-account listings arm via `createDoubleCheck` and fork on the second
-  click; official `@kody/*` install on first click), fork prompt, and report
-  link (report requires login)
+  click), fork prompt, and report link (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs

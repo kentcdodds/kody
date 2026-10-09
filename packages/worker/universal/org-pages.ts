@@ -16,7 +16,6 @@ const orgOwnedAccountSections = [
 	'packages',
 	'secret-providers',
 	'secrets',
-	'shared',
 	'values',
 	'waiting',
 	'webhooks',
@@ -28,11 +27,7 @@ export type OrgOwnedAccountSection = (typeof orgOwnedAccountSections)[number]
 const orgOwnedSectionSet: ReadonlySet<string> = new Set(orgOwnedAccountSections)
 
 /** Sections whose org URL is only the index. Nested paths stay on other routes. */
-const exactOrgSections: ReadonlySet<string> = new Set([
-	'packages',
-	'shared',
-	'webhooks',
-])
+const exactOrgSections: ReadonlySet<string> = new Set(['packages', 'webhooks'])
 
 export type OrganizationSummary = {
 	slug: string

@@ -5,27 +5,17 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { enablePackageShareGrantsForTests } from '#worker/package-registry/share-flag.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { runCapabilityProxyAuthenticatedFetch } from './capability-proxy-authenticated-fetch.ts'
 import { runCapabilityProxyOauthClientCredentials } from './capability-proxy-oauth-client-credentials.ts'
 import { createCapabilityProxyPackageHostTools } from './capability-proxy-package-grants.ts'
 
-const testMocks = vi.hoisted(() => ({
-	storageOwnerMaps: [] as Array<ReadonlyMap<string, string>>,
-}))
-
 vi.mock('#worker/storage-runner.ts', () => ({
 	createPackageStorageAccessDeniedMessage: (packageId: string) =>
 		`Package ${packageId} is not authorized for storage access.`,
-	createPackageStorageKodyTools: (options: {
-		storageOwnerByPackageId: ReadonlyMap<string, string>
-	}) => {
-		testMocks.storageOwnerMaps.push(options.storageOwnerByPackageId)
-		return {
-			packageStorageGet: async () => ({ value: 'owned-storage-value' }),
-		}
-	},
+	createPackageStorageKodyTools: () => ({
+		packageStorageGet: async () => ({ value: 'owned-storage-value' }),
+	}),
 }))
 
 vi.mock('#mcp/secrets/package-access.ts', () => ({
@@ -45,7 +35,7 @@ const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const callerUserId = 'a'.repeat(64)
 const packageOwnerId = 'b'.repeat(64)
 const ownedPackageId = 'owned-package'
-const sharedPackageId = 'shared-package'
+const otherOrgPackageId = 'other-org-package'
 
 function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -59,7 +49,7 @@ function createDb() {
 		.run(callerUserId, packageOwnerId)
 	const packageRows: Array<[string, string]> = [
 		[ownedPackageId, callerUserId],
-		[sharedPackageId, packageOwnerId],
+		[otherOrgPackageId, packageOwnerId],
 	]
 	for (const [id, userId] of packageRows) {
 		sqlite
@@ -70,19 +60,6 @@ function createDb() {
 			)
 			.run(id, userId, id, id, 'Test package', `source-${id}`)
 	}
-	sqlite
-		.prepare(
-			`INSERT INTO package_share_grants
-				(id, package_id, owner_user_id, grantee_user_id, status, invited_at, accepted_at)
-			 VALUES ('grant-1', ?, ?, ?, 'accepted', ?, ?)`,
-		)
-		.run(
-			sharedPackageId,
-			packageOwnerId,
-			callerUserId,
-			new Date().toISOString(),
-			new Date().toISOString(),
-		)
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
@@ -106,7 +83,6 @@ function createContext(db: D1Database): ApiInvocationContext {
 		principal: { kind: 'mcp' },
 		getFeatureFlags: async () => ({
 			'demo-indicator': false,
-			'package-share-grants': true,
 			'jev-search-rerank': false,
 			'execute-invoke': false,
 			'connection-profiles': false,
@@ -186,22 +162,16 @@ const packageOperations = [
 
 for (const operation of packageOperations) {
 	test(`${operation.name} only accepts caller-owned package ids for local execute`, async () => {
-		testMocks.storageOwnerMaps.length = 0
 		const { db } = createDb()
-		await enablePackageShareGrantsForTests(db)
 
 		await expect(operation.run(db, ownedPackageId)).resolves.toEqual(
 			operation.expected,
 		)
-		await expect(operation.run(db, sharedPackageId)).rejects.toThrow(
-			/Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, gatewayFetch, or oauthClientCredentials on execute --local/,
+		await expect(operation.run(db, otherOrgPackageId)).rejects.toThrow(
+			/not authorized for storage access/,
 		)
 		await expect(operation.run(db, 'unknown-package')).rejects.toThrow(
 			/not authorized for storage access/,
 		)
-		if (operation.name === 'packageStorageGet') {
-			expect(testMocks.storageOwnerMaps).toHaveLength(1)
-			expect(testMocks.storageOwnerMaps[0]?.size).toBe(0)
-		}
 	})
 }

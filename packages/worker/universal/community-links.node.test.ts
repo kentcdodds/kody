@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	getCommunityListingHref,
 	getCommunityPackageHrefFromName,
-	isOfficialCommunityListing,
 } from '#universal/community-links.ts'
 
 test('community listing hrefs prefer the canonical pair and fall back to the id URL', () => {
@@ -37,17 +36,7 @@ test('community listing hrefs prefer the canonical pair and fall back to the id 
 	).toBe('/community/listing-1')
 })
 
-test('official listings are the first-party @kody scope', () => {
-	expect(isOfficialCommunityListing({ name: '@kody/notion-mcp' })).toBe(true)
-	expect(isOfficialCommunityListing({ ownerUsername: 'kody' })).toBe(true)
-	expect(isOfficialCommunityListing({ ownerUsername: 'Kody' })).toBe(true)
-	expect(
-		isOfficialCommunityListing({
-			name: '@kentcdodds/github-triage',
-			ownerUsername: 'kentcdodds',
-		}),
-	).toBe(false)
-	expect(isOfficialCommunityListing({ name: 'unscoped' })).toBe(false)
+test('getCommunityPackageHrefFromName builds the canonical owner path', () => {
 	expect(getCommunityPackageHrefFromName('@jane/hn-pulse')).toBe(
 		'/@jane/hn-pulse',
 	)

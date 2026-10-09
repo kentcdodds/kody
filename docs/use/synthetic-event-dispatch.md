@@ -57,14 +57,13 @@ Search the `packages` domain, then call `packageSubscriptionDispatch`:
 
 Fields:
 
-| Field              | Required | Meaning                                                                 |
-| ------------------ | -------- | ----------------------------------------------------------------------- |
-| scoped name        | one of   | `@owner/leaf` (or the name leaf) as `kody_id`                           |
-| `package_id`       | one of   | Saved-package UUID when the scoped name is not known                    |
-| `package_scope`    | no       | Owner scope for delegated packages; preserve it from publish test hints |
-| `topic`            | yes      | Exact topic key from `kody.subscriptions`                               |
-| `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty  |
-| `email_message_id` | one of   | Stored inbound message id; platform rebuilds the production envelope    |
+| Field              | Required | Meaning                                                                |
+| ------------------ | -------- | ---------------------------------------------------------------------- |
+| scoped name        | one of   | `@owner/leaf` (or the name leaf) as `kody_id`                          |
+| `package_id`       | one of   | Saved-package UUID when the scoped name is not known                   |
+| `topic`            | yes      | Exact topic key from `kody.subscriptions`                              |
+| `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty |
+| `email_message_id` | one of   | Stored inbound message id; platform rebuilds the production envelope   |
 
 Pass exactly **one** of `params` or `email_message_id`, not both. There is no
 top-level request `idempotency_key` — the platform generates it. A
@@ -72,8 +71,7 @@ package-emitted event fixture can still include its production
 `params.idempotency_key` inside the nested event envelope.
 
 Look up the package with the scoped `@owner/leaf` name (or `package_id` when the
-name is not known). Preserve `package_scope` when it appears in a publish test
-hint so dispatch resolves the intended owner-scoped package.
+name is not known). The lookup runs in the org the connection is bound to.
 
 ### Fixture input (`params`)
 

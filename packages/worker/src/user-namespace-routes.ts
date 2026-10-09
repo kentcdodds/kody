@@ -14,6 +14,12 @@
 
 const userNamespaceSegments = new Set(['packages', 'connectors', 'webhooks'])
 
+/**
+ * Retired absolute connector mount (`/connectors/…`). Distinct from
+ * `/@owner/connectors/…`, which stays a namespaced machine path.
+ */
+export const retiredConnectorsPathPrefix = '/connectors'
+
 function splitUserNamespacePath(pathname: string) {
 	const parts = pathname.split('/').filter(Boolean)
 	return parts[0]?.startsWith('@') ? parts : null

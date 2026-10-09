@@ -510,11 +510,9 @@ async function publishedPackageArtifactDependenciesMatchCurrent(input: {
 	for (const dependency of directDependencies) {
 		const source = byId.get(dependency.sourceId)
 		if (!source?.published_commit) return false
-		// User-owned deps must belong to the publishing user (same as
-		// getEntitySourceByIdForUser). Platform-owned deps are id-only.
-		if (dependency.platformOwned !== true && source.user_id !== input.userId) {
-			return false
-		}
+		// Deps must belong to the publishing owner (same as
+		// getEntitySourceByIdForUser).
+		if (source.user_id !== input.userId) return false
 		if (source.published_commit !== dependency.publishedCommit) return false
 	}
 	return true

@@ -121,7 +121,6 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(body.session.username).toBe('home-user')
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
-		'package-share-grants': false,
 		'jev-search-rerank': false,
 		'execute-invoke': true,
 		'connection-profiles': false,

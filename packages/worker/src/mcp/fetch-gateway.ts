@@ -1,4 +1,3 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
@@ -36,7 +35,6 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
-import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
@@ -451,28 +449,14 @@ export async function expandSecretPlaceholders(input: {
 	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
-	// Share-grant package runs: resolve mounted/package secrets as the
-	// package owner (same stamp remap as packageSecrets.get / secret
-	// providers). Do not put owner id in the placeholder — remap from
-	// trusted packageId + share grant at the platform use site.
-	// Remap only for saved-secret placeholders. Integration tokens stay on
-	// the caller; provider secrets do their own owner remap.
-	const secretUserId =
-		callerUserId && authorityPackageId && referencedSecrets.length > 0
-			? await resolvePackageStorageOwner({
-					db: input.env.APP_DB,
-					caller: personIdFromStored(callerUserId),
-					packageId: authorityPackageId,
-				})
-			: callerUserId
 	const resolvedSecretResults = await Promise.all(
 		referencedSecrets.map(async (referenced) => {
-			if (!secretUserId) {
+			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveSecret({
 				env: input.env,
-				userId: secretUserId,
+				userId: callerUserId,
 				name: referenced.name,
 				scope: referenced.scope,
 				storageContext,
@@ -483,7 +467,7 @@ export async function expandSecretPlaceholders(input: {
 				throw new McpCallerError(
 					await createUnresolvedSecretMessage({
 						env: input.env,
-						userId: secretUserId,
+						userId: callerUserId,
 						name: referenced.name,
 						scope: referenced.scope,
 						storageContext,
@@ -494,14 +478,11 @@ export async function expandSecretPlaceholders(input: {
 			await assertPackageCanAccessResolvedSecret({
 				env: input.env,
 				baseUrl: input.props.baseUrl,
-				userId: secretUserId,
+				userId: callerUserId,
 				storageContext,
 				authorityPackageId,
 				secretName: referenced.name,
 				resolved,
-				// Share-grant remap resolves as the owner; do not inherit the
-				// owner's implicit self-authored keychain for the guest.
-				allowImplicitUserSecretAccess: secretUserId === callerUserId,
 			})
 			return { referenced, resolved, value: resolved.value }
 		}),

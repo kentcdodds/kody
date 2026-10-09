@@ -1,5 +1,7 @@
-import { rewritePackageManifestForFork } from '#worker/community/fork-scan.ts'
-import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
+import {
+	rewriteForkedPackageSelfReferences,
+	rewritePackageManifestForFork,
+} from '#worker/community/fork-scan.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	readArtifactFileAtCommit,

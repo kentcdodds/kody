@@ -234,10 +234,6 @@ function buildPackageExportCandidate(input: {
 			tags: entry.record.tags,
 			hasApp: entry.record.hasApp,
 			hidden: entry.record.hidden,
-			platformScope: entry.platformScope ?? null,
-			ownerUsername: entry.shareGranted
-				? (entry.record.name.replace(/^@/, '').split('/')[0] ?? null)
-				: null,
 			readmeSnippet: entry.readmeSnippet ?? null,
 			exportSubpath: actionMatch.subpath,
 			actionMatches: [actionMatch],
@@ -401,23 +397,10 @@ export const packageSearchEntityPlugin = {
 	async buildCandidates(input) {
 		const rows = input.optionalRows.packageRows
 		if (rows.length === 0) return []
-		// Platform rows rank lexically in every mode: the Vectorize index is
-		// per-user (no vectors exist for them in the caller's namespace), and
-		// the offline deterministic-embedding fallback is skipped too so
-		// online and offline ranking stay consistent with that contract.
-		const vectorEligibleRows = rows.filter((row) => !row.platformScope)
 		// Fail closed in every mode: no userId, and foreign rows never enter
-		// ranking unless the loader explicitly marked them as platform
-		// (built-in) scope rows — discover-and-fork only (decision 0036).
+		// ranking (no cross-org discovery).
 		if (!input.userId) return []
-		if (
-			rows.some(
-				(row) =>
-					row.record.userId !== input.userId &&
-					!row.platformScope &&
-					!row.shareGranted,
-			)
-		) {
+		if (rows.some((row) => row.record.userId !== input.userId)) {
 			console.warn(
 				JSON.stringify({
 					message: 'package candidates skipped: row userId mismatch',
@@ -428,12 +411,12 @@ export const packageSearchEntityPlugin = {
 		}
 		const meaningfulTokens = extractMeaningfulSearchTokens(input.query)
 		let vectorScoresByRecordId: Map<string, number> | null = null
-		if (!input.offline && input.userId && vectorEligibleRows.length > 0) {
+		if (!input.offline && input.userId) {
 			try {
 				vectorScoresByRecordId = await queryPackageVectorScores({
 					env: input.env,
 					query: input.query,
-					rows: vectorEligibleRows,
+					rows,
 					userId: input.userId,
 					limit: input.limit,
 					...(input.sharedQueryVector
@@ -486,9 +469,8 @@ export const packageSearchEntityPlugin = {
 					(actionMatches[0]?.score ?? 0) * 0.8,
 				)
 				const vectorHit = vectorScoresByRecordId?.get(entry.record.id)
-				const scoreComponents = entry.platformScope
-					? buildCandidateBaseScore({ lexical })
-					: vectorScoresByRecordId != null
+				const scoreComponents =
+					vectorScoresByRecordId != null
 						? buildCandidateBaseScore({
 								lexical,
 								...(vectorHit !== undefined ? { vector: vectorHit } : {}),
@@ -511,10 +493,6 @@ export const packageSearchEntityPlugin = {
 						tags: entry.record.tags,
 						hasApp: entry.record.hasApp,
 						hidden: entry.record.hidden,
-						platformScope: entry.platformScope ?? null,
-						ownerUsername: entry.shareGranted
-							? (entry.record.name.replace(/^@/, '').split('/')[0] ?? null)
-							: null,
 						readmeSnippet: entry.readmeSnippet ?? null,
 						actionMatches,
 						...(entry.listingAhead === true
@@ -713,26 +691,20 @@ export const packageSearchEntityPlugin = {
 			tags: match.tags,
 			hasApp: match.hasApp,
 			hidden: match.hidden,
-			platformScope: match.platformScope ?? null,
 			...(exportSubpath ? { exportSubpath } : {}),
 			...(match.listingAhead === true ? { listingAhead: true as const } : {}),
 			...(match.exportCallContract
 				? { exportCallContract: match.exportCallContract }
 				: {}),
-			// Platform package apps are hosted under the platform account's
-			// username, not the caller's.
-			hostedUrl: (() => {
-				const hostedUsername =
-					match.platformScope ?? match.ownerUsername ?? username
-				return match.hasApp && hostedUsername
+			hostedUrl:
+				match.hasApp && username
 					? buildPackageHostedUrl({
 							packageAppBaseUrl: packageAppBaseUrl ?? null,
 							appBaseUrl: baseUrl,
-							username: hostedUsername,
+							username,
 							kodyId: match.kodyId,
 						})
-					: null
-			})(),
+					: null,
 			readmeSnippet: match.readmeSnippet
 				? {
 						path: match.readmeSnippet.path,
@@ -951,7 +923,6 @@ export const packageSearchEntityPlugin = {
 				tags: detail.record.tags,
 				hasApp: detail.record.hasApp,
 				hidden: detail.record.hidden,
-				platformScope: detail.platformScope ?? null,
 				hostedUrl: detail.hostedUrl,
 				appEntry,
 				maintain,

@@ -83,9 +83,8 @@ persist a known plan name (never NULL); normal creation and reset paths default
 to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
-`free`, which is the default for new accounts, admin-created accounts,
-platform-account provisioning, seed SQL, and admin plan resets. Explicit `max`
-remains a valid deliberate assignment.
+`free`, which is the default for new accounts, admin-created accounts, seed SQL,
+and admin plan resets. Explicit `max` remains a valid deliberate assignment.
 
 **Reading stored values:** D1 constrains `users.plan` to the registered names.
 Reads use strict `parseStoredPlanName`: known names pass through unchanged,
@@ -183,10 +182,12 @@ retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
-Gmail-dot email collapse, no shared Stripe customer, and no platform-account
-referrer. An unverified party holds the qualifying invoice id on the pending
-row; email verification retries the grant. `/account/billing` shows the share
-link and simple referrer status.
+Gmail-dot email collapse, no shared Stripe customer, and no former platform
+account as referrer (its `users` row has no person behind it until Teams P9
+removes it, [#3084](https://github.com/kentcdodds/kody/issues/3084)). An
+unverified party holds the qualifying invoice id on the pending row; email
+verification retries the grant. `/account/billing` shows the share link and
+simple referrer status.
 
 `getUserEntitlement` overlays Pro through the later of the second-agent gift and
 this referral credit (retired Pro table, no wallet).
@@ -349,10 +350,10 @@ OAuth signup, admin-created) receives a one-shot house grant of
 `maybeGrantSignupWelcomeCredits` in `signup-welcome-credits.ts`. The ledger row
 is `admin_grant` with note `Welcome credits`, null `granted_by_user_id`, and
 deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
-Platform accounts are not granted. The balance is held until the account is
-credit-eligible Pro (include → credits → Free rate/compute fallback); this is
-not a Free prepaid wallet product and does not unlock spend on Free. The grant
-runs at account creation as best-effort: person-account inserts set
+The balance is held until the account is credit-eligible Pro (include → credits
+→ Free rate/compute fallback); this is not a Free prepaid wallet product and
+does not unlock spend on Free. The grant runs at account creation as
+best-effort: person-account inserts set
 `users.signup_welcome_credits_pending = 1` in the same write, then clear it
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
@@ -769,10 +770,9 @@ Stripe price so a later refresh can drop `legacy` on a subscription change.
 ## Assigning plans
 
 New accounts start with `users.plan = 'free'`. Password and social signup write
-that default via `resolvePlanWrite`. Admin-created accounts, platform-account
-provisioning, and seed SQL follow the same `resolvePlanWrite` default. Admins
-assign or reset plans on existing users from `/admin/users` (validated with
-strict `parsePlanName`).
+that default via `resolvePlanWrite`. Admin-created accounts and seed SQL follow
+the same `resolvePlanWrite` default. Admins assign or reset plans on existing
+users from `/admin/users` (validated with strict `parsePlanName`).
 
 Admins also assign or reset plans on existing users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in

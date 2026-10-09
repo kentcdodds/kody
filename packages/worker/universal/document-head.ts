@@ -223,7 +223,6 @@ const routeDocumentHeads = {
 				: 'Add connection',
 		)
 	},
-	[routePattern(routes.accountShared)]: titleOnly('Shared packages'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),
 	[routePattern(routes.accountIntegrationsApprove)]: titleOnly('Integrations'),
@@ -233,9 +232,6 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
-	),
-	[routePattern(routes.communityPackageApproveChanges)]: titleOnly(
-		'Approve shared package changes',
 	),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {
 		const files = loaderData?.packageFiles
@@ -507,7 +503,6 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgPackages)]: titleOnly('Repositories'),
 	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
 	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),
-	[routePattern(routes.orgShared)]: titleOnly('Shared packages'),
 	[routePattern(routes.orgValues)]: titleOnly('Values'),
 	[routePattern(routes.orgWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.orgWebhooks)]: titleOnly('Webhooks'),

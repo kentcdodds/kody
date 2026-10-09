@@ -46,10 +46,6 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountSecretsRouteLoader,
 	),
-	[routePattern(routes.orgShared)]: lazyRouteLoader(
-		accountArea,
-		(module) => module.accountSharedRouteLoader,
-	),
 	[routePattern(routes.orgValues)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountValuesRouteLoader,
@@ -112,9 +108,6 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgSecrets)]: (
 		<LazyAccountRoute render={(module) => <module.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.orgShared)]: (
-		<LazyAccountRoute render={(module) => <module.AccountSharedRoute />} />
 	),
 	[routePattern(routes.orgValues)]: (
 		<LazyAccountRoute render={(module) => <module.AccountValuesRoute />} />

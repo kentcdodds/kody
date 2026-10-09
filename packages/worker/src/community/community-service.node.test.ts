@@ -73,7 +73,6 @@ const { mockModule, pickMocks } = vi.hoisted(() => {
 		deleteCommunitySnapshot: vi.fn(),
 		setCommunityListingStatus: vi.fn(),
 		resolveCommunityReportRow: vi.fn(),
-		isPlatformAccountStableUserId: vi.fn(),
 	}
 	const pickMocks = (...names: Array<keyof typeof mockModule>) =>
 		Object.fromEntries(names.map((name) => [name, mockModule[name]]))
@@ -89,11 +88,6 @@ vi.mock('./listing-published-dispatch-queue-producer.ts', () =>
 		'enqueueCommunityForkUpstreamUpdatedDispatch',
 	),
 )
-vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: async () => null,
-	listPlatformAccountUsernames: async () => [],
-	...pickMocks('isPlatformAccountStableUserId'),
-}))
 vi.mock('#worker/package-registry/repo.ts', () =>
 	pickMocks(
 		'getSavedPackageById',
@@ -449,18 +443,18 @@ test('community operations reject banned users', async () => {
 	await expect(publish()).rejects.toThrow(/banned from community participation/)
 	await expect(fork()).rejects.toThrow(/banned from community participation/)
 
-	// Delegated publishes bind bans to the acting person too: the platform
-	// owner is not banned, but the banned actor must still be rejected.
+	// Org-owned publishes bind bans to the acting person too: the owning org
+	// is not banned, but the banned actor must still be rejected.
 	mockModule.getCommunityBan.mockImplementation(
 		async (_db: unknown, userId: unknown) => (userId === 'user-1' ? ban : null),
 	)
 	await expect(
-		publish({ userId: 'platform-owner-1', actorUserId: 'user-1' }),
+		publish({ userId: 'org-owner-1', actorUserId: 'user-1' }),
 	).rejects.toThrow(/banned from community participation/)
 	await expect(
 		unpublishCommunityListing({
 			env: createEnv(),
-			userId: 'platform-owner-1',
+			userId: 'org-owner-1',
 			actorUserId: 'user-1',
 			listingId: 'listing-1',
 		}),

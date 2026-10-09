@@ -68,7 +68,6 @@ const owner: PackageOwnerContext = {
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
 	actorUserId: personIdFromStored('user-1'),
-	delegated: false,
 }
 
 function create(
@@ -85,7 +84,7 @@ function create(
 	})
 }
 
-test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
+test('createStubSavedPackage rejects invalid kody ids and registers stubs for personal and org scopes', async () => {
 	const rejections = [
 		{
 			args: { kodyId: 'Not_A_Valid_Id' },
@@ -165,39 +164,38 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
 
-	// Delegated grants must persist under the platform owner, not the actor.
+	// Org-owned packages must persist under the org, not the acting member.
 	await create({
-		kodyId: 'official-tool',
+		kodyId: 'team-tool',
 		owner: {
-			ownerUserId: ownerIdFromStored('platform-owner'),
-			ownerScope: 'kody',
-			ownerEmail: 'kody@example.com',
+			ownerUserId: ownerIdFromStored('org-owner'),
+			ownerScope: 'acme',
+			ownerEmail: 'acme@example.com',
 			actorUserId: personIdFromStored('actor-1'),
-			delegated: true,
 		},
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'platform-owner',
-			email: 'kody@example.com',
+			userId: 'org-owner',
+			email: 'acme@example.com',
 		}),
 	)
 	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'platform-owner' }),
+		expect.objectContaining({ userId: 'org-owner' }),
 	)
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			user_id: 'platform-owner',
-			name: '@kody/official-tool',
+			user_id: 'org-owner',
+			name: '@acme/team-tool',
 		}),
 		expect.anything(),
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ userId: 'platform-owner' }),
+		expect.objectContaining({ userId: 'org-owner' }),
 	)
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'platform-owner' }),
+		expect.objectContaining({ userId: 'org-owner' }),
 	)
 })

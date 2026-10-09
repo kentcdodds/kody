@@ -5,7 +5,6 @@ export type ProvisionPersonalOrgInput = {
 	stableUserId: string
 	username: string
 	createdAt?: string
-	accountType?: 'person' | 'platform' | null
 	displayName?: string | null
 	bio?: string | null
 	avatarKey?: string | null
@@ -32,14 +31,6 @@ function orgSlugFromUsername(username: string) {
 	return normalized.toLowerCase()
 }
 
-function createdByUserIdForAccountType(input: {
-	stableUserId: string
-	accountType?: 'person' | 'platform' | null
-}) {
-	if (input.accountType === 'platform') return null
-	return input.stableUserId
-}
-
 /** Same logical batch as D1 `batch()`; sequential runs for test mocks without `.batch`. */
 async function runProvisionStatements(
 	statements: Array<{ run(): Promise<unknown> }>,
@@ -49,10 +40,6 @@ async function runProvisionStatements(
 	}
 }
 
-/**
- * Insert the personal org row, owner membership, and live handle for a new
- * person/platform account. Uses plain INSERT so unique conflicts fail loudly.
- */
 /** Idempotent personal org provisioning for seeds and fixture re-runs. */
 export async function ensurePersonalOrg(
 	db: D1Database,
@@ -66,6 +53,10 @@ export async function ensurePersonalOrg(
 	await provisionPersonalOrg(db, input)
 }
 
+/**
+ * Insert the personal org row, owner membership, and live handle for a new
+ * account. Uses plain INSERT so unique conflicts fail loudly.
+ */
 export async function provisionPersonalOrg(
 	db: D1Database,
 	input: ProvisionPersonalOrgInput,
@@ -73,7 +64,6 @@ export async function provisionPersonalOrg(
 	const createdAt = input.createdAt ?? new Date().toISOString()
 	const slug = orgSlugFromUsername(input.username)
 	const handle = slug
-	const createdByUserId = createdByUserIdForAccountType(input)
 	const plan = input.plan?.trim() || 'free'
 	const entitlementLadder = input.entitlementLadder?.trim() || 'public'
 	const profileVisibility = input.profileVisibility ?? 'public'
@@ -131,7 +121,7 @@ export async function provisionPersonalOrg(
 				input.secondAgentStandardGiftExpiresAt ?? null,
 				input.referralStandardCreditExpiresAt ?? null,
 				signupWelcomeCreditsPending,
-				createdByUserId,
+				input.stableUserId,
 				createdAt,
 				createdAt,
 			),

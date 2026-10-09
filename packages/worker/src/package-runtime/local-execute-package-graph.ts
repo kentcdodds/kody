@@ -1,5 +1,4 @@
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
-import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { loadLocalExecuteRuntimeSupport } from '#worker/local-execute-runtime-support-load.ts'
 import { packageSpecifierPrefix } from './package-import-resolution.ts'
 import { collectDynamicImportExpressionNodes } from './import-specifiers.ts'
@@ -104,17 +103,12 @@ export async function buildLocalExecutePackageGraph(input: {
 
 	let prepared: Awaited<ReturnType<typeof prepareKodyGraphFiles>>
 	try {
-		const allowPlatformScopes = await isPlatformAccountStableUserId(
-			input.env.APP_DB,
-			input.userId,
-		)
 		prepared = await prepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.userId,
 			sourceFiles,
 			entryPoint: 'entry.ts',
-			allowPlatformScopes,
 		})
 	} catch (error) {
 		throw mapPrepareFailure(error, staticImports)
@@ -416,13 +410,6 @@ function mapPrepareFailure(
 		return new LocalExecutePackageGraphError(
 			'package_import_unresolved',
 			`Could not resolve saved package import(s) for local bundling (${importList}): ${message}`,
-			{ cause: error },
-		)
-	}
-	if (/platform packages are not runnable/i.test(message)) {
-		return new LocalExecutePackageGraphError(
-			'package_import_unresolved',
-			message,
 			{ cause: error },
 		)
 	}

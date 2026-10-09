@@ -26,9 +26,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { type SessionInfo } from '#client/session.ts'
-import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
@@ -412,11 +410,7 @@ function railLinkGroups(groups: Array<AccountRailGroup>, currentPath: string) {
 	}))
 }
 
-function pageRail(input: {
-	session: SessionInfo | null
-	currentPath: string
-	showShared: boolean
-}) {
+function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 	if (isAccountRailPath(input.currentPath)) {
 		return {
 			label: 'Account sections',
@@ -442,11 +436,7 @@ function pageRail(input: {
 			eyebrow: 'Workspace',
 			name: orgSlug ? `@${orgSlug}` : undefined,
 		},
-		groups: workspaceRailGroups({
-			orgSlug,
-			personal,
-			showShared: input.showShared,
-		}),
+		groups: workspaceRailGroups({ orgSlug, personal }),
 	}
 }
 
@@ -464,12 +454,8 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
 		const session = readAppSession(handle)?.session ?? null
-		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
-		const explainer =
-			!showShared && currentPath === routes.accountShared.href()
-				? null
-				: resolveEntityExplainer(currentPath)
-		const rail = pageRail({ session, currentPath, showShared })
+		const explainer = resolveEntityExplainer(currentPath)
+		const rail = pageRail({ session, currentPath })
 
 		return (
 			<>

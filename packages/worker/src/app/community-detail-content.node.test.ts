@@ -4,7 +4,6 @@ import {
 	renderCommunityDetailContentHtml,
 } from '#app/community-detail-content.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
-import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 
 const sampleListing = {
 	id: 'listing-1',
@@ -86,29 +85,11 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'data-community-install',
 		'data-package-title-status="verify"',
 		'data-icon="git-fork"',
-		'data-official="false"',
 		'data-trusted="false"',
 	])
 	expect(installHtml.indexOf(testId('package-title-actions'))).toBeLessThan(
 		installHtml.indexOf(testId('package-repo-nav')),
 	)
-
-	const officialHtml = await render({
-		listing: {
-			...sampleListing,
-			name: '@kody/notion-mcp',
-			ownerUsername: 'kody',
-			kodyId: 'notion-mcp',
-		},
-		username: 'kody',
-		kodyId: 'notion-mcp',
-		returnTo: '/@kody/notion-mcp',
-	})
-	expectMarkers(officialHtml, [
-		'data-official="true"',
-		'data-package-title-status="fork"',
-		'data-icon="git-fork"',
-	])
 
 	expectMarkers(
 		await render({ listing: withInstall({}) }),
@@ -323,7 +304,7 @@ test('package chrome is shared for public listings and private owner packages', 
 	)
 })
 
-test('open package app link shows for owner and accepted share, and hides without an app or access', async () => {
+test('open package app link shows for the owner, and hides without an app or access', async () => {
 	const privateApp = {
 		listing: null,
 		isPrivate: true,
@@ -338,22 +319,14 @@ test('open package app link shows for owner and accepted share, and hides withou
 		'data-icon="share"',
 	])
 	expectMarkers(
-		await render({ ...privateApp, shareGrant: shareGrantFixture('accepted') }),
-		[openApp, appHref],
-	)
-	expectMarkers(
 		await render({ ...privateApp, viewerIsOwner: true, hasApp: false }),
 		[testId('package-repo-nav-files')],
 		[openApp],
 	)
 	expect(await render({ hasApp: true })).not.toContain(openApp)
 	expectMarkers(
-		await render({ ...privateApp, shareGrant: shareGrantFixture('pending') }),
-		[
-			'data-signifier="private"',
-			'data-icon="lock"',
-			testId('package-share-accept-frame-banner'),
-		],
+		await render(privateApp),
+		['data-signifier="private"', 'data-icon="lock"'],
 		[openApp, 'data-signifier="unpublished"'],
 	)
 })
@@ -372,26 +345,3 @@ test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
 		'/@kentcdodds/github-triage/approve-publish',
 	)
 })
-
-function shareGrantFixture(
-	status: 'pending' | 'accepted',
-): PackageShareGrantLoaderView {
-	return {
-		id: 'grant-1',
-		packageId: 'pkg-1',
-		status,
-		role: 'use',
-		trustLevel: 'pin',
-		pinAhead: false,
-		approveChangesPath: null,
-		packagePath: '/@kentcdodds/github-triage',
-		packageName: '@kentcdodds/github-triage',
-		packageKodyId: 'github-triage',
-		ownerUsername: 'kentcdodds',
-		inviteeEmail: 'jane@example.com',
-		inviteeUsername: 'jane',
-		granteeUsername: 'jane',
-		acceptedPublishedCommit: null,
-		publishedCommit: null,
-	}
-}

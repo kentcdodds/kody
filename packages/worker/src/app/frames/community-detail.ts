@@ -54,7 +54,6 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 					viewerIsOwner: page.viewerIsOwner,
 					listing,
 				}),
-				shareGrant: page.shareGrant,
 				hasApp: page.ownerPackage?.hasApp === true,
 				iconUrl:
 					listing?.iconUrl ??

@@ -16,7 +16,7 @@ import {
 	checkPermission,
 	computeEffectivePermissions,
 	getRequestPermissions,
-	reachedPackage,
+	packageResource as storedPackageResource,
 	runWithRequestPermissions,
 	type EffectivePermissions,
 	type OrgResource,
@@ -194,6 +194,38 @@ test('a resource in another org is denied before permissions are read', () => {
 	expect(error.message).toBe('package @kent/invoices belongs to another org.')
 })
 
+test("a stored package carries its owning org, so another org's package is wrong_org", async () => {
+	const otherOrgPackage = storedPackageResource({
+		id: 'pkg-9',
+		userId: 'org-2',
+		label: '@acme/invoices',
+	})
+	expect(otherOrgPackage.orgId).toBe(ownerIdFromStored('org-2'))
+	const error = denial(
+		checkPermission(access(), 'package:execute', otherOrgPackage),
+	)
+	expect(error.code).toBe('wrong_org')
+	expect(error.message).toBe('package @acme/invoices belongs to another org.')
+	expect(canSeeResource(access(), otherOrgPackage)).toBe(false)
+
+	const request = sessionRequestContext('user-1')
+	stubCompile(request)
+	await expect(
+		authorize(
+			{ env, request },
+			'package:read',
+			storedPackageResource({ id: 'pkg-9', userId: 'org-2' }),
+		),
+	).rejects.toMatchObject({ code: 'wrong_org' })
+	await expect(
+		authorize(
+			{ env, request },
+			'package:read',
+			storedPackageResource({ id: 'pkg-1', userId: 'user-1' }),
+		),
+	).resolves.toBeUndefined()
+})
+
 test('credential scopes narrow what the role grants', () => {
 	const scoped = access({ credentialScopes: new Set(['package:read']) })
 	expect(checkPermission(scoped, 'package:read').allowed).toBe(true)
@@ -260,7 +292,7 @@ test('a request with no signed-in person is denied unless the surface touches no
 })
 
 test('lists show a package when the request holds any permission on it', () => {
-	const pkg = reachedPackage(ownerIdFromStored('org-1'), { id: 'pkg-1' })
+	const pkg = storedPackageResource({ id: 'pkg-1', userId: 'org-1' })
 	expect(canSeeResource(access(), pkg)).toBe(true)
 	const executeOnly = access({
 		profileGrants: [
@@ -273,7 +305,7 @@ test('lists show a package when the request holds any permission on it', () => {
 	expect(
 		canSeeResource(
 			access(),
-			reachedPackage(ownerIdFromStored('org-2'), { id: 'pkg-1' }),
+			storedPackageResource({ id: 'pkg-1', userId: 'org-2' }),
 		),
 	).toBe(false)
 	const grantedOnly = access({

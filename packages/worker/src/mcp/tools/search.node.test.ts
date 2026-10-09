@@ -1183,40 +1183,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	expect(capabilityNames(taskQuery.matches)).toContain('emailSend')
 })
 
-test('searchUnified ranks platform (built-in) package rows and drops unmarked foreign rows', async () => {
-	const withPlatform = await search({
-		query: 'github helpers',
-		optionalRows: rows({
-			packageRows: [
-				leanPackageRow('pkg-own', 'user-1', {
-					name: '@user/notes',
-					kodyId: 'notes',
-					description: 'Notes helper',
-				}),
-				{
-					...leanPackageRow('platform-pkg-1', 'platform-user', {
-						name: '@kody/github',
-						kodyId: 'github',
-						description: 'Official GitHub helpers',
-						tags: ['github'],
-					}),
-					platformScope: 'kody',
-				},
-			],
-		}),
-	})
-	expect(
-		withPlatform.matches.find(
-			(match) => match.type === 'package' && match.kodyId === 'github',
-		),
-	).toMatchObject({
-		type: 'package',
-		name: '@kody/github',
-		platformScope: 'kody',
-	})
-
-	// An unmarked foreign row still fails the package lane closed (and logs
-	// the tripwire warning).
+test('searchUnified drops package rows owned by another org', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const withForeign = await search({
 		query: 'github helpers',

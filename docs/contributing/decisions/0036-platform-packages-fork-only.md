@@ -1,6 +1,7 @@
 # 0036 — Person accounts do not run official platform packages
 
-- **Status:** accepted
+- **Status:** superseded by
+  [0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
 - **Date:** 2026-08-24
 
 ## Context

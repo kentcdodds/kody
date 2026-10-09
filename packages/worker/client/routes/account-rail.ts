@@ -106,7 +106,6 @@ export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
 	/** True when `orgSlug` is the signup (personal) organization. */
 	personal: boolean
-	showShared: boolean
 }): Array<AccountRailGroup> {
 	if (!input.personal) return []
 	const { orgSlug } = input
@@ -175,19 +174,6 @@ export function workspaceRailGroups(input: {
 					label: 'MCP servers',
 					icon: 'server',
 				},
-				...(input.showShared
-					? [
-							{
-								href: orgSectionHref(
-									orgSlug,
-									'shared',
-									routes.accountShared.href(),
-								),
-								label: 'Shared',
-								icon: 'share' as const,
-							},
-						]
-					: []),
 			],
 		},
 		{

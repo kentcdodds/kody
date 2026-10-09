@@ -1,6 +1,6 @@
 # Packages
 
-Repo-backed saved packages: list, detail, files, share, approve-publish.
+Repo-backed saved packages: list, detail, files, approve-publish.
 
 ## How to get there
 
@@ -31,9 +31,8 @@ lives at `/@username/:kodyId` (the URL slug is the package name leaf; **Repo**
 tab: description, tags, license, badges), `/@username/:kodyId/tree/:ref`
 (**Files** tab), `/@username/:kodyId/assets/…` (README-relative images from the
 published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab:
-lock, visibility, share, webhooks, delete), `/@username/:kodyId/approve-publish`
-(published-vs-HEAD review), and `/@username/:kodyId/approve-changes` (guest
-pin-ahead published diff). Opening an allowlisted image or video in the tree
+lock, visibility, webhooks, delete), and `/@username/:kodyId/approve-publish`
+(published-vs-HEAD review). Opening an allowlisted image or video in the tree
 renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
 authz as the tree). Legacy `/account/packages` HTML URLs only redirect to these
 canonical pages.
@@ -74,8 +73,6 @@ fixtures use `control-kody execute` / `search` against the same origin.
 - `GET /account/repos/:repoId/icon/:iconCommit` (owner-only repo list mark)
 - `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
-- `GET|POST /profiles/:username/packages/:kodyId/share.json`
-- `GET|POST /profiles/:username/packages/:kodyId/approve-changes.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 
@@ -95,8 +92,8 @@ fixtures use `control-kody execute` / `search` against the same origin.
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
   non-empty root `README.md` and `AGENTS.md`.
-- Owners and accepted shares see **Open Package App** on the package page when
-  the package declares an app. Guests do not.
+- Owners see **Open Package App** on the package page when the package declares
+  an app. Other viewers do not.
 - Own-profile **Needs republish** (`listing=ahead`) is listing pin behind
   `published_commit`. It is not HEAD-ahead-of-published and not `updated_at`
   after `published_at` (community publish bumps that timestamp even when the pin

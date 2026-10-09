@@ -77,14 +77,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountConnectionsRouteLoader,
 	),
-	[routePattern(routes.accountShared)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSharedRouteLoader,
-	),
-	[routePattern(routes.communityPackageApproveChanges)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.packageShareApproveChangesRouteLoader,
-	),
 	[routePattern(routes.accountIntegrations)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountIntegrationsRouteLoader,
@@ -441,12 +433,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountConnectionNewAgent)]: (
 		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
-	),
-	[routePattern(routes.accountShared)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSharedRoute />} />
-	),
-	[routePattern(routes.communityPackageApproveChanges)]: (
-		<LazyAccountRoute render={(m) => <m.PackageShareApproveChangesRoute />} />
 	),
 	[routePattern(routes.accountIntegrations)]: (
 		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />

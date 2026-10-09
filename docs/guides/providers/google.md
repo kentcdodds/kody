@@ -172,15 +172,16 @@ Changing scopes means reconnecting: update the **Data Access** tab, then open
 - `403` from Gmail with a Calendar-only token: scopes are per-connection.
   Reconnect with the needed Gmail scope.
 
-## Use the official package and verify
+## Use the `@kody/google` package and verify
 
-A saved integration is auth credentials only. Finish by forking the official
-helpers so day-to-day work goes through maintained Gmail, Calendar, and Drive
-helpers in **your** scope instead of raw `createAuthenticatedFetch` calls.
+A saved integration is auth credentials only. Finish by forking `@kody/google`,
+a public community package from the `@kody` org, so day-to-day work goes through
+maintained Gmail, Calendar, and Drive helpers in **your** org instead of raw
+`createAuthenticatedFetch` calls.
 
 1. Search for `@kody/google`. It covers Gmail, Calendar, Drive, People, and
    YouTube.
-2. `communityFork` it into your scope (or click **Install** on the listing).
+2. `communityFork` it into your org (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the `personal` account alias maps
    to an integration named `google` — the default name this guide's connect link
    uses, so the primary lane needs no adaptation.

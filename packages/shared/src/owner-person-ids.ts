@@ -79,7 +79,7 @@ export function personIdFromStored<T extends string | null | undefined>(
 
 /**
  * Brand an owner id read from Kody's own storage (a `user_id` /
- * `owner_user_id` column, a platform account row, a persisted owner). Throws
+ * `owner_user_id` column, an org id, a persisted owner). Throws
  * when empty. Owners are not always people: `system:email` owns system mail.
  */
 export function ownerIdFromStored<T extends string | null | undefined>(
@@ -89,10 +89,10 @@ export function ownerIdFromStored<T extends string | null | undefined>(
 }
 
 /**
- * The person's personal org: the owner their own (non-delegated) actions read
- * and write. A personal org reuses the person's stable id, so this is the
- * identity. Acting in any other org must go through an explicit membership or
- * grant check, never through this function.
+ * The person's personal org: the owner their own actions read and write. A
+ * personal org reuses the person's stable id, so this is the identity. Acting
+ * in any other org must go through an explicit membership or grant check, never
+ * through this function.
  */
 export function personalOrgId(person: PersonId): OwnerId {
 	return person as string as OwnerId

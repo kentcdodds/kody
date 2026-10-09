@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { publishCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import {
 	communityListingSummarySchema,
 	toCommunityListingSummaryOutput,
@@ -35,20 +35,14 @@ export const communityPublishCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe('Saved package id to publish as a public package.'),
-			package_scope: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: communityListingSummarySchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const listing = await publishCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,

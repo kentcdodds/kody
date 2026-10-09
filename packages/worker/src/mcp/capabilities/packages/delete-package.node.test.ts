@@ -20,7 +20,6 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
 }))
@@ -33,7 +32,6 @@ function createCtx(userId = 'user-1') {
 		ownerScope: 'user',
 		ownerEmail: 'user@example.com',
 		actorUserId: userId,
-		delegated: false,
 	})
 	return {
 		env: { APP_DB: {} } as Env,

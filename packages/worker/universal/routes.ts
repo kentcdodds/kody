@@ -95,9 +95,6 @@ export const routes = route({
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),
-	accountShared: '/account/shared',
-	accountSharedApi: '/account/shared.json',
-	accountSharedApiPost: post('/account/shared.json'),
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
 	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
@@ -213,8 +210,6 @@ export const routes = route({
 	docDetailApi: '/docs/:slug.json',
 	docDetailMarkdown: '/docs/:slug.md',
 	docDetailOgImage: '/docs/:slug/og.png',
-	// Signed-in opt-in for the package-share-grants flag from the sharing docs.
-	packageSharingOptInPost: post('/docs/package-sharing/opt-in'),
 	// Signed-in opt-in for the mcp-skills-extension flag from the package skills docs.
 	packageSkillsOptInPost: post('/docs/package-skills/opt-in'),
 	// Signed-in opt-in for the mcp-events-extension flag from the MCP Events docs.
@@ -252,7 +247,6 @@ export const routes = route({
 	orgPackages: get('/@:orgSlug/packages'),
 	orgSecretProviders: get('/@:orgSlug/secret-providers(/*rest)'),
 	orgSecrets: get('/@:orgSlug/secrets(/*rest)'),
-	orgShared: get('/@:orgSlug/shared'),
 	orgValues: get('/@:orgSlug/values(/*rest)'),
 	orgWaiting: get('/@:orgSlug/waiting(/*rest)'),
 	orgWebhooks: get('/@:orgSlug/webhooks'),
@@ -274,19 +268,12 @@ export const routes = route({
 	communityPackageIcon: '/@:username/:kodyId/icon/:iconCommit',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
-	communityPackageApproveChanges: '/@:username/:kodyId/approve-changes',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
 	communityPackageApprovePublishApi:
 		'/profiles/:username/packages/:kodyId/approve-publish.json',
-	communityPackageApproveChangesApi:
-		'/profiles/:username/packages/:kodyId/approve-changes.json',
-	communityPackageShareApi: '/profiles/:username/packages/:kodyId/share.json',
-	communityPackageShareApiPost: post(
-		'/profiles/:username/packages/:kodyId/share.json',
-	),
 	// Owner-only webhook URL management for one package (the Webhooks section
 	// of package settings): GET lists declared webhooks with minted state,
 	// POST mints / rotates / reveals / enables / disables one. The credential

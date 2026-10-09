@@ -3,16 +3,12 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { vi } from 'vitest'
-import type * as scopeGrantsModule from '#worker/package-registry/scope-grants.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 export const moduleGraphMockModule = {
 	createWorker: vi.fn(),
 	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
-	getPlatformAccountByUsername: vi.fn<
-		typeof scopeGrantsModule.getPlatformAccountByUsername
-	>(async () => null),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 }

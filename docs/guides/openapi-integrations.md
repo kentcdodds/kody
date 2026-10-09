@@ -32,8 +32,9 @@ exists.
 ## When nothing close exists
 
 If community search finds no close package, prefer `@kody/openapi` for standard
-bind-and-call. Person accounts cannot import `@kody/*` live — `communityFork`
-the listing first, then import the copy.
+bind-and-call. It is a public community package from the `@kody` org, and
+imports resolve only in your org, so `communityFork` the listing first, then
+import the copy.
 
 Write a thin helpers package with `createAuthenticatedFetch` (or secret-backed
 headers) and a small hand-written client only when `@kody/openapi` cannot

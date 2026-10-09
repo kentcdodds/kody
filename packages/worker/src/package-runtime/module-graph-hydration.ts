@@ -1,4 +1,3 @@
-import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	normalizePackageExportKey,
@@ -30,13 +29,10 @@ import {
 import { createRelativeImportSpecifier } from './module-graph-paths.ts'
 
 /**
- * Resolve a caller-owned (or forked / share-granted) `kody:@` specifier to its
- * published `importable-module` artifact. Used by literal dynamic-import
- * hydration and by computed `import(specifier)` library loads
+ * Resolve a caller-owned `kody:@` specifier to its published
+ * `importable-module` artifact. Used by literal dynamic-import hydration and
+ * by computed `import(specifier)` library loads
  * ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
- * Never live-resolves platform scopes (`allowPlatformScopes: false`).
- * Source and published artifacts load under `sourceOwnerUserId` so share
- * guests match static `kody:@` imports. Rebuild+persist stays owner-only.
  */
 export async function resolveCurrentDynamicPackageArtifact(input: {
 	env: Env
@@ -51,28 +47,21 @@ export async function resolveCurrentDynamicPackageArtifact(input: {
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
 	assertNotSealedSecretProviderExport(parsed.exportName)
-	// Person accounts never resolve platform-owned sources here.
 	const resolution = await resolveSavedPackageImport({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		specifier: parsed,
-		allowPlatformScopes: false,
 	})
 	if (!resolution) {
-		await throwIfPersonPackagePlatformReference({
-			db: input.env.APP_DB,
-			packageName: parsed.packageName,
-		})
 		throw new Error(
-			`Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
+			`Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" in this org. To use a package from another org, communityFork it into this org and import the copy.`,
 		)
 	}
 	const { row } = resolution
-	const sourceOwnerUserId = resolution.sourceOwnerUserId
 	const loaded = await loadPackageSourceBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: sourceOwnerUserId,
+		userId: input.userId,
 		sourceId: row.sourceId,
 	})
 	if (!loaded.source.published_commit) {
@@ -85,11 +74,9 @@ export async function resolveCurrentDynamicPackageArtifact(input: {
 		manifest: loaded.manifest,
 		exportName,
 	})
-	// Published artifacts are owned by the source owner (own package, share
-	// grant, or nested share rewrite), matching static import rewriting.
 	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
-		userId: sourceOwnerUserId,
+		userId: input.userId,
 		sourceId: row.sourceId,
 		kind: 'importable-module',
 		artifactName: exportName,
@@ -98,13 +85,6 @@ export async function resolveCurrentDynamicPackageArtifact(input: {
 	if (loadedArtifact?.artifact) {
 		return loadedArtifact.artifact
 	}
-	// Share guests must not rebuild or persist under the owner's identity, and
-	// persisting under the guest would leave the next owner-keyed load cold.
-	if (resolution.shareOwned === true && sourceOwnerUserId !== input.userId) {
-		throw new Error(
-			`Dynamic Kody package import "${input.specifier}" resolved shared package "${row.name}", but its published importable-module artifact for "${exportName}" is missing. Ask the package owner to publish again.`,
-		)
-	}
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles: loaded.files,
 		bundleLabel: `Dynamic Kody package import "${input.specifier}"`,
@@ -112,14 +92,14 @@ export async function resolveCurrentDynamicPackageArtifact(input: {
 	const rebuilt = await buildKodyImportableModuleBundle({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: sourceOwnerUserId,
+		userId: input.userId,
 		sourceFiles: loaded.files,
 		entryPoint,
 		rootPackageId: row.id,
 	})
 	await persistPublishedBundleArtifact({
 		env: input.env,
-		userId: sourceOwnerUserId,
+		userId: input.userId,
 		source: loaded.source,
 		kind: 'importable-module',
 		artifactName: exportName,

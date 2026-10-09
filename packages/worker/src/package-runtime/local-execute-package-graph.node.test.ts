@@ -17,12 +17,6 @@ import {
 	runtimeModulePath,
 } from './module-graph-paths.ts'
 
-vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: mockModule.getPlatformAccountByUsername,
-	isPlatformAccountStableUserId: async () => false,
-	listPlatformAccountUsernames: async () => [],
-}))
-
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	resolveSavedPackageRef: (...args: Array<unknown>) =>
 		mockModule.resolveSavedPackageRef(...args),
@@ -48,7 +42,6 @@ vi.mock('./published-bundle-artifacts.ts', async () => {
 
 beforeEach(() => {
 	vi.clearAllMocks()
-	mockModule.getPlatformAccountByUsername.mockResolvedValue(null)
 })
 
 const graphInput = {
@@ -922,7 +915,6 @@ export default async () => m`
 
 test('buildLocalExecutePackageGraph rejects unresolved packages', async () => {
 	mockModule.getSavedPackageByName.mockResolvedValue(null)
-	mockModule.getPlatformAccountByUsername.mockResolvedValue(null)
 	const code = `import x from 'kody:@missing/pkg/export'
 export default async () => x`
 	await expect(

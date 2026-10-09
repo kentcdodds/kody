@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	collectChangedForkFiles,
+	rewriteForkedPackageSelfReferences,
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
@@ -31,14 +32,10 @@ function janeManifest(dependencies: unknown) {
 	})
 }
 
-function scanAsJane(
-	files: Record<string, string>,
-	allowedForeignScopes?: Array<string>,
-) {
+function scanAsJane(files: Record<string, string>) {
 	return scanCrossScopeReferences({
 		files,
 		expectedPackageScope: 'jane',
-		...(allowedForeignScopes ? { allowedForeignScopes } : {}),
 	})
 }
 
@@ -109,20 +106,45 @@ import 'kody:@owner/a/y'`,
 	).toEqual([{ file: 'package.json', specifier: '@owner/shared-utils' }])
 })
 
-test('scanCrossScopeReferences treats platform scopes as foreign without an allowlist', () => {
+test('scanCrossScopeReferences treats every other org scope as foreign', () => {
 	const files = {
 		'package.json': janeManifest(['@kody/github', '@owner/shared-utils']),
 		'src/index.ts': `import gh from 'kody:@kody/github/issues'
 import util from 'kody:@owner/util/helper'`,
 	}
-	expect(scanAsJane(files, ['kody'])).toEqual([
+	expect(scanAsJane(files)).toEqual([
+		{ file: 'package.json', specifier: '@kody/github' },
 		{ file: 'package.json', specifier: '@owner/shared-utils' },
+		{ file: 'src/index.ts', specifier: 'kody:@kody/' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
 	])
-	expect(scanAsJane(files)).toContainEqual({
-		file: 'src/index.ts',
-		specifier: 'kody:@kody/',
+})
+
+test('rewriteForkedPackageSelfReferences rewrites only the forked package name', () => {
+	const files = rewriteForkedPackageSelfReferences({
+		files: {
+			'package.json':
+				'{"dependencies":{"@kody/github":"*","@kody/shared":"*"}}',
+			'index.ts': `import gh from 'kody:@kody/github/issues'
+import shared from 'kody:@kody/shared/util'
+`,
+		},
+		originPackageName: '@kody/github',
+		nextPackageName: '@alice/github',
 	})
+	expect(files['index.ts']).toContain('kody:@alice/github/issues')
+	expect(files['index.ts']).toContain('kody:@kody/shared/util')
+	expect(files['package.json']).toContain('"@alice/github"')
+	expect(files['package.json']).toContain('"@kody/shared"')
+
+	const templateLiteral = rewriteForkedPackageSelfReferences({
+		files: {
+			'job.ts': 'await packages.invoke(`kody:@kody/github/issues`)\n',
+		},
+		originPackageName: '@kody/github',
+		nextPackageName: '@alice/github',
+	})
+	expect(templateLiteral['job.ts']).toContain('kody:@alice/github/issues')
 })
 
 test('collectChangedForkFiles returns only rewritten paths', () => {
