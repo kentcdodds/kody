@@ -402,6 +402,20 @@ test('rerankSearchCandidatesWithJev skips offline or flag-off and applies Score 
 	expect(
 		hybridCandidateMatchesIdentityTerm(descriptionOnlyPackage, longNameIntent),
 	).toBe(false)
+	const longNameMatch = longName.match
+	if (longNameMatch.type !== 'package') {
+		throw new Error('expected a package candidate')
+	}
+	expect(
+		hybridCandidateMatchesIdentityTerm(
+			{
+				...longName,
+				id: 'home-assistant-controls#./controls',
+				match: { ...longNameMatch, exportSubpath: './controls' },
+			},
+			longNameIntent,
+		),
+	).toBe(false)
 
 	const midTier = await rerank(
 		scoreRun((key) => {

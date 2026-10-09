@@ -238,12 +238,15 @@ function identityTokensMatchQuery(
 /**
  * Package name, kody id, or name leaf equals one query term or a contiguous
  * run of query terms of any length. Description and tag overlap does not count.
+ * Export rows inherit the parent identity and stay dropped, so a weak export
+ * cannot crowd out the package or receive an inlined call contract.
  */
 export function hybridCandidateMatchesIdentityTerm(
 	candidate: SearchCandidate,
 	intent: SearchIntent,
 ): boolean {
 	if (candidate.match.type !== 'package') return false
+	if (candidate.match.exportSubpath) return false
 	const { kodyId, name } = candidate.match
 	return [kodyId, name, getPackageNameLeaf(name)].some((value) =>
 		identityTokensMatchQuery(

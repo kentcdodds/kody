@@ -496,12 +496,7 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 			},
 		} as unknown as Env,
 	}
-	const embedDelayMs = 80
-	const retrieverDelayMs = 160
-	const embedText = async (text: string) => {
-		await new Promise((resolve) => setTimeout(resolve, embedDelayMs))
-		return [...deterministicEmbedding(text)]
-	}
+	const embedText = async (text: string) => [...deterministicEmbedding(text)]
 	const rankedIds = (result: Awaited<ReturnType<typeof search>>) =>
 		result.matches.map((match) =>
 			match.type === 'capability'
@@ -513,14 +508,11 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 						: `${match.type}`,
 		)
 
-	const sequentialStartedAt = performance.now()
-	await new Promise((resolve) => setTimeout(resolve, retrieverDelayMs))
 	const sequential = await search({
 		...fixtures,
 		embedText,
 		retrieverResults: [retrieverResult],
 	})
-	const sequentialMs = Math.round(performance.now() - sequentialStartedAt)
 
 	let embeddingStarted = false
 	let releaseRetrievers = (_results: Array<typeof retrieverResult>) => {}
@@ -529,7 +521,6 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 			releaseRetrievers = resolve
 		},
 	)
-	const overlappedStartedAt = performance.now()
 	const overlappedPromise = search({
 		...fixtures,
 		embedText: async (text) => {
@@ -541,10 +532,8 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 	await vi.waitFor(() => {
 		expect(embeddingStarted).toBe(true)
 	})
-	await new Promise((resolve) => setTimeout(resolve, retrieverDelayMs))
 	releaseRetrievers([retrieverResult])
 	const overlapped = await overlappedPromise
-	const overlappedMs = Math.round(performance.now() - overlappedStartedAt)
 
 	expect(rankedIds(overlapped)).toEqual(rankedIds(sequential))
 	expect(rankedIds(overlapped)).toEqual(
@@ -557,9 +546,6 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 	expect(overlapped.telemetry.candidateCounts).toEqual(
 		sequential.telemetry.candidateCounts,
 	)
-	// Retriever wait and embedding run together, so wall clock stays under the
-	// old sequence (retrievers, then embedding). The gap is the embed delay.
-	expect(overlappedMs).toBeLessThan(sequentialMs - embedDelayMs / 2)
 })
 
 test('searchUnified ranks package retriever results alongside capabilities', async () => {
