@@ -1,3 +1,4 @@
+import { resolveGrantPermissions } from '@kody-internal/shared/grant-presets.ts'
 import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
@@ -103,22 +104,81 @@ function toInvitePayload(invite: StoredInvite, orgSlug: string) {
 	}
 }
 
-async function assertOwnerInviteStillValid(
+async function assertInviterStillValid(db: D1Database, invite: StoredInvite) {
+	const requireOwner = invite.kind === 'membership' && invite.role === 'owner'
+	const inviter = await db
+		.prepare(
+			`SELECT role FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(invite.orgId, invite.invitedByUserId)
+		.first<{ role: string }>()
+	if (requireOwner) {
+		if (!inviter || inviter.role !== 'owner') {
+			throw new McpCallerError(
+				'This owner invite is no longer valid because the inviter is not an Owner.',
+			)
+		}
+		return
+	}
+	if (invite.kind === 'membership') {
+		if (!inviter) {
+			throw new McpCallerError(
+				'This invite is no longer valid because the inviter no longer has access.',
+			)
+		}
+		return
+	}
+	// Grant invites may come from outside collaborators who still hold a grant.
+	if (inviter) return
+	const grant = await db
+		.prepare(
+			`SELECT id FROM grants
+			 WHERE org_id = ?
+			   AND subject_type = 'user'
+			   AND subject_id = ?
+			   AND deleted_at IS NULL
+			 LIMIT 1`,
+		)
+		.bind(invite.orgId, invite.invitedByUserId)
+		.first<{ id: string }>()
+	if (!grant) {
+		throw new McpCallerError(
+			'This invite is no longer valid because the inviter no longer has access.',
+		)
+	}
+}
+
+async function assertInviteTargetsStillValid(
 	db: D1Database,
 	invite: StoredInvite,
 ) {
-	if (invite.kind !== 'membership' || invite.role !== 'owner') return
-	const inviter = await db
-		.prepare(
-			`SELECT user_id FROM org_memberships
-			 WHERE org_id = ? AND user_id = ? AND role = 'owner' AND deleted_at IS NULL`,
-		)
-		.bind(invite.orgId, invite.invitedByUserId)
-		.first<{ user_id: string }>()
-	if (!inviter) {
-		throw new McpCallerError(
-			'This owner invite is no longer valid because the inviter is not an Owner.',
-		)
+	const kind = invite.kind
+	switch (kind) {
+		case 'membership':
+			await assertTeamsInOrg(db, invite.orgId, invite.teamIds)
+			return
+		case 'grant': {
+			if (!invite.resourceType || !invite.resourceId) {
+				throw new McpCallerError('This grant invite is missing a resource.')
+			}
+			try {
+				resolveGrantPermissions({
+					resourceType: invite.resourceType,
+					preset: invite.preset,
+					permissions: invite.permissions,
+				})
+			} catch (error) {
+				throw new McpCallerError(
+					error instanceof Error ? error.message : 'Invalid grant invite.',
+				)
+			}
+			return
+		}
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unknown invite kind: ${String(exhaustive)}`)
+		}
 	}
 }
 
@@ -128,7 +188,8 @@ async function acceptStoredInvite(input: {
 	acceptedByUserId: string
 }) {
 	const { invite } = input
-	await assertOwnerInviteStillValid(input.db, invite)
+	await assertInviterStillValid(input.db, invite)
+	await assertInviteTargetsStillValid(input.db, invite)
 	// Claim the invite before side effects so a concurrent redeem loses the
 	// pending→accepted compare-and-set instead of applying access twice.
 	try {
