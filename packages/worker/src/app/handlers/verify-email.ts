@@ -82,13 +82,19 @@ export function createVerifyEmailHandler(env: Env) {
 				})
 			}
 			if (result.newlyVerified) {
-				void sendConnectAgentEmail({
-					env,
-					email: result.email,
-					userId: result.stableUserId,
-				}).catch((error) => {
-					console.warn('connect-agent-email-failed', error)
-				})
+				// Send 1 is immediate. waitUntil keeps it alive after this page
+				// returns; a floating promise is cancelled with the response,
+				// which drops the mail and never opens the dwell retry row.
+				waitUntil(
+					sendConnectAgentEmail({
+						env,
+						email: result.email,
+						userId: result.stableUserId,
+						requestUrl: request.url,
+					}).catch((error) => {
+						console.warn('connect-agent-email-failed', error)
+					}),
+				)
 				scheduleKitSubscriberSync({
 					env,
 					email: result.email,

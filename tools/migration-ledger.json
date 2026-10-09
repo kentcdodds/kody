@@ -367,6 +367,10 @@
 		{
 			"filename": "0091-teams-sharing-platform-conversion.sql",
 			"sha256": "2bd454f73d6aa1063f21435cb3d9c0e645b653973f0f94b31b6af941e983826c"
+		},
+		{
+			"filename": "0092-local-execute-parity-scopes.sql",
+			"sha256": "bfd5e655df0fa49080e9b2748fc7c9383a7df1f8ec215b1a8ff61ee5bda2dc93"
 		}
 	]
 }

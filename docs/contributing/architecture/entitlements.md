@@ -292,14 +292,17 @@ rates.
 
 **Debits.** The `usage_aggregation` lane runs `runCreditDebits`
 (`packages/worker/src/billing/credit-debits.ts`) right after it recomputes
-`usage_rollups`, for the prior and current UTC month. Candidates are every
-`credit_wallets` row plus every active gift/referral overlay period that still
-lacks a wallet row: a missing wallet reads as zero balance and is backfilled
-(`INSERT OR IGNORE`) before settle so the walk never skips an overlay period
-(#2642). Per candidate and debit meter (`creditDebitMeters`, open TEXT in D1 so
-CPU can join), billable units are usage above the include;
-`credit_debit_progress` records units already handled. A funded wallet is
-charged `creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
+`usage_rollups`, for the prior and current UTC month. Candidates are every live
+org or user that holds a `credit_wallets` row — team org wallets are keyed by
+org id and have no `users` row; personal orgs share that id with
+`stable_user_id` and the sweep visits it once — plus every active gift/referral
+overlay period that still lacks a wallet row. A missing wallet reads as zero
+balance and is backfilled (`INSERT OR IGNORE`) before settle so the walk never
+skips an overlay period (#2642). Per candidate and debit meter
+(`creditDebitMeters`, open TEXT in D1 so CPU can join), billable units are usage
+above the include; `credit_debit_progress` records units already handled. A
+funded wallet is charged
+`creditDebitCostMicroUsd(next) − creditDebitCostMicroUsd(accounted)`
 ($0.004 per unique worker day, $0.002 per million rows read, about 2× Cloudflare
 list). Every other wallet advances progress without a charge (against at least
 the purchasable Pro baseline when `creditWallet` is `none`), so a later top-up

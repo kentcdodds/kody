@@ -5,6 +5,8 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { localExecuteOrgPermissions } from './legacy-scope-rewrite.ts'
 import {
 	apiTokenScopeIncludes,
 	normalizeApiTokenScopes,
@@ -20,8 +22,13 @@ import {
 	type ResolvedApiTokenLifetime,
 } from './service.ts'
 
+/** Bootstrap defaults = local-execute parity + `org:read` (account reads). */
+const cliCredentialBootstrapDefaultScopes = normalizeApiTokenScopes([
+	...localExecuteOrgPermissions,
+	'org:read',
+]) as Array<ApiTokenScope>
+
 /** Distinct from `kody_at_` so chat/logs can show the CLI command safely. */
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const cliBootstrapCodePrefix = 'kody_bc_'
 
 const bootstrapCodeIdLength = 16
@@ -36,17 +43,13 @@ export const cliCredentialBootstrapPolicy = {
 	maxOutstandingCodesPerUser: 5,
 	defaultName: 'kody-cli-bootstrap',
 	/**
-	 * `org:execute` + `org:read` cover CapabilityProxy and account reads.
-	 * `package:execute` is required so `POST /v1/local-execute/package-graph`
-	 * can resolve `kody:@…` imports (request permissions check package:execute
-	 * per import). Without it, default bootstrap tokens fail closed on every
-	 * saved-package local execute.
+	 * Pre-P4 `local-execute` + `account:read` parity under org permissions:
+	 * CapabilityProxy hops (`org:execute`), account reads (`org:read`), and
+	 * the use-level scopes saved packages need (package-graph
+	 * `package:execute`, `createAuthenticatedFetch` → `integration:read`,
+	 * secrets, email, jobs, …). Do not mint `search:read` or write scopes.
 	 */
-	defaultScopes: [
-		'org:execute',
-		'org:read',
-		'package:execute',
-	] as const satisfies ReadonlyArray<ApiTokenScope>,
+	defaultScopes: cliCredentialBootstrapDefaultScopes,
 	minIdleTtlSeconds: apiTokenPolicy.minIdleTtlSeconds,
 	maxIdleTtlSeconds: apiTokenPolicy.maxIdleTtlSeconds,
 	maxMaxLifetimeSeconds: apiTokenPolicy.maxMaxLifetimeSeconds,

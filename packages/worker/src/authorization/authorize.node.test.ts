@@ -234,7 +234,7 @@ test('credential scopes narrow what the role grants', () => {
 	)
 	expect(error.code).toBe('credential_scope')
 	expect(error.message).toBe(
-		'This credential is not scoped for package:write on package @kent/invoices.',
+		'This credential is not scoped for package:write on package @kent/invoices. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.',
 	)
 })
 

@@ -3,6 +3,8 @@ import { readE2eCloudflareMockState } from '../tools/e2e-cloudflare-mock-state.t
 export const verificationEmailSubject =
 	'Verify your email to finish setting up Kody'
 
+export const connectAgentEmailSubject = 'Connect the agent you already use'
+
 export type MockEmailMessage = {
 	id: string
 	from_email: string
@@ -40,15 +42,30 @@ export async function listE2eCloudflareMockMessages() {
 	return (await response.json()) as MockEmailListResponse
 }
 
+function messageReaches(message: MockEmailMessage, recipient: string) {
+	return message.to_json.toLowerCase().includes(recipient.trim().toLowerCase())
+}
+
 export function findVerificationEmail(
 	messages: Array<MockEmailMessage>,
 	recipient: string,
 ) {
-	const normalized = recipient.trim().toLowerCase()
 	return (
 		messages.find((message) => {
 			if (message.subject !== verificationEmailSubject) return false
-			return message.to_json.toLowerCase().includes(normalized)
+			return messageReaches(message, recipient)
+		}) ?? null
+	)
+}
+
+export function findConnectAgentEmail(
+	messages: Array<MockEmailMessage>,
+	recipient: string,
+) {
+	return (
+		messages.find((message) => {
+			if (message.subject !== connectAgentEmailSubject) return false
+			return messageReaches(message, recipient)
 		}) ?? null
 	)
 }
