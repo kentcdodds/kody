@@ -1334,11 +1334,15 @@ jobs:
     # The KODY_API service binding targets the origin's KodyApi entrypoint,
     # so this deploys after origin. `deploy` may be skipped when only the
     # edge worker changed; the binding then targets the live origin.
+    # require-worker-tokens must succeed: when that job fails, `deploy` is
+    # skipped (not failed), and skipped must not greenlight an API rollout.
     needs:
       - sha-guard
+      - require-worker-tokens
       - deploy
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
+      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_api_worker == 'true' &&
       (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
