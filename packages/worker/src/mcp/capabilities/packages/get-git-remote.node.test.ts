@@ -1,3 +1,4 @@
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -83,9 +84,32 @@ type GitRemoteResult = {
 	setup_commands: Array<string>
 }
 
+function callerContextWithScopes(scopes: Array<OrgPermission> | null) {
+	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'user-1@example.com',
+			displayName: 'user-1',
+		},
+	})
+	if (!scopes || !callerContext.request) return callerContext
+	return {
+		...callerContext,
+		request: {
+			...callerContext.request,
+			credential: { ...callerContext.request.credential, scopes },
+		},
+	}
+}
+
 async function getRemote(
 	args: Record<string, unknown>,
-	{ snapshot = createPublishedSnapshot() }: { snapshot?: unknown } = {},
+	{
+		snapshot = createPublishedSnapshot(),
+		scopes = null,
+	}: { snapshot?: unknown; scopes?: Array<OrgPermission> | null } = {},
 ) {
 	const result = await getGitRemoteCapability.handler(args, {
 		env: {
@@ -96,15 +120,7 @@ async function getRemote(
 				},
 			},
 		} as unknown as Env,
-		callerContext: createMcpCallerContext({
-			source: { kind: 'mcp-oauth' },
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: personIdFromStored('user-1'),
-				email: 'user-1@example.com',
-				displayName: 'user-1',
-			},
-		}),
+		callerContext: callerContextWithScopes(scopes),
 	})
 	return result as GitRemoteResult
 }
@@ -307,6 +323,40 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 	expect(
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).not.toHaveBeenCalled()
+})
+
+test('get_git_remote mints read remotes with package:read and needs package:write or package:create for more', async () => {
+	resetMocks()
+	const { createToken } = mockPackageSource()
+	await expect(
+		getRemote(
+			{ package_id: 'package-1', scope: 'read' },
+			{ scopes: ['package:read'] },
+		),
+	).resolves.toMatchObject({ scope: 'read' })
+	expect(getGitRemoteCapability.orgPermission).toBe('package:read')
+
+	createToken.mockClear()
+	await expect(
+		getRemote({ package_id: 'package-1' }, { scopes: ['package:read'] }),
+	).rejects.toMatchObject({
+		code: 'credential_scope',
+		permission: 'package:write',
+	})
+	expect(createToken).not.toHaveBeenCalled()
+
+	resetMocks()
+	stubCreatedPackage()
+	await expect(
+		getRemote(
+			{ kody_id: 'unleashed-wifi', create: true, scope: 'read' },
+			{ scopes: ['package:read'] },
+		),
+	).rejects.toMatchObject({
+		code: 'credential_scope',
+		permission: 'package:create',
+	})
+	expect(mockModule.createStubSavedPackage).not.toHaveBeenCalled()
 })
 
 test('get_git_remote retries remote timeouts and write scope blocks without a restorable backup snapshot', async () => {
