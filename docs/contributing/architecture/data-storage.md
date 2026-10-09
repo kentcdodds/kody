@@ -419,7 +419,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `0088-teams-actor-columns.sql`, `0089-teams-orgs-backfill.sql`): one row per
   org. Personal orgs reuse `users.stable_user_id` as `orgs.id`. Billing,
   profile, gift, and budget columns live on the org row. Soft-delete and actor
-  columns exist on the row. See [decision 0063](../decisions/0063-teams-expand-orgs.md).
+  columns exist on the row. See
+  [decision 0063](../decisions/0063-teams-expand-orgs.md).
 - `handles` (0086): the username namespace. A personal org slug stays on the
   original handle; a live username rename adds a new handle row.
 - `org_memberships` (0086): `(org_id, user_id)` with role `owner`, `member`, or
