@@ -39,7 +39,7 @@ import {
 	type OauthProviderId,
 } from '#app/oauth-providers.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
-import { type routes } from '#universal/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import { usernameFromEmail } from '#worker/identity/username.ts'
 import {
@@ -167,7 +167,11 @@ function signedInOauthReturnLocation(
 	key: 'oauthLinked' | 'oauthError',
 	value: string,
 ) {
-	return oauthResultLocation(redirectTo ?? '/account', key, value)
+	return oauthResultLocation(
+		redirectTo ?? routes.accountSecurity.href(),
+		key,
+		value,
+	)
 }
 
 /**

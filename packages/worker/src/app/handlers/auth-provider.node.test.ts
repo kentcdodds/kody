@@ -840,7 +840,7 @@ test('signed-in users link and disconnect providers from their account', async (
 	})
 	expect(linkResponse.status).toBe(302)
 	expect(linkResponse.headers.get('Location')).toBe(
-		'/account?oauthLinked=github',
+		'/account/security?oauthLinked=github',
 	)
 	const connection = sqlite
 		.prepare(
@@ -856,11 +856,11 @@ test('signed-in users link and disconnect providers from their account', async (
 		{ cookie, mockMode: true },
 	)
 	expect(relinkResponse.headers.get('Location')).toBe(
-		'/account?oauthLinked=github',
+		'/account/security?oauthLinked=github',
 	)
 
 	// The same provider identity linked to a different signed-in user is a
-	// conflict surfaced on the account page, never an account switch.
+	// conflict surfaced on the Security page, never an account switch.
 	await seedUser(sqlite, {
 		id: 12,
 		email: 'other@example.com',
@@ -873,7 +873,7 @@ test('signed-in users link and disconnect providers from their account', async (
 		{ cookie: await sessionCookieFor('other@example.com'), mockMode: true },
 	)
 	expect(conflictResponse.headers.get('Location')).toBe(
-		'/account?oauthError=connection-conflict',
+		'/account/security?oauthError=connection-conflict',
 	)
 
 	// The connections API lists the link; disconnecting the only connection
