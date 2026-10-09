@@ -251,4 +251,26 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 	})
 	const second = await meter.getBudgetSpend({ month })
 	expect(second.users[memberB]).toBe(20_000)
+	expect(second.users[orgId] ?? 0).toBe(0)
+
+	// Absolute replace clears a prior org-fallback row when member shares appear.
+	await meter.replaceBudgetSpendFromLedger({
+		month,
+		users: { [orgId]: 20_000 },
+		automation: 0,
+	})
+	await syncOrgBudgetSpendFromCreditLedger({
+		db: env.APP_DB,
+		env,
+		orgId,
+		month,
+		includes: [
+			{ meter: 'unique_worker_days', include: 10 },
+			{ meter: 'durable_object_rows_read', include: 0 },
+		],
+		now,
+	})
+	const third = await meter.getBudgetSpend({ month })
+	expect(third.users[orgId] ?? 0).toBe(0)
+	expect(third.users[memberB]).toBe(20_000)
 })

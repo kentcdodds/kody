@@ -451,35 +451,37 @@ export async function settleCreditDebitMonth(input: {
 			batchCommitted = false
 		}
 	}
-	// Always replay budget MTD from committed ledger debits for the current
-	// month (idempotent). Recovers a prior post-commit UserMeter failure even
-	// when this run charged $0 (UNIQUE collision or no new billable units).
-	try {
-		await syncOrgBudgetSpendFromCreditLedger({
-			db: input.db,
-			env: input.env,
-			orgId: input.userId,
-			month: input.month,
-			includes: [
-				{
-					meter: 'unique_worker_days',
-					include: debitOverage.includedUniqueWorkerDays,
-				},
-				{
-					meter: 'durable_object_rows_read',
-					include: debitOverage.includedDurableObjectRowsRead,
-				},
-			],
-			now: input.now,
-		})
-	} catch (error) {
-		console.error('org-budget-spend-sync-failed', {
-			orgId: input.userId,
-			month: input.month,
-			debitedMicroUsd: settledDebitedMicroUsd,
-			error,
-		})
-		// Debit already committed; next hourly settle retries the sync.
+	// Funded wallets replay budget MTD from committed ledger debits
+	// (idempotent absolute replace). Recovers a prior post-commit UserMeter
+	// failure even when this run charged $0.
+	if (charge) {
+		try {
+			await syncOrgBudgetSpendFromCreditLedger({
+				db: input.db,
+				env: input.env,
+				orgId: input.userId,
+				month: input.month,
+				includes: [
+					{
+						meter: 'unique_worker_days',
+						include: debitOverage.includedUniqueWorkerDays,
+					},
+					{
+						meter: 'durable_object_rows_read',
+						include: debitOverage.includedDurableObjectRowsRead,
+					},
+				],
+				now: input.now,
+			})
+		} catch (error) {
+			console.error('org-budget-spend-sync-failed', {
+				orgId: input.userId,
+				month: input.month,
+				debitedMicroUsd: settledDebitedMicroUsd,
+				error,
+			})
+			// Debit already committed; next hourly settle retries the sync.
+		}
 	}
 	return {
 		month: input.month,

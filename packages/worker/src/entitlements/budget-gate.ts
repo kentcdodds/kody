@@ -410,7 +410,7 @@ export async function syncOrgBudgetSpendFromCreditLedger(input: {
 	}
 
 	const meter = userMeterRpc({ env: input.env, userId: input.orgId })
-	await meter.recomputeBudgetSpend({
+	await meter.replaceBudgetSpendFromLedger({
 		month: input.month,
 		users,
 		automation,

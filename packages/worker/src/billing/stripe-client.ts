@@ -84,6 +84,7 @@ const checkoutSessionSchema = object({
 	id: string(),
 	customer: nullable(string()),
 	client_reference_id: nullable(string()),
+	metadata: optional(nullable(record(string(), string()))),
 })
 
 const createdCheckoutSessionSchema = object({

@@ -413,8 +413,8 @@ export async function findOrgIdByStripeCustomerId(input: {
 /**
  * Resolve the org id that owns a Checkout Session by verifying
  * `client_reference_id` against `createBillingLinkReference(orgId)`. Prefer
- * Stripe metadata (`kody_org_id`); never reverse the HMAC; never use the
- * paying member's email as a team-org link target.
+ * Stripe metadata (`kody_org_id`); never reverse the HMAC. Customer email is
+ * a personal-org-only fallback (never used to resolve a team org).
  */
 export async function resolveOrgIdForCheckoutLink(input: {
 	env: SyncEnv
@@ -422,6 +422,7 @@ export async function resolveOrgIdForCheckoutLink(input: {
 	stableUserIdHint?: string | null
 	metadata?: Record<string, string> | null
 	customerId?: string | null
+	customerEmail?: string | null
 }): Promise<string | null> {
 	const clientReferenceId = input.clientReferenceId?.trim()
 	if (!clientReferenceId) return null
@@ -446,6 +447,18 @@ export async function resolveOrgIdForCheckoutLink(input: {
 		pushCandidate(
 			await findOrgIdByStripeCustomerId({ env: input.env, customerId }),
 		)
+	}
+
+	const customerEmail = input.customerEmail?.trim()
+	if (customerEmail) {
+		const row = await input.env.APP_DB.prepare(
+			`SELECT stable_user_id FROM users WHERE lower(email) = ?${andLiveDeletedAtSql()}`,
+		)
+			.bind(normalizeEmail(customerEmail))
+			.first<{ stable_user_id: string }>()
+		// Personal org id equals the owner's stable user id. Never treat email
+		// as a team-org resolver.
+		pushCandidate(row?.stable_user_id)
 	}
 
 	for (const orgId of candidates) {
@@ -728,7 +741,6 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 	user?: BillingUser
 	now?: Date
 }): Promise<ResolvedSubscriptionPlan> {
-	void input.customerEmail
 	if (input.orgId?.trim()) {
 		return linkStripeCustomerFromCheckoutSessionForOrg({
 			env: input.env,
@@ -765,6 +777,7 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 		stableUserIdHint: input.stableUserIdHint,
 		metadata,
 		customerId,
+		customerEmail: input.customerEmail,
 	})
 	if (!orgId) {
 		throw new BillingLinkError(

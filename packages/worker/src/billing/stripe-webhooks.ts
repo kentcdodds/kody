@@ -267,13 +267,20 @@ async function handleCustomerSubscriptionChange(input: {
 			})
 			result = { userId: user.id, orgId: orgOrUserHint, resolved }
 		} else {
-			const resolved = await refreshStripePlanForOrg({
-				env: input.env,
-				orgId: orgOrUserHint,
-				customerId,
-				now: input.now,
-			})
-			result = { userId: null, orgId: orgOrUserHint, resolved }
+			const org = await input.env.APP_DB.prepare(
+				`SELECT id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+			)
+				.bind(orgOrUserHint)
+				.first<{ id: string }>()
+			if (org?.id) {
+				const resolved = await refreshStripePlanForOrg({
+					env: input.env,
+					orgId: org.id,
+					customerId,
+					now: input.now,
+				})
+				result = { userId: null, orgId: org.id, resolved }
+			}
 		}
 	}
 	if (result.userId == null && result.orgId == null) {

@@ -29,12 +29,15 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 				refreshAt,
 			})
 		}
-		const personalUser = await input.env.APP_DB.prepare(
-			`SELECT 1 AS ok FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		// Any users row (live or soft-deleted) keeps the account write lease so
+		// deletion/purge cannot re-arm alarms. Only live team orgs (no users
+		// identity for this id) schedule without a lease.
+		const anyPersonalUser = await input.env.APP_DB.prepare(
+			`SELECT 1 AS ok FROM users WHERE stable_user_id = ?`,
 		)
 			.bind(userId)
 			.first<{ ok: number }>()
-		if (personalUser) {
+		if (anyPersonalUser) {
 			await withAccountWriteLease({
 				db: input.env.APP_DB,
 				stableUserId: userId,
@@ -42,10 +45,15 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 				env: input.env,
 				write: schedule,
 			})
-		} else {
-			// Team org: no users row / account deletion lease. Schedule directly.
-			await schedule()
+			return true
 		}
+		const liveTeamOrg = await input.env.APP_DB.prepare(
+			`SELECT 1 AS ok FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+			.bind(userId)
+			.first<{ ok: number }>()
+		if (!liveTeamOrg) return false
+		await schedule()
 		return true
 	} catch (error) {
 		if (error instanceof AccountDeletionInProgressError) return false

@@ -2096,6 +2096,51 @@ class UserMeterBase extends DurableObject<Env> {
 		return this.readBudgetSpendState(month)
 	}
 
+	/**
+	 * Replace current-month budget MTD with absolute totals from the credit
+	 * ledger. Unlike {@link recomputeBudgetSpend} (MAX-only), this clears prior
+	 * actor rows so weight changes and org-fallback → member handoff cannot
+	 * double-count the same debit.
+	 */
+	async replaceBudgetSpendFromLedger(input: {
+		month: string
+		users: Record<string, number>
+		automation: number
+	}): Promise<UserMeterBudgetSpendState> {
+		const month = assertUtcMonthKey(input.month)
+		const stored = this.storedBudgetMonth()
+		if (stored && month < stored) {
+			console.info('user_meter_budget_replace_skip_past_month', {
+				month,
+				storedMonth: stored,
+			})
+			return this.readBudgetSpendState(stored)
+		}
+		this.ensureBudgetMonth(month)
+		const automationTarget = Math.max(0, Math.floor(Number(input.automation)))
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec(`DELETE FROM budget_spend_users`)
+			this.ctx.storage.sql.exec(
+				`UPDATE budget_spend_state
+				 SET automation_micro_usd = ?
+				 WHERE id = ?`,
+				automationTarget,
+				budgetSpendStateRowId,
+			)
+			for (const [userId, microUsd] of Object.entries(input.users)) {
+				const target = Math.max(0, Math.floor(Number(microUsd)))
+				if (target <= 0) continue
+				this.ctx.storage.sql.exec(
+					`INSERT INTO budget_spend_users (user_id, micro_usd)
+					 VALUES (?, ?)`,
+					userId,
+					target,
+				)
+			}
+		})
+		return this.readBudgetSpendState(month)
+	}
+
 	async purge(): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			const deletingAt = this.readDeletingAt()
@@ -2375,6 +2420,11 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		orgSlug?: string | null
 	}) => Promise<UserMeterBudgetSpendState>
 	recomputeBudgetSpend: (input: {
+		month: string
+		users: Record<string, number>
+		automation: number
+	}) => Promise<UserMeterBudgetSpendState>
+	replaceBudgetSpendFromLedger: (input: {
 		month: string
 		users: Record<string, number>
 		automation: number
