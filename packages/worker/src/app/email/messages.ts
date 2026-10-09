@@ -16,10 +16,10 @@ export function buildVerificationEmail(input: {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Verify your email to finish setting up Kody',
-		preheader: 'One click and your assistant’s home is ready.',
+		preheader: 'One click and Your Agents\u2019 Cloud is ready.',
 		heading: 'Welcome to Kody',
 		body: [
-			'Kody is the home your AI assistant keeps — memory, keys, code, and automations, portable across every MCP host.',
+			'Kody is Your Agents\u2019 Cloud: memory, keys, code, and automations, portable across every MCP host.',
 			'Verify your email address to activate your account and get started.',
 		],
 		action: { label: 'Verify email address', url: input.verificationUrl },
@@ -650,7 +650,7 @@ export function buildPackageShareInviteEmail(input: {
 					'Both of you need a paid Kody plan to accept and to use the shared package.',
 				]
 			: [
-					'Kody is the home your AI assistant keeps — memory, keys, code, and automations.',
+					'Kody is Your Agents\u2019 Cloud: memory, keys, code, and automations.',
 					`${owner} invited you to use ${input.packageName}. This is an invitation, not an automatic attach.`,
 					'Create a Kody account with this email, choose a paid plan, then open the package page and accept. You will be able to read the source and invoke the package; you will not be able to publish or see raw secrets.',
 				],

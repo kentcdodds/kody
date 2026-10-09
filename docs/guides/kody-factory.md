@@ -12,9 +12,9 @@ ogImage: /images/kody-factory-map-og.jpg
 
 # The Kody factory map
 
-Kody is the home your agents share, laid out as a hosted factory: capabilities
-your agent can discover, combine, and keep running after the conversation ends.
-Your agent connects to Kody over MCP and starts with two tools:
+Kody is Your Agents' Cloud, laid out as a hosted factory: capabilities your
+agent can discover, combine, and keep running after the conversation ends. Your
+agent connects to Kody over MCP and starts with two tools:
 
 - **`search`** finds capabilities, official guides, saved packages,
   integrations, connected MCP servers, and relevant memories. Unscoped results

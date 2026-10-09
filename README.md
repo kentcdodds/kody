@@ -2,7 +2,7 @@
   <img src="./packages/worker/public/logo.png" alt="kody logo" width="400" />
 
   <p>
-    <strong>Your assistant's home — the memory, keys, code, and automations your AI agent keeps, portable across every MCP host. Built on Cloudflare Workers.</strong>
+    <strong>Your Agents' Cloud: the memory, keys, code, and automations your AI agent keeps, portable across every MCP host. Built on Cloudflare Workers.</strong>
   </p>
 
   <p>
@@ -17,7 +17,7 @@
 
 ---
 
-Kody is your assistant's home—the memory, keys, code, and automations your AI
+Kody is Your Agents' Cloud: the memory, keys, code, and automations your AI
 agent keeps, portable across every MCP host. Built on Cloudflare Workers and the
 Model Context Protocol (MCP), it ships a Remix UI, Worker-based request routing,
 package runtime plumbing, and OAuth-protected MCP endpoints. The project favors

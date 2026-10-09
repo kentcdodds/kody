@@ -57,8 +57,9 @@ is the product. The calling convention is pluggable.
 
 ## What Kody is for
 
-Kody is not a catalog of other people's tools. It's the runtime and home your
-assistant keeps, no matter which agent you talk to this year.
+Kody is not a catalog of other people's tools. It's Your Agents' Cloud: the
+runtime and home your assistant keeps, no matter which agent you talk to this
+year.
 
 When your assistant executes code in Kody, that code runs in a sandboxed
 Cloudflare Worker isolate next to the state it needs:

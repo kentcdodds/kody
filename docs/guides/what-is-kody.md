@@ -2,12 +2,12 @@
 id: what_is_kody
 title: What is Kody?
 summary:
-  Start here. Kody is the home your agents share. Connect the AI agent you
-  already use over MCP and it gains durable memory, secrets it never reads,
-  saved packages, and jobs that keep running while you are offline. Covers what
-  Kody is, how it pairs with personal agents, what you cannot get elsewhere, the
-  building blocks, real uses, and notes for an agent running a discovery
-  interview. Nothing here requires an account.
+  Start here. Kody is Your Agents' Cloud. Connect the AI agent you already use
+  over MCP and it gains durable memory, secrets it never reads, saved packages,
+  and jobs that keep running while you are offline. Covers what Kody is, how it
+  pairs with personal agents, what you cannot get elsewhere, the building
+  blocks, real uses, and notes for an agent running a discovery interview.
+  Nothing here requires an account.
 category: platform
 ---
 
@@ -35,7 +35,7 @@ Agent notes — for AI agents running a discovery conversation from this page:
   markdown at /docs/<slug>.md.
 -->
 
-Kody is the home your agents share. You keep using the AI agent you already have
+Kody is Your Agents' Cloud. You keep using the AI agent you already have
 (Claude, ChatGPT, Cursor, Codex, Copilot, Grok, OpenClaw, or any other
 MCP-capable host) and connect it to your Kody account. That agent gains durable
 state that outlives the conversation and keeps working while your computer is

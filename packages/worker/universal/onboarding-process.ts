@@ -105,7 +105,7 @@ export const portabilityGuideEntity = 'guide:portability'
 export const portabilityGuideHref = '/docs/portability'
 
 export const onboardingAccessLede =
-	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide, offers a few concrete first wins, and helps you make one of them. It is not a service gateway.'
+	'Kody is Your Agents\u2019 Cloud: memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide, offers a few concrete first wins, and helps you make one of them. It is not a service gateway.'
 
 export function onboardingAccessSelectedLede(agentLabel: string | null) {
 	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
@@ -316,7 +316,7 @@ export function formatOnboardingSearchNotice(
 ): string | null {
 	if (remainingLabels.length === 0) return null
 	const count = remainingLabels.length
-	return `Onboarding: ${count} step${count === 1 ? '' : 's'} left — ${remainingLabels.join(', ')}. Kody is the home your agents share, not a gateway. Details: ${baseUrl}/onboarding`
+	return `Onboarding: ${count} step${count === 1 ? '' : 's'} left — ${remainingLabels.join(', ')}. Kody is Your Agents\u2019 Cloud, not a gateway. Details: ${baseUrl}/onboarding`
 }
 
 export const onboardingExplorePackagesLabel = 'Explore packages'

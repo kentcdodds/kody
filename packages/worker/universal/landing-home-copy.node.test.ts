@@ -42,16 +42,14 @@ test('locked homepage copy names the six primitives', () => {
 		'',
 	)
 	expect(withoutTriggersBody).not.toMatch(/\u2014|—/)
-	expect(landingHeroHeadline).toBe(
+	expect(landingHeroHeadline).toBe('Your Agents\u2019 Cloud')
+	expect(landingHeroHeadline.endsWith(landingHeroHeadlineEmphasis)).toBe(true)
+	expect(landingHeroHeadlineEmphasis).toBe('Cloud')
+	expect(landingHeroSubhead).toBe(
 		'You shouldn\u2019t have to start over in every agent.',
 	)
-	expect(landingHeroHeadline.endsWith(landingHeroHeadlineEmphasis)).toBe(true)
-	expect(landingHeroHeadlineEmphasis).toBe('every agent.')
-	expect(landingHeroSubhead).toBe(
-		'Kody is the software platform your agents share',
-	)
 	expect(landingHeroSubhead.includes(landingHeroSubheadEmphasis)).toBe(true)
-	expect(landingHeroSubheadEmphasis).toBe('software platform')
+	expect(landingHeroSubheadEmphasis).toBe('every agent.')
 	expect(landingHeroLead.includes('Cursor')).toBe(true)
 	expect(landingHeroPrimaryCta).toContain('Connect')
 	expect(landingHeroSecondaryCta).toContain('how it works')

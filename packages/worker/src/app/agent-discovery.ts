@@ -64,9 +64,10 @@ export type AgentSkillDefinition = {
 
 const connectKodySkillBody = `# Connect Kody
 
-Kody is an OAuth-protected MCP personal assistant. You use it from an existing
-MCP host (Cursor, ChatGPT, Claude Desktop, Claude Code, Codex, Copilot, Grok,
-OpenCode, OpenClaw, Muse). There is no separate Kody chat app.
+Kody is Your Agents' Cloud: an OAuth-protected MCP personal assistant. You use
+it from an existing MCP host (Cursor, ChatGPT, Claude Desktop, Claude Code,
+Codex, Copilot, Grok, OpenCode, OpenClaw, Muse). There is no separate Kody chat
+app.
 
 ## When to use
 
@@ -91,9 +92,10 @@ or passwords into chat.
 
 const whatIsKodySkillBody = `# What is Kody
 
-Kody is a per-user personal assistant reached over MCP. Each signed-in user
-gets an isolated assistant (packages, jobs, secrets, memories, email,
-storage). The public MCP surface is two tools: \`search\` and \`execute\`.
+Kody is Your Agents' Cloud: a per-user personal assistant reached over MCP.
+Each signed-in user gets an isolated assistant (packages, jobs, secrets,
+memories, email, storage). The public MCP surface is two tools: \`search\` and
+\`execute\`.
 
 ## When to use
 
@@ -235,7 +237,7 @@ export function buildMcpServerCard(origin: string) {
 			version: kodyMcpServerCardVersion,
 		},
 		description:
-			'Per-user personal assistant over MCP. Two tools: search and execute. OAuth required. Connect from an existing MCP host — there is no separate Kody chat app.',
+			"Your Agents' Cloud. Per-user MCP assistant with search and execute. OAuth required. Connect from an existing MCP host. There is no separate Kody chat app.",
 		url: endpoint,
 		transport: {
 			type: 'streamable-http',
@@ -314,10 +316,10 @@ export function buildAuthMarkdown(origin: string): string {
 	return [
 		'# auth.md',
 		'',
-		'Kody is an OAuth-protected MCP personal assistant. Agents connect at',
-		`\`${mcp}\` from an existing MCP host. People complete sign-in and`,
-		'consent in the browser; do not ask anyone to paste secrets or tokens',
-		'into chat.',
+		"Kody is Your Agents' Cloud: an OAuth-protected MCP personal assistant.",
+		`Agents connect at \`${mcp}\` from an existing MCP host. People complete`,
+		'sign-in and consent in the browser; do not ask anyone to paste secrets',
+		'or tokens into chat.',
 		'',
 		'## Add the MCP server',
 		'',
@@ -356,10 +358,10 @@ export function buildHomeMarkdown(origin: string): string {
 	return [
 		'# Kody',
 		'',
-		'Kody is a per-user personal assistant for builders who would rather',
-		'own their automations than rent them. You use it from Cursor, ChatGPT,',
-		'Claude, Codex, Copilot, Grok, or any MCP host — not from a separate',
-		'Kody chat app.',
+		"Kody is Your Agents' Cloud: a per-user personal assistant for builders",
+		'who would rather own their automations than rent them. You use it from',
+		'Cursor, ChatGPT, Claude, Codex, Copilot, Grok, or any MCP host, not from',
+		'a separate Kody chat app.',
 		'',
 		`MCP URL: \`${origin}${mcpResourcePath}\` (OAuth required).`,
 		'',

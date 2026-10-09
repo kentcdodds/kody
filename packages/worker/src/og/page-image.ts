@@ -101,8 +101,8 @@ export function ogTitleChildren(input: {
 }
 
 function pageSubtitleMaxWidth(page: PublicOgPage): number {
-	// "The software platform your agents share" is 564px at 30px. A 560
-	// measure drops "agents share"; the title column keeps it one line.
+	// Home subtitle sits under a short H1 moniker; keep the title-column
+	// width so the supporting line stays one row in the share card.
 	return page.path === '/' ? PAGE_TITLE_WIDTH : PAGE_SUBTITLE_WIDTH
 }
 

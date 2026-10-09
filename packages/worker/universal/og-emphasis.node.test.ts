@@ -28,9 +28,9 @@ test('stripOgEmphasis drops markers and collapses hard line breaks', () => {
 	expect(stripOgEmphasis('Don\u2019t **start over**\nwith every agent')).toBe(
 		'Don\u2019t start over with every agent',
 	)
-	expect(
-		stripOgEmphasis('The **software**\n**platform** your\nagents share'),
-	).toBe('The software platform your agents share')
+	expect(stripOgEmphasis('Your Agents\u2019\n**Cloud**')).toBe(
+		'Your Agents\u2019 Cloud',
+	)
 	expect(stripOgEmphasis('odd ** marker')).toBe('odd ** marker')
 	expect(stripOgEmphasis('Good **copy**\nstray **')).toBe('Good copy stray **')
 })

@@ -19,10 +19,10 @@ for an outcome, watch the plan, review the actions that matter, and come back to
 the result. It is MIT licensed and, in its own words, an alpha for self-hosting
 and building on.
 
-Kody is the home your agents share. OpenMuse and Kody are complementary:
-OpenMuse is a place to talk to a personal agent, and Kody is what that agent
-keeps (and shares with Claude, Cursor, Codex, and the rest) after the
-conversation ends. The rest of this page is about using them together.
+Kody is Your Agents' Cloud. OpenMuse and Kody are complementary: OpenMuse is a
+place to talk to a personal agent, and Kody is what that agent keeps (and shares
+with Claude, Cursor, Codex, and the rest) after the conversation ends. The rest
+of this page is about using them together.
 
 ## What each one is good at
 

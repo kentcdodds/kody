@@ -99,7 +99,7 @@ export function buildLlmsTxt(baseUrl: string): string {
 	const lines = [
 		'# Kody',
 		'',
-		'> Kody is the home your agents share: connect the AI agent you already',
+		"> Kody is Your Agents' Cloud: connect the AI agent you already",
 		'> use over MCP and it gains durable memory, secrets it never reads, saved',
 		'> packages, jobs, workflows, webhooks, and apps that keep running while',
 		'> you are offline — and every other agent you connect reuses the same',

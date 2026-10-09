@@ -136,7 +136,7 @@ function communityListingHead({
 function homeDocumentHead(
 	context: DocumentHeadContext,
 ): DocumentHeadDescriptor {
-	const head = publicPageHead('home', DEFAULT_DOCUMENT_TITLE)
+	const head = publicPageHead('home', publicOgPages.home.ogTitle)
 	const variant = readHomeOgVariant(context.search)
 	if (!variant || !head.og) return head
 	const page = applyHomeOgVariant(publicOgPages.home, variant)

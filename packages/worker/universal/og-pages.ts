@@ -1,7 +1,8 @@
 import { stripOgEmphasis } from '#universal/og-emphasis.ts'
 
-const homeOgImageTitle = 'Don\u2019t **start over**\nwith every agent'
-const homeOgImageSubtitle = 'The software platform your agents share'
+const homeOgImageTitle = 'Your Agents\u2019\n**Cloud**'
+const homeOgImageSubtitle =
+	'You shouldn\u2019t have to start over in every agent.'
 
 /**
  * Registry of public pages that get a Satori-generated OG image at
@@ -53,7 +54,7 @@ export const publicOgPages = {
 		path: '/blog',
 	},
 	login: {
-		imageTitle: 'The Home Your Agents Share',
+		imageTitle: 'Your Agents\u2019 Cloud',
 		imageSubtitle:
 			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign in — Kody',
@@ -62,7 +63,7 @@ export const publicOgPages = {
 		path: '/login',
 	},
 	signup: {
-		imageTitle: 'The Home Your Agents Share',
+		imageTitle: 'Your Agents\u2019 Cloud',
 		imageSubtitle:
 			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign up — Kody',

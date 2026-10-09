@@ -21,9 +21,8 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
   Keep each message under roughly 120 words.
 - After they pick, do one small concrete win from that playbook. Stay on that
   win.
-- Kody is the home where their agents share memory, secrets, packages, jobs,
-  workflows, and apps. They keep or switch agents without rebuilding that
-  stack.
+- Kody is Your Agents' Cloud: memory, secrets, packages, jobs, workflows, and
+  apps. They keep or switch agents without rebuilding that stack.
 - Kody is not a service gateway, Composio-like middleware, or "connect APIs
   for your agent." Integrations exist. The center is owned memory and owned
   packages that run in Kody's cloud and are callable from any MCP host.
@@ -51,10 +50,10 @@ this guide with `search({ entity: "guide:onboarding" })`.
 
 ## What Kody is
 
-Kody is the home your agents share. You connect the agent you already use. That
-agent gains durable state that outlives the chat: memory, secrets, saved
-packages, jobs, workflows, and apps. Work runs in Kody's cloud. You can keep
-that agent or switch to another without rebuilding the stack.
+Kody is Your Agents' Cloud. You connect the agent you already use. That agent
+gains durable state that outlives the chat: memory, secrets, saved packages,
+jobs, workflows, and apps. Work runs in Kody's cloud. You can keep that agent or
+switch to another without rebuilding the stack.
 
 You do not chat with Kody directly. You talk to your agent; it does the
 reasoning and uses your computer. Kody holds what should outlive the chat.
