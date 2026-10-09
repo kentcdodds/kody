@@ -47,4 +47,5 @@ New code reads the right id from the context, and the compiler rejects a person
 id where an owner id belongs. Many storage helpers still take a plain `string`.
 Typing them as `OwnerId` happens incrementally, at the caller boundary, and
 never by re-keying. Revisit when `orgs` lands: `personalOrgId` stays for
-personal orgs, and org membership becomes the second resolver.
+personal orgs, and org membership becomes the second resolver (see
+[ADR 0063](./0063-teams-expand-orgs.md) for the P3 expand landing).

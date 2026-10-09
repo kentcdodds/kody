@@ -145,6 +145,7 @@ Open these before proposing a new primitive, surface, or storage home.
   actor, attribution, credential, membership) is derived, never persisted;
   Automation has no actor; downstream runs inherit lineage
 - [0062 — One org access check, declared by every surface](./0062-one-access-check.md)
+- [0063 — Teams P3 expand adds org rows without moving storage keys](./0063-teams-expand-orgs.md)
   — `authorize` is the one org check; every capability declares `orgPermission`
   and every Open API operation publishes `x-kody-permission`; site admin stays
   separate

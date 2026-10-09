@@ -63,10 +63,13 @@ the starter could do.
 
 ## The one swap point
 
-`resolveOrgBinding` is the only code that decides which org a person acts in and
-with which role. Today every person acts in their implicit org, whose id is
-their `stable_user_id`, as its Owner. Org memberships replace that function's
-body; no call site changes.
+`deriveRequestContext` chooses org binding from an optional DB-backed
+`orgBinding` (via `loadOrgBindingForPerson` on browser sessions and MCP OAuth)
+or falls back to `resolveOrgBinding`, which still maps every person to
+`personalOrgId(user.userId)` with slug from username. That fallback remains for
+sync paths and tests until phase 4 threads membership through every MCP/API
+caller. Call sites pass `orgBinding` only; they do not reimplement membership
+rules.
 
 The persisted caller context (job `caller_context_json`, MCP agent props) stays
 wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,
