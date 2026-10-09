@@ -30,7 +30,8 @@ async function createDb() {
 				stable_user_id TEXT NOT NULL UNIQUE,
 				email TEXT NOT NULL,
 				username TEXT NOT NULL,
-				deleting_at TEXT
+				deleting_at TEXT,
+				deleted_at TEXT
 			)`,
 		)
 		.run()
