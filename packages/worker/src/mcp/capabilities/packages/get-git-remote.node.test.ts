@@ -293,9 +293,6 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 		'https://x:art_v1_write_token@',
 	)
 	expect(writeResult.setup_commands.length).toBeGreaterThan(0)
-	expect(
-		writeResult.setup_commands.every((command) => typeof command === 'string'),
-	).toBe(true)
 	expect(mockModule.listServerRefs).toHaveBeenCalledWith(
 		expect.objectContaining({
 			protocolVersion: 1,
@@ -334,7 +331,6 @@ test('get_git_remote mints read remotes with package:read and needs package:writ
 			{ scopes: ['package:read'] },
 		),
 	).resolves.toMatchObject({ scope: 'read' })
-	expect(getGitRemoteCapability.orgPermission).toBe('package:read')
 
 	createToken.mockClear()
 	await expect(

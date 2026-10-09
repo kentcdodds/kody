@@ -346,7 +346,7 @@ destination account before importing D1 projections or republishing packages.
 Relational app data lives in D1.
 
 TEXT `user_id` (and `owner_user_id`) columns hold an `OwnerId`: the org that
-owns the row. Today every owner is a personal org whose id is the person's
+owns the row. Every owner is a personal org whose id is the person's
 `stable_user_id`, so the column names stay as they are. Columns that record who
 acted hold a `PersonId`. Both types come from
 `@kody-internal/shared/owner-person-ids.ts`; see
@@ -415,6 +415,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   on pre-cleanup failures (active writers or inventory); a partial-cleanup
   failure leaves the fence for retry. Never-attempted rows are processed before
   retries, and in-backoff fences are skipped.
+- `orgs` (`0086-teams-orgs-tables.sql`, `0087-teams-soft-delete-columns.sql`,
+  `0088-teams-actor-columns.sql`, `0089-teams-orgs-backfill.sql`): one row per
+  org. Personal orgs reuse `users.stable_user_id` as `orgs.id`. Billing,
+  profile, gift, and budget columns live on the org row. Soft-delete and actor
+  columns exist on the row. See
+  [decision 0063](../decisions/0063-teams-expand-orgs.md).
+- `handles` (0086): the username namespace. A personal org slug stays on the
+  original handle; a live username rename adds a new handle row.
+- `org_memberships` (0086): `(org_id, user_id)` with role `owner`, `member`, or
+  `billing`. Signup writes the person as Owner of their personal org.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -1425,12 +1435,9 @@ on write unless a migration backfills existing rows.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
-- HTTP package invocation tokens are gone.
-  `0084-purge-package-invocation-tokens.sql` deleted leftover rows;
-  `0085-drop-package-invocation-tokens.sql` drops `package_invocation_tokens`.
-  Keyed invocation replay lives in the RunLog Durable Object ledger (see
-  [Run records](./run-records.md)); the current D1 schema has no
-  `package_invocations` table.
+- Keyed invocation replay lives in the RunLog Durable Object ledger (see
+  [Run records](./run-records.md)). D1 has no `package_invocations` or
+  `package_invocation_tokens` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
   `0057-webhook-url-secret-encrypted.sql`,
   `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for

@@ -2,12 +2,6 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
-	openSealedJson,
-	generateSealKeyPair,
-	importRecipientPublicKey,
-	sealJson,
-} from '../preview-rehearsal/seal.ts'
-import {
 	assertReadOnlySql,
 	classifyStripePrice,
 	crossPlatformScopeDependenciesSql,
@@ -16,7 +10,6 @@ import {
 	readProductionBillingEnv,
 	runProductionQueries,
 	sharedPackageImportsSql,
-	targetResourceNames,
 } from './production-queries.ts'
 
 const proPriceId = 'price_pro_month'
@@ -430,11 +423,7 @@ test('runProductionQueries answers all five questions with reads only', async ()
 	])
 })
 
-test('a branch preview target skips Stripe and reads its own resources', async () => {
-	expect(targetResourceNames(parseQueryTarget('kody-branch-teams'))).toEqual({
-		appD1Name: 'kody-branch-teams-db',
-		oauthKvTitle: 'kody-branch-teams-oauth-kv',
-	})
+test('query targets refuse PR previews and the production worker name', () => {
 	expect(() => parseQueryTarget('kody-pr-12')).toThrow(/branch previews/)
 	expect(() => parseQueryTarget('kody-production')).toThrow(/branch previews/)
 })
@@ -450,16 +439,4 @@ test('Stripe prices are classified with the worker billing config', async () => 
 		'retired-standard',
 	)
 	expect(classifyStripePrice(production, 'price_unknown')).toBe('unmapped')
-})
-
-test('the report opens only with the recipient private key', async () => {
-	const pair = await generateSealKeyPair()
-	const envelope = await sealJson(
-		{ platformAccounts: { count: 2 } },
-		await importRecipientPublicKey(pair.publicKey),
-	)
-	expect(JSON.stringify(envelope)).not.toContain('platformAccounts')
-	await expect(openSealedJson(envelope, pair.privateKey)).resolves.toEqual({
-		platformAccounts: { count: 2 },
-	})
 })

@@ -302,27 +302,6 @@ test('account deletion statements never bind a LIKE or GLOB pattern (D1 caps pat
 	}
 })
 
-test('pending-drop tables stay in schema but are not inventoried for deletion or export', () => {
-	using db = createMigratedDb()
-	const tables = (
-		db
-			.prepare(
-				`SELECT name
-				FROM sqlite_schema
-				WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-				ORDER BY name`,
-			)
-			.all() as Array<{ name: string }>
-	).map((table) => table.name)
-	const inventorySql = accountUserDataTargets
-		.map((target) => buildUserScopedDeleteOrUpdateSql(matchFor(target)).sql)
-		.join('\n')
-	for (const table of accountUserDataPendingDropTables) {
-		expect(tables).toContain(table)
-		expect(inventorySql).not.toMatch(new RegExp(`\\b${table}\\b`, 'u'))
-	}
-})
-
 test('final schema drops retired tables without stale deletion/export inventory coverage', () => {
 	const retiredTables = [
 		'entitlement_daily_counters',

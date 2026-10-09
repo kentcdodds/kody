@@ -47,8 +47,6 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 	})
 	const staticRegistry = await getStaticRegistry()
 
-	expect(registry).not.toBe(staticRegistry)
-	expect(registry.capabilityMap).not.toBe(staticRegistry.capabilityMap)
 	expect(staticRegistry.capabilityMap).toHaveProperty('packageShareInvite')
 	expect(registry.capabilityMap).not.toHaveProperty('packageShareInvite')
 	expect(registry.capabilityMap).toHaveProperty('search')

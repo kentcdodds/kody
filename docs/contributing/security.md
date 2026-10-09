@@ -152,13 +152,14 @@ package-app surfaces:
   external script; its image pageview beacon is allowed in `img-src` and its
   `sendBeacon` duration/event pings are allowed in `connect-src`; the
   scroll-restoration restore script is an inline classic script allowed only by
-  its sha256 hash), `frame-ancestors 'none'`, `base-uri 'self'`,
-  `object-src 'none'`, `form-action 'self'`, `worker-src 'self' blob:` (for
-  Sentry Session Replay), and `connect-src` limited to `'self'` plus the Fathom,
-  Cloudflare Web Analytics, and Turnstile beacon hosts. The client bundle loads
-  as an external module. `style-src` allows `'unsafe-inline'` because
-  SSR-streamed styles arrive as inline `<style>` tags; style injection is far
-  lower risk than script injection.
+  its sha256 hash), `img-src` also allowlists `https://static.scarf.sh` for the
+  Scarf page pixel on public marketing and docs, `frame-ancestors 'none'`,
+  `base-uri 'self'`, `object-src 'none'`, `form-action 'self'`,
+  `worker-src 'self' blob:` (for Sentry Session Replay), and `connect-src`
+  limited to `'self'` plus the Fathom, Cloudflare Web Analytics, and Turnstile
+  beacon hosts. The client bundle loads as an external module. `style-src`
+  allows `'unsafe-inline'` because SSR-streamed styles arrive as inline
+  `<style>` tags; style injection is far lower risk than script injection.
 - `X-Frame-Options: DENY` plus `frame-ancestors 'none'` — stops clickjacking of
   the OAuth consent screen and account pages.
 - `X-Content-Type-Options: nosniff`.

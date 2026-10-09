@@ -74,7 +74,11 @@ only.
 
 `users.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
 constraint for the registered names (squashed baseline plus
-`0002-restructure-plan-tiers.sql`). **Live DDL defaults and writers always
+`0002-restructure-plan-tiers.sql`). The same plan, ladder, Stripe, gift, and
+credit-eligibility columns live on `orgs` (personal orgs reuse
+`users.stable_user_id` as `orgs.id`). Entitlement reads prefer the org row and
+fall back to `users` when that join misses. Writers that change those columns
+write both tables with the same id. **Live DDL defaults and writers always
 persist a known plan name (never NULL); normal creation and reset paths default
 to `free`.**
 

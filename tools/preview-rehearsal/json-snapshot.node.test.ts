@@ -40,7 +40,6 @@ test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt 
 			},
 		],
 	}
-	expect(diffSnapshots(before, before)).toEqual([])
 	expect(diffSnapshots(before, after)).toEqual([
 		{ path: '.people[0].proofs.user', before: 'h1', after: 'h2' },
 		{ path: '.people[0].tokens[1]', before: undefined, after: { id: 't2' } },

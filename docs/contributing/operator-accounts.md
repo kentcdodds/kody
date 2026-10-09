@@ -407,6 +407,21 @@ stays up.
 
 `Password manager: Fathom account login entry.`
 
+## Scarf
+
+Company-level page analytics on production `kody.codes` public marketing and
+docs only. Pixel id is committed in `packages/worker/client/scarf-analytics.ts`
+(no Wrangler var). Preview, local, and other hosts never send. CSP allowlist in
+`packages/worker/src/app/security-headers.ts` (`img-src` only).
+
+Dashboard: the Kody organization pixel at [scarf.sh](https://scarf.sh/). No
+secret in the Worker.
+
+Recovery: Scarf account login. Losing the pixel id only drops company analytics;
+the app stays up.
+
+`Password manager: Scarf account login entry.`
+
 ## Kit
 
 Exist-only lifecycle tags on account events. API: `https://api.kit.com/v4`
@@ -565,9 +580,10 @@ values in this repo.
 3. `Password manager: Stripe webhook endpoint id.`
 4. `Password manager: Sentry org slug; alert-rule destination; SENTRY_AUTH_TOKEN item name.`
 5. `Password manager: Fathom account login item name.`
-6. `Password manager: Kit account login item name.`
-7. `Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
-8. `Password manager: Google Cloud project / OAuth client name.`
-9. `Password manager: X project / app name.`
-10. `Password manager: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
-11. `Password manager: Cursor API key / cursorApiKey item name.`
+6. `Password manager: Scarf account login item name.`
+7. `Password manager: Kit account login item name.`
+8. `Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
+9. `Password manager: Google Cloud project / OAuth client name.`
+10. `Password manager: X project / app name.`
+11. `Password manager: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
+12. `Password manager: Cursor API key / cursorApiKey item name.`
