@@ -9,6 +9,7 @@ import {
 	resolveAuthorizeOrg,
 	selectConsentOrg,
 	selectConsentOrgsForLoader,
+	stripLoginFromAuthorizePrompt,
 } from './oauth-authorize.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { provisionPersonalOrg } from './provision.ts'
@@ -227,4 +228,22 @@ test('selectConsentOrgsForLoader auto-selects a sole org and keeps multi unspeci
 		],
 		selectedOrgSlug: 'acme',
 	})
+})
+
+test('stripLoginFromAuthorizePrompt drops login and keeps other prompts', () => {
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'https://kody.codes/oauth/authorize?client_id=c&prompt=login',
+		),
+	).toBe('https://kody.codes/oauth/authorize?client_id=c')
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'https://kody.codes/oauth/authorize?prompt=login%20consent&state=s',
+		),
+	).toBe('https://kody.codes/oauth/authorize?prompt=consent&state=s')
+	expect(
+		stripLoginFromAuthorizePrompt(
+			'https://kody.codes/oauth/authorize?prompt=consent',
+		),
+	).toBe('https://kody.codes/oauth/authorize?prompt=consent')
 })

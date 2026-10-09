@@ -87,6 +87,7 @@ import {
 	resolveAuthorizeOrg,
 	selectConsentOrg,
 	selectConsentOrgsForLoader,
+	stripLoginFromAuthorizePrompt,
 	type AuthorizeOrg,
 } from '#worker/orgs/oauth-authorize.ts'
 import { listOrgsForPerson } from '#worker/orgs/repo.ts'
@@ -1696,7 +1697,7 @@ export async function handleAuthorizeRequest(
 			isSecureRequest(request),
 		)
 		if (requiresOrgChoiceReload) {
-			const reloadTo = request.url
+			const reloadTo = stripLoginFromAuthorizePrompt(request.url)
 			const cookieHeaders = createSetCookieHeaders([setCookie])
 			if (wantsJson(request)) {
 				return jsonResponse(

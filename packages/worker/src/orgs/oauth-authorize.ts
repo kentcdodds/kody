@@ -176,3 +176,23 @@ export function readOrgSlugFromForm(formData: FormData): string | null {
 	const slug = normalizeOrgSlug(value)
 	return slug.length > 0 ? slug : null
 }
+
+/**
+ * After inline login, drop `login` from `prompt` before reloading authorize so
+ * the new session is not treated as signed-out (OIDC `prompt=login`).
+ * Other prompt values are preserved.
+ */
+export function stripLoginFromAuthorizePrompt(requestUrl: string): string {
+	const reloadUrl = new URL(requestUrl)
+	const prompt = reloadUrl.searchParams.get('prompt')
+	if (!prompt) return reloadUrl.toString()
+	const remaining = prompt
+		.split(/\s+/)
+		.filter((value) => value.length > 0 && value !== 'login')
+	if (remaining.length > 0) {
+		reloadUrl.searchParams.set('prompt', remaining.join(' '))
+	} else {
+		reloadUrl.searchParams.delete('prompt')
+	}
+	return reloadUrl.toString()
+}
