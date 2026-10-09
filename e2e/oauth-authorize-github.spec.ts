@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { type APIRequestContext } from '@playwright/test'
 import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 import {
 	clearAuthRateLimitsInE2eDatabase,
@@ -28,9 +29,7 @@ ${buildDeleteUserAndPersonalOrgSql({
 	clearAuthRateLimitsInE2eDatabase()
 }
 
-async function registerPublicClient(
-	request: import('@playwright/test').APIRequestContext,
-) {
+async function registerPublicClient(request: APIRequestContext) {
 	const response = await request.post('/oauth/register', {
 		data: {
 			redirect_uris: [callbackRedirectUri],

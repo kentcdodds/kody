@@ -6,7 +6,10 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
-import { resolvePostAuthLandingPath,defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
+import {
+	resolvePostAuthLandingPath,
+	defaultPostVerificationRedirect,
+} from '#universal/safe-redirect.ts'
 import {
 	createAuthCookie,
 	destroyAuthCookie,

@@ -1,4 +1,3 @@
-import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/component'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -7,9 +6,7 @@ import { readAppSession } from '#client/app-session-context.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
-	emptyPublicFormProtection,
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
@@ -18,20 +15,31 @@ import {
 } from '#client/public-form-protection.ts'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
 import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
-import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
-import { renderSocialSignInButtons } from '#client/routes/social-sign-in-buttons.tsx'
+import {
+	renderOauthAuthorizeSignInMethods,
+	startOauthAuthorizePasskeySignIn,
+	startOauthAuthorizeProviderSignIn,
+} from '#client/routes/oauth-authorize-sign-in.tsx'
 import {
 	fetchPublicAuthConfig,
-	startSocialSignIn,
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
-import { buildAuthLink } from '#client/auth-links.ts'
-import { renderIcon } from '#universal/icon.tsx'
+
+export { oauthAuthorizeRouteLoader } from '#client/routes/oauth-authorize-loader.ts'
 import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
 import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
+import {
+	oauthAuthorizeAccessLead,
+	oauthAuthorizeDangerButtonCss,
+	oauthAuthorizeHeaderCss,
+	oauthAuthorizePageCss,
+	oauthAuthorizePrimaryButtonCss,
+	oauthAuthorizeSecondaryButtonCss,
+	type OAuthAuthorizeStatus,
+} from '#client/routes/oauth-authorize-chrome.ts'
 import {
 	oauthAuthorizeActionsDisabled,
 	oauthAuthorizeApproveAriaLabel,
@@ -61,19 +69,13 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getAlertCardCss,
-	getDangerButtonCss,
-	getGhostButtonCss,
-	getPrimaryButtonCss,
-	getSecondaryButtonCss,
 	insetCardCss,
 	inputCss,
 	mutedLinkCss,
 	pageDescriptionCss,
 	pageEyebrowCss,
-	pageHeaderCss,
 	pageTitleCss,
 	sectionTitleCss,
-	stackedPageCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -86,28 +88,8 @@ type OAuthAuthorizeInfo = {
 	selectedOrgSlug: string | null
 }
 
-type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
-
-function oauthAuthorizeAccessLead(
-	status: OAuthAuthorizeStatus,
-	clientLabel: string,
-) {
-	switch (status) {
-		case 'ready':
-			return `${clientLabel} wants to access your kody account.`
-		case 'idle':
-		case 'loading':
-			return 'Loading authorization details…'
-		case 'error':
-			return null
-		default: {
-			const exhaustive: never = status
-			return exhaustive
-		}
-	}
-}
 
 function getSearchParams(handle: Handle) {
 	return new URLSearchParams(readRouterSearch(handle))
@@ -115,62 +97,6 @@ function getSearchParams(handle: Handle) {
 
 function isOAuthAuthorizePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/oauth/authorize'
-}
-
-export async function oauthAuthorizeRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const [response, authConfig] = await Promise.all([
-		fetch(`/oauth/authorize-info${url.search}`, {
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-			signal,
-		}),
-		fetchPublicAuthConfig(signal),
-	])
-	const payload = await response.json().catch(() => null)
-	const authProvidersPayload = authConfig
-		? {
-				authProviders: {
-					ok: true as const,
-					providers: authConfig.providers,
-					turnstileSiteKey: authConfig.turnstileSiteKey,
-				},
-			}
-		: {}
-	if (!response.ok || !payload?.ok) {
-		const errorText =
-			typeof payload?.error === 'string'
-				? payload.error
-				: 'Unable to load authorization details.'
-		return {
-			...authProvidersPayload,
-			oauthAuthorize: {
-				ok: false,
-				error: errorText,
-				allowClientReset: payload?.allowClientReset === true,
-				code: typeof payload?.code === 'string' ? payload.code : undefined,
-			},
-		}
-	}
-	return {
-		...authProvidersPayload,
-		oauthAuthorize: {
-			ok: true,
-			client: payload.client,
-			scopes: payload.scopes,
-			emailVerified:
-				typeof payload.emailVerified === 'boolean'
-					? payload.emailVerified
-					: null,
-			requireCredentials: payload.requireCredentials === true,
-			orgs: readOAuthAuthorizeConsentOrgs(payload.orgs),
-			selectedOrgSlug: readOAuthAuthorizeSelectedOrgSlug(
-				payload.selectedOrgSlug,
-			),
-		},
-	}
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -234,25 +160,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function readConsentFormProtection() {
-		const authForm = document.querySelector<HTMLFormElement>(
-			'form[data-testid="oauth-authorize-form"]',
-		)
-		return authForm
-			? readPublicFormProtection(new FormData(authForm), authForm)
-			: emptyPublicFormProtection()
-	}
-
 	async function handleProviderSignIn(providerId: string) {
 		if (signInStatus === 'submitting') return
 		signInStatus = 'submitting'
 		handle.update()
 		try {
-			const errorMessage = await startSocialSignIn(
+			const errorMessage = await startOauthAuthorizeProviderSignIn({
 				providerId,
-				readOAuthResumeTarget(),
-				readConsentFormProtection(),
-			)
+				redirectTo: readOAuthResumeTarget(),
+			})
 			if (errorMessage) {
 				setSignInError(errorMessage)
 			}
@@ -266,61 +182,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		signInStatus = 'submitting'
 		handle.update()
 		try {
-			const optionsResponse = await fetch('/webauthn/authentication', {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
+			const result = await startOauthAuthorizePasskeySignIn({
+				redirectTo: readOAuthResumeTarget(),
 			})
-			const optionsPayload = await optionsResponse.json().catch(() => null)
-			if (
-				!optionsResponse.ok ||
-				optionsPayload?.ok !== true ||
-				!optionsPayload.options
-			) {
-				setSignInError('Unable to start passkey sign-in.')
-				return
+			if (!result.ok) {
+				if (result.error === null) {
+					signInStatus = 'idle'
+					handle.update()
+					return
+				}
+				setSignInError(result.error)
 			}
-
-			let authenticationResponse
-			try {
-				authenticationResponse = await startAuthentication({
-					optionsJSON: optionsPayload.options,
-				})
-			} catch {
-				signInStatus = 'idle'
-				handle.update()
-				return
-			}
-
-			const protection = readConsentFormProtection()
-			const verificationResponse = await fetch('/webauthn/authentication', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include',
-				body: JSON.stringify({
-					response: authenticationResponse,
-					rememberMe: false,
-					...protection,
-				}),
-			})
-			const verificationPayload = await verificationResponse
-				.json()
-				.catch(() => null)
-			if (!verificationResponse.ok || verificationPayload?.ok !== true) {
-				const errorMessage =
-					typeof verificationPayload?.error === 'string'
-						? verificationPayload.error
-						: 'Passkey sign-in failed.'
-				setSignInError(errorMessage)
-				return
-			}
-
-			window.location.assign(
-				resolvePasswordAuthRedirect({
-					mode: 'login',
-					requiresTwoFactor: verificationPayload.requiresTwoFactor === true,
-					redirectTo: readOAuthResumeTarget(),
-				}),
-			)
 		} catch {
 			setSignInError('Network error. Please try again.')
 		}
@@ -689,9 +561,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				: 'Reset this connection'
 
 		return (
-			<section mix={css(pageCss)}>
-				<header mix={css(headerCss)}>
-					<span mix={css(eyebrowCss)}>Kody secure connection</span>
+			<section mix={css(oauthAuthorizePageCss)}>
+				<header mix={css(oauthAuthorizeHeaderCss)}>
+					<span mix={css(pageEyebrowCss)}>Kody secure connection</span>
 					<h1 mix={css(pageTitleCss)}>Authorize access</h1>
 					{accessLead ? (
 						<p mix={css(pageDescriptionCss)}>{accessLead}</p>
@@ -758,7 +630,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							})}
 							mix={[
 								on('click', () => submitDecision('deny')),
-								css(secondaryButtonCss),
+								css(oauthAuthorizeSecondaryButtonCss),
 							]}
 						>
 							Deny
@@ -787,7 +659,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 								disabled={resetClientDisabled}
 								mix={[
 									on('click', () => submitDecision('reset-client')),
-									css(dangerButtonCss),
+									css(oauthAuthorizeDangerButtonCss),
 								]}
 							>
 								{resetClientLabel}
@@ -878,7 +750,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 								data-testid="oauth-authorize-approve"
 								disabled={actionsDisabled || signInStatus === 'submitting'}
 								aria-label={approveAriaLabel}
-								mix={css(primaryButtonCss)}
+								mix={css(oauthAuthorizePrimaryButtonCss)}
 							>
 								{authorizeLabel}
 							</button>
@@ -891,47 +763,25 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 								})}
 								mix={[
 									on('click', () => submitDecision('deny')),
-									css(secondaryButtonCss),
+									css(oauthAuthorizeSecondaryButtonCss),
 								]}
 							>
 								Deny
 							</button>
 						</div>
 						{!isLoggedIn && isSessionReady
-							? renderSocialSignInButtons({
+							? renderOauthAuthorizeSignInMethods({
 									providers: authProviders,
 									disabled: actionsDisabled || signInStatus === 'submitting',
+									resumeTarget: readOAuthResumeTarget(),
 									onProviderClick: (providerId) => {
 										void handleProviderSignIn(providerId)
 									},
+									onPasskeyClick: () => {
+										void handlePasskeySignIn()
+									},
 								})
 							: null}
-						{!isLoggedIn && isSessionReady ? (
-							<button
-								type="button"
-								disabled={actionsDisabled || signInStatus === 'submitting'}
-								data-testid="oauth-authorize-passkey"
-								mix={[
-									css(passkeyButtonCss),
-									on('click', () => {
-										void handlePasskeySignIn()
-									}),
-								]}
-							>
-								{renderIcon('key', { size: '17' })}
-								Sign in with a passkey
-							</button>
-						) : null}
-						{!isLoggedIn && isSessionReady ? (
-							<p mix={css(descriptionCss)}>
-								<a
-									href={buildAuthLink('/login', readOAuthResumeTarget())}
-									mix={css(mutedLinkCss)}
-								>
-									Use the full sign-in page
-								</a>
-							</p>
-						) : null}
 					</form>
 				) : null}
 				<a href="/" mix={css(mutedLinkCss)}>
@@ -940,33 +790,4 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			</section>
 		)
 	}
-}
-
-const pageCss = {
-	...stackedPageCss,
-	maxWidth: '28rem',
-	margin: '0 auto',
-}
-
-const headerCss = pageHeaderCss
-const eyebrowCss = pageEyebrowCss
-const primaryButtonCss = getPrimaryButtonCss({
-	size: 'lg',
-	weight: 'semibold',
-})
-const secondaryButtonCss = getSecondaryButtonCss({
-	size: 'lg',
-	weight: 'semibold',
-})
-const dangerButtonCss = getDangerButtonCss({
-	size: 'lg',
-	weight: 'semibold',
-})
-
-const passkeyButtonCss = {
-	...getGhostButtonCss(),
-	width: '100%',
-	justifyContent: 'center',
-	gap: spacing.sm,
-	marginTop: spacing.sm,
 }
