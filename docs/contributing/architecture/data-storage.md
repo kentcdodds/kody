@@ -346,12 +346,19 @@ destination account before importing D1 projections or republishing packages.
 
 Relational app data lives in D1.
 
+TEXT `user_id` (and `owner_user_id`) columns hold an `OwnerId`: the org that
+owns the row. Today every owner is a personal org whose id is the person's
+`stable_user_id`, so the column names stay as they are. Columns that record who
+acted hold a `PersonId`. Both types come from
+`@kody-internal/shared/owner-person-ids.ts`; see
+[decision 0060](../decisions/0060-owner-and-person-ids.md).
+
 The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, with a NOT NULL unique index in
   `0001-squashed-init.sql`). Signup mints it as 32 random bytes in hex
-  (`createStableUserId`); it is opaque, never derived from the email, and never
+  (`mintPersonId`); it is opaque, never derived from the email, and never
   reminted. Accounts created before random minting carry SHA-256 of their signup
   email, so a stored id can reveal or confirm an email address: never expose
   stable ids publicly, and never recompute one from an email. Emails are claims

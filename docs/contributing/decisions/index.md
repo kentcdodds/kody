@@ -139,6 +139,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — `kody.emits` topics with `mcp: true` reach ChatGPT-style webhook subscribers
   through the existing package events consumer; flag plus client capability
   gate; Workers-limited SSRF guard documented
+- [0060 — Owner ids and person ids are separate types; storage stays keyed as-is](./0060-owner-and-person-ids.md)
+  — `OwnerId` (owning org) vs `PersonId` (actor), `personalOrgId` is the only
+  conversion; no `orgs` tables, column renames, or storage re-keying yet
 
 ## Historical / UI / implementation
 
