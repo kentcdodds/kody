@@ -197,12 +197,11 @@ A saved package is a repo with the package extension activated. Four concepts:
   (`packageId` on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
   `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
   `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
-  because storage runner names are keyed by the calling user's id.
-  Platform-owned **dependencies** are excluded from that grant set
-  (`platformOwned`). Person accounts must `communityFork` an official package
-  before importing it (decision 0036). User secrets locked to A are usable from
-  A's stamped module when B imports A; B's own code still cannot read them.
-  Writes stay fail-closed (`allowed_packages` required).
+  because storage runner names are keyed by the calling user's id. Imports
+  resolve only in the caller's org, so a package from another org (including
+  `@kody/*`) is `communityFork`ed before it is imported. User secrets locked to
+  A are usable from A's stamped module when B imports A; B's own code still
+  cannot read them. Writes stay fail-closed (`allowed_packages` required).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   has no scratch SQLite helper; another package's data goes through a static
@@ -247,10 +246,10 @@ Fleet source migrates with package codemod
 ([0013](./decisions/0013-synthetic-package-requests.md)), not a composition
 primitive.
 
-Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
-resolves that caller-owned person package. A `kody:@kody/...` target is not
-runnable in a person account (`communityFork` first). Foreign person accounts
-remain unresolvable. Platform-account packages may compose with each other.
+Exact scoped resolution avoids bare-id collisions. A `kody:@scope/...` target
+resolves only to a package in the caller's org. A package from another org,
+including `kody:@kody/...`, is not runnable until `communityFork` copies it into
+the caller's org.
 
 Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
