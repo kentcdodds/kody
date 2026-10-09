@@ -25,6 +25,11 @@ org.
   org id).
 - Connection profiles stay org-bound resource narrowing (Cole §15.7). They are
   not folded into OAuth scopes.
+- OIDC ID tokens and UserInfo identify the person and their selected org in
+  `sub`, so clients can connect several orgs for the same person. Personal orgs
+  keep the existing user-id subject, including grants without an org stamp.
+  Other orgs use `org:<encoded org id>:user:<encoded user id>`, with each id
+  encoded using `encodeURIComponent`. Refresh keeps the same subject.
 - Grants that still lack `metadata.orgId` / `props.orgId` use the `userId`
   fallback until P9 cleanup. Do not revoke those grants from this path.
 
