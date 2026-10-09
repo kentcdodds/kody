@@ -22,6 +22,7 @@ import {
 	readPermissionList,
 	requireOrgPermission,
 	requirePresetOrPermissions,
+	resolveAuthorizedGrantPermissions,
 	resolvePersonId,
 	resolveTeamId,
 	rethrowAccessError,
@@ -114,6 +115,11 @@ export const accessGrantCapability = defineDomainCapability(
 					args.resource_type,
 					args.resource_id,
 				)
+				const resolved = await resolveAuthorizedGrantPermissions(ctx, {
+					resourceType: args.resource_type,
+					preset: args.preset,
+					permissions,
+				})
 				const subject = await resolveGrantSubject(
 					scoped.db,
 					scoped.request.org.id,
@@ -131,7 +137,7 @@ export const accessGrantCapability = defineDomainCapability(
 					resourceId: args.resource_id,
 					subject,
 					preset: args.preset ?? null,
-					permissions: args.preset ? null : permissions,
+					permissions: args.preset ? null : [...resolved],
 					createdByUserId: scoped.user.userId,
 				})
 				const grant = await getGrantById({

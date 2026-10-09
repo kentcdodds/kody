@@ -43,6 +43,7 @@ import {
 	requireLiveOrg,
 	requireOrgPermission,
 	requirePresetOrPermissions,
+	resolveAuthorizedGrantPermissions,
 	rethrowAccessError,
 } from './shared.ts'
 
@@ -102,12 +103,49 @@ function toInvitePayload(invite: StoredInvite, orgSlug: string) {
 	}
 }
 
+async function assertOwnerInviteStillValid(
+	db: D1Database,
+	invite: StoredInvite,
+) {
+	if (invite.kind !== 'membership' || invite.role !== 'owner') return
+	const inviter = await db
+		.prepare(
+			`SELECT user_id FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND role = 'owner' AND deleted_at IS NULL`,
+		)
+		.bind(invite.orgId, invite.invitedByUserId)
+		.first<{ user_id: string }>()
+	if (!inviter) {
+		throw new McpCallerError(
+			'This owner invite is no longer valid because the inviter is not an Owner.',
+		)
+	}
+}
+
 async function acceptStoredInvite(input: {
 	db: D1Database
 	invite: StoredInvite
 	acceptedByUserId: string
 }) {
 	const { invite } = input
+	await assertOwnerInviteStillValid(input.db, invite)
+	// Claim the invite before side effects so a concurrent redeem loses the
+	// pending→accepted compare-and-set instead of applying access twice.
+	try {
+		await markInviteAccepted({
+			db: input.db,
+			inviteId: invite.id,
+			acceptedByUserId: input.acceptedByUserId,
+		})
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message === 'Invite could not be accepted.'
+		) {
+			throw new McpCallerError('This invite was already accepted.')
+		}
+		throw error
+	}
 	const kind = invite.kind
 	switch (kind) {
 		case 'membership': {
@@ -151,11 +189,6 @@ async function acceptStoredInvite(input: {
 			throw new Error(`Unknown invite kind: ${String(exhaustive)}`)
 		}
 	}
-	await markInviteAccepted({
-		db: input.db,
-		inviteId: invite.id,
-		acceptedByUserId: input.acceptedByUserId,
-	})
 }
 
 export const inviteCreateCapability = defineDomainCapability(
@@ -251,10 +284,19 @@ export const inviteCreateCapability = defineDomainCapability(
 							args.resource_type,
 							args.resource_id,
 						)
+						const resolved = await resolveAuthorizedGrantPermissions(ctx, {
+							resourceType: args.resource_type,
+							preset: args.preset,
+							permissions,
+						})
 						resourceType = args.resource_type
 						resourceId = args.resource_id
 						preset = args.preset ?? null
-						if (preset) permissions = null
+						if (preset) {
+							permissions = null
+						} else {
+							permissions = [...resolved]
+						}
 						break
 					}
 					default: {
