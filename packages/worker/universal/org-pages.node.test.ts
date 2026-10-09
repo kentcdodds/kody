@@ -4,7 +4,9 @@ import {
 	accountResourceRedirectPath,
 	currentSwitcherSlug,
 	orderOrganizations,
+	orgIdentity,
 	orgRoleLabel,
+	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgResourcePath,
 	switchOrgPath,
@@ -128,4 +130,45 @@ test('current organization comes from the URL, then the last-used slug', () => {
 			lastUsedSlug: null,
 		}),
 	).toBe('ada')
+})
+
+test('org rows show the signup organization as the person and others by name or handle', () => {
+	const viewer = { displayName: 'Ada Lovelace', avatarUrl: '/avatars/ada.png' }
+	expect(orgIdentity({ ...personal, displayName: null }, viewer)).toEqual({
+		name: 'Ada Lovelace',
+		handle: '@ada',
+		hasName: true,
+		avatarName: 'Ada Lovelace',
+		avatarUrl: '/avatars/ada.png',
+	})
+	expect(orgIdentity(personal, viewer).name).toBe('Ada Lovelace')
+	expect(
+		orgIdentity(personal, { displayName: ' ', avatarUrl: null }).name,
+	).toBe('Ada')
+	expect(orgIdentity(acme, viewer)).toEqual({
+		name: 'Acme',
+		handle: '@acme',
+		hasName: true,
+		avatarName: 'Acme',
+		avatarUrl: null,
+	})
+	expect(orgIdentity({ ...billing, displayName: '  ' }, viewer)).toEqual({
+		name: '@billing-co',
+		handle: '@billing-co',
+		hasName: false,
+		avatarName: 'billing-co',
+		avatarUrl: null,
+	})
+})
+
+test('a session without memberships still lists the signup organization', () => {
+	expect(
+		organizationsWithSignupFallback({ organizations: [acme], username: 'ada' }),
+	).toEqual([acme])
+	expect(
+		organizationsWithSignupFallback({ organizations: [], username: 'ada' }),
+	).toEqual([{ slug: 'ada', displayName: null, role: 'owner', personal: true }])
+	expect(
+		organizationsWithSignupFallback({ organizations: [], username: '' }),
+	).toEqual([])
 })

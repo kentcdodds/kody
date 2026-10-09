@@ -1151,8 +1151,10 @@ export type AccountOrganizationSummary = {
 type AccountInviteSummary = {
 	id: string
 	orgSlug: string
+	orgDisplayName: string | null
 	kind: string
 	role: string | null
+	expiresAt: string
 }
 
 export type AccountProfileLoaderData = {
@@ -1174,6 +1176,8 @@ export type AccountProfileLoaderData = {
 type AccountOrganizationsLoaderData = {
 	ok: true
 	error: string | null
+	/** What the person typed before a rejected submit, so it is not lost. */
+	draft: { displayName: string; slug: string }
 }
 
 export type AccountInvitesLoaderData = {

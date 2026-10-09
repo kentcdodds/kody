@@ -339,7 +339,7 @@ export const routes = route({
 	pendingVerification: '/pending-verification',
 	signup: '/signup',
 	account: '/account',
-	accountOrganizationsNew: '/account/organizations/new',
+	accountOrganizationsNew: get('/account/organizations/new'),
 	accountOrganizationsNewPost: post('/account/organizations/new'),
 	accountInvites: '/account/invites',
 	accountInvitesApi: '/account/invites.json',

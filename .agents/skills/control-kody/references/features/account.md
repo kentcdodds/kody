@@ -17,9 +17,17 @@ content box.
 ## How to get there
 
 `/account` after login. Account deletion is `/account/delete`. This page is the
-person: login, passkeys, email claims, and the list of organizations (including
-the last one used). Create an organization at `/account/organizations/new`.
-Invites are `/account/invites`.
+person: login, passkeys, email claims, and the list of organizations (the one
+the header switcher is acting in is marked Current). Create an organization at
+`/account/organizations/new` (`POST` the same path with `displayName` and
+`slug`); it redirects to the org home at `/@<slug>`. Invites are
+`/account/invites`. The header switcher (`data-testid="org-switcher"`) opens a
+popover anchored to the trigger; on narrow viewports the same rows sit in the
+menu panel.
+
+A non-personal org handle (`/@<slug>`) renders the org home for its members and
+404s for everyone else. Its resource pages stay 404 until storage follows
+`request.org.id` (#3073).
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/...`. The old `/account/...` resource URLs redirect there for a short

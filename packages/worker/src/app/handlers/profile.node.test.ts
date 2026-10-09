@@ -8,6 +8,12 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityProfileByUsername: vi.fn(),
 	getProfileActivity: vi.fn(),
 	listPublicProfilePackages: vi.fn(),
+	listOrganizationsForPerson: vi.fn(),
+}))
+
+vi.mock('#worker/orgs/repo.ts', () => ({
+	listOrganizationsForPerson: (...args: Array<unknown>) =>
+		mockModule.listOrganizationsForPerson(...args),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -308,4 +314,37 @@ test('profile page shell embeds the person and the unfiltered package list, or 4
 		ok: false,
 		unavailable: true,
 	})
+})
+
+test('an organization handle is a home for everyone its switcher lists and a 404 for everyone else', async () => {
+	setupPublicProfileMocks()
+	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		userId: 1,
+		mcpUser: { userId: 'stable-alice' },
+	})
+	mockModule.listOrganizationsForPerson.mockResolvedValue([
+		{ slug: 'alice', displayName: null, role: 'owner', personal: true },
+		{ slug: 'acme', displayName: 'Acme', role: 'member', personal: false },
+		{ slug: 'globex', displayName: 'Globex', role: null, personal: false },
+	])
+
+	const member = await call(createProfileHandler, '/@acme', 'acme')
+	expect(member.status).toBe(200)
+	expect(member.body).toMatchObject({
+		title: 'Acme',
+		loaderData: { profileShell: { ok: false, unavailable: true } },
+	})
+	expect(mockModule.listOrganizationsForPerson).toHaveBeenCalledWith(
+		undefined,
+		'stable-alice',
+	)
+
+	const collaborator = await call(createProfileHandler, '/@globex', 'globex')
+	expect(collaborator.status).toBe(200)
+	expect(collaborator.body).toMatchObject({ title: 'Globex' })
+
+	const outsider = await call(createProfileHandler, '/@zeta', 'zeta')
+	expect(outsider.status).toBe(404)
+	expect(outsider.body).toMatchObject({ title: 'Profile unavailable' })
 })

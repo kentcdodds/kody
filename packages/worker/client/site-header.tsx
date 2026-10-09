@@ -1,14 +1,17 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	currentSwitcherSlug,
+	orgIdentity,
 	orgRoleLabel,
-	orgSlugFromPathname,
 	orgSwitcherEntries,
+	organizationsWithSignupFallback,
 	switchOrgPath,
 	type OrganizationSummary,
+	type OrgSwitcherEntry,
 } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -78,21 +81,72 @@ export function dismissOpenPopoverPanel(panel: Element | null) {
 	}
 }
 
-function organizationsForHeader(input: {
-	organizations: Array<OrganizationSummary>
-	username: string
-	displayName: string
-}) {
-	if (input.organizations.length > 0) return input.organizations
-	if (!input.username) return []
-	return [
-		{
-			slug: input.username,
-			displayName: input.displayName || null,
-			role: 'owner' as const,
-			personal: true,
-		},
-	]
+type SwitcherRow = {
+	key: string
+	href: string
+	label: string
+	detail: string | null
+	ariaCurrent: 'true' | 'page' | undefined
+	/** The organization the header is acting in; drawn with a check. */
+	selected: boolean
+	leading: RemixNode
+	badge: string | null
+}
+
+function renderSwitcherRow(row: SwitcherRow) {
+	return (
+		<a
+			key={row.key}
+			href={row.href}
+			aria-current={row.ariaCurrent}
+			data-testid={`org-switcher-${row.key}`}
+			data-selected={row.selected ? '' : undefined}
+			mix={css(switcherRowCss)}
+		>
+			<span mix={css(switcherLeadingCss)}>{row.leading}</span>
+			<span mix={css(switcherRowTextCss)}>
+				<span mix={css(switcherRowLabelCss)}>{row.label}</span>
+				{row.detail ? (
+					<span mix={css(switcherRowDetailCss)}>{row.detail}</span>
+				) : null}
+			</span>
+			{row.badge ? <span mix={css(switcherCountCss)}>{row.badge}</span> : null}
+			{row.selected ? (
+				<span mix={css(switcherCheckCss)}>
+					{renderIcon('check', { size: '1.1rem' })}
+				</span>
+			) : null}
+		</a>
+	)
+}
+
+function renderIconWell(name: IconName) {
+	return (
+		<span aria-hidden="true" mix={css(switcherIconWellCss)}>
+			{renderIcon(name, { size: '1rem' })}
+		</span>
+	)
+}
+
+/** Focus order for the arrow keys: the trigger, then every row in the panel. */
+function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
+	if (!panel || !panel.matches(':popover-open')) return
+	const rows = Array.from(panel.querySelectorAll<HTMLElement>('a[href]'))
+	if (rows.length === 0) return
+	const index = rows.indexOf(document.activeElement as HTMLElement)
+	const next =
+		event.key === 'ArrowDown'
+			? rows[(index + 1) % rows.length]
+			: event.key === 'ArrowUp'
+				? rows[index <= 0 ? rows.length - 1 : index - 1]
+				: event.key === 'Home'
+					? rows[0]
+					: event.key === 'End'
+						? rows[rows.length - 1]
+						: null
+	if (!next) return
+	event.preventDefault()
+	next.focus()
 }
 
 function OrgSwitcher(
@@ -117,110 +171,163 @@ function OrgSwitcher(
 	}
 
 	return () => {
-		const organizations = organizationsForHeader({
+		const organizations = organizationsWithSignupFallback({
 			organizations: handle.props.organizations,
 			username: handle.props.username,
-			displayName: handle.props.displayName,
 		})
 		if (organizations.length === 0) return null
+		const viewer = {
+			displayName: handle.props.displayName,
+			avatarUrl: handle.props.avatarUrl,
+		}
 		const entries = orgSwitcherEntries(organizations, handle.props.inviteCount)
 		const currentSlug = currentSwitcherSlug({
 			pathname: handle.props.currentPathname,
 			organizations,
 			lastUsedSlug: handle.props.lastUsedOrganization,
 		})
-		const pathSlug = orgSlugFromPathname(handle.props.currentPathname)
 		const current = organizations.find((org) => org.slug === currentSlug)
-		const label = current ? `@${current.slug}` : 'Organizations'
-		const links = entries.map((entry) => {
-			if (entry.kind === 'create') {
-				return {
-					key: 'create',
-					href: routes.accountOrganizationsNew.href(),
-					label: 'Create org',
-					detail: null as string | null,
-					current: false,
+		const currentIdentity = current ? orgIdentity(current, viewer) : null
+		const label = currentIdentity?.handle ?? 'Organizations'
+		const avatarSize = handle.props.menu ? 32 : 28
+		const toRow = (entry: OrgSwitcherEntry): SwitcherRow => {
+			switch (entry.kind) {
+				case 'create':
+					return {
+						key: 'create',
+						href: routes.accountOrganizationsNew.href(),
+						label: 'Create organization',
+						detail: null,
+						ariaCurrent:
+							handle.props.currentPathname ===
+							routes.accountOrganizationsNew.href()
+								? 'page'
+								: undefined,
+						selected: false,
+						leading: renderIconWell('plus'),
+						badge: null,
+					}
+				case 'invites':
+					return {
+						key: 'invites',
+						href: routes.accountInvites.href(),
+						label: 'Invites',
+						detail: null,
+						ariaCurrent:
+							handle.props.currentPathname === routes.accountInvites.href()
+								? 'page'
+								: undefined,
+						selected: false,
+						leading: renderIconWell('mail'),
+						badge: entry.count > 0 ? String(entry.count) : null,
+					}
+				case 'org': {
+					const identity = orgIdentity(entry.org, viewer)
+					const role = entry.showRole ? orgRoleLabel(entry.org.role) : null
+					const selected = entry.org.slug === currentSlug
+					return {
+						key: entry.org.slug,
+						// Non-personal org resource pages stay gated until storage
+						// follows request.org.id (#3073), so switching into those
+						// orgs lands on the org home instead of a not-found section.
+						href: entry.org.personal
+							? switchOrgPath(handle.props.currentPathname, entry.org.slug)
+							: `/@${entry.org.slug}`,
+						label: identity.name,
+						detail: identity.hasName
+							? [identity.handle, role].filter(Boolean).join(' · ')
+							: role,
+						ariaCurrent: selected ? 'true' : undefined,
+						selected,
+						leading: (
+							<UserAvatar
+								displayName={identity.avatarName}
+								avatarUrl={identity.avatarUrl}
+								size={avatarSize}
+								variant="well"
+							/>
+						),
+						badge: null,
+					}
+				}
+				default: {
+					const exhaustive: never = entry
+					return exhaustive
 				}
 			}
-			if (entry.kind === 'invites') {
-				const countLabel =
-					entry.count > 0 ? `Invites (${entry.count})` : 'Invites'
-				return {
-					key: 'invites',
-					href: routes.accountInvites.href(),
-					label: countLabel,
-					detail: null,
-					current:
-						handle.props.currentPathname === routes.accountInvites.href(),
-				}
-			}
-			const role = entry.showRole ? orgRoleLabel(entry.org.role) : null
-			// Non-personal org resource pages stay gated until storage follows
-			// request.org.id (#3073), so switching into those orgs lands on
-			// `/@slug` instead of a not-found section URL.
-			const href = entry.org.personal
-				? switchOrgPath(handle.props.currentPathname, entry.org.slug)
-				: `/@${entry.org.slug}`
-			return {
-				key: entry.org.slug,
-				href,
-				label: `@${entry.org.slug}`,
-				detail: role,
-				current: entry.org.slug === pathSlug,
-			}
-		})
+		}
+		const orgRows = entries.filter((entry) => entry.kind === 'org').map(toRow)
+		const actionRows = entries
+			.filter((entry) => entry.kind !== 'org')
+			.map(toRow)
+
+		const body = (
+			<>
+				<p mix={css(switcherEyebrowCss)}>Organizations</p>
+				<div
+					role="group"
+					aria-label="Organizations"
+					mix={css(switcherGroupCss)}
+				>
+					{orgRows.map(renderSwitcherRow)}
+				</div>
+				<div mix={css(switcherActionsCss)}>
+					{actionRows.map(renderSwitcherRow)}
+				</div>
+			</>
+		)
 
 		if (handle.props.menu) {
 			return (
-				<div data-testid="org-switcher-menu" mix={css(menuGroupCss)}>
-					{links.map((link) => (
-						<a
-							key={link.key}
-							href={link.href}
-							aria-current={link.current ? 'page' : undefined}
-						>
-							{link.label}
-							{link.detail ? ` · ${link.detail}` : ''}
-						</a>
-					))}
+				<div
+					data-menu-group
+					data-testid="org-switcher-menu"
+					mix={css(switcherMenuGroupCss)}
+				>
+					{body}
 				</div>
 			)
 		}
 
 		return (
-			<div mix={css(orgSwitcherCss)}>
+			<div
+				mix={[
+					css(orgSwitcherCss),
+					on('keydown', (event: KeyboardEvent) => {
+						moveSwitcherFocus(
+							event,
+							document.getElementById(orgSwitcherPanelId),
+						)
+					}),
+				]}
+			>
 				<button
 					type="button"
 					popovertarget={orgSwitcherPanelId}
 					aria-label={`Organization ${label}`}
 					aria-expanded={open ? 'true' : 'false'}
+					data-open={open ? '' : undefined}
 					data-testid="org-switcher"
 					mix={css(orgSwitcherButtonCss)}
 				>
 					<UserAvatar
-						displayName={current?.displayName || current?.slug || label}
-						avatarUrl={current?.personal ? handle.props.avatarUrl : null}
-						size={24}
+						displayName={currentIdentity?.avatarName ?? label}
+						avatarUrl={currentIdentity?.avatarUrl ?? null}
+						size={26}
 						variant="well"
 					/>
-					<span>{label}</span>
+					<span mix={css(orgSwitcherLabelCss)}>{label}</span>
+					<span aria-hidden="true" mix={css(orgSwitcherChevronCss)}>
+						{renderIcon('chevron-down', { size: '1rem' })}
+					</span>
 				</button>
 				<div
 					id={orgSwitcherPanelId}
 					popover
+					data-testid="org-switcher-panel"
 					mix={[css(orgSwitcherPanelCss), on('toggle', onToggle)]}
 				>
-					{links.map((link) => (
-						<a
-							key={link.key}
-							href={link.href}
-							aria-current={link.current ? 'page' : undefined}
-							data-testid={`org-switcher-${link.key}`}
-						>
-							<span>{link.label}</span>
-							{link.detail ? <span>{link.detail}</span> : null}
-						</a>
-					))}
+					{body}
 				</div>
 			</div>
 		)
@@ -364,7 +471,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						popover
 						mix={[css(menuPanelCss), on('toggle', onMenuToggle)]}
 					>
-						<div mix={css(menuGroupCss)}>
+						<div data-menu-group mix={css(menuGroupCss)}>
 							{marketingLinks.map((link) => (
 								<a
 									key={link.href}
@@ -389,49 +496,30 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 								</a>
 							) : null}
 						</div>
-						<div mix={css(menuGroupCss)}>
+						{handle.props.loggedIn ? (
+							<OrgSwitcher
+								organizations={handle.props.organizations ?? []}
+								inviteCount={handle.props.inviteCount ?? 0}
+								lastUsedOrganization={handle.props.lastUsedOrganization ?? null}
+								username={handle.props.username}
+								displayName={handle.props.displayName}
+								avatarUrl={handle.props.avatarUrl}
+								currentPathname={handle.props.currentPathname}
+								menu
+							/>
+						) : null}
+						<div data-menu-group mix={css(menuGroupCss)}>
 							{handle.props.loggedIn ? (
-								<>
-									{profileHref ? (
-										<a
-											href={profileHref}
-											aria-label={`@${handle.props.username}`}
-											aria-current={profileAriaCurrent}
-											data-testid="site-header-profile-menu"
-											mix={css(menuProfileLinkCss)}
-										>
-											<UserAvatar
-												displayName={handle.props.displayName}
-												avatarUrl={handle.props.avatarUrl}
-												size={32}
-												variant="well"
-											/>
-											{handle.props.username}
-										</a>
-									) : null}
-									<OrgSwitcher
-										organizations={handle.props.organizations ?? []}
-										inviteCount={handle.props.inviteCount ?? 0}
-										lastUsedOrganization={
-											handle.props.lastUsedOrganization ?? null
-										}
-										username={handle.props.username}
-										displayName={handle.props.displayName}
-										avatarUrl={handle.props.avatarUrl}
-										currentPathname={handle.props.currentPathname}
-										menu
-									/>
-									<a
-										href={routes.account.href()}
-										aria-current={ariaCurrent(
-											handle.props.currentPathname,
-											routes.account.href(),
-										)}
-										data-testid="site-header-account-menu"
-									>
-										Account
-									</a>
-								</>
+								<a
+									href={routes.account.href()}
+									aria-current={ariaCurrent(
+										handle.props.currentPathname,
+										routes.account.href(),
+									)}
+									data-testid="site-header-account-menu"
+								>
+									Account
+								</a>
 							) : (
 								<a href={handle.props.loginHref}>Log in</a>
 							)}
@@ -619,14 +707,19 @@ const menuPanelCss = {
 	},
 }
 
-const menuGroupCss = {
-	display: 'grid',
-	gap: '0.15rem',
-	'& + &': {
+/** Hairline between the menu panel's groups, whichever component draws them. */
+const menuGroupDividerCss = {
+	'[data-menu-group] + &': {
 		marginTop: '0.35rem',
 		paddingTop: '0.5rem',
 		borderTop: `1px solid ${colors.border}`,
 	},
+}
+
+const menuGroupCss = {
+	display: 'grid',
+	gap: '0.15rem',
+	...menuGroupDividerCss,
 	'& a': {
 		display: 'flex',
 		alignItems: 'center',
@@ -683,65 +776,211 @@ const navUserAvatarCss = {
 	'&:hover': { color: colors.text },
 }
 
-const menuProfileLinkCss = {
-	gap: '0.65rem',
-}
+/** The trigger names this; the panel positions against it (CSS anchor positioning). */
+const orgSwitcherAnchor = '--org-switcher'
 
 const orgSwitcherCss = {
 	position: 'relative' as const,
 }
 
 const orgSwitcherButtonCss = {
+	anchorName: orgSwitcherAnchor,
 	display: 'inline-flex',
 	alignItems: 'center',
 	gap: '0.45rem',
 	minHeight: '44px',
-	padding: '0.2rem 0.55rem 0.2rem 0.2rem',
-	borderRadius: '999px',
+	padding: '0.2rem 0.6rem 0.2rem 0.2rem',
+	borderRadius: radius.full,
 	border: `1.5px solid ${colors.border}`,
 	background: 'transparent',
 	color: colors.text,
-	fontWeight: 550,
-	fontSize: '0.95rem',
+	// Buttons do not inherit the page face on their own.
+	font: `600 0.95rem/1 ${typography.fontFamily}`,
 	cursor: 'pointer',
-	'&:hover': { borderColor: colors.textMuted },
+	transition: `border-color ${transitions.fast}, background-color ${transitions.fast}`,
+	'&[data-open]': {
+		borderColor: colors.textMuted,
+		backgroundColor: colors.surface,
+	},
+	[hoverMq]: {
+		'&:hover': { borderColor: colors.textMuted },
+	},
 }
 
+const orgSwitcherLabelCss = {
+	maxWidth: '14rem',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap' as const,
+}
+
+const orgSwitcherChevronCss = {
+	display: 'inline-flex',
+	color: colors.textMuted,
+	transition: `rotate 180ms ${transitions.easeOut}`,
+	'[data-open] > &': { rotate: '180deg' },
+	'@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+}
+
+/**
+ * Hangs under the trigger, left edges aligned, and flips to align right edges
+ * when the trigger sits too close to the viewport's end. Native popover, like
+ * the site menu: top layer, light dismiss, Escape, and focus return come from
+ * the platform. Browsers without anchor positioning keep it under the
+ * header's right edge, where the trigger usually is.
+ */
 const orgSwitcherPanelCss = {
 	position: 'fixed' as const,
 	inset: 'auto' as const,
 	top: '4.15rem',
 	right: pageGutter,
-	left: 'auto',
-	width: 'min(18rem, calc(100vw - 2rem))',
+	width: 'min(20rem, calc(100vw - 2rem))',
+	maxHeight: 'calc(100dvh - 6rem)',
+	overflowY: 'auto' as const,
 	margin: 0,
-	padding: '0.4rem',
+	padding: '0.5rem',
+	boxSizing: 'border-box' as const,
 	border: `1.5px solid ${colors.border}`,
-	borderRadius: '16px',
+	borderRadius: '18px',
 	backgroundColor: colors.surface,
 	boxShadow: shadows.md,
 	color: colors.text,
-	'& a': {
-		display: 'flex',
-		alignItems: 'center',
-		justifyContent: 'space-between',
-		gap: '0.75rem',
-		minHeight: '40px',
-		padding: '0 0.7rem',
-		borderRadius: '10px',
-		color: colors.text,
-		textDecoration: 'none',
-		fontWeight: 550,
+	'@supports (anchor-name: --a)': {
+		positionAnchor: orgSwitcherAnchor,
+		top: 'anchor(bottom)',
+		left: 'anchor(left)',
+		right: 'auto',
+		marginTop: '0.5rem',
+		positionTryFallbacks: 'flip-inline',
 	},
-	'& a[aria-current="page"]': {
-		backgroundColor: colors.primarySoft,
-		color: colors.primaryText,
+	opacity: 0,
+	translate: '0 -6px',
+	transformOrigin: 'top left',
+	transition: `opacity 160ms ${transitions.easeOut}, translate 160ms ${transitions.easeOut}, display 160ms allow-discrete, overlay 160ms allow-discrete`,
+	'&:popover-open': {
+		display: 'grid',
+		opacity: 1,
+		translate: '0 0',
+		'@starting-style': { opacity: 0, translate: '0 -6px' },
 	},
-	'& a span:last-child': {
-		color: colors.textMuted,
-		fontWeight: 500,
-		fontSize: '0.85rem',
+	'@media (prefers-reduced-motion: reduce)': {
+		translate: 'none',
+		transition: `opacity 120ms ${transitions.easeOut}, display 120ms allow-discrete, overlay 120ms allow-discrete`,
 	},
+}
+
+const switcherEyebrowCss = {
+	margin: 0,
+	padding: '0.35rem 0.6rem 0.3rem',
+	[headerNavMq]: { paddingInline: '0.85rem' },
+	fontSize: typography.fontSize.xs,
+	fontWeight: 650,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const switcherGroupCss = {
+	display: 'grid',
+	gap: '0.15rem',
+}
+
+const switcherActionsCss = {
+	display: 'grid',
+	gap: '0.15rem',
+	marginTop: '0.35rem',
+	paddingTop: '0.4rem',
+	borderTop: `1px solid ${colors.border}`,
+}
+
+/** Mobile menu: the same rows as one of the menu panel's groups. */
+const switcherMenuGroupCss = {
+	display: 'grid',
+	...menuGroupDividerCss,
+}
+
+const switcherRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.7rem',
+	minHeight: '44px',
+	padding: '0.4rem 0.6rem',
+	[headerNavMq]: { paddingInline: '0.85rem' },
+	boxSizing: 'border-box' as const,
+	borderRadius: '12px',
+	color: colors.text,
+	textDecoration: 'none',
+	transition: `background-color ${transitions.fast}`,
+	'&[aria-current="page"]': { backgroundColor: colors.primarySoft },
+	'&:active': { backgroundColor: colors.primarySoftest },
+	[hoverMq]: {
+		'&:hover': { backgroundColor: colors.primarySoftest, color: colors.text },
+	},
+}
+
+const switcherLeadingCss = {
+	display: 'inline-flex',
+	flexShrink: 0,
+	lineHeight: 0,
+}
+
+const switcherIconWellCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '28px',
+	height: '28px',
+	boxSizing: 'border-box' as const,
+	borderRadius: radius.full,
+	border: `1px dashed ${colors.border}`,
+	color: colors.textMuted,
+	[headerNavMq]: { width: '32px', height: '32px' },
+}
+
+const switcherRowTextCss = {
+	display: 'grid',
+	gap: '0.1rem',
+	minWidth: 0,
+	flex: '1 1 auto',
+}
+
+const switcherRowLabelCss = {
+	fontWeight: 600,
+	fontSize: '0.95rem',
+	lineHeight: 1.25,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap' as const,
+	[headerNavMq]: { fontSize: '1rem' },
+}
+
+const switcherRowDetailCss = {
+	fontSize: typography.fontSize.sm,
+	lineHeight: 1.25,
+	color: colors.textMuted,
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
+	whiteSpace: 'nowrap' as const,
+}
+
+const switcherCountCss = {
+	flexShrink: 0,
+	minWidth: '1.4rem',
+	padding: '0.1rem 0.45rem',
+	boxSizing: 'border-box' as const,
+	borderRadius: radius.full,
+	backgroundColor: colors.primary,
+	color: colors.onPrimary,
+	fontSize: typography.fontSize.xs,
+	fontWeight: 700,
+	textAlign: 'center' as const,
+	fontVariantNumeric: 'tabular-nums',
+}
+
+const switcherCheckCss = {
+	display: 'inline-flex',
+	flexShrink: 0,
+	color: colors.primaryText,
 }
 
 const demoIndicatorCss = {

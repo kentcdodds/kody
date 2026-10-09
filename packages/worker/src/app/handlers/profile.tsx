@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
@@ -13,7 +14,27 @@ import { getUserAvatarObject } from '#worker/community/avatar.ts'
 import { getCommunityProfileByUsername } from '#worker/community/profile-service.ts'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { listOrganizationsForPerson } from '#worker/orgs/repo.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
+
+/**
+ * A non-personal organization has no person profile behind its handle. Its
+ * members and grant-only collaborators (the people its header switcher lists)
+ * get the organization home there; everyone else gets the 404.
+ */
+async function findMemberOrganization(
+	env: Env,
+	request: Request,
+	slug: string,
+) {
+	const user = await readAuthenticatedAppUser(request, env)
+	if (!user) return null
+	const organizations = await listOrganizationsForPerson(
+		env.APP_DB,
+		user.mcpUser.userId,
+	)
+	return organizations.find((org) => org.slug === slug && !org.personal) ?? null
+}
 
 export function createProfileHandler(env: Env) {
 	return {
@@ -31,11 +52,14 @@ export function createProfileHandler(env: Env) {
 				prefetchFeatureFlags: true,
 			})
 			if (!data) {
+				const memberOrg = await findMemberOrganization(env, request, username)
 				return renderAppPage({
 					request,
 					env,
-					title: 'Profile unavailable',
-					status: 404,
+					title: memberOrg
+						? memberOrg.displayName?.trim() || `@${memberOrg.slug}`
+						: 'Profile unavailable',
+					status: memberOrg ? 200 : 404,
 					loaderData: {
 						profileShell: { ok: false, unavailable: true },
 					},

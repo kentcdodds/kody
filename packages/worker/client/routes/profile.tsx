@@ -27,7 +27,13 @@ import {
 	readProfilePackageFiltersFromHref,
 } from '#universal/profile-search.ts'
 import { ProfileContent } from '#universal/profile-content.tsx'
-import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
+import { readAppSession } from '#client/app-session-context.tsx'
+import {
+	renderOrgIdentity,
+	renderProfileIdentity,
+} from '#client/routes/profile-identity.tsx'
+import { renderOrgHomeMain } from '#client/routes/org-home.tsx'
+import { orgIdentity, orgRoleLabel } from '#universal/org-pages.ts'
 import { ProfileRepositorySearchInput } from './profile-search-field.tsx'
 import { profileListForUsername } from './profile-list-for-username.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
@@ -221,6 +227,34 @@ export function ProfileRoute(handle: Handle) {
 			listLoadedForUsername,
 			username,
 		)
+
+		const memberOrg = showUnavailable
+			? readAppSession(handle)?.session?.organizations?.find(
+					(org) => org.slug === username && !org.personal,
+				)
+			: undefined
+		if (memberOrg) {
+			const identity = orgIdentity(memberOrg, {
+				displayName: '',
+				avatarUrl: null,
+			})
+			return (
+				<section mix={css(pageCss)} data-testid="org-page">
+					<div mix={css(layoutCss)}>
+						{renderOrgIdentity({
+							name: identity.name,
+							handle: identity.handle,
+							avatarName: identity.avatarName,
+							role: orgRoleLabel(memberOrg.role),
+						})}
+						{renderOrgHomeMain({
+							handle: identity.handle,
+							collaborator: memberOrg.role === null,
+						})}
+					</div>
+				</section>
+			)
+		}
 
 		if (showUnavailable) {
 			return (
