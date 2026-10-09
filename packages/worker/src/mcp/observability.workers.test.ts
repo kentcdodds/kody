@@ -243,17 +243,17 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	const packageSave = (await getStaticRegistry()).capabilityMap['packageSave']
 	if (!packageSave) throw new Error('Expected packageSave capability')
 	const handler = packageSave.handler
+	const userCallerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+	})
 	await expect(
-		handler(
-			{},
-			{
-				env: createTestEnv(),
-				callerContext: createMcpCallerContext({
-					source: { kind: 'mcp-oauth' },
-					baseUrl: 'https://example.com',
-				}),
-			},
-		),
+		handler({}, { env: createTestEnv(), callerContext: userCallerContext }),
 	).rejects.toThrow('Invalid input for capability "packageSave"')
 
 	expect(takeMcpEvents()).toEqual([
@@ -266,15 +266,6 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 		}),
 	])
 
-	const userCallerContext = createMcpCallerContext({
-		source: { kind: 'mcp-oauth' },
-		baseUrl: 'https://example.com',
-		user: {
-			userId: personIdFromStored('user-1'),
-			email: 'user@example.com',
-			displayName: 'user',
-		},
-	})
 	const signedInContext = {
 		env: createTestEnv(),
 		callerContext: userCallerContext,
