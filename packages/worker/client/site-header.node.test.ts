@@ -50,8 +50,6 @@ test('logged-in header shows Account to the left of the profile avatar', async (
 	expect(html).toContain('href="/@ada"')
 	expect(html).toContain('aria-label="@ada"')
 	expect(html).toContain('data-testid="site-header-profile"')
-	expect(html).toContain('data-testid="site-header-profile-menu"')
-	expect(html).toMatch(/site-header-profile-menu[\s\S]*?>ada</)
 
 	const accountTestIdAt = html.indexOf('data-testid="site-header-account"')
 	const profileTestIdAt = html.indexOf('data-testid="site-header-profile"')
@@ -64,9 +62,16 @@ test('logged-in header shows Account to the left of the profile avatar', async (
 	expect(desktopAccountTag).toContain('href="/account"')
 	expect(desktopAccountTag).toContain('aria-current="page"')
 	expect(html).toContain('min-height: 44px')
-	expect(html).toContain('>Create org<')
-	expect(html).toContain('>Invites<')
-	expect(html).not.toContain('>@ada ·')
+	// A single organization is the person: their name and handle, no role,
+	// and the mobile menu does not list the handle twice.
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	expect(menu).toContain('>Ada Lovelace<')
+	expect(menu).toContain('>@ada<')
+	expect(menu).toContain('>Create organization<')
+	expect(menu).toContain('>Invites<')
+	expect(html).not.toContain('Owner')
+	expect(html).not.toContain('site-header-profile-menu')
+	expect(menu.match(/data-testid="org-switcher-ada"/g)).toHaveLength(1)
 })
 
 test('org switcher lists the signup organization, then others with roles, then create and invites', async () => {
@@ -101,17 +106,33 @@ test('org switcher lists the signup organization, then others with roles, then c
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	const adaAt = menu.indexOf('>@ada · Owner<')
 	const acmeAt = menu.indexOf('>@acme · Member<')
-	const createAt = menu.indexOf('>Create org<')
-	const invitesAt = menu.indexOf('>Invites (2)<')
+	const createAt = menu.indexOf('>Create organization<')
+	const invitesAt = menu.indexOf('>Invites<')
 	expect(adaAt).toBeGreaterThan(-1)
 	expect(acmeAt).toBeGreaterThan(adaAt)
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
+	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
 	expect(html).toContain('aria-label="Organization @acme"')
+	// The org in the URL is current: checked and announced, the other is not.
+	const acmeRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
+	)
+	expect(acmeRow).toContain('aria-current="true"')
+	expect(acmeRow).toContain('data-selected')
+	const adaRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-ada"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-ada"')) + 1,
+	)
+	expect(adaRow).not.toContain('aria-current')
+	expect(adaRow).not.toContain('data-selected')
 	// Personal org keeps the section; non-personal lands on org home (#3073).
 	expect(html).toContain('href="/@ada/secrets"')
 	expect(html).toContain('href="/@acme"')
 	expect(html).not.toContain('href="/@acme/secrets"')
+	expect(html).toContain('data-icon="plus"')
+	expect(html).toContain('data-icon="mail"')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {
