@@ -49,6 +49,35 @@ synchronous, for callers that already hold the compiled permissions.
 Every person is the Owner of their implicit org today, so steps 2 to 4 never
 deny. Profiles and the signed-in step are the denials that can fire.
 
+### Checking many resources
+
+Lists, search, and background checks compile once and decide per resource:
+
+```ts
+const access = await computeEffectivePermissions({ env, request })
+const visible = packages.filter((pkg) =>
+	canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+)
+```
+
+- `checkPermission(access, permission, resource)` is one decision.
+- `canSeeResource` is list and search visibility: the request holds some
+  permission on the resource. An execute-only profile still shows the package so
+  it can be invoked; reading its source or skills needs `package:read`.
+- `runWithRequestPermissions` binds the compiled permissions for deep call sites
+  that carry no caller context. Package import resolution reads them with
+  `getRequestPermissions` and checks `package:execute` on each imported package.
+- `reachedPackage` builds the resource for a package a lookup already reached:
+  one the org owns, one delegated through `package_scope`, an accepted share, or
+  a built-in platform package. Delegation and shares run their own checks first,
+  so the package counts as in the request's org until they become an org binding
+  and grants ([#3040](https://github.com/kentcdodds/kody/issues/3040)).
+
+The connection profile comes from `request.credential.profileName`. Automation
+keeps the profile of the credential that created the job or webhook, and a run
+started by another run keeps its starter's profile. Read the profile there,
+never from the wire `connectionProfileName`.
+
 ### Surfaces declare their permission
 
 Every capability definition has a required

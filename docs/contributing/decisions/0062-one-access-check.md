@@ -29,6 +29,11 @@ for Kody staff and must not blur into org access.
 - `none` means the surface touches no org data. Site-admin capabilities declare
   `none`; a test fails if one declares an org permission.
 - Site-admin checks stay separate and run first.
+- Connection-profile narrowing lives only in `authorize`. Lists, search, skills,
+  MCP events, and package import resolution compile once with
+  `computeEffectivePermissions` and decide with `checkPermission` or
+  `canSeeResource`. The profile is read from `request.credential.profileName`,
+  which Automation and inherited runs keep.
 
 We do **not**:
 
