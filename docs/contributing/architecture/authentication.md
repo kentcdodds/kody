@@ -343,8 +343,12 @@ Both are opt-in and adapted from the Epic Stack.
 ## Account deletion
 
 `POST /account/delete` is implemented by
-`packages/worker/src/app/handlers/account-delete.ts` and orchestrated by
-`packages/worker/src/app/account-deletion.ts`.
+`packages/worker/src/app/handlers/account-delete.ts`. It soft-deletes through
+`softDeleteUserAccount` (`packages/worker/src/orgs/soft-delete.ts`). Hard purge
+after the restore window is `hardPurgeSoftDeletedUser`
+(`packages/worker/src/orgs/hard-purge.ts`), which calls `deleteUserAccount` in
+`packages/worker/src/app/account-deletion.ts`. See
+[ADR 0066](../decisions/0066-soft-delete-and-purge.md).
 
 - Requires an active `kody_session` cookie and a JSON body with `confirmation`
   set to `GOODBYE KODY`. Accounts that have a usable password also re-enter
@@ -358,11 +362,19 @@ Both are opt-in and adapted from the Epic Stack.
   been deleted" from that query, so the confirmation is on the signed-out page
   the user lands on. The edge cache keys anonymous HTML on pathname plus search,
   so this document stays distinct from `/`.
-- Successful deletion best-effort fans `user.deleted` to admin-owned packages.
-  Successful password signup, social-login signup, and admin person account
-  creation fan `user.created`. See
+- Successful soft delete best-effort fans `user.deleted` to admin-owned
+  packages. Successful password signup, social-login signup, and admin person
+  account creation fan `user.created`. See
   [the admin events guide](../../guides/admin-events.md#user-created-and-deleted-admins).
-- On success, runs a full per-user cascade across:
+- The handler stamps `deleted_at`, soft-deletes sole-member orgs, and cancels
+  Kody Stripe subscriptions. Restore within 30 UTC days is `restoreUserAccount`.
+  The JSON body is
+  `{ ok, softDeleted: true, restoreWindowDays: 30, userId, deletedAt, deletedOrgIds }`
+  plus a `Set-Cookie` that destroys the session. It does not hard-delete rows or
+  refund unused time. Prorated refunds run with the later hard purge.
+- After the 30-day restore window, the purge lane hard-deletes across the
+  surfaces below. While `SOFT_DELETE_PURGE_ENABLED` is not `true`, that lane
+  only lists candidates:
   - the user's active package workflow instances, terminated first so no step
     writes after the purge; if any termination fails, deletion stops before
     purging anything and keeps the account fenced so a retry can still find the
@@ -380,24 +392,25 @@ Both are opt-in and adapted from the Epic Stack.
     the bound OAuth provider,
   - the user row itself last so a partial failure can be retried.
 - `env.OAUTH_PROVIDER` is injected by `@cloudflare/workers-oauth-provider` only
-  inside its own `fetch` wrapper, so it exists for `POST /account/delete` but
-  not for the hourly unverified-account purge (`JobsHost.runScheduledLane` RPC
-  on origin) or for `adminUnverifiedAccountPurgeRun` when served from the
-  sessionful `MCP` Durable Object on kody-platform. Those paths call
-  `resolveOAuthHelpers` (`packages/worker/src/oauth-helpers.ts`), which returns
-  `env.OAUTH_PROVIDER` when present and otherwise builds the same
-  `OAuthHelpersImpl` through the library's `getOAuthApi(options, env)` over
-  `OAUTH_KV`. The non-handler provider options (endpoints, scopes, TTLs, CIMD,
-  `onError`) live in `packages/worker/src/oauth-provider-options.ts` and are
-  spread into both the origin `OAuthProvider` and the fallback, so storage
-  semantics cannot drift; the fallback supplies inert 404 handlers because the
-  helpers API never routes a request. The fallback loads the library from the
-  pre-bundled `oauth-provider.mjs` additional module
+  inside its own `fetch` wrapper, so the soft-delete POST does not use it, and
+  it is also absent for the hourly unverified-account purge
+  (`JobsHost.runScheduledLane` RPC on origin) or for
+  `adminUnverifiedAccountPurgeRun` when served from the sessionful `MCP` Durable
+  Object on kody-platform. Those paths call `resolveOAuthHelpers`
+  (`packages/worker/src/oauth-helpers.ts`), which returns `env.OAUTH_PROVIDER`
+  when present and otherwise builds the same `OAuthHelpersImpl` through the
+  library's `getOAuthApi(options, env)` over `OAUTH_KV`. The non-handler
+  provider options (endpoints, scopes, TTLs, CIMD, `onError`) live in
+  `packages/worker/src/oauth-provider-options.ts` and are spread into both the
+  origin `OAuthProvider` and the fallback, so storage semantics cannot drift;
+  the fallback supplies inert 404 handlers because the helpers API never routes
+  a request. The fallback loads the library from the pre-bundled
+  `oauth-provider.mjs` additional module
   (`tools/build-worker-bundler-modules.ts`, `find_additional_modules`) because
   wrangler inlines plain dynamic imports into the main module; the startup
   bundle check forbids the provider package in the platform/runtime entries so
-  it stays off their startup path. Deletion only reports "OAuth grants were not
-  revoked" when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account
+  it stays off their startup path. Hard purge only reports "OAuth grants were
+  not revoked" when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account
   export's `oauth_grants` section (`packages/worker/src/account/export.ts`) uses
   the same reader for `listUserGrants`, so `accountExportManifest` /
   `accountExportSection` served from the platform `MCP` Durable Object include
@@ -406,9 +419,9 @@ Both are opt-in and adapted from the Epic Stack.
   `purge()` restored so the purged object keeps no state. A later signup with
   the same email or username gets a new random `stable_user_id`, so it never
   shares the deleted account's Durable Objects, storage prefixes, or secrets.
-- Returns a structured
-  `{ ok, deletedRowCounts, deletedKvKeys, revokedOAuthGrants, clearedDurableObjects, deletedVectors, warnings }`
-  payload alongside a `Set-Cookie` that destroys the session.
+- `deleteUserAccount` (the hard purge) returns
+  `{ deletedRowCounts, deletedKvKeys, revokedOAuthGrants, clearedDurableObjects, deletedVectors, warnings }`.
+  That payload is not the `POST /account/delete` response.
 
 Related handlers:
 
