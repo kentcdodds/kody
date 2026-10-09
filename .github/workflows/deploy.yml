@@ -1440,11 +1440,15 @@ jobs:
     # Independent of origin: docs fetch the live OpenAPI JSON over HTTPS.
     # Deploys after the API worker when that job ran, so a brand-new API
     # hostname is live before docs proxy it; skipped API deploys are fine.
+    # Same require-worker-tokens gate as API: a token failure must not leave
+    # docs deploying while origin/API stay rolled back.
     needs:
       - sha-guard
+      - require-worker-tokens
       - deploy-api-worker
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
+      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_api_docs_worker == 'true' &&
       (needs.deploy-api-worker.result == 'success' ||
