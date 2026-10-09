@@ -213,10 +213,16 @@ export function parseD1RehearsalSnapshot(raw: string): D1RehearsalSnapshot {
 		if (
 			!rehearsalDatabaseRoles.includes(database.role) ||
 			typeof database.bookmark !== 'string' ||
-			typeof database.uuid !== 'string'
+			typeof database.uuid !== 'string' ||
+			typeof database.name !== 'string' ||
+			!Array.isArray(database.tables)
 		) {
 			throw new Error('D1 rehearsal snapshot has a malformed database entry.')
 		}
+	}
+	const roles = new Set(parsed.databases.map((database) => database.role))
+	if (roles.size !== parsed.databases.length) {
+		throw new Error('D1 rehearsal snapshot has duplicate database roles.')
 	}
 	return parsed as D1RehearsalSnapshot
 }

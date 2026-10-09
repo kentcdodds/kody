@@ -38,11 +38,24 @@ export function stripVolatile(value: unknown): unknown {
 	return out
 }
 
-async function capture(fn: () => Promise<unknown>) {
-	try {
-		return stripVolatile(await fn())
-	} catch (error) {
-		return { error: error instanceof Error ? error.message : String(error) }
+export type SnapshotCheckFailure = { check: string; error: string }
+
+type Capture = (check: string, fn: () => Promise<unknown>) => Promise<unknown>
+
+/**
+ * Every captured read is a required check: a failure is kept in the snapshot
+ * for diagnosis and listed in `failures`, so the run fails even when the
+ * before and after snapshots fail identically.
+ */
+function createCapture(failures: Array<SnapshotCheckFailure>): Capture {
+	return async (check, fn) => {
+		try {
+			return stripVolatile(await fn())
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			failures.push({ check, error: message })
+			return { error: message }
+		}
 	}
 }
 
@@ -60,7 +73,9 @@ async function snapshotPerson(
 	session: RehearsalSession,
 	user: SnapshotUser,
 	origins: RehearsalOrigins,
+	capture: Capture,
 ) {
+	const check = (name: string) => `${user.role}.${name}`
 	const echoUrl = `${origins.mockCloudflare}/__mocks/rehearsal/echo`
 	const packageName = `@${user.username}/${personalPackageLeaf}`
 	const appUrl = buildPackageAppUrl({
@@ -70,18 +85,27 @@ async function snapshotPerson(
 	})
 	const memorySearches: Record<string, unknown> = {}
 	for (const query of memoryQueries) {
-		memorySearches[query] = await capture(async () =>
-			memoryMatchesSummary(
-				await callCapability(session, 'metaMemorySearch', { query, limit: 3 }),
-			),
+		memorySearches[query] = await capture(
+			check(`memorySearch:${query}`),
+			async () =>
+				memoryMatchesSummary(
+					await callCapability(session, 'metaMemorySearch', {
+						query,
+						limit: 3,
+					}),
+				),
 		)
 	}
 	return {
 		role: user.role,
-		me: await capture(() => callCapability(session, 'metaGetCurrentUser')),
-		packages: await capture(() => callCapability(session, 'packageList')),
+		me: await capture(check('me'), () =>
+			callCapability(session, 'metaGetCurrentUser'),
+		),
+		packages: await capture(check('packages'), () =>
+			callCapability(session, 'packageList'),
+		),
 		appUrl,
-		app: await capture(async () => {
+		app: await capture(check('app'), async () => {
 			const response = await session.request(new URL(appUrl).pathname)
 			return {
 				status: response.status,
@@ -90,7 +114,7 @@ async function snapshotPerson(
 					response.body.includes(appMarker),
 			}
 		}),
-		jobs: await capture(async () => {
+		jobs: await capture(check('jobs'), async () => {
 			const listed = (await callCapability(session, 'jobList')) as {
 				jobs?: Array<Record<string, unknown>>
 			}
@@ -102,34 +126,38 @@ async function snapshotPerson(
 				next_run_at: job.next_run_at ?? null,
 			}))
 		}),
-		webhooks: await capture(() => callCapability(session, 'webhookList')),
-		secrets: await capture(() => callCapability(session, 'secretList')),
+		webhooks: await capture(check('webhooks'), () =>
+			callCapability(session, 'webhookList'),
+		),
+		secrets: await capture(check('secrets'), () =>
+			callCapability(session, 'secretList'),
+		),
 		secretProofs: {
-			user: await capture(() =>
+			user: await capture(check('secretProof.user'), () =>
 				session.execute(userSecretProofModule(echoUrl)),
 			),
-			package: await capture(() =>
+			package: await capture(check('secretProof.package'), () =>
 				session.execute(
 					packageExportModule(`kody:${packageName}/secret-proof`),
 				),
 			),
 		},
-		integrations: await capture(() =>
+		integrations: await capture(check('integrations'), () =>
 			callCapability(session, 'integrationList'),
 		),
-		integrationProof: await capture(() =>
+		integrationProof: await capture(check('integrationProof'), () =>
 			session.execute(integrationProofModule(echoUrl)),
 		),
 		memorySearches,
 		shares: {
-			inbound: await capture(() =>
+			inbound: await capture(check('shares.inbound'), () =>
 				callCapability(session, 'packageShareList', { scope: 'inbound' }),
 			),
-			outbound: await capture(() =>
+			outbound: await capture(check('shares.outbound'), () =>
 				callCapability(session, 'packageShareList', { scope: 'outbound' }),
 			),
 		},
-		tokens: await capture(async () => {
+		tokens: await capture(check('tokens'), async () => {
 			const listed = (await session.api('tokenList')) as {
 				tokens?: Array<Record<string, unknown>>
 			}
@@ -139,7 +167,15 @@ async function snapshotPerson(
 				scopes: token.scopes,
 			}))
 		}),
-		usage: await capture(() => callCapability(session, 'usageGet')),
+		/**
+		 * Not compared by `diffSnapshots`: every snapshot's own execute calls
+		 * (and job runs) move the counters.
+		 */
+		observed: {
+			usage: await capture(check('usage'), () =>
+				callCapability(session, 'usageGet'),
+			),
+		},
 	}
 }
 
@@ -149,6 +185,7 @@ export type JsonSnapshot = {
 	origins: RehearsalOrigins
 	admin: Record<string, unknown>
 	people: Array<Awaited<ReturnType<typeof snapshotPerson>>>
+	failures: Array<SnapshotCheckFailure>
 }
 
 /**
@@ -167,20 +204,22 @@ export async function takeJsonSnapshot(input: {
 	const adminUser = input.users.find((user) => user.role === 'admin')
 	if (!adminUser)
 		throw new Error('Snapshot needs the rehearsal admin credentials.')
+	const failures: Array<SnapshotCheckFailure> = []
+	const capture = createCapture(failures)
 	const admin = await openRehearsalSession(input.origins.app, adminUser)
 	const adminView: Record<string, unknown> = {}
 	try {
 		for (const user of input.users) {
 			adminView[user.role] = {
-				user: await capture(() =>
+				user: await capture(`admin.${user.role}.user`, () =>
 					callCapability(admin, 'adminUserGet', { email: user.email }),
 				),
-				wallet: await capture(() =>
+				wallet: await capture(`admin.${user.role}.wallet`, () =>
 					callCapability(admin, 'adminCreditWalletGet', { email: user.email }),
 				),
 			}
 		}
-		adminView.scopeGrants = await capture(() =>
+		adminView.scopeGrants = await capture('admin.scopeGrants', () =>
 			callCapability(admin, 'adminPackageScopeGrantList'),
 		)
 	} finally {
@@ -191,7 +230,7 @@ export async function takeJsonSnapshot(input: {
 		log(`Snapshotting ${user.role}...`)
 		const session = await openRehearsalSession(input.origins.app, user)
 		try {
-			people.push(await snapshotPerson(session, user, input.origins))
+			people.push(await snapshotPerson(session, user, input.origins, capture))
 		} finally {
 			await session.close()
 		}
@@ -202,6 +241,7 @@ export async function takeJsonSnapshot(input: {
 		origins: input.origins,
 		admin: adminView,
 		people,
+		failures,
 	}
 }
 
@@ -211,13 +251,16 @@ export type SnapshotDifference = {
 	after: unknown
 }
 
-/** Structural diff of two snapshots (or any JSON values), ignoring `takenAt`. */
+/**
+ * Structural diff of two snapshots (or any JSON values), ignoring `takenAt`
+ * and every `observed` section.
+ */
 export function diffSnapshots(
 	before: unknown,
 	after: unknown,
 	path = '',
 ): Array<SnapshotDifference> {
-	if (path === '.takenAt') return []
+	if (path === '.takenAt' || path.endsWith('.observed')) return []
 	if (
 		before &&
 		after &&

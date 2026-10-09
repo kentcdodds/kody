@@ -23,7 +23,7 @@ import {
 	resolveRehearsalOrigins,
 	type RehearsalOrigins,
 } from './rehearsal-env.ts'
-import { sealJson } from './seal.ts'
+import { importRecipientPublicKey, sealJson } from './seal.ts'
 import { mintCliToken, seedRehearsal, type TokenLifetime } from './seed.ts'
 
 export const rehearsalUsage = [
@@ -83,14 +83,17 @@ export function readTokenLifetime(flags: Map<string, string>): TokenLifetime {
 	if (alias) {
 		throw new Error(`--lifetime must be short or long, not "${alias}".`)
 	}
-	const idleSeconds = Number(idle)
-	const maxSeconds = Number(max)
-	if (!Number.isInteger(idleSeconds) || !Number.isInteger(maxSeconds)) {
+	const isPositiveInteger = (value: string | undefined) =>
+		value !== undefined && /^[1-9]\d*$/.test(value.trim())
+	if (!isPositiveInteger(idle) || !isPositiveInteger(max)) {
 		throw new Error(
 			'An explicit token lifetime is required: --lifetime short|long, or --idle-ttl-seconds <n> --max-lifetime-seconds <n>.',
 		)
 	}
-	return { idle_ttl_seconds: idleSeconds, max_lifetime_seconds: maxSeconds }
+	return {
+		idle_ttl_seconds: Number(idle),
+		max_lifetime_seconds: Number(max),
+	}
 }
 
 function cloudflareClient(): CloudflareClient {
@@ -177,7 +180,9 @@ async function main(argv: ReadonlyArray<string>) {
 		case 'seed': {
 			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
 			const outDir = requireFlag(flags, 'out-dir')
-			const publicKey = requireFlag(flags, 'recipient-public-key')
+			const publicKey = await importRecipientPublicKey(
+				requireFlag(flags, 'recipient-public-key'),
+			)
 			await derivedUsers(workerName)
 			const client = cloudflareClient()
 			const origins = await resolveRehearsalOrigins(client, workerName)
@@ -204,7 +209,9 @@ async function main(argv: ReadonlyArray<string>) {
 		case 'credentials': {
 			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
 			const lifetime = readTokenLifetime(flags)
-			const publicKey = requireFlag(flags, 'recipient-public-key')
+			const publicKey = await importRecipientPublicKey(
+				requireFlag(flags, 'recipient-public-key'),
+			)
 			const origins = await resolveRehearsalOrigins(
 				cloudflareClient(),
 				workerName,
@@ -256,8 +263,16 @@ async function main(argv: ReadonlyArray<string>) {
 				origins = await resolveRehearsalOrigins(cloudflareClient(), workerName)
 				users = await derivedUsers(workerName)
 			}
-			await writeJson(out, await takeJsonSnapshot({ origins, users, log }))
+			const snapshot = await takeJsonSnapshot({ origins, users, log })
+			await writeJson(out, snapshot)
 			log(`JSON snapshot written to ${out}.`)
+			if (snapshot.failures.length > 0) {
+				fail(
+					`${snapshot.failures.length} snapshot check(s) failed:\n${snapshot.failures
+						.map((failure) => `  ${failure.check}: ${failure.error}`)
+						.join('\n')}`,
+				)
+			}
 			return
 		}
 		case 'origins': {

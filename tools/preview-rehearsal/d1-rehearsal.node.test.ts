@@ -160,6 +160,20 @@ test('snapshot records a bookmark and sorted per-table row counts for app, audit
 		],
 	})
 	expect(parseD1RehearsalSnapshot(JSON.stringify(snapshot))).toEqual(snapshot)
+	const [first] = snapshot.databases
+	expect(() =>
+		parseD1RehearsalSnapshot(
+			JSON.stringify({
+				...snapshot,
+				databases: [{ ...first, tables: undefined }],
+			}),
+		),
+	).toThrow('malformed database entry')
+	expect(() =>
+		parseD1RehearsalSnapshot(
+			JSON.stringify({ ...snapshot, databases: [first, first] }),
+		),
+	).toThrow('duplicate database roles')
 	const markdown = formatD1SnapshotMarkdown(snapshot)
 	expect(markdown).toContain(`| \`${worker}-jobs-db\` | jobs | \`jobs-b1\` |`)
 	expect(markdown).toContain('app: 3 tables, 95 rows')

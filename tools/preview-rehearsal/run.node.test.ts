@@ -30,6 +30,22 @@ test('readTokenLifetime requires an explicit lifetime', () => {
 	expect(() => readTokenLifetime(new Map())).toThrow(
 		'An explicit token lifetime is required',
 	)
+	const invalid: Array<[idle: string, max: string]> = [
+		['', ''],
+		['0', '86400'],
+		['3600', '-1'],
+		['1.5', '86400'],
+	]
+	for (const [idle, max] of invalid) {
+		expect(() =>
+			readTokenLifetime(
+				new Map([
+					['idle-ttl-seconds', idle],
+					['max-lifetime-seconds', max],
+				]),
+			),
+		).toThrow('An explicit token lifetime is required')
+	}
 	expect(() => readTokenLifetime(new Map([['lifetime', 'forever']]))).toThrow(
 		'--lifetime must be short or long',
 	)

@@ -582,6 +582,9 @@ export async function seedRehearsal(
 		const setupToken = new URL(
 			readStringAt(created, ['createdUser', 'setupLink'], 'adminUserCreate'),
 		).searchParams.get('token')
+		if (!setupToken) {
+			throw new Error('adminUserCreate setupLink has no token parameter.')
+		}
 		const confirmed = await postJson(
 			`${input.origins.app}/password-reset/confirm`,
 			{

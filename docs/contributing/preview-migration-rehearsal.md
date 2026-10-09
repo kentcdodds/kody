@@ -49,6 +49,12 @@ Attach the run links and both diffs to the migration PR. `diff` exits 1 when
 anything differs; each difference must be expected by the migration (new tables,
 rewritten scopes) or it is a bug.
 
+Keep the preview quiet while this runs: one step at a time, no other deploys to
+it, and no manual sign-ins during a `snapshot` or `restore`. The workflow runs
+one action at a time per preview, but it does not lock against `preview.yml`.
+The D1 bookmarks are taken one database after another, so a write landing
+between them makes the restore point inconsistent.
+
 ## Workflow actions
 
 `.github/workflows/preview-rehearsal.yml` (`🧪 Preview Rehearsal`). Each run
@@ -103,6 +109,11 @@ results for four fixed memory searches, share grants (inbound and outbound),
 token ids and scopes, and usage. As the admin: each user's account record and
 wallet (balance, plan, eligibility), and the scope grants.
 
+Every read is a required check. A failed check is written into the snapshot and
+listed under `failures`, and the run fails, so a check that breaks the same way
+before and after still fails the rehearsal. Usage counters sit under `observed`,
+which `diff` skips: each snapshot's own execute calls, and job runs, move them.
+
 Then per D1 database: a Time Travel bookmark and the row count of every table.
 The JSON snapshot runs first, so the bookmark includes the sessions and usage
 the snapshot itself created.
@@ -118,9 +129,11 @@ upserts, so table counts stay stable across deploys.
 The rehearsal admin and users have private passwords: HMAC-SHA256 of the preview
 name and role under the CI Cloudflare token
 (`tools/preview-rehearsal/rehearsal-env.ts`). Nothing is stored; every workflow
-run derives the same passwords, masks them, and never prints them. Credentials
-leave CI only as an envelope sealed to your public key (RSA-OAEP-256 wrapping an
-AES-256-GCM key), because Actions artifacts on this public repo are
+run derives the same passwords, masks them, and never prints them. Rotating that
+token changes every derived password, so the workflow can no longer sign in to
+previews seeded before the rotation; re-create those previews and seed again.
+Credentials leave CI only as an envelope sealed to your public key (RSA-OAEP-256
+wrapping an AES-256-GCM key), because Actions artifacts on this public repo are
 world-readable.
 
 Open a sealed artifact locally:

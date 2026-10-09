@@ -17,10 +17,17 @@ test('stripVolatile drops per-read fields but keeps job schedules', () => {
 	})
 })
 
-test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt', () => {
+test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt and observed', () => {
 	const before = {
 		takenAt: 'a',
-		people: [{ role: 'alice', tokens: [{ id: 't1' }], proofs: { user: 'h1' } }],
+		people: [
+			{
+				role: 'alice',
+				tokens: [{ id: 't1' }],
+				proofs: { user: 'h1' },
+				observed: { usage: { executes: 3 } },
+			},
+		],
 	}
 	const after = {
 		takenAt: 'b',
@@ -29,6 +36,7 @@ test('diffSnapshots reports changed, added, and removed paths, ignoring takenAt'
 				role: 'alice',
 				tokens: [{ id: 't1' }, { id: 't2' }],
 				proofs: { user: 'h2' },
+				observed: { usage: { executes: 9 } },
 			},
 		],
 	}

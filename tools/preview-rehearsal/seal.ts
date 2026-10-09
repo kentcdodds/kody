@@ -46,13 +46,12 @@ export async function generateSealKeyPair() {
 	}
 }
 
-export async function sealJson(
-	value: unknown,
+/** Import before any writes so a bad key fails before the preview changes. */
+export async function importRecipientPublicKey(
 	publicKeyBase64: string,
-): Promise<SealedEnvelope> {
-	let publicKey: CryptoKey
+): Promise<CryptoKey> {
 	try {
-		publicKey = await crypto.subtle.importKey(
+		return await crypto.subtle.importKey(
 			'spki',
 			fromBase64(publicKeyBase64),
 			rsaParams,
@@ -64,6 +63,12 @@ export async function sealJson(
 			`recipient public key is not a base64 SPKI RSA key: ${error instanceof Error ? error.message : String(error)}`,
 		)
 	}
+}
+
+export async function sealJson(
+	value: unknown,
+	publicKey: CryptoKey,
+): Promise<SealedEnvelope> {
 	const contentKey = crypto.getRandomValues(new Uint8Array(32))
 	const iv = crypto.getRandomValues(new Uint8Array(12))
 	const aesKey = await crypto.subtle.importKey(
