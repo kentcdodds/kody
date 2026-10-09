@@ -646,7 +646,8 @@ jobs:
       # written here. --force because APP_DB embed fingerprints can outlive the
       # index (an existing preview's first deploy onto its own index, or a
       # deploy that failed between ensure and this step) and would skip the
-      # upserts.
+      # upserts. The secret was synced after the app deploy and takes a few
+      # seconds to reach the edge, hence --auth-retry-seconds.
       - name: 🧭 Reindex builtin capability vectors (preview Vectorize)
         shell: bash
         env:
@@ -655,7 +656,7 @@ jobs:
           set -euo pipefail
           CAPABILITY_REINDEX_SECRET="$(cat "$RUNNER_TEMP/capability-reindex-secret")"
           export CAPABILITY_REINDEX_SECRET
-          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities --force
+          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities --force --auth-retry-seconds 90
 
       - name: 🩺 Healthcheck platform worker (preview)
         shell: bash

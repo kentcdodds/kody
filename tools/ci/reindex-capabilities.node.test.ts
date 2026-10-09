@@ -103,6 +103,60 @@ test('runCapabilityReindex refuses to send the secret over plain http to a remot
 	).resolves.toEqual({ sweeps: 1 })
 })
 
+test('runCapabilityReindex retries a first-sweep 401/503 only inside the auth retry window', async () => {
+	let clock = 0
+	const timing = {
+		now: () => clock,
+		sleep: async (ms: number) => {
+			clock += ms
+		},
+	}
+	const base = {
+		baseUrl: 'https://kody-branch-x.example.workers.dev',
+		secret: 's',
+		log: () => {},
+		...timing,
+	}
+	const propagating = fakeMaintenanceEndpoint([
+		{ status: 503, body: { error: 'Capability reindex is not configured' } },
+		{ status: 401, body: { error: 'Unauthorized' } },
+		{ body: { complete: true } },
+	])
+	await expect(
+		runCapabilityReindex({
+			...base,
+			authRetrySeconds: 60,
+			fetcher: propagating.fetcher,
+		}),
+	).resolves.toEqual({ sweeps: 1 })
+	expect(propagating.calls).toHaveLength(3)
+	expect(clock).toBe(10_000)
+
+	clock = 0
+	const neverConfigured = fakeMaintenanceEndpoint(
+		Array.from({ length: 5 }, () => ({
+			status: 503,
+			body: { error: 'Capability reindex is not configured' },
+		})),
+	)
+	await expect(
+		runCapabilityReindex({
+			...base,
+			authRetrySeconds: 12,
+			fetcher: neverConfigured.fetcher,
+		}),
+	).rejects.toThrow('Capability reindex failed with HTTP 503.')
+	expect(neverConfigured.calls).toHaveLength(3)
+
+	const noWindow = fakeMaintenanceEndpoint([
+		{ status: 401, body: { error: 'Unauthorized' } },
+	])
+	await expect(
+		runCapabilityReindex({ ...base, fetcher: noWindow.fetcher }),
+	).rejects.toThrow('Capability reindex failed with HTTP 401.')
+	expect(noWindow.calls).toHaveLength(1)
+})
+
 test('parseReindexArgs accepts known phases and omits phases for a full sweep', () => {
 	expect(
 		parseReindexArgs([
@@ -113,17 +167,21 @@ test('parseReindexArgs accepts known phases and omits phases for a full sweep', 
 			'--force',
 			'--max-sweeps',
 			'3',
+			'--auth-retry-seconds',
+			'90',
 		]),
 	).toEqual({
 		baseUrl: 'https://x.example',
 		phases: ['capabilities', 'packages'],
 		force: true,
 		maxSweeps: 3,
+		authRetrySeconds: 90,
 	})
 	expect(parseReindexArgs(['--url', 'https://x.example'])).toEqual({
 		baseUrl: 'https://x.example',
 		phases: undefined,
 		force: false,
 		maxSweeps: undefined,
+		authRetrySeconds: undefined,
 	})
 })

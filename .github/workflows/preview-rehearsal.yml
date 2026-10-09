@@ -177,14 +177,7 @@ jobs:
           echo "::add-mask::$CAPABILITY_REINDEX_SECRET"
           export CAPABILITY_REINDEX_SECRET
           node tools/ci/sync-worker-secrets.ts --env "" --name "$PREVIEW_NAME" --set "CAPABILITY_REINDEX_SECRET=$CAPABILITY_REINDEX_SECRET"
-          for attempt in 1 2 3 4 5 6; do
-            if node tools/ci/reindex-capabilities.ts --url "$APP_URL" --force --max-sweeps 40 | tee "$OUT_DIR/reindex.log"; then
-              exit 0
-            fi
-            echo "Reindex attempt $attempt failed (the new secret may still be propagating); retrying in 15s." >&2
-            sleep 15
-          done
-          exit 1
+          node tools/ci/reindex-capabilities.ts --url "$APP_URL" --force --max-sweeps 40 --auth-retry-seconds 90 | tee "$OUT_DIR/reindex.log"
 
       - name: 🧾 Summary
         if: always()

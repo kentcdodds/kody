@@ -12,9 +12,19 @@ export type CapabilityReindexOptions = {
 	phases?: ReadonlyArray<CapabilityReindexPhaseName>
 	force?: boolean
 	maxSweeps?: number
+	/**
+	 * Keep retrying a first-sweep 401/503 for this long. A secret set by
+	 * `wrangler secret bulk` reaches the edge a few seconds after the command
+	 * returns, so callers that just rotated the secret pass a short window.
+	 */
+	authRetrySeconds?: number
 	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	now?: () => number
 	log?: (line: string) => void
 }
+
+const authRetryDelayMs = 5_000
 
 const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -42,8 +52,13 @@ export async function runCapabilityReindex(options: CapabilityReindexOptions) {
 	const fetcher = options.fetcher ?? fetch
 	const log = options.log ?? ((line: string) => console.log(line))
 	const maxSweeps = options.maxSweeps ?? 8
+	const sleep =
+		options.sleep ??
+		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+	const now = options.now ?? Date.now
 	assertSecretSafeOrigin(options.baseUrl)
 	const url = `${options.baseUrl.replace(/\/+$/, '')}/__maintenance/reindex-capabilities`
+	const authRetryUntil = now() + (options.authRetrySeconds ?? 0) * 1000
 	let cursor: unknown
 	for (let sweep = 1; sweep <= maxSweeps; sweep += 1) {
 		const body = {
@@ -52,18 +67,33 @@ export async function runCapabilityReindex(options: CapabilityReindexOptions) {
 			...(cursor === undefined ? {} : { cursor }),
 		}
 		log(`POST ${url} (sweep ${sweep}) ${JSON.stringify(body)}`)
-		const response = await fetcher(url, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${options.secret}`,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(120_000),
-		})
-		const text = await response.text()
+		const send = () =>
+			fetcher(url, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${options.secret}`,
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+				signal: AbortSignal.timeout(120_000),
+			})
+		let response = await send()
+		let text = await response.text()
 		log(text)
+		while (
+			sweep === 1 &&
+			(response.status === 401 || response.status === 503) &&
+			now() + authRetryDelayMs <= authRetryUntil
+		) {
+			log(
+				`HTTP ${response.status}; the reindex secret may still be propagating. Retrying in ${authRetryDelayMs / 1000}s.`,
+			)
+			await sleep(authRetryDelayMs)
+			response = await send()
+			text = await response.text()
+			log(text)
+		}
 		if (!response.ok) {
 			throw new Error(`Capability reindex failed with HTTP ${response.status}.`)
 		}
@@ -92,11 +122,15 @@ export function parseReindexArgs(argv: ReadonlyArray<string>) {
 	let phases: Array<CapabilityReindexPhaseName> | undefined
 	let force = false
 	let maxSweeps: number | undefined
+	let authRetrySeconds: number | undefined
 	for (let index = 0; index < argv.length; index += 1) {
 		const arg = argv[index]
 		const value = argv[index + 1] ?? ''
 		if (
-			(arg === '--url' || arg === '--phases' || arg === '--max-sweeps') &&
+			(arg === '--url' ||
+				arg === '--phases' ||
+				arg === '--max-sweeps' ||
+				arg === '--auth-retry-seconds') &&
 			(!value || value.startsWith('-'))
 		) {
 			fail(`Missing value for ${arg}.`)
@@ -131,14 +165,21 @@ export function parseReindexArgs(argv: ReadonlyArray<string>) {
 				}
 				index += 1
 				break
+			case '--auth-retry-seconds':
+				authRetrySeconds = Number(value)
+				if (!Number.isInteger(authRetrySeconds) || authRetrySeconds < 0) {
+					fail('--auth-retry-seconds must be a non-negative integer.')
+				}
+				index += 1
+				break
 			default:
 				fail(
-					`Unknown flag: ${arg}. Usage: node tools/ci/reindex-capabilities.ts --url <origin> [--phases capabilities,memories,jobs,packages] [--force] [--max-sweeps <n>] (reads CAPABILITY_REINDEX_SECRET)`,
+					`Unknown flag: ${arg}. Usage: node tools/ci/reindex-capabilities.ts --url <origin> [--phases capabilities,memories,jobs,packages] [--force] [--max-sweeps <n>] [--auth-retry-seconds <n>] (reads CAPABILITY_REINDEX_SECRET)`,
 				)
 		}
 	}
 	if (!baseUrl) fail('Missing required flag: --url <origin>')
-	return { baseUrl, phases, force, maxSweeps }
+	return { baseUrl, phases, force, maxSweeps, authRetrySeconds }
 }
 
 if (isExecutedDirectly(import.meta.url)) {
