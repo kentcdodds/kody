@@ -136,7 +136,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/@:username/:kodyId/settings',
 			'/account/repos/:repoId/icon/:iconCommit',
 			'/@:username/:kodyId/approve-publish',
-			'/@:username/:kodyId/approve-changes',
 			'/@:orgSlug/packages',
 		],
 		apis: [
@@ -144,8 +143,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/packages/:packageId/approve-publish.json',
 			'/account/packages/:packageId/files.json',
 			'/profiles/:username/packages/:kodyId/approve-publish.json',
-			'/profiles/:username/packages/:kodyId/approve-changes.json',
-			'/profiles/:username/packages/:kodyId/share.json',
 			'/@:username/:kodyId/raw/:ref(/*relativePath)',
 		],
 	},
@@ -236,13 +233,6 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		file: 'experiments.md',
 		paths: ['/account/experiments'],
 		apis: ['/account/experiments.json'],
-	},
-	{
-		id: 'shared',
-		title: 'Shared packages',
-		file: 'shared.md',
-		paths: ['/account/shared', '/@:orgSlug/shared'],
-		apis: ['/account/shared.json'],
 	},
 	{
 		id: 'memories',
