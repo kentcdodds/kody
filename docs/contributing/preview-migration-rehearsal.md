@@ -191,7 +191,7 @@ An operator can also take the JSON snapshot without Cloudflare credentials:
 | Package-app subdomains and cookie binding (`PACKAGE_APP_BASE_URL` unset) | Workers tests, plus a production smoke after cutover; previews rehearse the inline app path                        |
 | Seat subscriptions and Stripe-backed auto-refill                         | Workers tests with a stubbed Stripe client; the seed writes auto-refill settings directly                          |
 | Plaintext secret reveal                                                  | Does not exist; decryption is proven by hashes from the mock echo route                                            |
-| Production data shapes                                                   | Read-only production queries (spec §12.4)                                                                          |
+| Production data shapes                                                   | [Teams production queries](./teams-production-queries.md) (spec §12.4)                                             |
 | Rolling back KV, Durable Objects, Artifacts repos, or Vectorize          | Not covered: `restore` rewinds D1 only; run `reindex` after a restore, and re-create the preview for a clean slate |
 
 ## Reference

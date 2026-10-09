@@ -173,7 +173,7 @@ if (isExecutedDirectly(import.meta.url)) {
 			await writeFile(outPath, `${JSON.stringify(value, null, 2)}\n`, {
 				mode: 0o600,
 			})
-			console.error(`Wrote the opened credentials to ${outPath} (mode 600).`)
+			console.error(`Wrote the opened envelope to ${outPath} (mode 600).`)
 			break
 		}
 		default:

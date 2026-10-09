@@ -19,6 +19,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Manual PR preview testing](./preview-manual-testing.md)
 - [Preview migration rehearsal](./preview-migration-rehearsal.md) (seed,
   snapshot, migrate, verify, restore on a branch preview; operator/CI only)
+- [Teams production queries](./teams-production-queries.md) (read-only, sealed
+  counts and ids before the Teams data conversion; Kent runs)
 - [control-kody](./control-kody.md) (Feature Map + CLI; daily
   `@kentcdodds/verification-skill-maintain`)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
