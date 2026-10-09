@@ -5,7 +5,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
-import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import {
+	callerFeatureFlagEvaluationFailed,
+	resolveCallerFeatureFlags,
+} from '#mcp/capabilities/access-control.ts'
 import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
 import {
 	executeInvokeFieldDescription,
@@ -59,7 +62,10 @@ import {
 	createRawFetchHostSink,
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
-import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	consumeDailyEntitlement,
+	getCachedUserEntitlement,
+} from '#worker/entitlements/service.ts'
 import {
 	abandonRunRecord,
 	claimRunRecord,
@@ -345,7 +351,41 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// Schema omit/advertise is decided at register. Re-read the
 				// flag here so a kill-switch applies on the next call even
 				// when a legacy session still has invoke in its tool list.
-				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
+				// Plan lookup overlaps that read. The daily counter is spent
+				// only after the read succeeds — an evaluation failure is
+				// fail-closed and must not consume quota.
+				const liveFlagsPromise = resolveCallerFeatureFlags(env, callerContext)
+				const entitlementPrefetch = callerContext.user?.userId
+					? getCachedUserEntitlement(env.APP_DB, {
+							userId: callerContext.user.userId,
+							email: callerContext.user.email,
+						}).then(
+							() => undefined,
+							() => undefined,
+						)
+					: null
+				const liveFlags = await liveFlagsPromise
+				if (await callerFeatureFlagEvaluationFailed(env, callerContext)) {
+					throw new Error('Feature flag evaluation failed')
+				}
+				void entitlementPrefetch
+				const registryAndMemories = Promise.all([
+					getCapabilityRegistryForContext({
+						env,
+						callerContext,
+					}),
+					surfaceToolMemories({
+						env,
+						callerContext,
+						conversationId: resolvedConversationId,
+						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+					}),
+				])
+				// Observe the pair if quota or claim returns before we await it.
+				void registryAndMemories.then(
+					() => undefined,
+					() => undefined,
+				)
 				const resolvedModule = resolveExecuteModule({
 					code,
 					invoke,
@@ -408,18 +448,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const [registry, surfacedMemories] = await Promise.all([
-					getCapabilityRegistryForContext({
-						env,
-						callerContext,
-					}),
-					surfaceToolMemories({
-						env,
-						callerContext,
-						conversationId: resolvedConversationId,
-						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-					}),
-				])
+				const [registry, surfacedMemories] = await registryAndMemories
 				const registeredCapabilityCount = Object.keys(
 					registry.capabilityHandlers,
 				).length
