@@ -315,7 +315,7 @@ test('token minting enforces parent scopes for local-execute', async () => {
 
 test('a token can only rotate tokens it could have minted', async () => {
 	const api = await createApi()
-	const rotator = await api.mint(['token:delete'])
+	const rotator = await api.mint(['token:delete', 'token:read'])
 	const stronger = await mintApiToken({
 		db: api.db,
 		userId: api.userId,
