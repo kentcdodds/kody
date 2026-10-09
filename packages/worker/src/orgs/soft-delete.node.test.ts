@@ -217,6 +217,111 @@ test('org soft delete revokes team-bound API tokens and bootstrap codes', async 
 	expect(boot?.n).toBe(0)
 })
 
+test('org soft delete tombstones bucket child rows and inbox addresses', async () => {
+	const { env, appDb } = await createHarness()
+	const orgId = 'org-child-rows'
+	await seedOrg(appDb, orgId, 'child-rows')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-bucket', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_entries (
+				bucket_id, name, encrypted_value, created_at, updated_at
+			) VALUES ('sec-bucket', 'api-key', 'cipher', ?, ?)`,
+		)
+		.bind(ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO value_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('val-bucket', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO value_entries (
+				bucket_id, name, value, created_at, updated_at
+			) VALUES ('val-bucket', 'setting', '1', ?, ?)`,
+		)
+		.bind(ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO email_inboxes (
+				id, user_id, name, created_at, updated_at
+			) VALUES ('inbox-1', ?, 'main', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO email_inbox_addresses (
+				id, inbox_id, user_id, address, local_part, domain,
+				enabled, created_at, updated_at
+			) VALUES (
+				'addr-1', 'inbox-1', ?, 'child@example.com', 'child', 'example.com',
+				1, ?, ?
+			)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+
+	const deleted = await softDeleteOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now,
+	})
+	const secret = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_entries WHERE bucket_id = 'sec-bucket' AND name = 'api-key'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(secret?.deleted_at).toBe(deleted.deletedAt)
+	const value = await appDb
+		.prepare(
+			`SELECT deleted_at FROM value_entries WHERE bucket_id = 'val-bucket' AND name = 'setting'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(value?.deleted_at).toBe(deleted.deletedAt)
+	const address = await appDb
+		.prepare(`SELECT deleted_at FROM email_inbox_addresses WHERE id = 'addr-1'`)
+		.first<{ deleted_at: string | null }>()
+	expect(address?.deleted_at).toBe(deleted.deletedAt)
+
+	await restoreOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now: new Date(now.getTime() + 60_000),
+	})
+	const restoredSecret = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_entries WHERE bucket_id = 'sec-bucket' AND name = 'api-key'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(restoredSecret?.deleted_at).toBeNull()
+	const restoredValue = await appDb
+		.prepare(
+			`SELECT deleted_at FROM value_entries WHERE bucket_id = 'val-bucket' AND name = 'setting'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(restoredValue?.deleted_at).toBeNull()
+	const restoredAddress = await appDb
+		.prepare(`SELECT deleted_at FROM email_inbox_addresses WHERE id = 'addr-1'`)
+		.first<{ deleted_at: string | null }>()
+	expect(restoredAddress?.deleted_at).toBeNull()
+})
+
 test('resourceRestore clears one org-owned row while the org is still soft-deleted', async () => {
 	const { env, appDb } = await createHarness()
 	const orgId = 'org-resource-restore'

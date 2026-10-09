@@ -1,3 +1,9 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Invalidation must resolve soft-deleted users by id; resolve still refuses
+ * tombstoned owners via an explicit live `deleted_at` check below.
+ */
 import { isSessionInvalidatedByStoredPasswordChange } from '#app/request-auth-cache.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
@@ -74,11 +80,7 @@ export async function invalidatePackageAppOwnerCacheForDbUserId(
 		// Include soft-deleted users: invalidation must clear cache after
 		// soft-delete even though live reads hide the tombstoned row.
 		const row = await db
-			.prepare(
-				`SELECT stable_user_id FROM users
-				 WHERE id = ?
-				   AND (deleted_at IS NULL OR deleted_at IS NOT NULL)`,
-			)
+			.prepare(`SELECT stable_user_id FROM users WHERE id = ?`)
 			.bind(dbUserId)
 			.first<{ stable_user_id: string }>()
 		if (row?.stable_user_id) {

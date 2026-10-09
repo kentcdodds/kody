@@ -437,6 +437,35 @@ test('invoice.paid acks when a qualifying invoice has no linked live user', asyn
 	expect(result).toEqual({ status: 200, body: { ok: true } })
 })
 
+test('invoice.paid acks soft-deleted customers without rewarding referrals', async () => {
+	silenceExpectedConsoleErrors(['stripe_webhook_invoice_paid_user_not_linked'])
+	const referrer = await seedUser({
+		email: 'referrer-soft-deleted@example.com',
+	})
+	const referee = await seedUser({
+		email: 'referee-soft-deleted@example.com',
+		stripeCustomerId: 'cus_soft_deleted_invoice',
+	})
+	await seedReferral(referrer, referee, '2026-09-07T00:00:00.000Z')
+	await env.APP_DB.prepare(`UPDATE users SET deleted_at = ? WHERE id = ?`)
+		.bind(now.toISOString(), referee.id)
+		.run()
+	using _fetch = noFetch('soft-deleted invoice.paid')
+	const result = await deliver(
+		invoicePaid('evt_invoice_soft_deleted', 1_778_000_250, {
+			id: 'in_soft_deleted',
+			customer: 'cus_soft_deleted_invoice',
+			subscription: 'sub_soft_deleted',
+			amount_paid: 1200,
+		}),
+	)
+	expect(result).toEqual({ status: 200, body: { ok: true } })
+	expect(await readReferral(referee, 'status, reward_invoice_id')).toEqual({
+		status: 'pending',
+		reward_invoice_id: null,
+	})
+})
+
 test('invoice.paid returns 500 when the referrer paid period cannot be loaded', async () => {
 	silenceExpectedConsoleErrors([
 		'stripe_webhook_process_failed',

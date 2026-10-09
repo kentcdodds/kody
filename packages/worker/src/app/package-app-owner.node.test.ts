@@ -10,6 +10,7 @@ import { createDb } from '#worker/db.ts'
 import { applyPasswordChange } from './apply-password-change.ts'
 import {
 	invalidatePackageAppOwnerCache,
+	invalidatePackageAppOwnerCacheForDbUserId,
 	resolvePackageAppOwnerByStableUserId,
 } from './package-app-owner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -109,6 +110,32 @@ test('admin suspend and unsuspend invalidate the owner cache through real users-
 			issuedAt,
 		}),
 	).toMatchObject({ userId: stableUserId })
+})
+
+test('soft-deleted owners resolve to null and db-id invalidation still clears cache', async () => {
+	const { env, stableUserId, d1 } = await seedOwnerUser()
+	invalidatePackageAppOwnerCache({ stableUserId })
+	const issuedAt = Date.now()
+	expect(
+		await resolvePackageAppOwnerByStableUserId({
+			env,
+			stableUserId,
+			issuedAt,
+		}),
+	).not.toBeNull()
+
+	await d1
+		.prepare(`UPDATE users SET deleted_at = ? WHERE id = 1`)
+		.bind(new Date().toISOString())
+		.run()
+	await invalidatePackageAppOwnerCacheForDbUserId(d1, 1)
+	expect(
+		await resolvePackageAppOwnerByStableUserId({
+			env,
+			stableUserId,
+			issuedAt,
+		}),
+	).toBeNull()
 })
 
 test('applyPasswordChange invalidates sessions issued before the stamp', async () => {
