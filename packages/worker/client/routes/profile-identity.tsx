@@ -67,6 +67,39 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 	)
 }
 
+/**
+ * Identity column for an organization's home: the same face as a person's
+ * profile, with the viewer's role where a person shows their bio.
+ */
+export function renderOrgIdentity(input: {
+	name: string
+	handle: string
+	avatarName: string
+	role: string
+}) {
+	return (
+		<header mix={css(identityCss)} data-testid="org-identity">
+			<div mix={css(avatarWrapCss)}>
+				<UserAvatar
+					displayName={input.avatarName}
+					avatarUrl={null}
+					size={{ narrow: 72, wide: 160 }}
+					variant="well"
+				/>
+			</div>
+			<div mix={css(identityCopyCss)}>
+				<div mix={css(nameRowCss)}>
+					<h1 mix={css(displayNameCss)}>{input.name}</h1>
+					<span mix={css(badgeCss)} data-testid="org-role">
+						{input.role}
+					</span>
+				</div>
+				<p mix={css(usernameCss)}>{input.handle}</p>
+			</div>
+		</header>
+	)
+}
+
 function renderProfileLoggedOutCtas(returnTo: string) {
 	return (
 		<div mix={css(guestCtaCss)} data-testid="profile-guest-cta">
