@@ -133,7 +133,11 @@ export function createAccountProfileApiHandler(env: Env) {
 					)
 				}
 
-				if (await isUsernameClaimedInIdentity(env.APP_DB, username)) {
+				if (
+					await isUsernameClaimedInIdentity(env.APP_DB, username, {
+						exceptStableUserId: user.mcpUser.userId,
+					})
+				) {
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'account',
@@ -193,6 +197,11 @@ export function createAccountProfileApiHandler(env: Env) {
 					})
 				} catch (error) {
 					try {
+						await rollbackUserHandleRename(env.APP_DB, {
+							stableUserId: packageUserId,
+							claimedUsername: username,
+							restoreUsername: previousUsername,
+						})
 						await db.update(usersTable, user.userId, {
 							username: previousUsername,
 							updated_at: utcSqliteTimestamp(),

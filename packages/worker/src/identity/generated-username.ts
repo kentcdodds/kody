@@ -15,14 +15,54 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 /**
  * Whether a username is already claimed on `users`, a live or retired
  * `handles` row, or an org slug (personal org slugs mirror usernames).
+ *
+ * Pass `exceptStableUserId` when the caller is reclaiming their own retired
+ * handle or personal org slug (rename-back).
  */
 export async function isUsernameClaimedInIdentity(
 	db: D1Database,
 	username: string,
+	options?: { exceptStableUserId?: string },
 ) {
 	const normalized = normalizeUsername(username)
 	if (!normalized) return false
-	if (await userExistsByUsername(db, normalized)) return true
+	const except = options?.exceptStableUserId?.trim() || null
+	if (except) {
+		const otherUser = await db
+			.prepare(
+				`SELECT 1 AS present FROM users
+				 WHERE username = ? AND stable_user_id != ?`,
+			)
+			.bind(normalized, except)
+			.first<{ present: number }>()
+		if (otherUser) return true
+	} else if (await userExistsByUsername(db, normalized)) {
+		return true
+	}
+
+	if (except) {
+		const foreignHandle = await db
+			.prepare(
+				`SELECT 1 AS present FROM handles
+				 WHERE handle = ?
+				   AND NOT (
+				     user_id = ?
+				     OR (user_id IS NULL AND org_id = ?)
+				   )`,
+			)
+			.bind(normalized, except, except)
+			.first<{ present: number }>()
+		if (foreignHandle) return true
+		const foreignOrg = await db
+			.prepare(
+				`SELECT 1 AS present FROM orgs
+				 WHERE slug = ? AND id != ?`,
+			)
+			.bind(normalized, except)
+			.first<{ present: number }>()
+		return Boolean(foreignOrg)
+	}
+
 	const handleRow = await db
 		.prepare(`SELECT 1 AS present FROM handles WHERE handle = ?`)
 		.bind(normalized)
