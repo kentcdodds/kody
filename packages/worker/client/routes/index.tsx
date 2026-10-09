@@ -23,6 +23,10 @@ import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	orgAccountClientLoaders,
+	orgAccountClientRoutes,
+} from './org-account-routes.tsx'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ProfileRoute, profileRouteLoader } from './profile.tsx'
@@ -390,6 +394,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		marketingArea,
 		(m) => m.faqRouteLoader,
 	),
+	...orgAccountClientLoaders,
 }
 
 export const clientRoutes = {
@@ -701,4 +706,5 @@ export const clientRoutes = {
 		<LazyOnboardingRoute render={(m) => <m.OAuthAuthorizeRoute />} />
 	),
 	[oauthPaths.callback]: <OAuthCallbackRoute />,
+	...orgAccountClientRoutes,
 }

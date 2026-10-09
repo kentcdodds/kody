@@ -1141,6 +1141,20 @@ export type AccountFormerEmail = {
 	claimedAt: string
 }
 
+export type AccountOrganizationSummary = {
+	slug: string
+	displayName: string | null
+	role: 'owner' | 'member' | 'billing' | null
+	personal: boolean
+}
+
+export type AccountInviteSummary = {
+	id: string
+	orgSlug: string
+	kind: string
+	role: string | null
+}
+
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -1152,6 +1166,19 @@ export type AccountProfileLoaderData = {
 	avatarUrl: string | null
 	profileVisibility: ProfileVisibility
 	formerEmails: Array<AccountFormerEmail>
+	organizations?: Array<AccountOrganizationSummary>
+	inviteCount?: number
+	lastUsedOrganization?: string | null
+}
+
+export type AccountOrganizationsLoaderData = {
+	ok: true
+	error: string | null
+}
+
+export type AccountInvitesLoaderData = {
+	ok: true
+	invites: Array<AccountInviteSummary>
 }
 
 export type AccountConnectionListItem = {
@@ -2352,6 +2379,8 @@ export type AppLoaderData = {
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
+	accountOrganizations?: AccountOrganizationsLoaderData
+	accountInvites?: AccountInvitesLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData

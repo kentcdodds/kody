@@ -16,7 +16,14 @@ content box.
 
 ## How to get there
 
-`/account` after login. Account deletion is `/account/delete`.
+`/account` after login. Account deletion is `/account/delete`. This page is the
+person: login, passkeys, email claims, and the list of organizations (including
+the last one used). Create an organization at `/account/organizations/new`.
+Invites are `/account/invites`.
+
+Resource pages (packages, secrets, jobs, and the rest) live under
+`/@<slug>/...`. The old `/account/...` resource URLs redirect there for a short
+time.
 
 ## Drive it
 

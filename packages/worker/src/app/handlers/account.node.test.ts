@@ -274,7 +274,9 @@ test('authenticated account SSR batches user/role and flag reads into two round 
 		'onboarding',
 	])
 	// Session batches: users+roles, then flags+overrides+experiments_opt_in.
+	// Organization list and invite counts are extra prepares on the session
+	// shell and again for the account page payload.
 	expect(counts.batchSizes).toEqual([2, 3])
-	expect(counts.prepare).toBe(6)
+	expect(counts.prepare).toBe(14)
 	expect(counts.batch).toBe(2)
 })

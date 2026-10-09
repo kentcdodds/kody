@@ -91,7 +91,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	// No cold-path loading copy when the SSR payload is present.
 	expect(html).not.toContain('Loading connections')
 	// The rail marks this page current and links Repositories to the profile.
-	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
 	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Repositories<\/a>/)
 	expect(html).toContain('data-icon="box"')
 })
@@ -175,7 +175,7 @@ test('picking a client shows that host’s install steps with a way back to the 
 	)
 	expect(html).not.toContain('aria-label="Connected agents"')
 	// Connections stays the current rail item on the add views.
-	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
 })
 
 test('an unknown agent segment renders the fallback instead of instructions', async () => {
@@ -293,14 +293,14 @@ test('account rail lists Connections and Repositories at the same level as the o
 	expect(items.map((item) => item.label)).toContain('Shared')
 	expect(items.map((item) => item.label)).toContain('Secret providers')
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
-		'/account/secret-providers',
+		'/@jane/secret-providers',
 	)
 	expect(items.map((item) => item.label)).toContain('Experiments')
 	expect(items.find((item) => item.label === 'Experiments')?.href).toBe(
 		'/account/experiments',
 	)
 	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
-		'/account/connections',
+		'/@jane/connections',
 	)
 	// Repositories is the profile page — the canonical repo list — not the
 	// `/account/packages` redirect, unless the session has no username yet.

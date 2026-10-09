@@ -319,11 +319,20 @@ import { createSignupHandler } from '#app/handlers/signup.ts'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
+import { createOrgAccountRedirectMiddleware } from '#app/org-account-redirect.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
+import {
+	createAccountInvitesApiHandler,
+	createAccountInvitesHandler,
+	createAccountOrganizationsNewHandler,
+	createAccountOrganizationsNewPostHandler,
+} from '#app/handlers/account-organizations.ts'
+import { createOrgSectionHandler } from '#app/handlers/org-section.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
 			remixCrossOriginProtection,
+			createOrgAccountRedirectMiddleware(env),
 			createReferralCookieMiddleware(),
 			createAccountWriteLeaseMiddleware(env),
 		],
@@ -406,6 +415,11 @@ export function createAppRouter(env: Env) {
 			signup: createSignupHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
 			account: createAccountHandler(env),
+			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
+			accountOrganizationsNewPost:
+				createAccountOrganizationsNewPostHandler(env),
+			accountInvites: createAccountInvitesHandler(env),
+			accountInvitesApi: createAccountInvitesApiHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
@@ -606,6 +620,21 @@ export function createAppRouter(env: Env) {
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
+			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgConnections: createOrgSectionHandler(env, 'connections'),
+			orgEmail: createOrgSectionHandler(env, 'email'),
+			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
+			orgJobs: createOrgSectionHandler(env, 'jobs'),
+			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
+			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgPackages: createOrgSectionHandler(env, 'packages'),
+			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
+			orgSecrets: createOrgSectionHandler(env, 'secrets'),
+			orgShared: createOrgSectionHandler(env, 'shared'),
+			orgValues: createOrgSectionHandler(env, 'values'),
+			orgWaiting: createOrgSectionHandler(env, 'waiting'),
+			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
+			orgWorkflows: createOrgSectionHandler(env, 'workflows'),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
 			profileAvatar: createProfileAvatarHandler(env),

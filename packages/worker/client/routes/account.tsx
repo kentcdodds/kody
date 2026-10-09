@@ -6,9 +6,11 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type OnboardingChecklistLoaderData,
+	type AccountOrganizationSummary,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
+import { orgRoleLabel } from '#universal/org-pages.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { routes } from '#universal/routes.ts'
 import {
@@ -75,6 +77,9 @@ export function AccountRoute(handle: Handle) {
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
+	let organizations: Array<AccountOrganizationSummary> = []
+	let inviteCount = 0
+	let lastUsedOrganization: string | null = null
 	let email = ''
 	let emailVerified = false
 	let emailVerificationDelivery: AccountProfileLoaderData['emailVerificationDelivery'] =
@@ -168,6 +173,9 @@ export function AccountRoute(handle: Handle) {
 		draftProfileVisibility = payload.profileVisibility
 		if (!optimisticAvatarObjectUrl) avatarUrl = payload.avatarUrl
 		accountEmailClaims.applyFormerEmails(payload.formerEmails ?? [])
+		organizations = payload.organizations ?? []
+		inviteCount = payload.inviteCount ?? 0
+		lastUsedOrganization = payload.lastUsedOrganization ?? null
 	}
 
 	function releaseOptimisticAvatar() {
@@ -557,6 +565,43 @@ export function AccountRoute(handle: Handle) {
 							shouldShowOnboardingChecklist(onboardingChecklist))
 							? renderOnboardingBanner({ checklist: onboardingChecklist })
 							: null}
+						<AccountManagementPanel
+							title="Organizations"
+							description="Organizations you can open. The last one you used is marked."
+						>
+							<ul mix={css({ margin: 0, paddingLeft: '1.1rem' })}>
+								{(organizations.length > 0
+									? organizations
+									: username
+										? [
+												{
+													slug: username,
+													displayName: null,
+													role: 'owner' as const,
+													personal: true,
+												},
+											]
+										: []
+								).map((org) => (
+									<li key={org.slug}>
+										<a href={routes.profile.href({ username: org.slug })}>
+											{org.displayName?.trim() || `@${org.slug}`}
+										</a>
+										{organizations.length > 1
+											? ` (${orgRoleLabel(org.role)})`
+											: ''}
+										{org.slug === lastUsedOrganization ? ' · Last used' : ''}
+									</li>
+								))}
+							</ul>
+							<p mix={css({ margin: `${spacing.sm} 0 0` })}>
+								<a href={routes.accountOrganizationsNew.href()}>Create org</a>
+								{' · '}
+								<a href={routes.accountInvites.href()}>
+									{inviteCount > 0 ? `Invites (${inviteCount})` : 'Invites'}
+								</a>
+							</p>
+						</AccountManagementPanel>
 						{renderAccountProfilePanel({
 							email,
 							emailVerified,

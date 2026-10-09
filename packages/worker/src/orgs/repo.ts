@@ -82,6 +82,209 @@ function toBinding(row: {
  * The person's personal org (id = stable user id). Throws when the owner
  * membership is missing — P4 does not invent a binding.
  */
+type OrgAccessRow = {
+	org_id: string
+	org_slug: string
+	role: OrgRole | null
+	suspended_at: string | null
+	deleted_at: string | null
+}
+
+function bindingFromAccessRow(row: OrgAccessRow | null): OrgBinding | null {
+	if (!row?.org_slug?.trim()) return null
+	if (row.deleted_at || row.suspended_at) return null
+	return {
+		org: {
+			id: ownerIdFromStored(row.org_id),
+			slug: row.org_slug.trim(),
+		},
+		role: row.role,
+	}
+}
+
+/**
+ * Organization named by `slug` when `personId` is a live member or holds a
+ * grant there (directly, or through a team). Missing, suspended, and
+ * deleted organizations are denied the same way.
+ */
+export async function loadOrgBindingForSlug(
+	db: D1Database,
+	personId: string,
+	slug: string,
+): Promise<OrgBinding | null> {
+	const normalized = slug.trim().toLowerCase()
+	if (!normalized) return null
+	const row = await db
+		.prepare(
+			`SELECT o.id AS org_id,
+			        o.slug AS org_slug,
+			        o.suspended_at AS suspended_at,
+			        o.deleted_at AS deleted_at,
+			        m.role AS role
+			 FROM orgs o
+			 LEFT JOIN org_memberships m
+			   ON m.org_id = o.id
+			  AND m.user_id = ?
+			  AND m.deleted_at IS NULL
+			 WHERE o.slug = ?`,
+		)
+		.bind(personId, normalized)
+		.first<OrgAccessRow>()
+	if (!row || row.deleted_at || row.suspended_at) return null
+	if (row.role) return bindingFromAccessRow(row)
+	const grant = await db
+		.prepare(
+			`SELECT 1 AS ok
+			 FROM grants g
+			 WHERE g.org_id = ?
+			   AND g.deleted_at IS NULL
+			   AND g.subject_type = 'user'
+			   AND g.subject_id = ?
+			 UNION
+			 SELECT 1 AS ok
+			 FROM team_members tm
+			 INNER JOIN teams t
+			   ON t.id = tm.team_id
+			  AND t.deleted_at IS NULL
+			  AND t.org_id = ?
+			 INNER JOIN grants g
+			   ON g.subject_type = 'team'
+			  AND g.subject_id = t.id
+			  AND g.org_id = t.org_id
+			  AND g.deleted_at IS NULL
+			 WHERE tm.user_id = ?
+			   AND tm.deleted_at IS NULL
+			 LIMIT 1`,
+		)
+		.bind(row.org_id, personId, row.org_id, personId)
+		.first<{ ok: number }>()
+	if (!grant) return null
+	return bindingFromAccessRow({ ...row, role: null })
+}
+
+export type ListedOrganization = {
+	slug: string
+	displayName: string | null
+	role: OrgRole | null
+	personal: boolean
+}
+
+export async function listOrganizationsForPerson(
+	db: D1Database,
+	personId: string,
+): Promise<Array<ListedOrganization>> {
+	const memberships = await db
+		.prepare(
+			`SELECT o.slug AS slug,
+			        o.display_name AS display_name,
+			        m.role AS role,
+			        CASE WHEN o.id = ? THEN 1 ELSE 0 END AS personal
+			 FROM org_memberships m
+			 INNER JOIN orgs o ON o.id = m.org_id
+			 WHERE m.user_id = ?
+			   AND m.deleted_at IS NULL
+			   AND o.deleted_at IS NULL`,
+		)
+		.bind(personId, personId)
+		.all<{
+			slug: string
+			display_name: string | null
+			role: OrgRole
+			personal: number
+		}>()
+	const grants = await db
+		.prepare(
+			`SELECT DISTINCT o.slug AS slug, o.display_name AS display_name
+			 FROM grants g
+			 INNER JOIN orgs o ON o.id = g.org_id
+			 WHERE g.deleted_at IS NULL
+			   AND g.subject_type = 'user'
+			   AND g.subject_id = ?
+			   AND o.deleted_at IS NULL
+			   AND NOT EXISTS (
+			     SELECT 1 FROM org_memberships m
+			     WHERE m.org_id = o.id
+			       AND m.user_id = ?
+			       AND m.deleted_at IS NULL
+			   )`,
+		)
+		.bind(personId, personId)
+		.all<{ slug: string; display_name: string | null }>()
+	const listed = [
+		...(memberships.results ?? []).map((row) => ({
+			slug: row.slug,
+			displayName: row.display_name,
+			role: row.role,
+			personal: row.personal === 1,
+		})),
+		...(grants.results ?? []).map((row) => ({
+			slug: row.slug,
+			displayName: row.display_name,
+			role: null as OrgRole | null,
+			personal: false,
+		})),
+	]
+	listed.sort((left, right) => {
+		if (left.personal !== right.personal) return left.personal ? -1 : 1
+		return left.slug.localeCompare(right.slug)
+	})
+	return listed
+}
+
+export async function countPendingInvitesForPerson(
+	db: D1Database,
+	input: { email: string; username: string; now: string },
+) {
+	const row = await db
+		.prepare(
+			`SELECT COUNT(*) AS count
+			 FROM invites
+			 WHERE status = 'pending'
+			   AND expires_at > ?
+			   AND (
+			     lower(COALESCE(invitee_email, '')) = lower(?)
+			     OR lower(COALESCE(invitee_username, '')) = lower(?)
+			   )`,
+		)
+		.bind(input.now, input.email, input.username)
+		.first<{ count: number }>()
+	return Number(row?.count ?? 0)
+}
+
+export type PendingInviteSummary = {
+	id: string
+	orgSlug: string
+	kind: string
+	role: string | null
+}
+
+export async function listPendingInvitesForPerson(
+	db: D1Database,
+	input: { email: string; username: string; now: string },
+): Promise<Array<PendingInviteSummary>> {
+	const rows = await db
+		.prepare(
+			`SELECT i.id AS id, o.slug AS org_slug, i.kind AS kind, i.role AS role
+			 FROM invites i
+			 INNER JOIN orgs o ON o.id = i.org_id
+			 WHERE i.status = 'pending'
+			   AND i.expires_at > ?
+			   AND (
+			     lower(COALESCE(i.invitee_email, '')) = lower(?)
+			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)
+			   )
+			 ORDER BY i.created_at DESC`,
+		)
+		.bind(input.now, input.email, input.username)
+		.all<{ id: string; org_slug: string; kind: string; role: string | null }>()
+	return (rows.results ?? []).map((row) => ({
+		id: row.id,
+		orgSlug: row.org_slug,
+		kind: row.kind,
+		role: row.role,
+	}))
+}
+
 export async function loadOrgBindingForPerson(
 	db: D1Database,
 	personId: string,

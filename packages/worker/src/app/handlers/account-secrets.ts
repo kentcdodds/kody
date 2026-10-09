@@ -32,6 +32,7 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -95,7 +96,7 @@ export function createAccountSecretsHandler(env: Env) {
 			// Prefill agent links use the focused /connect/secret-set page.
 			// Bare /account/secrets/new stays on the account list editor.
 			if (
-				requestUrl.pathname === '/account/secrets/new' &&
+				accountAliasPath(requestUrl.pathname) === '/account/secrets/new' &&
 				requestUrl.searchParams.get('name')?.trim()
 			) {
 				const redirectUrl = new URL(

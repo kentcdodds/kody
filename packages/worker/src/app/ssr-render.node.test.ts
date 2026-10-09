@@ -440,7 +440,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 			'href="/@account-user"',
 			'aria-label="@account-user"',
 			'data-testid="account-connections-link"',
-			'href="/account/connections"',
+			'href="/@account-user/connections"',
 			'>Connections</a>',
 			'data-icon="link"',
 			'data-icon="box"',
@@ -464,6 +464,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		avatarUrl: null,
 		profileVisibility: 'public',
 		formerEmails: [],
+		organizations: [],
+		inviteCount: 0,
+		lastUsedOrganization: null,
 	})
 	expect(account.loaderData?.accountConnections).toEqual(
 		emptyAccountConnections,
@@ -573,7 +576,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="account-connections-add"',
 	])
 	expect(connections.html).toMatch(
-		/href="\/account\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/connections"[^>]*aria-current="page"/,
 	)
 	expect(connections.loaderData?.accountConnectedAgents).toEqual({
 		ok: true,
@@ -605,7 +608,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Connect Cursor"',
 	])
 	expect(addCursor.html).toMatch(
-		/href="\/account\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/connections"[^>]*aria-current="page"/,
 	)
 	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),

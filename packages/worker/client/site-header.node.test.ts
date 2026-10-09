@@ -64,6 +64,51 @@ test('logged-in header shows Account to the left of the profile avatar', async (
 	expect(desktopAccountTag).toContain('href="/account"')
 	expect(desktopAccountTag).toContain('aria-current="page"')
 	expect(html).toContain('min-height: 44px')
+	expect(html).toContain('>Create org<')
+	expect(html).toContain('>Invites<')
+	expect(html).not.toContain('>@ada ·')
+})
+
+test('org switcher lists the signup organization, then others with roles, then create and invites', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@acme/secrets',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: 'member',
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			inviteCount: 2,
+			lastUsedOrganization: 'ada',
+		}),
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	const adaAt = menu.indexOf('>@ada · Owner<')
+	const acmeAt = menu.indexOf('>@acme · Member<')
+	const createAt = menu.indexOf('>Create org<')
+	const invitesAt = menu.indexOf('>Invites (2)<')
+	expect(adaAt).toBeGreaterThan(-1)
+	expect(acmeAt).toBeGreaterThan(adaAt)
+	expect(createAt).toBeGreaterThan(acmeAt)
+	expect(invitesAt).toBeGreaterThan(createAt)
+	expect(html).toContain('aria-label="Organization @acme"')
+	expect(html).toContain('href="/@ada/secrets"')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {

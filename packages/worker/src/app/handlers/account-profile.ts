@@ -7,6 +7,7 @@ import {
 	getRequestIp,
 	logAuditEvent,
 } from '#worker/audit-log.ts'
+import { loadAccountOrganizationSnapshot } from '#app/account-organizations-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
@@ -71,7 +72,16 @@ export function createAccountProfileApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await loadAccountProfileData(user, env))
+				const [profile, organizations] = await Promise.all([
+					loadAccountProfileData(user, env),
+					loadAccountOrganizationSnapshot(env, user, request),
+				])
+				return jsonResponse({
+					...profile,
+					organizations: organizations.organizations,
+					inviteCount: organizations.inviteCount,
+					lastUsedOrganization: organizations.lastUsedOrganization,
+				})
 			}
 
 			if (request.method !== 'POST') {

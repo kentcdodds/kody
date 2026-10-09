@@ -1,4 +1,4 @@
-import { post, route } from 'remix/routes'
+import { get, post, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
@@ -240,6 +240,23 @@ export const routes = route({
 	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	communityFeatureApiPost: post('/community/:listingId/feature.json'),
 	communityInstallApiPost: post('/community/:listingId/install.json'),
+	// Organization resource pages. Static sections outrank `/@:username/:kodyId`.
+	// `packages` and `webhooks` are index-only so package apps and ingress stay put.
+	orgActivity: get('/@:orgSlug/activity(/*rest)'),
+	orgConnections: get('/@:orgSlug/connections(/*rest)'),
+	orgEmail: get('/@:orgSlug/email(/*rest)'),
+	orgIntegrations: get('/@:orgSlug/integrations(/*rest)'),
+	orgJobs: get('/@:orgSlug/jobs(/*rest)'),
+	orgMcpServers: get('/@:orgSlug/mcp-servers(/*rest)'),
+	orgMemories: get('/@:orgSlug/memories(/*rest)'),
+	orgPackages: get('/@:orgSlug/packages'),
+	orgSecretProviders: get('/@:orgSlug/secret-providers(/*rest)'),
+	orgSecrets: get('/@:orgSlug/secrets(/*rest)'),
+	orgShared: get('/@:orgSlug/shared'),
+	orgValues: get('/@:orgSlug/values(/*rest)'),
+	orgWaiting: get('/@:orgSlug/waiting(/*rest)'),
+	orgWebhooks: get('/@:orgSlug/webhooks'),
+	orgWorkflows: get('/@:orgSlug/workflows(/*rest)'),
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
 	// package name leaf (`/@acme/devin`) rather than the listing uuid. Deeper
@@ -322,6 +339,10 @@ export const routes = route({
 	pendingVerification: '/pending-verification',
 	signup: '/signup',
 	account: '/account',
+	accountOrganizationsNew: '/account/organizations/new',
+	accountOrganizationsNewPost: post('/account/organizations/new'),
+	accountInvites: '/account/invites',
+	accountInvitesApi: '/account/invites.json',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

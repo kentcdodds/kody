@@ -9,10 +9,13 @@ const profileMatcher = createMatcher(routes.profile.pattern)
  * render a profile page for it.
  */
 export function getProfileUsernameFromPathname(pathname: string) {
-	return (
-		profileMatcher.match(new URL(pathname, 'http://localhost'))?.params
-			.username ?? null
-	)
+	const matched = profileMatcher.match(new URL(pathname, 'http://localhost'))
+		?.params.username
+	if (matched) return matched
+	// `/@slug/packages` is the signed-in repository list for that organization.
+	const packages =
+		/^\/@([a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9]))\/packages\/?$/.exec(pathname)
+	return packages?.[1] ?? null
 }
 
 export function isProfilePathname(pathname: string) {

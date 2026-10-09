@@ -1,4 +1,5 @@
 import { createHref } from 'remix/route-pattern/href'
+import { accountAliasPath } from '#universal/org-pages.ts'
 
 function decodePathSegment(value: string) {
 	try {
@@ -31,12 +32,16 @@ export function createListDetailRoute(
 	const detailPrefix = `${basePath}/`
 
 	function isRoutePath(href: string) {
-		const pathname = new URL(href, 'http://localhost').pathname
+		const pathname = accountAliasPath(
+			new URL(href, 'http://localhost').pathname,
+		)
 		return pathname === basePath || pathname.startsWith(detailPrefix)
 	}
 
 	function getSelection(href: string): ListDetailSelection {
-		const pathname = new URL(href, 'http://localhost').pathname
+		const pathname = accountAliasPath(
+			new URL(href, 'http://localhost').pathname,
+		)
 		if (pathname === newPath) {
 			return {
 				selectedId: null,

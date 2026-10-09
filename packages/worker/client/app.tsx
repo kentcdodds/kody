@@ -337,6 +337,9 @@ export function App(handle: Handle<AppProps>) {
 								showDemoIndicator={isLoggedIn && showDemoIndicator}
 								loginHref={loginHref}
 								currentPathname={currentPathname}
+								organizations={session?.organizations}
+								inviteCount={session?.inviteCount}
+								lastUsedOrganization={session?.lastUsedOrganization}
 							/>
 						)}
 						<main

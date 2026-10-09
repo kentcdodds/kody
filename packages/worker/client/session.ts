@@ -14,6 +14,7 @@ import {
 	featureFlagKeys,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
+import { type OrganizationSummary } from '#universal/org-pages.ts'
 
 export type SessionInfo = {
 	email: string
@@ -24,6 +25,9 @@ export type SessionInfo = {
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
 	featureFlags: Record<FeatureFlagKey, boolean>
+	organizations?: Array<OrganizationSummary>
+	inviteCount?: number
+	lastUsedOrganization?: string | null
 }
 
 export type SessionStatus = 'idle' | 'loading' | 'ready'
@@ -93,11 +97,44 @@ export async function fetchSessionInfo(
 					roles,
 					permissions,
 					featureFlags,
+					organizations: readOrganizations(payload?.session?.organizations),
+					inviteCount: readInviteCount(payload?.session?.inviteCount),
+					lastUsedOrganization:
+						typeof payload?.session?.lastUsedOrganization === 'string'
+							? payload.session.lastUsedOrganization
+							: null,
 				}
 			: null
 	} catch {
 		return null
 	}
+}
+
+function readInviteCount(value: unknown) {
+	return typeof value === 'number' && Number.isFinite(value)
+		? Math.max(0, Math.floor(value))
+		: 0
+}
+
+function readOrganizations(value: unknown): Array<OrganizationSummary> {
+	if (!Array.isArray(value)) return []
+	const organizations: Array<OrganizationSummary> = []
+	for (const item of value) {
+		if (!item || typeof item !== 'object') continue
+		const row = item as Record<string, unknown>
+		if (typeof row.slug !== 'string' || !row.slug.trim()) continue
+		const role =
+			row.role === 'owner' || row.role === 'member' || row.role === 'billing'
+				? row.role
+				: null
+		organizations.push({
+			slug: row.slug,
+			displayName: typeof row.displayName === 'string' ? row.displayName : null,
+			role,
+			personal: row.personal === true,
+		})
+	}
+	return organizations
 }
 
 function isRoleName(value: string): value is RoleName {

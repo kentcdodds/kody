@@ -493,9 +493,35 @@ const routeDocumentHeads = {
 	[oauthPaths.callback]: titleOnly('OAuth callback'),
 } as const satisfies Record<string, DocumentHeadResolver>
 
+const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
+	[routePattern(routes.orgActivity)]: titleOnly('Activity'),
+	[routePattern(routes.orgConnections)]: titleOnly('Connections'),
+	[routePattern(routes.orgEmail)]: titleOnly('Email inbox'),
+	[routePattern(routes.orgIntegrations)]: titleOnly('Integrations'),
+	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
+	[routePattern(routes.orgMcpServers)]: titleOnly('MCP servers'),
+	[routePattern(routes.orgMemories)]: titleOnly('Memories'),
+	[routePattern(routes.orgPackages)]: ({ params }) =>
+		titleOnly(params.orgSlug ? `@${params.orgSlug}` : 'Repositories'),
+	[routePattern(routes.orgSecretProviders)]: titleOnly('Secret providers'),
+	[routePattern(routes.orgSecrets)]: titleOnly('Secrets'),
+	[routePattern(routes.orgShared)]: titleOnly('Shared packages'),
+	[routePattern(routes.orgValues)]: titleOnly('Values'),
+	[routePattern(routes.orgWaiting)]: titleOnly('Waiting'),
+	[routePattern(routes.orgWebhooks)]: titleOnly('Webhooks'),
+	[routePattern(routes.orgWorkflows)]: titleOnly('Workflows'),
+	[routePattern(routes.accountOrganizationsNew)]: titleOnly(
+		'Create organization',
+	),
+	[routePattern(routes.accountInvites)]: titleOnly('Invites'),
+}
+
 const documentHeadMatcher = (() => {
 	const matcher = createMultiMatcher<DocumentHeadResolver>()
-	for (const [pattern, resolver] of Object.entries(routeDocumentHeads)) {
+	for (const [pattern, resolver] of Object.entries({
+		...routeDocumentHeads,
+		...orgDocumentHeads,
+	})) {
 		matcher.add(pattern, resolver)
 	}
 	return matcher

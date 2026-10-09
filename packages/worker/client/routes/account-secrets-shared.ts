@@ -10,6 +10,7 @@ import {
 } from '@kody-internal/shared/account-secret-route.ts'
 import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -311,7 +312,10 @@ export async function accountSecretsRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const prefillName = url.searchParams.get('name')?.trim()
-	if (url.pathname === '/account/secrets/new' && prefillName) {
+	if (
+		accountAliasPath(url.pathname) === '/account/secrets/new' &&
+		prefillName
+	) {
 		return routeLoaderRedirect(`/connect/secret-set${url.search}`)
 	}
 	const href = `${url.pathname}${url.search}`

@@ -77,6 +77,20 @@ test('router prefers static nested paths and package files over dynamic siblings
 	expect(await resolveAll(resolve, cases)).toEqual(cases)
 })
 
+test('organization resource pages outrank a package url with the same shape', async () => {
+	const resolve = makeRouter([
+		'orgSecrets',
+		'orgPackages',
+		'communityPackage',
+		'profile',
+	])
+	expect(await resolve('/@ada/secrets')).toBe('orgSecrets')
+	expect(await resolve('/@ada/secrets/new')).toBe('orgSecrets')
+	expect(await resolve('/@ada/packages')).toBe('orgPackages')
+	expect(await resolve('/@ada/devin')).toBe('communityPackage')
+	expect(await resolve('/@ada')).toBe('profile')
+})
+
 test('method mismatches return 405 with Allow and GET routes serve HEAD', async () => {
 	const router = createRouter({
 		async defaultHandler() {

@@ -115,7 +115,7 @@ test('webhooks index lists declared webhooks with status and deep-links each row
 	expect(html).toContain('hmac-sha256 · sentry-hook-signature')
 	// The rail marks this page current and the section explainer is the
 	// webhooks one; no cold-path loading copy with SSR data.
-	expect(html).toMatch(/href="\/account\/webhooks"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/webhooks"[^>]*aria-current="page"/)
 	expect(html).toContain('data-entity-explainer="webhooks"')
 	expect(html).not.toContain('Loading webhooks')
 	// Credential paths never appear on the index; mint/reveal/rotate live on

@@ -1,4 +1,10 @@
 import { css, type Handle, type RemixNode } from 'remix/component'
+import {
+	accountAliasPath,
+	orgResourcePath,
+	parseOrgResourcePath,
+	type OrgOwnedAccountSection,
+} from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -395,6 +401,14 @@ export function accountPackagesNavHref(username: string | null | undefined) {
 		: routes.accountPackages.href()
 }
 
+function orgSectionHref(
+	username: string | null | undefined,
+	section: OrgOwnedAccountSection,
+	fallback: string,
+) {
+	return username ? orgResourcePath(username, section) : fallback
+}
+
 type AccountNavItem = { href: string; label: string; icon: IconName }
 
 /** Account rail items in display order for the signed-in session. */
@@ -404,10 +418,18 @@ export function accountNavItemsFor(input: {
 }): Array<AccountNavItem> {
 	return [
 		{ href: '/account', label: 'Overview', icon: 'home' },
-		{ href: '/account/waiting', label: 'Waiting', icon: 'clock' },
+		{
+			href: orgSectionHref(input.username, 'waiting', '/account/waiting'),
+			label: 'Waiting',
+			icon: 'clock',
+		},
 		{ href: '/account/experiments', label: 'Experiments', icon: 'star' },
 		{
-			href: routes.accountConnections.href(),
+			href: orgSectionHref(
+				input.username,
+				'connections',
+				routes.accountConnections.href(),
+			),
 			label: 'Connections',
 			icon: 'link',
 		},
@@ -419,7 +441,11 @@ export function accountNavItemsFor(input: {
 		...(input.showShared
 			? [
 					{
-						href: routes.accountShared.href(),
+						href: orgSectionHref(
+							input.username,
+							'shared',
+							routes.accountShared.href(),
+						),
 						label: 'Shared',
 						icon: 'share' as const,
 					},
@@ -427,26 +453,89 @@ export function accountNavItemsFor(input: {
 			: []),
 		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
 		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
-		{ href: '/account/activity', label: 'Activity', icon: 'trending-up' },
-		{ href: '/account/jobs', label: 'Jobs', icon: 'briefcase' },
-		{ href: '/account/workflows', label: 'Workflows', icon: 'refresh' },
-		{ href: routes.accountWebhooks.href(), label: 'Webhooks', icon: 'cloud' },
-		{ href: '/account/secrets', label: 'Secrets', icon: 'key' },
 		{
-			href: '/account/secret-providers',
+			href: orgSectionHref(input.username, 'activity', '/account/activity'),
+			label: 'Activity',
+			icon: 'trending-up',
+		},
+		{
+			href: orgSectionHref(input.username, 'jobs', '/account/jobs'),
+			label: 'Jobs',
+			icon: 'briefcase',
+		},
+		{
+			href: orgSectionHref(input.username, 'workflows', '/account/workflows'),
+			label: 'Workflows',
+			icon: 'refresh',
+		},
+		{
+			href: orgSectionHref(
+				input.username,
+				'webhooks',
+				routes.accountWebhooks.href(),
+			),
+			label: 'Webhooks',
+			icon: 'cloud',
+		},
+		{
+			href: orgSectionHref(input.username, 'secrets', '/account/secrets'),
+			label: 'Secrets',
+			icon: 'key',
+		},
+		{
+			href: orgSectionHref(
+				input.username,
+				'secret-providers',
+				'/account/secret-providers',
+			),
 			label: 'Secret providers',
 			icon: 'key',
 		},
-		{ href: '/account/integrations', label: 'Integrations', icon: 'plug' },
-		{ href: '/account/mcp-servers', label: 'MCP servers', icon: 'server' },
-		{ href: '/account/memories', label: 'Memories', icon: 'book' },
-		{ href: '/account/email', label: 'Email', icon: 'mail' },
+		{
+			href: orgSectionHref(
+				input.username,
+				'integrations',
+				'/account/integrations',
+			),
+			label: 'Integrations',
+			icon: 'plug',
+		},
+		{
+			href: orgSectionHref(
+				input.username,
+				'mcp-servers',
+				'/account/mcp-servers',
+			),
+			label: 'MCP servers',
+			icon: 'server',
+		},
+		{
+			href: orgSectionHref(input.username, 'memories', '/account/memories'),
+			label: 'Memories',
+			icon: 'book',
+		},
+		{
+			href: orgSectionHref(input.username, 'email', '/account/email'),
+			label: 'Email',
+			icon: 'mail',
+		},
 	]
 }
 
 function isAccountNavItemActive(itemHref: string, currentPath: string) {
 	if (itemHref === '/account') return currentPath === '/account'
-	return currentPath === itemHref || currentPath.startsWith(`${itemHref}/`)
+	// The repository list is `/@slug` (and package pages under it). Organization
+	// sections such as `/@slug/secrets` are their own rail items.
+	if (/^\/@[^/]+$/.test(itemHref)) {
+		if (currentPath === itemHref) return true
+		const orgPage = parseOrgResourcePath(currentPath)
+		if (orgPage?.section === 'packages') return true
+		if (orgPage) return false
+		return currentPath.startsWith(`${itemHref}/`)
+	}
+	const itemAlias = accountAliasPath(itemHref)
+	const currentAlias = accountAliasPath(currentPath)
+	return currentAlias === itemAlias || currentAlias.startsWith(`${itemAlias}/`)
 }
 
 type AccountPageHeaderProps = {
