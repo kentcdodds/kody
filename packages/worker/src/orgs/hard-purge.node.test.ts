@@ -105,6 +105,71 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		)
 		.bind(orgId, ts)
 		.run()
+	const otherOrgId = 'org-hard-purge-other'
+	await appDb
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder,
+				created_at, updated_at
+			) VALUES (?, 'other-purge', 'Other', 'free', 'public', ?, ?)`,
+		)
+		.bind(otherOrgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-other', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(otherOrgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_entries (
+				bucket_id, name, encrypted_value, created_at, updated_at
+			) VALUES ('sec-other', 'api-key', 'cipher', ?, ?)`,
+		)
+		.bind(ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO teams (
+				id, org_id, slug, name, created_by_user_id, created_at, updated_at
+			) VALUES ('team-other', ?, 'eng', 'Eng', 'owner-1', ?, ?)`,
+		)
+		.bind(otherOrgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO team_members (team_id, user_id, created_at)
+			 VALUES ('team-other', 'member-1', ?)`,
+		)
+		.bind(ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO grants (
+				id, org_id, resource_type, resource_id, subject_type, subject_id,
+				preset, created_by_user_id, created_at, updated_at
+			) VALUES (
+				'grant-other', ?, 'package', 'pkg-2', 'user', 'member-1',
+				'use', 'owner-1', ?, ?
+			)`,
+		)
+		.bind(otherOrgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO grant_permissions (grant_id, permission)
+			 VALUES ('grant-other', 'package:read')`,
+		)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO handles (handle, org_id, created_at) VALUES ('other-purge', ?, ?)`,
+		)
+		.bind(otherOrgId, ts)
+		.run()
 
 	await hardPurgeOrg({
 		env: { APP_DB: appDb, AUDIT_DB: auditDb } as Env,
@@ -142,4 +207,37 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 		.bind(orgId)
 		.first<{ action: string }>()
 	expect(audit?.action).toBe('org.purged')
+	const otherStillThere = await appDb
+		.prepare(
+			`SELECT
+				(SELECT COUNT(*) FROM orgs WHERE id = ?) AS orgs,
+				(SELECT COUNT(*) FROM secret_buckets WHERE id = 'sec-other') AS buckets,
+				(SELECT COUNT(*) FROM secret_entries WHERE bucket_id = 'sec-other') AS entries,
+				(SELECT COUNT(*) FROM teams WHERE id = 'team-other') AS teams,
+				(SELECT COUNT(*) FROM team_members WHERE team_id = 'team-other') AS members,
+				(SELECT COUNT(*) FROM grants WHERE id = 'grant-other') AS grants,
+				(SELECT COUNT(*) FROM grant_permissions WHERE grant_id = 'grant-other') AS permissions,
+				(SELECT COUNT(*) FROM handles WHERE handle = 'other-purge') AS handles`,
+		)
+		.bind(otherOrgId)
+		.first<{
+			orgs: number
+			buckets: number
+			entries: number
+			teams: number
+			members: number
+			grants: number
+			permissions: number
+			handles: number
+		}>()
+	expect(otherStillThere).toEqual({
+		orgs: 1,
+		buckets: 1,
+		entries: 1,
+		teams: 1,
+		members: 1,
+		grants: 1,
+		permissions: 1,
+		handles: 1,
+	})
 })

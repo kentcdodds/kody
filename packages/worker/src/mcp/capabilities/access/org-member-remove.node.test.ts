@@ -124,3 +124,77 @@ test('orgMemberRemove revokes org credentials and disconnects own-login integrat
 		.first<{ deleted_at: string | null }>()
 	expect(owner?.deleted_at).toBeNull()
 })
+
+test('orgMemberRemove retries credential revoke after the membership is already tombstoned', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(
+		sqlite,
+		new URL('../../../../migrations/', import.meta.url),
+	)
+	const db = createD1FromSqlite(sqlite)
+	const orgId = 'org-remove-retry'
+	const ownerId = testStableUserIdFromEmail('retry-owner@example.com')
+	const memberId = testStableUserIdFromEmail('retry-member@example.com')
+	const ts = '2026-01-01T00:00:00.000Z'
+	const deletedAt = '2026-10-01T12:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder, created_at, updated_at
+			) VALUES (?, 'retry-org', 'Retry', 'free', 'public', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'owner', ?, NULL), (?, ?, 'member', ?, ?)`,
+		)
+		.bind(orgId, ownerId, ts, orgId, memberId, ts, deletedAt)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-retry', ?, ?, 'team token', 'hash', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(memberId, orgId, ts, ts, ts, ts)
+		.run()
+
+	const result = await orgMemberRemoveCapability.handler(
+		{ user_id: memberId },
+		{
+			env: { APP_DB: db } as Env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://heykody.dev',
+				user: {
+					userId: personIdFromStored(ownerId),
+					email: 'retry-owner@example.com',
+					displayName: 'Owner',
+				},
+				orgBinding: {
+					org: { id: ownerIdFromStored(orgId), slug: 'retry-org' },
+					role: 'owner',
+				},
+			}),
+		},
+	)
+	expect(result).toEqual({ user_id: memberId, removed: true })
+	const token = await db
+		.prepare(`SELECT revoked_at FROM api_tokens WHERE id = 'token-retry'`)
+		.first<{ revoked_at: string | null }>()
+	expect(token?.revoked_at).toBe(deletedAt)
+	const owner = await db
+		.prepare(
+			`SELECT deleted_at FROM org_memberships WHERE org_id = ? AND user_id = ?`,
+		)
+		.bind(orgId, ownerId)
+		.first<{ deleted_at: string | null }>()
+	expect(owner?.deleted_at).toBeNull()
+})

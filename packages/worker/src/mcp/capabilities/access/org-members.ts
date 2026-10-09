@@ -181,7 +181,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 		name: 'orgMemberRemove',
 		orgPermission: 'member:delete',
 		description:
-			'Remove a member from the organization this request is bound to. Revokes org-bound credentials, disconnects integrations they connected, and keeps their jobs running, the same as when they leave. Their team memberships in this organization end too. The last Owner cannot be removed.',
+			'Remove a member from the organization this request is bound to. Revokes org-bound credentials, disconnects integrations they connected, and keeps their jobs running, the same as when they leave. A retry finishes that cleanup when the membership is already tombstoned. Their team memberships in this organization end too. The last Owner cannot be removed.',
 		keywords: ['member', 'remove', 'kick'],
 		readOnly: false,
 		idempotent: false,
@@ -203,9 +203,33 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 				})
 				const membership = await liveMembership(db, request.org.id, userId)
 				if (!membership) {
-					throw new McpCallerError(
-						'That person is not a member of this organization.',
-					)
+					const tombstone = await db
+						.prepare(
+							`SELECT role, deleted_at FROM org_memberships
+							 WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
+						)
+						.bind(request.org.id, userId)
+						.first<{ role: string; deleted_at: string }>()
+					if (!tombstone?.deleted_at) {
+						throw new McpCallerError(
+							'That person is not a member of this organization.',
+						)
+					}
+					await onMemberSoftRemoved({
+						env: ctx.env,
+						orgId: request.org.id,
+						userId,
+						deletedAt: tombstone.deleted_at,
+						resume: true,
+					})
+					if (seatRole(tombstone.role)) {
+						await syncSeatsAfterMembershipChange({
+							db,
+							env: ctx.env,
+							orgId: request.org.id,
+						})
+					}
+					return { user_id: userId, removed: true as const }
 				}
 				const removingOwner = membership.role === 'owner'
 				if (removingOwner) {
