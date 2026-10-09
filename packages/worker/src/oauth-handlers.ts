@@ -73,7 +73,10 @@ import {
 	isConnectionProfileAuthorizeError,
 } from '#worker/connection-profiles/authorize-error.ts'
 import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
-import { readOrgSlugFromUrl } from '#universal/org-binding/url.ts'
+import {
+	readOrgSlugFromUrl,
+	stripOrgFromResourceUri,
+} from '#universal/org-binding/url.ts'
 import { isOrgAuthorizeError } from '#worker/orgs/authorize-error.ts'
 import {
 	grantMatchesConsentOrg,
@@ -1585,28 +1588,16 @@ export async function handleAuthorizeRequest(
 		// email verification, establish a browser session and reload authorize
 		// when the account has several orgs and neither the form, authorize
 		// URL, nor OAuth resource named an org, so the picker can render.
+		// Peek only — do not call resolveAuthorizeOrg here; it strips `?org=`
+		// from authRequest.resource and would hide a resource-only org from
+		// the later approval resolve.
 		const formOrgSlug = readOrgSlugFromForm(formData)
-		let hasExplicitOrgRequest = Boolean(formOrgSlug)
-		if (!hasExplicitOrgRequest) {
-			try {
-				const urlOrg = await resolveAuthorizeOrg({
-					env,
-					request,
-					authRequest,
-					userId: approvedUserId,
-				})
-				hasExplicitOrgRequest = Boolean(urlOrg)
-			} catch (error) {
-				if (isOrgAuthorizeError(error)) {
-					// Client named an org (URL or resource) that is invalid —
-					// do not bounce to the picker; approval surfaces the error.
-					hasExplicitOrgRequest = true
-				} else {
-					throw error
-				}
-			}
-		}
-		if (!hasExplicitOrgRequest) {
+		const urlOrgSlug = readOrgSlugFromUrl(request.url)
+		const resourceOrgSlug =
+			typeof authRequest.resource === 'string'
+				? stripOrgFromResourceUri(authRequest.resource).orgSlug
+				: null
+		if (!formOrgSlug && !urlOrgSlug && !resourceOrgSlug) {
 			const accessible = await listOrgsForPerson(env.APP_DB, approvedUserId)
 			requiresOrgChoiceReload = accessible.length > 1
 		}
