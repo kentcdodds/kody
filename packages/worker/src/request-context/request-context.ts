@@ -39,7 +39,7 @@ export type RequestSource =
 /** The identity fields a request context is derived from. */
 type RequestPerson = Pick<McpUserContext, 'userId' | 'username'>
 
-type OrgBinding = {
+export type RequestOrgBinding = {
 	org: RequestOrg
 	role: OrgRole
 }
@@ -50,7 +50,7 @@ type OrgBinding = {
  * their `stable_user_id`, as its Owner. Org memberships replace this body;
  * callers do not change.
  */
-function resolveOrgBinding(user: RequestPerson): OrgBinding {
+function resolveOrgBinding(user: RequestPerson): RequestOrgBinding {
 	return {
 		org: {
 			id: personalOrgId(user.userId),
@@ -80,7 +80,7 @@ function credentialFor(input: {
 }
 
 function automation(input: {
-	binding: OrgBinding
+	binding: RequestOrgBinding
 	source: AutomationSource
 	sourceId: string
 	credentialKind: RequestCredentialKind
@@ -113,8 +113,10 @@ export function deriveRequestContext(input: {
 	user: RequestPerson
 	source: RequestSource
 	profileName?: string | null
+	/** When set (DB-backed session paths), overrides {@link resolveOrgBinding}. */
+	orgBinding?: RequestOrgBinding
 }): RequestContext {
-	const binding = resolveOrgBinding(input.user)
+	const binding = input.orgBinding ?? resolveOrgBinding(input.user)
 	const { source } = input
 	const profileName = input.profileName?.trim() || null
 	switch (source.kind) {

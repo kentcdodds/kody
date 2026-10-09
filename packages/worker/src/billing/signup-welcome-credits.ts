@@ -25,6 +25,7 @@ import {
 	forgiveUnchargedCreditUsage,
 	readCreditWallet,
 } from './credit-wallet.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 
 export type SignupWelcomeCreditResult = {
 	applied: boolean
@@ -43,14 +44,21 @@ async function setSignupWelcomeCreditsPending(input: {
 	userId: string
 	pending: boolean
 }): Promise<void> {
-	await input.db
-		.prepare(
-			`UPDATE users
-			 SET signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP
-			 WHERE stable_user_id = ?`,
-		)
-		.bind(input.pending ? 1 : 0, input.userId)
-		.run()
+	const pending = input.pending ? 1 : 0
+	await batchUsersAndPersonalOrgBillingUpdate({
+		db: input.db,
+		stableUserId: input.userId,
+		usersStatement: input.db
+			.prepare(
+				`UPDATE users
+				 SET signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP
+				 WHERE stable_user_id = ?`,
+			)
+			.bind(pending, input.userId),
+		orgSetClause:
+			'signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP',
+		orgValues: [pending],
+	})
 }
 
 async function isSignupWelcomeCreditsPending(

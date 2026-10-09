@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	createMcpCallerContext,
 	parseMcpCallerContextWire,
@@ -20,6 +23,18 @@ const user: McpUserContext = {
 	username: 'ada',
 	displayName: 'Ada',
 }
+
+test('orgBinding overrides implicit personalOrgId slug from username', () => {
+	const request = deriveRequestContext({
+		user,
+		source: { kind: 'session' },
+		orgBinding: {
+			org: { id: ownerIdFromStored(stableId), slug: 'legacy-slug' },
+			role: 'owner',
+		},
+	})
+	expect(request.org).toEqual({ id: stableId, slug: 'legacy-slug' })
+})
 
 test('interactive sources act as the person, as Owner of their own org', () => {
 	const session = deriveRequestContext({ user, source: { kind: 'session' } })

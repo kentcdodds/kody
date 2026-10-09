@@ -1,4 +1,5 @@
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { readPagination } from '#worker/query-params.ts'
@@ -415,12 +416,18 @@ export async function updateAdminUserPlan(
 			now,
 		})
 	}
-	await db
-		.prepare(
-			`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
-		)
-		.bind(nextPlan, nextLadder, utcSqliteTimestamp(now), existingRow.id)
-		.run()
+	const updatedAt = utcSqliteTimestamp(now)
+	await batchUsersAndPersonalOrgBillingUpdate({
+		db,
+		stableUserId: existing.stableUserId,
+		usersStatement: db
+			.prepare(
+				`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
+			)
+			.bind(nextPlan, nextLadder, updatedAt, existingRow.id),
+		orgSetClause: 'plan = ?, entitlement_ladder = ?, updated_at = ?',
+		orgValues: [nextPlan, nextLadder, updatedAt],
+	})
 
 	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
 }

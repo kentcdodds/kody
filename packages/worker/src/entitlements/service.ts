@@ -265,6 +265,34 @@ export async function resolveUserEntitlementFromRow(input: {
  * paid access remains continuous. The credit wallet is `funded` only for
  * the purchasable Pro with a positive balance.
  */
+async function loadEntitlementRowForStableUserId(
+	db: D1Database,
+	input: { stableUserId: string; email: string | null | undefined },
+): Promise<UserEntitlementRow | null> {
+	const columns = userEntitlementColumnsSql()
+	const orgRow = await db
+		.prepare(`SELECT ${columns} FROM orgs WHERE id = ?`)
+		.bind(input.stableUserId)
+		.first<UserEntitlementRow>()
+	if (orgRow) return orgRow
+
+	console.error(
+		JSON.stringify({
+			message: 'orgs row missing for entitlement read; falling back to users',
+			stableUserId: input.stableUserId,
+		}),
+	)
+	const email = input.email?.trim().toLowerCase()
+	return await db
+		.prepare(
+			email
+				? `SELECT ${columns} FROM users WHERE email = ? AND stable_user_id = ?`
+				: `SELECT ${columns} FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(...(email ? [email, input.stableUserId] : [input.stableUserId]))
+		.first<UserEntitlementRow>()
+}
+
 export async function getUserEntitlement(
 	db: D1Database,
 	input: { userId: string; email: string | null | undefined },
@@ -272,15 +300,10 @@ export async function getUserEntitlement(
 	const email = input.email?.trim().toLowerCase()
 	if (!input.userId) return publicFreeEntitlement
 	if (!stableUserIdPattern.test(input.userId)) return publicFreeEntitlement
-	const columns = userEntitlementColumnsSql()
-	const row = await db
-		.prepare(
-			email
-				? `SELECT ${columns} FROM users WHERE email = ? AND stable_user_id = ?`
-				: `SELECT ${columns} FROM users WHERE stable_user_id = ?`,
-		)
-		.bind(...(email ? [email, input.userId] : [input.userId]))
-		.first<UserEntitlementRow>()
+	const row = await loadEntitlementRowForStableUserId(db, {
+		stableUserId: input.userId,
+		email,
+	})
 	if (!row) return publicFreeEntitlement
 	return await resolveUserEntitlementFromRow({
 		db,

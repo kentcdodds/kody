@@ -1,3 +1,5 @@
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+
 /**
  * Shared `users` provisioning for `*.workers.test.ts` suites. Local D1 starts
  * empty and never applies migrations, so each suite creates the tables it
@@ -193,6 +195,7 @@ export async function ensureUsersTestSchema(input: {
 		// earlier suite sharing this database.
 	}
 	await ensureCreditWalletsTestTable(input.db)
+	await ensureOrgsTestSchema(input.db)
 }
 
 /**

@@ -12,6 +12,7 @@ import {
 	resolveSecondAgentStandardGiftWrite,
 	type SecondAgentStandardGiftState,
 } from '#universal/second-agent-standard-gift.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 
 export type SecondAgentStandardGiftEvaluation =
 	| { outcome: 'below_threshold' }
@@ -136,24 +137,28 @@ export async function evaluateSecondAgentStandardGift(input: {
 		now,
 	})
 	const grantedAt = now.toISOString()
-	const updated = await input.db
-		.prepare(
-			`UPDATE users
-			 SET second_agent_standard_gift_granted_at = ?,
-			     second_agent_standard_gift_expires_at = ?,
-			     updated_at = ?
-			 WHERE stable_user_id = ?
-			   AND second_agent_standard_gift_granted_at IS NULL`,
-		)
-		.bind(
-			grantedAt,
-			write.expiresAt,
-			utcSqliteTimestamp(now),
-			input.stableUserId,
-		)
-		.run()
+	const updatedAt = utcSqliteTimestamp(now)
+	const batchResult = await batchUsersAndPersonalOrgBillingUpdate({
+		db: input.db,
+		stableUserId: input.stableUserId,
+		usersStatement: input.db
+			.prepare(
+				`UPDATE users
+				 SET second_agent_standard_gift_granted_at = ?,
+				     second_agent_standard_gift_expires_at = ?,
+				     updated_at = ?
+				 WHERE stable_user_id = ?
+				   AND second_agent_standard_gift_granted_at IS NULL`,
+			)
+			.bind(grantedAt, write.expiresAt, updatedAt, input.stableUserId),
+		orgSetClause: `second_agent_standard_gift_granted_at = ?,
+				     second_agent_standard_gift_expires_at = ?,
+				     updated_at = ?`,
+		orgValues: [grantedAt, write.expiresAt, updatedAt],
+	})
+	const updated = batchResult[0]
 
-	if ((updated.meta.changes ?? 0) === 0) {
+	if ((updated?.meta.changes ?? 0) === 0) {
 		return {
 			outcome: 'already_granted',
 			gift: await loadSecondAgentStandardGift(

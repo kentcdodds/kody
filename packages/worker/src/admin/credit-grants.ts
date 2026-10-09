@@ -10,6 +10,7 @@ import {
 	type AdminCreditLedgerItem,
 	type AdminCreditWalletSummary,
 } from '#universal/loader-data.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 import {
 	creditAdminGrantNoteMaxLength,
 	validateCreditAdminGrantCents,
@@ -262,12 +263,19 @@ export async function setAdminCreditEligibility(input: {
 		next: { ...row, admin_credits_eligible: input.creditsEligible ? 1 : 0 },
 		now,
 	})
-	await db
-		.prepare(
-			`UPDATE users SET admin_credits_eligible = ?, updated_at = ? WHERE id = ?`,
-		)
-		.bind(input.creditsEligible ? 1 : 0, utcSqliteTimestamp(now), row.id)
-		.run()
+	const updatedAt = utcSqliteTimestamp(now)
+	const adminCreditsEligible = input.creditsEligible ? 1 : 0
+	await batchUsersAndPersonalOrgBillingUpdate({
+		db,
+		stableUserId,
+		usersStatement: db
+			.prepare(
+				`UPDATE users SET admin_credits_eligible = ?, updated_at = ? WHERE id = ?`,
+			)
+			.bind(adminCreditsEligible, updatedAt, row.id),
+		orgSetClause: 'admin_credits_eligible = ?, updated_at = ?',
+		orgValues: [adminCreditsEligible, updatedAt],
+	})
 	const wallet = await loadAdminCreditWallet(input.env, { stableUserId })
 	if (!wallet) throw new AdminCreditGrantError(404, 'User not found.')
 	return { previousAdminCreditsEligible, note, wallet }

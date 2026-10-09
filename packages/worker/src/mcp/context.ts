@@ -11,6 +11,7 @@ import {
 } from '@kody-internal/shared/chat.ts'
 import {
 	deriveRequestContext,
+	type RequestOrgBinding,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
 
@@ -44,6 +45,11 @@ export function createMcpCallerContext(
 	input: McpCallerContextWireInput & {
 		/** How this request reached Kody; decides actor, attribution, credential. */
 		source: RequestSource
+		/**
+		 * DB-backed org membership when available. MCP/API call sites that do
+		 * not pass this still derive personalOrgId from the user (P4 cleanup).
+		 */
+		orgBinding?: RequestOrgBinding
 	},
 ): McpCallerContext {
 	const wire = createMcpCallerContextWire(input)
@@ -54,6 +60,7 @@ export function createMcpCallerContext(
 					user: wire.user,
 					source: input.source,
 					profileName: wire.connectionProfileName,
+					orgBinding: input.orgBinding,
 				})
 			: null,
 	}

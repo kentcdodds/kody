@@ -20,6 +20,10 @@ import {
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'
@@ -81,6 +85,7 @@ async function deleteUserBestEffort(input: {
 	userId: number
 	stableUserId: string
 }) {
+	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
 	try {
 		await input.db
 			.prepare(`DELETE FROM users WHERE id = ?`)
@@ -160,7 +165,22 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			)
 		}
 		userId = lastRowId
+		await provisionPersonalOrgForSignup(input.db, {
+			stableUserId,
+			username,
+			createdAt: nowIso,
+			accountType: 'person',
+			plan: 'free',
+			signupWelcomeCreditsPending: 1,
+		})
 	} catch (error) {
+		if (userId != null) {
+			await deleteUserBestEffort({
+				db: input.db,
+				userId,
+				stableUserId,
+			})
+		}
 		const uniqueField = getUniqueConstraintField(error)
 		if (uniqueField === 'email') {
 			throw new AdminCreateUserError(

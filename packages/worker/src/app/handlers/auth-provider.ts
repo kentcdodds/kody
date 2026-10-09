@@ -78,6 +78,10 @@ import {
 	reconcileSignupWelcomeCreditsIfPending,
 } from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import {
@@ -762,6 +766,14 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					{ returnRow: true },
 				)
 				newUser = { id: createdUser.id, stable_user_id: stableUserId, email }
+				await provisionPersonalOrgForSignup(env.APP_DB, {
+					stableUserId,
+					username,
+					createdAt,
+					accountType: 'person',
+					plan: resolvePlanWrite(null),
+					signupWelcomeCreditsPending: 1,
+				})
 			} catch (error) {
 				const uniqueField = getUniqueConstraintField(error)
 				if (uniqueField === 'stable_user_id') {
@@ -775,6 +787,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 
 			async function rollbackNewUser(userId: number) {
 				invalidatePackageAppOwnerCache({ stableUserId })
+				await rollbackPersonalOrgAfterFailedSignup(env.APP_DB, stableUserId)
 				try {
 					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 						.bind(userId)

@@ -5,6 +5,7 @@ import {
 	type JobRetentionPreferences,
 	validateJobRetentionDaysInput,
 } from './job-retention.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 import { maxJobRetentionCandidatesPerRun } from '@kody-internal/shared/jobs/repo.ts'
 import { jobsData } from './jobs-data.ts'
 import { deleteJob } from './service.ts'
@@ -88,25 +89,40 @@ export async function updateJobRetentionPreferencesForUser(input: {
 			`Job retention days must be integers between 1 and 365. Platform defaults are ${defaultJobRetentionDays.successOnce}/${defaultJobRetentionDays.failedOrNeverRanOnce}/${defaultJobRetentionDays.disabledRecurring}. Forever keep is only available via Preserve on a job.`,
 		)
 	}
-	const result = await input.db
-		.prepare(
-			`UPDATE users
-			SET
-				job_retention_success_once_days = ?,
-				job_retention_failed_once_days = ?,
-				job_retention_disabled_recurring_days = ?,
-				updated_at = ?
-			WHERE stable_user_id = ?`,
-		)
-		.bind(
+	const updatedAt = new Date().toISOString()
+	const batchResult = await batchUsersAndPersonalOrgBillingUpdate({
+		db: input.db,
+		stableUserId: input.userId,
+		usersStatement: input.db
+			.prepare(
+				`UPDATE users
+				SET
+					job_retention_success_once_days = ?,
+					job_retention_failed_once_days = ?,
+					job_retention_disabled_recurring_days = ?,
+					updated_at = ?
+				WHERE stable_user_id = ?`,
+			)
+			.bind(
+				successOnceDays,
+				failedOrNeverRanOnceDays,
+				disabledRecurringDays,
+				updatedAt,
+				input.userId,
+			),
+		orgSetClause: `job_retention_success_once_days = ?,
+					job_retention_failed_once_days = ?,
+					job_retention_disabled_recurring_days = ?,
+					updated_at = ?`,
+		orgValues: [
 			successOnceDays,
 			failedOrNeverRanOnceDays,
 			disabledRecurringDays,
-			new Date().toISOString(),
-			input.userId,
-		)
-		.run()
-	if ((result.meta.changes ?? 0) !== 1) {
+			updatedAt,
+		],
+	})
+	const result = batchResult[0]
+	if ((result?.meta.changes ?? 0) !== 1) {
 		throw new Error('Unable to update job retention preferences.')
 	}
 	return resolveJobRetentionPreferences({

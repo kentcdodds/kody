@@ -5,6 +5,7 @@ import { type EmailVerificationDelivery } from '#universal/email-verification-de
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { loadOrgBindingForPerson } from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
 export type AuthenticatedAppUser = {
@@ -41,6 +42,10 @@ async function readAuthenticatedAppUserInternal(
 	// session, so every consumer of this helper fails closed.
 	if (resolved.user.accountSuspended) return null
 
+	const orgBinding = await loadOrgBindingForPerson(
+		env.APP_DB,
+		resolved.user.mcpUser.userId,
+	)
 	const user = {
 		sessionUserId: resolved.sessionUserId,
 		userId: resolved.user.userId,
@@ -56,6 +61,7 @@ async function readAuthenticatedAppUserInternal(
 		request: deriveRequestContext({
 			user: resolved.user.mcpUser,
 			source: { kind: 'session' },
+			orgBinding,
 		}),
 	} satisfies AuthenticatedAppUser
 	if (prefetchFeatureFlags) {

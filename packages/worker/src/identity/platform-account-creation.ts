@@ -13,6 +13,10 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 export type PlatformAccountCreateErrorCode =
 	| 'invalid_email'
@@ -123,6 +127,13 @@ export async function createPlatformAccount(input: {
 			)
 		}
 		userId = lastRowId
+		await provisionPersonalOrgForSignup(input.db, {
+			stableUserId,
+			username,
+			createdAt: nowIso,
+			accountType: 'platform',
+			plan: 'free',
+		})
 		await claimAccountEmail(input.db, {
 			userId,
 			email,
@@ -170,6 +181,7 @@ async function deleteUserBestEffort(input: {
 	userId: number
 	stableUserId: string
 }) {
+	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
 	try {
 		await input.db
 			.prepare(`DELETE FROM users WHERE id = ?`)

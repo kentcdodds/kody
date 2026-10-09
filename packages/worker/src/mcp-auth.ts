@@ -23,6 +23,7 @@ import {
 	toMcpCallerContextWire,
 	type McpServerProps,
 } from './mcp/context.ts'
+import { loadOrgBindingForPerson } from '#worker/orgs/repo.ts'
 import type * as StatelessLane from './mcp/stateless-lane.ts'
 import {
 	classifyMcpProtocolRequest,
@@ -475,12 +476,14 @@ export async function handleMcpRequest({
 
 	const connectionProfileName =
 		readConnectionProfileNameFromGrantProps(grantProps)
+	const orgBinding = await loadOrgBindingForPerson(env.APP_DB, mcpUser.userId)
 	const callerContext = createMcpCallerContext({
 		baseUrl: origin,
 		source: { kind: 'mcp-oauth' },
 		executionOrigin: 'interactive',
 		user: mcpUser,
 		connectionProfileName,
+		orgBinding,
 	})
 	context.props = toMcpCallerContextWire(callerContext)
 

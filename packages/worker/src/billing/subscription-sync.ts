@@ -32,6 +32,7 @@ import {
 	StripeApiError,
 } from './stripe-client.ts'
 import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 
 export class BillingLinkError extends Error {
 	readonly code:
@@ -109,22 +110,41 @@ export async function refreshStripePlanForUser(input: {
 			now,
 		})
 	}
-	await input.env.APP_DB.prepare(
-		`UPDATE users
-		 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
-		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?
-		 WHERE id = ? AND stripe_customer_id = ?`,
-	)
-		.bind(
+	if (!previous?.stable_user_id) {
+		throw new Error(
+			`Cannot refresh Stripe plan: missing stable_user_id for user ${input.userId}.`,
+		)
+	}
+	const stripePlanRefreshedAt = now.toISOString()
+	const stripeCreditsEligible = resolved.creditsEligible ? 1 : 0
+	await batchUsersAndPersonalOrgBillingUpdate({
+		db: input.env.APP_DB,
+		stableUserId: previous.stable_user_id,
+		usersStatement: input.env.APP_DB.prepare(
+			`UPDATE users
+			 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
+			     stripe_plan_refreshed_at = ?, entitlement_ladder = ?
+			 WHERE id = ? AND stripe_customer_id = ?`,
+		).bind(
 			resolved.stripePlan,
 			resolved.stripePriceId,
-			resolved.creditsEligible ? 1 : 0,
-			now.toISOString(),
+			stripeCreditsEligible,
+			stripePlanRefreshedAt,
 			nextLadder,
 			input.userId,
 			input.customerId,
-		)
-		.run()
+		),
+		orgSetClause: `stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
+		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?, updated_at = ?`,
+		orgValues: [
+			resolved.stripePlan,
+			resolved.stripePriceId,
+			stripeCreditsEligible,
+			stripePlanRefreshedAt,
+			nextLadder,
+			stripePlanRefreshedAt,
+		],
+	})
 	waitUntil(
 		maybeSyncDiscordGuildRolesForUser({
 			env: input.env,
@@ -389,14 +409,19 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 	}
 
 	const now = input.now ?? new Date()
+	const updatedAt = now.toISOString()
 	try {
-		await input.env.APP_DB.prepare(
-			`UPDATE users
-			 SET stripe_customer_id = ?, updated_at = ?
-			 WHERE id = ?`,
-		)
-			.bind(customerId, now.toISOString(), input.user.id)
-			.run()
+		await batchUsersAndPersonalOrgBillingUpdate({
+			db: input.env.APP_DB,
+			stableUserId: input.user.stableUserId,
+			usersStatement: input.env.APP_DB.prepare(
+				`UPDATE users
+				 SET stripe_customer_id = ?, updated_at = ?
+				 WHERE id = ?`,
+			).bind(customerId, updatedAt, input.user.id),
+			orgSetClause: 'stripe_customer_id = ?, updated_at = ?',
+			orgValues: [customerId, updatedAt],
+		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (/UNIQUE constraint failed/i.test(message)) {

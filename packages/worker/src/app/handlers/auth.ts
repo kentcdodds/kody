@@ -64,6 +64,10 @@ import {
 	reconcileSignupWelcomeCreditsIfPending,
 } from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -324,9 +328,10 @@ export function createAuthHandler(env: Env) {
 				}
 
 				let record: { id: number; stableUserId: string } | null = null
+				const signupCreatedAt = new Date().toISOString()
 				try {
 					const stableUserId = allocated.stableUserId
-					const createdAt = new Date().toISOString()
+					const createdAt = signupCreatedAt
 					const createdUser = await db.create(
 						usersTable,
 						{
@@ -400,10 +405,51 @@ export function createAuthHandler(env: Env) {
 				}
 
 				const signupUser = record
+				try {
+					await provisionPersonalOrgForSignup(env.APP_DB, {
+						stableUserId: signupUser.stableUserId,
+						username: normalizedUsername,
+						createdAt: signupCreatedAt,
+						accountType: 'person',
+						plan: resolvePlanWrite(null),
+						signupWelcomeCreditsPending: 1,
+					})
+				} catch (error) {
+					console.error('Failed to provision personal org at signup:', error)
+					try {
+						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+							.bind(signupUser.id)
+							.run()
+					} catch (deleteError) {
+						console.error(
+							'Failed to remove user row after org provision failure:',
+							deleteError,
+						)
+					}
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'org_provision_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to create account.' },
+						{ status: 500 },
+					)
+				}
+
 				async function removeFailedSignupUser() {
 					invalidatePackageAppOwnerCache({
 						stableUserId: signupUser.stableUserId,
 					})
+					await rollbackPersonalOrgAfterFailedSignup(
+						env.APP_DB,
+						signupUser.stableUserId,
+					)
 					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
 						.bind(signupUser.id)
 						.run()

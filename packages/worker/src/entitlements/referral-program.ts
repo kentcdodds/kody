@@ -257,10 +257,12 @@ function stackReferralCreditStatement(input: {
 	referralId: number
 	invoiceId: string
 	now: Date
+	table: 'users' | 'orgs'
 }) {
+	const idColumn = input.table === 'users' ? 'stable_user_id' : 'id'
 	return input.db
 		.prepare(
-			`UPDATE users
+			`UPDATE ${input.table}
 			 SET referral_standard_credit_expires_at = strftime(
 			       '%Y-%m-%dT%H:%M:%fZ',
 			       max(
@@ -271,7 +273,7 @@ function stackReferralCreditStatement(input: {
 			       'unixepoch'
 			     ),
 			     updated_at = ?
-			 WHERE stable_user_id = ?
+			 WHERE ${idColumn} = ?
 			   AND EXISTS (
 			     SELECT 1 FROM referrals
 			     WHERE id = ?
@@ -288,6 +290,20 @@ function stackReferralCreditStatement(input: {
 			input.referralId,
 			input.invoiceId,
 		)
+}
+
+function stackReferralCreditDualWriteStatements(input: {
+	db: D1Database
+	stableUserId: string
+	paidPeriodEndAt: string | null
+	referralId: number
+	invoiceId: string
+	now: Date
+}) {
+	return [
+		stackReferralCreditStatement({ ...input, table: 'users' }),
+		stackReferralCreditStatement({ ...input, table: 'orgs' }),
+	]
 }
 
 export async function rewardReferralForPaidInvoice(input: {
@@ -366,7 +382,7 @@ export async function rewardReferralForPaidInvoice(input: {
 				 WHERE id = ? AND (status = 'pending' OR credits_granted_at IS NULL)`,
 			)
 			.bind(rewardedAt, invoiceId, pending.id),
-		stackReferralCreditStatement({
+		...stackReferralCreditDualWriteStatements({
 			db: input.db,
 			stableUserId: referrer.stable_user_id,
 			paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
@@ -374,7 +390,7 @@ export async function rewardReferralForPaidInvoice(input: {
 			invoiceId,
 			now,
 		}),
-		stackReferralCreditStatement({
+		...stackReferralCreditDualWriteStatements({
 			db: input.db,
 			stableUserId: referee.stable_user_id,
 			paidPeriodEndAt: input.paidPeriodEndAt ?? null,
