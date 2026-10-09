@@ -562,9 +562,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_STATUS_API_TOKEN` (required for production deploys; uploaded to
   `kody-status` as its `CLOUDFLARE_API_TOKEN` Worker secret for operator alert
   email. Needs only `Account · Email Sending · Edit`.)
-- Production deploys fail before any resource, migration, or secret change when
-  `CLOUDFLARE_APP_API_TOKEN`, `CLOUDFLARE_RUNTIME_API_TOKEN`, or
-  `CLOUDFLARE_STATUS_API_TOKEN` is unset or equals `CLOUDFLARE_API_TOKEN`
+- Production deploys fail in a shared `require-worker-tokens` job (before
+  jobs/highlight/origin/status mutations) when `CLOUDFLARE_APP_API_TOKEN`,
+  `CLOUDFLARE_RUNTIME_API_TOKEN`, or `CLOUDFLARE_STATUS_API_TOKEN` is unset or
+  equals `CLOUDFLARE_API_TOKEN`, or when `CLOUDFLARE_API_TOKEN` itself is unset
   (`tools/ci/check-worker-cloudflare-tokens.ts`). There is no fallback to the
   deploy token.
 - `CLOUDFLARE_ACCOUNT_ID` (required GitHub Actions **variable** for Cloudflare
