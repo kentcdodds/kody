@@ -318,6 +318,7 @@ export function createAccountBillingCancellationFeedbackApiHandler(env: Env) {
 			try {
 				const feedback = await submitPlatformFeedback({
 					db: env.APP_DB,
+					env,
 					submitterUserId: user.mcpUser.userId,
 					submitterUsername,
 					submitterEmail: user.email,
