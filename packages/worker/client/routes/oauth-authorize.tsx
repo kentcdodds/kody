@@ -698,9 +698,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 										mix={css(inputCss)}
 									/>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Password</span>
+								<div mix={css(fieldCss)}>
+									<label
+										for="oauth-authorize-password"
+										mix={css(fieldLabelCss)}
+									>
+										Password
+									</label>
 									<PasswordRevealInput
+										id="oauth-authorize-password"
 										name="password"
 										required
 										autoComplete="current-password"
@@ -708,7 +714,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 										disabled={actionsDisabled}
 										mix={css(inputCss)}
 									/>
-								</label>
+								</div>
 							</>
 						) : null}
 						{!isLoggedIn && turnstileSiteKey ? (

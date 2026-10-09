@@ -207,9 +207,15 @@ export function ConnectOauthCredentialsForm(
 								</button>
 							</section>
 						) : (
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Client Secret</span>
+							<div mix={css(fieldCss)}>
+								<label
+									for="connect-oauth-client-secret"
+									mix={css(fieldLabelCss)}
+								>
+									Client Secret
+								</label>
 								<PasswordRevealInput
+									id="connect-oauth-client-secret"
 									name="oauthClientSecret"
 									required
 									{...passwordManagerIgnoreProps}
@@ -222,7 +228,7 @@ export function ConnectOauthCredentialsForm(
 										css(inputCss),
 									]}
 								/>
-							</label>
+							</div>
 						)
 					) : null}
 					<button

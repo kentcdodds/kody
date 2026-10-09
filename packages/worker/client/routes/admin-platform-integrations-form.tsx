@@ -222,9 +222,12 @@ export function renderIntegrationForm(input: {
 							mix={css(accountInputCss)}
 						/>
 					</label>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>Client secret</span>
+					<div mix={css(fieldCss)}>
+						<label for="admin-platform-client-secret" mix={css(fieldLabelCss)}>
+							Client secret
+						</label>
 						<PasswordRevealInput
+							id="admin-platform-client-secret"
 							data-field-ring
 							name="clientSecret"
 							autoComplete="new-password"
@@ -233,7 +236,7 @@ export function renderIntegrationForm(input: {
 							revealNoun="client secret"
 							mix={css(accountInputCss)}
 						/>
-					</label>
+					</div>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Flow</span>
 						<select

@@ -381,8 +381,13 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 										</button>
 									</div>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Client secret</span>
+								<div mix={css(fieldCss)}>
+									<label
+										for="mcp-oauth-created-client-secret"
+										mix={css(fieldLabelCss)}
+									>
+										Client secret
+									</label>
 									<div
 										mix={css({
 											display: 'flex',
@@ -398,6 +403,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 											})}
 										>
 											<PasswordRevealInput
+												id="mcp-oauth-created-client-secret"
 												data-field-ring
 												value={createdClient.clientSecret}
 												readOnly
@@ -421,7 +427,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 											Copy
 										</button>
 									</div>
-								</label>
+								</div>
 							</section>
 						) : null}
 

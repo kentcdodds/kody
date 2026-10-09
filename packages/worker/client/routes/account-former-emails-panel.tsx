@@ -145,9 +145,15 @@ export function renderAccountFormerEmailsPanel(
 						mix={[css(accountInputCss), on('input', onReleaseEmailInput)]}
 					/>
 				</label>
-				<label mix={css(accountFieldCss)}>
-					<span mix={css(accountFieldLabelCss)}>Current password</span>
+				<div mix={css(accountFieldCss)}>
+					<label
+						for="account-former-email-password"
+						mix={css(accountFieldLabelCss)}
+					>
+						Current password
+					</label>
 					<PasswordRevealInput
+						id="account-former-email-password"
 						name="password"
 						data-field-ring
 						required
@@ -155,7 +161,7 @@ export function renderAccountFormerEmailsPanel(
 						value={releasePassword}
 						mix={[css(accountInputCss), on('input', onReleasePasswordInput)]}
 					/>
-				</label>
+				</div>
 				<div>
 					<button
 						type="submit"

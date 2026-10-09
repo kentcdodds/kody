@@ -354,9 +354,15 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 								mix={[css(accountInputCss), on('input', onDraftEmailInput)]}
 							/>
 						</label>
-						<label mix={css(accountFieldCss)}>
-							<span mix={css(accountFieldLabelCss)}>Current password</span>
+						<div mix={css(accountFieldCss)}>
+							<label
+								for="account-email-change-password"
+								mix={css(accountFieldLabelCss)}
+							>
+								Current password
+							</label>
 							<PasswordRevealInput
+								id="account-email-change-password"
 								name="password"
 								data-field-ring
 								required
@@ -367,7 +373,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 									on('input', onEmailChangePasswordInput),
 								]}
 							/>
-						</label>
+						</div>
 						<div>
 							<button
 								type="submit"

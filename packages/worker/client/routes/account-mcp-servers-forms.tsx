@@ -200,12 +200,13 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 				</span>
 			</label>
 
-			<label mix={css(fieldCss)}>
-				<span mix={css(fieldLabelCss)}>
+			<div mix={css(fieldCss)}>
+				<label for="mcp-server-bearer-token" mix={css(fieldLabelCss)}>
 					Bearer token{' '}
 					<span mix={css({ color: colors.textMuted })}>(optional)</span>
-				</span>
+				</label>
 				<PasswordRevealInput
+					id="mcp-server-bearer-token"
 					data-field-ring
 					name="bearerToken"
 					value={addBearerToken}
@@ -227,7 +228,7 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 					unauthenticated servers. The token is stored only in your private MCP
 					client hub and is never shown again.
 				</span>
-			</label>
+			</div>
 
 			<div>
 				<button type="submit" disabled={isMutating} mix={css(primaryButtonCss)}>

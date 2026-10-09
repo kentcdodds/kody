@@ -108,8 +108,10 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 					</p>
 				</label>
 
-				<label mix={css(fieldCss)}>
-					<span mix={css(fieldLabelCss)}>Secret value</span>
+				<div mix={css(fieldCss)}>
+					<label for="secret-editor-value" mix={css(fieldLabelCss)}>
+						Secret value
+					</label>
 					<div
 						mix={ref((node, signal) => {
 							valueField = node as HTMLElement
@@ -126,6 +128,7 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 						})}
 					>
 						<PasswordRevealInput
+							id="secret-editor-value"
 							required
 							autoFocus={Boolean(autoFocusKey)}
 							data-field="secret-value"
@@ -147,7 +150,7 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							]}
 						/>
 					</div>
-				</label>
+				</div>
 
 				<details
 					mix={css(advancedDetailsCss)}

@@ -174,9 +174,12 @@ export function ResetPasswordRoute(handle: Handle) {
 				>
 					{renderHoneypot()}
 					{mode === 'confirm' ? (
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>New password</span>
+						<div mix={css(fieldCss)}>
+							<label for="reset-password-new" mix={css(fieldLabelCss)}>
+								New password
+							</label>
 							<PasswordRevealInput
+								id="reset-password-new"
 								name="password"
 								required
 								{...passwordManagerIgnoreProps}
@@ -184,7 +187,7 @@ export function ResetPasswordRoute(handle: Handle) {
 								disabled={isSubmitting}
 								mix={css(inputCss)}
 							/>
-						</label>
+						</div>
 					) : (
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Email</span>

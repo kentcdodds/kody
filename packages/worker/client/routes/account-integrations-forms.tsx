@@ -431,9 +431,12 @@ export function RotateCredentialsForm(
 							]}
 						/>
 					</label>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>New client secret</span>
+					<div mix={css(fieldCss)}>
+						<label for="oauth-app-client-secret" mix={css(fieldLabelCss)}>
+							New client secret
+						</label>
 						<PasswordRevealInput
+							id="oauth-app-client-secret"
 							data-field-ring
 							name="oauthAppClientSecret"
 							value={clientSecret}
@@ -447,7 +450,7 @@ export function RotateCredentialsForm(
 								css(accountInputCss),
 							]}
 						/>
-					</label>
+					</div>
 					<label
 						mix={css({
 							display: 'flex',

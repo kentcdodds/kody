@@ -248,9 +248,15 @@ export function AccountDeletePanel(
 								/>
 							</label>
 							{handle.props.hasUsablePassword ? (
-								<label mix={css(accountFieldCss)}>
-									<span mix={css(accountFieldLabelCss)}>Current password</span>
+								<div mix={css(accountFieldCss)}>
+									<label
+										for="account-delete-password"
+										mix={css(accountFieldLabelCss)}
+									>
+										Current password
+									</label>
 									<PasswordRevealInput
+										id="account-delete-password"
 										name="password"
 										data-testid="delete-account-password"
 										data-field-ring
@@ -259,7 +265,7 @@ export function AccountDeletePanel(
 										value={password}
 										mix={[css(accountInputCss), on('input', updatePassword)]}
 									/>
-								</label>
+								</div>
 							) : null}
 							{error ? (
 								<p

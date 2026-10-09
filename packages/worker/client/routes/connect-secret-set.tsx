@@ -604,9 +604,12 @@ export function ConnectSecretSetRoute(handle: Handle) {
 								) : null}
 							</div>
 
-							<label mix={css(fieldCss)}>
-								<span mix={css(fieldLabelCss)}>Secret value</span>
+							<div mix={css(fieldCss)}>
+								<label for="connect-secret-set-value" mix={css(fieldLabelCss)}>
+									Secret value
+								</label>
 								<PasswordRevealInput
+									id="connect-secret-set-value"
 									required
 									autoFocus={Boolean(autofocusKey)}
 									data-field="secret-value"
@@ -631,7 +634,7 @@ export function ConnectSecretSetRoute(handle: Handle) {
 										css(inputCss),
 									]}
 								/>
-							</label>
+							</div>
 
 							<button
 								type="submit"
