@@ -18,13 +18,15 @@ async function createSeededDb() {
 			name TEXT NOT NULL,
 			kody_id TEXT NOT NULL,
 			description TEXT NOT NULL DEFAULT '',
-			source_id TEXT NOT NULL
+			source_id TEXT NOT NULL,
+			deleted_at TEXT
 		);
 		CREATE TABLE entity_sources (
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
 			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL
+			entity_id TEXT NOT NULL,
+			deleted_at TEXT
 		);
 		CREATE TABLE community_listings (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -36,7 +38,8 @@ async function createSeededDb() {
 			description TEXT NOT NULL DEFAULT '',
 			license TEXT NOT NULL DEFAULT 'MIT',
 			pinned_commit TEXT NOT NULL,
-			status TEXT NOT NULL DEFAULT 'active'
+			status TEXT NOT NULL DEFAULT 'active',
+			deleted_at TEXT
 		);
 		CREATE TABLE community_forks (
 			id TEXT PRIMARY KEY NOT NULL,

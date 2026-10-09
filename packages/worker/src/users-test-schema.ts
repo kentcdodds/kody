@@ -1,5 +1,6 @@
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { liveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 /**
  * Shared `users` provisioning for `*.workers.test.ts` suites. Local D1 starts
@@ -77,6 +78,7 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 		alter: `TEXT NOT NULL DEFAULT 'public'`,
 	},
 	deleting_at: { create: 'TEXT' },
+	deleted_at: { create: 'TEXT' },
 	suspended_at: { create: 'TEXT' },
 	email_outbound_paused_at: { create: 'TEXT' },
 	email_verification_delivery_status: { create: 'TEXT' },
@@ -188,7 +190,7 @@ export async function ensureUsersTestSchema(input: {
 		await input.db
 			.prepare(
 				`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_stable_user_id
-				 ON users(stable_user_id)${andLiveDeletedAtSql()}`,
+				 ON users(stable_user_id) WHERE ${liveDeletedAtSql()}`,
 			)
 			.run()
 	} catch {
@@ -197,6 +199,7 @@ export async function ensureUsersTestSchema(input: {
 	}
 	await ensureCreditWalletsTestTable(input.db)
 	await ensureOrgsTestSchema(input.db)
+	await ensureSoftDeleteTestColumns(input.db)
 }
 
 /**

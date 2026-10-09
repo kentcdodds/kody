@@ -443,7 +443,8 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 	sqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
-			stripe_plan TEXT
+			stripe_plan TEXT,
+			deleted_at TEXT
 		);
 		CREATE TABLE oauth_connections (
 			user_id INTEGER NOT NULL,

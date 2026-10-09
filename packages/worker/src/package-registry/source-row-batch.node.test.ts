@@ -36,6 +36,8 @@ function createEntitySourcesTable(sqlite: DatabaseSync) {
 			source_root TEXT NOT NULL,
 			last_external_check_at TEXT,
 			external_check_until TEXT,
+			deleted_at TEXT,
+
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -50,7 +52,7 @@ function insertSource(
 		.prepare(
 			`INSERT INTO entity_sources VALUES
 				(?, ?, 'package', ?, ?, 'commit-1', NULL,
-				'package.json', '/', NULL, NULL,
+				'package.json', '/', NULL, NULL, NULL,
 				'2026-09-10T00:00:00.000Z', '2026-09-10T00:00:00.000Z')`,
 		)
 		.run(input.id, input.userId, `package-${input.id}`, `repo-${input.id}`)
@@ -110,7 +112,7 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 		query.includes('FROM entity_sources'),
 	)
 	expect(sourceQueries).toEqual([
-		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?)',
+		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?) AND deleted_at IS NULL',
 	])
 
 	await expect(
@@ -136,7 +138,7 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 	})
 	expect(lone.id).toBe('source-a')
 	expect(queries.slice(loneQueriesStart)).toEqual([
-		'SELECT * FROM entity_sources WHERE id = ?',
+		'SELECT * FROM entity_sources WHERE id = ? AND deleted_at IS NULL',
 	])
 
 	const explicit = await loadPackageSourceRowsForUser({
@@ -147,5 +149,7 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 	expect([...explicit.keys()].sort()).toEqual(['source-a', 'source-c'])
 	expect(
 		queries.filter((query) => query.includes('WHERE id IN (')).at(-1),
-	).toBe('SELECT * FROM entity_sources WHERE id IN (?, ?, ?, ?)')
+	).toBe(
+		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?, ?) AND deleted_at IS NULL',
+	)
 })

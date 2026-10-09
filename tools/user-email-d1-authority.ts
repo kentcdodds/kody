@@ -151,8 +151,25 @@ function stringValue(node: ts.Node): string | null {
 	return null
 }
 
+function isSoftDeleteLiveFilterCall(node: ts.Node) {
+	if (!ts.isCallExpression(node)) return false
+	const callee = node.expression.getText()
+	return (
+		callee.endsWith('andLiveDeletedAtSql') ||
+		callee.endsWith('liveDeletedAtSql') ||
+		callee.endsWith('withLiveDeletedAt')
+	)
+}
+
 function isStaticSqlLiteral(node: ts.Node) {
-	return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
+	if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+		return true
+	}
+	if (!ts.isTemplateExpression(node)) return false
+	for (const span of node.templateSpans) {
+		if (!isSoftDeleteLiveFilterCall(span.expression)) return false
+	}
+	return true
 }
 
 type LegacyEmailModule = 'repo' | 'retired'

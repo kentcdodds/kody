@@ -95,7 +95,8 @@ function createDeleteForkDb() {
 	sqlite.exec(`
 		CREATE TABLE users (
 			stable_user_id TEXT PRIMARY KEY NOT NULL,
-			deleting_at TEXT
+			deleting_at TEXT,
+			deleted_at TEXT
 		);
 		CREATE TABLE saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -111,6 +112,8 @@ function createDeleteForkDb() {
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
 			locked_at TEXT,
+			deleted_at TEXT,
+
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		);
@@ -118,7 +121,8 @@ function createDeleteForkDb() {
 			id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
 			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL
+			entity_id TEXT NOT NULL,
+			deleted_at TEXT
 		);
 		CREATE TABLE community_forks (
 			id TEXT PRIMARY KEY NOT NULL,
@@ -152,7 +156,8 @@ function createDeleteForkDb() {
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
 			storage_id TEXT NOT NULL,
-			kind TEXT NOT NULL DEFAULT 'package'
+			kind TEXT NOT NULL DEFAULT 'package',
+			deleted_at TEXT
 		);
 		${communityForksDeleteCascadeStatements.join(';\n')}
 	`)

@@ -1,8 +1,8 @@
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensureSecretBucketsTestSchema } from '#worker/secrets-test-schema.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { communityForksDeleteCascadeStatements } from './community-forks-delete-cascade.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 /**
  * Community flow workers-unit schema. Adds the community tables and the
@@ -252,7 +252,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	try {
 		await db
 			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1${andLiveDeletedAtSql()}`,
+				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 			)
 			.run()
 	} catch {
@@ -260,9 +260,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	}
 	try {
 		await db
-			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT${andLiveDeletedAtSql()}`,
-			)
+			.prepare(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
 			.run()
 	} catch {
 		// Column already present.
@@ -270,7 +268,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	try {
 		await db
 			.prepare(
-				`ALTER TABLE community_listings ADD COLUMN category TEXT NOT NULL DEFAULT 'other'${andLiveDeletedAtSql()}`,
+				`ALTER TABLE community_listings ADD COLUMN category TEXT NOT NULL DEFAULT 'other'`,
 			)
 			.run()
 	} catch {
@@ -278,11 +276,10 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	}
 	try {
 		await db
-			.prepare(
-				`ALTER TABLE community_listings ADD COLUMN package_version TEXT${andLiveDeletedAtSql()}`,
-			)
+			.prepare(`ALTER TABLE community_listings ADD COLUMN package_version TEXT`)
 			.run()
 	} catch {
 		// Column already present.
 	}
+	await ensureSoftDeleteTestColumns(db)
 }

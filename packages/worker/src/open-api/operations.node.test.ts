@@ -23,6 +23,9 @@ const excludedCapabilities = new Set([
 	'packageSubscriptionDispatch',
 	'webhookSyntheticDispatch',
 	'communitySetFeatured',
+	'orgDelete',
+	'orgRestore',
+	'resourceRestore',
 ])
 
 function schemaTypes(schema: unknown): Array<string> {

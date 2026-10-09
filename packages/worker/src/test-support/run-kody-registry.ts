@@ -17,6 +17,13 @@ import {
 	type RepoSessionRow,
 } from '#worker/repo/types.ts'
 
+function normalizeMockQuery(query: string): string {
+	return query
+		.replace(/\s+/g, ' ')
+		.trim()
+		.replace(/\s+and deleted_at is null/gi, '')
+}
+
 /**
  * User-scoped RunLog namespace stub (idFromName(userId) → per-user RPC), enough
  * for workflow projection create/idempotency/active-count paths. Mirrors the
@@ -282,7 +289,7 @@ export function createJobMutationDatabase(input: {
 			return results
 		},
 		prepare(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim()
+			const normalized = normalizeMockQuery(query)
 			return {
 				bind(...params: Array<unknown>) {
 					return {

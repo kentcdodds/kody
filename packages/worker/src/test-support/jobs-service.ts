@@ -285,7 +285,10 @@ export function createDatabase(
 										row['bucket_id'] === params[0] && row['name'] === params[1],
 								) as T | null
 							}
-							if (query.includes('FROM jobs WHERE id = ? AND user_id = ?')) {
+							if (
+								query.includes('FROM jobs WHERE id = ? AND user_id = ?') &&
+								query.includes('deleted_at IS NULL')
+							) {
 								return selectOne(
 									'jobs',
 									(row) =>
@@ -407,7 +410,11 @@ export function createDatabase(
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async all<T = Record<string, unknown>>() {
-							if (query.includes('FROM jobs WHERE user_id = ? ORDER BY')) {
+							if (
+								query.includes('FROM jobs WHERE user_id = ?') &&
+								query.includes('deleted_at IS NULL') &&
+								query.includes('ORDER BY')
+							) {
 								return {
 									results: selectAll(
 										'jobs',

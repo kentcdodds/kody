@@ -70,7 +70,7 @@ test('listCommunityIndexOverview loads shelves with one windowed listing query',
 		},
 	})
 	expect(queries).toEqual([
-		"SELECT category, COUNT(*) AS listing_count FROM community_listings WHERE status = 'active' GROUP BY category",
+		"SELECT category, COUNT(*) AS listing_count FROM community_listings WHERE status = 'active' AND deleted_at IS NULL GROUP BY category",
 	])
 
 	const seeds: Array<

@@ -4,6 +4,11 @@ import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-ses
 
 export type RowMap = Record<string, Array<Record<string, unknown>>>
 
+/** Production queries append live-delete filters; mocks match the legacy shape. */
+function stripLiveDeletedFilter(sql: string): string {
+	return sql.replace(/\s+and deleted_at is null/g, '')
+}
+
 export function createTestDb(
 	initial: RowMap,
 	options?: {
@@ -58,7 +63,7 @@ export function createTestDb(
 	const db = {
 		prepare(query: string) {
 			const trimmed = query.replace(/\s+/g, ' ').trim()
-			const lower = trimmed.toLowerCase()
+			const lower = stripLiveDeletedFilter(trimmed.toLowerCase())
 			return {
 				bind(...params: Array<unknown>) {
 					return {
