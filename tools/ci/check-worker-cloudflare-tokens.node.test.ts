@@ -44,6 +44,21 @@ test('worker token preflight fails closed on missing or deploy-scope worker toke
 		'Missing GitHub Actions secret CLOUDFLARE_STATUS_API_TOKEN',
 	)
 
+	// Without a deploy token the distinctness check cannot run; fail closed.
+	const missingDeploy = findWorkerTokenProblems(
+		{
+			CLOUDFLARE_API_TOKEN: '',
+			CLOUDFLARE_APP_API_TOKEN: 'app-token',
+			CLOUDFLARE_RUNTIME_API_TOKEN: 'runtime-token',
+			CLOUDFLARE_STATUS_API_TOKEN: 'status-token',
+		},
+		allWorkerTokens,
+	)
+	expect(missingDeploy).toHaveLength(1)
+	expect(missingDeploy[0]).toContain(
+		'Missing GitHub Actions secret CLOUDFLARE_API_TOKEN',
+	)
+
 	const previousExitCode = process.exitCode
 	const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {})
 	consoleError.mockImplementation(() => {})

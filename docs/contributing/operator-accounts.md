@@ -144,9 +144,10 @@ Every Worker reads its Cloudflare REST token as the Worker secret
 `CLOUDFLARE_API_TOKEN`, but production uploads a different least-privilege
 GitHub secret to each Worker
 ([#2010](https://github.com/kentcdodds/kody/issues/2010)). The deploy token is
-never uploaded to a Worker, and `.github/workflows/deploy.yml` fails before any
-resource, migration, or secret change when a Worker-scoped token is unset or
-equals the deploy token (`tools/ci/check-worker-cloudflare-tokens.ts`).
+never uploaded to a Worker, and `.github/workflows/deploy.yml` runs a shared
+`require-worker-tokens` job before any production mutation when a Worker-scoped
+token is unset or equals the deploy token, or when the deploy token itself is
+unset (`tools/ci/check-worker-cloudflare-tokens.ts`).
 
 | Name (GitHub Actions unless noted)   | Holder                                                                             | Purpose                                                                              |
 | ------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |

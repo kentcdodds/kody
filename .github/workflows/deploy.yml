@@ -203,6 +203,50 @@ jobs:
           fi
           rm -f "$PATH_FILTER_LIST"
 
+  # Cloudflare token split (#2010). CLOUDFLARE_API_TOKEN is the deploy token:
+  # wrangler and tools/ci authenticate with it, and it is never uploaded to a
+  # Worker. Each Worker's CLOUDFLARE_API_TOKEN secret comes from its own
+  # narrower GitHub secret, overwritten on every sync so no Worker keeps a
+  # stale deploy-scope value:
+  #   kody-production, kody-platform <- CLOUDFLARE_APP_API_TOKEN
+  #   kody-runtime                   <- CLOUDFLARE_RUNTIME_API_TOKEN
+  #   kody-status                    <- CLOUDFLARE_STATUS_API_TOKEN
+  # There is no fallback to the deploy token. Run this before any production
+  # mutation (including jobs/highlight siblings) so a missing token fails the
+  # deploy instead of leaving the fleet half-applied.
+  require-worker-tokens:
+    runs-on: ubuntu-latest
+    name: 🔒 Require Worker-scoped Cloudflare tokens
+    timeout-minutes: 2
+    needs: sha-guard
+    if: needs.sha-guard.outputs.should_deploy == 'true'
+    environment:
+      name: production
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
+          fetch-depth: 1
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: 🔒 Check Worker-scoped Cloudflare tokens
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
+          CLOUDFLARE_RUNTIME_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
+          CLOUDFLARE_STATUS_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
+        run: >
+          node tools/ci/check-worker-cloudflare-tokens.ts
+          CLOUDFLARE_APP_API_TOKEN CLOUDFLARE_RUNTIME_API_TOKEN
+          CLOUDFLARE_STATUS_API_TOKEN
+
   # The jobs worker deploys before origin so origin's JOBS service binding
   # can validate against an existing jobs-worker script. See
   # docs/contributing/architecture/jobs-worker-migration-runbook.md.
@@ -210,10 +254,13 @@ jobs:
     runs-on: ubuntu-latest
     name: 🎨 Deploy highlight worker
     timeout-minutes: 8
-    needs: sha-guard
+    needs:
+      - sha-guard
+      - require-worker-tokens
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_highlight == 'true'
+      needs.sha-guard.outputs.deploy_highlight == 'true' &&
+      needs.require-worker-tokens.result == 'success'
     environment:
       name: production
     steps:
@@ -303,10 +350,13 @@ jobs:
     runs-on: ubuntu-latest
     name: ⏰ Deploy jobs worker
     timeout-minutes: 8
-    needs: sha-guard
+    needs:
+      - sha-guard
+      - require-worker-tokens
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_jobs == 'true'
+      needs.sha-guard.outputs.deploy_jobs == 'true' &&
+      needs.require-worker-tokens.result == 'success'
     environment:
       name: production
     steps:
@@ -440,10 +490,12 @@ jobs:
     timeout-minutes: 20
     needs:
       - sha-guard
+      - require-worker-tokens
       - deploy-jobs-worker
       - deploy-highlight-worker
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
+      needs.require-worker-tokens.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       (needs.deploy-jobs-worker.result == 'success' ||
         needs.deploy-jobs-worker.result == 'skipped') &&
@@ -467,30 +519,6 @@ jobs:
         with:
           node-version: 26
           cache: npm
-
-      # Cloudflare token split (#2010). CLOUDFLARE_API_TOKEN is the deploy
-      # token: wrangler and tools/ci authenticate with it, and it is never
-      # uploaded to a Worker. Each Worker's CLOUDFLARE_API_TOKEN secret comes
-      # from its own narrower GitHub secret, overwritten on every sync so no
-      # Worker keeps a stale deploy-scope value:
-      #   kody-production, kody-platform <- CLOUDFLARE_APP_API_TOKEN
-      #   kody-runtime                   <- CLOUDFLARE_RUNTIME_API_TOKEN
-      #   kody-status                    <- CLOUDFLARE_STATUS_API_TOKEN
-      # There is no fallback to the deploy token. Check before any resource,
-      # migration, or secret mutation so a missing token fails the deploy
-      # instead of leaving it half-applied.
-      - name: 🔒 Require Worker-scoped Cloudflare tokens
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_APP_API_TOKEN: ${{ secrets.CLOUDFLARE_APP_API_TOKEN }}
-          CLOUDFLARE_RUNTIME_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN }}
-          CLOUDFLARE_STATUS_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
-        run: >
-          node tools/ci/check-worker-cloudflare-tokens.ts
-          CLOUDFLARE_APP_API_TOKEN CLOUDFLARE_RUNTIME_API_TOKEN
-          CLOUDFLARE_STATUS_API_TOKEN
 
       - name: 📥 Install Dependencies
         run: npm ci
@@ -1173,16 +1201,20 @@ jobs:
     # /health/components), which would open spurious incidents.
     needs:
       - sha-guard
+      - require-worker-tokens
       - deploy
     # always() is required: `deploy` itself uses always() so it can run
     # after skipped jobs/highlight siblings. Without always() here, GitHub
     # skips this job whenever those siblings were skipped — even when the
     # path filter set deploy_status_worker=true (see #2143: guard matched
     # packages/status/ but this job never started).
+    # require-worker-tokens already gated STATUS (and APP/RUNTIME) before any
+    # sibling mutation; re-check here only if that job somehow did not run.
     if: >-
       always() && !cancelled() && needs.sha-guard.result == 'success' &&
-      needs.deploy.result == 'success' && needs.sha-guard.outputs.should_deploy
-      == 'true' && needs.sha-guard.outputs.deploy_status_worker == 'true'
+      needs.require-worker-tokens.result == 'success' && needs.deploy.result ==
+      'success' && needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
       url: https://status.kody.codes
@@ -1198,15 +1230,6 @@ jobs:
         with:
           node-version: 26
           cache: npm
-
-      - name: 🔒 Require status Worker Cloudflare token
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_STATUS_API_TOKEN:
-            ${{ secrets.CLOUDFLARE_STATUS_API_TOKEN }}
-        run: >
-          node tools/ci/check-worker-cloudflare-tokens.ts
-          CLOUDFLARE_STATUS_API_TOKEN
 
       - name: 📥 Install Dependencies
         run: npm ci

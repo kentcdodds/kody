@@ -28,6 +28,11 @@ export function findWorkerTokenProblems(
 ): Array<string> {
 	const deployToken = env[deployTokenEnvName]?.trim() ?? ''
 	const problems: Array<string> = []
+	if (!deployToken) {
+		problems.push(
+			`Missing GitHub Actions secret ${deployTokenEnvName} (wrangler + tools/ci deploy token). Cannot verify Worker-scoped tokens are distinct from it.`,
+		)
+	}
 	for (const name of names) {
 		const value = env[name]?.trim() ?? ''
 		const scope = workerTokenPermissions[name]
