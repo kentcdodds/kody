@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	Client,
 	type ClientCapabilities,
@@ -39,7 +40,7 @@ vi.mock('./list-events.ts', async (importOriginal) => ({
 const callerContext = createMcpCallerContext({
 	baseUrl: 'https://kody.example.com',
 	user: {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'one@example.com',
 		displayName: 'One',
 	},

@@ -21,7 +21,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { resolveStripePriceCatalog } from '#worker/billing/stripe-price-catalog.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const adminUsageMetrics = [
 	'execute',
@@ -84,7 +84,7 @@ export async function loadAdminUserUsageData(
 		.first<AdminUserUsageUserRow>()
 	if (!row) return null
 
-	const usageUserId = resolveUserStableId(row)
+	const usageUserId = ownerIdFromStored(row.stable_user_id)
 	const entitlement = await resolveUserEntitlementFromRow({
 		db: env.APP_DB,
 		stableUserId: usageUserId,

@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
@@ -53,11 +57,13 @@ const mockModule = vi.hoisted(() => {
 			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser: {
-				userId: 'stable-user-1',
+				userId: personIdFromStored('stable-user-1'),
 				email: 'user@example.com',
 				username: 'test-user',
 				displayName: 'user',
 			},
+			actor: personIdFromStored('stable-user-1'),
+			owner: personalOrgId(personIdFromStored('stable-user-1')),
 		})),
 		searchSavedPackagesByUserId: vi.fn<
 			typeof packageRepo.searchSavedPackagesByUserId
@@ -520,7 +526,7 @@ test('account package detail redirects the owner to the canonical package URL', 
 		username: 'test-user',
 		email: 'user@example.com',
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',

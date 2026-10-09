@@ -12,7 +12,6 @@ import {
 	mcpEventsExtensionFlagKey,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	recordFeatureFlagExposures,
 	type FeatureFlagExposureEnv,
@@ -36,7 +35,7 @@ export async function recordMcpEventsClientsFlagExposure(
 	input: McpEventsClientsExposureInput,
 ): Promise<void> {
 	try {
-		const stableUserId = normalizeStableUserId(input.stableUserId ?? '')
+		const stableUserId = input.stableUserId?.trim() ?? ''
 		if (!stableUserId) return
 		const flagKey = input.flagKey ?? mcpEventsExtensionFlagKey
 		if (getFeatureFlagExposureRecording(flagKey) !== 'mcp-events-clients') {

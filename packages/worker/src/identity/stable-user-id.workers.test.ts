@@ -1,10 +1,9 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
-	createStableUserId,
-	normalizeStableUserId,
-	resolveUserStableId,
-} from './user-id.ts'
+	mintPersonId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 
 type UsersStableIdRow = {
 	id: number
@@ -55,7 +54,7 @@ async function findUserByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<UsersStableIdRow | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	return (
 		(await db
@@ -83,7 +82,7 @@ test('indexed stable ids resolve and email-change ids stay authoritative', async
 	const row = await findUserByStableUserId(env.APP_DB, storedStableUserId)
 	expect(row?.email).toBe(email)
 	expect(row?.stable_user_id).toBe(storedStableUserId)
-	expect(resolveUserStableId(row!)).toBe(storedStableUserId)
+	expect(personIdFromStored(row?.stable_user_id)).toBe(storedStableUserId)
 
 	expect(
 		await findUserByStableUserId(env.APP_DB, `missing-${storedStableUserId}`),
@@ -93,9 +92,9 @@ test('indexed stable ids resolve and email-change ids stay authoritative', async
 test('minted stable ids are random 64-hex and resolve via the unique index', async () => {
 	await recreateUsersTable(env.APP_DB)
 	const email = `signup-${crypto.randomUUID()}@example.com`
-	const stableUserId = createStableUserId()
+	const stableUserId = mintPersonId()
 	expect(stableUserId).toMatch(/^[a-f0-9]{64}$/)
-	expect(createStableUserId()).not.toBe(stableUserId)
+	expect(mintPersonId()).not.toBe(stableUserId)
 	await seedUser({ db: env.APP_DB, email, stableUserId })
 
 	const row = await findUserByStableUserId(env.APP_DB, stableUserId)

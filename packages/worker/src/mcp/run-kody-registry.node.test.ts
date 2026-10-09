@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import * as registryModule from '#mcp/capabilities/registry.ts'
@@ -19,10 +20,7 @@ import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
-import {
-	type JobRecord,
-	type PersistedJobCallerContext,
-} from '#worker/jobs/types.ts'
+import { type JobRecord } from '#worker/jobs/types.ts'
 import {
 	insertRepoSession,
 	listRepoSessionsBySource,
@@ -120,7 +118,11 @@ const secretSetRegistry = () =>
 const meCaller = () =>
 	createMcpCallerContext({
 		baseUrl: 'https://app.example.com',
-		user: { userId: 'user-1', email: 'me@example.com', displayName: 'Me' },
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
 		storageContext: null,
 	})
 
@@ -225,7 +227,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 		createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'user',
 				roles: ['user'],
@@ -263,7 +265,11 @@ test('package workflow tools create instances from package context and honor cal
 		env: workflowEnv,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://app.example.com',
-			user: { userId: 'user-1', email: 'me@example.com', displayName: 'Me' },
+			user: {
+				userId: personIdFromStored('user-1'),
+				email: 'me@example.com',
+				displayName: 'Me',
+			},
 			storageContext: null,
 			repoContext: null,
 		}),
@@ -391,21 +397,22 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	silenceIncidentalRuntimeWarnings([
 		/^\{"message":"artifact repo delete failed"/,
 	])
+	const user = {
+		userId: personIdFromStored('user-123'),
+		email: 'user@example.com',
+		displayName: 'User Example',
+	}
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
+		user,
 		storageContext: {
 			sessionId: null,
 			appId: 'app-123',
 			packageId: null,
 			storageId: null,
 		},
-	}) as PersistedJobCallerContext
-	const userId = callerContext.user.userId
+	})
+	const userId = user.userId
 	const jobId = '504513c3-f29e-47f0-9ea1-402569ebef54'
 	const job: JobRecord = {
 		version: 1,
@@ -430,7 +437,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		errorCount: 0,
 	}
 	const db = createJobMutationDatabase({
-		jobs: [createJobRow(job, callerContext)],
+		jobs: [createJobRow(job, { ...callerContext, user })],
 		entitySources: [
 			createEntitySourceRow({
 				userId,
@@ -536,7 +543,7 @@ test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts the
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-123',
+			userId: personIdFromStored('user-123'),
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},
@@ -637,7 +644,7 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 			createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: {
-					userId: 'user-123',
+					userId: personIdFromStored('user-123'),
 					email: 'user@example.com',
 					displayName: 'User Example',
 				},
@@ -655,7 +662,7 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-123',
+			userId: personIdFromStored('user-123'),
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},

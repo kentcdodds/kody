@@ -22,7 +22,7 @@ import { isAccountEmailVerified } from '#worker/identity/email-verification-stat
 import { getEnv } from '#app/env.ts'
 import { type OAuthAuthorizeLoaderData } from '#universal/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { createDb, usersTable } from './db.ts'
 import { upgradePasswordHashIfNeeded } from './password-upgrade.ts'
@@ -545,7 +545,7 @@ async function handleResetClientRequest(
 				createSetCookieHeaders([clearResetVerificationCookie]),
 			)
 		}
-		const userId = resolveUserStableId(userRecord)
+		const userId = personIdFromStored(userRecord.stable_user_id)
 		const grants = await listUserOAuthGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => revokeOAuthGrant(helpers, grant.id, userId)),
@@ -1080,7 +1080,7 @@ async function tryHandleSilentOidcAuthorize(
 	}
 
 	const approvedEmail = userRecord.email.trim().toLowerCase()
-	const approvedUserId = resolveUserStableId(userRecord)
+	const approvedUserId = personIdFromStored(userRecord.stable_user_id)
 	recordMcpConnectFunnelEvent(env, {
 		stage: 'mcp_connect_started',
 		userId: approvedUserId,
@@ -1385,12 +1385,12 @@ export async function handleAuthorizeRequest(
 			if (userRecord) {
 				recordMcpConnectFunnelEvent(env, {
 					stage: 'mcp_connect_started',
-					userId: resolveUserStableId(userRecord),
+					userId: personIdFromStored(userRecord.stable_user_id),
 					clientId: authRequest.clientId,
 				})
 				recordMcpConnectFunnelEvent(env, {
 					stage: 'mcp_connect_failed',
-					userId: resolveUserStableId(userRecord),
+					userId: personIdFromStored(userRecord.stable_user_id),
 					clientId: authRequest.clientId,
 					errorClass: 'invalid_credentials',
 				})
@@ -1436,12 +1436,12 @@ export async function handleAuthorizeRequest(
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_started',
-				userId: resolveUserStableId(userRecord),
+				userId: personIdFromStored(userRecord.stable_user_id),
 				clientId: authRequest.clientId,
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_failed',
-				userId: resolveUserStableId(userRecord),
+				userId: personIdFromStored(userRecord.stable_user_id),
 				clientId: authRequest.clientId,
 				errorClass: 'two_factor_required',
 			})
@@ -1453,7 +1453,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username
-		approvedUserId = resolveUserStableId(userRecord)
+		approvedUserId = personIdFromStored(userRecord.stable_user_id)
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
 		const userRecord = session?.stableUserId
@@ -1490,7 +1490,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = userRecord.email.trim().toLowerCase()
 		approvedUsername = username
-		approvedUserId = resolveUserStableId(userRecord)
+		approvedUserId = personIdFromStored(userRecord.stable_user_id)
 		if (session && approvedEmail !== sessionEmail) {
 			setCookie = await createAuthCookie(
 				{

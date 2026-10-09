@@ -39,7 +39,7 @@ import {
 	allocateSignupIdentity,
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	createPasswordHash,
@@ -657,7 +657,7 @@ export function createAuthHandler(env: Env) {
 				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{
-						stableUserId: resolveUserStableId(userRecord),
+						stableUserId: personIdFromStored(userRecord.stable_user_id),
 						email: normalizedEmail,
 						rememberMe,
 					},
@@ -683,7 +683,7 @@ export function createAuthHandler(env: Env) {
 				)
 			}
 
-			const stableUserId = resolveUserStableId(userRecord)
+			const stableUserId = personIdFromStored(userRecord.stable_user_id)
 			const cookie = await createAuthCookie(
 				{
 					stableUserId,

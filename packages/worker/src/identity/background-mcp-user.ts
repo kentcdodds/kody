@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
@@ -95,7 +96,7 @@ async function loadBackgroundMcpUser(
 	}
 
 	return {
-		userId,
+		userId: personIdFromStored(userId),
 		email: user.email,
 		username: user.username,
 		displayName:

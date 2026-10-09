@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
@@ -12,7 +13,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'user-1@example.com',
 					displayName: 'user-1',
 				},

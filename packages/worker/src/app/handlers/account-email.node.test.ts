@@ -50,7 +50,10 @@ const messageRecord: EmailMessageRecord = {
 	updatedAt: new Date(0).toISOString(),
 }
 
-const mockModule = vi.hoisted(() => {
+const mockModule = await vi.hoisted(async () => {
+	// Hoisted above static imports, so the id helpers load here.
+	const { personalOrgId, personIdFromStored } =
+		await import('@kody-internal/shared/owner-person-ids.ts')
 	const authenticatedUser: AuthenticatedAppUser = {
 		sessionUserId: '42',
 		userId: 42,
@@ -63,11 +66,13 @@ const mockModule = vi.hoisted(() => {
 		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',
 		},
+		actor: personIdFromStored('stable-user-1'),
+		owner: personalOrgId(personIdFromStored('stable-user-1')),
 	}
 	return {
 		authenticatedUser,

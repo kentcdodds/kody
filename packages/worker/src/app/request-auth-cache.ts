@@ -25,7 +25,7 @@ import {
 } from '#worker/identity/permissions-db.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
 	parseEmailVerificationDelivery,
@@ -177,7 +177,7 @@ async function resolveRequestAuth(
 		}
 	}
 
-	const stableUserId = resolveUserStableId(userRecord)
+	const stableUserId = personIdFromStored(userRecord.stable_user_id)
 	const displayName = resolveDisplayName({
 		email: userRecord.email,
 		username: userRecord.username,

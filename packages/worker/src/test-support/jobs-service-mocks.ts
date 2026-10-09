@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { vi } from 'vitest'
 import type * as backgroundMcpUserModule from '#worker/identity/background-mcp-user.ts'
 import type * as managerClientModule from '#worker/jobs/manager-client.ts'
@@ -55,7 +56,7 @@ export const identityMockModule = {
 	resolveBackgroundMcpUser: vi.fn<
 		typeof backgroundMcpUserModule.resolveBackgroundMcpUser
 	>(async (_db, userId) => ({
-		userId,
+		userId: personIdFromStored(userId),
 		email: `${userId}@example.com`,
 		username: userId,
 		displayName: userId,
@@ -202,7 +203,7 @@ export function resetJobServiceMocks() {
 	identityMockModule.resolveBackgroundMcpUser.mockReset()
 	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
 		async (_db: D1Database, userId: string) => ({
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			username: userId,
 			displayName: userId,

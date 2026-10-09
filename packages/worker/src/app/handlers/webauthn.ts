@@ -38,7 +38,7 @@ import {
 	setWebAuthnChallengeSecret,
 } from '#app/webauthn.ts'
 import { createDb, usersTable } from '#worker/db.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 export function createWebauthnRegistrationHandler(env: Env) {
 	return {
@@ -342,7 +342,7 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			// A verified passkey assertion already satisfies MFA (possession +
 			// user verification), so skip the TOTP challenge even when 2FA is
 			// enabled. Password and social logins still require it.
-			const stableUserId = resolveUserStableId(userRecord)
+			const stableUserId = personIdFromStored(userRecord.stable_user_id)
 			headers.append(
 				'Set-Cookie',
 				await createAuthCookie(

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
@@ -21,7 +22,7 @@ import {
 	listOutboundPackageShareGrants,
 	PackageSharePaidRequiredError,
 	PackageSharePinAheadError,
-	resolvePackageStorageOwnerUserId,
+	resolvePackageStorageOwner,
 	retainAuthorizedPackageStorageGrantIds,
 	resolveShareGrantedPackageImport,
 	revokePackageShare,
@@ -37,13 +38,13 @@ const ownerUserId = 'aa'.repeat(32)
 const guestUserId = 'bb'.repeat(32)
 const freeUserId = 'cc'.repeat(32)
 const owner = {
-	userId: ownerUserId,
+	userId: personIdFromStored(ownerUserId),
 	email: 'alice@example.com',
 	displayName: 'Alice',
 	username: 'alice',
 }
 const guest = {
-	userId: guestUserId,
+	userId: personIdFromStored(guestUserId),
 	email: 'jesse@example.com',
 	displayName: 'Jesse',
 	username: 'jesse',
@@ -244,7 +245,7 @@ test('execute storage grant checks skip empty sets and verify ownership concurre
 	await expect(
 		collectShareStorageOwners({
 			db: counting.db,
-			callerUserId: ownerUserId,
+			callerUserId: personIdFromStored(ownerUserId),
 			packageIds: [],
 		}),
 	).resolves.toEqual(new Map())
@@ -279,7 +280,7 @@ test('turning package-share-grants off cuts accepted runtime access', async () =
 	await expect(
 		collectShareStorageOwners({
 			db,
-			callerUserId: guestUserId,
+			callerUserId: personIdFromStored(guestUserId),
 			packageIds: [packageId],
 		}),
 	).resolves.toEqual(new Map())
@@ -303,7 +304,11 @@ test('invite, accept, revoke, and leave follow paid and accept-required rules', 
 	await expect(
 		invite(
 			{ username: 'jesse' },
-			{ ...owner, userId: freeUserId, email: 'free@example.com' },
+			{
+				...owner,
+				userId: personIdFromStored(freeUserId),
+				email: 'free@example.com',
+			},
 		),
 	).rejects.toBeInstanceOf(PackageSharePaidRequiredError)
 
@@ -329,12 +334,23 @@ test('invite, accept, revoke, and leave follow paid and accept-required rules', 
 	const resolved = await resolveImport()
 	expect(resolved?.row.id).toBe(packageId)
 	expect(resolved?.sourceOwnerUserId).toBe(ownerUserId)
-	const guestCall = { db, callerUserId: guestUserId, packageId }
-	expect(await isShareGrantedForeignPackage(guestCall)).toBe(true)
-	expect(await resolvePackageStorageOwnerUserId(guestCall)).toBe(ownerUserId)
+	expect(
+		await isShareGrantedForeignPackage({
+			db,
+			callerUserId: guestUserId,
+			packageId,
+		}),
+	).toBe(true)
+	expect(
+		await resolvePackageStorageOwner({
+			db,
+			caller: personIdFromStored(guestUserId),
+			packageId,
+		}),
+	).toBe(ownerUserId)
 	const shareOwners = await collectShareStorageOwners({
 		db,
-		callerUserId: guestUserId,
+		callerUserId: personIdFromStored(guestUserId),
 		packageIds: [packageId],
 	})
 	expect(shareOwners.get(packageId)).toBe(ownerUserId)
@@ -521,7 +537,7 @@ test('a later owner of an invite email cannot steal a bound grant', async () => 
 	expect(inbound.some((grant) => grant.id === invited.id)).toBe(false)
 	await expect(
 		accept(invited.id, undefined, {
-			userId: attackerUserId,
+			userId: personIdFromStored(attackerUserId),
 			email: 'steal@example.com',
 			displayName: 'Attacker',
 			username: 'steal',
@@ -549,7 +565,7 @@ test('re-inviting an accepted email grant fails with a conflict, not a unique-in
 test('unverified accounts cannot see, attach, or accept unbound email invites', async () => {
 	const { db, invite, accept } = await createHarness()
 	const unverifiedGuest = (userId: string, email: string) => ({
-		userId,
+		userId: personIdFromStored(userId),
 		email,
 		displayName: 'Unverified',
 		username: email.split('@')[0]!,

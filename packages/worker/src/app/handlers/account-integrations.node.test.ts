@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
@@ -80,11 +84,13 @@ const mockModule = vi.hoisted(() => {
 			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser: {
-				userId: 'stable-user-1',
+				userId: personIdFromStored('stable-user-1'),
 				email: 'user@example.com',
 				username: 'test-user',
 				displayName: 'user',
 			},
+			actor: personIdFromStored('stable-user-1'),
+			owner: personalOrgId(personIdFromStored('stable-user-1')),
 		})),
 		readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 		listJoinedIntegrations: vi.fn<
@@ -645,11 +651,13 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-other',
+			userId: personIdFromStored('stable-user-other'),
 			email: 'other@example.com',
 			username: 'other-user',
 			displayName: 'other',
 		},
+		actor: personIdFromStored('stable-user-other'),
+		owner: personalOrgId(personIdFromStored('stable-user-other')),
 	})
 	const otherUserResponse = await rotate({
 		clientId: 'other-client',

@@ -46,7 +46,7 @@ import {
 import { type RoleName, roleNames } from '#universal/permissions.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export { adminUserListItemFieldNames, type AdminUserListItem }
 
@@ -226,8 +226,8 @@ export function createAdminUserUsageApiHandler(env: Env) {
 			try {
 				await requireUserWithPermission(request, env, 'read:user:any')
 				const url = new URL(request.url)
-				const stableUserId = url.searchParams.get('stableUserId')?.trim() ?? ''
-				if (!isStableUserId(stableUserId)) {
+				const stableUserId = parsePersonId(url.searchParams.get('stableUserId'))
+				if (!stableUserId) {
 					return jsonResponse(
 						{ ok: false, error: 'stableUserId is required.' },
 						400,
@@ -769,8 +769,5 @@ function readRoleName(body: object, key: string): RoleName | null {
 }
 
 function readStableUserIdField(body: object): string | null {
-	const value = (body as Record<string, unknown>).stableUserId
-	if (typeof value !== 'string') return null
-	const stableUserId = normalizeStableUserId(value)
-	return isStableUserId(stableUserId) ? stableUserId : null
+	return parsePersonId((body as Record<string, unknown>).stableUserId)
 }

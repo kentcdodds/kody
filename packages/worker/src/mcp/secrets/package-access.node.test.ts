@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -153,7 +154,11 @@ function mountCaller(
 	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: userId
-			? { userId, email: `${userId}@example.com`, displayName: userId }
+			? {
+					userId: personIdFromStored(userId),
+					email: `${userId}@example.com`,
+					displayName: userId,
+				}
 			: undefined,
 		repoContext: null,
 		storageContext: {

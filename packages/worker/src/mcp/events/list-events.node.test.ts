@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -29,7 +30,11 @@ vi.mock('#worker/connection-profiles/access.ts', () => ({
 const env = { APP_DB: {} } as Env
 const callerContext = createMcpCallerContext({
 	baseUrl: 'https://kody.example.com',
-	user: { userId: 'user-1', email: 'one@example.com', displayName: 'One' },
+	user: {
+		userId: personIdFromStored('user-1'),
+		email: 'one@example.com',
+		displayName: 'One',
+	},
 })
 
 function savedPackage(id: string, kodyId: string): SavedPackageRecord {

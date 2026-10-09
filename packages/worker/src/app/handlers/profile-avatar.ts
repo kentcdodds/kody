@@ -6,7 +6,7 @@ import {
 	parseUserAvatarCacheKey,
 } from '#worker/community/avatar.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 const publicUserAvatarCacheControl = 'public, max-age=31536000, immutable'
 const privateUserAvatarCacheControl = 'private, no-store'
@@ -28,10 +28,8 @@ export function createProfileAvatarHandler(env: Env) {
 			const isPublic = row.profile_visibility === 'public'
 			if (!isPublic) {
 				const user = await readAuthenticatedAppUser(request, env)
-				const ownerStableId = resolveUserStableId({
-					stable_user_id: row.stable_user_id,
-				})
-				if (!user || user.mcpUser.userId !== ownerStableId) {
+				const ownerStableId = ownerIdFromStored(row.stable_user_id)
+				if (!user || user.owner !== ownerStableId) {
 					return new Response('Not found', { status: 404 })
 				}
 			}

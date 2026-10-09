@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 
@@ -20,6 +24,7 @@ const { handleAccountPackageAdoptAction } =
 	await import('./account-package-adopt.ts')
 
 function createUser() {
+	const actor = personIdFromStored('stable-user-1')
 	return {
 		sessionUserId: '42',
 		userId: 42,
@@ -32,11 +37,13 @@ function createUser() {
 		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: actor,
 			email: 'user@example.com',
 			username: 'user',
 			displayName: 'user',
 		},
+		actor,
+		owner: personalOrgId(actor),
 	}
 }
 

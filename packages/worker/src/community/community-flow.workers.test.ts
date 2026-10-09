@@ -1,3 +1,7 @@
+import {
+	personIdFromStored,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -45,7 +49,7 @@ const artifactsApiBaseUrl = 'https://artifacts-mock.test'
 const baseUrl = 'https://test.kody.dev'
 
 type TestUser = {
-	userId: string
+	userId: PersonId
 	email: string
 	username: string
 	displayName: string
@@ -75,7 +79,7 @@ async function insertTestUser(input: {
 		'person',
 	)
 	return {
-		userId,
+		userId: personIdFromStored(userId),
 		email: input.email,
 		username: input.username,
 		displayName: input.username,

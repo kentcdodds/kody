@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
@@ -106,11 +110,13 @@ const authenticatedUser: AuthenticatedAppUser = {
 	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'user@example.com',
 		username: 'test-user',
 		displayName: 'user',
 	},
+	actor: personIdFromStored('stable-user-1'),
+	owner: personalOrgId(personIdFromStored('stable-user-1')),
 }
 
 test('loadAccountEmailData reads USER message graph only through owner Mailbox readers', async () => {

@@ -1,5 +1,5 @@
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 export type PublicUserIdentity = {
 	userId: number
@@ -34,7 +34,7 @@ export async function findPublicUserIdentityByStableUserId(input: {
 		userId: userRecord.id,
 		username: userRecord.username,
 		email: userRecord.email,
-		mcpUserId: resolveUserStableId(userRecord),
+		mcpUserId: personIdFromStored(userRecord.stable_user_id),
 	}
 }
 
@@ -64,7 +64,7 @@ export async function findPublicUserIdentityByUsername(input: {
 		userId: userRecord.id,
 		username: userRecord.username,
 		email: userRecord.email,
-		mcpUserId: resolveUserStableId(userRecord),
+		mcpUserId: personIdFromStored(userRecord.stable_user_id),
 	}
 }
 

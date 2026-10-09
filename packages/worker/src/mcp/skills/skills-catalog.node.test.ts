@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	ProtocolError,
 	ResourceNotFoundError,
@@ -63,7 +64,11 @@ const {
 const env = { APP_DB: {} } as unknown as Env
 const callerContext = createMcpCallerContext({
 	baseUrl: 'https://kody.example',
-	user: { userId: 'user-1', email: 'a@example.com', displayName: 'A' },
+	user: {
+		userId: personIdFromStored('user-1'),
+		email: 'a@example.com',
+		displayName: 'A',
+	},
 })
 
 const skillMd = [

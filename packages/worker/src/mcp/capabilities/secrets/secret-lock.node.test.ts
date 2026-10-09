@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -72,7 +73,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://kody.codes',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: 'alice@example.com',
 				displayName: 'Alice',
 			},

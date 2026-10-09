@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -438,7 +439,7 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 				createMcpCallerContext({
 					baseUrl: 'https://example.com',
 					user: {
-						userId: `${roles[0]}-1`,
+						userId: personIdFromStored(`${roles[0]}-1`),
 						email: `${roles[0]}@example.com`,
 						displayName: roles[0]!,
 						roles,

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createPackageEventTools } from '#worker/package-invocations/service.ts'
@@ -939,7 +940,7 @@ export function createRuntimeEventTools(
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId: 'user-123',
+				userId: personIdFromStored('user-123'),
 				email: 'me@example.com',
 				displayName: 'Me',
 			},

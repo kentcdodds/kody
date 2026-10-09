@@ -11,7 +11,6 @@
  */
 
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const accountSuspendedMessage =
 	'This account is suspended. Email support@kody.codes to appeal.'
@@ -52,7 +51,7 @@ export async function getAccountRestrictionsByStableUserId(input: {
 	db: D1Database
 	stableUserId: string
 }): Promise<AccountRestrictions | null> {
-	const stableUserId = normalizeStableUserId(input.stableUserId)
+	const stableUserId = input.stableUserId.trim()
 	if (!stableUserId) return null
 	const row = await input.db
 		.prepare(

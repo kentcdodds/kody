@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById, updateJobRow } from '@kody-internal/shared/jobs/repo.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -29,6 +30,7 @@ import {
 	insertPublishedEntitySource,
 	createBaseCallerContext,
 	insertLeftoverJob,
+	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 
 vi.mock('#worker/repo/source-service.ts', async () =>
@@ -199,20 +201,22 @@ test('updateJob and deleteJob sync the job manager alarm', async () => {
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
 	const { env, callerContext, userId } = setup()
 	const created = await insertJob(env, callerContext, 'Owner job')
-	const otherCallerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-999',
-			email: 'other@example.com',
-			displayName: 'Other User',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-999',
-			packageId: null,
-			storageId: null,
-		},
-	}) as PersistedJobCallerContext
+	const otherCallerContext = withCallerUser(
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored('user-999'),
+				email: 'other@example.com',
+				displayName: 'Other User',
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'app-999',
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	)
 	const notFound = `Job "${created.id}" was not found.`
 
 	await expectCallerError(

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -86,7 +87,7 @@ const open = createCapability('example_open')
 const callerContext = createMcpCallerContext({
 	baseUrl: 'https://example.com',
 	user: {
-		userId: 'user-1',
+		userId: personIdFromStored('user-1'),
 		email: 'user@example.com',
 		displayName: 'user',
 		roles: ['user'],
@@ -287,7 +288,7 @@ test('one MCP request records flag exposures once and reuses the request evaluat
 	const requestContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
-			userId: stableUserId,
+			userId: personIdFromStored(stableUserId),
 			email: 'flags@example.com',
 			displayName: 'flags',
 			roles: ['user'],
@@ -329,7 +330,7 @@ test('one MCP request records flag exposures once and reuses the request evaluat
 	const nextRequestContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
-			userId: stableUserId,
+			userId: personIdFromStored(stableUserId),
 			email: 'flags@example.com',
 			displayName: 'flags',
 			roles: ['user'],

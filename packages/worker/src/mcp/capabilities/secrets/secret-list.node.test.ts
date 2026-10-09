@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -79,7 +80,7 @@ test('secretList matches implicit user-secret read access and still lists packag
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 			},
@@ -90,7 +91,7 @@ test('secretList matches implicit user-secret read access and still lists packag
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 			},
@@ -184,7 +185,11 @@ test('secretList from execute returns caller-owned package metadata with package
 			env,
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://example.com',
-				user: { userId, email: `${userId}@example.com`, displayName: userId },
+				user: {
+					userId: personIdFromStored(userId),
+					email: `${userId}@example.com`,
+					displayName: userId,
+				},
 			}),
 		},
 	)

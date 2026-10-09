@@ -15,7 +15,6 @@ import {
 	getFeatureFlagEvaluationsForUser,
 	type FeatureFlagEvaluation,
 } from '#worker/feature-flags/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -102,7 +101,7 @@ async function loadCallerFeatureFlagResolution(
 			if (!env.APP_DB) return null
 			if (!callerContext.user?.userId) return null
 			try {
-				const stableUserId = normalizeStableUserId(callerContext.user.userId)
+				const stableUserId = callerContext.user.userId.trim()
 				if (!stableUserId) return null
 				const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
 				if (userId === null) return null

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type CapabilityContext } from '../types.ts'
@@ -79,7 +80,7 @@ test('codingGuideGet serves public bundled guides and hides admin-only docs from
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://kody.example',
 				user: {
-					userId: 'admin-1',
+					userId: personIdFromStored('admin-1'),
 					email: 'admin@example.com',
 					displayName: 'Admin',
 					roles: ['admin'],

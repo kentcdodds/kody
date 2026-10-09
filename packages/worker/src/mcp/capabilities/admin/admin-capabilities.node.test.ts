@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -147,7 +148,7 @@ function createAdminCapabilityTest(
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'admin-user',
+				userId: personIdFromStored('admin-user'),
 				email: 'admin@example.com',
 				displayName: 'admin',
 				roles: callerRoles,

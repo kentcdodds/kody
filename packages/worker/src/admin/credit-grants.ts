@@ -30,7 +30,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parseOwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type AdminUserTarget } from './users-data.ts'
 
 const adminCreditLedgerLimit = 20
@@ -56,8 +56,8 @@ async function loadCreditGrantTarget(
 ): Promise<CreditGrantTargetRow | null> {
 	const columns = `id, stable_user_id, username, ${userEntitlementColumnsSql()}`
 	if (target.stableUserId !== undefined) {
-		const stableUserId = normalizeStableUserId(target.stableUserId)
-		if (!isStableUserId(stableUserId)) return null
+		const stableUserId = parseOwnerId(target.stableUserId)
+		if (!stableUserId) return null
 		return db
 			.prepare(`SELECT ${columns} FROM users WHERE stable_user_id = ?`)
 			.bind(stableUserId)

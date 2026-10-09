@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import type * as MemoryService from '#mcp/memory/service.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -31,7 +32,7 @@ function createSignedInCapabilityContext() {
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: 'user-123',
+				userId: personIdFromStored('user-123'),
 				email: 'user@example.com',
 				displayName: 'User',
 			},

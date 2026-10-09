@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -199,7 +200,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 			createMcpCallerContext({
 				baseUrl: 'https://example.com',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'user@example.com',
 					displayName: 'User One',
 				},
@@ -262,7 +263,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	const userCallerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'user',
 		},

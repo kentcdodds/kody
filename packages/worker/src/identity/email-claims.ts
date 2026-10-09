@@ -1,7 +1,7 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { createStableUserId } from '#worker/user-id.ts'
+import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export type EmailClaimStatus = 'claimed' | 'released'
 
@@ -342,7 +342,7 @@ export async function allocateSignupIdentity(
 	if (await isEmailReservedForOtherAccount(db, normalized)) {
 		return { ok: false, reason: 'former_email_claimed' }
 	}
-	return { ok: true, stableUserId: createStableUserId() }
+	return { ok: true, stableUserId: mintPersonId() }
 }
 
 export class EmailClaimConflictError extends Error {

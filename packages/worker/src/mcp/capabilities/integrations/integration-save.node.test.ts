@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -42,7 +43,11 @@ function createEnv() {
 function caller(userId: string) {
 	return createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId, email: `${userId}@example.com`, displayName: userId },
+		user: {
+			userId: personIdFromStored(userId),
+			email: `${userId}@example.com`,
+			displayName: userId,
+		},
 	})
 }
 

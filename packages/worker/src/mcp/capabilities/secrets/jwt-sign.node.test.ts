@@ -1,4 +1,8 @@
 import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	constants,
 	createHmac,
 	createVerify,
@@ -27,7 +31,7 @@ const ctx = {
 	callerContext: createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-123',
+			userId: personIdFromStored('user-123'),
 			email: 'user@example.com',
 			displayName: 'User',
 		},
@@ -490,8 +494,8 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 	expect(JSON.stringify(signed)).not.toContain('PRIVATE KEY')
 
 	const ownerSpy = vi
-		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
-		.mockResolvedValue('owner-user')
+		.spyOn(shareGrants, 'resolvePackageStorageOwner')
+		.mockResolvedValue(ownerIdFromStored('owner-user'))
 	vi.spyOn(
 		packageAccess,
 		'assertPackageCanAccessResolvedSecret',
@@ -501,7 +505,7 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: 'guest-user',
+				userId: personIdFromStored('guest-user'),
 				email: 'guest@example.com',
 				displayName: 'Guest',
 			},
@@ -515,7 +519,7 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 	})
 	expect(ownerSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
-			callerUserId: 'guest-user',
+			caller: 'guest-user',
 			packageId: 'shared-pkg',
 		}),
 	)

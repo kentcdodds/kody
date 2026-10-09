@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
 	getUserAvatarObject: vi.fn(),
-	resolveUserStableId: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -25,11 +24,6 @@ vi.mock('#worker/community/avatar.ts', () => ({
 	},
 	getUserAvatarObject: (...args: Array<unknown>) =>
 		mocks.getUserAvatarObject(...args),
-}))
-
-vi.mock('#worker/user-id.ts', () => ({
-	resolveUserStableId: (...args: Array<unknown>) =>
-		mocks.resolveUserStableId(...args),
 }))
 
 const publicRow = {
@@ -87,12 +81,13 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 		userId: 1,
 		email: 'alice@example.com',
 		mcpUser: { userId: 'stable-alice' },
+		actor: 'stable-alice',
+		owner: 'stable-alice',
 	})
 	mocks.getUserSocialRowByUsername.mockResolvedValue({
 		...publicRow,
 		profile_visibility: 'private',
 	})
-	mocks.resolveUserStableId.mockReturnValue('stable-alice')
 	mocks.getUserAvatarObject.mockResolvedValue({
 		body: new Blob([Uint8Array.from([9])]).stream(),
 		httpMetadata: { contentType: 'image/png' },

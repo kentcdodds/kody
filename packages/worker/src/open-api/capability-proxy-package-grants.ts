@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	type AdditionalKodyTools,
@@ -88,7 +89,7 @@ export async function authorizeLocalExecuteOwnedPackageId(input: {
 }) {
 	const storageOwnerByPackageId = await collectShareStorageOwners({
 		db: input.db,
-		callerUserId: input.callerUserId,
+		callerUserId: personIdFromStored(input.callerUserId),
 		packageIds: [input.packageId],
 	})
 	const authorized = await retainAuthorizedPackageStorageGrantIds({

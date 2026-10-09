@@ -47,7 +47,7 @@ import {
 	listSavedPackagesBySlugs,
 } from '#worker/package-registry/repo.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 const defaultCommunityListLimit = 50
 const onboardingFeaturedListingLimit = 12
@@ -396,8 +396,10 @@ async function loadCommunityDetailDataUncached(
 		readOptionalAuthenticatedAppUser(request, env),
 	])
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
-	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
-	const viewerUserId = user?.mcpUser.userId ?? null
+	const ownerUserId = ownerRow
+		? ownerIdFromStored(ownerRow.stable_user_id)
+		: null
+	const viewerUserId = user?.owner ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
 	const viewerInstalls = await loadViewerListingInstalls({

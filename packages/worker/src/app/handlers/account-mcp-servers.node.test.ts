@@ -9,7 +9,10 @@ import { type McpServerLastError } from '#worker/mcp-client/types.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as ProviderMarks from '#worker/integrations/provider-marks.ts'
 
-const mockModule = vi.hoisted(() => {
+const mockModule = await vi.hoisted(async () => {
+	// Hoisted above static imports, so the id helpers load here.
+	const { personalOrgId, personIdFromStored } =
+		await import('@kody-internal/shared/owner-person-ids.ts')
 	const epoch = new Date(0).toISOString()
 	const setting = (
 		overrides: Partial<McpServerSettingMetadata> = {},
@@ -30,7 +33,7 @@ const mockModule = vi.hoisted(() => {
 		...overrides,
 	})
 	const mcpUser = {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'user@example.com',
 		username: 'test-user',
 		displayName: 'user',
@@ -52,6 +55,8 @@ const mockModule = vi.hoisted(() => {
 			permissions: [],
 			artifactOwnerIds: [],
 			mcpUser,
+			actor: mcpUser.userId,
+			owner: personalOrgId(mcpUser.userId),
 		})),
 		readAuthSessionResult: vi.fn<typeof authSession.readAuthSessionResult>(
 			async () => ({

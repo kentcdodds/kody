@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as SecretsService from '#mcp/secrets/service.ts'
@@ -62,7 +63,7 @@ function getPackage(
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'kody@example.com',
 					displayName: 'Kody',
 					username: 'kody',

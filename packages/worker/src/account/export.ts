@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	accountExportForeignUserIdColumnsByTable,
 	accountExportRedactedColumnsByTable,
@@ -43,7 +44,6 @@ import {
 	repoSessionIndexRpc,
 } from '#worker/repo/repo-session-index-client.ts'
 import { type RepoSessionIndexExportResult } from '#worker/repo/repo-session-index-do.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
 import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
 
 const accountExportSchemaVersion = 1
@@ -1654,7 +1654,7 @@ export async function resolveAccountExportDbUserId(input: {
 	if (!row) {
 		throw new Error('Authenticated account was not found.')
 	}
-	if (resolveUserStableId(row) !== input.mcpUserId) {
+	if (ownerIdFromStored(row.stable_user_id) !== input.mcpUserId) {
 		throw new Error(
 			'Authenticated user identity did not match the account email.',
 		)

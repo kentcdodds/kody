@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 /**
  * Deterministic fixture id for seeding test accounts by email. Production mints
- * random ids (`createStableUserId`); this matches the legacy email-hash shape so
+ * random ids (`mintPersonId`); this matches the legacy email-hash shape so
  * tests can also seed pre-random-id accounts and legacy email reservations.
  */
 export function testStableUserIdFromEmail(email: string) {

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
@@ -312,7 +313,7 @@ function createCallerContext(userId: string) {
 	return createMcpCallerContext({
 		baseUrl: 'https://kody.dev',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: 'worker@example.com',
 			displayName: 'Worker Test',
 		},
@@ -899,7 +900,7 @@ export default async function selfAdopt() {
 				baseUrl: 'https://kody.dev',
 				executionOrigin: 'interactive',
 				user: {
-					userId,
+					userId: personIdFromStored(userId),
 					email: `${username}@example.com`,
 					displayName: 'Forker',
 				},

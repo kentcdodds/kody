@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -161,7 +162,12 @@ async function setup({
 		} as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
-			user: { userId, username: 'kody', email, displayName: 'Repo User' },
+			user: {
+				userId: personIdFromStored(userId),
+				username: 'kody',
+				email,
+				displayName: 'Repo User',
+			},
 		}),
 	}
 	const open = (input: { kody_id?: string; conversation_id?: string } = {}) =>

@@ -17,7 +17,6 @@ import {
 	jevSearchRerankFlagKey,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	recordFeatureFlagExposures,
 	type FeatureFlagExposureEnv,
@@ -43,7 +42,7 @@ export async function recordPaidRankedSearchFlagExposure(
 ): Promise<void> {
 	try {
 		if (!input.planEligible) return
-		const stableUserId = normalizeStableUserId(input.stableUserId ?? '')
+		const stableUserId = input.stableUserId?.trim() ?? ''
 		if (!stableUserId) return
 		const flagKey = input.flagKey ?? jevSearchRerankFlagKey
 		if (getFeatureFlagExposureRecording(flagKey) !== 'paid-ranked-search') {

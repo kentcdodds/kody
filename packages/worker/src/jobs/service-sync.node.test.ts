@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -13,7 +14,6 @@ import {
 	refreshPackageJobRowIdentity,
 } from '@kody-internal/shared/jobs/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { type PersistedJobCallerContext } from './types.ts'
 import {
 	identityMockModule,
 	resetJobServiceMocks,
@@ -23,6 +23,7 @@ import {
 	insertPublishedEntitySource,
 	insertLeftoverJob,
 	syncSinglePackageJob,
+	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -123,7 +124,7 @@ function seedPackageSource(input: {
 function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
 	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
 		async (_db: D1Database, id: string) => ({
-			userId: id,
+			userId: personIdFromStored(id),
 			email: emailsByUserId[id] ?? `${id}@example.com`,
 			username: id,
 			displayName: id,
@@ -132,20 +133,22 @@ function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
 }
 
 function createPlanUserCallerContext(input: { userId: string; email: string }) {
-	return createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: input.userId,
-			email: input.email,
-			displayName: 'Plan User',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-			packageId: null,
-			storageId: null,
-		},
-	}) as PersistedJobCallerContext
+	return withCallerUser(
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(input.userId),
+				email: input.email,
+				displayName: 'Plan User',
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'app-123',
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	)
 }
 
 function syncQuotaJob(input: {
@@ -565,16 +568,18 @@ test('blank-email package context uses the max plan for storage writes and neste
 		packageId: 'package-1',
 		storageId: 'job:package-job:package-1:parent',
 	}
-	const stalePackageContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		executionOrigin: 'background',
-		user: {
-			userId,
-			email: '',
-			displayName: 'Package Owner',
-		},
-		storageContext: stalePackageStorageContext,
-	}) as PersistedJobCallerContext
+	const stalePackageContext = withCallerUser(
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			executionOrigin: 'background',
+			user: {
+				userId: personIdFromStored(userId),
+				email: '',
+				displayName: 'Package Owner',
+			},
+			storageContext: stalePackageStorageContext,
+		}),
+	)
 
 	await expect(
 		saveValue({
@@ -588,7 +593,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
 	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
-		userId,
+		userId: personIdFromStored(userId),
 		email,
 		username: userId,
 		displayName: 'Package Owner',

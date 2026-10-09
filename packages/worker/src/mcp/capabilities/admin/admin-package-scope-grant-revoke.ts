@@ -6,7 +6,7 @@ import {
 	deletePackageScopeGrant,
 	getPlatformAccountByUsername,
 } from '#worker/package-registry/scope-grants.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
@@ -86,7 +86,7 @@ export const adminPackageScopeGrantRevokeCapability = defineDomainCapability(
 					}
 					const { deleted } = await deletePackageScopeGrant(ctx.env.APP_DB, {
 						scopeOwnerUserId: platformAccount.stableUserId,
-						granteeUserId: resolveUserStableId(grantee),
+						granteeUserId: personIdFromStored(grantee.stable_user_id),
 					})
 					return {
 						deleted,

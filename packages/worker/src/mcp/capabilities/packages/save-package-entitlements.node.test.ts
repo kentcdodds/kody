@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-policy.ts'
@@ -289,7 +290,11 @@ async function setup({
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
-			user: { userId, email, displayName: 'Planned User' },
+			user: {
+				userId: personIdFromStored(userId),
+				email,
+				displayName: 'Planned User',
+			},
 		}),
 	}
 	const save = (args: Record<string, unknown>) =>

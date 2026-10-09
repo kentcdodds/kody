@@ -42,7 +42,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { findLegacyEmailHashReservation } from '#worker/identity/email-claims.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
@@ -179,8 +179,7 @@ function decodePathSegment(value: string) {
 function parseSelectedStableUserId(
 	value: string | null | undefined,
 ): string | null {
-	const stableUserId = normalizeStableUserId(value)
-	return isStableUserId(stableUserId) ? stableUserId : null
+	return parsePersonId(value)
 }
 
 /** Read the `q`, `role`, and `verification` filter query params. */
@@ -246,7 +245,7 @@ export async function adminUserMatchesListFilters(
 	requestUrl: string,
 	stableUserId: string,
 ): Promise<boolean> {
-	if (!isStableUserId(stableUserId)) return false
+	if (!parsePersonId(stableUserId)) return false
 	const url = new URL(requestUrl, 'http://localhost')
 	const filters = readAdminUserListFilters(url)
 	const { whereClause, params } = buildAdminUserListWhereClause(
@@ -332,10 +331,10 @@ export async function loadAdminUserByTarget(
 	db: D1Database,
 	input: AdminUserTarget,
 ): Promise<AdminUserListItem | null> {
-	const stableUserId = normalizeStableUserId(input.stableUserId)
+	const stableUserId = parsePersonId(input.stableUserId)
 	const email = input.email?.trim() ?? ''
 	const username = input.username?.trim() ?? ''
-	if (input.stableUserId !== undefined && !isStableUserId(stableUserId)) {
+	if (input.stableUserId !== undefined && !stableUserId) {
 		return null
 	}
 	const userRow = stableUserId
@@ -608,7 +607,7 @@ export async function loadAdminUserRowByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<AdminUserRow | null> {
-	if (!isStableUserId(stableUserId)) return null
+	if (!parsePersonId(stableUserId)) return null
 	return await db
 		.prepare(
 			`SELECT ${adminUserRowSelectSql}

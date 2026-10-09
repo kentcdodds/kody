@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -31,7 +32,7 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 			roles: ['admin'],
@@ -63,7 +64,7 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	const adminContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'admin@example.com',
 			displayName: 'admin',
 			roles: ['admin'],
@@ -72,7 +73,7 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	const regularContext = createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'admin@example.com',
 			displayName: 'admin',
 			roles: ['user'],

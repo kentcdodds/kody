@@ -1,7 +1,8 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { resolvePackageStorageOwnerUserId } from '#worker/package-registry/share-grants.ts'
+import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { buildSecretProviderPackageApprovalUrl } from './approval-url.ts'
@@ -363,9 +364,9 @@ export async function resolveProviderSecret(input: {
 	const rawRef = normalizeProviderRef(input.ref)
 	const authorityPackageId = input.authorityPackageId?.trim() || null
 	const ownerUserId = authorityPackageId
-		? await resolvePackageStorageOwnerUserId({
+		? await resolvePackageStorageOwner({
 				db: input.env.APP_DB,
-				callerUserId: input.userId,
+				caller: personIdFromStored(input.userId),
 				packageId: authorityPackageId,
 			})
 		: input.userId

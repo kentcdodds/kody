@@ -1,5 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import {
+	personalOrgId,
+	ownerIdFromStored,
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { normalizeEmailAddress } from '#worker/email/address.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
@@ -13,7 +19,6 @@ import { isPaidPlan, type PlanName } from '#universal/plans.ts'
 import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { getCommunityPackageHref } from '#worker/community/package-url.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import { getSavedPackageById } from './repo.ts'
 import {
 	isPackageShareGrantsEnabled,
@@ -69,7 +74,7 @@ async function queryShareGrantsOrEmpty<T>(
 export type PackageShareGrantRow = {
 	id: string
 	packageId: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	inviteeEmail: string | null
 	inviteeUsername: string | null
 	granteeUserId: string | null
@@ -163,7 +168,7 @@ function mapGrantRow(row: Record<string, unknown>): PackageShareGrantRow {
 	return {
 		id: String(row['id']),
 		packageId: String(row['package_id']),
-		ownerUserId: String(row['owner_user_id']),
+		ownerUserId: ownerIdFromStored(String(row['owner_user_id'])),
 		inviteeEmail:
 			row['invitee_email'] == null ? null : String(row['invitee_email']),
 		inviteeUsername:
@@ -794,32 +799,37 @@ export async function isShareGrantedForeignPackage(input: {
 	return grant != null
 }
 
-export async function resolvePackageStorageOwnerUserId(input: {
+/**
+ * Whose storage a package call touches: the caller's own owner for their own
+ * packages, or the sharing owner for an accepted share grant.
+ */
+export async function resolvePackageStorageOwner(input: {
 	db: D1Database
-	callerUserId: string
+	caller: PersonId
 	packageId: string
-}) {
+}): Promise<OwnerId> {
+	const callerOwner = personalOrgId(input.caller)
 	const own = canPrepareAppDb(input.db)
 		? await getSavedPackageById(input.db, {
-				userId: input.callerUserId,
+				userId: callerOwner,
 				packageId: input.packageId,
 			})
 		: null
-	if (own) return input.callerUserId
+	if (own) return callerOwner
 	const grant = await findAcceptedPackageShareGrant({
 		db: input.db,
 		packageId: input.packageId,
-		granteeUserId: input.callerUserId,
+		granteeUserId: input.caller,
 	})
-	return grant?.ownerUserId ?? input.callerUserId
+	return grant?.ownerUserId ?? callerOwner
 }
 
 export async function collectShareStorageOwners(input: {
 	db: D1Database
-	callerUserId: string
+	callerUserId: PersonId
 	packageIds: Iterable<string>
-}): Promise<Map<string, string>> {
-	const owners = new Map<string, string>()
+}): Promise<Map<string, OwnerId>> {
+	const owners = new Map<string, OwnerId>()
 	if (!canPrepareAppDb(input.db)) return owners
 	const packageIds = [
 		...new Set(
@@ -849,7 +859,7 @@ export async function collectShareStorageOwners(input: {
 			.all<{ package_id: string; owner_user_id: string }>()
 		for (const row of rows.results ?? []) {
 			if (row.owner_user_id && row.owner_user_id !== input.callerUserId) {
-				owners.set(row.package_id, row.owner_user_id)
+				owners.set(row.package_id, ownerIdFromStored(row.owner_user_id))
 			}
 		}
 		return owners
@@ -893,7 +903,7 @@ export async function invitePackageShare(input: {
 	packageId: string
 	invitee: { username?: string; email?: string }
 }): Promise<PackageShareGrantRow> {
-	const ownerUserId = normalizeStableUserId(input.owner.userId)
+	const ownerUserId = input.owner.userId.trim()
 	if (!ownerUserId) {
 		throw new PackageShareAccessError('Owner user id is required.')
 	}
@@ -1024,7 +1034,7 @@ export async function acceptPackageShare(input: {
 	packageId?: string
 	trustLevel?: PackageShareTrustLevel
 }): Promise<PackageShareGrantRow> {
-	const guestUserId = normalizeStableUserId(input.guest.userId)
+	const guestUserId = input.guest.userId.trim()
 	if (!guestUserId) {
 		throw new PackageShareAccessError('Guest user id is required.')
 	}

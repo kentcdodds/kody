@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -27,7 +28,7 @@ function createTenant(label: string) {
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: `${userId}@example.com`,
 				displayName: 'Runs Tester',
 			},

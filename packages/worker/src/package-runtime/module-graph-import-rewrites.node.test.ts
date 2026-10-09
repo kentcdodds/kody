@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
@@ -433,7 +434,7 @@ test('buildKodyModuleBundle rejects ad-hoc execute and person-package imports of
 						id: 1,
 						username: 'kody',
 						email: 'kody@example.com',
-						stableUserId: 'platform-kody',
+						stableUserId: ownerIdFromStored('platform-kody'),
 					}
 				: null,
 	)

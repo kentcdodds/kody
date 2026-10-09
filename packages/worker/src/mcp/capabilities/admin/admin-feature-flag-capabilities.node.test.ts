@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -45,7 +46,9 @@ function createFeatureFlagCapabilityTest() {
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://example.com',
 				user: {
-					userId: testStableUserIdFromEmail('admin@example.com'),
+					userId: personIdFromStored(
+						testStableUserIdFromEmail('admin@example.com'),
+					),
 					email: 'admin@example.com',
 					displayName: 'admin',
 					roles: ['admin'],

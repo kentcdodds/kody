@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test } from 'vitest'
@@ -54,7 +55,7 @@ function callerContext(userId: string) {
 	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email,
 			displayName: 'Usage Trend',
 		},

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -177,8 +178,8 @@ test('provider resolve grants, hosts, cache, owner execute, share owner binding,
 	expect(packageUse.value).toBe('item-password')
 	expect(h.invokeProvider).toHaveBeenCalledTimes(2)
 
-	vi.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId').mockResolvedValue(
-		ownerId,
+	vi.spyOn(shareGrants, 'resolvePackageStorageOwner').mockResolvedValue(
+		ownerIdFromStored(ownerId),
 	)
 	clearProviderSecretCacheForTests()
 	const shared = await h.resolve({

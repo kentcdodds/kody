@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { d1LockRetryBaseDelayMs } from '#worker/d1-retry.ts'
@@ -97,7 +98,7 @@ test('cold MCP session owner discovery reads persisted Agents SDK props', async 
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
 		user: {
-			userId: 'user-a',
+			userId: personIdFromStored('user-a'),
 			email: 'a@example.com',
 			displayName: 'User A',
 		},

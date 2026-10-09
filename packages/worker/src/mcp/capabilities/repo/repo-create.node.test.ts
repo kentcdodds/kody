@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -115,7 +116,11 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ctx = {
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail, displayName: 'User' },
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: userEmail,
+				displayName: 'User',
+			},
 			baseUrl: 'https://kody.test',
 		}),
 	}
@@ -150,7 +155,11 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ceilingCtx = {
 		env: { APP_DB: atCeiling } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail, displayName: 'User' },
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: userEmail,
+				displayName: 'User',
+			},
 			baseUrl: 'https://kody.test',
 		}),
 	}

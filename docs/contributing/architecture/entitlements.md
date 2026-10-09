@@ -797,8 +797,8 @@ when a manual plan is set.
 ## Plan lookup
 
 The MCP `userId` is the account's stored `users.stable_user_id` (NOT NULL,
-unique index; minted randomly at signup by `createStableUserId`, then preserved
-across email changes). `getUserEntitlement` returns `{ plan, ladder }`.
+unique index; minted randomly at signup by `mintPersonId`, then preserved across
+email changes). `getUserEntitlement` returns `{ plan, ladder }`.
 `getUserPlan(db, { userId, email })` is the plan-only wrapper and always returns
 a `PlanName`:
 

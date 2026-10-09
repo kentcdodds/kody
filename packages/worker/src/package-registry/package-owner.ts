@@ -1,4 +1,9 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import {
+	personalOrgId,
+	type OwnerId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
@@ -23,18 +28,18 @@ export class PackageScopeAccessError extends Error {
 /**
  * The acting-user / owning-account pair for a package operation.
  *
- * `ownerUserId` (a stable MCP user id) is the only id that may be used for
+ * `ownerUserId` (an `OwnerId`) is the only id that may be used for
  * storage: `saved_packages.user_id`, `entity_sources.user_id`, Vectorize
  * metadata, repo-session RPC ownership, entitlements, and community listing
- * ownership. `actorUserId` is the signed-in caller and is used for audit and
+ * ownership. `actorUserId` (a `PersonId`) is the signed-in caller and is used for audit and
  * attribution only. The two are equal for personal-scope operations and
  * differ only when acting under a package scope grant on a platform account.
  */
 export type PackageOwnerContext = {
-	ownerUserId: string
+	ownerUserId: OwnerId
 	ownerScope: string
 	ownerEmail: string
-	actorUserId: string
+	actorUserId: PersonId
 	delegated: boolean
 }
 
@@ -69,7 +74,7 @@ export async function resolvePackageOwnerContext(
 	const scope = normalizeRequestedScope(requestedScope)
 	if (!scope || scope === ownScope) {
 		return {
-			ownerUserId: user.userId,
+			ownerUserId: personalOrgId(user.userId),
 			ownerScope: ownScope,
 			ownerEmail: user.email,
 			actorUserId: user.userId,

@@ -8,6 +8,7 @@ import {
 	type InferOutput,
 	union,
 } from 'remix/data-schema'
+import { type OwnerId, type PersonId } from './owner-person-ids.ts'
 
 export const mcpUserContextSchema = object({
 	userId: string(),
@@ -60,8 +61,10 @@ type McpUserContextInferred = InferOutput<typeof mcpUserContextSchema>
 
 export type McpUserContext = Omit<
 	McpUserContextInferred,
-	'roles' | 'permissions' | 'username'
+	'userId' | 'roles' | 'permissions' | 'username'
 > & {
+	/** The signed-in person. Read `McpCallerContext.actor` / `.owner` instead. */
+	userId: PersonId
 	username?: string
 	roles?: Array<string>
 	permissions?: Array<string>
@@ -71,10 +74,25 @@ export type McpRepoContext = InferOutput<typeof mcpRepoContextSchema>
 export type McpExecutionOrigin = InferOutput<typeof mcpExecutionOriginSchema>
 type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
 
-export type McpCallerContext = Omit<
+/**
+ * The serializable caller context: what crosses worker boundaries and what
+ * jobs persist in `caller_context_json`. Carries no derived identity.
+ */
+export type McpCallerContextWire = Omit<
 	McpCallerContextInferred,
 	'user' | 'connectionProfileName'
 > & {
 	user?: McpUserContext | null
 	connectionProfileName?: string | null
+}
+
+/**
+ * A caller context with resolved identities. `actor` is the person acting
+ * (audit, RBAC, attribution); `owner` is the org whose data the call reads and
+ * writes (storage). `createMcpCallerContext` and `parseMcpCallerContext` derive both
+ * from `user`; they are never read from serialized input.
+ */
+export type McpCallerContext = McpCallerContextWire & {
+	actor: PersonId | null
+	owner: OwnerId | null
 }

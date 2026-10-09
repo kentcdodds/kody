@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -310,8 +314,8 @@ test('fetch gateway requires package approval before resolving user secrets', as
 	const packageSpy = vi
 		.spyOn(packageRepo, 'getSavedPackageById')
 		.mockResolvedValue(savedPackage('pkg-1', 'example-package'))
-	vi.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId').mockImplementation(
-		async (input) => input.callerUserId,
+	vi.spyOn(shareGrants, 'resolvePackageStorageOwner').mockImplementation(
+		async (input) => personalOrgId(input.caller),
 	)
 	const forkSpy = vi
 		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
@@ -1059,8 +1063,8 @@ test('share-grant guest secret refs expand as the package owner and require owne
 		userId: 'guest-user',
 	}
 	const ownerSpy = vi
-		.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId')
-		.mockResolvedValue('owner-user')
+		.spyOn(shareGrants, 'resolvePackageStorageOwner')
+		.mockResolvedValue(ownerIdFromStored('owner-user'))
 	vi.spyOn(packageRepo, 'getSavedPackageById').mockResolvedValue(
 		savedPackage('shared-pkg', 'shared-tools', {
 			userId: 'owner-user',
@@ -1096,7 +1100,7 @@ test('share-grant guest secret refs expand as the package owner and require owne
 		)
 		expect(ownerSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
-				callerUserId: 'guest-user',
+				caller: 'guest-user',
 				packageId: 'shared-pkg',
 			}),
 		)

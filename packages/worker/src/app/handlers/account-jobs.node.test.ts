@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -89,11 +93,13 @@ const mockModule = vi.hoisted(() => ({
 		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',
 		},
+		actor: personIdFromStored('stable-user-1'),
+		owner: personalOrgId(personIdFromStored('stable-user-1')),
 	})),
 	inspectJobsForUser: vi.fn(),
 	updateJob: vi.fn(),

@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	loadAccountActivityData,
@@ -30,11 +34,13 @@ const user: ActivityUser = {
 	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'user@example.com',
 		username: 'test-user',
 		displayName: 'user',
 	},
+	actor: personIdFromStored('stable-user-1'),
+	owner: personalOrgId(personIdFromStored('stable-user-1')),
 }
 
 const weekAgo = '2026-07-19T12:00:00.000Z'

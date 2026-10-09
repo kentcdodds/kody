@@ -1,5 +1,5 @@
 import { createCookie } from 'remix/cookie'
-import { isStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * Short-lived signed cookie that parks a password- or passkey-verified login
@@ -58,7 +58,7 @@ function isPendingTwoFactorSession(
 	const record = value as Record<string, unknown>
 	return (
 		record.v === 2 &&
-		isStableUserId(record.stableUserId) &&
+		parsePersonId(record.stableUserId) !== null &&
 		typeof record.email === 'string' &&
 		record.email.length > 0 &&
 		typeof record.rememberMe === 'boolean'

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { packageOwnedJobDeleteErrorMessage } from '#worker/jobs/job-retention.ts'
@@ -48,7 +49,7 @@ const { workflowListCapability } = await import('./workflow-list.ts')
 
 const env = {} as Env
 const user = {
-	userId: 'user-123',
+	userId: personIdFromStored('user-123'),
 	email: 'user@example.com',
 	displayName: 'User Example',
 }

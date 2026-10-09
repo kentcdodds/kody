@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -65,7 +66,11 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 	const env = { APP_DB: db } as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com/',
-		user: { userId: stableUserId, email, displayName: 'Waiting' },
+		user: {
+			userId: personIdFromStored(stableUserId),
+			email,
+			displayName: 'Waiting',
+		},
 	})
 
 	await expect(

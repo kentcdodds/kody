@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -108,10 +112,12 @@ const authenticatedUser: AuthenticatedAppUser = {
 	permissions: [],
 	artifactOwnerIds: ['9'],
 	mcpUser: {
-		userId: 'stable-ada',
+		userId: personIdFromStored('stable-ada'),
 		email: 'ada@example.com',
 		displayName: 'ada',
 	},
+	actor: personIdFromStored('stable-ada'),
+	owner: personalOrgId(personIdFromStored('stable-ada')),
 }
 
 function createBillingDb(customerId: string | null = null) {

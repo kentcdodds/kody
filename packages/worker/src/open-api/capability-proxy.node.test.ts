@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -69,7 +70,7 @@ function mockBootstrapToolContext(db: D1Database) {
 							callerContext: createMcpCallerContext({
 								baseUrl: 'https://kody.codes',
 								user: {
-									userId: callerContext.user.userId,
+									userId: personIdFromStored(callerContext.user.userId),
 									email: 'caller@example.com',
 									displayName: 'Caller',
 								},

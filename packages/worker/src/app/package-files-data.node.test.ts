@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUser from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -213,11 +217,13 @@ function viewer(userId: string): AuthenticatedAppUser {
 		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: 'viewer@example.com',
 			username: 'viewer',
 			displayName: 'viewer',
 		},
+		actor: personIdFromStored(userId),
+		owner: personalOrgId(personIdFromStored(userId)),
 	}
 }
 

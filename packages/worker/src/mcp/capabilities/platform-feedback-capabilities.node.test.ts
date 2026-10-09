@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import type * as PlatformFeedbackOutcomeEmail from '#worker/platform-feedback/outcome-email.ts'
 import type * as PlatformFeedbackService from '#worker/platform-feedback/service.ts'
 import { expect, test, vi } from 'vitest'
@@ -122,7 +123,7 @@ function createCapabilityContext(input?: {
 			...(input
 				? {
 						user: {
-							userId: input.userId ?? 'user-1',
+							userId: personIdFromStored(input.userId ?? 'user-1'),
 							username: `${input.userId ?? 'user-1'}-name`,
 							email: `${input.userId ?? 'user-1'}@example.com`,
 							displayName: `${input.userId ?? 'user-1'}-name`,

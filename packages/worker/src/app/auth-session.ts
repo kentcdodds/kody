@@ -1,6 +1,6 @@
 import { createCookie } from 'remix/cookie'
 import { isIssuedAtInvalidatedByPasswordChange } from '#worker/password-change-lockout.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 const defaultSessionMaxAgeSeconds = 60 * 60 * 24 * 7
 const rememberedSessionMaxAgeSeconds = 60 * 60 * 24 * 30
@@ -66,7 +66,7 @@ function isStoredAuthSession(value: unknown): value is StoredAuthSession {
 	const record = value as Record<string, unknown>
 	return (
 		record.v === 2 &&
-		isStableUserId(record.stableUserId) &&
+		parsePersonId(record.stableUserId) !== null &&
 		typeof record.email === 'string' &&
 		record.email.length > 0 &&
 		(record.rememberMe === undefined ||

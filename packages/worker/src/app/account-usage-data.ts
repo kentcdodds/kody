@@ -15,7 +15,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
@@ -51,7 +51,7 @@ export async function loadAccountUsageData(input: {
 	if (!row) return null
 
 	const manualPlan = parseStoredPlanName(row.plan)
-	const usageUserId = resolveUserStableId(row)
+	const usageUserId = ownerIdFromStored(row.stable_user_id)
 	// Best-effort: retry a creation-time welcome grant that failed earlier.
 	// No-ops unless signup_welcome_credits_pending is set (no pre-ship backfill).
 	await reconcileSignupWelcomeCreditsIfPending({

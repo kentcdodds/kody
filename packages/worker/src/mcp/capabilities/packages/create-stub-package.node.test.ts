@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
@@ -60,10 +64,10 @@ function resetMocks() {
 }
 
 const owner: PackageOwnerContext = {
-	ownerUserId: 'user-1',
+	ownerUserId: ownerIdFromStored('user-1'),
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
-	actorUserId: 'user-1',
+	actorUserId: personIdFromStored('user-1'),
 	delegated: false,
 }
 
@@ -165,10 +169,10 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 	await create({
 		kodyId: 'official-tool',
 		owner: {
-			ownerUserId: 'platform-owner',
+			ownerUserId: ownerIdFromStored('platform-owner'),
 			ownerScope: 'kody',
 			ownerEmail: 'kody@example.com',
-			actorUserId: 'actor-1',
+			actorUserId: personIdFromStored('actor-1'),
 			delegated: true,
 		},
 	})

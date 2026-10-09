@@ -9,7 +9,7 @@ import {
 } from '#worker/entitlements/user-meter-do.ts'
 import { calculateUserD1StorageBytes } from '#worker/entitlements/service.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parseOwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 
 type DailyResourceRead = {
 	resource: DailyEntitlementResource
@@ -166,8 +166,8 @@ export async function loadAdminUserMeterParityReport(input: {
 	stableUserId: string
 	now?: Date
 }): Promise<AdminUserMeterParityReport | null> {
-	const stableUserId = normalizeStableUserId(input.stableUserId)
-	if (!isStableUserId(stableUserId)) return null
+	const stableUserId = parseOwnerId(input.stableUserId)
+	if (!stableUserId) return null
 	if (!(await userExists(input.db, stableUserId))) return null
 
 	const now = input.now ?? new Date()

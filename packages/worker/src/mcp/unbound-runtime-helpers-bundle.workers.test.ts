@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -23,7 +24,7 @@ test(
 		const callerContext = createMcpCallerContext({
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId: 'user-unbound-repro',
+				userId: personIdFromStored('user-unbound-repro'),
 				email: 'repro@example.com',
 				displayName: 'Repro',
 			},
@@ -64,7 +65,7 @@ test(
 		const callerContext = createMcpCallerContext({
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId: 'user-unbound-secrets',
+				userId: personIdFromStored('user-unbound-secrets'),
 				email: 'secrets@example.com',
 				displayName: 'Secrets',
 			},

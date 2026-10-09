@@ -55,7 +55,7 @@ import {
 	allocateSignupIdentity,
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	getTurnstileSiteKey,
@@ -442,7 +442,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					clearReferralCookie?: boolean
 				} = {},
 			) {
-				const stableUserId = resolveUserStableId(user)
+				const stableUserId = personIdFromStored(user.stable_user_id)
 				const postLoginPath =
 					options.destination ?? redirectTo ?? defaultRedirectTo
 				// Two-factor accounts get the same pending-verification gate as
@@ -614,7 +614,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				try {
 					await assertAccountWritableDb(
 						env.APP_DB,
-						resolveUserStableId(existingUser),
+						personIdFromStored(existingUser.stable_user_id),
 					)
 				} catch (error) {
 					if (error instanceof AccountDeletionInProgressError) {
@@ -632,7 +632,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 							d1: env.APP_DB,
 							helpers,
 							userId: existingUser.id,
-							stableUserId: resolveUserStableId(existingUser),
+							stableUserId: personIdFromStored(existingUser.stable_user_id),
 							unusablePasswordHash: unusablePasswordHash.reclaimedUnverified,
 							clearSecondFactorsAndConnections: true,
 							requireWritableAccount: true,
@@ -691,7 +691,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					if ((stamped.meta.changes ?? 0) === 1) {
 						recordOnboardingFunnelEvent(env, {
 							stage: 'email_verified',
-							userId: resolveUserStableId(existingUser),
+							userId: personIdFromStored(existingUser.stable_user_id),
 						})
 					}
 					if ((stamped.meta.changes ?? 0) !== 1) {

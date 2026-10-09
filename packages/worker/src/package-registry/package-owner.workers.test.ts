@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createPlatformAccount } from '#worker/identity/platform-account-creation.ts'
@@ -53,12 +54,12 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 		username: reservedPlatformUsername(),
 	})
 	const personUser = {
-		userId: person.stableUserId,
+		userId: personIdFromStored(person.stableUserId),
 		email: person.email,
 		displayName: person.username,
 	}
 	const actorUser = {
-		userId: actor.stableUserId,
+		userId: personIdFromStored(actor.stableUserId),
 		email: actor.email,
 		displayName: actor.username,
 	}
@@ -113,7 +114,7 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 	const staleEmail = `stale-${crypto.randomUUID()}@example.com`
 	expect(
 		await resolvePackageOwnerContext(env, {
-			userId: person.stableUserId,
+			userId: personIdFromStored(person.stableUserId),
 			email: staleEmail,
 			displayName: person.username,
 		}),

@@ -1,5 +1,7 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -85,22 +87,21 @@ function createDb() {
 }
 
 function createContext(db: D1Database): ApiInvocationContext {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.codes',
+		executionOrigin: 'interactive',
+		user: {
+			userId: personIdFromStored(callerUserId),
+			email: 'caller@example.com',
+			displayName: 'Caller',
+		},
+		storageContext: null,
+		repoContext: null,
+	})
+	if (!callerContext.user) throw new Error('Caller context needs a user')
 	return {
 		env: { APP_DB: db } as Env,
-		callerContext: {
-			baseUrl: 'https://kody.codes',
-			executionOrigin: 'interactive',
-			user: {
-				userId: callerUserId,
-				email: 'caller@example.com',
-				displayName: 'Caller',
-				username: undefined,
-				roles: undefined,
-				permissions: undefined,
-			},
-			storageContext: null,
-			repoContext: null,
-		},
+		callerContext: { ...callerContext, user: callerContext.user },
 		principal: { kind: 'mcp' },
 		getFeatureFlags: async () => ({
 			'demo-indicator': false,

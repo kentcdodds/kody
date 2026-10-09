@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -10,7 +11,7 @@ import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { resolvePackageStorageOwnerUserId } from '#worker/package-registry/share-grants.ts'
+import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import {
 	decodeHmacKeyMaterial,
 	extractSecretMaterial,
@@ -105,12 +106,12 @@ export const jwtSignCapability = defineDomainCapability(
 			const secretScope =
 				args.private_key_secret_scope ?? referenced.scope ?? undefined
 			const secretUserId = authorityPackageId
-				? await resolvePackageStorageOwnerUserId({
+				? await resolvePackageStorageOwner({
 						db: ctx.env.APP_DB,
-						callerUserId: user.userId,
+						caller: user.userId,
 						packageId: authorityPackageId,
 					})
-				: user.userId
+				: personalOrgId(user.userId)
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: secretUserId,
@@ -140,7 +141,8 @@ export const jwtSignCapability = defineDomainCapability(
 				authorityPackageId,
 				secretName,
 				resolved,
-				allowImplicitUserSecretAccess: secretUserId === user.userId,
+				allowImplicitUserSecretAccess:
+					secretUserId === personalOrgId(user.userId),
 			})
 
 			const secretMaterial = extractSecretMaterial({

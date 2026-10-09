@@ -6,7 +6,10 @@ import {
 	invokeContractFreshnessTtlMs,
 } from '#worker/package-invocations/invoke-contract-cache.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
-import { isStableUserId, resolveUserStableId } from '#worker/user-id.ts'
+import {
+	parsePersonId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * The account a hosted package app runs on behalf of.
@@ -121,7 +124,7 @@ async function loadPackageAppOwnerRowWithCache(input: {
 				return null
 			}
 			return {
-				userId: resolveUserStableId(userRecord),
+				userId: personIdFromStored(userRecord.stable_user_id),
 				username: userRecord.username,
 				email: userRecord.email,
 				deletingAt: userRecord.deleting_at ?? null,
@@ -144,7 +147,7 @@ export async function resolvePackageAppOwnerByStableUserId(input: {
 	stableUserId: string
 	issuedAt: number
 }): Promise<PackageAppOwner | null> {
-	if (!isStableUserId(input.stableUserId)) return null
+	if (!parsePersonId(input.stableUserId)) return null
 
 	const row = await loadPackageAppOwnerRowWithCache({
 		env: input.env,

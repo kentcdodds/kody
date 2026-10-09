@@ -12,7 +12,6 @@ import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminCapabilityAccess = {
 	requiredRole: 'admin',
@@ -242,7 +241,7 @@ export async function resolveActingAdminUserId(
 	ctx: CapabilityContext,
 ): Promise<number> {
 	const user = requireMcpUser(ctx.callerContext)
-	const stableUserId = normalizeStableUserId(user.userId)
+	const stableUserId = user.userId.trim()
 	if (!stableUserId) {
 		throw new Error('Authenticated admin account was not found.')
 	}

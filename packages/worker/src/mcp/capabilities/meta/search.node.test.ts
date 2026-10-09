@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as accessControl from '#mcp/capabilities/access-control.ts'
 import type * as capabilityRegistry from '#mcp/capabilities/registry.ts'
@@ -223,6 +224,7 @@ function createContext(
 			user: user
 				? {
 						...user,
+						userId: personIdFromStored(user.userId),
 						email: 'user@example.com',
 						displayName: 'User',
 					}

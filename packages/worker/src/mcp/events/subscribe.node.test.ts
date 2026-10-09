@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -79,7 +80,11 @@ function createPrincipal(
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://kody.example.com',
 			user: userId
-				? { userId, email: 'one@example.com', displayName: 'One' }
+				? {
+						userId: personIdFromStored(userId),
+						email: 'one@example.com',
+						displayName: 'One',
+					}
 				: null,
 			connectionProfileName: overrides.connectionProfileName ?? null,
 		}),

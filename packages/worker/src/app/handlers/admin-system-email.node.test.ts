@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
@@ -57,11 +61,13 @@ function createActor(
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: '1'.padStart(64, '0'),
+			userId: personIdFromStored('1'.padStart(64, '0')),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
 		},
+		actor: personIdFromStored('1'.padStart(64, '0')),
+		owner: personalOrgId(personIdFromStored('1'.padStart(64, '0'))),
 	}
 }
 

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { collectPackageStorageGrantIds } from '#mcp/run-kody-registry.ts'
@@ -217,7 +218,7 @@ test('resolveSavedPackageImport resolves accepted share grants and not pending o
 	await invitePackageShare({
 		db,
 		owner: {
-			userId: ownerUserId,
+			userId: personIdFromStored(ownerUserId),
 			email: 'alice@example.com',
 			displayName: 'Alice',
 			username: 'alice',
@@ -231,7 +232,7 @@ test('resolveSavedPackageImport resolves accepted share grants and not pending o
 	await acceptPackageShare({
 		db,
 		guest: {
-			userId: guestUserId,
+			userId: personIdFromStored(guestUserId),
 			email: 'jesse@example.com',
 			displayName: 'Jesse',
 			username: 'jesse',

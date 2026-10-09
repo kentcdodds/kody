@@ -123,7 +123,12 @@ async function renderDetail({
 		commit: headCommit,
 	})
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		viewer && { roles: [], ...viewer },
+		viewer && {
+			roles: [],
+			...viewer,
+			actor: viewer.mcpUser.userId,
+			owner: viewer.mcpUser.userId,
+		},
 	)
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue(forks)
 	mockModule.listSavedPackagesBySlugs.mockResolvedValue(savedPackagesByKodyId)

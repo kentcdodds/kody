@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/server/validators/cf-worker'
 import { beforeEach, expect, test, vi } from 'vitest'
@@ -62,7 +63,11 @@ const skillUri = 'skill://owner/ship/ship-it/SKILL.md'
 
 const signedInCaller = createMcpCallerContext({
 	baseUrl: 'https://kody.example',
-	user: { userId: 'user-1', email: 'a@example.com', displayName: 'A' },
+	user: {
+		userId: personIdFromStored('user-1'),
+		email: 'a@example.com',
+		displayName: 'A',
+	},
 })
 
 function envelope(extensions?: Record<string, unknown>) {

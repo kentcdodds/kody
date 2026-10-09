@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
@@ -1301,7 +1302,7 @@ test(
 		const callerContext = createMcpCallerContext({
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: 'sandbox-fail-logs@example.com',
 				displayName: 'Sandbox Fail Logs',
 			},

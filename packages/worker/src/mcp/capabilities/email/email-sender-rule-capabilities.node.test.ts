@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as EmailSenderRules from '#worker/email/sender-rules.ts'
@@ -47,7 +48,7 @@ function createUserContext(userId = 'user-1') {
 	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			displayName: 'User Example',
 		},

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -67,7 +68,7 @@ function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: input.executionOrigin ?? 'interactive',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'kody@example.com',
 				displayName: 'Kody',
 				username: 'kody',

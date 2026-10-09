@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	auditEventSummaries,
@@ -36,7 +37,7 @@ function memberContext(userId: string) {
 	return createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			displayName: userId,
 			roles: ['user'],

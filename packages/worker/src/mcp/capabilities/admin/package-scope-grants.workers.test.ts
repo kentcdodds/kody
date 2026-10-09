@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -53,7 +54,7 @@ function createAdminCapabilityContext(input: {
 		callerContext: createMcpCallerContext({
 			baseUrl: 'https://example.com',
 			user: {
-				userId: input.userId,
+				userId: personIdFromStored(input.userId),
 				email: input.email,
 				displayName: 'admin',
 				roles: ['admin'],

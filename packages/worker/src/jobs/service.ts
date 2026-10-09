@@ -2,7 +2,11 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
+import {
+	createMcpCallerContext,
+	parseMcpCallerContext,
+	toMcpCallerContextWire,
+} from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
@@ -117,11 +121,11 @@ export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
 ): PersistedJobCallerContext {
-	const parsed = parseMcpCallerContext(callerContext)
-	if (!parsed.user) {
+	const wire = toMcpCallerContextWire(parseMcpCallerContext(callerContext))
+	if (!wire.user) {
 		throw new Error('Authenticated MCP user is required for job operations.')
 	}
-	return parsed as PersistedJobCallerContext
+	return { ...wire, user: wire.user }
 }
 
 function serializeCallerContext(callerContext: PersistedJobCallerContext) {
@@ -414,7 +418,7 @@ async function executePublishedJobArtifact(input: {
 	).catch((error: unknown) => {
 		throw markPreExecutionTransientError(error)
 	})
-	const callerContext = {
+	const callerContext = createMcpCallerContext({
 		...input.callerContext,
 		repoContext: source
 			? {
@@ -429,7 +433,7 @@ async function executePublishedJobArtifact(input: {
 					entityId: source.entity_id,
 				}
 			: null,
-	}
+	})
 	const packageContext = input.artifact.packageContext ?? null
 	const runRecord = {
 		surface: 'job' as const,
@@ -619,18 +623,21 @@ async function createPackageJobCallerContext(input: {
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
 	const user = await resolveBackgroundMcpUser(input.db, input.userId)
-	return createMcpCallerContext({
-		baseUrl: input.baseUrl,
-		executionOrigin: 'background',
-		user,
-		storageContext: {
-			sessionId: null,
-			appId: input.packageId,
-			packageId: input.packageId,
-			storageId: null,
-		},
-		repoContext: null,
-	}) as PersistedJobCallerContext
+	const wire = toMcpCallerContextWire(
+		createMcpCallerContext({
+			baseUrl: input.baseUrl,
+			executionOrigin: 'background',
+			user,
+			storageContext: {
+				sessionId: null,
+				appId: input.packageId,
+				packageId: input.packageId,
+				storageId: null,
+			},
+			repoContext: null,
+		}),
+	)
+	return { ...wire, user }
 }
 
 async function resolveJobRuntimeCallerContext(input: {

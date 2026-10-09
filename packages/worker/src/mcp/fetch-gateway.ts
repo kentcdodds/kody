@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
@@ -35,7 +36,7 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
-import { resolvePackageStorageOwnerUserId } from '#worker/package-registry/share-grants.ts'
+import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
@@ -450,9 +451,9 @@ export async function expandSecretPlaceholders(input: {
 	// the caller; provider secrets do their own owner remap.
 	const secretUserId =
 		callerUserId && authorityPackageId && referencedSecrets.length > 0
-			? await resolvePackageStorageOwnerUserId({
+			? await resolvePackageStorageOwner({
 					db: input.env.APP_DB,
-					callerUserId,
+					caller: personIdFromStored(callerUserId),
 					packageId: authorityPackageId,
 				})
 			: callerUserId

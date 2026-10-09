@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -242,7 +243,11 @@ function runBundle(
 		env,
 		createMcpCallerContext({
 			baseUrl,
-			user: { userId, email: 'worker@example.com', displayName: 'Worker Test' },
+			user: {
+				userId: personIdFromStored(userId),
+				email: 'worker@example.com',
+				displayName: 'Worker Test',
+			},
 		}),
 		bundle,
 		undefined,

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { cliCredentialBootstrapCapability } from './cli-credential-bootstrap.ts'
@@ -16,7 +17,7 @@ test.each([
 					callerContext: createMcpCallerContext({
 						baseUrl: 'https://kody.codes',
 						user: {
-							userId: 'user-1',
+							userId: personIdFromStored('user-1'),
 							email: 'user@example.com',
 							displayName: 'User',
 						},

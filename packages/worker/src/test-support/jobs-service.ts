@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 export * from './jobs-service-mocks.ts'
 import { repoMockModule } from './jobs-service-mocks.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -18,6 +19,10 @@ import {
 	type JobSchedule,
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
+import {
+	type McpCallerContext,
+	type McpUserContext,
+} from '@kody-internal/shared/chat.ts'
 export function mockRepoPersistence() {
 	repoMockModule.ensureEntitySource.mockImplementation(
 		async ({ db, id, userId, entityKind, entityId, sourceRoot }) => {
@@ -1084,21 +1089,30 @@ export async function insertPublishedEntitySource(input: {
 	}
 }
 
-export function createBaseCallerContext(): PersistedJobCallerContext {
-	return createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-			packageId: null,
-			storageId: null,
-		},
-	}) as PersistedJobCallerContext
+export function withCallerUser(
+	callerContext: McpCallerContext,
+): McpCallerContext & { user: McpUserContext } {
+	if (!callerContext.user) throw new Error('Caller context needs a user')
+	return { ...callerContext, user: callerContext.user }
+}
+
+export function createBaseCallerContext() {
+	return withCallerUser(
+		createMcpCallerContext({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored('user-123'),
+				email: 'user@example.com',
+				displayName: 'User Example',
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'app-123',
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	)
 }
 
 export async function insertLeftoverJob(input: {

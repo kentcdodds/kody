@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	WorkerEntrypoint,
 	exports as workerExports,
@@ -976,7 +977,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
 			user: {
-				userId: this.ctx.props.userId,
+				userId: personIdFromStored(this.ctx.props.userId),
 				email: this.ctx.props.email,
 				username: undefined,
 				displayName: this.ctx.props.displayName,
@@ -2117,7 +2118,7 @@ export async function createPackageAppCallerContext(input: {
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user: {
-			userId: input.user.userId,
+			userId: personIdFromStored(input.user.userId),
 			email: input.user.email,
 			username: input.user.username,
 			displayName: input.user.displayName ?? `package:${input.packageId}`,

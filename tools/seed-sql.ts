@@ -11,7 +11,7 @@ import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 /**
  * Deterministic fixture `stable_user_id` for local seed accounts so re-seeding
  * and dependent seed rows (packages, integrations) resolve the same owner.
- * Production signup mints random ids (`createStableUserId`); never use this
+ * Production signup mints random ids (`mintPersonId`); never use this
  * outside local fixtures.
  */
 export function seedStableUserIdFromEmail(email: string) {

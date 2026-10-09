@@ -8,7 +8,7 @@ import {
 	grantAdminCreditsToUser,
 	loadAdminCreditWallet,
 } from '#worker/admin/credit-grants.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parseOwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * Admin credit wallet for one account: GET reads balance and recent
@@ -22,10 +22,10 @@ export function createAdminUserCreditsApiHandler(env: Env) {
 			try {
 				if (request.method === 'GET') {
 					await requireUserWithPermission(request, env, 'read:user:any')
-					const stableUserId = normalizeStableUserId(
+					const stableUserId = parseOwnerId(
 						new URL(request.url).searchParams.get('stableUserId'),
 					)
-					if (!isStableUserId(stableUserId)) {
+					if (!stableUserId) {
 						return jsonResponse(
 							{ ok: false, error: 'stableUserId is required.' },
 							400,
@@ -50,10 +50,8 @@ export function createAdminUserCreditsApiHandler(env: Env) {
 					amountCents?: unknown
 					note?: unknown
 				} | null
-				const stableUserId = normalizeStableUserId(
-					typeof body?.stableUserId === 'string' ? body.stableUserId : '',
-				)
-				if (!isStableUserId(stableUserId)) {
+				const stableUserId = parseOwnerId(body?.stableUserId)
+				if (!stableUserId) {
 					return jsonResponse(
 						{ ok: false, error: 'stableUserId is required.' },
 						400,

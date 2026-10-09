@@ -11,7 +11,7 @@ import {
 	claimAccountEmail,
 	isEmailReservedForOtherAccount,
 } from '#worker/identity/email-claims.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { reconcileDestinationsAfterIdentityEmailChange } from '#worker/email/destinations.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -196,7 +196,7 @@ export async function verifyEmailChangeToken(input: {
 
 	// Preserve the existing stable id across email changes so MCP identity,
 	// ownership rows, and grants stay bound to the same account.
-	const stableUserId = resolveUserStableId(record)
+	const stableUserId = personIdFromStored(record.stable_user_id)
 	const verifiedAt = now.toISOString()
 
 	try {

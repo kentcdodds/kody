@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -49,7 +50,11 @@ function update(
 			callerContext: createMcpCallerContext({
 				baseUrl: 'https://heykody.dev',
 				user: userId
-					? { userId, email: 'user@example.com', displayName: 'User' }
+					? {
+							userId: personIdFromStored(userId),
+							email: 'user@example.com',
+							displayName: 'User',
+						}
 					: null,
 			}),
 		},

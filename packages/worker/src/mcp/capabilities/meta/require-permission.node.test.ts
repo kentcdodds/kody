@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { requireMcpUserWithPermission } from './require-permission.ts'
@@ -17,7 +18,7 @@ test('requireMcpUserWithPermission throws when the user lacks the permission', (
 			createMcpCallerContext({
 				baseUrl: 'https://example.com',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'user@example.com',
 					displayName: 'user',
 					roles: ['user'],
@@ -31,7 +32,7 @@ test('requireMcpUserWithPermission throws when the user lacks the permission', (
 
 test('requireMcpUserWithPermission returns the user when the permission is present', () => {
 	const user = {
-		userId: 'user-1',
+		userId: personIdFromStored('user-1'),
 		email: 'admin@example.com',
 		displayName: 'admin',
 		roles: ['admin'],
@@ -54,7 +55,7 @@ test('requireMcpUserWithPermission treats missing permissions as unauthorized', 
 			createMcpCallerContext({
 				baseUrl: 'https://example.com',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'user@example.com',
 					displayName: 'user',
 				},

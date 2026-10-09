@@ -26,7 +26,6 @@ import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	readMonthlyComputeUsage,
 	type MonthlyComputeUsage,
@@ -410,7 +409,7 @@ export async function findCachedUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<StableUserAccount | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	return await cachedStableUserAccounts.getOrCreate(
 		db,
@@ -431,7 +430,7 @@ export async function findUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<StableUserAccount | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	const row = await db
 		.prepare(

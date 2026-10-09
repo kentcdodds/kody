@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -388,7 +389,7 @@ export const packageShareInspectCapability = defineDomainCapability(
 				})
 				if (
 					!grant ||
-					(grant.ownerUserId !== user.userId &&
+					(grant.ownerUserId !== personalOrgId(user.userId) &&
 						!grantIsAddressedToGuest(
 							grant,
 							user.userId,

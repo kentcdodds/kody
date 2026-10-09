@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import * as registryModule from '#mcp/capabilities/registry.ts'
@@ -62,7 +63,11 @@ const okBundle = {
 const callerFor = (userId = 'user-123') =>
 	createMcpCallerContext({
 		baseUrl: 'https://heykody.dev',
-		user: { userId, email: `${userId}@example.com`, displayName: userId },
+		user: {
+			userId: personIdFromStored(userId),
+			email: `${userId}@example.com`,
+			displayName: userId,
+		},
 	})
 
 const runOk = (options: RunOptions = {}, callerContext = callerFor()) =>
