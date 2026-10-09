@@ -224,10 +224,8 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					}
 				}
 
-				const clientReferenceId = await createBillingLinkReference(
-					env,
-					user.mcpUser.userId,
-				)
+				// Org is the billing subject; the signed-in member only authorizes.
+				const clientReferenceId = await createBillingLinkReference(env, orgId)
 				const successUrl = `${new URL('/account/billing/success', request.url).toString()}?session_id={CHECKOUT_SESSION_ID}`
 				const session = await createCheckoutSession(env, {
 					priceId,
@@ -236,10 +234,8 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					cancelUrl: billingUrl,
 					quantity: seatQuantity,
 					...(customerId ? { customerId } : { customerEmail: user.email }),
-					// Lets the Stripe webhook resolve the user without reversing
-					// the HMAC client_reference_id (still verified on link).
-					// Success redirect linking still keys off the signed-in user;
-					// webhook org resolution uses kody_org_id below (team soak).
+					// Org identity on Stripe objects (ADR 0065). HMAC client_reference_id
+					// is also org-backed and verified on link.
 					metadata: {
 						...buildOrgBillingMetadata(orgId),
 						kody_plan: plan,
@@ -377,15 +373,14 @@ export function createAccountBillingSuccessHandler(env: Env) {
 			}
 
 			const requestIp = getRequestIp(request) ?? undefined
+			const orgId = user.request.org.id
 			try {
+				// Link the Stripe customer onto the request-bound org. The member
+				// is the authorizing actor only (audit email below).
 				await linkStripeCustomerFromCheckoutSessionAttribution({
 					env,
 					sessionId,
-					user: {
-						id: user.userId,
-						email: user.email,
-						stableUserId: user.mcpUser.userId,
-					},
+					orgId,
 				})
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),

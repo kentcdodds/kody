@@ -32,7 +32,10 @@ import {
 	StripeApiError,
 } from './stripe-client.ts'
 import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
-import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
+import {
+	batchUsersAndPersonalOrgBillingUpdate,
+	updateOrgBillingColumns,
+} from '#worker/orgs/billing-dual-write.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -386,17 +389,89 @@ export async function findUserIdByStripeCustomerId(input: {
 	return orgRow?.id ?? null
 }
 
-/**
- * Verify a completed Stripe Checkout session belongs to the logged-in user
- * (`client_reference_id` must equal their stable user id), link the Stripe
- * customer id uniquely onto their users row, then refresh stripe_plan.
- */
-export async function linkStripeCustomerFromCheckoutSession(input: {
+/** Resolve the org that owns a Stripe customer (team or personal). */
+export async function findOrgIdByStripeCustomerId(input: {
 	env: SyncEnv
-	user: BillingUser
+	customerId: string
+}): Promise<string | null> {
+	const customerId = input.customerId.trim()
+	if (!customerId) return null
+	const orgRow = await input.env.APP_DB.prepare(
+		`SELECT id FROM orgs WHERE stripe_customer_id = ? AND deleted_at IS NULL`,
+	)
+		.bind(customerId)
+		.first<{ id: string }>()
+	if (orgRow?.id) return orgRow.id
+	const userRow = await input.env.APP_DB.prepare(
+		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(customerId)
+		.first<{ stable_user_id: string }>()
+	return userRow?.stable_user_id?.trim() || null
+}
+
+/**
+ * Resolve the org id that owns a Checkout Session by verifying
+ * `client_reference_id` against `createBillingLinkReference(orgId)`. Prefer
+ * Stripe metadata (`kody_org_id`); never reverse the HMAC; never use the
+ * paying member's email as a team-org link target.
+ */
+export async function resolveOrgIdForCheckoutLink(input: {
+	env: SyncEnv
+	clientReferenceId: string | null | undefined
+	stableUserIdHint?: string | null
+	metadata?: Record<string, string> | null
+	customerId?: string | null
+}): Promise<string | null> {
+	const clientReferenceId = input.clientReferenceId?.trim()
+	if (!clientReferenceId) return null
+
+	const candidates: Array<string> = []
+	const seen = new Set<string>()
+	function pushCandidate(orgId: string | null | undefined) {
+		const trimmed = orgId?.trim()
+		if (!trimmed || seen.has(trimmed)) return
+		seen.add(trimmed)
+		candidates.push(trimmed)
+	}
+
+	pushCandidate(
+		resolveOrgIdFromStripeMetadata(input.metadata) ??
+			input.stableUserIdHint?.trim() ??
+			null,
+	)
+
+	const customerId = input.customerId?.trim()
+	if (customerId) {
+		pushCandidate(
+			await findOrgIdByStripeCustomerId({ env: input.env, customerId }),
+		)
+	}
+
+	for (const orgId of candidates) {
+		const expected = await createBillingLinkReference(input.env, orgId)
+		if (expected !== clientReferenceId) continue
+		const org = await input.env.APP_DB.prepare(
+			`SELECT id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+		)
+			.bind(orgId)
+			.first<{ id: string }>()
+		if (org?.id) return org.id
+		// Personal org before/without an orgs row: stable user id is the org id.
+		const user = await input.env.APP_DB.prepare(
+			`SELECT stable_user_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		)
+			.bind(orgId)
+			.first<{ stable_user_id: string }>()
+		if (user?.stable_user_id) return user.stable_user_id
+	}
+	return null
+}
+
+async function loadCheckoutSessionForLink(input: {
+	env: SyncEnv
 	sessionId: string
-	now?: Date
-}): Promise<ResolvedSubscriptionPlan> {
+}) {
 	if (!isBillingConfigured(input.env)) {
 		throw new BillingLinkError(
 			'billing_not_configured',
@@ -410,10 +485,8 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			'Checkout session id is missing.',
 		)
 	}
-
-	let session
 	try {
-		session = await getCheckoutSession(input.env, sessionId)
+		return await getCheckoutSession(input.env, sessionId)
 	} catch (error) {
 		if (error instanceof BillingNotConfiguredError) {
 			throw new BillingLinkError(
@@ -428,94 +501,25 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			{ cause: error },
 		)
 	}
+}
 
-	// The reference is an HMAC of the stable user id keyed by the deployment
-	// cookie secret, so it cannot be derived from a (guessable) email hash by
-	// an attacker who obtains or forges a Checkout Session client_reference_id.
-	const expectedReference = await createBillingLinkReference(
-		input.env,
-		input.user.stableUserId,
-	)
-	if (session.client_reference_id !== expectedReference) {
-		throw new BillingLinkError(
-			'client_reference_mismatch',
-			'This checkout session does not belong to your account.',
-		)
-	}
-
-	const customerId = session.customer?.trim()
-	if (!customerId) {
-		throw new BillingLinkError(
-			'missing_customer',
-			'The checkout session did not include a Stripe customer.',
-		)
-	}
-
-	const claimedBy = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stripe_customer_id = ? AND id != ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(customerId, input.user.id)
-		.first<{ id: number }>()
-	if (claimedBy) {
-		throw new BillingLinkError(
-			'customer_already_linked',
-			'This Stripe customer is already linked to another Kody account.',
-		)
-	}
-
-	// First-link or same-customer only: this endpoint is a GET (Stripe's
-	// redirect target), so never let a later checkout session silently
-	// replace an established linkage.
-	const existing = await input.env.APP_DB.prepare(
-		`SELECT stripe_customer_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(input.user.id)
-		.first<{ stripe_customer_id: string | null }>()
-	const existingCustomerId = existing?.stripe_customer_id?.trim() || null
-	if (existingCustomerId && existingCustomerId !== customerId) {
-		throw new BillingLinkError(
-			'account_already_linked',
-			'Your account is already linked to a different Stripe customer. Contact the operator to relink it.',
-		)
-	}
-
-	const now = input.now ?? new Date()
-	const updatedAt = now.toISOString()
-	try {
-		await batchUsersAndPersonalOrgBillingUpdate({
-			db: input.env.APP_DB,
-			stableUserId: input.user.stableUserId,
-			usersStatement: input.env.APP_DB.prepare(
-				`UPDATE users
-				 SET stripe_customer_id = ?, updated_at = ?
-				 WHERE id = ?${andLiveDeletedAtSql()}`,
-			).bind(customerId, updatedAt, input.user.id),
-			orgSetClause: 'stripe_customer_id = ?, updated_at = ?',
-			orgValues: [customerId, updatedAt],
-		})
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		if (/UNIQUE constraint failed/i.test(message)) {
-			throw new BillingLinkError(
-				'customer_already_linked',
-				'This Stripe customer is already linked to another Kody account.',
-				{ cause: error },
-			)
-		}
-		throw error
-	}
-
+async function refreshAfterCheckoutLink(input: {
+	env: SyncEnv
+	orgId: string
+	customerId: string
+	now: Date
+}): Promise<ResolvedSubscriptionPlan> {
 	const backstopScheduled = await scheduleStripePlanRefreshBackstop({
 		env: input.env,
-		userId: input.user.stableUserId,
-		now,
+		userId: input.orgId,
+		now: input.now,
 	})
 	try {
-		return await refreshStripePlanForUser({
+		return await refreshStripePlanForOrg({
 			env: input.env,
-			userId: input.user.id,
-			customerId,
-			now,
+			orgId: input.orgId,
+			customerId: input.customerId,
+			now: input.now,
 		})
 	} catch (error) {
 		if (
@@ -523,11 +527,8 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			error instanceof BillingNotConfiguredError
 		) {
 			if (!backstopScheduled) throw error
-			// The customer is linked; a failed plan refresh must not surface as
-			// a checkout error. The billing page refreshes on view and the
-			// per-user alarm retries after this plan-relevant activity.
 			console.error('billing_link_refresh_failed', {
-				userId: input.user.id,
+				orgId: input.orgId,
 				error: error instanceof Error ? error.message : String(error),
 			})
 			return {
@@ -544,9 +545,171 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 }
 
 /**
+ * Link a completed Checkout Session's Stripe customer onto the org row
+ * identified by `orgId`. `client_reference_id` must be the org-backed HMAC.
+ * Personal orgs (org id = owner stable user id) still dual-write the users
+ * row; team orgs write the team org row only — the authorizing member is
+ * never the link target.
+ */
+export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
+	env: SyncEnv
+	orgId: string
+	sessionId: string
+	now?: Date
+}): Promise<ResolvedSubscriptionPlan> {
+	const orgId = input.orgId.trim()
+	if (!orgId) {
+		throw new BillingLinkError(
+			'user_not_found',
+			'No Kody organization matched this checkout session attribution.',
+		)
+	}
+
+	const session = await loadCheckoutSessionForLink({
+		env: input.env,
+		sessionId: input.sessionId,
+	})
+
+	const expectedReference = await createBillingLinkReference(input.env, orgId)
+	if (session.client_reference_id !== expectedReference) {
+		throw new BillingLinkError(
+			'client_reference_mismatch',
+			'This checkout session does not belong to this organization.',
+		)
+	}
+
+	const customerId = session.customer?.trim()
+	if (!customerId) {
+		throw new BillingLinkError(
+			'missing_customer',
+			'The checkout session did not include a Stripe customer.',
+		)
+	}
+
+	const personalUser = await input.env.APP_DB.prepare(
+		`SELECT id, stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(orgId)
+		.first<{ id: number; stripe_customer_id: string | null }>()
+
+	const orgRow = await input.env.APP_DB.prepare(
+		`SELECT id, stripe_customer_id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
+	)
+		.bind(orgId)
+		.first<{ id: string; stripe_customer_id: string | null }>()
+
+	if (!orgRow && !personalUser) {
+		throw new BillingLinkError(
+			'user_not_found',
+			'No Kody organization matched this checkout session attribution.',
+		)
+	}
+
+	const claimedByOtherOrg = await input.env.APP_DB.prepare(
+		`SELECT id FROM orgs
+		 WHERE stripe_customer_id = ?
+		   AND id != ?
+		   AND deleted_at IS NULL`,
+	)
+		.bind(customerId, orgId)
+		.first<{ id: string }>()
+	if (claimedByOtherOrg) {
+		throw new BillingLinkError(
+			'customer_already_linked',
+			'This Stripe customer is already linked to another Kody organization.',
+		)
+	}
+
+	const claimedByOtherUser = await input.env.APP_DB.prepare(
+		`SELECT id FROM users
+		 WHERE stripe_customer_id = ?
+		   AND stable_user_id != ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(customerId, orgId)
+		.first<{ id: number }>()
+	if (claimedByOtherUser) {
+		throw new BillingLinkError(
+			'customer_already_linked',
+			'This Stripe customer is already linked to another Kody account.',
+		)
+	}
+
+	const existingOrgCustomer = orgRow?.stripe_customer_id?.trim() || null
+	const existingUserCustomer = personalUser?.stripe_customer_id?.trim() || null
+	const existingCustomerId = existingOrgCustomer ?? existingUserCustomer
+	if (existingCustomerId && existingCustomerId !== customerId) {
+		throw new BillingLinkError(
+			'account_already_linked',
+			'This organization is already linked to a different Stripe customer. Contact the operator to relink it.',
+		)
+	}
+
+	const now = input.now ?? new Date()
+	const updatedAt = now.toISOString()
+	try {
+		if (personalUser) {
+			// Personal org: one dual-write to users + personal org row.
+			await batchUsersAndPersonalOrgBillingUpdate({
+				db: input.env.APP_DB,
+				stableUserId: orgId,
+				usersStatement: input.env.APP_DB.prepare(
+					`UPDATE users
+					 SET stripe_customer_id = ?, updated_at = ?
+					 WHERE id = ?${andLiveDeletedAtSql()}`,
+				).bind(customerId, updatedAt, personalUser.id),
+				orgSetClause: 'stripe_customer_id = ?, updated_at = ?',
+				orgValues: [customerId, updatedAt],
+			})
+		} else if (orgRow) {
+			// Team org: org row only. Do not touch any member users row.
+			await updateOrgBillingColumns({
+				db: input.env.APP_DB,
+				orgId,
+				setClause: 'stripe_customer_id = ?, updated_at = ?',
+				values: [customerId, updatedAt],
+			})
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (/UNIQUE constraint failed/i.test(message)) {
+			throw new BillingLinkError(
+				'customer_already_linked',
+				'This Stripe customer is already linked to another Kody account.',
+				{ cause: error },
+			)
+		}
+		throw error
+	}
+
+	return await refreshAfterCheckoutLink({
+		env: input.env,
+		orgId,
+		customerId,
+		now,
+	})
+}
+
+/**
+ * Personal-org convenience wrapper: org id equals the owner's stable user id.
+ */
+export async function linkStripeCustomerFromCheckoutSession(input: {
+	env: SyncEnv
+	user: BillingUser
+	sessionId: string
+	now?: Date
+}): Promise<ResolvedSubscriptionPlan> {
+	return linkStripeCustomerFromCheckoutSessionForOrg({
+		env: input.env,
+		orgId: input.user.stableUserId,
+		sessionId: input.sessionId,
+		now: input.now,
+	})
+}
+
+/**
  * Shared checkout-link path used by the success redirect and the
- * `checkout.session.completed` webhook: resolve the owning user from session
- * attribution fields, then run the same link+refresh logic.
+ * `checkout.session.completed` webhook. The link target is always an org;
+ * the signed-in member is only the authorizing actor on the success path.
  */
 export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 	env: SyncEnv
@@ -556,39 +719,187 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 	metadata?: Record<string, string> | null
 	customerId?: string | null
 	customerEmail?: string | null
-	/** When set (success redirect), skip candidate lookup and use this user. */
+	/** Prefer this: request-bound org id from the success redirect. */
+	orgId?: string
+	/**
+	 * Legacy personal success path: treated as org id = stable user id.
+	 * Prefer `orgId`.
+	 */
 	user?: BillingUser
 	now?: Date
 }): Promise<ResolvedSubscriptionPlan> {
-	if (input.user) {
-		return linkStripeCustomerFromCheckoutSession({
+	void input.customerEmail
+	if (input.orgId?.trim()) {
+		return linkStripeCustomerFromCheckoutSessionForOrg({
 			env: input.env,
-			user: input.user,
+			orgId: input.orgId.trim(),
+			sessionId: input.sessionId,
+			now: input.now,
+		})
+	}
+	if (input.user) {
+		return linkStripeCustomerFromCheckoutSessionForOrg({
+			env: input.env,
+			orgId: input.user.stableUserId,
 			sessionId: input.sessionId,
 			now: input.now,
 		})
 	}
 
-	const user = await resolveBillingUserForCheckoutLink({
+	let clientReferenceId = input.clientReferenceId
+	let metadata = input.metadata
+	let customerId = input.customerId
+	if (clientReferenceId == null || metadata == null || customerId == null) {
+		const session = await loadCheckoutSessionForLink({
+			env: input.env,
+			sessionId: input.sessionId,
+		})
+		clientReferenceId = clientReferenceId ?? session.client_reference_id
+		metadata = metadata ?? session.metadata ?? null
+		customerId = customerId ?? session.customer
+	}
+
+	const orgId = await resolveOrgIdForCheckoutLink({
 		env: input.env,
-		clientReferenceId: input.clientReferenceId,
+		clientReferenceId,
 		stableUserIdHint: input.stableUserIdHint,
-		metadata: input.metadata,
-		customerId: input.customerId,
-		customerEmail: input.customerEmail,
+		metadata,
+		customerId,
 	})
-	if (!user) {
+	if (!orgId) {
 		throw new BillingLinkError(
 			'user_not_found',
-			'No Kody account matched this checkout session attribution.',
+			'No Kody organization matched this checkout session attribution.',
 		)
 	}
-	return linkStripeCustomerFromCheckoutSession({
+	return linkStripeCustomerFromCheckoutSessionForOrg({
 		env: input.env,
-		user,
+		orgId,
 		sessionId: input.sessionId,
 		now: input.now,
 	})
+}
+
+/**
+ * Refresh stripe_plan columns for an org. Personal orgs dual-write through
+ * {@link refreshStripePlanForUser}; team orgs update the orgs row only.
+ */
+export async function refreshStripePlanForOrg(input: {
+	env: SyncEnv
+	orgId: string
+	customerId: string
+	now?: Date
+}): Promise<ResolvedSubscriptionPlan> {
+	const orgId = input.orgId.trim()
+	const personalUser = await input.env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(orgId)
+		.first<{ id: number }>()
+	if (personalUser?.id != null) {
+		return refreshStripePlanForUser({
+			env: input.env,
+			userId: personalUser.id,
+			customerId: input.customerId,
+			now: input.now,
+		})
+	}
+
+	const now = input.now ?? new Date()
+	const previous = await input.env.APP_DB.prepare(
+		`SELECT stripe_price_id, ${userEntitlementColumnsSql()}
+		 FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(orgId)
+		.first<UserEntitlementRow & { stripe_price_id: string | null }>()
+	if (!previous) {
+		throw new Error(`Cannot refresh Stripe plan: missing org ${orgId}.`)
+	}
+	const subscriptions = await listSubscriptions(input.env, input.customerId)
+	const resolved = resolveSubscriptionPlan(subscriptions, input.env)
+	const nextLadder = resolveEntitlementLadderAfterPaidAccessChange({
+		currentLadder: parseEntitlementLadder(previous.entitlement_ladder),
+		manualPlan: parseStoredPlanName(previous.plan),
+		previousStripePlan: parseStripePlanName(previous.stripe_plan),
+		nextStripePlan: resolved.stripePlan,
+		previousStripePriceId: previous.stripe_price_id,
+		nextStripePriceId: resolved.stripePriceId,
+	})
+	await forgiveCreditUsageBeforeUnlock({
+		db: input.env.APP_DB,
+		userId: orgId,
+		current: previous,
+		next: {
+			...previous,
+			stripe_plan: resolved.stripePlan,
+			stripe_credits_eligible: resolved.creditsEligible ? 1 : 0,
+			entitlement_ladder: nextLadder,
+		},
+		now,
+	})
+	const stripePlanRefreshedAt = now.toISOString()
+	const stripeCreditsEligible = resolved.creditsEligible ? 1 : 0
+	await updateOrgBillingColumns({
+		db: input.env.APP_DB,
+		orgId,
+		setClause: `stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
+		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?, updated_at = ?`,
+		values: [
+			resolved.stripePlan,
+			resolved.stripePriceId,
+			stripeCreditsEligible,
+			stripePlanRefreshedAt,
+			nextLadder,
+			stripePlanRefreshedAt,
+		],
+		orgWhereSuffix: ' AND stripe_customer_id = ?',
+		orgWhereValues: [input.customerId],
+	})
+
+	const previousPlan = parseStripePlanName(previous.stripe_plan)
+	const nextPlan = resolved.stripePlan
+	if (
+		(nextPlan === 'standard' || nextPlan === 'pro') &&
+		nextPlan !== previousPlan
+	) {
+		waitUntil(
+			sendToOrgBillingRecipients({
+				db: input.env.APP_DB,
+				orgId,
+				sendOne: async (recipient) => {
+					await sendBillingSuccessEmail({
+						env: input.env,
+						email: recipient.email,
+						userId: recipient.userId,
+						planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
+					})
+				},
+			}).catch((error) => {
+				console.warn('billing-success-email-failed', error)
+			}),
+		)
+	}
+	const status = resolved.subscriptionStatus
+	if (status === 'past_due' || status === 'unpaid') {
+		const day = utcDayKey(now)
+		waitUntil(
+			sendToOrgBillingRecipients({
+				db: input.env.APP_DB,
+				orgId,
+				sendOne: async (recipient) => {
+					await sendPastDueEmail({
+						env: input.env,
+						email: recipient.email,
+						userId: recipient.userId,
+						day,
+					})
+				},
+			}).catch((error) => {
+				console.warn('billing-past-due-email-failed', error)
+			}),
+		)
+	}
+	return resolved
 }
 
 export async function refreshStripePlanForStripeCustomer(input: {
@@ -597,31 +908,51 @@ export async function refreshStripePlanForStripeCustomer(input: {
 	now?: Date
 }): Promise<{
 	userId: number | null
+	orgId: string | null
 	resolved: ResolvedSubscriptionPlan | null
 }> {
 	const userId = await findUserIdByStripeCustomerId({
 		env: input.env,
 		customerId: input.customerId,
 	})
-	if (userId == null) {
-		return { userId: null, resolved: null }
+	if (userId != null) {
+		const user = await loadBillingUserById(input.env, userId)
+		if (!user) {
+			return { userId: null, orgId: null, resolved: null }
+		}
+		await scheduleStripePlanRefreshBackstop({
+			env: input.env,
+			userId: user.stableUserId,
+			now: input.now,
+		})
+		const resolved = await refreshStripePlanForUser({
+			env: input.env,
+			userId: user.id,
+			customerId: input.customerId,
+			now: input.now,
+		})
+		return { userId: user.id, orgId: user.stableUserId, resolved }
 	}
-	const user = await loadBillingUserById(input.env, userId)
-	if (!user) {
-		return { userId: null, resolved: null }
+
+	const orgId = await findOrgIdByStripeCustomerId({
+		env: input.env,
+		customerId: input.customerId,
+	})
+	if (!orgId) {
+		return { userId: null, orgId: null, resolved: null }
 	}
 	await scheduleStripePlanRefreshBackstop({
 		env: input.env,
-		userId: user.stableUserId,
+		userId: orgId,
 		now: input.now,
 	})
-	const resolved = await refreshStripePlanForUser({
+	const resolved = await refreshStripePlanForOrg({
 		env: input.env,
-		userId: user.id,
+		orgId,
 		customerId: input.customerId,
 		now: input.now,
 	})
-	return { userId: user.id, resolved }
+	return { userId: null, orgId, resolved }
 }
 
 export function parseStoredStripePlan(value: string | null | undefined) {

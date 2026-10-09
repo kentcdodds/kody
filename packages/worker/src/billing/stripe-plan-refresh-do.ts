@@ -6,7 +6,10 @@ import {
 } from '#worker/account/deletion-state.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { stripePlanRefreshBackstopDelayMs } from './stripe-plan-refresh-client.ts'
-import { refreshStripePlanForUser } from './subscription-sync.ts'
+import {
+	refreshStripePlanForOrg,
+	refreshStripePlanForUser,
+} from './subscription-sync.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const userIdStorageKey = 'user-id'
@@ -38,8 +41,9 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 	}
 
 	async alarm() {
-		const userId = await this.ctx.storage.get<string>(userIdStorageKey)
-		if (!userId) {
+		const billingSubjectId =
+			await this.ctx.storage.get<string>(userIdStorageKey)
+		if (!billingSubjectId) {
 			await this.ctx.storage.deleteAll()
 			return
 		}
@@ -48,37 +52,60 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 			 FROM users
 			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
-			.bind(userId)
+			.bind(billingSubjectId)
 			.first<{ id: number; stripe_customer_id: string | null }>()
-		if (!user?.stripe_customer_id) {
+		const org =
+			user?.stripe_customer_id != null
+				? null
+				: await this.env.APP_DB.prepare(
+						`SELECT stripe_customer_id FROM orgs
+						 WHERE id = ? AND deleted_at IS NULL`,
+					)
+						.bind(billingSubjectId)
+						.first<{ stripe_customer_id: string | null }>()
+		const customerId =
+			user?.stripe_customer_id?.trim() ||
+			org?.stripe_customer_id?.trim() ||
+			null
+		if (!customerId) {
 			await this.ctx.storage.deleteAll()
 			return
 		}
-		const customerId = user.stripe_customer_id
 
 		try {
-			await withAccountWriteLease({
-				db: this.env.APP_DB,
-				stableUserId: userId,
-				holder: 'stripe_plan_refresh_alarm',
-				env: this.env,
-				write: async () => {
-					await refreshStripePlanForUser({
-						env: this.env,
-						userId: user.id,
-						customerId,
-					})
-				},
-			})
+			if (user?.id != null) {
+				await withAccountWriteLease({
+					db: this.env.APP_DB,
+					stableUserId: billingSubjectId,
+					holder: 'stripe_plan_refresh_alarm',
+					env: this.env,
+					write: async () => {
+						await refreshStripePlanForUser({
+							env: this.env,
+							userId: user.id,
+							customerId,
+						})
+					},
+				})
+			} else {
+				await refreshStripePlanForOrg({
+					env: this.env,
+					orgId: billingSubjectId,
+					customerId,
+				})
+			}
 		} catch (error) {
 			if (error instanceof AccountDeletionInProgressError) {
 				await this.ctx.storage.deleteAll()
 				return
 			}
-			console.error('stripe_plan_refresh_alarm_failed', { userId, error })
+			console.error('stripe_plan_refresh_alarm_failed', {
+				userId: billingSubjectId,
+				error,
+			})
 			Sentry.withScope((scope) => {
 				scope.setTag('billing.operation', 'stripe_plan_refresh_alarm')
-				scope.setContext('stripe_plan_refresh', { userId })
+				scope.setContext('stripe_plan_refresh', { userId: billingSubjectId })
 				Sentry.captureException(error)
 			})
 			await this.ctx.storage.setAlarm(
@@ -87,7 +114,7 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 			return
 		}
 		console.info('stripe_plan_refresh_alarm', {
-			userId,
+			userId: billingSubjectId,
 			status: 'refreshed',
 		})
 		await this.ctx.storage.deleteAll()

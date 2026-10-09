@@ -56,7 +56,7 @@ import { sendCreditLowBalanceEmail } from '#app/user-account-emails.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { creditDebitMonths } from './credit-wallet.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
-import { recordOrgBudgetSpendAfterCreditDebit } from '#worker/entitlements/budget-gate.ts'
+import { syncOrgBudgetSpendFromCreditLedger } from '#worker/entitlements/budget-gate.ts'
 
 export const creditDebitBatchSize = 50
 export const creditDebitMaxBatchesPerRun = 20
@@ -438,6 +438,8 @@ export async function settleCreditDebitMonth(input: {
 				.bind(debitedMicroUsd, nowIso, input.userId),
 		)
 	}
+	let settledDebitedMicroUsd = debitedMicroUsd
+	let batchCommitted = true
 	if (statements.length > 0) {
 		try {
 			await input.db.batch(statements)
@@ -445,34 +447,48 @@ export async function settleCreditDebitMonth(input: {
 			const message = error instanceof Error ? error.message : String(error)
 			if (!/UNIQUE constraint failed/i.test(message)) throw error
 			// An overlapping run already settled from this starting point.
-			return {
-				month: input.month,
-				debitedMicroUsd: 0,
-				forgivenUnits: {
+			settledDebitedMicroUsd = 0
+			batchCommitted = false
+		}
+	}
+	// Always replay budget MTD from committed ledger debits for the current
+	// month (idempotent). Recovers a prior post-commit UserMeter failure even
+	// when this run charged $0 (UNIQUE collision or no new billable units).
+	try {
+		await syncOrgBudgetSpendFromCreditLedger({
+			db: input.db,
+			env: input.env,
+			orgId: input.userId,
+			month: input.month,
+			includes: [
+				{
+					meter: 'unique_worker_days',
+					include: debitOverage.includedUniqueWorkerDays,
+				},
+				{
+					meter: 'durable_object_rows_read',
+					include: debitOverage.includedDurableObjectRowsRead,
+				},
+			],
+			now: input.now,
+		})
+	} catch (error) {
+		console.error('org-budget-spend-sync-failed', {
+			orgId: input.userId,
+			month: input.month,
+			debitedMicroUsd: settledDebitedMicroUsd,
+			error,
+		})
+		// Debit already committed; next hourly settle retries the sync.
+	}
+	return {
+		month: input.month,
+		debitedMicroUsd: settledDebitedMicroUsd,
+		forgivenUnits: batchCommitted
+			? forgivenUnits
+			: {
 					unique_worker_days: 0,
 					durable_object_rows_read: 0,
 				},
-			}
-		}
 	}
-	if (debitedMicroUsd > 0 && charge) {
-		try {
-			await recordOrgBudgetSpendAfterCreditDebit({
-				db: input.db,
-				env: input.env,
-				orgId: input.userId,
-				month: input.month,
-				debitedMicroUsd,
-				now: input.now,
-			})
-		} catch (error) {
-			console.warn('org-budget-spend-after-debit-failed', {
-				orgId: input.userId,
-				month: input.month,
-				debitedMicroUsd,
-				error,
-			})
-		}
-	}
-	return { month: input.month, debitedMicroUsd, forgivenUnits }
 }

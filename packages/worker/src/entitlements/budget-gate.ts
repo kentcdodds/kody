@@ -1,9 +1,9 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
-	creditDebitCostMicroUsd,
-	creditDebitMeters,
-	type CreditDebitMeter,
-} from '#universal/credits.ts'
+	buildBudgetSpendActorWeights,
+	type BudgetSpendAttributionInclude,
+} from '#universal/budget-spend-attribution.ts'
+import { creditDebitMeters, type CreditDebitMeter } from '#universal/credits.ts'
 import { type RequestSource } from '#worker/request-context/request-context.ts'
 import { type TransactionalEmailEnv } from '#app/email/sender-config.ts'
 import { sendBudgetHitEmail } from '#worker/billing/org-budget-hit-emails.ts'
@@ -287,7 +287,11 @@ type AttributionSpendShare = {
  * MTD counters. The real-time gate only checks (delta 0); settlement is what
  * advances spend so member/automation budgets can block later work.
  *
- * Splits by `usage_attribution_daily` actor weights for the month when present;
+ * Prefer {@link syncOrgBudgetSpendFromCreditLedger}: it recomputes absolute
+ * MTD from committed ledger debits (idempotent recovery). This incremental
+ * helper remains for tests and one-shot attribution of a known delta.
+ *
+ * Splits by overage-only `usage_attribution_daily` actor weights when present;
  * otherwise attributes the debit to the org billing id as the member actor
  * (personal-org soak: org id equals the owner user id).
  */
@@ -297,6 +301,7 @@ export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 	orgId: string
 	month: string
 	debitedMicroUsd: number
+	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
 	now?: Date
 }): Promise<void> {
 	const debit = Math.max(0, Math.floor(Number(input.debitedMicroUsd)))
@@ -309,6 +314,7 @@ export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 		db: input.db,
 		orgId: input.orgId,
 		month: input.month,
+		includes: input.includes,
 	})
 	const totalWeight = shares.reduce((sum, share) => sum + share.weight, 0)
 	if (totalWeight <= 0 || shares.length === 0) {
@@ -346,10 +352,95 @@ export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 	}
 }
 
+/**
+ * Idempotent org budget MTD sync from committed `credit_ledger_entries`
+ * debits. Uses UserMeter `recomputeBudgetSpend` (MAX semantics) so a failed
+ * post-debit write is repaired on the next settle without double-counting.
+ * Source of truth is the ledger; attribution weights are overage-only.
+ */
+export async function syncOrgBudgetSpendFromCreditLedger(input: {
+	db: D1Database
+	env: UserMeterEnv
+	orgId: string
+	month: string
+	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
+	now?: Date
+}): Promise<void> {
+	const now = input.now ?? new Date()
+	if (!shouldMutateBudgetMtdForMonth(input.month, now)) {
+		return
+	}
+	if (!(await orgBudgetEnforcementAvailable(input.db, input.orgId))) {
+		return
+	}
+	const totalDebited = await sumOrgCreditDebitMicroUsd({
+		db: input.db,
+		orgId: input.orgId,
+		month: input.month,
+	})
+	if (totalDebited <= 0) return
+
+	const shares = await loadBudgetSpendShares({
+		db: input.db,
+		orgId: input.orgId,
+		month: input.month,
+		includes: input.includes,
+	})
+	const totalWeight = shares.reduce((sum, share) => sum + share.weight, 0)
+	const users: Record<string, number> = {}
+	let automation = 0
+	if (totalWeight <= 0 || shares.length === 0) {
+		users[input.orgId] = totalDebited
+	} else {
+		let allocated = 0
+		for (let index = 0; index < shares.length; index += 1) {
+			const share = shares[index]!
+			const isLast = index === shares.length - 1
+			const slice = isLast
+				? totalDebited - allocated
+				: Math.floor((totalDebited * share.weight) / totalWeight)
+			allocated += slice
+			if (slice <= 0) continue
+			if (share.automationSource != null) {
+				automation += slice
+			} else if (share.actorUserId != null) {
+				users[share.actorUserId] = (users[share.actorUserId] ?? 0) + slice
+			}
+		}
+	}
+
+	const meter = userMeterRpc({ env: input.env, userId: input.orgId })
+	await meter.recomputeBudgetSpend({
+		month: input.month,
+		users,
+		automation,
+	})
+}
+
+async function sumOrgCreditDebitMicroUsd(input: {
+	db: D1Database
+	orgId: string
+	month: string
+}): Promise<number> {
+	const row = await input.db
+		.prepare(
+			`SELECT COALESCE(SUM(-amount_micro_usd), 0) AS total
+			 FROM credit_ledger_entries
+			 WHERE user_id = ?
+			   AND month = ?
+			   AND kind = 'debit'`,
+		)
+		.bind(input.orgId, input.month)
+		.first<{ total: number }>()
+	const total = Math.floor(Number(row?.total ?? 0))
+	return Number.isFinite(total) && total > 0 ? total : 0
+}
+
 async function loadBudgetSpendShares(input: {
 	db: D1Database
 	orgId: string
 	month: string
+	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
 }): Promise<Array<AttributionSpendShare>> {
 	const monthPrefix = `${input.month}-`
 	const meterList = creditDebitMeters.map((meter) => `'${meter}'`).join(', ')
@@ -357,6 +448,7 @@ async function loadBudgetSpendShares(input: {
 		const { results } = await input.db
 			.prepare(
 				`SELECT
+					day,
 					meter,
 					COALESCE(actor_user_id, '') AS actor_user_id,
 					COALESCE(automation_source, '') AS automation_source,
@@ -366,7 +458,7 @@ async function loadBudgetSpendShares(input: {
 				   AND day >= ?
 				   AND day < ?
 				   AND meter IN (${meterList})
-				 GROUP BY meter,
+				 GROUP BY day, meter,
 					COALESCE(actor_user_id, ''),
 					COALESCE(automation_source, '')`,
 			)
@@ -377,56 +469,37 @@ async function loadBudgetSpendShares(input: {
 				nextUtcMonthDay(input.month),
 			)
 			.all<{
+				day: string
 				meter: string
 				actor_user_id: string
 				automation_source: string
 				units: number
 			}>()
-		const merged = new Map<string, AttributionSpendShare>()
+		const dailyUnits = []
 		for (const row of results ?? []) {
 			const meter = asCreditDebitMeter(row.meter)
 			if (!meter) continue
 			const units = Number(row.units)
 			if (!Number.isFinite(units) || units <= 0) continue
-			// Weight by priced micro-USD so row-read counts cannot drown worker-days.
-			const weight = creditDebitCostMicroUsd(meter, units)
-			if (weight <= 0) continue
-			const automation = row.automation_source.trim()
-			const actor = row.actor_user_id.trim()
-			// Prefer automation_source when present: hourly attribution may also
-			// stamp the org billing id into actor_user_id for schedule/webhook.
-			const share: AttributionSpendShare =
-				automation.length > 0
-					? {
-							actorUserId: null,
-							automationSource: automation,
-							weight,
-						}
-					: actor.length > 0
-						? {
-								actorUserId: actor,
-								automationSource: null,
-								weight,
-							}
-						: { actorUserId: null, automationSource: null, weight: 0 }
-			if (share.weight <= 0) continue
-			if (share.actorUserId == null && share.automationSource == null) {
-				continue
-			}
-			const key =
-				share.automationSource != null
-					? `automation:${share.automationSource}`
-					: `user:${share.actorUserId}`
-			const existing = merged.get(key)
-			if (existing) {
-				existing.weight += share.weight
-			} else {
-				merged.set(key, share)
-			}
+			dailyUnits.push({
+				day: row.day,
+				meter,
+				actorUserId: row.actor_user_id,
+				automationSource: row.automation_source,
+				units,
+			})
 		}
-		return [...merged.values()]
-	} catch {
-		return []
+		const includes =
+			input.includes ??
+			creditDebitMeters.map((meter) => ({ meter, include: 0 }))
+		return buildBudgetSpendActorWeights({ dailyUnits, includes })
+	} catch (error) {
+		console.error('org-budget-spend-shares-failed', {
+			orgId: input.orgId,
+			month: input.month,
+			error,
+		})
+		throw error
 	}
 }
 

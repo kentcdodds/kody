@@ -8,6 +8,7 @@ import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import type * as onboardingData from '#app/onboarding-data.ts'
 import type * as pageAuth from '#app/page-auth.ts'
+import { createBillingLinkReference } from '#worker/billing/billing-config.ts'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
 import { StripeApiError } from '#worker/billing/stripe-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -254,9 +255,11 @@ test('billing checkout bills the request-bound org, not only the personal id', a
 	const env = createEnv()
 	const response = await postCheckout(env, { plan: 'pro' })
 	expect(response.status).toBe(200)
+	const expectedReference = await createBillingLinkReference(env, teamOrgId)
 	expect(mockModule.createCheckoutSession).toHaveBeenLastCalledWith(
 		env,
 		expect.objectContaining({
+			clientReferenceId: expectedReference,
 			metadata: expect.objectContaining({ kody_org_id: teamOrgId }),
 		}),
 	)
@@ -513,5 +516,13 @@ test('billing success renders a thank-you page instead of redirecting', async ()
 			},
 		},
 	})
+	expect(
+		mockModule.linkStripeCustomerFromCheckoutSessionAttribution,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sessionId: 'cs_test',
+			orgId: authenticatedUser.request.org.id,
+		}),
+	)
 	expect(success.headers.get('location')).toBeNull()
 })

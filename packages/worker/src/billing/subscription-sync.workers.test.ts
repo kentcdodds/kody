@@ -6,9 +6,11 @@ import { StripeApiError } from './stripe-client.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
+	linkStripeCustomerFromCheckoutSessionForOrg,
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const legacyStandardPrice = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
@@ -492,4 +494,62 @@ test('refreshStripePlanForUser does not re-flag a public account that resubscrib
 			subscriptionList('sub_resub', 'active'),
 		),
 	).toMatchObject({ stripe_plan: 'pro', entitlement_ladder: 'public' })
+})
+
+test('team checkout links Stripe customer onto the team org, not the member personal org', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const member = await seedUser('team-member', { plan: 'free' })
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-org-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, 'owner', ?)`,
+	)
+		.bind(teamOrgId, member.stableUserId, now.toISOString())
+		.run()
+
+	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
+	using _fetch = stubStripeFetch({
+		checkout: {
+			id: 'cs_team_org',
+			customer: 'cus_team_org',
+			client_reference_id: orgLinkReference,
+		},
+		subscriptions: subscriptionList('sub_team_org', 'active'),
+	})
+
+	const result = await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: teamOrgId,
+		sessionId: 'cs_team_org',
+		now,
+	})
+	expect(result.stripePlan).toBe('pro')
+
+	const org = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id, stripe_plan FROM orgs WHERE id = ?`,
+	)
+		.bind(teamOrgId)
+		.first<{ stripe_customer_id: string | null; stripe_plan: string | null }>()
+	expect(org).toEqual({
+		stripe_customer_id: 'cus_team_org',
+		stripe_plan: 'pro',
+	})
+	expect(await readUser(member.id, 'stripe_customer_id, stripe_plan')).toEqual({
+		stripe_customer_id: null,
+		stripe_plan: null,
+	})
 })

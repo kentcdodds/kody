@@ -25,6 +25,7 @@ import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
+	refreshStripePlanForOrg,
 	refreshStripePlanForStripeCustomer,
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
@@ -251,7 +252,7 @@ async function handleCustomerSubscriptionChange(input: {
 		customerId,
 		now: input.now,
 	})
-	if (result.userId == null && orgOrUserHint) {
+	if (result.userId == null && result.orgId == null && orgOrUserHint) {
 		const user = await input.env.APP_DB.prepare(
 			`SELECT id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
@@ -264,10 +265,18 @@ async function handleCustomerSubscriptionChange(input: {
 				customerId,
 				now: input.now,
 			})
-			result = { userId: user.id, resolved }
+			result = { userId: user.id, orgId: orgOrUserHint, resolved }
+		} else {
+			const resolved = await refreshStripePlanForOrg({
+				env: input.env,
+				orgId: orgOrUserHint,
+				customerId,
+				now: input.now,
+			})
+			result = { userId: null, orgId: orgOrUserHint, resolved }
 		}
 	}
-	if (result.userId == null) {
+	if (result.userId == null && result.orgId == null) {
 		console.error('stripe_webhook_subscription_user_not_found', { customerId })
 	}
 }
@@ -290,13 +299,25 @@ async function handleInvoicePaymentFailed(input: {
 		customerId,
 		now: input.now,
 	})
-	if (result.userId == null) {
+	const orgId =
+		result.orgId ??
+		(result.userId != null
+			? (
+					await input.env.APP_DB.prepare(
+						`SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+					)
+						.bind(result.userId)
+						.first<{ stable_user_id: string }>()
+				)?.stable_user_id
+			: null)
+	if (!orgId) {
 		console.error('stripe_webhook_invoice_user_not_found', { customerId })
 		return
 	}
 	const subscriptionStatus = result.resolved?.subscriptionStatus ?? null
 	console.error('stripe_webhook_invoice_payment_failed', {
 		userId: result.userId,
+		orgId,
 		customerId,
 		subscriptionStatus,
 	})
@@ -306,17 +327,11 @@ async function handleInvoicePaymentFailed(input: {
 	if (subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid') {
 		return
 	}
-	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(result.userId)
-		.first<{ stable_user_id: string }>()
-	if (!user?.stable_user_id) return
 	const day = utcDayKey(input.now ?? new Date())
 	waitUntil(
 		sendToOrgBillingRecipients({
 			db: input.env.APP_DB,
-			orgId: user.stable_user_id,
+			orgId,
 			sendOne: async (recipient) => {
 				await sendPaymentFailedEmail({
 					env: input.env,

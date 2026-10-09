@@ -301,16 +301,15 @@ export function getMatchingPriceIdsForPlan(
 }
 
 /**
- * Unguessable per-user checkout attribution value. The stable user id
- * alone is NOT sufficient (it is a plain SHA-256 of the account email, so
- * anyone who knows the email can derive it and mint checkout sessions that
- * would pass a naive comparison). Signing it with the deployment cookie
- * secret means only sessions created by this deployment for this user carry
- * a matching reference.
+ * Unguessable checkout attribution for a billing subject id (the org id).
+ * Personal orgs reuse the owner's stable user id, so single-org checkout
+ * keeps the same reference. The raw id alone is NOT sufficient (legacy
+ * accounts may be a plain SHA-256 of the email), so this is HMAC'd with the
+ * deployment cookie secret.
  */
 export async function createBillingLinkReference(
 	env: Pick<Env, 'COOKIE_SECRET'>,
-	stableUserId: string,
+	billingSubjectId: string,
 ): Promise<string> {
 	const key = await crypto.subtle.importKey(
 		'raw',
@@ -322,7 +321,7 @@ export async function createBillingLinkReference(
 	const signature = await crypto.subtle.sign(
 		'HMAC',
 		key,
-		new TextEncoder().encode(`billing-link:${stableUserId}`),
+		new TextEncoder().encode(`billing-link:${billingSubjectId}`),
 	)
 	return toHex(new Uint8Array(signature))
 }
