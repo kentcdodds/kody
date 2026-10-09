@@ -16,6 +16,23 @@ export type CapabilityReindexOptions = {
 	log?: (line: string) => void
 }
 
+const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/** The bearer secret must never cross the network in cleartext. */
+function assertSecretSafeOrigin(baseUrl: string) {
+	let parsed: URL
+	try {
+		parsed = new URL(baseUrl)
+	} catch {
+		throw new Error(`Invalid --url "${baseUrl}".`)
+	}
+	if (parsed.protocol === 'https:') return
+	if (parsed.protocol === 'http:' && loopbackHosts.has(parsed.hostname)) return
+	throw new Error(
+		`Refusing to send the reindex secret to ${parsed.origin}; use an https:// origin (plain http is only allowed for localhost).`,
+	)
+}
+
 /**
  * Drive `POST /__maintenance/reindex-capabilities` until it reports
  * `complete: true`, passing each sweep's cursor to the next. Throws on a
@@ -25,6 +42,7 @@ export async function runCapabilityReindex(options: CapabilityReindexOptions) {
 	const fetcher = options.fetcher ?? fetch
 	const log = options.log ?? ((line: string) => console.log(line))
 	const maxSweeps = options.maxSweeps ?? 8
+	assertSecretSafeOrigin(options.baseUrl)
 	const url = `${options.baseUrl.replace(/\/+$/, '')}/__maintenance/reindex-capabilities`
 	let cursor: unknown
 	for (let sweep = 1; sweep <= maxSweeps; sweep += 1) {

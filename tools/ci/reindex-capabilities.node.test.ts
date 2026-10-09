@@ -82,6 +82,27 @@ test('runCapabilityReindex fails loudly on HTTP errors, missing cursors, and swe
 	).rejects.toThrow('did not finish after 2 sweeps')
 })
 
+test('runCapabilityReindex refuses to send the secret over plain http to a remote host', async () => {
+	const endpoint = fakeMaintenanceEndpoint([{ body: { complete: true } }])
+	await expect(
+		runCapabilityReindex({
+			baseUrl: 'http://kody-pr-3.example.workers.dev',
+			secret: 's',
+			fetcher: endpoint.fetcher,
+			log: () => {},
+		}),
+	).rejects.toThrow('Refusing to send the reindex secret')
+	expect(endpoint.calls).toEqual([])
+	await expect(
+		runCapabilityReindex({
+			baseUrl: 'http://localhost:3742',
+			secret: 's',
+			fetcher: endpoint.fetcher,
+			log: () => {},
+		}),
+	).resolves.toEqual({ sweeps: 1 })
+})
+
 test('parseReindexArgs accepts known phases and omits phases for a full sweep', () => {
 	expect(
 		parseReindexArgs([
