@@ -51,6 +51,21 @@ not cat the session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 
+Flag-gated preview checks need a `preview-flag:<key>` label for a key in
+`tools/preview-seed-flag-allowlist.ts` before 🔎 Preview seeds. Example for
+connection profiles:
+
+```bash
+# PR label: preview-flag:connection-profiles
+# .github/workflows/preview.yml then seeds with:
+# node tools/seed-test-data.ts --remote --config "$WRANGLER_CONFIG" \
+#   --email me@kentcdodds.com --password ilikecode \
+#   --enable-flag connection-profiles
+npm run control-kody -- preview --pr 42 --request 'GET /account/connected-agents.json --dump --contains "connectionProfilesEnabled":true'
+```
+
+`--enable-flag` with `--remote` fails unless the wrangler env is `preview`.
+
 ## When
 
 After the PR is **ready for review** (drafts and forks have no preview) and you
