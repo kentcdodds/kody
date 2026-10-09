@@ -97,9 +97,11 @@ export type SearchResultStructuredContent = {
 			top1Type: SearchMatchType | null
 			/**
 			 * Adaptive keep path after Jev Score (`kept-high` |
-			 * `kept-lowered` | `empty`). Present when Score ran successfully.
+			 * `kept-lowered` | `kept-identity` | `empty`). Present when Score
+			 * ran successfully. `kept-identity` is the empty-list exception
+			 * for package name / kody id / leaf hits.
 			 */
-			keepPath?: 'kept-high' | 'kept-lowered' | 'empty'
+			keepPath?: 'kept-high' | 'kept-lowered' | 'kept-identity' | 'empty'
 			/** Present only when `outcome` is `fallback-error`. */
 			errorReason?: string
 			/** Present when the Jev stage ran or attempted. */

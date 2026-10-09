@@ -13,10 +13,14 @@ import {
 	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
+	hybridCandidateMatchesIdentityTerm,
 	selectJevKeptCandidates,
 } from './search-jev-rerank.ts'
+import {
+	understandSearchQuery,
+	type SearchIntent,
+} from './understand-search-query.ts'
 import { type SearchCandidate } from './search-types.ts'
-import { type SearchIntent } from './understand-search-query.ts'
 
 function makeCandidate(
 	overrides: Partial<SearchCandidate> & {
@@ -310,6 +314,108 @@ test('rerankSearchCandidatesWithJev skips offline or flag-off and applies Score 
 		candidatesAfter: 0,
 		droppedCount: emptyAfterDrop.candidatesBefore,
 	})
+
+	const dropboxIntent = understandSearchQuery({
+		query: 'dropbox shared link',
+		entities: [],
+	})
+	const dropboxPackage = makeCandidate({
+		id: 'dropbox',
+		title: '@acme/dropbox',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-dropbox',
+			kodyId: 'dropbox',
+			name: '@acme/dropbox',
+			title: '@acme/dropbox',
+			description: 'Direct download URLs and shared-link helpers.',
+			tags: ['files'],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const descriptionOnlyPackage = makeCandidate({
+		id: 'notes',
+		title: '@acme/notes',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-notes',
+			kodyId: 'notes',
+			name: '@acme/notes',
+			title: '@acme/notes',
+			description: 'dropbox shared link notes that are not the package.',
+			tags: ['shared', 'link'],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const identityKept = await rerank(
+		scoreRun(() => ({ score: jevSearchMinKeepScore - 1, confidence: 0.9 })),
+		{
+			query: 'dropbox shared link',
+			intent: dropboxIntent,
+			limit: 5,
+			candidates: makeNecessityRunPool([
+				descriptionOnlyPackage,
+				dropboxPackage,
+				makeCandidate({ id: 'shared', title: 'Shared link capability' }),
+			]),
+		},
+	)
+	expect(identityKept).toMatchObject({
+		outcome: 'applied',
+		keepPath: 'kept-identity',
+		top1Type: 'package',
+	})
+	expect(idsOf(identityKept)).toEqual(['dropbox'])
+	expect(identityKept.candidatesAfter).toBe(1)
+	expect(identityKept.droppedCount).toBeGreaterThan(0)
+
+	const longName = makeCandidate({
+		id: 'home-assistant-controls',
+		title: '@user/home-assistant-controls',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-home',
+			kodyId: 'home-assistant-controls',
+			name: '@user/home-assistant-controls',
+			title: '@user/home-assistant-controls',
+			description: 'Controls for the house.',
+			tags: [],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const longNameIntent = understandSearchQuery({
+		query: 'use home assistant controls',
+		entities: [],
+	})
+	expect(hybridCandidateMatchesIdentityTerm(longName, longNameIntent)).toBe(
+		true,
+	)
+	expect(
+		hybridCandidateMatchesIdentityTerm(descriptionOnlyPackage, longNameIntent),
+	).toBe(false)
+	const longNameMatch = longName.match
+	if (longNameMatch.type !== 'package') {
+		throw new Error('expected a package candidate')
+	}
+	expect(
+		hybridCandidateMatchesIdentityTerm(
+			{
+				...longName,
+				id: 'home-assistant-controls#./controls',
+				match: { ...longNameMatch, exportSubpath: './controls' },
+			},
+			longNameIntent,
+		),
+	).toBe(false)
 
 	const midTier = await rerank(
 		scoreRun((key) => {
