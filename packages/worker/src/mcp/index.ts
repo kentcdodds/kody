@@ -4,6 +4,7 @@ import { invariant } from '@epic-web/invariant'
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker-provider.js'
 import { McpAgent } from 'agents/mcp'
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
 import { assembleMcpServerInstructionsForCaller } from './assemble-mcp-server-instructions.ts'
@@ -111,8 +112,22 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		}
 		return agent
 	}
-	getCallerContext() {
-		return parseMcpCallerContext(this.props, { kind: 'mcp-oauth' })
+	private parsedCallerContext: {
+		props: Props | undefined
+		callerContext: McpCallerContext
+	} | null = null
+	/**
+	 * One caller context per props object, so per-request caches keyed on the
+	 * context (feature flags, effective permissions) hold across a request.
+	 * `updateProps` replaces the object, which re-derives it.
+	 */
+	getCallerContext(): McpCallerContext {
+		const props: Props | undefined = this.props
+		const cached = this.parsedCallerContext
+		if (cached && cached.props === props) return cached.callerContext
+		const callerContext = parseMcpCallerContext(props, { kind: 'mcp-oauth' })
+		this.parsedCallerContext = { props, callerContext }
+		return callerContext
 	}
 	getEnv() {
 		return this.env
