@@ -369,23 +369,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					throw new Error('Feature flag evaluation failed')
 				}
 				void entitlementPrefetch
-				const registryAndMemories = Promise.all([
-					getCapabilityRegistryForContext({
-						env,
-						callerContext,
-					}),
-					surfaceToolMemories({
-						env,
-						callerContext,
-						conversationId: resolvedConversationId,
-						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
-					}),
-				])
-				// Observe the pair if quota or claim returns before we await it.
-				void registryAndMemories.then(
-					() => undefined,
-					() => undefined,
-				)
+				// Registry assembly overlaps the quota check. Context retrievers
+				// stay after quota and a fresh idempotency claim so a denied
+				// call does not run bundled package code.
+				const registryPromise = getCapabilityRegistryForContext({
+					env,
+					callerContext,
+				})
+				void registryPromise.catch(() => {})
 				const resolvedModule = resolveExecuteModule({
 					code,
 					invoke,
@@ -448,7 +439,15 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					claimedRunHandle = claim.handle
 				}
 
-				const [registry, surfacedMemories] = await registryAndMemories
+				const [registry, surfacedMemories] = await Promise.all([
+					registryPromise,
+					surfaceToolMemories({
+						env,
+						callerContext,
+						conversationId: resolvedConversationId,
+						retrievalQuery: buildMemoryRetrievalQuery(memoryContext),
+					}),
+				])
 				const registeredCapabilityCount = Object.keys(
 					registry.capabilityHandlers,
 				).length

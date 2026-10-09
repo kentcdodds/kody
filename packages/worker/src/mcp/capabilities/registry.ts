@@ -181,6 +181,9 @@ export async function getCapabilityRegistryForContext(input: {
 			registry,
 		}),
 	)
+	// MCP ref reads sit between this start and the await. Observe a rejection
+	// now; awaiting `flagsPromise` later still throws.
+	void flagsPromise.catch(() => {})
 	if (!userId) {
 		return filterRegistryForContext({
 			registry: await staticRegistryPromise,

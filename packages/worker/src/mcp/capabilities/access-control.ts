@@ -124,12 +124,20 @@ const callerFeatureFlagMaps = new WeakMap<
 	Promise<CallerFeatureFlags>
 >()
 
+class UnresolvedFeatureFlagUser extends Error {
+	constructor() {
+		super('feature flag user is unresolved')
+		this.name = 'UnresolvedFeatureFlagUser'
+	}
+}
+
 async function loadFreshCallerFeatureFlagResolution(
 	env: Env,
 	stableUserId: string,
 ): Promise<CallerFeatureFlagResolution> {
 	const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
-	if (userId === null) return { status: 'unresolved' }
+	// Do not cache this. A users row can appear in the same TTL window.
+	if (userId === null) throw new UnresolvedFeatureFlagUser()
 	const evaluations = await getFeatureFlagEvaluationsForUser(env.APP_DB, userId)
 	await recordFeatureFlagExposures(env, {
 		stableUserId,
@@ -153,7 +161,10 @@ async function loadCallerFeatureFlagResolution(
 					cacheKey: stableUserId,
 					create: () => loadFreshCallerFeatureFlagResolution(env, stableUserId),
 				})
-			} catch {
+			} catch (error) {
+				if (error instanceof UnresolvedFeatureFlagUser) {
+					return { status: 'unresolved' }
+				}
 				return { status: 'failed' }
 			}
 		})()

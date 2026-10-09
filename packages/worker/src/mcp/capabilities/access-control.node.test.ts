@@ -400,3 +400,49 @@ test('flag evaluation failure fails closed, skips exposures, and is not cached',
 	await resolveCallerFeatureFlags(env, secondContext)
 	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(2)
 })
+
+test('an unresolved flag user is not cached across requests', async () => {
+	const stableUserId = testStableUserIdFromEmail('flag-unresolved@example.com')
+	let numericUserId: number | null = null
+	const env = {
+		APP_DB: {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async first() {
+								return numericUserId === null ? null : { id: numericUserId }
+							},
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+	flagMocks.getFeatureFlagEvaluationsForUser.mockReset()
+	flagMocks.recordFeatureFlagExposures.mockClear()
+	flagMocks.getFeatureFlagEvaluationsForUser.mockResolvedValue(
+		createEvaluations({ 'execute-invoke': true }),
+	)
+	const caller = () =>
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: 'flag-unresolved@example.com',
+				displayName: 'flags',
+				roles: ['user'],
+			},
+		})
+
+	const missing = await resolveCallerFeatureFlags(env, caller())
+	expect(missing['execute-invoke']).toBe(false)
+	expect(await callerFeatureFlagEvaluationFailed(env, caller())).toBe(false)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).not.toHaveBeenCalled()
+
+	numericUserId = 11
+	const present = await resolveCallerFeatureFlags(env, caller())
+	expect(present['execute-invoke']).toBe(true)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(1)
+})
