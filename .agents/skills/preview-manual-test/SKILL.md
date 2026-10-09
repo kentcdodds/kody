@@ -42,9 +42,12 @@ npm run preview:manual-test -- \
 `METHOD /path [status] [json-body] [--dump] [--contains <text>]` (default
 success: 2xx). `--dump` / `--contains` match `control-kody request`, e.g.
 `--request 'GET /pricing --dump --contains Worker compute'`. Use the JSON APIs
-the UI uses (`/account/*.json` in `packages/worker/universal/routes.ts`). For
-more authenticated HTTP after login, use `control-kody request` (`--dump` /
-`--contains` for HTML). Do not cat the session cookie into `curl` or Python.
+the UI uses (`/account/*.json` in `packages/worker/universal/routes.ts`).
+`GET /account/export.json` is a metadata manifest only — do not `--contains`
+user data there; verify rows with MCP `accountExportSection` via
+`control-kody execute` (see the contributing doc). For more authenticated HTTP
+after login, use `control-kody request` (`--dump` / `--contains` for HTML). Do
+not cat the session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 

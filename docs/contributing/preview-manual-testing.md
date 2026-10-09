@@ -59,6 +59,21 @@ unless the body includes the text (everything up to the next flag, so
 `--request 'GET /pricing --dump --contains Worker compute'` works). They can
 also follow the spec as separate flags and apply to the previous `--request`.
 
+`GET /account/export.json` is a bounded metadata manifest (header
+`X-Kody-Export-Completeness: manifest-only`). It lists section counts and points
+at MCP export capabilities; it does not inline D1 rows, secret names, or other
+user payload. Do not use `--contains` on that route to assert saved secrets,
+memories, or similar — the check fails even when export works. At most assert
+manifest shape, for example
+`--request 'GET /account/export.json --contains accountExportSection'`. To
+verify exported content, use MCP `accountExportSection` via
+`control-kody execute` on the same preview origin. One-line example for
+`secret_entries` metadata (name only, never the value):
+
+```bash
+npm run control-kody -- execute --origin <preview> --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.accountExportSection({ section: "d1_table", table: "secret_entries" }) }'
+```
+
 `--json` includes session metadata for the scripted run. For more authenticated
 HTTP, use `control-kody request` with the same `--origin` (and `--dump` /
 `--contains` for HTML). Do not `cat` the session cookie into `curl` or Python.
