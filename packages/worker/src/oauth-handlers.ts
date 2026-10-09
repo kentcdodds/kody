@@ -938,15 +938,42 @@ export async function loadOAuthAuthorizeData(
 		})
 	}
 
-	const requestedOrgSlug = readOrgSlugFromUrl(request.url)
 	let orgs: Array<OAuthAuthorizeConsentOrg> = []
-	let selectedOrgSlug: string | null = requestedOrgSlug
+	let selectedOrgSlug: string | null = readOrgSlugFromUrl(request.url)
 	if (!requireCredentials && authorizeSession.stableUserId) {
+		// Match approve: resolve `?org=` from the authorize URL and resource
+		// before auto-selecting. Fail closed when the client named an
+		// inaccessible or conflicting org, so the consent screen cannot look
+		// ready and then reject on submit.
+		let resolvedRequested: AuthorizeOrg | null = null
+		try {
+			resolvedRequested = await resolveAuthorizeOrg({
+				env,
+				request,
+				authRequest,
+				userId: authorizeSession.stableUserId,
+			})
+		} catch (error) {
+			if (isOrgAuthorizeError(error)) {
+				return {
+					data: {
+						ok: false,
+						error: error.message,
+						allowClientReset: false,
+					},
+					setCookie: clearResetVerificationCookie ?? sessionSetCookie,
+				}
+			}
+			throw error
+		}
 		const accessible = await listOrgsForPerson(
 			env.APP_DB,
 			authorizeSession.stableUserId,
 		)
-		const consent = selectConsentOrgsForLoader(accessible, requestedOrgSlug)
+		const consent = selectConsentOrgsForLoader(
+			accessible,
+			resolvedRequested?.slug ?? null,
+		)
 		orgs = consent.orgs
 		selectedOrgSlug = consent.selectedOrgSlug
 	}
@@ -1556,11 +1583,30 @@ export async function handleAuthorizeRequest(
 		approvedUserId = personIdFromStored(userRecord.stable_user_id)
 		// Inline login never saw the org picker (loader had no session). After
 		// email verification, establish a browser session and reload authorize
-		// when the account has several orgs and neither the form nor `?org=`
-		// named one, so the picker can render.
+		// when the account has several orgs and neither the form, authorize
+		// URL, nor OAuth resource named an org, so the picker can render.
 		const formOrgSlug = readOrgSlugFromForm(formData)
-		const urlOrgSlug = readOrgSlugFromUrl(request.url)
-		if (!formOrgSlug && !urlOrgSlug) {
+		let hasExplicitOrgRequest = Boolean(formOrgSlug)
+		if (!hasExplicitOrgRequest) {
+			try {
+				const urlOrg = await resolveAuthorizeOrg({
+					env,
+					request,
+					authRequest,
+					userId: approvedUserId,
+				})
+				hasExplicitOrgRequest = Boolean(urlOrg)
+			} catch (error) {
+				if (isOrgAuthorizeError(error)) {
+					// Client named an org (URL or resource) that is invalid —
+					// do not bounce to the picker; approval surfaces the error.
+					hasExplicitOrgRequest = true
+				} else {
+					throw error
+				}
+			}
+		}
+		if (!hasExplicitOrgRequest) {
 			const accessible = await listOrgsForPerson(env.APP_DB, approvedUserId)
 			requiresOrgChoiceReload = accessible.length > 1
 		}

@@ -571,6 +571,50 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		selectedOrgSlug: 'test-user',
 	})
 
+	const resourceOrgInfo = await handleAuthorizeInfo(
+		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams), {
+			headers: { ...jsonAccept, Cookie: await sessionCookie() },
+		}),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => ({
+					...baseAuthRequest,
+					resource: `${mcpResource}?org=test-user`,
+				}),
+			}),
+			await createDatabase('password123'),
+		),
+	)
+	expect(resourceOrgInfo.status).toBe(200)
+	await expect(resourceOrgInfo.json()).resolves.toMatchObject({
+		ok: true,
+		selectedOrgSlug: 'test-user',
+	})
+
+	const orgMismatchInfo = await handleAuthorizeInfo(
+		new Request(
+			exampleOAuthUrl('authorize-info', {
+				...baseAuthorizeParams,
+				org: 'test-user',
+			}),
+			{ headers: { ...jsonAccept, Cookie: await sessionCookie() } },
+		),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => ({
+					...baseAuthRequest,
+					resource: `${mcpResource}?org=other-org`,
+				}),
+			}),
+			await createDatabase('password123'),
+		),
+	)
+	expect(orgMismatchInfo.status).toBe(400)
+	await expect(orgMismatchInfo.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringMatching(/do not match/i),
+	})
+
 	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(
 			exampleOAuthUrl('authorize-info', {
