@@ -353,6 +353,11 @@ Both are opt-in and adapted from the Epic Stack.
   `action: 'account_delete'`, `result: 'failure'`.
 - The Account settings page opens a modal for this confirmation before posting
   `POST /account/delete`.
+- On success the handler clears the session cookie and the account page
+  navigates to `/?accountDeleted=1`. The homepage renders "Your Kody account has
+  been deleted" from that query, so the confirmation is on the signed-out page
+  the user lands on. The edge cache keys anonymous HTML on pathname plus search,
+  so this document stays distinct from `/`.
 - Successful deletion best-effort fans `user.deleted` to admin-owned packages.
   Successful password signup, social-login signup, and admin person account
   creation fan `user.created`. See
