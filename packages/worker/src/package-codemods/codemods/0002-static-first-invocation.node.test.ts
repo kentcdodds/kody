@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import { staticFirstInvocationCodemod as codemod } from './0002-static-first-invocation.ts'
 
+const packageContext = { packageName: '@user/demo' }
+
 const manifest = `${JSON.stringify(
 	{
 		name: '@user/demo',
@@ -36,10 +38,10 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 		),
 	}
 
-	expect(codemod.detect(files)).toEqual([
+	expect(codemod.detect(files, packageContext)).toEqual([
 		manual('index.ts', '`packages.invokeChecked`'),
 	])
-	const result = codemod.transform(files)
+	const result = codemod.transform(files, packageContext)
 	expect(result).toMatchObject({
 		changed: true,
 		changedPaths: ['index.ts'],
@@ -54,7 +56,7 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 	)
 	expect(output).not.toContain('invokeChecked')
 	expect(output).not.toContain("kodyId: 'github'")
-	const rerun = codemod.transform(result.files)
+	const rerun = codemod.transform(result.files, packageContext)
 	expect(rerun.changed).toBe(false)
 	expect(rerun.files).toEqual(result.files)
 
@@ -69,8 +71,8 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 			'}',
 		),
 	}
-	expect(codemod.detect(untouched)).toEqual([])
-	expect(codemod.transform(untouched)).toMatchObject({
+	expect(codemod.detect(untouched, packageContext)).toEqual([])
+	expect(codemod.transform(untouched, packageContext)).toMatchObject({
 		changed: false,
 		files: untouched,
 	})
@@ -127,13 +129,15 @@ test('0002 reports needsManual and leaves files unchanged for non-migratable cal
 	]
 	for (const { name, files, needsManual } of cases) {
 		const input = { 'package.json': manifest, ...files }
-		expect({ name, ...codemod.transform(input) }).toMatchObject({
-			name,
-			changed: false,
-			changedPaths: [],
-			files: input,
-			needsManual,
-		})
+		expect({ name, ...codemod.transform(input, packageContext) }).toMatchObject(
+			{
+				name,
+				changed: false,
+				changedPaths: [],
+				files: input,
+				needsManual,
+			},
+		)
 	}
 
 	const mixedFiles = {
@@ -151,7 +155,7 @@ test('0002 reports needsManual and leaves files unchanged for non-migratable cal
 			'}',
 		),
 	}
-	const mixedResult = codemod.transform(mixedFiles)
+	const mixedResult = codemod.transform(mixedFiles, packageContext)
 	expect(mixedResult).toMatchObject({
 		changed: true,
 		changedPaths: ['auto.ts'],

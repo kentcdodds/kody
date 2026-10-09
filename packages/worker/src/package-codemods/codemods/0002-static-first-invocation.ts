@@ -5,6 +5,7 @@ import {
 } from '#worker/package-runtime/deprecated-invocation-usage.ts'
 import {
 	type PackageCodemod,
+	type PackageCodemodContext,
 	type PackageCodemodFinding,
 	type PackageCodemodTransformResult,
 } from '../types.ts'
@@ -186,6 +187,7 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 
 function transform(
 	files: Record<string, string>,
+	context: PackageCodemodContext,
 ): PackageCodemodTransformResult {
 	const usages = collectStaticFirstDeprecatedInvocationUsage(files)
 	const nextFiles: Record<string, string> = { ...files }
@@ -263,8 +265,10 @@ function transform(
 				objectRepairFiles[path] = source
 			}
 		}
-		const objectRepair =
-			invokeObjectToSpecifierCodemod.transform(objectRepairFiles)
+		const objectRepair = invokeObjectToSpecifierCodemod.transform(
+			objectRepairFiles,
+			context,
+		)
 		if (objectRepair.needsManual.length > 0) {
 			return {
 				files: { ...files },

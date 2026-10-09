@@ -152,17 +152,14 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0065 — Org seats, prepaid credits, and Free-tier fallback at $0](./0065-org-seats-and-free-tier-fallback.md)
   — org-billed seats and credits; empty wallet uses Free rate/compute limits
   (supersedes 0051 hard stop); Stripe writes stay Kody-only
-<<<<<<< HEAD
 - [0066 — Teams soft delete, restore window, and purge lane](./0066-soft-delete-and-purge.md)
   — 30-day restore window, live `deleted_at IS NULL` reads plus scanner, purge
   lane with `deleting_at`, org vs user deletion split, purge audit in
   `org_audit_events`, first purge dry-run, no feature flag
-=======
 - [0067 — Cross-org grants replace package shares and platform accounts](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
   — shares are `use` grants, scope grants are Owner memberships, platform
   accounts are ordinary orgs; a package imports only its own org's packages and
   cross-org access is a grant or a fork (supersedes 0014, 0035, 0036, 0050)
->>>>>>> e209ff7cc (Teams P8: ADR 0067, supersessions, and sharing and rehearsal docs)
 
 ## Historical / UI / implementation
 
