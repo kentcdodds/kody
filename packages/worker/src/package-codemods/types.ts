@@ -10,9 +10,21 @@ export type PackageCodemodTransformResult = {
 	needsManual: Array<PackageCodemodFinding>
 }
 
+/** Host facts about the package being repaired, never read from its files. */
+export type PackageCodemodContext = {
+	/** Registry name (`@org/kody-id`); its scope is the owning org. */
+	packageName: string
+}
+
 export type PackageCodemod = {
 	id: string
 	description: string
-	detect(files: Record<string, string>): Array<PackageCodemodFinding>
-	transform(files: Record<string, string>): PackageCodemodTransformResult
+	detect(
+		files: Record<string, string>,
+		context: PackageCodemodContext,
+	): Array<PackageCodemodFinding>
+	transform(
+		files: Record<string, string>,
+		context: PackageCodemodContext,
+	): PackageCodemodTransformResult
 }

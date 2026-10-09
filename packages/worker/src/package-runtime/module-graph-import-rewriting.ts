@@ -7,7 +7,6 @@ import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -80,15 +79,6 @@ export type LoadedKodyGraphPackage = LoadedPackageSource & {
 	row: SavedPackageRecord
 	prefix: string
 	/**
-	 * User id the source was loaded under: the caller for own packages, the
-	 * platform account's stable id for live platform-scope imports.
-	 */
-	sourceOwnerUserId: string
-	/** Platform scope username when resolved live (e.g. "kody"), else null. */
-	platformScope: string | null
-	shareOwned?: boolean
-	storageOwnerUserId?: string
-	/**
 	 * True once this package's published source snapshot has been rewritten
 	 * into `RewriteState.files` for a live rebuild. Published importable
 	 * artifacts skip that materialization so dual heavy export graphs (for
@@ -117,12 +107,6 @@ type RewriteState = {
 	 * artifacts that later get composed into foreign bundles.
 	 */
 	rootPackageId: string | null
-	/**
-	 * Platform-account package graphs may resolve live `@kody/*` imports
-	 * when composing with other platform scopes (decision 0036). Person
-	 * accounts — ad hoc execute and saved packages — must not.
-	 */
-	allowPlatformScopes: boolean
 	proxies: Map<string, string>
 	dynamicPackageImports: Map<string, string>
 	packages: LoadedKodyGraphPackages
@@ -156,11 +140,9 @@ async function maybeEnsurePublishedArtifactTarget(input: {
 		manifest: input.loaded.manifest,
 		exportName,
 	})
-	// Published artifacts are persisted by the owner at publish time, so
-	// platform-scope imports read them under the platform account's id.
 	const artifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.state.env,
-		userId: input.loaded.sourceOwnerUserId,
+		userId: input.state.userId,
 		sourceId: input.loaded.row.sourceId,
 		kind: 'importable-module',
 		artifactName: exportName,
@@ -204,19 +186,6 @@ function applyReplacements(
 	return nextSource
 }
 
-function nestedShareOwnerUserIdFor(
-	state: RewriteState,
-	sourcePackageId: string | null,
-) {
-	if (!sourcePackageId) return undefined
-	for (const loaded of state.packages.values()) {
-		if (loaded.row.id === sourcePackageId && loaded.shareOwned === true) {
-			return loaded.storageOwnerUserId ?? loaded.sourceOwnerUserId
-		}
-	}
-	return undefined
-}
-
 function assertReplacementsDoNotOverlap(
 	replacements: Array<RewriteReplacement>,
 ) {
@@ -238,45 +207,30 @@ function assertReplacementsDoNotOverlap(
 async function ensurePackageResolved(
 	state: RewriteState,
 	specifier: string,
-	nestedShareOwnerUserId?: string,
 ): Promise<LoadedKodyGraphPackage> {
 	const parsed = parseKodyPackageSpecifier(specifier)
-	const packageKey = nestedShareOwnerUserId
-		? `${parsed.packageName}#${nestedShareOwnerUserId}`
-		: parsed.packageName
+	const packageKey = parsed.packageName
 	const existing = state.packages.get(packageKey)
 	if (existing) return existing
 	const resolution = await resolveSavedPackageImport({
 		db: state.env.APP_DB,
 		userId: state.userId,
 		specifier: parsed,
-		allowPlatformScopes: state.allowPlatformScopes,
-		nestedShareOwnerUserId,
 	})
 	if (!resolution) {
-		if (!state.allowPlatformScopes) {
-			await throwIfPersonPackagePlatformReference({
-				db: state.env.APP_DB,
-				packageName: parsed.packageName,
-			})
-		}
 		throw new SavedPackageNotFoundError(parsed.packageName)
 	}
 	const { row } = resolution
 	const loaded = await loadPackageSourceBySourceId({
 		env: state.env,
 		baseUrl: state.baseUrl,
-		userId: resolution.sourceOwnerUserId,
+		userId: state.userId,
 		sourceId: row.sourceId,
 	})
 	const entry: LoadedKodyGraphPackage = {
 		...loaded,
 		row,
 		prefix: joinPath(packageSourcePrefix, packageKey),
-		sourceOwnerUserId: resolution.sourceOwnerUserId,
-		platformScope: resolution.platformScope,
-		shareOwned: resolution.shareOwned,
-		storageOwnerUserId: resolution.storageOwnerUserId,
 		sourceMaterialized: false,
 	}
 	state.packages.set(packageKey, entry)
@@ -309,7 +263,6 @@ async function materializePackageSourceIntoFiles(
 async function ensurePackageProxy(
 	state: RewriteState,
 	specifier: string,
-	nestedShareOwnerUserId?: string,
 ): Promise<string> {
 	const existing = state.proxies.get(specifier)
 	if (existing) return existing
@@ -335,11 +288,7 @@ async function ensurePackageProxy(
 					// full package source (including node_modules) into the
 					// bundler VFS. Multiple heavy exports from one package
 					// otherwise stack unused source graphs beside each artifact.
-					const loaded = await ensurePackageResolved(
-						state,
-						specifier,
-						nestedShareOwnerUserId,
-					)
+					const loaded = await ensurePackageResolved(state, specifier)
 					calleePackageId = loaded.row.id
 					const publishedTarget = await maybeEnsurePublishedArtifactTarget({
 						state,
@@ -558,11 +507,7 @@ async function rewriteKodyImports(input: {
 		if (node.kind === 'dynamic') {
 			continue
 		}
-		const proxyPath = await ensurePackageProxy(
-			input.state,
-			node.specifier,
-			nestedShareOwnerUserIdFor(input.state, input.sourcePackageId),
-		)
+		const proxyPath = await ensurePackageProxy(input.state, node.specifier)
 		replacements.push({
 			start: node.start,
 			end: node.end,
@@ -628,13 +573,11 @@ export type PreparedKodyGraph = {
 	files: Record<string, string>
 	packages: LoadedKodyGraphPackages
 	publishedArtifactDependencies: Array<BundleArtifactDependency>
-	allowPlatformScopes: boolean
 	entryPoint: string
 }
 
 /**
- * Request-scoped prepare cache keyed by entry + root package + platform-scope
- * flag. Callers that build both module and importable-module bootstraps for
+ * Request-scoped prepare cache keyed by entry + root package. Callers that build both module and importable-module bootstraps for
  * the same export must share one Map so prepare runs once per graph.
  */
 export type PreparedKodyGraphCache = Map<string, Promise<PreparedKodyGraph>>
@@ -642,12 +585,10 @@ export type PreparedKodyGraphCache = Map<string, Promise<PreparedKodyGraph>>
 function preparedKodyGraphCacheKey(input: {
 	entryPoint: string
 	rootPackageId: string | null
-	allowPlatformScopes: boolean
 }) {
 	return JSON.stringify([
 		normalizePackageWorkspacePath(input.entryPoint),
 		input.rootPackageId,
-		input.allowPlatformScopes,
 	])
 }
 
@@ -658,7 +599,6 @@ export async function prepareKodyGraphFiles(input: {
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	rootPackageId?: string | null
-	allowPlatformScopes?: boolean
 }): Promise<PreparedKodyGraph> {
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
@@ -676,7 +616,6 @@ export async function prepareKodyGraphFiles(input: {
 		rootPackage,
 		importNodesCache,
 	})
-	const allowPlatformScopes = input.allowPlatformScopes === true
 	const state: RewriteState = {
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -685,7 +624,6 @@ export async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
-		allowPlatformScopes,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
@@ -743,7 +681,6 @@ export async function prepareKodyGraphFiles(input: {
 		files: refreshKodyRuntimeModules(files) as Record<string, string>,
 		packages: state.packages,
 		publishedArtifactDependencies: state.publishedArtifactDependencies,
-		allowPlatformScopes,
 		entryPoint,
 	}
 }
@@ -758,7 +695,6 @@ export async function getOrPrepareKodyGraphFiles(
 		prepareCache?: PreparedKodyGraphCache
 	},
 ): Promise<PreparedKodyGraph> {
-	const allowPlatformScopes = input.allowPlatformScopes === true
 	const rootPackageId = input.rootPackageId?.trim() || null
 	const cache = input.prepareCache
 	if (!cache) {
@@ -767,7 +703,6 @@ export async function getOrPrepareKodyGraphFiles(
 	const key = preparedKodyGraphCacheKey({
 		entryPoint: input.entryPoint,
 		rootPackageId,
-		allowPlatformScopes,
 	})
 	const existing = cache.get(key)
 	if (existing) return await existing

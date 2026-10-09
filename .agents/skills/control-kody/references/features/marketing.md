@@ -14,12 +14,10 @@ other interactive walkthroughs) stay in the article column; they do not break
 out over the nav. The docs shell opts out of overflow anchoring so replacing the
 article does not bump the rail. After hydrate it independently prefetches every
 sidebar href (one loader request per slug, including `/docs/connect`) so a click
-adopts a warm payload instead of waiting on a cold fetch.
-`/docs/package-sharing` opens with a flag callout: signed-in visitors POST
-`/docs/package-sharing/opt-in` to turn `package-share-grants` on for themselves;
-signed-out visitors log in with `redirectTo` back to that page.
-`/docs/package-skills` has the same callout for `mcp-skills-extension`
-(`/docs/package-skills/opt-in`). `/docs/mcp-events` does the same for
+adopts a warm payload instead of waiting on a cold fetch. `/docs/package-skills`
+opens with a flag callout for `mcp-skills-extension`: signed-in visitors POST
+`/docs/package-skills/opt-in` to turn it on for themselves; signed-out visitors
+log in with `redirectTo` back to that page. `/docs/mcp-events` does the same for
 `mcp-events-extension` via `/docs/mcp-events/opt-in`. Custom secret providers
 are documented at `/docs/secret-providers`. Open API is documented at
 `/docs/open-api`; local CLI execute at `/docs/local-execute`.

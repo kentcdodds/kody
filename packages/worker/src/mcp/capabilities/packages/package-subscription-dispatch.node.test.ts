@@ -45,7 +45,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: mocks.resolvePackageOwnerContext,
 }))
 
@@ -94,7 +93,6 @@ function createCtx(
 		ownerScope: 'user',
 		ownerEmail: 'user@example.com',
 		actorUserId: 'user-1',
-		delegated: false,
 	})
 	return {
 		env: { APP_DB: {} } as Env,
@@ -285,26 +283,24 @@ test('packageSubscriptionDispatch rejects runtime callers and undeclared topics'
 	await expect(dispatch()).rejects.toThrow(/packageSubscriptionDispatch/)
 })
 
-test('packageSubscriptionDispatch resolves delegated package scope like packageGet', async () => {
+test('packageSubscriptionDispatch resolves the package in the request org like packageGet', async () => {
 	mockDeclaredSubscription('repo.pushed')
 	const ctx = createCtx()
 	mocks.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'platform-user',
-		ownerScope: 'kody',
-		ownerEmail: 'kody@example.com',
+		ownerUserId: 'org-owner',
+		ownerScope: 'acme',
+		ownerEmail: 'acme@example.com',
 		actorUserId: 'user-1',
-		delegated: true,
 	})
 
-	await dispatch({ package_scope: 'kody' }, ctx)
+	await dispatch({}, ctx)
 
-	expect(mocks.resolvePackageOwnerContext).toHaveBeenCalledWith(
-		ctx.env,
-		ctx.callerContext.user,
-		'kody',
-	)
+	expect(mocks.resolvePackageOwnerContext).toHaveBeenCalledWith(ctx.env, {
+		user: ctx.callerContext.user,
+		request: ctx.callerContext.request,
+	})
 	expect(mocks.resolveSavedPackageRef).toHaveBeenCalledWith(ctx.env.APP_DB, {
-		userId: 'platform-user',
+		userId: 'org-owner',
 		ref: 'demo',
 		match: 'slug',
 	})

@@ -5,16 +5,13 @@ import {
 	requireMcpRequest,
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
 import {
 	canSeeResource,
 	computeEffectivePermissions,
-	reachedPackage,
+	packageResource,
 } from '#worker/authorization/authorize.ts'
 import {
 	packageSummaryWithCommunityProvenanceSchema,
@@ -32,23 +29,16 @@ export const listPackagesCapability = defineDomainCapability(
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		inputSchema: z.object({
-			package_scope: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(packageScopeInputDescription),
-		}),
+		inputSchema: z.object({}),
 		outputSchema: z.object({
 			packages: z.array(packageSummaryWithCommunityProvenanceSchema),
 		}),
-		async handler(args, ctx) {
+		async handler(_args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const packages = await applySavedPackageForkListingAncestry({
 				env: ctx.env,
 				records: await listSavedPackagesWithCommunityProvenanceByUserId(
@@ -63,7 +53,7 @@ export const listPackagesCapability = defineDomainCapability(
 				request: requireMcpRequest(ctx.callerContext),
 			})
 			const visible = packages.filter((pkg) =>
-				canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+				canSeeResource(access, packageResource(pkg)),
 			)
 			return {
 				packages: visible.map(toPackageSummaryWithCommunityProvenance),

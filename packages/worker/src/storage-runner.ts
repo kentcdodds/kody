@@ -1356,27 +1356,13 @@ export function createPackageStorageKodyTools(input: {
 	email?: string | null
 	grantedPackageIds: ReadonlySet<string>
 	writable?: boolean
-	storageOwnerByPackageId?: ReadonlyMap<string, string>
 }) {
 	const writable = input.writable !== false
 	// One cache for the whole sandbox so nested packageStorage() SQL across
 	// granted packages (and repeated CREATE/INSERT in one export) does not
 	// rescan every inventoried bucket on each statement.
-	const entitlementCacheByOwner = new Map<
-		string,
-		ReturnType<typeof createStorageBytesEntitlementRunCache>
-	>()
-	const entitlementCacheFor = (storageOwnerUserId: string) => {
-		let cache = entitlementCacheByOwner.get(storageOwnerUserId)
-		if (!cache) {
-			cache = createStorageBytesEntitlementRunCache()
-			entitlementCacheByOwner.set(storageOwnerUserId, cache)
-		}
-		return cache
-	}
+	const entitlementCache = createStorageBytesEntitlementRunCache()
 	const createGrantedStorageTools = (packageId: string) => {
-		const storageOwnerUserId =
-			input.storageOwnerByPackageId?.get(packageId) ?? input.userId
 		const {
 			storageGet,
 			storageList,
@@ -1386,13 +1372,11 @@ export function createPackageStorageKodyTools(input: {
 			storageClear,
 		} = createStorageKodyTools({
 			env: input.env,
-			userId: storageOwnerUserId,
-			// Owner-id storage must not pair the guest email with the owner's
-			// user id (plan lookup is email+id). Resolve the owner by id only.
-			email: storageOwnerUserId === input.userId ? input.email : null,
+			userId: input.userId,
+			email: input.email,
 			storageId: buildPackageStorageId(packageId),
 			writable,
-			entitlementCache: entitlementCacheFor(storageOwnerUserId),
+			entitlementCache,
 		})
 		if (writable && (!storageSet || !storageDelete || !storageClear)) {
 			// createStorageKodyTools only omits these when writable is false.

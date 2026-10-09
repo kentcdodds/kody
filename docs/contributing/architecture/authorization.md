@@ -63,7 +63,7 @@ Lists, search, and background checks compile once and decide per resource:
 ```ts
 const access = await computeEffectivePermissions({ env, request })
 const visible = packages.filter((pkg) =>
-	canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+	canSeeResource(access, packageResource(pkg)),
 )
 ```
 
@@ -74,11 +74,10 @@ const visible = packages.filter((pkg) =>
 - `runWithRequestPermissions` binds the compiled permissions for deep call sites
   that carry no caller context. Package import resolution reads them with
   `getRequestPermissions` and checks `package:execute` on each imported package.
-- `reachedPackage` builds the resource for a package a lookup already reached:
-  one the org owns, one delegated through `package_scope`, an accepted share, or
-  a built-in platform package. Delegation and shares run their own checks first,
-  so the package counts as in the request's org until they become an org binding
-  and grants ([#3040](https://github.com/kentcdodds/kody/issues/3040)).
+- `packageResource(pkg)` builds the resource from the stored package row. Its
+  org is the package's owning org, so a package from another org denies with
+  `wrong_org` unless the request is bound to that org (as a member or through a
+  grant).
 
 The connection profile comes from `request.credential.profileName`. Automation
 keeps the profile of the credential that created the job or webhook, and a run
@@ -121,8 +120,8 @@ exception** for Kody staff: permissions with `access = 'any'` allow specific
 account-administration endpoints to cross user boundaries. Site-admin-owned
 system email for reserved platform addresses is the other deliberate exception:
 it is stored under the reserved `system:email` owner id, not any human account.
-See [Project intent](../project-intent.md) and the `per-user-isolation`
-invariant in [Primitives map](./primitives.yaml).
+See [Project intent](../project-intent.md) and the `per-org-isolation` invariant
+in [Primitives map](./primitives.yaml).
 
 User-approved platform feedback is a third narrow exception. A submission
 crosses into the admin review surface only after the user explicitly approves

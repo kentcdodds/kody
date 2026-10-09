@@ -51,8 +51,8 @@ anything differs; each difference must be expected by the migration (new tables,
 rewritten scopes) or it is a bug.
 
 The D1 diff always has some noise. Every bookmark changes. Each JSON snapshot
-also writes a fixed set of rows: about 21 `audit_events` (five logins, five MCP
-authorizations, and 11 audited admin reads) and 4
+also writes a fixed set of rows: about 20 `audit_events` (five logins, five MCP
+authorizations, and 10 audited admin reads) and 4
 `agent_package_conversation_uses` (one per non-admin user's package execute).
 Restore rewinds data only, so after a restore the JSON diff still shows whatever
 the deployed code changed.
@@ -79,7 +79,7 @@ uploads `preview-rehearsal-<action>` and writes the D1 table to the run summary.
 A `seed` run's artifact holds the **pre-seed** bookmarks only when the roster
 was empty. A failed mid-seed is retried by restoring that run and seeding again.
 A second `seed` is a no-op only when the full roster exists **and** dave has
-been renamed to `rh-dave-renamed` (the last durable APP_DB write). Six accounts
+been renamed to `rh-dave-renamed` (the last durable APP_DB write). Five accounts
 without that rename is still partial. A no-op does not take a new bookmark, so
 it cannot overwrite the real pre-seed snapshot. A partial roster still fails —
 restore the last successful seed run, then seed again. The `seed` command itself
@@ -88,14 +88,14 @@ still refuses to write into a non-empty roster.
 <details>
 <summary>What the seed creates (§12.2)</summary>
 
-| Who           | How                                                                       | Holds                                                                   |
-| ------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `rh-admin`    | Seed SQL path (`buildSeedUserSql`, legacy `sha256(email)` id), site admin | Runs every admin step                                                   |
-| `rh-alice`    | Seed SQL path (legacy id), Pro                                            | Shared package (accepted by carol), $25 grant                           |
-| `rh-bob`      | Seed SQL path (legacy id)                                                 | Scope grant on `@rh-platform`; published there                          |
-| `rh-carol`    | `adminUserCreate` + setup link (random id), Pro                           | Accepted alice's share and ran it; pending invite to alice; auto-refill |
-| `rh-dave`     | `/auth` signup + `adminUserVerify` (random id)                            | Forked the platform listing; renamed to `rh-dave-renamed`               |
-| `rh-platform` | `adminPlatformAccountCreate`                                              | Public (listed), private, and hidden packages                           |
+| Who        | How                                                                       | Holds                                                                                                          |
+| ---------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `rh-admin` | Seed SQL path (`buildSeedUserSql`, legacy `sha256(email)` id), site admin | Runs every admin step                                                                                          |
+| `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, $25 grant                                                                  |
+| `rh-bob`   | Seed SQL path (legacy id)                                                 | Owner of `@rh-org`; published there                                                                            |
+| `rh-carol` | `adminUserCreate` + setup link (random id), Pro                           | Ran alice's package through her `use` grant (bound to alice's org); pending grant invite to alice; auto-refill |
+| `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing; renamed to `rh-dave-renamed`                                                           |
+| `@rh-org`  | `orgCreate` by bob (an ordinary org, no `users` row)                      | Public (listed), private, and hidden packages                                                                  |
 
 Each of alice, bob, carol, and dave has: a package with an inline app, a
 recurring and a one-off job (the recurring one run once), a webhook with a
@@ -118,10 +118,13 @@ have no Stripe mock and the settings route requires a Stripe customer.
 Per user, signed in as that user: ids and username, packages, the inline app
 response, jobs with `next_run_at`, webhooks, secret names plus a fresh
 decryption proof for both secrets, integrations plus an authenticated call, top
-results for four fixed memory searches, share grants (inbound and outbound;
-alice and carol, the users who opted in to sharing), token ids and scopes, and
-usage. As the admin: each user's account record and wallet (balance, plan,
-eligibility), and the scope grants.
+results for four fixed memory searches, access grants (`accessList`), token ids
+and scopes, and usage. As bob, bound to `@rh-org`: the org's packages and
+grants, which only load while his Owner membership is live. As the admin: each
+user's account record and wallet (balance, plan, eligibility). One derived
+check, `packages.ownedByOneOrg`, fails when a package id shows up in more than
+one owner's package list, so nothing is injected from another account (the old
+platform-account lane).
 
 Every read is a required check. A failed check is written into the snapshot and
 listed under `failures`, and the run fails, so a check that breaks the same way
@@ -189,6 +192,49 @@ both `--idle-ttl-seconds` and `--max-lifetime-seconds`.
 
 An operator can also take the JSON snapshot without Cloudflare credentials:
 `node tools/preview-rehearsal/run.ts json-snapshot --credentials creds/credentials.json --out snap.json`.
+
+## P8: sharing and platform conversion
+
+The Teams P8 data conversion is migration
+`packages/worker/migrations/0091-teams-sharing-platform-conversion.sql`, so it
+runs in step 5 with the rest of the migrations. It turns accepted package shares
+into `use` grants, pending shares into grant invites (fresh tokens, so old share
+invite links stop working), scope grantees into Owners, and platform accounts
+into `pro` orgs with admin credits. Only `@kody` gets the $1,000 site-admin
+credit. Revoked and left shares stay for the P9 table drop. The migration fails
+closed on those invariants.
+
+The same change deletes the share and platform-account code, so the seed can no
+longer create shares or platform accounts. It seeds the converted shape instead
+(a `use` grant, a grant invite, and an ordinary org with an Owner), and the
+conversion of real share and platform rows is checked by the workflow below.
+
+`.github/workflows/teams-p8-conversion.yml` (`🔁 Teams P8 Conversion Checks`)
+adds a sealed backup and a read-only verify around that migration. Both seal to
+your recipient key, and the public logs name failing checks without counts:
+
+```bash
+# Before the migration deploys: seal share grants, scope grants, and platform users rows.
+gh workflow run teams-p8-conversion.yml --ref main -f target=$P -f mode=backup \
+  -f recipient_public_key="$(cat ~/.kody-rehearsal/key.pub)"
+
+# After it deploys: re-check every invariant. Fails when any check has gaps.
+gh workflow run teams-p8-conversion.yml --ref main -f target=$P -f mode=verify \
+  -f recipient_public_key="$(cat ~/.kody-rehearsal/key.pub)"
+```
+
+A branch preview already has the migration applied after step 5, so
+`mode=backup-then-verify` runs both there. Production needs
+`-f target=production -f confirm="teams p8 conversion checks"`, `main`, and
+`kentcdodds`. `verify` is meant for right after the deploy: it expects the
+converted state, so a later change (an Owner removed on purpose) shows as a gap.
+
+When `verify` names a gap in memberships, platform plans, or the `@kody` credit,
+`node tools/teams-migration/convert-sharing-and-platform.ts --mode repair --confirm-repair ...`
+re-applies those writes (idempotent) and verifies again. Lost share grants are
+not repaired there: restore from the D1 bookmark and re-apply the migration.
+Code and tests: `tools/teams-migration/convert-sharing-and-platform.ts` and
+`convert-sharing-and-platform.node.test.ts`.
 
 ## What the preview cannot rehearse
 

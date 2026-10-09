@@ -71,11 +71,11 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
-- [Package sharing](../guides/package-sharing.md) (person-to-person use grants;
-  not platform scope grants —
-  [0050](./decisions/0050-package-share-grants-are-not-scope-grants.md))
+- [Package sharing](../guides/package-sharing.md) (org access grants and
+  invites;
+  [0067](./decisions/0067-cross-org-grants-replace-shares-and-platform-accounts.md))
 - [`packageStorage()` grants and stamp-aligned secrets](./package-storage-static-imports.md)
-  (stamp/grant model under fork-only official packages)
+  (stamp/grant model when imports resolve only in the caller's org)
 - [Package codemods](./package-codemods.md)
 - [Public packages](./community-packages.md)
 - [Inbound webhooks](../use/webhooks.md) (external HTTP knock)

@@ -5,7 +5,10 @@
 Superseded by [0035](./0035-platform-packages-execute-only.md) for saved
 person-account packages, then fully by
 [0036](./0036-platform-packages-fork-only.md) (person accounts do not run
-official platform packages, including ad hoc execute).
+official platform packages, including ad hoc execute). Platform accounts
+themselves are retired by
+[0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md) (Teams
+P8).
 
 ## Context
 

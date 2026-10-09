@@ -22,9 +22,7 @@ import {
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
 import { readAppSession } from '#client/app-session-context.tsx'
-import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
@@ -423,16 +421,8 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const personal =
 			organizations.find((org) => org.slug === orgSlug)?.personal ??
 			Boolean(orgSlug && orgSlug === session?.username)
-		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
-		const explainer =
-			!showShared && currentPath === routes.accountShared.href()
-				? null
-				: resolveEntityExplainer(currentPath)
-		const navItems = accountNavItemsFor({
-			orgSlug,
-			personal,
-			showShared,
-		})
+		const explainer = resolveEntityExplainer(currentPath)
+		const navItems = accountNavItemsFor({ orgSlug, personal })
 
 		return (
 			<>

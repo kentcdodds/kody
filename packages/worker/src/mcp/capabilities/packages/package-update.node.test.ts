@@ -20,7 +20,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
 }))
@@ -40,7 +39,6 @@ function update(
 			ownerScope: 'user',
 			ownerEmail: 'user@example.com',
 			actorUserId: userId,
-			delegated: false,
 		})
 	}
 	return packageUpdateCapability.handler(

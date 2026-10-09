@@ -44,8 +44,6 @@ const { CommunityActionError } = await import('#worker/community/errors.ts')
 const { EntitlementLimitError } = await import('#worker/entitlements/errors.ts')
 const { PackageNameInputError, normalizePackageNameInput } =
 	await import('#worker/package-registry/package-name.ts')
-const { PackageScopeAccessError } =
-	await import('#worker/package-registry/package-owner.ts')
 const { SavedPackageNotFoundError } =
 	await import('#worker/package-runtime/package-import-resolution.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
@@ -124,8 +122,6 @@ function thrownBy(run: () => unknown) {
 	throw new Error('expected run to throw')
 }
 
-const packageScopeMessage =
-	'You do not have a package scope grant for "@kody". Omit package_scope to use your personal scope, or ask an admin to grant access to that platform account.'
 const repoSearchMessage =
 	'repoSearch received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).'
 const packageSaveOverwriteMessage =
@@ -199,13 +195,6 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			'community',
 			'CommunityActionError',
 			new CommunityActionError('Fork this public package before rating it.'),
-		),
-		// Missing package scope grant (KODY-CLOUDFLARE-5N).
-		handlerFailure(
-			'packageList',
-			'packages',
-			'PackageScopeAccessError',
-			new PackageScopeAccessError(packageScopeMessage),
 		),
 		handlerFailure(
 			'storageQuery',
@@ -356,7 +345,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		for (const event of callerFailures) logMcpEvent(event)
 	})
 
-	expect(payloads).toHaveLength(25)
+	expect(payloads).toHaveLength(24)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

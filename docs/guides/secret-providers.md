@@ -49,8 +49,8 @@ request URL must be `https:`.
 
 Ad hoc execute does not need a package grant. Saved packages do:
 `secretProviderLock` returns the Allow URL; grant and revoke on
-`/account/secret-providers`. Shared packages use the **owner's** binding and
-grants, not the guest's.
+`/account/secret-providers`. A package runs in the org that owns it, so a
+collaborator holding a grant uses that org's binding and grants, not their own.
 
 Search does not crawl vaults. `secretProviderList` returns binding metadata
 only.

@@ -810,7 +810,7 @@ test('control-kody request logs in before a mutating call when no cookie exists'
 				cookie: request.headers.cookie,
 			})
 			if (handleAuth(request, response, 'kody_session=fresh')) return
-			if (request.url === '/docs/package-sharing/opt-in') {
+			if (request.url === '/account/experiments.json') {
 				if (request.headers.cookie !== 'kody_session=fresh') {
 					response.statusCode = 302
 					response.setHeader('Location', '/login')
@@ -836,7 +836,7 @@ test('control-kody request logs in before a mutating call when no cookie exists'
 			const code = await runCommand(
 				requestArgv(
 					'POST',
-					'/docs/package-sharing/opt-in',
+					'/account/experiments.json',
 					origin,
 					path.join(temp.dir, 'cookie'),
 				),
@@ -848,7 +848,7 @@ test('control-kody request logs in before a mutating call when no cookie exists'
 			const optInCookies = seen
 				.filter(
 					(hit) =>
-						hit.method === 'POST' && hit.url === '/docs/package-sharing/opt-in',
+						hit.method === 'POST' && hit.url === '/account/experiments.json',
 				)
 				.map((hit) => hit.cookie)
 			expect(optInCookies).toContain('kody_session=fresh')

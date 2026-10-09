@@ -60,7 +60,6 @@ export function accountNavItemsFor(input: {
 	orgSlug: string | null | undefined
 	/** True when `orgSlug` is the signup (personal) organization. */
 	personal: boolean
-	showShared: boolean
 }): Array<AccountNavItem> {
 	return [
 		{ href: '/account', label: 'Overview', icon: 'home' },
@@ -87,19 +86,6 @@ export function accountNavItemsFor(input: {
 			label: 'Repositories',
 			icon: 'box',
 		},
-		...(input.showShared
-			? [
-					{
-						href: orgSectionHref(
-							input.orgSlug,
-							'shared',
-							routes.accountShared.href(),
-						),
-						label: 'Shared',
-						icon: 'share' as const,
-					},
-				]
-			: []),
 		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
 		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
 		{

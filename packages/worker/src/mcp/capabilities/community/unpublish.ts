@@ -4,11 +4,11 @@ import { getCommunityListingById } from '#worker/community/repo.ts'
 import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 
 export const communityUnpublishCapability = defineDomainCapability(
 	capabilityDomainNames.community,
@@ -29,11 +29,6 @@ export const communityUnpublishCapability = defineDomainCapability(
 				.describe(
 					'Must equal the package name leaf (URL slug). Confirm with the user first: going private 404s public URLs and unlists the catalog; existing forks keep their copies.',
 				),
-			package_scope: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(packageScopeInputDescription),
 		}),
 		outputSchema: z.object({
 			listing_id: z.string(),
@@ -41,11 +36,10 @@ export const communityUnpublishCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const listing = await getCommunityListingById(ctx.env.APP_DB, {
 				listingId: args.listing_id,
 				includeDelisted: true,

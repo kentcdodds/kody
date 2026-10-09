@@ -3,7 +3,10 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import {
 	buildPackagePublishApprovalUrl,
@@ -39,10 +42,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
-import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
@@ -84,11 +84,6 @@ const inputSchema = z
 			.describe(
 				'Optional saved package id to update in place. Omit to create a new saved package.',
 			),
-		package_scope: z
-			.string()
-			.min(1)
-			.optional()
-			.describe(packageScopeInputDescription),
 		files: z
 			.array(packageFileSchema)
 			.min(1)
@@ -216,11 +211,10 @@ export const savePackageCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			let files = normalizeFiles(args.files)
 			let packageJsonContent = files['package.json']
 			if (!packageJsonContent) {

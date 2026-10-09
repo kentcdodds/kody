@@ -51,11 +51,6 @@ import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
-import { assertPersonOwnedPackageMayNotRunPlatformDependencies } from '#worker/package-registry/platform-package-policy.ts'
-import {
-	collectShareStorageOwners,
-	retainAuthorizedPackageStorageGrantIds,
-} from '#worker/package-registry/share-grants.ts'
 import {
 	createRuntimeHelperExtraProviders,
 	createRuntimeHelperKodyToolSets,
@@ -816,11 +811,7 @@ export function collectPackageStorageGrantIds(input: {
 		grantedPackageIds.add(input.packageContext.packageId)
 	}
 	for (const dependency of input.dependencies) {
-		// Platform-scope (built-in) dependencies run in the caller's runtime
-		// but stay stateless there: granting the platform package UUID would
-		// open an empty caller-local bucket, never the platform account's
-		// data, so `packageStorage()` fails closed inside live platform code.
-		if (dependency.packageId && dependency.platformOwned !== true) {
+		if (dependency.packageId) {
 			grantedPackageIds.add(dependency.packageId)
 		}
 	}
@@ -1171,43 +1162,11 @@ export async function runBundledModuleWithRegistry(
 		}
 		await reportExecutePhaseProgress(reportProgress, 'provider-assembly')
 		const providerAssemblyStartedAtMs = Date.now()
-		const runningPackageId = options?.packageContext?.packageId?.trim()
-		const runningUserId = callerContext.user?.userId
-		if (runningPackageId && runningUserId) {
-			await assertPersonOwnedPackageMayNotRunPlatformDependencies({
-				db: env.APP_DB,
-				userId: runningUserId,
-				packageId: runningPackageId,
-				dependencies: bundle.dependencies ?? [],
-			})
-		}
 		const grantedPackageStorageIds = collectPackageStorageGrantIds({
 			packageContext: options?.packageContext ?? null,
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
-		const storageOwnerByPackageId = new Map<string, string>()
-		let authorizedPackageStorageIds = new Set(grantedPackageStorageIds)
-		if (callerContext.user?.userId) {
-			const shareOwners = await collectShareStorageOwners({
-				db: env.APP_DB,
-				callerUserId: callerContext.user.userId,
-				packageIds: grantedPackageStorageIds,
-			})
-			for (const [packageId, ownerUserId] of shareOwners) {
-				storageOwnerByPackageId.set(packageId, ownerUserId)
-			}
-			authorizedPackageStorageIds =
-				await retainAuthorizedPackageStorageGrantIds({
-					db: env.APP_DB,
-					callerUserId: callerContext.user.userId,
-					packageIds: grantedPackageStorageIds,
-					storageOwnerByPackageId,
-				})
-			if (runningPackageId && grantedPackageStorageIds.has(runningPackageId)) {
-				authorizedPackageStorageIds.add(runningPackageId)
-			}
-		}
 		// Static package export calls report through a sandbox bridge with a
 		// bundler-stamped callee package id; only ids recorded as *direct*
 		// static bundle dependencies at build time are accepted (mismatches are
@@ -1239,7 +1198,7 @@ export async function runBundledModuleWithRegistry(
 				email: callerContext.user?.email ?? null,
 				request: callerContext.request,
 				storageContext: normalizedStorageContext,
-				grantedSecretAuthorityPackageIds: [...authorizedPackageStorageIds],
+				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -1311,9 +1270,8 @@ export async function runBundledModuleWithRegistry(
 		// missing-capability TypeError.
 		const packageStorageTools = callerContext.user?.userId
 			? {
-					grantedPackageIds: authorizedPackageStorageIds,
+					grantedPackageIds: grantedPackageStorageIds,
 					writable: !closedWorldRetrieverRuntime,
-					storageOwnerByPackageId,
 				}
 			: undefined
 		const packageSecretTools = callerContext.user?.userId
@@ -1321,7 +1279,7 @@ export async function runBundledModuleWithRegistry(
 					env,
 					callerContext,
 					runPackageId: options?.packageContext?.packageId ?? null,
-					grantedPackageIds: authorizedPackageStorageIds,
+					grantedPackageIds: grantedPackageStorageIds,
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {

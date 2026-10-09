@@ -19,7 +19,6 @@ import {
 	type AccountPackagesLoaderData,
 	type AppLoaderData,
 } from '#universal/loader-data.ts'
-import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 
 export type CommunityDetailApiPayload = {
 	ok: true
@@ -39,7 +38,6 @@ export type CommunityDetailApiPayload = {
 	kodyId: string
 	isPrivate: boolean
 	invocationUrlOrigin: string
-	shareGrant?: PackageShareGrantLoaderView | null
 }
 
 export type CommunityPackageMovedPayload = {
@@ -74,7 +72,6 @@ export type CommunityShellSnapshot = {
 	kodyId: string
 	isPrivate: boolean
 	invocationUrlOrigin: string
-	shareGrant?: PackageShareGrantLoaderView | null
 }
 
 export type CommunityInstallOutcome = {

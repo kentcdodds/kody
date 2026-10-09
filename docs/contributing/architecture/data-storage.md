@@ -372,20 +372,22 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   community profile fields are `display_name`, `bio`, and `profile_visibility`
   (default `public`). `experiments_opt_in` is the account preference for the
   feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
-  `account_type` (`'person'` default or `'platform'`) distinguishes normal
-  signups from operator-provisioned platform accounts that own official package
-  scopes (see [Platform accounts](./platform-accounts.md)). First-touch
-  marketing columns (`utm_*`, `first_touch_landing_path`,
-  `first_touch_referrer`) store signup attribution when present. Activation and
-  return columns (`first_mcp_connected_at`, `first_execute_at`,
-  `first_search_at`, `first_saved_package_at`, `first_secret_at`,
-  `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
-  support product metrics; email verification delivery columns track the latest
-  transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
-  the write-once ledger for the 14-day Pro overlay granted when known connected
-  agent ecosystems first reach 2; `second_agent_standard_gift_expires_at` is set
-  only when that overlay actually raises a free account (NULL means already paid
-  / no-op). See [Entitlements](./entitlements.md#second-agent-pro-gift).
+  `account_type` (`'person'` default or `'platform'`) is a leftover: former
+  platform accounts are ordinary orgs now, but their `users` rows stay until
+  Teams P9 deletes them and drops the column
+  ([#3084](https://github.com/kentcdodds/kody/issues/3084)). Person-only sweeps
+  filter with `personUserRowSql` until then. First-touch marketing columns
+  (`utm_*`, `first_touch_landing_path`, `first_touch_referrer`) store signup
+  attribution when present. Activation and return columns
+  (`first_mcp_connected_at`, `first_execute_at`, `first_search_at`,
+  `first_saved_package_at`, `first_secret_at`, `first_integration_at`,
+  `first_job_at`, `mcp_client_name`, `last_active_at`) support product metrics;
+  email verification delivery columns track the latest transactional verify-mail
+  outcome. `second_agent_standard_gift_granted_at` is the write-once ledger for
+  the 14-day Pro overlay granted when known connected agent ecosystems first
+  reach 2; `second_agent_standard_gift_expires_at` is set only when that overlay
+  actually raises a free account (NULL means already paid / no-op). See
+  [Entitlements](./entitlements.md#second-agent-pro-gift).
   `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
   Pro overlay from the uncapped referral program. Pre-signup attribution lives
@@ -431,17 +433,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
-- `package_scope_grants`: explicit rows granting a person account permission to
-  act inside a platform account's package scope (`scope_owner_user_id`,
-  `grantee_user_id`, `created_by_user_id`, `created_at`; squashed baseline).
-  Grants are only representable when the scope owner is a platform account.
-- `package_share_grants`: person-to-person invitations to **use** one saved
-  package (`package_id`, `owner_user_id`, invitee email/username,
-  `grantee_user_id`, `status`, `role`, `trust_level`,
-  `accepted_published_commit`). Not a platform scope grant. Owner invites; guest
-  must accept; role is `use` (read source + invoke). See
-  [package sharing](../../guides/package-sharing.md) and
-  [0050](../decisions/0050-package-share-grants-are-not-scope-grants.md).
+- `package_scope_grants` and `package_share_grants`: retired. Migration 0091
+  converted their rows to org memberships and access grants, and no code reads
+  or writes them. They stay only for the Teams P8 soak and are dropped in P9
+  ([#3083](https://github.com/kentcdodds/kody/issues/3083),
+  [#3082](https://github.com/kentcdodds/kody/issues/3082)).
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
@@ -492,11 +488,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   secrets are auto-granted for read/use to self-authored packages (no
   `community_forks` row for that `saved_packages.id` + `userId`) and adopted
   forks (`community_forks.adopted_at`, set only by the signed-in owner on the
-  package settings page). Person accounts do not run official platform packages
-  ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
-  community forks (`community_forks.forked_package_id`, indexed in the squashed
-  baseline) still require an explicit `allowed_packages` grant on every package
-  read path. Updating or deleting a user secret from package code (`secretSet` /
+  package settings page). Packages from another org (including `@kody`) run only
+  after `communityFork` copies them into the caller's org. Unadopted community
+  forks (`community_forks.forked_package_id`, indexed in the squashed baseline)
+  still require an explicit `allowed_packages` grant on every package read path.
+  Updating or deleting a user secret from package code (`secretSet` /
   `secretDelete`) always requires that grant, regardless of fork or adoption
   state. Official OAuth token rotation persists host-side and does not use that
   write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
@@ -1714,13 +1710,10 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 1. `packages/worker/src/package-runtime/package-import-resolution.ts` parses the
    `kody:@` prefix, the `@scope/name` package name, and an optional export
    subpath (default `.`).
-2. Resolution is scoped to the caller's `userId`. Person accounts — ad hoc
-   execute and saved packages — must `communityFork` a platform-account package
-   (for example `@kody/github`) into the caller's scope before importing or
-   invoking it (decision
-   [0036 — Person accounts do not run official platform packages](../decisions/0036-platform-packages-fork-only.md)).
-   Person-account and public package scopes never grant cross-user imports.
-   Platform-account packages may still compose with each other.
+2. Resolution is scoped to the caller's org. Ad hoc execute and saved packages
+   must `communityFork` a package from another org (for example `@kody/github`
+   from the `@kody` org) into the caller's org before importing or invoking it.
+   No scope grants cross-org imports.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal

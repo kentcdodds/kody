@@ -13,7 +13,6 @@ import { createAccountMcpServersHandler } from '#app/handlers/account-mcp-server
 import { createAccountMemoriesHandler } from '#app/handlers/account-memories.ts'
 import { createAccountSecretProvidersHandler } from '#app/handlers/account-secret-providers.ts'
 import { createAccountSecretsHandler } from '#app/handlers/account-secrets.ts'
-import { createAccountSharedHandler } from '#app/handlers/account-shared.ts'
 import { createAccountValuesHandler } from '#app/handlers/account-values.ts'
 import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
 import { createAccountWebhooksHandler } from '#app/handlers/account-webhooks.ts'
@@ -51,8 +50,6 @@ function sectionHandler(
 			return createAccountSecretProvidersHandler(env)
 		case 'secrets':
 			return createAccountSecretsHandler(env)
-		case 'shared':
-			return createAccountSharedHandler(env)
 		case 'values':
 			return createAccountValuesHandler(env)
 		case 'waiting':
@@ -103,7 +100,6 @@ function sectionParams(
 		case 'packages':
 		case 'secret-providers':
 		case 'secrets':
-		case 'shared':
 		case 'waiting':
 		case 'webhooks':
 			return {}

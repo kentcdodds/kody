@@ -43,13 +43,12 @@ Search the `packages` domain, then call `packageAppFetch`:
 
 Optional request fields:
 
-| Field           | Default | Meaning                                                         |
-| --------------- | ------- | --------------------------------------------------------------- |
-| `package_scope` | omitted | Owner scope for delegated packages; preserve it from test hints |
-| `path`          | `/`     | Path **after** the app mount (what the handler sees)            |
-| `method`        | `GET`   | HTTP method                                                     |
-| `headers`       | `{}`    | Extra request headers (safe subset)                             |
-| `body`          | omitted | Raw request body string for `POST` / `PUT` / `PATCH`            |
+| Field     | Default | Meaning                                              |
+| --------- | ------- | ---------------------------------------------------- |
+| `path`    | `/`     | Path **after** the app mount (what the handler sees) |
+| `method`  | `GET`   | HTTP method                                          |
+| `headers` | `{}`    | Extra request headers (safe subset)                  |
+| `body`    | omitted | Raw request body string for `POST` / `PUT` / `PATCH` |
 
 Example POST with JSON:
 
@@ -64,9 +63,7 @@ Example POST with JSON:
 ```
 
 Look up the package with the scoped `@owner/leaf` name (or `package_id` when the
-name is not known). When `test_hints.app` includes `package_scope`, preserve
-that exact owner scope so the probe cannot resolve an unrelated same-named
-package in the caller's personal scope.
+name is not known). The lookup runs in the org the connection is bound to.
 
 Websocket upgrade requests (`Upgrade: websocket`, `Connection: Upgrade`, or
 equivalent) are rejected.

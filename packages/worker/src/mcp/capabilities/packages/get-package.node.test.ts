@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as SecretsService from '#mcp/secrets/service.ts'
@@ -31,7 +34,6 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
 }))
@@ -45,7 +47,7 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 const { getPackageCapability } = await import('./get-package.ts')
 
 function getPackage(
-	args: { package_scope?: string } = {},
+	args: Record<string, unknown> = {},
 	owner?: { ownerUserId: string; ownerScope: string; ownerEmail: string },
 ) {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
@@ -53,7 +55,6 @@ function getPackage(
 		ownerScope: 'kody',
 		ownerEmail: 'kody@example.com',
 		actorUserId: 'user-1',
-		delegated: Boolean(owner),
 		...owner,
 	})
 	return getPackageCapability.handler(
@@ -69,6 +70,17 @@ function getPackage(
 					displayName: 'Kody',
 					username: 'kody',
 				},
+				...(owner
+					? {
+							orgBinding: {
+								org: {
+									id: ownerIdFromStored(owner.ownerUserId),
+									slug: owner.ownerScope,
+								},
+								role: 'owner' as const,
+							},
+						}
+					: {}),
 			}),
 		},
 	)
@@ -132,7 +144,7 @@ function stubSource(
 	})
 }
 
-test('getPackageCapability returns export metadata for owner and delegated package scopes', async () => {
+test('getPackageCapability returns export metadata for personal and org-bound owners', async () => {
 	stubSavedPackage()
 	stubSource(
 		'@kentcdodds/discord-gateway',
@@ -191,52 +203,53 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		sourceId: 'source-1',
 	})
 
-	// Delegated package_scope loads the owner's package metadata.
+	// An org-bound request loads the org's package metadata.
 	stubSavedPackage({
-		userId: 'platform-owner',
-		name: '@kody/discord-gateway',
+		userId: 'org-owner',
+		name: '@acme/discord-gateway',
 		hasApp: false,
 		sourceListingId: null,
 	})
 	stubSource(
-		'@kody/discord-gateway',
+		'@acme/discord-gateway',
 		{ './post-message': './src/post-message.ts' },
 		{},
 	)
 	mockModule.resolvePackageOwnerContext.mockClear()
 
-	const delegated = await getPackage(
-		{ package_scope: 'kody' },
+	const orgOwned = await getPackage(
+		{},
 		{
-			ownerUserId: 'platform-owner',
-			ownerScope: 'kody',
-			ownerEmail: 'platform@example.com',
+			ownerUserId: 'org-owner',
+			ownerScope: 'acme',
+			ownerEmail: 'acme@example.com',
 		},
 	)
 
 	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ userId: 'user-1' }),
-		'kody',
+		expect.objectContaining({
+			user: expect.objectContaining({ userId: 'user-1' }),
+		}),
 	)
 	expect(
 		mockModule.getSavedPackageWithCommunityProvenanceById,
 	).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			userId: 'platform-owner',
+			userId: 'org-owner',
 			packageId: 'package-1',
 		}),
 	)
 	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenLastCalledWith(
-		expect.objectContaining({ userId: 'platform-owner' }),
+		expect.objectContaining({ userId: 'org-owner' }),
 	)
-	expect(delegated.exports[0]).toMatchObject({
+	expect(orgOwned.exports[0]).toMatchObject({
 		subpath: './post-message',
-		import_specifier: 'kody:@kody/discord-gateway/post-message',
+		import_specifier: 'kody:@acme/discord-gateway/post-message',
 	})
 	expect(owned.package_secrets).toEqual([])
-	expect(delegated.package_secrets).toEqual([])
+	expect(orgOwned.package_secrets).toEqual([])
 })
 
 test('getPackageCapability includes package-scoped secret metadata as FYI', async () => {

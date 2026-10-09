@@ -33,9 +33,10 @@ permissions in that org.
   App (typically a system administrator).
 - There is one OAuth app per Salesforce org you want to call. Production and
   sandbox are different login hosts and different connections.
-- The official helpers package is
-  [@kody/salesforce](https://kody.codes/@kody/salesforce). A saved integration
-  is credentials only; that package is the agent-facing surface.
+- The helpers package is
+  [@kody/salesforce](https://kody.codes/@kody/salesforce), a public community
+  package from the `@kody` org. A saved integration is credentials only; fork
+  that package and use your copy as the agent-facing surface.
 
 See the [OAuth guide](../oauth.md) for query parameters, confidential exchange,
 and reconnect behavior.
@@ -62,9 +63,9 @@ wrong org.
 
 ## Connect to Kody
 
-Open this URL while signed in to Kody. It matches the official package's
-prefilled connect link, with the production callback and connect page on
-`https://kody.codes/connect/oauth`:
+Open this URL while signed in to Kody. It matches the `@kody/salesforce`
+package's prefilled connect link, with the production callback and connect page
+on `https://kody.codes/connect/oauth`:
 
 ```text
 https://kody.codes/connect/oauth?provider=salesforce&authorizeUrl=https%3A%2F%2Flogin.salesforce.com%2Fservices%2Foauth2%2Fauthorize&tokenUrl=https%3A%2F%2Flogin.salesforce.com%2Fservices%2Foauth2%2Ftoken&apiBaseUrl=https%3A%2F%2Flogin.salesforce.com&scopes=api%20refresh_token%20offline_access&flow=confidential&allowedHosts=login.salesforce.com%2C*.salesforce.com%2C*.force.com%2C*.my.salesforce.com
@@ -89,12 +90,12 @@ who can see the data the workflow needs.
 
 Each org is its own Kody integration. Give production, sandbox, and extra orgs
 different `provider` values (`salesforce`, `salesforce-sandbox`,
-`salesforce-eu`). Official package helpers take `integrationName` so a call
-targets that connection instead of the default `salesforce` name.
+`salesforce-eu`). The package helpers take `integrationName` so a call targets
+that connection instead of the default `salesforce` name.
 
 ## Verify
 
-After connecting, `communityFork` `@kody/salesforce` into your scope and run the
+After connecting, `communityFork` `@kody/salesforce` into your org and run the
 fork's smoke test from `execute` (pass `integrationName` when the connection is
 not named `salesforce`):
 
@@ -137,13 +138,13 @@ refresh.
   and reconnect.
 - API calls fail against `login.salesforce.com` or `test.salesforce.com` after
   connect: those are login hosts, not the org instance. Salesforce returns an
-  instance URL (for example `*.my.salesforce.com`) from userinfo; the official
-  package follows that URL. Keep the wildcard hosts from the connect link so
+  instance URL (for example `*.my.salesforce.com`) from userinfo; the package
+  follows that URL. Keep the wildcard hosts from the connect link so
   `createAuthenticatedFetch` can reach the instance.
 - `invalid_client` / secret errors: confirm the consumer secret is current and
   that `flow=confidential` is set. Rotate the secret in Salesforce and reconnect
   if it was regenerated.
 
-After you are connected, use the official
-[@kody/salesforce](https://kody.codes/@kody/salesforce) package for identity,
-SOQL, sObject metadata, and confirmed record changes.
+After you are connected, fork
+[@kody/salesforce](https://kody.codes/@kody/salesforce) and use your copy for
+identity, SOQL, sObject metadata, and confirmed record changes.

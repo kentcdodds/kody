@@ -51,7 +51,6 @@ vi.mock('#worker/feature-flags/exposure.ts', async (importOriginal) => {
 function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
-		'package-share-grants': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
 		'connection-profiles': false,

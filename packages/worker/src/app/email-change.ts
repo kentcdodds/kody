@@ -12,7 +12,6 @@ import {
 	isEmailReservedForOtherAccount,
 } from '#worker/identity/email-claims.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
-import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { reconcileDestinationsAfterIdentityEmailChange } from '#worker/email/destinations.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -243,11 +242,6 @@ export async function verifyEmailChangeToken(input: {
 		userId: record.user_id,
 		email: newEmail,
 		now,
-	})
-	await attachPendingPackageShareInvitesSafely({
-		db: input.db,
-		userId: stableUserId,
-		email: newEmail,
 	})
 	await reconcileDestinationsAfterIdentityEmailChange({
 		db: input.db,

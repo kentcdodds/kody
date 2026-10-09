@@ -75,7 +75,6 @@ export default async function __kodyComputedImportCall(params) {
 			kodyId: input.artifact.packageContext?.kodyId ?? '',
 			packageId: calleePackageId,
 			packageName: undefined,
-			platformOwned: false,
 		})
 	}
 	return {

@@ -65,16 +65,19 @@ export function describeFailure(
 
 /**
  * Sign in through `/auth` (session cookie) and the MCP OAuth flow (one new
- * MCP OAuth connection per call), the same way an agent connects.
+ * MCP OAuth connection per call), the same way an agent connects. `orgSlug`
+ * binds the MCP connection to that org instead of the personal org.
  */
 export async function openRehearsalSession(
 	origin: string,
 	credentials: RehearsalCredentials,
+	options: { orgSlug?: string } = {},
 ): Promise<RehearsalSession> {
 	const cookieHeader = await loginToApp(origin, credentials)
 	const connection = await connectAppMcpClient(origin, credentials, {
 		cookieHeader,
 		clientName: 'kody-preview-rehearsal',
+		orgSlug: options.orgSlug,
 	})
 	const callTool = async (name: string, args: Record<string, unknown>) =>
 		connection.client.callTool({ name, arguments: args }, defaultMcpCallOptions)

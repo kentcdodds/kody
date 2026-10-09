@@ -13,8 +13,7 @@ type ConfirmControl = {
 /**
  * The fork control lives in the server frame, so it stays clickable while
  * the client is submitting or waiting for a reload. Ignore those clicks.
- * Official `@kody/*` listings fork on the first click. Another-account
- * listings use the same git-fork icon and `createDoubleCheck` (first click
+ * Every listing uses the git-fork icon and `createDoubleCheck` (first click
  * arms, blur cancels, second click starts the fork).
  */
 export function decideCommunityInstallClick(input: {

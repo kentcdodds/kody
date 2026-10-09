@@ -20,7 +20,6 @@ test('provisionPersonalOrg creates org, owner membership, and handle', async () 
 		stableUserId,
 		username: 'Ada',
 		createdAt,
-		accountType: 'person',
 		plan: 'free',
 	})
 

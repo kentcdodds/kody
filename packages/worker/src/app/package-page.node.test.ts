@@ -5,7 +5,6 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	loadCommunityDetailData: vi.fn(),
 	loadAccountPackageDetail: vi.fn(),
-	loadViewerPackageShare: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
 }))
 
@@ -36,14 +35,7 @@ vi.mock('#worker/community/profile-repo.ts', () => ({
 		mockModule.getUserSocialRowByUsername(...args),
 }))
 
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	loadViewerPackageShare: (...args: Array<unknown>) =>
-		mockModule.loadViewerPackageShare(...args),
-	toPackageShareGrantLoaderView: (view: unknown) => view,
-}))
-
-const { loadPackagePage, packagePageIsPrivate } =
-	await import('./package-page.ts')
+const { loadPackagePage } = await import('./package-page.ts')
 
 const request = new Request('https://example.com/@owner/notes')
 const env = {} as Env
@@ -190,44 +182,15 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 	})
 })
 
-test('loadPackagePage lets pending and accepted share guests see a private package', async () => {
+test('loadPackagePage hides a private package from a signed-in non-owner', async () => {
 	setProfileVisibility('private')
 	mockModule.loadCommunityDetailData.mockResolvedValue(null)
-	mockModule.loadAccountPackageDetail.mockResolvedValue({
-		...ownerPackageDetail,
-		isPrivate: true,
-	})
+	mockModule.loadAccountPackageDetail.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'guest@example.com',
 		mcpUser: { userId: 'guest-1' },
 	})
 	resolvesTo('package', pkg({ isPrivate: true }))
-	const shareGrant = (status: string) => ({
-		id: 'grant-1',
-		status,
-		packageName: '@owner/notes',
-	})
-
-	mockModule.loadViewerPackageShare.mockResolvedValue(shareGrant('pending'))
-	const pending = await load()
-	expect(pending).toMatchObject({
-		kind: 'page',
-		viewerIsOwner: false,
-		loggedIn: true,
-		ownerPackage: null,
-		canReadOwnerSource: false,
-		shareGrant: { id: 'grant-1', status: 'pending' },
-		ownerProfilePublic: false,
-	})
-	expect(pending.kind === 'page' && packagePageIsPrivate(pending)).toBe(true)
-
-	mockModule.loadViewerPackageShare.mockResolvedValue(shareGrant('accepted'))
-	expect(await load()).toMatchObject({
-		kind: 'page',
-		viewerIsOwner: false,
-		ownerPackage: { id: 'pkg-1' },
-		canReadOwnerSource: true,
-		shareGrant: { id: 'grant-1', status: 'accepted' },
-		ownerProfilePublic: false,
-	})
+	expect(await load()).toEqual({ kind: 'not_found' })
+	expect(mockModule.loadAccountPackageDetail).not.toHaveBeenCalled()
 })

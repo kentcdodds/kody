@@ -12,14 +12,11 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
  *
  * Two tiers with different lifetimes:
  *
- * - **Freshness tier** (saved-package row, entity-source row, platform-account
- *   flag): these rows can change on republish/rename, so they carry a short
+ * - **Freshness tier** (saved-package row, entity-source row): these rows can change on republish/rename, so they carry a short
  *   TTL. That TTL is the cross-isolate republish staleness bound; the isolate
  *   that runs the projection refresh also invalidates eagerly, so it picks
  *   the new publish up immediately. Misses are never retained — a package
- *   saved moments later is visible on the next lookup. The platform-account
- *   flag is stable for an isolate lifetime in practice; the TTL only keeps it
- *   on the same freshness clock as the other invoke lookups.
+ *   saved moments later is visible on the next lookup.
  * - **Commit tier** (prepared bundle artifact): keyed by the published commit
  *   taken from the freshness tier, and a published commit's artifact is
  *   immutable, so entries here are never a staleness source. The TTL only
@@ -81,7 +78,6 @@ export type PackageAppSlugLookup = {
 const savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
 const packageAppSlugCache = createFreshnessCache<PackageAppSlugLookup | null>()
 const sourceRowCache = createFreshnessCache<EntitySourceRow>()
-const platformAccountFlagCache = createFreshnessCache<boolean>()
 const moduleArtifactCache = createArtifactCache()
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -114,28 +110,8 @@ function packageAppSlugCacheKey(input: { userId: string; slug: string }) {
 	return JSON.stringify(['saved-package-app-slug', input.userId, input.slug])
 }
 
-function savedPackageCacheKeyMatchesLookup(
-	cacheKey: string,
-	packageIdOrKodyId: string,
-) {
-	try {
-		const parsed: unknown = JSON.parse(cacheKey)
-		return (
-			Array.isArray(parsed) &&
-			parsed[0] === 'saved-package' &&
-			parsed[2] === packageIdOrKodyId
-		)
-	} catch {
-		return false
-	}
-}
-
 function sourceRowCacheKey(input: { userId: string; sourceId: string }) {
 	return JSON.stringify(['source-row', input.userId, input.sourceId])
-}
-
-function platformAccountFlagCacheKey(userId: string) {
-	return JSON.stringify(['platform-account', userId])
 }
 
 export async function resolveSavedPackageWithFreshnessCache(input: {
@@ -191,16 +167,6 @@ export async function loadSourceRowWithFreshnessCache(input: {
 	return await sourceRowCache.getOrCreate({
 		cacheKey: sourceRowCacheKey(input),
 		create: async () => deepFreeze(await input.load()),
-	})
-}
-
-export async function loadPlatformAccountFlagWithFreshnessCache(input: {
-	userId: string
-	load: () => Promise<boolean>
-}): Promise<boolean> {
-	return await platformAccountFlagCache.getOrCreate({
-		cacheKey: platformAccountFlagCacheKey(input.userId),
-		create: input.load,
 	})
 }
 
@@ -271,13 +237,10 @@ export function invalidateInvokeContractFreshness(input: {
 	sourceId?: string | null
 }) {
 	for (const packageIdOrKodyId of input.packageIdOrKodyIds) {
+		savedPackageCache.delete(
+			savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
+		)
 		if (packageIdOrKodyId.startsWith('kody:@')) {
-			// Public platform packages resolve under every caller's cache
-			// namespace. Publish/delete is rare and this cache is capped at 200,
-			// so scan it to evict every caller alias immediately in this isolate.
-			savedPackageCache.deleteWhere((cacheKey) =>
-				savedPackageCacheKeyMatchesLookup(cacheKey, packageIdOrKodyId),
-			)
 			// Derive the URL leaf from the scoped name so rename/delete also
 			// clears the package-app slug cache (keys are never `kody:@…`).
 			evictPackageAppSlugCache({
@@ -285,9 +248,6 @@ export function invalidateInvokeContractFreshness(input: {
 				slug: getPackageNameLeaf(packageIdOrKodyId.slice('kody:'.length)),
 			})
 		} else {
-			savedPackageCache.delete(
-				savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
-			)
 			// When kodyId still equals the leaf, this also clears the slug entry.
 			evictPackageAppSlugCache({
 				userId: input.userId,

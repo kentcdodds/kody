@@ -61,15 +61,14 @@ function fakeSeedStatusApi(input: {
 
 const worker = 'kody-branch-teams-rehearsal'
 
-test('roster emails are the five people plus the platform account', () => {
-	expect(rehearsalSeedRosterSize).toBe(6)
+test('roster emails are the five people (the rehearsal org has no users row)', () => {
+	expect(rehearsalSeedRosterSize).toBe(5)
 	expect(rehearsalSeedEmails).toEqual([
 		'rh-admin@example.com',
 		'rh-alice@example.com',
 		'rh-bob@example.com',
 		'rh-carol@example.com',
 		'rh-dave@example.com',
-		'rh-platform@example.com',
 	])
 })
 
@@ -82,20 +81,20 @@ test('classifyRehearsalSeed requires the renamed dave username for complete', ()
 	expect(classifyRehearsalSeed({ count: 1, daveUsername: null })).toBe(
 		'partial',
 	)
+	expect(classifyRehearsalSeed({ count: 4, daveUsername: null })).toBe(
+		'partial',
+	)
+	expect(classifyRehearsalSeed({ count: 5, daveUsername: 'rh-dave' })).toBe(
+		'partial',
+	)
 	expect(classifyRehearsalSeed({ count: 5, daveUsername: null })).toBe(
 		'partial',
 	)
-	expect(classifyRehearsalSeed({ count: 6, daveUsername: 'rh-dave' })).toBe(
-		'partial',
-	)
-	expect(classifyRehearsalSeed({ count: 6, daveUsername: null })).toBe(
-		'partial',
-	)
 	expect(
-		classifyRehearsalSeed({ count: 6, daveUsername: renamedDaveUsername }),
+		classifyRehearsalSeed({ count: 5, daveUsername: renamedDaveUsername }),
 	).toBe('complete')
 	expect(
-		classifyRehearsalSeed({ count: 7, daveUsername: renamedDaveUsername }),
+		classifyRehearsalSeed({ count: 6, daveUsername: renamedDaveUsername }),
 	).toBe('complete')
 })
 
@@ -105,7 +104,7 @@ test('rehearsalSeedStatus counts every roster email and reads dave username', as
 		workerName: worker,
 		state: 'empty',
 		count: 0,
-		expected: 6,
+		expected: 5,
 		daveUsername: null,
 		app: { role: 'app', name: `${worker}-db`, uuid: 'app-uuid' },
 	})
@@ -121,32 +120,32 @@ test('rehearsalSeedStatus counts every roster email and reads dave username', as
 	).resolves.toMatchObject({
 		state: 'partial',
 		count: 3,
-		expected: 6,
+		expected: 5,
 		daveUsername: null,
 	})
 
 	const usersOnly = fakeSeedStatusApi({
-		userCount: 6,
+		userCount: 5,
 		daveUsername: 'rh-dave',
 	})
 	await expect(
 		rehearsalSeedStatus(usersOnly.client, worker),
 	).resolves.toMatchObject({
 		state: 'partial',
-		count: 6,
+		count: 5,
 		daveUsername: 'rh-dave',
 	})
 
 	const complete = fakeSeedStatusApi({
-		userCount: 6,
+		userCount: 5,
 		daveUsername: renamedDaveUsername,
 	})
 	await expect(
 		rehearsalSeedStatus(complete.client, worker),
 	).resolves.toMatchObject({
 		state: 'complete',
-		count: 6,
-		expected: 6,
+		count: 5,
+		expected: 5,
 		daveUsername: renamedDaveUsername,
 	})
 })
@@ -161,20 +160,20 @@ test('assertNotSeeded allows an empty roster and refuses partial or complete', a
 
 	await expect(
 		assertNotSeeded(fakeSeedStatusApi({ userCount: 3 }).client, worker),
-	).rejects.toThrow('partial rehearsal roster (3/6)')
+	).rejects.toThrow('partial rehearsal roster (3/5)')
 	await expect(
 		assertNotSeeded(
-			fakeSeedStatusApi({ userCount: 6, daveUsername: 'rh-dave' }).client,
+			fakeSeedStatusApi({ userCount: 5, daveUsername: 'rh-dave' }).client,
 			worker,
 		),
-	).rejects.toThrow('partial rehearsal roster (6/6)')
+	).rejects.toThrow('partial rehearsal roster (5/5)')
 	await expect(
 		assertNotSeeded(
 			fakeSeedStatusApi({
-				userCount: 6,
+				userCount: 5,
 				daveUsername: renamedDaveUsername,
 			}).client,
 			worker,
 		),
-	).rejects.toThrow('already has the full rehearsal roster (6/6)')
+	).rejects.toThrow('already has the full rehearsal roster (5/5)')
 })

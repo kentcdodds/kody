@@ -34,7 +34,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	packageScopeInputDescription: 'package scope',
 	resolvePackageOwnerContext: (...args: Array<unknown>) =>
 		mockModule.resolvePackageOwnerContext(...args),
 }))
@@ -67,7 +66,6 @@ const personalOwner = {
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
 	actorUserId: 'user-1',
-	delegated: false,
 }
 const invalidInput = 'Invalid input for capability "packageGetGitRemote"'
 const createRequiresLeaf =
@@ -373,7 +371,7 @@ test('get_git_remote retries remote timeouts and write scope blocks without a re
 	).rejects.toThrow('Stop and report this source recovery problem')
 })
 
-test('get_git_remote create mode registers stubs for owner and delegated scopes', async () => {
+test('get_git_remote create mode registers stubs for personal and org-bound owners', async () => {
 	resetMocks()
 	stubCreatedPackage()
 	const createdResult = await getRemote({
@@ -428,29 +426,28 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 	})
 
 	resetMocks()
-	const delegatedOwner = {
-		ownerUserId: 'platform-owner',
-		ownerScope: 'kody',
-		ownerEmail: 'kody@example.com',
+	const orgOwner = {
+		ownerUserId: 'org-owner',
+		ownerScope: 'acme',
+		ownerEmail: 'acme@example.com',
 		actorUserId: 'user-1',
-		delegated: true,
 	}
-	mockModule.resolvePackageOwnerContext.mockResolvedValue(delegatedOwner)
-	stubCreatedPackage('platform-owner', '@kody/unleashed-wifi')
-	const delegatedResult = await getRemote({
+	mockModule.resolvePackageOwnerContext.mockResolvedValue(orgOwner)
+	stubCreatedPackage('org-owner', '@acme/unleashed-wifi')
+	const orgResult = await getRemote({
 		kody_id: 'unleashed-wifi',
 		create: true,
-		package_scope: 'kody',
 	})
 	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ userId: 'user-1' }),
-		'kody',
+		expect.objectContaining({
+			user: expect.objectContaining({ userId: 'user-1' }),
+		}),
 	)
 	const ownerLookup = [
 		expect.anything(),
 		expect.objectContaining({
-			userId: 'platform-owner',
+			userId: 'org-owner',
 			ref: 'unleashed-wifi',
 		}),
 	]
@@ -460,11 +457,11 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 	])
 	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
 		expect.objectContaining({
-			owner: delegatedOwner,
+			owner: orgOwner,
 			kodyId: 'unleashed-wifi',
 		}),
 	)
-	expect(delegatedResult).toMatchObject({
+	expect(orgResult).toMatchObject({
 		created: true,
 		package_id: 'package-1',
 	})

@@ -64,10 +64,10 @@ package `dryRun` and fresh user confirmation before a live mutation.
 <summary>What's the difference between forking and sharing?</summary>
 
 **Fork** copies a public package so the other person owns and adapts that copy.
-**Share** leaves one live package in the owner's account; the guest accepts,
-then reads source and invokes it. Paid plans are required to share. See
-[Share a package](/docs/package-sharing) for invite, pin/follow, and guest
-limits.
+**Granting access** leaves one live package in the owner's org; the collaborator
+connects to that org to read and run it. See
+[Share a package](/docs/package-sharing) for grants, invites, and what a
+collaborator can do.
 
 </details>
 
@@ -75,7 +75,7 @@ Public packages in the Community catalog are excluded from general `search`.
 When you need durable reusable behavior and nothing in the user's account fits,
 call `communitySearch` for a close public package. If the other person should
 use your live package instead of their own copy,
-[share it](/docs/package-sharing).
+[grant them access](/docs/package-sharing).
 
 If a public package is close to the user's goal:
 

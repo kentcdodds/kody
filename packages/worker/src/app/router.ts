@@ -156,16 +156,7 @@ import {
 	createAccountExperimentsApiHandler,
 	createAccountExperimentsHandler,
 } from '#app/handlers/account-experiments.ts'
-import {
-	createAccountSharedApiHandler,
-	createAccountSharedHandler,
-} from '#app/handlers/account-shared.ts'
-import { createCommunityPackageShareApiHandler } from '#app/handlers/package-share.ts'
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
-import {
-	createCommunityPackageApproveChangesApiHandler,
-	createCommunityPackageApproveChangesHandler,
-} from '#app/handlers/package-share-approve-changes.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -248,7 +239,6 @@ import {
 	createDocsMarkdownHandler,
 	createLlmsTxtHandler,
 } from '#app/handlers/docs.tsx'
-import { createPackageSharingOptInHandler } from '#app/handlers/package-sharing-opt-in.ts'
 import { createPackageSkillsOptInHandler } from '#app/handlers/package-skills-opt-in.ts'
 import { createMcpEventsOptInHandler } from '#app/handlers/mcp-events-opt-in.ts'
 import {
@@ -379,7 +369,6 @@ export function createAppRouter(env: Env) {
 			docDetailApi: createDocDetailApiHandler(env),
 			docDetailMarkdown: createDocDetailMarkdownHandler(env),
 			docDetailOgImage: createDocDetailOgImageHandler(env),
-			packageSharingOptInPost: createPackageSharingOptInHandler(env),
 			packageSkillsOptInPost: createPackageSkillsOptInHandler(env),
 			mcpEventsOptInPost: createMcpEventsOptInHandler(env),
 			llmsTxt: createLlmsTxtHandler(env),
@@ -446,12 +435,6 @@ export function createAppRouter(env: Env) {
 				createAccountPackageApprovePublishHandler(env),
 			communityPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
-			communityPackageApproveChanges:
-				createCommunityPackageApproveChangesHandler(env),
-			communityPackageApproveChangesApi:
-				createCommunityPackageApproveChangesApiHandler(env),
-			communityPackageShareApi: createCommunityPackageShareApiHandler(env),
-			communityPackageShareApiPost: createCommunityPackageShareApiHandler(env),
 			communityPackageWebhooksApi:
 				createCommunityPackageWebhooksApiHandler(env),
 			communityPackageWebhooksApiPost:
@@ -499,9 +482,6 @@ export function createAppRouter(env: Env) {
 			accountExperiments: createAccountExperimentsHandler(env),
 			accountExperimentsApi: createAccountExperimentsApiHandler(env),
 			accountExperimentsApiPost: createAccountExperimentsApiHandler(env),
-			accountShared: createAccountSharedHandler(env),
-			accountSharedApi: createAccountSharedApiHandler(env),
-			accountSharedApiPost: createAccountSharedApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountEmailDestinationsApi: createAccountEmailDestinationsHandler(env),
 			accountEmailDestinationsApiPost:
@@ -630,7 +610,6 @@ export function createAppRouter(env: Env) {
 			orgPackages: createOrgSectionHandler(env, 'packages'),
 			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
 			orgSecrets: createOrgSectionHandler(env, 'secrets'),
-			orgShared: createOrgSectionHandler(env, 'shared'),
 			orgValues: createOrgSectionHandler(env, 'values'),
 			orgWaiting: createOrgSectionHandler(env, 'waiting'),
 			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
