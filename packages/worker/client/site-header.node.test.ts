@@ -33,13 +33,13 @@ test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or
 	expect(closedHidePopover).not.toHaveBeenCalled()
 })
 
-test('logged-in header shows Account to the left of the profile avatar', async () => {
+test('logged-in header has one menu: the organization, then your own links and Log out', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
 			displayName: 'Ada Lovelace',
 			username: 'ada',
-			avatarUrl: null,
+			avatarUrl: '/profiles/ada/avatar/abc.jpg',
 			showAdminLink: false,
 			showDemoIndicator: false,
 			loginHref: '/login',
@@ -47,34 +47,45 @@ test('logged-in header shows Account to the left of the profile avatar', async (
 		}),
 	)
 
-	expect(html).toContain('href="/@ada"')
-	expect(html).toContain('aria-label="@ada"')
-	expect(html).toContain('data-testid="site-header-profile"')
-
-	const accountTestIdAt = html.indexOf('data-testid="site-header-account"')
-	const profileTestIdAt = html.indexOf('data-testid="site-header-profile"')
-	expect(accountTestIdAt).toBeGreaterThan(-1)
-	expect(profileTestIdAt).toBeGreaterThan(accountTestIdAt)
-	const desktopAccountTag = html.slice(
-		html.lastIndexOf('<a', accountTestIdAt),
-		html.indexOf('>', accountTestIdAt) + 1,
+	// No separate Account link or profile avatar beside the switcher.
+	expect(html).not.toContain('data-testid="site-header-account"')
+	expect(html).not.toContain('data-testid="site-header-profile"')
+	expect(html).not.toContain('data-testid="site-header-account-menu"')
+	expect(html).toContain('aria-label="@ada: organizations and account"')
+	// The photo is drawn once on the trigger and once on the signup org row
+	// in each panel (desktop popover and phone menu), never as its own link.
+	const trigger = html.slice(
+		html.indexOf('data-testid="org-switcher"'),
+		html.indexOf('data-testid="org-switcher-panel"'),
 	)
-	expect(desktopAccountTag).toContain('href="/account"')
-	expect(desktopAccountTag).toContain('aria-current="page"')
+	expect(trigger.match(/avatar\/abc\.jpg/g)).toHaveLength(1)
 	expect(html).toContain('min-height: 44px')
+
 	// A single organization is the person: their name and handle, no role,
 	// and the mobile menu does not list the handle twice.
 	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
 	expect(menu).toContain('>Ada Lovelace<')
 	expect(menu).toContain('>@ada<')
 	expect(menu).toContain('>Create organization<')
-	expect(menu).toContain('>Invites<')
+	// No invites waiting: the row stays out of the way.
+	expect(menu).not.toContain('>Invites<')
 	expect(html).not.toContain('Owner')
-	expect(html).not.toContain('site-header-profile-menu')
 	expect(menu.match(/data-testid="org-switcher-ada"/g)).toHaveLength(1)
+
+	const account = menu.slice(
+		menu.indexOf('data-testid="org-switcher-account-group"'),
+	)
+	expect(account).toContain('>Your account<')
+	expect(account).toMatch(/href="\/@ada"[^>]*>[\s\S]*?>Your profile</)
+	expect(account).toMatch(
+		/href="\/account"[^>]*aria-current="page"[^>]*>[\s\S]*?>Account settings</,
+	)
+	expect(account).toMatch(
+		/<form[^>]*action="\/logout"[\s\S]*?data-testid="org-switcher-logout"[\s\S]*?>Log out</,
+	)
 })
 
-test('org switcher lists the signup organization, then others with roles, then create and invites', async () => {
+test('org switcher lists the signup organization, then others with roles, then create and waiting invites', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -113,7 +124,8 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain('aria-label="Organization @acme"')
+	expect(html).toContain('aria-label="@acme: organizations and account"')
+	expect(menu).toContain('href="/account/organizations#invites"')
 	// The org in the URL is current: checked and announced, the other is not.
 	const acmeRow = menu.slice(
 		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
