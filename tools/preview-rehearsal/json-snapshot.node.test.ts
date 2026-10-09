@@ -55,14 +55,14 @@ test('findPackagesListedByMoreThanOneOwner flags a package injected into another
 		findPackagesListedByMoreThanOneOwner({
 			alice: { packages: [{ id: 'a1' }, { id: 'shared' }] },
 			carol: { packages: [{ id: 'c1' }, { id: 'shared' }] },
-			'@rh-org': { packages: [{ id: 'o1' }] },
+			'@rh-platform': { packages: [{ id: 'o1' }] },
 			dave: { error: 'failed' },
 		}),
 	).toEqual([{ id: 'shared', owners: ['alice', 'carol'] }])
 	expect(
 		findPackagesListedByMoreThanOneOwner({
 			alice: { packages: [{ id: 'a1' }] },
-			'@rh-org': { packages: [{ id: 'o1' }] },
+			'@rh-platform': { packages: [{ id: 'o1' }] },
 		}),
 	).toEqual([])
 })

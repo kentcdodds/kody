@@ -72,9 +72,13 @@ export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 /** Dave renames during the seed so `username_redirects` has a row. */
 export const renamedDaveUsername = 'rh-dave-renamed'
 
-/** An ordinary org (no `users` row), owned by bob. */
+/**
+ * An ordinary org owned by bob. Slug matches the former platform account
+ * username from main's seed (`rh-platform`) so a main→P8 conversion rehearsal
+ * and a fresh P8 seed both land on the same org slug for snapshots.
+ */
 export const rehearsalOrg = {
-	slug: 'rh-org',
+	slug: 'rh-platform',
 	displayName: 'Rehearsal Org',
 	owner: 'bob',
 } as const satisfies {

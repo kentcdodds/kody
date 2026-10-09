@@ -300,7 +300,12 @@ export async function takeJsonSnapshot(input: {
 		throw new Error('Snapshot needs the rehearsal admin credentials.')
 	const failures: Array<SnapshotCheckFailure> = []
 	const capture = createCapture(failures)
-	const admin = await openRehearsalSession(input.origins.app, adminUser)
+	// Bind every session to an org. After P8, users who also own another org
+	// (for example bob after a scope-grant conversion) must pass ?org= or
+	// consent refuses with "Choose an organization".
+	const admin = await openRehearsalSession(input.origins.app, adminUser, {
+		orgSlug: adminUser.username,
+	})
 	const adminView: Record<string, unknown> = {}
 	try {
 		for (const user of input.users) {
@@ -319,7 +324,9 @@ export async function takeJsonSnapshot(input: {
 	const people: JsonSnapshot['people'] = []
 	for (const user of input.users.filter((entry) => entry.role !== 'admin')) {
 		log(`Snapshotting ${user.role}...`)
-		const session = await openRehearsalSession(input.origins.app, user)
+		const session = await openRehearsalSession(input.origins.app, user, {
+			orgSlug: user.username,
+		})
 		try {
 			people.push(await snapshotPerson(session, user, input.origins, capture))
 		} finally {

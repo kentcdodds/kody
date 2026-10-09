@@ -188,10 +188,12 @@ async function sessionFor(
 		workerName: input.workerName,
 		role: user.role,
 	})
+	// Default to the personal org slug so multi-org users (bob after a
+	// scope-grant conversion) do not hit the consent org picker.
 	return openRehearsalSession(
 		input.origins.app,
 		{ email: user.email, username: user.username, password },
-		options,
+		{ orgSlug: options.orgSlug ?? user.username },
 	)
 }
 
