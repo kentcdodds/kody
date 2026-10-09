@@ -22,7 +22,10 @@ import {
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
-import { runWithInboundRequestSignal } from './inbound-request-signal.ts'
+import {
+	getInboundRequestSignal,
+	runWithInboundRequestSignal,
+} from './inbound-request-signal.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -112,21 +115,24 @@ class MCPBase extends McpAgent<Env, State, Props> {
 		}
 		return agent
 	}
-	private parsedCallerContext: {
-		props: Props | undefined
-		callerContext: McpCallerContext
-	} | null = null
+	private callerContextsByRequest = new WeakMap<
+		AbortSignal,
+		{ props: Props | undefined; callerContext: McpCallerContext }
+	>()
 	/**
-	 * One caller context per props object, so per-request caches keyed on the
-	 * context (feature flags, effective permissions) hold across a request.
-	 * `updateProps` replaces the object, which re-derives it.
+	 * One caller context per inbound HTTP request, so per-request caches keyed
+	 * on the context (feature flags, effective permissions) hold for that
+	 * request and reset on the next one. The session's props object outlives
+	 * requests, so it cannot be the key on its own.
 	 */
 	getCallerContext(): McpCallerContext {
 		const props: Props | undefined = this.props
-		const cached = this.parsedCallerContext
+		const signal = getInboundRequestSignal()
+		const cached = signal ? this.callerContextsByRequest.get(signal) : undefined
 		if (cached && cached.props === props) return cached.callerContext
 		const callerContext = parseMcpCallerContext(props, { kind: 'mcp-oauth' })
-		this.parsedCallerContext = { props, callerContext }
+		if (signal)
+			this.callerContextsByRequest.set(signal, { props, callerContext })
 		return callerContext
 	}
 	getEnv() {
