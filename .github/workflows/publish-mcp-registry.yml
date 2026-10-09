@@ -8,6 +8,7 @@ on:
     paths:
       - server.json
       - .github/workflows/publish-mcp-registry.yml
+      - tools/ci/mcp-registry-publish.ts
 
 permissions:
   contents: read
@@ -26,7 +27,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6.0.2
 
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Decide whether to publish
+        id: decide
+        run: node tools/ci/mcp-registry-publish.ts decide
+
       - name: Install mcp-publisher
+        if: steps.decide.outputs.action == 'publish'
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -34,7 +45,16 @@ jobs:
             | tar xz mcp-publisher
 
       - name: Authenticate with GitHub OIDC
+        if: steps.decide.outputs.action == 'publish'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish
-        run: ./mcp-publisher publish
+        if: steps.decide.outputs.action == 'publish'
+        run: |
+          set -euo pipefail
+          if output=$(./mcp-publisher publish 2>&1); then
+            printf '%s\n' "$output"
+          else
+            printf '%s\n' "$output"
+            node tools/ci/mcp-registry-publish.ts interpret-error --text "$output"
+          fi

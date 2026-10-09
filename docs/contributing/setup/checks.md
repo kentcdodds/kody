@@ -130,7 +130,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `steps.<id>.outputs` and `needs.<id>` references in `.github/workflows/*.yml`
   that do not name an existing step or job id. GitHub resolves those
   misspellings to empty strings instead of failing the run, so a typo in
-  `deploy.yml` would otherwise first appear on a production deploy.
+  `deploy.yml` would otherwise first appear on a production deploy. It also
+  requires a `server.json` version bump when registry metadata changes: the MCP
+  Registry cannot republish a version.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
