@@ -178,7 +178,8 @@ export async function loadAdminLaunchSignals(input: {
 					 FROM users
 					 WHERE deleting_at IS NULL
 						AND stripe_plan IN ('standard', 'pro')
-					 GROUP BY 1, 2${andLiveDeletedAtSql()}`,
+						${andLiveDeletedAtSql()}
+					 GROUP BY 1, 2`,
 				)
 				.all<PaidPriceRow>(),
 			input.db
@@ -197,7 +198,8 @@ export async function loadAdminLaunchSignals(input: {
 						COUNT(*) AS n
 					 FROM users
 					 WHERE deleting_at IS NULL
-					 GROUP BY 1${andLiveDeletedAtSql()}`,
+						${andLiveDeletedAtSql()}
+					 GROUP BY 1`,
 				)
 				.bind(nowIso, nowIso)
 				.all<NamedCountRow>(),
@@ -207,7 +209,8 @@ export async function loadAdminLaunchSignals(input: {
 					 FROM users
 					 WHERE deleting_at IS NULL
 						AND first_mcp_connected_at IS NOT NULL
-					 GROUP BY 1${andLiveDeletedAtSql()}`,
+						${andLiveDeletedAtSql()}
+					 GROUP BY 1`,
 				)
 				.all<NamedCountRow>(),
 			input.db

@@ -119,7 +119,7 @@ export async function buildDurableObjectOwnerMap(
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
-				`SELECT user_id, storage_id, kind FROM user_storage_buckets${andLiveDeletedAtSql()}`,
+				`SELECT user_id, storage_id, kind FROM user_storage_buckets WHERE deleted_at IS NULL`,
 			).all<{ user_id: string; storage_id: string; kind: string }>(),
 		),
 		runD1WithRetry(() =>

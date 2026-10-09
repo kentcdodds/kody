@@ -346,8 +346,8 @@ export async function listEmailInboxesForUser(input: {
 		.prepare(
 			`SELECT *
 			FROM email_inboxes
-			WHERE user_id = ?
-			ORDER BY created_at DESC, id DESC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY created_at DESC, id DESC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
@@ -362,8 +362,8 @@ export async function listEmailInboxAddressesForUser(input: {
 		.prepare(
 			`SELECT *
 			FROM email_inbox_addresses
-			WHERE user_id = ?
-			ORDER BY created_at DESC, id DESC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY created_at DESC, id DESC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()

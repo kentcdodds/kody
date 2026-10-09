@@ -58,7 +58,7 @@ export async function listPlatformAccountUsernames(
 	try {
 		const result = await db
 			.prepare(
-				`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC${andLiveDeletedAtSql()}`,
+				`SELECT username FROM users WHERE account_type = 'platform'${andLiveDeletedAtSql()} ORDER BY username ASC`,
 			)
 			.all<{ username: string }>()
 		return (result.results ?? []).map((row) => row.username)

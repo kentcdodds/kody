@@ -15,7 +15,6 @@ import {
 } from '#worker/discord/guild-role.ts'
 import { isOauthProviderId } from '#app/oauth-providers.ts'
 import { type routes } from '#universal/routes.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const disconnectSchema = object({
 	intent: string(),
@@ -120,13 +119,14 @@ export function createAccountConnectionsApiHandler(env: Env) {
 					EXISTS (
 						SELECT 1 FROM users
 						WHERE id = ?1 AND password_hash LIKE 'pbkdf2_sha256$%'
+							AND deleted_at IS NULL
 					)
 					OR EXISTS (SELECT 1 FROM passkeys WHERE user_id = ?1)
 					OR EXISTS (
 						SELECT 1 FROM oauth_connections
 						WHERE user_id = ?1 AND provider_name != ?2
 					)
-				 )${andLiveDeletedAtSql()}`,
+				 )`,
 			)
 				.bind(user.userId, provider)
 				.run()

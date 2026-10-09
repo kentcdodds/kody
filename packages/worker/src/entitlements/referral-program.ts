@@ -508,11 +508,12 @@ export async function loadReferralProgramSummary(input: {
 			.prepare(
 				`SELECT r.status, r.created_at, r.rewarded_at, u.username AS referee_username
 				 FROM referrals r
-				 LEFT JOIN users u ON u.stable_user_id = r.referee_stable_user_id
+				 LEFT JOIN users u
+					ON u.stable_user_id = r.referee_stable_user_id
+					AND u.deleted_at IS NULL
 				 WHERE r.referrer_stable_user_id = ?
 				   AND r.status IN ('pending', 'rewarded')
-				 ORDER BY r.created_at DESC
-				 ${andLiveDeletedAtSql()} LIMIT 50`,
+				 ORDER BY r.created_at DESC LIMIT 50`,
 			)
 			.bind(input.stableUserId)
 			.all<{

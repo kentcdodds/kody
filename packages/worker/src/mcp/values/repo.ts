@@ -136,8 +136,8 @@ export async function listValueMetadataForBucket(input: {
 		.prepare(
 			`SELECT ? AS scope, ? AS binding_key, name, description, value, created_at, updated_at, ? AS expires_at
 			FROM value_entries
-			WHERE bucket_id = ?
-			ORDER BY name ASC${andLiveDeletedAtSql()}`,
+			WHERE bucket_id = ?${andLiveDeletedAtSql()}
+			ORDER BY name ASC`,
 		)
 		.bind(
 			input.bucket.scope,
@@ -165,8 +165,8 @@ export async function userHasPersistedValues(input: {
 			FROM value_entries e
 			INNER JOIN value_buckets b ON b.id = e.bucket_id
 			WHERE b.user_id = ?
-				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			${andLiveDeletedAtSql()} LIMIT 1`,
+				AND (b.expires_at IS NULL OR b.expires_at > ?)${andLiveDeletedAtSql('e')}${andLiveDeletedAtSql('b')}
+			LIMIT 1`,
 		)
 		.bind(input.userId, now)
 		.first<{ found: number }>()

@@ -142,7 +142,7 @@ async function listAdditionalDestinationRows(
 			`SELECT id, email, verified_at, is_default
 			 FROM email_notification_destinations
 			 WHERE user_id = ?
-			 ORDER BY created_at ASC, email ASC${andLiveDeletedAtSql()}`,
+			${andLiveDeletedAtSql()} ORDER BY created_at ASC, email ASC`,
 		)
 		.bind(userId)
 		.all<DestinationRow>()

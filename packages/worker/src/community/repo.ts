@@ -947,7 +947,8 @@ export async function repointOrphanedCommunityForksToListing(
 					SELECT 1
 					FROM community_listings
 					WHERE community_listings.id = community_forks.listing_id
-				)${andLiveDeletedAtSql()}`,
+						${andLiveDeletedAtSql('community_listings')}
+				)`,
 		)
 		.bind(
 			input.listingId,

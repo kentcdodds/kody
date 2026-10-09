@@ -84,8 +84,8 @@ export async function listEmailSenderRules(input: {
 		.prepare(
 			`SELECT *
 			FROM email_sender_rules
-			WHERE user_id = ?
-			ORDER BY created_at ASC, id ASC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY created_at ASC, id ASC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()
@@ -240,9 +240,8 @@ export async function evaluateEmailSenderRules(input: {
 				AND (
 					value = ?
 					OR ? LIKE '%.' || value
-				)
-			ORDER BY length(value) DESC, id ASC
-			${andLiveDeletedAtSql()} LIMIT 1`,
+				)${andLiveDeletedAtSql()}
+			ORDER BY length(value) DESC, id ASC LIMIT 1`,
 		)
 		.bind(input.userId, senderDomain, senderDomain)
 		.first<Record<string, unknown>>()

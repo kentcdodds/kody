@@ -343,8 +343,8 @@ export async function listSecretBucketsByScope(input: {
 			`SELECT id, user_id, scope, binding_key, expires_at, created_at, updated_at
 			FROM secret_buckets
 			WHERE user_id = ? AND scope = ?
-				AND (expires_at IS NULL OR expires_at > ?)
-			ORDER BY binding_key ASC${andLiveDeletedAtSql()}`,
+				AND (expires_at IS NULL OR expires_at > ?)${andLiveDeletedAtSql()}
+			ORDER BY binding_key ASC`,
 		)
 		.bind(input.userId, input.scope, now)
 		.all<Record<string, unknown>>()
@@ -359,8 +359,8 @@ export async function listSecretMetadataForBucket(input: {
 		.prepare(
 			`SELECT ? AS scope, ? AS binding_key, name, description, allowed_hosts, allowed_packages, created_at, updated_at, expires_at AS entry_expires_at, ? AS bucket_expires_at
 			FROM secret_entries
-			WHERE bucket_id = ?
-			ORDER BY name ASC${andLiveDeletedAtSql()}`,
+			WHERE bucket_id = ?${andLiveDeletedAtSql()}
+			ORDER BY name ASC`,
 		)
 		.bind(
 			input.bucket.scope,
@@ -384,8 +384,8 @@ export async function listUserScopeSecretMetadata(input: {
 			FROM secret_buckets b
 			JOIN secret_entries e ON e.bucket_id = b.id
 			WHERE b.user_id = ? AND b.scope = 'user'
-				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			ORDER BY e.name ASC${andLiveDeletedAtSql()}`,
+				AND (b.expires_at IS NULL OR b.expires_at > ?)${andLiveDeletedAtSql('b')}${andLiveDeletedAtSql('e')}
+			ORDER BY e.name ASC`,
 		)
 		.bind(input.userId, now)
 		.all<Record<string, unknown>>()
@@ -418,8 +418,8 @@ export async function listSecretLocationsByNameForUser(input: {
 			JOIN secret_entries e ON e.bucket_id = b.id
 			WHERE b.user_id = ? AND e.name = ?
 				AND (b.expires_at IS NULL OR b.expires_at > ?)
-				AND (e.expires_at IS NULL OR e.expires_at > ?)
-			ORDER BY b.scope ASC, b.binding_key ASC${andLiveDeletedAtSql()}`,
+				AND (e.expires_at IS NULL OR e.expires_at > ?)${andLiveDeletedAtSql('b')}${andLiveDeletedAtSql('e')}
+			ORDER BY b.scope ASC, b.binding_key ASC`,
 		)
 		.bind(input.userId, input.name, now, now)
 		.all<Record<string, unknown>>()

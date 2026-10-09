@@ -469,9 +469,8 @@ export async function reconcileKitSubscribers(input: {
 		 FROM users
 		 WHERE deleting_at IS NULL
 		   AND account_type = 'person'
-		   AND email IS NOT NULL
-		 ORDER BY updated_at DESC
-		 ${andLiveDeletedAtSql()} LIMIT ?`,
+		   AND email IS NOT NULL${andLiveDeletedAtSql()}
+		 ORDER BY updated_at DESC LIMIT ?`,
 	)
 		.bind(kitSubscriberSyncSweepLimit)
 		.all<KitUserRow>()

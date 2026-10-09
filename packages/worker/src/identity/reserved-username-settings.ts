@@ -300,8 +300,9 @@ export async function findReservedUsernameConflicts(
 			.prepare(
 				`SELECT username, stable_user_id
 				 FROM users
+				 WHERE 1 = 1${andLiveDeletedAtSql()}
 				 ORDER BY username ASC
-				 ${andLiveDeletedAtSql()} LIMIT ? OFFSET ?`,
+				 LIMIT ? OFFSET ?`,
 			)
 			.bind(conflictQueryPageSize, offset)
 			.all<{ username: string; stable_user_id: string }>()

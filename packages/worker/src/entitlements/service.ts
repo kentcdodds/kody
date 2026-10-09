@@ -1050,9 +1050,8 @@ export async function listUsersForD1StorageReconciliation(input: {
 		.prepare(
 			`SELECT stable_user_id AS userId
 			FROM users
-			WHERE stable_user_id > ?
-			ORDER BY stable_user_id ASC
-			${andLiveDeletedAtSql()} LIMIT ?`,
+			WHERE stable_user_id > ?${andLiveDeletedAtSql()}
+			ORDER BY stable_user_id ASC LIMIT ?`,
 		)
 		.bind(lastUserId, input.limit)
 		.all<{ userId: string }>()

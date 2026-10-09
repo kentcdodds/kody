@@ -161,8 +161,8 @@ export async function listEntitySourcesByUser(
 	const { results } = await db
 		.prepare(
 			`SELECT * FROM entity_sources
-			WHERE user_id = ?
-			ORDER BY updated_at DESC, created_at DESC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY updated_at DESC, created_at DESC`,
 		)
 		.bind(userId)
 		.all<Record<string, unknown>>()

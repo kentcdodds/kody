@@ -863,9 +863,8 @@ async function countUserBundleKvKeys(input: {
 		const page = await input.env.APP_DB.prepare(
 			`SELECT id, published_commit
 			FROM entity_sources
-			WHERE user_id = ? AND id > ?
-			ORDER BY id
-			${andLiveDeletedAtSql()} LIMIT 100`,
+			WHERE user_id = ? AND id > ?${andLiveDeletedAtSql()}
+			ORDER BY id LIMIT 100`,
 		)
 			.bind(input.userId, afterId)
 			.all<{ id: string; published_commit: string | null }>()

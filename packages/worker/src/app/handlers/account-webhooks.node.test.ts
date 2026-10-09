@@ -119,6 +119,8 @@ function createEnv() {
 			previous_url_secret_hash TEXT,
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			deleted_at TEXT,
+
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
 		);

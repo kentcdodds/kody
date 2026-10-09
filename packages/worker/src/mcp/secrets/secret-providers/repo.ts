@@ -157,8 +157,8 @@ export async function listSecretProviderBindings(
 			`SELECT user_id, provider_id, package_id, door_secret_name, config_json,
 				created_at, updated_at
 			FROM secret_provider_bindings
-			WHERE user_id = ?
-			ORDER BY provider_id ASC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY provider_id ASC`,
 		)
 		.bind(input.userId)
 		.all<BindingRow>()

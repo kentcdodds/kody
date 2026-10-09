@@ -237,8 +237,8 @@ export async function listWebhookEndpointsForUser(input: {
 		.prepare(
 			`SELECT *
 			FROM webhook_endpoints
-			WHERE user_id = ?
-			ORDER BY created_at DESC, id DESC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY created_at DESC, id DESC`,
 		)
 		.bind(input.userId)
 		.all<WebhookEndpointRow>()

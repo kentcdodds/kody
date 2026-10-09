@@ -182,7 +182,7 @@ export async function findRecentMcpEventCallbackVerification(input: {
 			`SELECT id, secret_encrypted, verified_at FROM mcp_event_subscriptions
 			 WHERE user_id = ? AND oauth_client_id = ? AND callback_url = ?
 			   AND verified_at IS NOT NULL AND verified_at > ?
-			 ORDER BY verified_at DESC${andLiveDeletedAtSql()}`,
+			${andLiveDeletedAtSql()} ORDER BY verified_at DESC`,
 		)
 		.bind(
 			input.userId,

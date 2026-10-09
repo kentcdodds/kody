@@ -36,7 +36,7 @@ export async function removeAllSecretApprovalsForPackage(input: {
 			SELECT 1
 			FROM json_each(e.allowed_packages)
 			WHERE value = ?
-		)${andLiveDeletedAtSql()}`,
+		)${andLiveDeletedAtSql('e')}`,
 	)
 		.bind(input.packageId, input.userId, input.packageId)
 		.run()

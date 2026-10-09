@@ -37,7 +37,8 @@ function createPublishedBundleArtifactsDb() {
 		CREATE TABLE entity_sources (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
-			published_commit TEXT
+			published_commit TEXT,
+			deleted_at TEXT
 		);
 	`)
 	return createD1FromSqlite(sqlite)

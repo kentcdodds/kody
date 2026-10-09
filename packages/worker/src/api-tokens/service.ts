@@ -363,8 +363,8 @@ async function listActiveApiTokenRecords(input: {
 			FROM api_tokens
 			WHERE user_id = ?
 				AND revoked_at IS NULL
-				AND expires_at > ?
-			ORDER BY created_at ASC, id ASC${andLiveDeletedAtSql()}`,
+				AND expires_at > ?${andLiveDeletedAtSql()}
+			ORDER BY created_at ASC, id ASC`,
 		)
 		.bind(input.userId, input.now.toISOString())
 		.all<Record<string, unknown>>()
@@ -625,8 +625,8 @@ export async function listApiTokens(input: {
 		.prepare(
 			`SELECT *
 			FROM api_tokens
-			WHERE user_id = ?
-			ORDER BY created_at DESC, id ASC${andLiveDeletedAtSql()}`,
+			WHERE user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY created_at DESC, id ASC`,
 		)
 		.bind(input.userId)
 		.all<Record<string, unknown>>()

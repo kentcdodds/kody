@@ -189,7 +189,7 @@ async function readNearStockCap(input: {
 					`SELECT COUNT(*) AS count FROM secret_entries se
 					 JOIN secret_buckets sb ON sb.id = se.bucket_id
 					 WHERE sb.user_id = ?
-					   AND (sb.expires_at IS NULL OR sb.expires_at > ?)${andLiveDeletedAtSql()}`,
+					   AND (sb.expires_at IS NULL OR sb.expires_at > ?)${andLiveDeletedAtSql('se')}${andLiveDeletedAtSql('sb')}`,
 				)
 				.bind(input.user.stable_user_id, input.now.toISOString())
 				.first<{ count: number }>(),

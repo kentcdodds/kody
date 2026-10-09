@@ -44,6 +44,7 @@ function createParityTestDb() {
 			email TEXT NOT NULL,
 			password_hash TEXT,
 			deleting_at TEXT,
+			deleted_at TEXT,
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);

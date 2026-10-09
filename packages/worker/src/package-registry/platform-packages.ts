@@ -20,7 +20,7 @@ async function listPlatformAccounts(
 ): Promise<Array<PlatformAccountRef>> {
 	const result = await db
 		.prepare(
-			`SELECT username, stable_user_id FROM users WHERE account_type = 'platform' ORDER BY username ASC${andLiveDeletedAtSql()}`,
+			`SELECT username, stable_user_id FROM users WHERE account_type = 'platform'${andLiveDeletedAtSql()} ORDER BY username ASC`,
 		)
 		.all<{ username: string; stable_user_id: string }>()
 	return (result.results ?? []).map((row) => ({

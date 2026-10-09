@@ -335,9 +335,8 @@ export async function listStorageBucketsMissingEstimates(input: {
 		.prepare(
 			`SELECT user_id AS userId, storage_id AS storageId, kind
 			FROM user_storage_buckets
-			WHERE estimated_bytes IS NULL
-			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
-			${andLiveDeletedAtSql()} LIMIT ?`,
+			WHERE estimated_bytes IS NULL${andLiveDeletedAtSql()}
+			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC LIMIT ?`,
 		)
 		.bind(input.limit)
 		.all<{
@@ -456,8 +455,8 @@ export async function listUserStorageBucketIds(input: {
 	const result = await input.env.APP_DB.prepare(
 		`SELECT storage_id AS storageId
 		FROM user_storage_buckets
-		WHERE user_id = ? AND kind <> 'repo_session'
-		ORDER BY storage_id ASC${andLiveDeletedAtSql()}`,
+		WHERE user_id = ? AND kind <> 'repo_session'${andLiveDeletedAtSql()}
+		ORDER BY storage_id ASC`,
 	)
 		.bind(input.userId)
 		.all<{ storageId: string }>()
@@ -482,8 +481,8 @@ export async function listUserStorageBucketEstimates(input: {
 	const result = await input.env.APP_DB.prepare(
 		`SELECT storage_id AS storageId, kind, estimated_bytes AS estimatedBytes
 		FROM user_storage_buckets
-		WHERE user_id = ?
-		ORDER BY storage_id ASC${andLiveDeletedAtSql()}`,
+		WHERE user_id = ?${andLiveDeletedAtSql()}
+		ORDER BY storage_id ASC`,
 	)
 		.bind(input.userId)
 		.all<{
@@ -508,8 +507,8 @@ export async function listPlatformStorageBuckets(input: {
 		.prepare(
 			`SELECT user_id AS userId, storage_id AS storageId
 			FROM user_storage_buckets
-			WHERE kind <> 'repo_session'
-			ORDER BY user_id ASC, storage_id ASC${andLiveDeletedAtSql()}`,
+			WHERE kind <> 'repo_session'${andLiveDeletedAtSql()}
+			ORDER BY user_id ASC, storage_id ASC`,
 		)
 		.all<{ userId: string; storageId: string }>()
 	return result.results ?? []

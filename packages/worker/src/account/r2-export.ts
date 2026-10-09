@@ -213,10 +213,10 @@ async function findNextRef(input: {
 						AND entity_sources.user_id = community_listings.owner_user_id
 						AND entity_sources.entity_kind = 'package'
 						AND entity_sources.entity_id = community_listings.package_id
+						AND entity_sources.deleted_at IS NULL
 					WHERE community_listings.owner_user_id = ?
-						AND community_listings.rowid > ?
-					ORDER BY community_listings.rowid
-					${andLiveDeletedAtSql()} LIMIT 1`,
+						AND community_listings.rowid > ?${andLiveDeletedAtSql('community_listings')}
+					ORDER BY community_listings.rowid LIMIT 1`,
 				)
 					.bind(input.userId, cursor.state.afterRowid)
 					.first<{
@@ -272,9 +272,8 @@ async function findNextRef(input: {
 						entity_sources.indexed_commit
 					FROM entity_sources
 					WHERE entity_sources.user_id = ?
-						AND entity_sources.rowid > ?
-					ORDER BY entity_sources.rowid
-					${andLiveDeletedAtSql()} LIMIT 1`,
+						AND entity_sources.rowid > ?${andLiveDeletedAtSql('entity_sources')}
+					ORDER BY entity_sources.rowid LIMIT 1`,
 				)
 					.bind(input.userId, cursor.state.afterRowid)
 					.first<{
@@ -406,9 +405,10 @@ async function resolveCurrentRef(input: {
 					AND entity_sources.user_id = community_listings.owner_user_id
 					AND entity_sources.entity_kind = 'package'
 					AND entity_sources.entity_id = community_listings.package_id
+					AND entity_sources.deleted_at IS NULL
 				WHERE community_listings.owner_user_id = ?
 					AND community_listings.rowid = ?
-					AND community_listings.id = ?${andLiveDeletedAtSql()}`,
+					AND community_listings.id = ?${andLiveDeletedAtSql('community_listings')}`,
 			)
 				.bind(input.userId, input.ref.source.rowid, input.ref.source.listingId)
 				.first<{
@@ -436,7 +436,7 @@ async function resolveCurrentRef(input: {
 				FROM entity_sources
 				WHERE entity_sources.user_id = ?
 					AND entity_sources.rowid = ?
-					AND entity_sources.repo_id = ?${andLiveDeletedAtSql()}`,
+					AND entity_sources.repo_id = ?${andLiveDeletedAtSql('entity_sources')}`,
 			)
 				.bind(input.userId, input.ref.source.rowid, input.ref.source.repoId)
 				.first<{
@@ -662,7 +662,8 @@ export async function countAccountR2ObjectRefs(input: {
 				AND entity_sources.user_id = community_listings.owner_user_id
 				AND entity_sources.entity_kind = 'package'
 				AND entity_sources.entity_id = community_listings.package_id
-			WHERE community_listings.owner_user_id = ?${andLiveDeletedAtSql()}`,
+				AND entity_sources.deleted_at IS NULL
+			WHERE community_listings.owner_user_id = ?${andLiveDeletedAtSql('community_listings')}`,
 		)
 			.bind(input.userId)
 			.first<{ count: number }>(),
@@ -678,7 +679,7 @@ export async function countAccountR2ObjectRefs(input: {
 							entity_sources.indexed_commit,
 							entity_sources.published_commit
 						) IS NOT NULL)
-				)${andLiveDeletedAtSql()}`,
+				)${andLiveDeletedAtSql('entity_sources')}`,
 		)
 			.bind(input.userId)
 			.first<{ count: number }>(),

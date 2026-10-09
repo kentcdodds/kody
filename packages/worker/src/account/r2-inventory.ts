@@ -66,10 +66,10 @@ async function listUserCommunityListings(env: Env, userId: string) {
 				AND entity_sources.user_id = community_listings.owner_user_id
 				AND entity_sources.entity_kind = 'package'
 				AND entity_sources.entity_id = community_listings.package_id
+				AND entity_sources.deleted_at IS NULL
 			WHERE community_listings.owner_user_id = ?
-				AND community_listings.rowid > ?
-			ORDER BY community_listings.rowid
-			${andLiveDeletedAtSql()} LIMIT ?`,
+				AND community_listings.rowid > ?${andLiveDeletedAtSql('community_listings')}
+			ORDER BY community_listings.rowid LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
 			.all<{
@@ -106,9 +106,8 @@ async function listUserIdentityIcons(env: Env, userId: string) {
 				entity_sources.indexed_commit
 			FROM entity_sources
 			WHERE entity_sources.user_id = ?
-				AND entity_sources.rowid > ?
-			ORDER BY entity_sources.rowid
-			${andLiveDeletedAtSql()} LIMIT ?`,
+				AND entity_sources.rowid > ?${andLiveDeletedAtSql('entity_sources')}
+			ORDER BY entity_sources.rowid LIMIT ?`,
 		)
 			.bind(userId, afterRowid, pageSize + 1)
 			.all<{

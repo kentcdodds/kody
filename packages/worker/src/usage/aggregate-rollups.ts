@@ -442,7 +442,8 @@ async function deleteNonLiveUserRollups(input: {
 						SELECT 1 FROM users
 						WHERE stable_user_id = usage_rollups.user_id
 							AND deleting_at IS NULL
-					)${andLiveDeletedAtSql()}`,
+							${andLiveDeletedAtSql('users')}
+					)`,
 			)
 			.bind(...input.months)
 			.run(),

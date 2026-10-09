@@ -154,11 +154,12 @@ export async function countStaticDependentBundleArtifactPackages(
 					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
 					AND json_extract(dependency.value, '$.transitive') IS NULL
+					${andLiveDeletedAtSql('source')}${andLiveDeletedAtSql('p')}
 			)
 			SELECT
 				COUNT(DISTINCT package_id) AS total_packages,
 				COUNT(DISTINCT CASE WHEN stale = 1 THEN package_id END) AS stale_packages
-			FROM matching${andLiveDeletedAtSql()}`,
+			FROM matching`,
 		)
 		.bind(
 			input.currentDependencyCommit,
@@ -216,6 +217,7 @@ export async function listStaticDependentBundleArtifactRows(
 					AND artifact.published_commit = source.published_commit
 					AND json_extract(dependency.value, '$.sourceId') = ?
 					AND json_extract(dependency.value, '$.transitive') IS NULL
+					${andLiveDeletedAtSql('source')}${andLiveDeletedAtSql('p')}
 			),
 			package_rollup AS (
 				SELECT
@@ -280,7 +282,7 @@ export async function listStaticDependentBundleArtifactRows(
 				bundled_dependency_commit
 			FROM ranked_packages
 			WHERE package_rank <= ? AND entrypoint_rank <= ?
-			ORDER BY package_rank ASC, entrypoint_rank ASC${andLiveDeletedAtSql()}`,
+			ORDER BY package_rank ASC, entrypoint_rank ASC`,
 		)
 		.bind(
 			input.currentDependencyCommit,

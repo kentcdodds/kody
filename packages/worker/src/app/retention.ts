@@ -276,7 +276,8 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 					WHERE source.user_id = published_bundle_artifacts.user_id
 						AND source.id = published_bundle_artifacts.source_id
 						AND source.published_commit = published_bundle_artifacts.published_commit
-				)${andLiveDeletedAtSql()}`,
+						${andLiveDeletedAtSql('source')}
+				)`,
 		)
 			.bind(input.id, input.kvKey, input.cutoff)
 			.run(),
@@ -370,9 +371,9 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 				WHERE source.user_id = artifact.user_id
 					AND source.id = artifact.source_id
 					AND source.published_commit = artifact.published_commit
+					${andLiveDeletedAtSql('source')}
 			)
-		ORDER BY artifact.created_at ASC, artifact.id ASC
-		${andLiveDeletedAtSql()} LIMIT ?`,
+		ORDER BY artifact.created_at ASC, artifact.id ASC LIMIT ?`,
 		)
 			.bind(cutoff, batchSize)
 			.all<{

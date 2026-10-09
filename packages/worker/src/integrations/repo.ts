@@ -311,8 +311,8 @@ export async function listOauthAppsWithConnectionCounts(input: {
 					WHERE i.user_id = a.user_id AND i.app_slug = a.slug
 				) AS connection_count
 			FROM user_oauth_apps a
-			WHERE a.user_id = ?
-			ORDER BY a.slug ASC${andLiveDeletedAtSql()}`,
+			WHERE a.user_id = ?${andLiveDeletedAtSql()}
+			ORDER BY a.slug ASC`,
 		)
 		.bind(input.userId)
 		.all<UserOauthAppWithCountRow>()

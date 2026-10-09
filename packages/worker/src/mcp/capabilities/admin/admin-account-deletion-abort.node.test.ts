@@ -40,6 +40,8 @@ function createCapabilityTestDb() {
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			deleting_at TEXT,
+			deleted_at TEXT,
+
 			created_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z',
 			updated_at TEXT NOT NULL DEFAULT '2026-01-01T00:00:00.000Z'
 		);

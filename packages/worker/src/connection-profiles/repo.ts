@@ -78,7 +78,7 @@ export async function listConnectionProfiles(input: {
 			`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 			 FROM connection_profiles
 			 WHERE user_id = ?
-			 ORDER BY name COLLATE NOCASE ASC${andLiveDeletedAtSql()}`,
+			${andLiveDeletedAtSql()} ORDER BY name COLLATE NOCASE ASC`,
 		)
 		.bind(input.userId)
 		.all<ConnectionProfileRow>()

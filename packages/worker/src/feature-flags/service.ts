@@ -520,7 +520,7 @@ export async function listFeatureFlagsForAdmin(
 			`SELECT f.key, f.enabled, f.rollout_percent, f.audience, f.note,
 				u.stable_user_id AS updated_by_stable_user_id, f.updated_at
 			 FROM feature_flags f
-			 LEFT JOIN users u ON u.id = f.updated_by${andLiveDeletedAtSql()}`,
+			 LEFT JOIN users u ON u.id = f.updated_by AND u.deleted_at IS NULL`,
 		)
 		.all<GlobalFlagRow>()
 	const globalByKey = new Map(
@@ -533,7 +533,8 @@ export async function listFeatureFlagsForAdmin(
 				u.stable_user_id
 			 FROM feature_flag_user_overrides o
 			 JOIN users u ON u.id = o.user_id
-			 ORDER BY o.flag_key ASC, u.username ASC${andLiveDeletedAtSql()}`,
+			 WHERE u.deleted_at IS NULL
+			 ORDER BY o.flag_key ASC, u.username ASC`,
 		)
 		.all<OverrideFlagRow>()
 	const overridesByKey = new Map<

@@ -12,7 +12,8 @@ function createAdminPlatformFeedbackFixture() {
 			username TEXT NOT NULL,
 			email TEXT NOT NULL,
 			stable_user_id TEXT,
-			private_content TEXT
+			private_content TEXT,
+			deleted_at TEXT
 		);
 		CREATE UNIQUE INDEX idx_users_stable_user_id
 			ON users(stable_user_id)

@@ -50,6 +50,8 @@ function entitySourcesSqlite() {
 			source_root TEXT NOT NULL,
 			last_external_check_at TEXT,
 			external_check_until TEXT,
+			deleted_at TEXT,
+
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -62,21 +64,23 @@ test('source deletion removes only its repo-session storage inventory', async ()
 	sqlite.exec(`
 		CREATE TABLE entity_sources (
 			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL
+			user_id TEXT NOT NULL,
+			deleted_at TEXT
 		);
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
 			storage_id TEXT NOT NULL,
 			kind TEXT NOT NULL,
+			deleted_at TEXT,
 			PRIMARY KEY (user_id, storage_id)
 		);
 		INSERT INTO entity_sources VALUES
-			('source-a', 'user-a'),
-			('source-b', 'user-b');
+			('source-a', 'user-a', NULL),
+			('source-b', 'user-b', NULL);
 		INSERT INTO user_storage_buckets VALUES
-			('user-a', 'repo-session:session-a', 'repo_session'),
-			('user-a', 'exec:keep', 'execute'),
-			('user-b', 'repo-session:session-b', 'repo_session');
+			('user-a', 'repo-session:session-a', 'repo_session', NULL),
+			('user-a', 'exec:keep', 'execute', NULL),
+			('user-b', 'repo-session:session-b', 'repo_session', NULL);
 	`)
 	const db = createD1FromSqlite(sqlite)
 	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
@@ -139,18 +143,18 @@ test('external reconcile selects token-pending packages and the daily backstop c
 		INSERT INTO entity_sources VALUES
 			(
 				'dormant', 'user-1', 'package', 'package-1', 'repo-1',
-				'commit-1', NULL, 'package.json', '/', NULL, NULL,
+				'commit-1', NULL, 'package.json', '/', NULL, NULL, NULL,
 				'2026-05-01T00:00:00.000Z', '2026-05-01T00:00:00.000Z'
 			),
 			(
 				'pending', 'user-2', 'package', 'package-2', 'repo-2',
 				'commit-2', NULL, 'package.json', '/',
-				'2026-05-04T01:00:00.000Z', '2026-05-04T04:00:00.000Z',
+				'2026-05-04T01:00:00.000Z', '2026-05-04T04:00:00.000Z', NULL,
 				'2026-05-02T00:00:00.000Z', '2026-05-02T00:00:00.000Z'
 			),
 			(
 				'job', 'user-1', 'job', 'job-1', 'repo-3',
-				'commit-3', NULL, 'kody.json', '/', NULL,
+				'commit-3', NULL, 'kody.json', '/', NULL, NULL,
 				'2026-05-04T04:00:00.000Z',
 				'2026-05-03T00:00:00.000Z', '2026-05-03T00:00:00.000Z'
 			);
@@ -204,7 +208,7 @@ test('listEntitySourcesByIds batches ids into IN queries and skips missing rows'
 			.prepare(
 				`INSERT INTO entity_sources VALUES
 					(?, 'user-1', 'package', ?, ?, 'commit-1', NULL,
-					'package.json', '/', NULL, NULL,
+					'package.json', '/', NULL, NULL, NULL,
 					'2026-09-10T00:00:00.000Z', '2026-09-10T00:00:00.000Z')`,
 			)
 			.run(id, `package-${id}`, `repo-${id}`)
@@ -227,7 +231,7 @@ test('listEntitySourcesByIds batches ids into IN queries and skips missing rows'
 		'package-source-a',
 	)
 	expect(queries).toEqual([
-		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?)',
+		'SELECT * FROM entity_sources WHERE id IN (?, ?, ?) AND deleted_at IS NULL',
 	])
 
 	const manyIds = Array.from({ length: 101 }, (_, index) => `missing-${index}`)

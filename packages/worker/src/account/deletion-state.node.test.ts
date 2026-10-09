@@ -115,6 +115,7 @@ function createLeaseHarness(
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE,
 			deleting_at TEXT,
+			deleted_at TEXT,
 			active_write_count INTEGER NOT NULL DEFAULT 0,
 			updated_at TEXT
 		);

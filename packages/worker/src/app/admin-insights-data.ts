@@ -141,7 +141,7 @@ async function queryAdminInsights(
 				 FROM users
 				 WHERE created_at >= ?
 				 GROUP BY day
-				 ORDER BY day ASC${andLiveDeletedAtSql()}`,
+				${andLiveDeletedAtSql()} ORDER BY day ASC`,
 			)
 			.bind(signupCutoff)
 			.all<DayCountRow>(),
@@ -168,7 +168,7 @@ async function queryAdminInsights(
 				`SELECT COALESCE(plan, 'none') AS plan, COUNT(*) AS n
 				 FROM users
 				 GROUP BY COALESCE(plan, 'none')
-				 ORDER BY n DESC${andLiveDeletedAtSql()}`,
+				${andLiveDeletedAtSql()} ORDER BY n DESC`,
 			)
 			.all<PlanRow>(),
 		auditDb

@@ -130,7 +130,8 @@ function createAdminCtx() {
 			id INTEGER PRIMARY KEY,
 			stable_user_id TEXT UNIQUE NOT NULL,
 			username TEXT NOT NULL,
-			email TEXT NOT NULL
+			email TEXT NOT NULL,
+			deleted_at TEXT
 		);
 	`)
 	const auditSqlite = new DatabaseSync(':memory:')

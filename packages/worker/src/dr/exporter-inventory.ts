@@ -24,8 +24,8 @@ export async function listPlatformOwnerInventory(
 		.prepare(
 			`SELECT stable_user_id AS ownerId
 			FROM users
-			WHERE deleting_at IS NULL
-			ORDER BY stable_user_id ASC${andLiveDeletedAtSql()}`,
+			WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
+			ORDER BY stable_user_id ASC`,
 		)
 		.all<{ ownerId: string }>()
 	return (result.results ?? []).map((row) => row.ownerId)
@@ -74,8 +74,8 @@ export async function listPlatformArtifactInventory(
 			`SELECT id AS sourceId, user_id AS userId, entity_kind AS entityKind,
 				entity_id AS entityId, published_commit AS publishedCommit
 			FROM entity_sources
-			WHERE published_commit IS NOT NULL AND trim(published_commit) != ''
-			ORDER BY id ASC${andLiveDeletedAtSql()}`,
+			WHERE published_commit IS NOT NULL AND trim(published_commit) != ''${andLiveDeletedAtSql()}
+			ORDER BY id ASC`,
 		)
 		.all<ArtifactInventoryEntry>()
 	return result.results ?? []
