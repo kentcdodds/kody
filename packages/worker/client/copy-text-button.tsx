@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/component'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -16,7 +16,8 @@ export const onboardingCopiedConnectActionEvent =
 
 type CopyTextButtonProps = {
 	value: string
-	idleLabel?: string
+	idleLabel?: RemixNode
+	copiedLabel?: string
 	class?: string
 	/**
 	 * `pill` is the redesign's display-face pill (prompt-block copy);
@@ -134,7 +135,7 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 		}, 2000)
 	}
 
-	function renderLabel(state: CopyState, text: string) {
+	function renderLabel(state: CopyState, text: RemixNode) {
 		const active = copyState === state
 		return (
 			<span
@@ -170,7 +171,10 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 			]}
 		>
 			{renderLabel('idle', handle.props.idleLabel ?? 'Copy')}
-			{renderLabel('copied', 'Copied')}
+			{renderLabel(
+				'copied',
+				handle.props.copiedLabel ?? handle.props.copiedLabel ?? 'Copied',
+			)}
 			{renderLabel('error', 'Copy failed')}
 			<span
 				id={`${handle.id}-copy-status`}
@@ -178,7 +182,7 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 				mix={css(visuallyHiddenCss)}
 			>
 				{copyState === 'copied'
-					? 'Copied'
+					? (handle.props.copiedLabel ?? 'Copied')
 					: copyState === 'error'
 						? 'Copy failed'
 						: ''}
