@@ -49,6 +49,12 @@ Attach the run links and both diffs to the migration PR. `diff` exits 1 when
 anything differs; each difference must be expected by the migration (new tables,
 rewritten scopes) or it is a bug.
 
+The D1 diff always has some noise. Every bookmark changes. Each JSON snapshot
+also writes a fixed set of rows: about 16 `audit_events` (the admin reads are
+audited) and 4 `agent_package_conversation_uses` (one per user's package
+execute). Restore rewinds data only, so after a restore the JSON diff still
+shows whatever the deployed code changed.
+
 Keep the preview quiet while this runs: one step at a time, no other deploys to
 it, and no manual sign-ins during a `snapshot` or `restore`. The workflow runs
 one action at a time per preview, but it does not lock against `preview.yml`.
@@ -116,8 +122,8 @@ before and after still fails the rehearsal. Usage counters sit under `observed`,
 which `diff` skips: each snapshot's own execute calls, and job runs, move them.
 
 Then per D1 database: a Time Travel bookmark and the row count of every table.
-The JSON snapshot runs first, so the bookmark includes the sessions and usage
-the snapshot itself created.
+The JSON snapshot runs first, so the bookmark includes the audit events and
+usage the snapshot itself created.
 
 The preview fixture user (`me@kentcdodds.com`) is not in the JSON snapshot.
 `preview.yml` re-runs its seed on every deploy, but that seed is idempotent
