@@ -514,10 +514,12 @@ export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
  * Soft-delete a user and their sole-member orgs. Other-org memberships go
  * through {@link onMemberSoftRemoved}.
  *
- * Sole-member orgs (including the personal org) are soft-deleted first so
- * {@link softDeleteOrg} can refuse active OwnerId write leases before any
- * person tombstone is written. That keeps a lease conflict from leaving the
- * user deleted while an org is still live.
+ * The person row is tombstoned first so a mid-loop {@link softDeleteOrg}
+ * failure (for example an active OwnerId lease) cannot leave sole-member orgs
+ * deleted while the person stays live — {@link restoreUserAccount} only
+ * revives orgs that share the person's `deleted_at`. OwnerId writes stay
+ * blocked for the tombstoned person even if a personal org is still live
+ * ({@link assertAccountWritableDb}).
  */
 export async function softDeleteUserAccount(input: {
 	env: Env
@@ -531,6 +533,16 @@ export async function softDeleteUserAccount(input: {
 		userId: input.userId,
 	})
 	const deletedAt = (input.now ?? new Date()).toISOString()
+	const userUpdate = await input.env.APP_DB.prepare(
+		`UPDATE users
+		 SET deleted_at = ?, updated_at = ?
+		 WHERE stable_user_id = ? AND deleted_at IS NULL`,
+	)
+		.bind(deletedAt, deletedAt, input.userId)
+		.run()
+	if ((userUpdate.meta.changes ?? 0) === 0) {
+		throw new Error('user_not_found_or_already_deleted')
+	}
 
 	const soleMemberOrgs = await input.env.APP_DB.prepare(
 		`SELECT m.org_id AS org_id
@@ -570,17 +582,6 @@ export async function softDeleteUserAccount(input: {
 			userId: input.userId,
 			deletedAt,
 		})
-	}
-
-	const userUpdate = await input.env.APP_DB.prepare(
-		`UPDATE users
-		 SET deleted_at = ?, updated_at = ?
-		 WHERE stable_user_id = ? AND deleted_at IS NULL`,
-	)
-		.bind(deletedAt, deletedAt, input.userId)
-		.run()
-	if ((userUpdate.meta.changes ?? 0) === 0) {
-		throw new Error('user_not_found_or_already_deleted')
 	}
 
 	await logOrgAuditEvent({
