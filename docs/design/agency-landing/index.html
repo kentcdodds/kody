@@ -622,15 +622,86 @@
           scroll-behavior: auto;
         }
       }
-      .ownership { font-size: 13px!important; margin: -10px 0 24px!important; }
-      .run-preview { display:flex; justify-content:space-between; align-items:center; gap:15px; padding:20px; margin-top:18px; background:#f0f3e8; border-radius:6px; font-size:13px; }
-      .run-preview p { font-size:12px; color:#627559; margin:7px 0 0 24px; }
-      .run-dot { color:#56803a; margin-right:10px; }
-      .activity-row { display:flex; gap:22px; padding:22px 0; border-bottom:1px solid #e1e6dc; font-size:13px; }
-      .activity-time { width:62px; flex-shrink:0; color:#728072; font-size:11px; }
-      .activity-row p { color:#6a7e6c; font-size:12px; margin-top:6px; }
-      @media(min-width:901px) { h1 {font-size:60px} .hero{grid-template-columns:1.15fr .85fr;align-items:center;padding-top:55px;padding-bottom:45px} }
-      @media(max-width:640px) { h1{font-size:44px} .tabs{gap:18px;font-size:12px}.run-preview{padding:15px;align-items:start}.run-preview strong{font-size:12px}.run-preview .share{font-size:11px;white-space:nowrap;padding:8px}.run-preview p{margin-left:0}.activity-row{gap:12px} }
+      .ownership {
+        font-size: 13px !important;
+        margin: -10px 0 24px !important;
+      }
+      .run-preview {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        padding: 20px;
+        margin-top: 18px;
+        background: #f0f3e8;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .run-preview p {
+        font-size: 12px;
+        color: #627559;
+        margin: 7px 0 0 24px;
+      }
+      .run-dot {
+        color: #56803a;
+        margin-right: 10px;
+      }
+      .activity-row {
+        display: flex;
+        gap: 22px;
+        padding: 22px 0;
+        border-bottom: 1px solid #e1e6dc;
+        font-size: 13px;
+      }
+      .activity-time {
+        width: 62px;
+        flex-shrink: 0;
+        color: #728072;
+        font-size: 11px;
+      }
+      .activity-row p {
+        color: #6a7e6c;
+        font-size: 12px;
+        margin-top: 6px;
+      }
+      @media (min-width: 901px) {
+        h1 {
+          font-size: 60px;
+        }
+        .hero {
+          grid-template-columns: 1.15fr 0.85fr;
+          align-items: center;
+          padding-top: 55px;
+          padding-bottom: 45px;
+        }
+      }
+      @media (max-width: 640px) {
+        h1 {
+          font-size: 44px;
+        }
+        .tabs {
+          gap: 18px;
+          font-size: 12px;
+        }
+        .run-preview {
+          padding: 15px;
+          align-items: start;
+        }
+        .run-preview strong {
+          font-size: 12px;
+        }
+        .run-preview .share {
+          font-size: 11px;
+          white-space: nowrap;
+          padding: 8px;
+        }
+        .run-preview p {
+          margin-left: 0;
+        }
+        .activity-row {
+          gap: 12px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -651,10 +722,16 @@
       </nav>
       <main>
         <section class="hero">
-          <h1>Build client workflows.<br /><span>Make them part of the business.</span></h1>
+          <h1>
+            Build client workflows.<br /><span
+              >Make them part of the business.</span
+            >
+          </h1>
           <div>
             <p>
-              Kody gives your agency a shared home to build, run, and maintain client automations. Choose who owns and maintains the work. Clients use it from their AI agent or an app.
+              Kody gives your agency a shared home to build, run, and maintain
+              client automations. Choose who owns and maintains the work.
+              Clients use it from their AI agent or an app.
             </p>
             <a class="button" href="#demo" data-demo
               >Book an agency demo
@@ -685,7 +762,9 @@
               </div>
               <button class="share" id="share">Share ↗</button>
             </div>
-            <p class="people">Owned by Northline Studio · Shared with Acme finance</p>
+            <p class="people">
+              Owned by Northline Studio · Shared with Acme finance
+            </p>
             <div class="tabs" role="tablist" aria-label="Workspace content">
               <button
                 class="tab active"
@@ -700,10 +779,27 @@
                 aria-selected="false"
                 data-tab="access"
               >
-                People & access
-              </button><button class="tab" role="tab" aria-selected="false" data-tab="activity">Activity</button>
+                People & access</button
+              ><button
+                class="tab"
+                role="tab"
+                aria-selected="false"
+                data-tab="activity"
+              >
+                Activity
+              </button>
             </div>
-            <div id="rows"></div><div class="run-preview"><div><span class="run-dot">✓</span><strong id="run-title">Monthly invoicing</strong><p id="run-detail">Scheduled run · Drafts prepared for finance</p></div><button class="share" id="inspect-run">View run ↗</button></div>
+            <div id="rows"></div>
+            <div class="run-preview">
+              <div>
+                <span class="run-dot">✓</span
+                ><strong id="run-title">Monthly invoicing</strong>
+                <p id="run-detail">
+                  Scheduled run · Drafts prepared for finance
+                </p>
+              </div>
+              <button class="share" id="inspect-run">View run ↗</button>
+            </div>
             <div class="connected">
               <span style="color: #68964c">●</span> Available to connected
               agents
@@ -714,21 +810,29 @@
           </div>
         </section>
         <div class="under">
-          <p>Explore an example workspace. Switch clients, inspect access, or view activity.</p>
+          <p>
+            Explore an example workspace. Switch clients, inspect access, or
+            view activity.
+          </p>
           <a href="#client-spaces">See how ownership works ↓</a>
         </div>
         <section class="story" id="client-spaces">
           <div>
             <h2>Client work belongs<br />to the business.</h2>
             <p>
-              Keep workflows, connections, and data in a space with clear ownership. Give your builders access to maintain the work and your clients access to use it.
+              Keep workflows, connections, and data in a space with clear
+              ownership. Give your builders access to maintain the work and your
+              clients access to use it.
             </p>
             <p>
-              People change roles. Clients take work in-house. Hand over ownership and remove access without starting over in someone else’s chat.
+              People change roles. Clients take work in-house. Hand over
+              ownership and remove access without starting over in someone
+              else’s chat.
             </p>
           </div>
           <div class="permission">
-            <h3>Monthly invoicing</h3><p class="ownership">Owner: Acme Construction</p>
+            <h3>Monthly invoicing</h3>
+            <p class="ownership">Owner: Acme Construction</p>
             <div class="person">
               <span class="avatar">NS</span>Northline Studio<span class="role"
                 >Can edit</span
@@ -758,19 +862,25 @@
           <article class="usecase">
             <h3>Reuse the parts you’ve already built.</h3>
             <p>
-              Build reusable packages for your integrations, reporting, and business rules. Compose them into a workflow for the next client, with that client’s own connections and data.
+              Build reusable packages for your integrations, reporting, and
+              business rules. Compose them into a workflow for the next client,
+              with that client’s own connections and data.
             </p>
           </article>
           <article class="usecase">
             <h3>Keep running when the chat closes.</h3>
             <p>
-              Run saved workflows on a schedule or from a webhook. Inspect the run history when something needs attention, then improve the workflow your team maintains.
+              Run saved workflows on a schedule or from a webhook. Inspect the
+              run history when something needs attention, then improve the
+              workflow your team maintains.
             </p>
           </article>
           <article class="usecase">
             <h3>Let clients choose how they use it.</h3>
             <p>
-              One client prefers Claude. Another uses ChatGPT. Someone in finance just needs a button. Give them access to the same underlying workflow.
+              One client prefers Claude. Another uses ChatGPT. Someone in
+              finance just needs a button. Give them access to the same
+              underlying workflow.
             </p>
           </article>
         </div>
@@ -790,7 +900,9 @@
       <button class="close" aria-label="Close dialog">×</button>
       <h2>Let’s talk about your agency.</h2>
       <p>
-        We’ll walk through who owns it, how it runs, and what your client needs to use it. Bring an invoicing process, a recurring report, or an internal tool.
+        We’ll walk through who owns it, how it runs, and what your client needs
+        to use it. Bring an invoicing process, a recurring report, or an
+        internal tool.
       </p>
       <p class="preview-note">
         Design preview. Connect this button to your booking calendar before
@@ -900,9 +1012,19 @@
       function render() {
         document.querySelector("#client-title").textContent =
           clients[selected].name;
-        document.querySelector(".people").textContent = selected === 2 ? "Owned by Northline Studio · Internal team access" : "Owned by " + clients[selected].name + " · Maintained by Northline Studio";
-        document.querySelector("#run-title").textContent = clients[selected].items[0][1];
-        document.querySelector("#run-detail").textContent = ["Scheduled run · Drafts prepared for finance", "Client request · Intake ready for review", "Scheduled run · Audit ready for review"][selected];
+        document.querySelector(".people").textContent =
+          selected === 2
+            ? "Owned by Northline Studio · Internal team access"
+            : "Owned by " +
+              clients[selected].name +
+              " · Maintained by Northline Studio";
+        document.querySelector("#run-title").textContent =
+          clients[selected].items[0][1];
+        document.querySelector("#run-detail").textContent = [
+          "Scheduled run · Drafts prepared for finance",
+          "Client request · Intake ready for review",
+          "Scheduled run · Audit ready for review",
+        ][selected];
         document.querySelector("#client-access").firstChild.textContent =
           clients[selected].name;
         document.querySelector("#rows").innerHTML =
@@ -913,7 +1035,9 @@
                     `<div class="row"><span class="fileicon" aria-hidden="true">${x[0]}</span><div><div class="name">${x[1]}</div><div class="detail">${x[2]}</div></div><span class="kind">${x[3]}</span><span class="badge">${x[4]}</span></div>`,
                 )
                 .join("")
-            : tab === "activity" ? `<div class="activity-row"><span class="activity-time">09:02</span><div><strong>${clients[selected].items[0][1]} completed</strong><p>Triggered by ${selected === 1 ? "Jamie Lee" : "schedule"} · Result saved in this space</p></div></div><div class="activity-row"><span class="activity-time">08:58</span><div><strong>Jamie Lee updated the workflow</strong><p>Changed validation rules · Northline Studio</p></div></div><div class="activity-row"><span class="activity-time">Yesterday</span><div><strong>Client access granted</strong><p>Can run workflows · Cannot edit source</p></div></div>` : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
+            : tab === "activity"
+              ? `<div class="activity-row"><span class="activity-time">09:02</span><div><strong>${clients[selected].items[0][1]} completed</strong><p>Triggered by ${selected === 1 ? "Jamie Lee" : "schedule"} · Result saved in this space</p></div></div><div class="activity-row"><span class="activity-time">08:58</span><div><strong>Jamie Lee updated the workflow</strong><p>Changed validation rules · Northline Studio</p></div></div><div class="activity-row"><span class="activity-time">Yesterday</span><div><strong>Client access granted</strong><p>Can run workflows · Cannot edit source</p></div></div>`
+              : `<div class="person"><span class="avatar">NS</span>Northline Studio<span class="role">Can edit</span></div><div class="person"><span class="avatar">CL</span>${clients[selected].name}<span class="role">Can run</span></div><div class="person"><span class="avatar">JL</span>Jamie Lee<span class="role">Can run</span></div>`;
       }
       document.querySelectorAll("[data-client]").forEach(
         (b) =>
@@ -948,7 +1072,9 @@
       document
         .querySelectorAll(".close")
         .forEach((b) => (b.onclick = () => b.closest("dialog").close()));
-      document.querySelector("#inspect-run").onclick = () => { document.querySelector('[data-tab="activity"]').click(); };
+      document.querySelector("#inspect-run").onclick = () => {
+        document.querySelector('[data-tab="activity"]').click();
+      };
       render();
     </script>
   </body>
