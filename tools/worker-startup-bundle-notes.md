@@ -380,3 +380,8 @@ runtime path if this budget is raised again.
   carries those templates or the rewrite AST walk. Clears #2831 overage
   (measured 5_123_062). Local dry-run platform 5_104_954 against the previous
   5_108_000 budget, reviewed ceiling 5_106_000.
+- Teams access (grants, invites, members, teams), org soft-delete, and org
+  billing sit on the platform entry. Those domains already load through dynamic
+  import() in `builtin-domains.ts`, which defers startup CPU, and esbuild keeps
+  the modules in this same entry. Local dry-run 5_118_387 against the previous
+  5_106_000 budget (#3092). Reviewed ceiling 5_120_000.
