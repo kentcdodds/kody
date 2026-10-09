@@ -8,6 +8,7 @@ import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import {
 	AuthorizationError,
+	authorize,
 	runWithRequestPermissions,
 } from '#worker/authorization/authorize.ts'
 import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
@@ -17,6 +18,7 @@ import {
 	mintCliCredentialBootstrap,
 	redeemCliCredentialBootstrap,
 } from './cli-credential-bootstrap.ts'
+import { localExecuteOrgPermissions } from './legacy-scope-rewrite.ts'
 import { apiTokenLifetimeAliases, mintApiToken } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -73,6 +75,9 @@ test('default CLI bootstrap scopes resolve an owned package for local execute', 
 	})
 	expect(minted.scopes).toEqual([...cliCredentialBootstrapPolicy.defaultScopes])
 	expect(minted.scopes).toContain('package:execute')
+	expect(minted.scopes).toEqual(
+		expect.arrayContaining([...localExecuteOrgPermissions, 'org:read']),
+	)
 
 	const redeemed = await redeemCliCredentialBootstrap({
 		db,
@@ -102,6 +107,71 @@ test('default CLI bootstrap scopes resolve an owned package for local execute', 
 		}),
 	)
 	expect(resolved?.row.id).toBe(packageInfo.id)
+})
+
+test('default CLI bootstrap scopes authorize integration:read for local package execute', async () => {
+	const { db, env, userId } = await createHarness()
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		lifetime: 'short',
+	})
+	const redeemed = await redeemCliCredentialBootstrap({
+		db,
+		code: minted.bootstrap_code,
+		lifetime: 'short',
+	})
+	expect(redeemed.token.scopes).toContain('integration:read')
+	expect(redeemed.token.scopes).toContain('integration:use')
+	expect(redeemed.token.scopes).toContain('secret:use')
+
+	const request = deriveRequestContext({
+		user: {
+			userId: personIdFromStored(userId),
+			username,
+		},
+		source: { kind: 'api-token', tokenId: redeemed.token.id },
+		scopes: redeemed.token.scopes,
+	})
+	// createAuthenticatedFetch → integrationGet checks integration:read on
+	// the CapabilityProxy hop; that is the #3104 / #3109 failure mode.
+	await expect(
+		authorize({ env, request }, 'integration:read'),
+	).resolves.toBeUndefined()
+	await expect(
+		authorize({ env, request }, 'integration:use'),
+	).resolves.toBeUndefined()
+	await expect(
+		authorize({ env, request }, 'secret:use'),
+	).resolves.toBeUndefined()
+
+	const narrow = await mintApiToken({
+		db,
+		userId,
+		name: 'narrow-pre-parity-bootstrap',
+		scopes: ['org:execute', 'org:read', 'package:execute'],
+		idleTtlSeconds: apiTokenLifetimeAliases.short.idleTtlSeconds,
+		maxLifetimeSeconds: apiTokenLifetimeAliases.short.maxLifetimeSeconds,
+		createdVia: 'cli-bootstrap',
+	})
+	const narrowRequest = deriveRequestContext({
+		user: {
+			userId: personIdFromStored(userId),
+			username,
+		},
+		source: { kind: 'api-token', tokenId: narrow.id },
+		scopes: narrow.scopes,
+	})
+	const denied = await authorize(
+		{ env, request: narrowRequest },
+		'integration:read',
+	).catch((caught: unknown) => caught)
+	expect(denied).toBeInstanceOf(AuthorizationError)
+	expect(denied).toMatchObject({
+		code: 'credential_scope',
+		permission: 'integration:read',
+	})
+	expect(String(denied)).toMatch(/cliCredentialBootstrap/)
 })
 
 test('missing package:execute names the scope instead of package-not-found', async () => {

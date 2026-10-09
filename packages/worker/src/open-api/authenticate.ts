@@ -72,7 +72,7 @@ function describeFailure(reason: ApiTokenAuthenticationFailure) {
 		case 'unknown':
 			return 'Invalid API token.'
 		case 'expired':
-			return 'API token expired. Mint a new one (MCP api tool: tokenCreate).'
+			return 'API token expired. Agents on MCP: call cliCredentialBootstrap with lifetime short|long, then `npx @kodycodes/cli auth bootstrap --code …`. CI/headless: mint with tokenCreate.'
 		case 'revoked':
 			return 'API token was revoked.'
 		default: {

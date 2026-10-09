@@ -258,7 +258,7 @@ function denialMessage(
 		case 'missing_permission':
 			return `Missing ${permission}${target}. An org Owner can grant it.`
 		case 'credential_scope':
-			return `This credential is not scoped for ${permission}${target}.`
+			return `This credential is not scoped for ${permission}${target}. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.`
 		case 'connection_profile': {
 			const action = profileActionFor(permission) ?? permission
 			return `This connection profile cannot ${action}${resource ? ` ${describeResource(resource)}` : ''}.`
